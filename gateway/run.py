@@ -3829,10 +3829,18 @@ class GatewayRunner:
                     target = qcmd.get("target", "").strip()
                     if target:
                         target = target if target.startswith("/") else f"/{target}"
-                        target_command = target.lstrip("/")
+                        # Split target into command and default args (only take first token as command name)
+                        target_parts = target.lstrip("/").split(None, 1)
+                        target_command = target_parts[0]
+                        target_default_args = target_parts[1] if len(target_parts) > 1 else ""
                         user_args = event.get_command_args().strip()
-                        event.text = f"{target} {user_args}".strip()
+                        # User args override default args
+                        final_args = user_args if user_args else target_default_args
+                        event.text = f"/{target_command} {final_args}".strip()
                         command = target_command
+                        # Check if the target is a built-in command and handle it explicitly
+                        if target_command == "model":
+                            return await self._handle_model_command(event)
                         # Fall through to normal command dispatch below
                     else:
                         return f"Quick command '/{command}' has no target defined."
