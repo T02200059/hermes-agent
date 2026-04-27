@@ -3815,6 +3815,34 @@ def _mirror_slash_side_effects(sid: str, session: dict, command: str) -> str:
         session.get("agent"),
     )
 
+    # Resolve quick_commands aliases first
+    # This handles cases like /grok -> /model grok-4-1-fast-reasoning ;; /reasoning low
+    cfg = _load_cfg()
+    quick_commands = cfg.get("quick_commands", {}) or {}
+    if isinstance(quick_commands, dict) and name in quick_commands:
+        qcmd = quick_commands[name]
+        if isinstance(qcmd, dict) and qcmd.get("type") == "alias":
+            target = qcmd.get("target", "").strip()
+            if target:
+                # If target contains ;;, take the first command (usually /model)
+                # and extract its args
+                if ";;" in target:
+                    first_cmd = target.split(";;")[0].strip()
+                    if first_cmd.startswith("/"):
+                        first_cmd = first_cmd.lstrip("/")
+                    cmd_parts = first_cmd.split(None, 1)
+                    if cmd_parts:
+                        name = cmd_parts[0]
+                        arg = cmd_parts[1] if len(cmd_parts) > 1 else ""
+                else:
+                    # Single command alias
+                    if target.startswith("/"):
+                        target = target.lstrip("/")
+                    cmd_parts = target.split(None, 1)
+                    if cmd_parts:
+                        name = cmd_parts[0]
+                        arg = cmd_parts[1] if len(cmd_parts) > 1 else ""
+
     # Reject agent-mutating commands during an in-flight turn.  These
     # all do read-then-mutate on live agent/session state that the
     # worker thread running agent.run_conversation is using.  Parity
