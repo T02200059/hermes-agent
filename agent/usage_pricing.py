@@ -254,6 +254,87 @@ _OFFICIAL_DOCS_PRICING: Dict[tuple[str, str], PricingEntry] = {
         source_url="https://api-docs.deepseek.com/quick_start/pricing",
         pricing_version="deepseek-pricing-2026-03-16",
     ),
+    # xAI Grok
+    (
+        "xai",
+        "grok-4-1-fast-reasoning",
+    ): PricingEntry(
+        input_cost_per_million=Decimal("0.20"),
+        output_cost_per_million=Decimal("0.50"),
+        source="official_docs_snapshot",
+        source_url="https://docs.x.ai/developers/models",
+        pricing_version="xai-pricing-2026-04-27",
+    ),
+    (
+        "xai",
+        "grok-4-1-fast-non-reasoning",
+    ): PricingEntry(
+        input_cost_per_million=Decimal("0.20"),
+        output_cost_per_million=Decimal("0.50"),
+        source="official_docs_snapshot",
+        source_url="https://docs.x.ai/developers/models",
+        pricing_version="xai-pricing-2026-04-27",
+    ),
+    (
+        "xai",
+        "grok-4.20-0309-reasoning",
+    ): PricingEntry(
+        input_cost_per_million=Decimal("2.00"),
+        output_cost_per_million=Decimal("6.00"),
+        source="official_docs_snapshot",
+        source_url="https://docs.x.ai/developers/models",
+        pricing_version="xai-pricing-2026-04-27",
+    ),
+    (
+        "xai",
+        "grok-4.20-0309-non-reasoning",
+    ): PricingEntry(
+        input_cost_per_million=Decimal("2.00"),
+        output_cost_per_million=Decimal("6.00"),
+        source="official_docs_snapshot",
+        source_url="https://docs.x.ai/developers/models",
+        pricing_version="xai-pricing-2026-04-27",
+    ),
+    (
+        "xai",
+        "grok-4.20-multi-agent-0309",
+    ): PricingEntry(
+        input_cost_per_million=Decimal("2.00"),
+        output_cost_per_million=Decimal("6.00"),
+        source="official_docs_snapshot",
+        source_url="https://docs.x.ai/developers/models",
+        pricing_version="xai-pricing-2026-04-27",
+    ),
+    (
+        "xai",
+        "grok-4-0709",
+    ): PricingEntry(
+        input_cost_per_million=Decimal("3.00"),
+        output_cost_per_million=Decimal("15.00"),
+        source="official_docs_snapshot",
+        source_url="https://docs.x.ai/developers/models",
+        pricing_version="xai-pricing-2026-04-27",
+    ),
+    (
+        "xai",
+        "grok-3",
+    ): PricingEntry(
+        input_cost_per_million=Decimal("3.00"),
+        output_cost_per_million=Decimal("15.00"),
+        source="official_docs_snapshot",
+        source_url="https://docs.x.ai/developers/models",
+        pricing_version="xai-pricing-2026-04-27",
+    ),
+    (
+        "xai",
+        "grok-3-mini",
+    ): PricingEntry(
+        input_cost_per_million=Decimal("0.60"),
+        output_cost_per_million=Decimal("3.00"),
+        source="official_docs_snapshot",
+        source_url="https://docs.x.ai/developers/models",
+        pricing_version="xai-pricing-2026-04-27",
+    ),
     # Google Gemini
     (
         "google",
