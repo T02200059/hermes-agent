@@ -1630,33 +1630,25 @@ def _(rid, params: dict) -> dict:
     if db is None:
         return _db_unavailable_error(rid, code=5006)
     try:
-        # Resume picker should include human conversation surfaces beyond
-        # tui/cli (notably telegram from blitz row #7), but avoid internal
-        # sources that clutter the modal (tool/acp/etc).
-        allow = frozenset(
-            {
-                "cli",
-                "tui",
-                "telegram",
-                "discord",
-                "slack",
-                "whatsapp",
-                "wecom",
-                "weixin",
-                "feishu",
-                "signal",
-                "mattermost",
-                "matrix",
-                "qq",
-            }
-        )
+        # Resume picker should surface human conversation sessions from every
+        # user-facing surface — CLI, TUI, all gateway platforms (including new
+        # ones not enumerated here), ACP adapter clients, webhook sessions,
+        # custom `HERMES_SESSION_SOURCE` values, and older installs with
+        # different source labels. We deny-list only the noisy internal
+        # sources (``tool`` sub-agent runs) rather than allow-listing a
+        # fixed set of platform names that goes stale whenever a new
+        # platform is added or a user names their own source.
+        deny = frozenset({"tool"})
 
-        limit = int(params.get("limit", 20) or 20)
-        fetch_limit = max(limit * 5, 100)
+        limit = int(params.get("limit", 200) or 200)
+        # Over-fetch modestly so per-source filtering doesn't leave us
+        # short; the compression-tip projection in ``list_sessions_rich``
+        # can also merge rows.
+        fetch_limit = max(limit * 2, 200)
         rows = [
             s
             for s in db.list_sessions_rich(source=None, limit=fetch_limit)
-            if (s.get("source") or "").strip().lower() in allow
+            if (s.get("source") or "").strip().lower() not in deny
         ][:limit]
         return _ok(
             rid,
@@ -2321,6 +2313,26 @@ def _(rid, params: dict) -> dict:
                 payload["rendered"] = rendered
             _emit("message.complete", sid, payload)
 
+            if (
+                status == "complete"
+                and isinstance(raw, str)
+                and raw.strip()
+                and isinstance(text, str)
+                and text.strip()
+            ):
+                try:
+                    from agent.title_generator import maybe_auto_title
+
+                    maybe_auto_title(
+                        _get_db(),
+                        session.get("session_key") or sid,
+                        text,
+                        raw,
+                        session.get("history", []),
+                    )
+                except Exception:
+                    pass
+
             # CLI parity: when voice-mode TTS is on, speak the agent reply
             # (cli.py:_voice_speak_response).  Only the final text — tool
             # calls / reasoning already stream separately and would be
@@ -2548,48 +2560,6 @@ def _(rid, params: dict) -> dict:
 
     threading.Thread(target=run, daemon=True).start()
     return _ok(rid, {"task_id": task_id})
-
-
-@method("prompt.btw")
-def _(rid, params: dict) -> dict:
-    session, err = _sess(params, rid)
-    if err:
-        return err
-    text, sid = params.get("text", ""), params.get("session_id", "")
-    if not text:
-        return _err(rid, 4012, "text required")
-    snapshot = list(session.get("history", []))
-
-    def run():
-        session_tokens = _set_session_context(session["session_key"])
-        try:
-            from run_agent import AIAgent
-
-            result = AIAgent(
-                model=_resolve_model(),
-                quiet_mode=True,
-                platform="tui",
-                max_iterations=8,
-                enabled_toolsets=[],
-            ).run_conversation(text, conversation_history=snapshot)
-            _emit(
-                "btw.complete",
-                sid,
-                {
-                    "text": (
-                        result.get("final_response", str(result))
-                        if isinstance(result, dict)
-                        else str(result)
-                    )
-                },
-            )
-        except Exception as e:
-            _emit("btw.complete", sid, {"text": f"error: {e}"})
-        finally:
-            _clear_session_context(session_tokens)
-
-    threading.Thread(target=run, daemon=True).start()
-    return _ok(rid, {"status": "running"})
 
 
 # ── Methods: respond ─────────────────────────────────────────────────

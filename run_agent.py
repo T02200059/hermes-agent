@@ -892,7 +892,6 @@ class AIAgent:
         checkpoints_enabled: bool = False,
         checkpoint_max_snapshots: int = 50,
         pass_session_id: bool = False,
-        persist_session: bool = True,
     ):
         """
         Initialize the AI Agent.
@@ -964,7 +963,6 @@ class AIAgent:
         self.background_review_callback = None  # Optional sync callback for gateway delivery
         self.skip_context_files = skip_context_files
         self.pass_session_id = pass_session_id
-        self.persist_session = persist_session
         self._credential_pool = credential_pool
         self.log_prefix_chars = log_prefix_chars
         self.log_prefix = f"{log_prefix} " if log_prefix else ""
@@ -3247,12 +3245,25 @@ class AIAgent:
                 with open(os.devnull, "w") as _devnull, \
                      contextlib.redirect_stdout(_devnull), \
                      contextlib.redirect_stderr(_devnull):
+                    # Inherit the parent agent's live runtime (provider, model,
+                    # base_url, api_key, api_mode) so the fork uses the exact
+                    # same credentials the main turn is using.  Without this,
+                    # AIAgent.__init__ re-runs auto-resolution from env vars,
+                    # which fails for OAuth-only providers, session-scoped
+                    # creds, or credential-pool setups where the resolver can't
+                    # reconstruct auth from scratch -- producing the spurious
+                    # "No LLM provider configured" warning at end of turn.
+                    _parent_runtime = self._current_main_runtime()
                     review_agent = AIAgent(
                         model=self.model,
                         max_iterations=8,
                         quiet_mode=True,
                         platform=self.platform,
                         provider=self.provider,
+                        api_mode=_parent_runtime.get("api_mode") or None,
+                        base_url=_parent_runtime.get("base_url") or None,
+                        api_key=_parent_runtime.get("api_key") or None,
+                        credential_pool=getattr(self, "_credential_pool", None),
                         parent_session_id=self.session_id,
                     )
                     review_agent._memory_write_origin = "background_review"
@@ -3293,10 +3304,19 @@ class AIAgent:
                 logger.warning("Background memory/skill review failed: %s", e)
                 self._emit_auxiliary_failure("background review", e)
             finally:
-                # Close all resources (httpx client, subprocesses, etc.) so
-                # GC doesn't try to clean them up on a dead asyncio event
-                # loop (which produces "Event loop is closed" errors).
+                # Background review agents can initialize memory providers
+                # (for example Hindsight) that own their own network clients.
+                # Explicitly stop those providers before closing the agent so
+                # their aiohttp sessions do not leak until GC/process exit.
+                # Then close all remaining resources (httpx client,
+                # subprocesses, etc.) so GC doesn't try to clean them up on a
+                # dead asyncio event loop (which produces "Event loop is
+                # closed" errors).
                 if review_agent is not None:
+                    try:
+                        review_agent.shutdown_memory_provider()
+                    except Exception:
+                        pass
                     try:
                         review_agent.close()
                     except Exception:
@@ -3353,10 +3373,7 @@ class AIAgent:
         """Save session state to both JSON log and SQLite on any exit path.
 
         Ensures conversations are never lost, even on errors or early returns.
-        Skipped when ``persist_session=False`` (ephemeral helper flows).
         """
-        if not self.persist_session:
-            return
         self._apply_persist_user_message_override(messages)
         self._session_messages = messages
         self._save_session_log(messages)
@@ -7873,7 +7890,17 @@ class AIAgent:
             api_msg["reasoning_content"] = existing
             return
 
-        # 2. DeepSeek / Kimi thinking mode: tool-call turns that lack
+        # 2. Healthy session: promote 'reasoning' field to 'reasoning_content'
+        # for providers that use the internal 'reasoning' key.
+        # This must happen BEFORE the DeepSeek/Kimi tool-call check so that
+        # genuine reasoning content is not overwritten by the empty-string
+        # fallback (#15812 regression in PR #15478).
+        normalized_reasoning = source_msg.get("reasoning")
+        if isinstance(normalized_reasoning, str) and normalized_reasoning:
+            api_msg["reasoning_content"] = normalized_reasoning
+            return
+
+        # 3. DeepSeek / Kimi thinking mode: tool-call turns that lack
         # reasoning_content are "poisoned history" — a prior provider (MiniMax,
         # etc.) left them empty. DeepSeek returns HTTP 400 if reasoning_content
         # is absent on replay; inject "" to satisfy the provider's requirement
@@ -7887,13 +7914,6 @@ class AIAgent:
         )
         if needs_empty_reasoning:
             api_msg["reasoning_content"] = ""
-            return
-
-        # 3. Healthy session: promote 'reasoning' field to 'reasoning_content'
-        # for providers that use the internal 'reasoning' key.
-        normalized_reasoning = source_msg.get("reasoning")
-        if isinstance(normalized_reasoning, str) and normalized_reasoning:
-            api_msg["reasoning_content"] = normalized_reasoning
             return
 
         # 4. DeepSeek / Kimi thinking mode: all assistant messages need
@@ -8139,6 +8159,22 @@ class AIAgent:
                 self._last_flushed_db_idx = 0
             except Exception as e:
                 logger.warning("Session DB compression split failed — new session will NOT be indexed: %s", e)
+
+        # Notify the context engine that the session_id rotated because of
+        # compression (not a fresh /new). Plugin engines (e.g. hermes-lcm) use
+        # boundary_reason="compression" to preserve DAG lineage across the
+        # rollover instead of re-initializing fresh per-session state.
+        # See hermes-lcm#68. Built-in ContextCompressor ignores kwargs.
+        try:
+            _old_sid = locals().get("old_session_id")
+            if _old_sid and hasattr(self.context_compressor, "on_session_start"):
+                self.context_compressor.on_session_start(
+                    self.session_id or "",
+                    boundary_reason="compression",
+                    old_session_id=_old_sid,
+                )
+        except Exception as _ce_err:
+            logger.debug("context engine on_session_start (compression): %s", _ce_err)
 
         # Warn on repeated compressions (quality degrades with each pass)
         _cc = self.context_compressor.compression_count
