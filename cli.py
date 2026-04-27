@@ -6202,10 +6202,31 @@ class HermesCLI:
                 elif qcmd.get("type") == "alias":
                     target = qcmd.get("target", "").strip()
                     if target:
-                        target = target if target.startswith("/") else f"/{target}"
-                        user_args = cmd_original[len(base_cmd):].strip()
-                        aliased_command = f"{target} {user_args}".strip()
-                        return self.process_command(aliased_command)
+                        # Support chaining multiple commands with ";;"
+                        # e.g., "/model x ;; /reasoning low"
+                        if ";;" in target:
+                            # Split into multiple commands and execute them sequentially
+                            commands = [cmd.strip() for cmd in target.split(";;") if cmd.strip()]
+                            results = []
+                            for cmd in commands:
+                                # Process each command in the chain
+                                cmd = cmd if cmd.startswith("/") else f"/{cmd}"
+                                # Get any user-provided args after the original command
+                                user_args = cmd_original[len(base_cmd):].strip()
+                                aliased_command = f"{cmd} {user_args}".strip() if user_args else cmd
+                                # Recursively process each command
+                                result = self.process_command(aliased_command)
+                                if result:
+                                    results.append(str(result))
+                            if results:
+                                self._console_print("\n".join(results))
+                            return
+                        else:
+                            # Original single command logic
+                            target = target if target.startswith("/") else f"/{target}"
+                            user_args = cmd_original[len(base_cmd):].strip()
+                            aliased_command = f"{target} {user_args}".strip()
+                            return self.process_command(aliased_command)
                     else:
                         self._console_print(f"[bold red]Quick command '{base_cmd}' has no target defined[/]")
                 else:
