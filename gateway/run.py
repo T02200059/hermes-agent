@@ -3828,20 +3828,58 @@ class GatewayRunner:
                 elif qcmd.get("type") == "alias":
                     target = qcmd.get("target", "").strip()
                     if target:
-                        target = target if target.startswith("/") else f"/{target}"
-                        # Split target into command and default args (only take first token as command name)
-                        target_parts = target.lstrip("/").split(None, 1)
-                        target_command = target_parts[0]
-                        target_default_args = target_parts[1] if len(target_parts) > 1 else ""
-                        user_args = event.get_command_args().strip()
-                        # User args override default args
-                        final_args = user_args if user_args else target_default_args
-                        event.text = f"/{target_command} {final_args}".strip()
-                        command = target_command
-                        # Check if the target is a built-in command and handle it explicitly
-                        if target_command == "model":
-                            return await self._handle_model_command(event)
-                        # Fall through to normal command dispatch below
+                        # Support chaining multiple commands with ";;"
+                        # e.g., "/model x ;; /reasoning low"
+                        if ";;" in target:
+                            # Split into multiple commands and execute them sequentially
+                            commands = [cmd.strip() for cmd in target.split(";;") if cmd.strip()]
+                            results = []
+                            for cmd in commands:
+                                # Process each command in the chain
+                                cmd = cmd if cmd.startswith("/") else f"/{cmd}"
+                                cmd_parts = cmd.lstrip("/").split(None, 1)
+                                cmd_name = cmd_parts[0]
+                                cmd_args = cmd_parts[1] if len(cmd_parts) > 1 else ""
+                                
+                                # Create a temporary event for each command
+                                temp_event = dataclasses.replace(event, text=f"/{cmd_name} {cmd_args}".strip())
+                                temp_command = cmd_name
+                                temp_event.text = f"/{temp_command} {cmd_args}".strip()
+                                
+                                # Handle built-in commands
+                                if temp_command == "model":
+                                    result = await self._handle_model_command(temp_event)
+                                elif temp_command == "reasoning":
+                                    result = await self._handle_reasoning_command(temp_event)
+                                elif temp_command == "new" or temp_command == "reset":
+                                    result = await self._handle_new_command(temp_event)
+                                elif temp_command == "clear":
+                                    result = await self._handle_clear_command(temp_event)
+                                else:
+                                    # For other commands, continue normal dispatch
+                                    temp_event = replace(event, text=f"/{temp_command} {cmd_args}".strip())
+                                    result = await self._dispatch_command(temp_event, temp_command)
+                                
+                                if result:
+                                    results.append(str(result))
+                            
+                            return "\n".join(results) if results else "Commands executed."
+                        else:
+                            # Original single command logic
+                            target = target if target.startswith("/") else f"/{target}"
+                            # Split target into command and default args (only take first token as command name)
+                            target_parts = target.lstrip("/").split(None, 1)
+                            target_command = target_parts[0]
+                            target_default_args = target_parts[1] if len(target_parts) > 1 else ""
+                            user_args = event.get_command_args().strip()
+                            # User args override default args
+                            final_args = user_args if user_args else target_default_args
+                            event.text = f"/{target_command} {final_args}".strip()
+                            command = target_command
+                            # Check if the target is a built-in command and handle it explicitly
+                            if target_command == "model":
+                                return await self._handle_model_command(event)
+                            # Fall through to normal command dispatch below
                     else:
                         return f"Quick command '/{command}' has no target defined."
                 else:
@@ -5806,6 +5844,21 @@ class GatewayRunner:
             "base_url": result.base_url,
             "api_mode": result.api_mode,
         }
+
+        # Update session database so /status shows the new model immediately
+        if self._session_db:
+            try:
+                session_entry = self.session_store.get_or_create_session(source)
+                self._session_db.update_token_counts(
+                    session_id=session_entry.session_id,
+                    model=result.new_model,
+                    billing_provider=result.target_provider,
+                    billing_base_url=result.base_url or "",
+                    billing_mode=result.api_mode or "",
+                    absolute=True,  # Set values directly, not increment
+                )
+            except Exception as exc:
+                logger.warning("Failed to update session model in DB: %s", exc)
 
         # Evict cached agent so the next turn creates a fresh agent from the
         # override rather than relying on cache signature mismatch detection.
