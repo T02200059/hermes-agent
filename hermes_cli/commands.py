@@ -1453,6 +1453,32 @@ class SlashCommandCompleter(Completer):
         except Exception:
             pass
 
+        # User-defined quick_commands (from ~/.hermes/config.yaml)
+        try:
+            from hermes_cli.config import read_raw_config
+            qcmds = read_raw_config().get("quick_commands", {}) or {}
+            if isinstance(qcmds, dict):
+                for qname, qc in sorted(qcmds.items()):
+                    if not isinstance(qc, dict):
+                        continue
+                    if qname.startswith(word):
+                        qtype = qc.get("type", "")
+                        if qtype == "exec":
+                            desc = f"exec: {qc.get('command', '')}"
+                        elif qtype == "alias":
+                            desc = f"alias → {qc.get('target', '')}"
+                        else:
+                            desc = qtype or "quick command"
+                        short_desc = desc[:50] + ("..." if len(desc) > 50 else "")
+                        yield Completion(
+                            self._completion_text(qname, word),
+                            start_position=-len(word),
+                            display=f"/{qname}",
+                            display_meta=f"⚡ {short_desc}",
+                        )
+        except Exception:
+            pass
+
 
 # ---------------------------------------------------------------------------
 # Inline auto-suggest (ghost text) for slash commands
