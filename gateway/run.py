@@ -4129,8 +4129,67 @@ class GatewayRunner:
                                     result = await self._handle_clear_command(temp_event)
                                 else:
                                     # For other commands, continue normal dispatch
-                                    temp_event = replace(event, text=f"/{temp_command} {cmd_args}".strip())
-                                    result = await self._dispatch_command(temp_event, temp_command)
+                                    if temp_command:
+                                        from hermes_cli.commands import resolve_command as _resolve_temp_cmd
+                                        _temp_def = _resolve_temp_cmd(temp_command)
+                                        _temp_canonical = _temp_def.name if _temp_def else temp_command
+                                        # Re-dispatch through the same command pipeline
+                                        if _temp_canonical == "status":
+                                            result = await self._handle_status_command(temp_event)
+                                        elif _temp_canonical == "profile":
+                                            result = await self._handle_profile_command(temp_event)
+                                        elif _temp_canonical == "agents":
+                                            result = await self._handle_agents_command(temp_event)
+                                        elif _temp_canonical == "restart":
+                                            result = await self._handle_restart_command(temp_event)
+                                        elif _temp_canonical == "stop":
+                                            result = await self._handle_stop_command(temp_event)
+                                        elif _temp_canonical == "fast":
+                                            result = await self._handle_fast_command(temp_event)
+                                        elif _temp_canonical == "verbose":
+                                            result = await self._handle_verbose_command(temp_event)
+                                        elif _temp_canonical == "yolo":
+                                            result = await self._handle_yolo_command(temp_event)
+                                        elif _temp_canonical == "voice":
+                                            result = await self._handle_voice_command(temp_event)
+                                        elif _temp_canonical == "personality":
+                                            result = await self._handle_personality_command(temp_event)
+                                        elif _temp_canonical == "retry":
+                                            result = await self._handle_retry_command(temp_event)
+                                        elif _temp_canonical == "undo":
+                                            result = await self._handle_undo_command(temp_event)
+                                        elif _temp_canonical == "sethome":
+                                            result = await self._handle_set_home_command(temp_event)
+                                        elif _temp_canonical == "compress":
+                                            result = await self._handle_compress_command(temp_event)
+                                        elif _temp_canonical == "usage":
+                                            result = await self._handle_usage_command(temp_event)
+                                        elif _temp_canonical == "insights":
+                                            result = await self._handle_insights_command(temp_event)
+                                        elif _temp_canonical == "reload-mcp":
+                                            result = await self._handle_reload_mcp_command(temp_event)
+                                        elif _temp_canonical == "approve":
+                                            result = await self._handle_approve_command(temp_event)
+                                        elif _temp_canonical == "deny":
+                                            result = await self._handle_deny_command(temp_event)
+                                        elif _temp_canonical == "update":
+                                            result = await self._handle_update_command(temp_event)
+                                        elif _temp_canonical == "title":
+                                            result = await self._handle_title_command(temp_event)
+                                        elif _temp_canonical == "resume":
+                                            result = await self._handle_resume_command(temp_event)
+                                        elif _temp_canonical == "branch":
+                                            result = await self._handle_branch_command(temp_event)
+                                        elif _temp_canonical == "rollback":
+                                            result = await self._handle_rollback_command(temp_event)
+                                        elif _temp_canonical == "background":
+                                            result = await self._handle_background_command(temp_event)
+                                        elif _temp_canonical in ("new", "reset"):
+                                            result = await self._handle_reset_command(temp_event)
+                                        elif _temp_canonical == "help":
+                                            result = await self._handle_help_command(temp_event)
+                                        elif _temp_canonical == "commands":
+                                            result = await self._handle_commands_command(temp_event)
                                 
                                 if result:
                                     results.append(str(result))
@@ -4148,10 +4207,73 @@ class GatewayRunner:
                             final_args = user_args if user_args else target_default_args
                             event.text = f"/{target_command} {final_args}".strip()
                             command = target_command
-                            # Check if the target is a built-in command and handle it explicitly
-                            if target_command == "model":
-                                return await self._handle_model_command(event)
-                            # Fall through to normal command dispatch below
+                            # Resolve the target command's canonical name and dispatch
+                            if target_command:
+                                from hermes_cli.commands import resolve_command as _resolve_target_cmd
+                                _target_def = _resolve_target_cmd(target_command)
+                                _target_canonical = _target_def.name if _target_def else target_command
+                                # Dispatch to the appropriate handler
+                                if _target_canonical == "model":
+                                    return await self._handle_model_command(event)
+                                elif _target_canonical == "reasoning":
+                                    return await self._handle_reasoning_command(event)
+                                elif _target_canonical == "status":
+                                    return await self._handle_status_command(event)
+                                elif _target_canonical == "profile":
+                                    return await self._handle_profile_command(event)
+                                elif _target_canonical == "agents":
+                                    return await self._handle_agents_command(event)
+                                elif _target_canonical == "restart":
+                                    return await self._handle_restart_command(event)
+                                elif _target_canonical == "stop":
+                                    return await self._handle_stop_command(event)
+                                elif _target_canonical == "fast":
+                                    return await self._handle_fast_command(event)
+                                elif _target_canonical == "verbose":
+                                    return await self._handle_verbose_command(event)
+                                elif _target_canonical == "yolo":
+                                    return await self._handle_yolo_command(event)
+                                elif _target_canonical == "voice":
+                                    return await self._handle_voice_command(event)
+                                elif _target_canonical == "personality":
+                                    return await self._handle_personality_command(event)
+                                elif _target_canonical == "retry":
+                                    return await self._handle_retry_command(event)
+                                elif _target_canonical == "undo":
+                                    return await self._handle_undo_command(event)
+                                elif _target_canonical == "sethome":
+                                    return await self._handle_set_home_command(event)
+                                elif _target_canonical == "compress":
+                                    return await self._handle_compress_command(event)
+                                elif _target_canonical == "usage":
+                                    return await self._handle_usage_command(event)
+                                elif _target_canonical == "insights":
+                                    return await self._handle_insights_command(event)
+                                elif _target_canonical == "reload-mcp":
+                                    return await self._handle_reload_mcp_command(event)
+                                elif _target_canonical == "approve":
+                                    return await self._handle_approve_command(event)
+                                elif _target_canonical == "deny":
+                                    return await self._handle_deny_command(event)
+                                elif _target_canonical == "update":
+                                    return await self._handle_update_command(event)
+                                elif _target_canonical == "title":
+                                    return await self._handle_title_command(event)
+                                elif _target_canonical == "resume":
+                                    return await self._handle_resume_command(event)
+                                elif _target_canonical == "branch":
+                                    return await self._handle_branch_command(event)
+                                elif _target_canonical == "rollback":
+                                    return await self._handle_rollback_command(event)
+                                elif _target_canonical == "background":
+                                    return await self._handle_background_command(event)
+                                elif _target_canonical in ("new", "reset"):
+                                    return await self._handle_reset_command(event)
+                                elif _target_canonical == "help":
+                                    return await self._handle_help_command(event)
+                                elif _target_canonical == "commands":
+                                    return await self._handle_commands_command(event)
+                            # Fall through to normal dispatch (plugin, skill, agent)
                     else:
                         return f"Quick command '/{command}' has no target defined."
                 else:
