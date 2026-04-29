@@ -4196,85 +4196,126 @@ def _(rid, params: dict) -> dict:
 
 
 def _mirror_slash_side_effects(sid: str, session: dict, command: str) -> str:
-    """Apply side effects that must also hit the gateway's live agent."""
+    """Apply side effects that must also hit the gateway's live agent.
+    
+    Supports ;; chained commands from quick_commands aliases, matching
+    gateway/run.py behavior for commands like:
+      /m-dsv4p -> /model deepseek-v4-pro --provider deepseek --global ;; /think low
+    """
     parts = command.lstrip("/").split(None, 1)
     if not parts:
         return ""
-    name, arg, agent = (
-        parts[0],
-        (parts[1].strip() if len(parts) > 1 else ""),
-        session.get("agent"),
-    )
+    original_name = parts[0]
+    original_arg = (parts[1].strip() if len(parts) > 1 else "")
+    agent = session.get("agent")
 
-    # Resolve quick_commands aliases first
-    # This handles cases like /grok -> /model grok-4-1-fast-reasoning ;; /reasoning low
+    # Resolve quick_commands aliases and build command chain
     cfg = _load_cfg()
     quick_commands = cfg.get("quick_commands", {}) or {}
-    if isinstance(quick_commands, dict) and name in quick_commands:
-        qcmd = quick_commands[name]
+    
+    # Build list of commands to execute (supports ;; chaining)
+    chain_commands = []
+    
+    if isinstance(quick_commands, dict) and original_name in quick_commands:
+        qcmd = quick_commands[original_name]
         if isinstance(qcmd, dict) and qcmd.get("type") == "alias":
             target = qcmd.get("target", "").strip()
             if target:
-                # If target contains ;;, take the first command (usually /model)
-                # and extract its args
+                # Support ;; chaining — split and process each command
                 if ";;" in target:
-                    first_cmd = target.split(";;")[0].strip()
-                    if first_cmd.startswith("/"):
-                        first_cmd = first_cmd.lstrip("/")
-                    cmd_parts = first_cmd.split(None, 1)
-                    if cmd_parts:
-                        name = cmd_parts[0]
-                        arg = cmd_parts[1] if len(cmd_parts) > 1 else ""
+                    commands = [cmd.strip() for cmd in target.split(";;") if cmd.strip()]
+                    for cmd in commands:
+                        cmd = cmd if cmd.startswith("/") else f"/{cmd}"
+                        cmd = cmd.lstrip("/")
+                        cmd_parts = cmd.split(None, 1)
+                        if cmd_parts:
+                            chain_commands.append({
+                                "name": cmd_parts[0],
+                                "arg": cmd_parts[1] if len(cmd_parts) > 1 else ""
+                            })
                 else:
                     # Single command alias
                     if target.startswith("/"):
                         target = target.lstrip("/")
                     cmd_parts = target.split(None, 1)
                     if cmd_parts:
-                        name = cmd_parts[0]
-                        arg = cmd_parts[1] if len(cmd_parts) > 1 else ""
+                        chain_commands.append({
+                            "name": cmd_parts[0],
+                            "arg": cmd_parts[1] if len(cmd_parts) > 1 else ""
+                        })
+    
+    # If not a quick_command alias, treat as single command
+    if not chain_commands:
+        chain_commands = [{"name": original_name, "arg": original_arg}]
 
-    # Reject agent-mutating commands during an in-flight turn.  These
-    # all do read-then-mutate on live agent/session state that the
-    # worker thread running agent.run_conversation is using.  Parity
-    # with the session.compress / session.undo guards and the gateway
-    # runner's running-agent /model guard.
-    _MUTATES_WHILE_RUNNING = {"model", "personality", "prompt", "compress"}
-    if name in _MUTATES_WHILE_RUNNING and session.get("running"):
-        return f"session busy — /interrupt the current turn before running /{name}"
+    # Commands that mutate agent state during an in-flight turn
+    _MUTATES_WHILE_RUNNING = {"model", "personality", "prompt", "compress", "reasoning"}
+    
+    warnings = []
+    
+    for cmd_item in chain_commands:
+        name = cmd_item["name"]
+        arg = cmd_item["arg"]
+        
+        if name in _MUTATES_WHILE_RUNNING and session.get("running"):
+            warnings.append(f"session busy — /interrupt before /{name}")
+            continue
+        
+        try:
+            if name == "model" and arg and agent:
+                result = _apply_model_switch(sid, session, arg)
+                if result.get("warning"):
+                    warnings.append(result["warning"])
+            elif name == "reasoning" and agent:
+                # Handle /reasoning command — apply reasoning effort to live agent
+                _apply_reasoning_to_agent(agent, arg)
+                _emit("session.info", sid, _session_info(agent))
+            elif name == "personality" and arg and agent:
+                _, new_prompt = _validate_personality(arg, _load_cfg())
+                _apply_personality_to_session(sid, session, new_prompt)
+            elif name == "prompt" and agent:
+                cfg = _load_cfg()
+                new_prompt = (cfg.get("agent") or {}).get("system_prompt", "") or ""
+                agent.ephemeral_system_prompt = new_prompt or None
+                agent._cached_system_prompt = None
+            elif name == "compress" and agent:
+                with session["history_lock"]:
+                    _compress_session_history(session, arg)
+                _emit("session.info", sid, _session_info(agent))
+            elif name == "fast" and agent:
+                mode = arg.lower()
+                if mode in {"fast", "on"}:
+                    agent.service_tier = "priority"
+                elif mode in {"normal", "off"}:
+                    agent.service_tier = None
+                _emit("session.info", sid, _session_info(agent))
+            elif name == "reload-mcp" and agent and hasattr(agent, "reload_mcp_tools"):
+                agent.reload_mcp_tools()
+            elif name == "stop":
+                from tools.process_registry import process_registry
+                process_registry.kill_all()
+        except Exception as e:
+            warnings.append(f"live session sync failed for /{name}: {e}")
+    
+    return " ".join(warnings) if warnings else ""
 
-    try:
-        if name == "model" and arg and agent:
-            result = _apply_model_switch(sid, session, arg)
-            return result.get("warning", "")
-        elif name == "personality" and arg and agent:
-            _, new_prompt = _validate_personality(arg, _load_cfg())
-            _apply_personality_to_session(sid, session, new_prompt)
-        elif name == "prompt" and agent:
-            cfg = _load_cfg()
-            new_prompt = (cfg.get("agent") or {}).get("system_prompt", "") or ""
-            agent.ephemeral_system_prompt = new_prompt or None
-            agent._cached_system_prompt = None
-        elif name == "compress" and agent:
-            with session["history_lock"]:
-                _compress_session_history(session, arg)
-            _emit("session.info", sid, _session_info(agent))
-        elif name == "fast" and agent:
-            mode = arg.lower()
-            if mode in {"fast", "on"}:
-                agent.service_tier = "priority"
-            elif mode in {"normal", "off"}:
-                agent.service_tier = None
-            _emit("session.info", sid, _session_info(agent))
-        elif name == "reload-mcp" and agent and hasattr(agent, "reload_mcp_tools"):
-            agent.reload_mcp_tools()
-        elif name == "stop":
-            from tools.process_registry import process_registry
 
-            process_registry.kill_all()
-    except Exception as e:
-        return f"live session sync failed: {e}"
-    return ""
+def _apply_reasoning_to_agent(agent, arg: str) -> None:
+    """Apply reasoning effort setting to agent from /reasoning command args."""
+    from hermes_constants import parse_reasoning_effort
+    
+    arg = (arg or "").strip().lower()
+    if not arg:
+        return
+    
+    # Handle --global flag (strip it for agent config, worker handles persistence)
+    if "--global" in arg:
+        arg = arg.replace("--global", "").strip()
+    
+    # Parse effort level (low, medium, high, etc.)
+    parsed = parse_reasoning_effort(arg)
+    if parsed and isinstance(parsed, dict):
+        agent.reasoning_config = parsed
 
 
 @method("slash.exec")
@@ -4308,6 +4349,21 @@ def _(rid, params: dict) -> dict:
     except Exception:
         pass
 
+    # Resolve quick_commands aliases and check for ;; chaining
+    # If the alias contains ;;, we need to execute each command sequentially
+    cfg = _load_cfg()
+    quick_commands = cfg.get("quick_commands", {}) or {}
+    chain_commands = [cmd]  # Default: single command
+    
+    if isinstance(quick_commands, dict) and _cmd_base in quick_commands:
+        qcmd = quick_commands[_cmd_base]
+        if isinstance(qcmd, dict) and qcmd.get("type") == "alias":
+            target = qcmd.get("target", "").strip()
+            if target and ";;" in target:
+                # Parse ;; chained commands
+                commands = [c.strip() for c in target.split(";;") if c.strip()]
+                chain_commands = [c if c.startswith("/") else f"/{c}" for c in commands]
+
     worker = session.get("slash_worker")
     if not worker:
         try:
@@ -4320,9 +4376,17 @@ def _(rid, params: dict) -> dict:
             return _err(rid, 5030, f"slash worker start failed: {e}")
 
     try:
-        output = worker.run(cmd)
+        # Execute each command in the chain sequentially
+        outputs = []
+        for chain_cmd in chain_commands:
+            output = worker.run(chain_cmd)
+            if output:
+                outputs.append(output)
+        
+        # Mirror all side effects (handles ;; chain internally)
         warning = _mirror_slash_side_effects(params.get("session_id", ""), session, cmd)
-        payload = {"output": output or "(no output)"}
+        
+        payload = {"output": "\n".join(outputs) or "(no output)"}
         if warning:
             payload["warning"] = warning
         return _ok(rid, payload)

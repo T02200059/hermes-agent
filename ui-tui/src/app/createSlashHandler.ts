@@ -119,6 +119,19 @@ export function createSlashHandler(ctx: SlashHandlerContext): (cmd: string) => b
             }
 
             if (d.type === 'alias') {
+              // Split ;; chained commands (e.g. "model X --global ;; think low")
+              // and execute each separately, so the backend doesn't receive
+              // the entire remainder as one arg with spaces.
+              const chained = d.target
+                .split(';;')
+                .map(c => c.trim())
+                .filter(Boolean)
+              if (chained.length > 1) {
+                for (const part of chained) {
+                  handler(`/${part}${argTail}`)
+                }
+                return true
+              }
               return handler(`/${d.target}${argTail}`)
             }
 
