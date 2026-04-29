@@ -1,6 +1,6 @@
-import { AlternateScreen, Box, NoSelect, ScrollBox, Text } from '@hermes/ink'
+import { AlternateScreen, Box, NoSelect, ScrollBox, Text, useSelection } from '@hermes/ink'
 import { useStore } from '@nanostores/react'
-import { Fragment, memo, useMemo, useRef } from 'react'
+import { Fragment, memo, useEffect, useMemo, useRef } from 'react'
 
 import { useGateway } from '../app/gatewayContext.js'
 import type { AppLayoutProps } from '../app/interfaces.js'
@@ -328,6 +328,7 @@ export const AppLayout = memo(function AppLayout({
 
   return (
     <Shell {...shellProps}>
+      <AutoCopyOnSelect />
       <Box flexDirection="column" flexGrow={1}>
         <Box flexDirection="row" flexGrow={1}>
           {overlay.agents ? (
@@ -368,6 +369,45 @@ export const AppLayout = memo(function AppLayout({
     </Shell>
   )
 })
+
+/**
+ * 选中即复制 — 监听 Ink 内部选区完成事件，自动复制到剪贴板。
+ *
+ * 放在 AlternateScreen 子树中（useSelection 需要 StdinContext），
+ * 通过 subscribe 检测 isDragging 从 true → false 的转换，
+ * 拖拽松开瞬间自动调 copySelectionNoClear()，保留高亮反馈。
+ */
+function AutoCopyOnSelect() {
+  const selection = useSelection()
+  const justFinished = useRef(false)
+
+  useEffect(() => {
+    const dbg = (msg: string, ...args: unknown[]) => {
+      // ignored — remove when stable
+      void msg; void args
+    }
+    dbg('[copy] mounted, hasSelection=%s', selection.hasSelection())
+    return selection.subscribe(() => {
+      const state = selection.getState() as { isDragging?: boolean } | null
+      if (!state) return
+
+      dbg('[copy] subscribe: isDragging=%s hasSelection=%s justFinished=%s',
+        state.isDragging, selection.hasSelection(), justFinished.current)
+
+      if (state.isDragging) {
+        justFinished.current = true
+      } else if (justFinished.current && selection.hasSelection()) {
+        dbg('[copy] 选中即复制触发！')
+        justFinished.current = false
+        selection.copySelectionNoClear()
+      } else {
+        justFinished.current = false
+      }
+    })
+  }, [selection])
+
+  return null
+}
 
 type GutterMouseEvent = {
   button: number

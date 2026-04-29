@@ -356,7 +356,7 @@ export function useMainApp(gw: GatewayClient) {
 
   const tabCwd = ui.info?.cwd
 
-  useTerminalTitle(model ? `${marker} ${model}${tabCwd ? ` · ${shortCwd(tabCwd, 24)}` : ''}` : 'Hermes')
+  useTerminalTitle(model ? `Hermes · ${marker} ${model}${tabCwd ? ` · ${shortCwd(tabCwd, 24)}` : ''}` : 'Hermes')
 
   useEffect(() => {
     if (!ui.sid || !stdout) {

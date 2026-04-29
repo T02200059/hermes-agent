@@ -1670,13 +1670,18 @@ export default class Ink {
 
     return () => this.selectionListeners.delete(cb)
   }
+  private wasDragging = false
+
   private notifySelectionChange(): void {
     this.scheduleRender()
 
     const active = hasSelection(this.selection)
+    const dragging = this.selection.isDragging
+    const dragEnded = this.wasDragging && !dragging
 
-    if (active !== this.selectionWasActive) {
+    if (active !== this.selectionWasActive || dragEnded) {
       this.selectionWasActive = active
+      this.wasDragging = dragging
 
       for (const cb of this.selectionListeners) {
         cb()
