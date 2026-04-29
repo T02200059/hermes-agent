@@ -2726,6 +2726,9 @@ class FeishuAdapter(BasePlatformAdapter):
             thread_id=getattr(message, "thread_id", None) or None,
             user_id_alt=sender_profile["user_id_alt"],
         )
+        # Per-channel ephemeral prompt (e.g. feishu.channel_prompts in config.yaml)
+        from gateway.platforms.base import resolve_channel_prompt
+        _channel_prompt = resolve_channel_prompt(self.config.extra, chat_id)
         normalized = MessageEvent(
             text=text,
             message_type=inbound_type,
@@ -2736,6 +2739,7 @@ class FeishuAdapter(BasePlatformAdapter):
             media_types=media_types,
             reply_to_message_id=reply_to_message_id,
             reply_to_text=reply_to_text,
+            channel_prompt=_channel_prompt,
             timestamp=datetime.now(),
         )
         await self._dispatch_inbound_event(normalized)
