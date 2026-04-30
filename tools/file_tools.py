@@ -4,6 +4,7 @@
 import errno
 import json
 import logging
+import re
 import os
 import threading
 from pathlib import Path
@@ -443,7 +444,7 @@ def clear_file_ops_cache(task_id: str = None):
             _file_ops_cache.clear()
 
 
-def read_file_tool(path: str, offset: int = 1, limit: int = 500, task_id: str = "default") -> str:
+def read_file_tool(path: str, offset: int = 1, limit: int = 500, headings_only: bool = False, task_id: str = "default") -> str:
     """Read a file with pagination and line numbers."""
     try:
         offset, limit = normalize_read_pagination(offset, limit)
@@ -478,12 +479,43 @@ def read_file_tool(path: str, offset: int = 1, limit: int = 500, task_id: str = 
         if block_error:
             return json.dumps({"error": block_error})
 
+        # ── Headings-only mode ────────────────────────────────────────
+        if headings_only:
+            ext = _resolved.suffix.lower()
+            if ext == ".md":
+                try:
+                    text = _resolved.read_text(encoding="utf-8", errors="replace")
+                except Exception as e:
+                    return json.dumps({
+                        "error": f"Cannot read '{path}' for headings extraction: {e}",
+                        "path": path, "headings": [],
+                    })
+                lines = text.splitlines()
+                in_code_block = False
+                headings = []
+                for i, line in enumerate(lines, 1):
+                    stripped = line.strip()
+                    if stripped.startswith("```"):
+                        in_code_block = not in_code_block
+                        continue
+                    if not in_code_block and re.match(r'^#{1,6}\s', stripped):
+                        headings.append(f"{i}|{line}")
+                return json.dumps({
+                    "path": path,
+                    "headings": headings,
+                    "total_lines": len(lines),
+                    "note": "Showing heading structure only. Use read_file(path, offset=<line>, limit=<lines>) to read a specific section.",
+                }, ensure_ascii=False)
+            else:
+                # Non-markdown: preview first 30 lines
+                return read_file_tool(path, offset=1, limit=30, task_id=task_id)
+
         # ── Dedup check ───────────────────────────────────────────────
-        # If we already read this exact (path, offset, limit) and the
+        # If we already read this exact (path, offset, limit, headings_only) and the
         # file hasn't been modified since, return a lightweight stub
         # instead of re-sending the same content.  Saves context tokens.
         resolved_str = str(_resolved)
-        dedup_key = (resolved_str, offset, limit)
+        dedup_key = (resolved_str, offset, limit, headings_only)
         with _read_tracker_lock:
             task_data = _read_tracker.setdefault(task_id, {
                 "last_key": None, "consecutive": 0,
@@ -1024,13 +1056,14 @@ def _check_file_reqs():
 
 READ_FILE_SCHEMA = {
     "name": "read_file",
-    "description": "Read a text file with line numbers and pagination. Use this instead of cat/head/tail in terminal. Output format: 'LINE_NUM|CONTENT'. Suggests similar filenames if not found. Use offset and limit for large files. Reads exceeding ~100K characters are rejected; use offset and limit to read specific sections of large files. NOTE: Cannot read images or binary files — use vision_analyze for images.",
+    "description": "Read a text file with line numbers and pagination. Use this instead of cat/head/tail in terminal. Output format: 'LINE_NUM|CONTENT'. Suggests similar filenames if not found. Use offset and limit for large files. Reads exceeding ~100K characters are rejected; use offset and limit to read specific sections of large files. NOTE: Cannot read images or binary files — use vision_analyze for images. Tip: set headings_only=true to only return the heading/section structure of a markdown file — fast, lightweight, ideal for exploring large docs before diving into specific sections.",
     "parameters": {
         "type": "object",
         "properties": {
             "path": {"type": "string", "description": "Path to the file to read (absolute, relative, or ~/path)"},
             "offset": {"type": "integer", "description": "Line number to start reading from (1-indexed, default: 1)", "default": 1, "minimum": 1},
-            "limit": {"type": "integer", "description": "Maximum number of lines to read (default: 500, max: 2000)", "default": 500, "maximum": 2000}
+            "limit": {"type": "integer", "description": "Maximum number of lines to read (default: 500, max: 2000)", "default": 500, "maximum": 2000},
+            "headings_only": {"type": "boolean", "description": "If true, only return the heading structure of a markdown file (lines starting with #). Skips code blocks. For non-markdown files, returns first 30 lines as preview. Default: false.", "default": False}
         },
         "required": ["path"]
     }
@@ -1088,7 +1121,7 @@ SEARCH_FILES_SCHEMA = {
 
 def _handle_read_file(args, **kw):
     tid = kw.get("task_id") or "default"
-    return read_file_tool(path=args.get("path", ""), offset=args.get("offset", 1), limit=args.get("limit", 500), task_id=tid)
+    return read_file_tool(path=args.get("path", ""), offset=args.get("offset", 1), limit=args.get("limit", 500), headings_only=args.get("headings_only", False), task_id=tid)
 
 
 def _handle_write_file(args, **kw):
