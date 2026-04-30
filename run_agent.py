@@ -4676,8 +4676,21 @@ class AIAgent:
                 prompt_parts.append(context_files_prompt)
 
         from hermes_time import now as _hermes_now
-        now = _hermes_now()
-        timestamp_line = f"Conversation started: {now.strftime('%A, %B %d, %Y %I:%M %p')}"
+        # [yangtb-patch] Stabilize timestamp across compression cycles to preserve
+        # prefix cache (DashScope/Qwen implicit KV cache reuse). Use session_start
+        # (set once at __init__) instead of _hermes_now() which changes every call.
+        # After compression, append a separate compaction timestamp so the prefix
+        # before this line stays cache-stable.
+        # Ref: NousResearch/hermes-agent #8687, PR #8689
+        # NOTE: Once official PR #8689 is merged into main, prefer the upstream
+        # version and remove this local patch during the next yangtb sync.
+        _start = getattr(self, "session_start", None) or _hermes_now()
+        timestamp_line = f"Conversation started: {_start.strftime('%A, %B %d, %Y %I:%M %p')}"
+        # Append compaction info only after at least one compression cycle
+        _comp_count = getattr(self.context_compressor, "compression_count", 0) if hasattr(self, "context_compressor") else 0
+        if _comp_count > 0:
+            _now = _hermes_now()
+            timestamp_line += f"\nLast context compaction: {_now.strftime('%A, %B %d, %Y %I:%M %p')} (#{_comp_count})"
         if self.pass_session_id and self.session_id:
             timestamp_line += f"\nSession ID: {self.session_id}"
         if self.model:
