@@ -320,6 +320,7 @@ def session_search(
     query: str,
     role_filter: str = None,
     limit: int = 3,
+    deep_summary: bool = False,
     db=None,
     current_session_id: str = None,
 ) -> str:
@@ -424,16 +425,38 @@ def session_search(
             if len(seen_sessions) >= limit:
                 break
 
+        # Decide whether to use fast window mode or full session load.
+        # deep_summary=True → full session (user asked for "complete recap")
+        # deep_summary=False (default) → window around FTS5 hits (fast)
+        deep_summary = _auto_detect_deep_summary(query, deep_summary)
+
+        # Collect FTS5 hit message IDs for window mode
+        hit_ids_by_session: Dict[str, List[int]] = {}
+        if not deep_summary:
+            for result in raw_results:
+                raw_sid = result.get("session_id")
+                resolved_sid = _resolve_to_parent(raw_sid) if raw_sid else raw_sid
+                msg_id = result.get("id")
+                if resolved_sid and msg_id is not None:
+                    hit_ids_by_session.setdefault(resolved_sid, []).append(msg_id)
+
         # Prepare all sessions for parallel summarization
         tasks = []
         for session_id, match_info in seen_sessions.items():
             try:
-                messages = db.get_messages_as_conversation(session_id)
+                if deep_summary:
+                    messages = db.get_messages_as_conversation(session_id)
+                else:
+                    hit_ids = hit_ids_by_session.get(session_id, [])
+                    messages = db.get_messages_window_by_ids(
+                        session_id, hit_ids, window_size=10,
+                    )
                 if not messages:
                     continue
                 session_meta = db.get_session(session_id) or {}
                 conversation_text = _format_conversation(messages)
-                conversation_text = _truncate_around_matches(conversation_text, query)
+                if deep_summary:
+                    conversation_text = _truncate_around_matches(conversation_text, query)
                 tasks.append((session_id, match_info, conversation_text, session_meta))
             except Exception as e:
                 logging.warning(
@@ -567,10 +590,38 @@ SESSION_SEARCH_SCHEMA = {
                 "description": "Max sessions to summarize (default: 3, max: 5).",
                 "default": 3,
             },
+            "deep_summary": {
+                "type": "boolean",
+                "description": (
+                    "Only set to true when the user explicitly asks to 'recap everything', "
+                    "'full review', 'all content', 'complete summary', or similar phrases "
+                    "indicating they want the entire session read in full. "
+                    "Default is false — fast mode, only reads the window around matched messages. "
+                    "False is suitable for most cases: 'what did we do about X', "
+                    "'find the Y config', 'remember the Z command'."
+                ),
+                "default": False,
+            },
         },
         "required": [],
     },
 }
+
+
+DEEP_SUMMARY_TRIGGERS = [
+    "完整", "全面", "全部", "所有", "全部内容",
+    "full", "all", "entire", "complete", "whole",
+    "recap everything", "full review", "complete summary",
+    "完整回顾", "全面回顾",
+]
+
+
+def _auto_detect_deep_summary(query: str, deep_summary: bool) -> bool:
+    """Auto-upgrade to deep_summary if query strongly implies full recap."""
+    if deep_summary:
+        return True
+    q = query.lower()
+    return any(t in q for t in DEEP_SUMMARY_TRIGGERS)
 
 
 # --- Registry ---
@@ -584,6 +635,7 @@ registry.register(
         query=args.get("query") or "",
         role_filter=args.get("role_filter"),
         limit=args.get("limit", 3),
+        deep_summary=args.get("deep_summary", False),
         db=kw.get("db"),
         current_session_id=kw.get("current_session_id")),
     check_fn=check_session_search_requirements,

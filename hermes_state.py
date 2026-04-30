@@ -1862,6 +1862,101 @@ class SessionDB:
             )
         self._execute_write(_do)
 
+    # ── Fast window search (cross-session) ──
+
+    def get_messages_window_by_ids(
+        self, session_id: str,
+        hit_message_ids: List[int],
+        window_size: int = 10,
+        target_total: int = 21,
+        max_expand: int = 3,
+    ) -> List[Dict[str, Any]]:
+        """
+        Get a window of messages around FTS5 hit positions, crossing session
+        boundaries (parent/child chain).  Uses globally-unique message IDs
+        so context compression doesn't break continuity.
+
+        Automatically expands the window if too few messages are captured
+        (up to max_expand doubles of window_size).
+
+        hit_message_ids: list of message IDs where FTS5 matched
+        window_size: messages before/after each hit (doubled on each expand)
+        target_total: desired minimum before fallback to full load
+        max_expand: how many times to double the window if under target
+        """
+        # 1. Resolve session lineage to cross session boundaries
+        chain = self._session_lineage_root_to_tip(session_id)
+        if not chain:
+            return []
+
+        if not hit_message_ids:
+            # No hits at all — fall back to full session load
+            return self.get_messages_as_conversation(session_id)
+
+        hit_id = min(hit_message_ids)  # Use earliest hit as anchor
+
+        placeholders = ",".join("?" for _ in chain)
+        current_window = window_size
+
+        for attempt in range(max_expand):
+            id_low = max(0, hit_id - current_window)
+            id_high = hit_id + current_window
+
+            with self._lock:
+                rows = self._conn.execute(
+                    "SELECT role, content, tool_call_id, tool_calls, tool_name, "
+                    "reasoning, reasoning_content, reasoning_details, "
+                    "codex_reasoning_items, codex_message_items "
+                    f"FROM messages WHERE session_id IN ({placeholders}) "
+                    "AND id BETWEEN ? AND ? ORDER BY id",
+                    chain + [id_low, id_high],
+                ).fetchall()
+
+            if len(rows) >= target_total or attempt == max_expand - 1:
+                break
+
+            current_window *= 2  # Auto-expand: double the window
+
+        # Convert to same format as get_messages_as_conversation
+        messages = []
+        for row in rows:
+            content = row["content"]
+            if row["role"] in {"user", "assistant"} and isinstance(content, str):
+                content = sanitize_context(content).strip()
+            msg: Dict[str, Any] = {"role": row["role"], "content": content}
+            if row["tool_call_id"]:
+                msg["tool_call_id"] = row["tool_call_id"]
+            if row["tool_name"]:
+                msg["tool_name"] = row["tool_name"]
+            if row["tool_calls"]:
+                try:
+                    msg["tool_calls"] = json.loads(row["tool_calls"])
+                except (json.JSONDecodeError, TypeError):
+                    msg["tool_calls"] = []
+            if row["role"] == "assistant":
+                if row["reasoning"]:
+                    msg["reasoning"] = row["reasoning"]
+                if row["reasoning_content"] is not None:
+                    msg["reasoning_content"] = row["reasoning_content"]
+                if row["reasoning_details"]:
+                    try:
+                        msg["reasoning_details"] = json.loads(row["reasoning_details"])
+                    except (json.JSONDecodeError, TypeError):
+                        msg["reasoning_details"] = None
+                if row["codex_reasoning_items"]:
+                    try:
+                        msg["codex_reasoning_items"] = json.loads(row["codex_reasoning_items"])
+                    except (json.JSONDecodeError, TypeError):
+                        msg["codex_reasoning_items"] = None
+                if row["codex_message_items"]:
+                    try:
+                        msg["codex_message_items"] = json.loads(row["codex_message_items"])
+                    except (json.JSONDecodeError, TypeError):
+                        msg["codex_message_items"] = None
+            messages.append(msg)
+
+        return messages
+
     # ── Space reclamation ──
 
     def vacuum(self) -> None:
