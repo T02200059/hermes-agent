@@ -1,12 +1,20 @@
 from __future__ import annotations
 
+import logging
+import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
+from pathlib import Path
 from typing import Any, Dict, Literal, Optional
 
+import yaml
+
 from agent.model_metadata import fetch_endpoint_model_metadata, fetch_model_metadata
+from hermes_constants import get_hermes_home
 from utils import base_url_host_matches
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_PRICING = {"input": 0.0, "output": 0.0}
 
@@ -440,7 +448,306 @@ _OFFICIAL_DOCS_PRICING: Dict[tuple[str, str], PricingEntry] = {
         source_url="https://aws.amazon.com/bedrock/pricing/",
         pricing_version="bedrock-pricing-2026-04",
     ),
+    # ── Alibaba Cloud Bailian (DashScope) — China mainland, CNY→USD @ 7.2 ──
+    # DeepSeek
+    (
+        "aliyun-company",
+        "deepseek-v4-pro",
+    ): PricingEntry(
+        input_cost_per_million=Decimal("1.67"),
+        output_cost_per_million=Decimal("3.33"),
+        source="official_docs_snapshot",
+        source_url="https://help.aliyun.com/zh/model-studio/model-pricing",
+        pricing_version="aliyun-bailian-2026-04-30",
+    ),
+    (
+        "aliyun-company",
+        "deepseek-v4-flash",
+    ): PricingEntry(
+        input_cost_per_million=Decimal("0.14"),
+        output_cost_per_million=Decimal("0.28"),
+        source="official_docs_snapshot",
+        source_url="https://help.aliyun.com/zh/model-studio/model-pricing",
+        pricing_version="aliyun-bailian-2026-04-30",
+    ),
+    # Qwen
+    (
+        "aliyun-company",
+        "qwen3.5-plus",
+    ): PricingEntry(
+        input_cost_per_million=Decimal("0.11"),
+        output_cost_per_million=Decimal("0.67"),
+        source="official_docs_snapshot",
+        source_url="https://help.aliyun.com/zh/model-studio/model-pricing",
+        pricing_version="aliyun-bailian-2026-04-30",
+    ),
+    (
+        "aliyun-company",
+        "qwen3-coder-plus",
+    ): PricingEntry(
+        input_cost_per_million=Decimal("0.56"),
+        output_cost_per_million=Decimal("2.22"),
+        source="official_docs_snapshot",
+        source_url="https://help.aliyun.com/zh/model-studio/model-pricing",
+        pricing_version="aliyun-bailian-2026-04-30",
+    ),
+    (
+        "aliyun-company",
+        "qwen2.5-72b-instruct",
+    ): PricingEntry(
+        input_cost_per_million=Decimal("0.56"),
+        output_cost_per_million=Decimal("1.67"),
+        source="official_docs_snapshot",
+        source_url="https://help.aliyun.com/zh/model-studio/model-pricing",
+        pricing_version="aliyun-bailian-2026-04-30",
+    ),
+    # Third-party models
+    (
+        "aliyun-company",
+        "glm-5",
+    ): PricingEntry(
+        input_cost_per_million=Decimal("0.56"),
+        output_cost_per_million=Decimal("2.50"),
+        source="official_docs_snapshot",
+        source_url="https://help.aliyun.com/zh/model-studio/model-pricing",
+        pricing_version="aliyun-bailian-2026-04-30",
+    ),
+    (
+        "aliyun-company",
+        "glm-5.1",
+    ): PricingEntry(
+        input_cost_per_million=Decimal("0.83"),
+        output_cost_per_million=Decimal("3.33"),
+        source="official_docs_snapshot",
+        source_url="https://help.aliyun.com/zh/model-studio/model-pricing",
+        pricing_version="aliyun-bailian-2026-04-30",
+    ),
+    (
+        "aliyun-company",
+        "kimi-k2.5",
+    ): PricingEntry(
+        input_cost_per_million=Decimal("0.56"),
+        output_cost_per_million=Decimal("2.92"),
+        source="official_docs_snapshot",
+        source_url="https://help.aliyun.com/zh/model-studio/model-pricing",
+        pricing_version="aliyun-bailian-2026-04-30",
+    ),
+    (
+        "aliyun-company",
+        "minimax-m2.5",
+    ): PricingEntry(
+        input_cost_per_million=Decimal("0.29"),
+        output_cost_per_million=Decimal("1.17"),
+        source="official_docs_snapshot",
+        source_url="https://help.aliyun.com/zh/model-studio/model-pricing",
+        pricing_version="aliyun-bailian-2026-04-30",
+    ),
+    # Embedding (memory model)
+    (
+        "aliyun-company",
+        "qwen3-vl-embedding",
+    ): PricingEntry(
+        input_cost_per_million=Decimal("0.10"),
+        output_cost_per_million=Decimal("0"),
+        source="official_docs_snapshot",
+        source_url="https://help.aliyun.com/zh/model-studio/model-pricing",
+        pricing_version="aliyun-bailian-2026-04-30",
+    ),
+    # ── aliyun-personal mirrors aliyun-company (same DashScope pricing) ──
+    (
+        "aliyun-personal",
+        "deepseek-v4-pro",
+    ): PricingEntry(
+        input_cost_per_million=Decimal("1.67"),
+        output_cost_per_million=Decimal("3.33"),
+        source="official_docs_snapshot",
+        source_url="https://help.aliyun.com/zh/model-studio/model-pricing",
+        pricing_version="aliyun-bailian-2026-04-30",
+    ),
+    (
+        "aliyun-personal",
+        "deepseek-v4-flash",
+    ): PricingEntry(
+        input_cost_per_million=Decimal("0.14"),
+        output_cost_per_million=Decimal("0.28"),
+        source="official_docs_snapshot",
+        source_url="https://help.aliyun.com/zh/model-studio/model-pricing",
+        pricing_version="aliyun-bailian-2026-04-30",
+    ),
+    (
+        "aliyun-personal",
+        "qwen3.5-plus",
+    ): PricingEntry(
+        input_cost_per_million=Decimal("0.11"),
+        output_cost_per_million=Decimal("0.67"),
+        source="official_docs_snapshot",
+        source_url="https://help.aliyun.com/zh/model-studio/model-pricing",
+        pricing_version="aliyun-bailian-2026-04-30",
+    ),
+    (
+        "aliyun-personal",
+        "qwen3-coder-plus",
+    ): PricingEntry(
+        input_cost_per_million=Decimal("0.56"),
+        output_cost_per_million=Decimal("2.22"),
+        source="official_docs_snapshot",
+        source_url="https://help.aliyun.com/zh/model-studio/model-pricing",
+        pricing_version="aliyun-bailian-2026-04-30",
+    ),
+    (
+        "aliyun-personal",
+        "qwen2.5-72b-instruct",
+    ): PricingEntry(
+        input_cost_per_million=Decimal("0.56"),
+        output_cost_per_million=Decimal("1.67"),
+        source="official_docs_snapshot",
+        source_url="https://help.aliyun.com/zh/model-studio/model-pricing",
+        pricing_version="aliyun-bailian-2026-04-30",
+    ),
+    (
+        "aliyun-personal",
+        "glm-5",
+    ): PricingEntry(
+        input_cost_per_million=Decimal("0.56"),
+        output_cost_per_million=Decimal("2.50"),
+        source="official_docs_snapshot",
+        source_url="https://help.aliyun.com/zh/model-studio/model-pricing",
+        pricing_version="aliyun-bailian-2026-04-30",
+    ),
+    (
+        "aliyun-personal",
+        "glm-5.1",
+    ): PricingEntry(
+        input_cost_per_million=Decimal("0.83"),
+        output_cost_per_million=Decimal("3.33"),
+        source="official_docs_snapshot",
+        source_url="https://help.aliyun.com/zh/model-studio/model-pricing",
+        pricing_version="aliyun-bailian-2026-04-30",
+    ),
+    (
+        "aliyun-personal",
+        "kimi-k2.5",
+    ): PricingEntry(
+        input_cost_per_million=Decimal("0.56"),
+        output_cost_per_million=Decimal("2.92"),
+        source="official_docs_snapshot",
+        source_url="https://help.aliyun.com/zh/model-studio/model-pricing",
+        pricing_version="aliyun-bailian-2026-04-30",
+    ),
+    (
+        "aliyun-personal",
+        "minimax-m2.5",
+    ): PricingEntry(
+        input_cost_per_million=Decimal("0.29"),
+        output_cost_per_million=Decimal("1.17"),
+        source="official_docs_snapshot",
+        source_url="https://help.aliyun.com/zh/model-studio/model-pricing",
+        pricing_version="aliyun-bailian-2026-04-30",
+    ),
+    # Embedding (memory model)
+    (
+        "aliyun-personal",
+        "qwen3-vl-embedding",
+    ): PricingEntry(
+        input_cost_per_million=Decimal("0.10"),
+        output_cost_per_million=Decimal("0"),
+        source="official_docs_snapshot",
+        source_url="https://help.aliyun.com/zh/model-studio/model-pricing",
+        pricing_version="aliyun-bailian-2026-04-30",
+    ),
 }
+
+# ── User-provided pricing (pricing.yaml) ──
+# Cached with 5-minute TTL; cleared on Hermes restart.
+_USER_PRICING: Dict[tuple, "PricingEntry"] = {}
+_USER_PRICING_LOADED_AT: float = 0.0
+_USER_PRICING_CACHE_TTL: float = 300.0  # seconds
+
+_USER_PRICING_PATH: Optional[Path] = None
+
+
+def _resolve_user_pricing_path() -> Optional[Path]:
+    """Resolve the pricing override file path, respecting profiles."""
+    global _USER_PRICING_PATH
+    if _USER_PRICING_PATH is not None:
+        return _USER_PRICING_PATH if _USER_PRICING_PATH.exists() else None
+    try:
+        home = get_hermes_home()
+    except Exception:
+        return None
+    candidate = Path(home) / "pricing.yaml"
+    if candidate.exists():
+        _USER_PRICING_PATH = candidate
+        return candidate
+    _USER_PRICING_PATH = Path("__sentinel__")
+    return None
+
+
+def _load_user_pricing() -> None:
+    """Parse pricing.yaml into _USER_PRICING cache.
+
+    Cached for 5 minutes to avoid repeated filesystem I/O on every tool call.
+    When the cache expires (or the file's mtime changes), the file is re-read.
+    """
+    global _USER_PRICING, _USER_PRICING_LOADED_AT, _USER_PRICING_PATH
+    import time as _time
+    now = _time.monotonic()
+
+    # Fast path: cache is warm and not expired
+    if _USER_PRICING and (now - _USER_PRICING_LOADED_AT) < _USER_PRICING_CACHE_TTL:
+        return
+
+    # Cache miss or expired — reset and (maybe) reload
+    _USER_PRICING = {}
+    _USER_PRICING_LOADED_AT = now
+    _USER_PRICING_PATH = None  # re-resolve in case file was created/deleted
+
+    path = _resolve_user_pricing_path()
+    if not path:
+        return
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except Exception:
+        logger.debug("pricing.yaml: cannot read %s", path, exc_info=True)
+        return
+    try:
+        data = yaml.safe_load(raw) or {}
+    except yaml.YAMLError:
+        logger.warning("pricing.yaml: invalid YAML in %s", path, exc_info=True)
+        return
+
+    providers = data.get("providers")
+    if not isinstance(providers, dict):
+        return
+
+    loaded = 0
+    for provider_name, provider_cfg in providers.items():
+        if not isinstance(provider_cfg, dict):
+            continue
+        models = provider_cfg.get("models")
+        if not isinstance(models, dict):
+            continue
+        source_url = provider_cfg.get("source_url", "").strip() or None
+        for model_name, pricing in models.items():
+            if not isinstance(pricing, dict):
+                continue
+            input_val = pricing.get("input")
+            output_val = pricing.get("output")
+            if input_val is None and output_val is None:
+                continue
+            key = (str(provider_name).strip().lower(), str(model_name).strip().lower())
+            _USER_PRICING[key] = PricingEntry(
+                input_cost_per_million=_to_decimal(input_val),
+                output_cost_per_million=_to_decimal(output_val),
+                cache_read_cost_per_million=_to_decimal(pricing.get("cache_read")),
+                cache_write_cost_per_million=_to_decimal(pricing.get("cache_write")),
+                source="user_override",
+                source_url=source_url,
+                pricing_version="user-pricing-yaml",
+            )
+            loaded += 1
+    if loaded:
+        logger.info("pricing.yaml: loaded %d model pricing overrides", loaded)
 
 
 def _to_decimal(value: Any) -> Optional[Decimal]:
@@ -550,6 +857,13 @@ def get_pricing_entry(
     api_key: Optional[str] = None,
 ) -> Optional[PricingEntry]:
     route = resolve_billing_route(model_name, provider=provider, base_url=base_url)
+
+    # ── User pricing overrides (pricing.yaml) — highest priority ──
+    _load_user_pricing()
+    user_entry = _USER_PRICING.get((route.provider, route.model.lower()))
+    if user_entry is not None:
+        return user_entry
+
     if route.billing_mode == "subscription_included":
         return PricingEntry(
             input_cost_per_million=_ZERO,
