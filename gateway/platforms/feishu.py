@@ -2344,15 +2344,9 @@ class FeishuAdapter(BasePlatformAdapter):
 
         self._submit_on_loop(loop, self._resolve_approval(approval_id, choice, user_name))
 
-        if P2CardActionTriggerResponse is None:
-            return None
-        response = P2CardActionTriggerResponse()
-        if CallBackCard is not None:
-            card = CallBackCard()
-            card.type = "raw"
-            card.data = self._build_resolved_approval_card(choice=choice, user_name=user_name)
-            response.card = card
-        return response
+        # Return empty response to avoid NameError on CallBackToast in Lark WS client.
+        # Approval is resolved asynchronously above; no need to update the card inline.
+        return P2CardActionTriggerResponse() if P2CardActionTriggerResponse else None
 
     async def _resolve_approval(self, approval_id: Any, choice: str, user_name: str) -> None:
         """Pop approval state and unblock the waiting agent thread."""
