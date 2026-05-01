@@ -103,6 +103,7 @@ from gateway.platforms.qqbot.constants import (
     RATE_LIMIT_DELAY,
     QUICK_DISCONNECT_THRESHOLD,
     MAX_QUICK_DISCONNECT_COUNT,
+    HEARTBEAT_MAX_FAILURES,
     MAX_MESSAGE_LENGTH,
     DEDUP_WINDOW_SECONDS,
     DEDUP_MAX_SIZE,
@@ -603,17 +604,36 @@ class QQAdapter(BasePlatformAdapter):
 
         The interval is set from the Hello (op 10) event's heartbeat_interval.
         QQ's default is ~41s; we send at 80% of the interval to stay safe.
+
+        Consecutive heartbeat failures indicate a dead connection (e.g. after
+        system sleep/wake). When HEARTBEAT_MAX_FAILURES is reached, the
+        WebSocket is closed so _listen_loop detects the break and reconnects.
         """
+        hb_fail = 0
         try:
             while self._running:
                 await asyncio.sleep(self._heartbeat_interval)
                 if not self._ws or self._ws.closed:
+                    hb_fail = 0
                     continue
                 try:
                     # d should be the latest sequence number received, or null
                     await self._ws.send_json({"op": 1, "d": self._last_seq})
+                    hb_fail = 0
                 except Exception as exc:
-                    logger.debug("[%s] Heartbeat failed: %s", self._log_tag, exc)
+                    hb_fail += 1
+                    logger.warning(
+                        "[%s] Heartbeat failed (%d/%d): %s",
+                        self._log_tag, hb_fail, HEARTBEAT_MAX_FAILURES, exc,
+                    )
+                    if hb_fail >= HEARTBEAT_MAX_FAILURES:
+                        logger.error(
+                            "[%s] Heartbeat failed %d times, closing WebSocket",
+                            self._log_tag, hb_fail,
+                        )
+                        if self._ws and not self._ws.closed:
+                            await self._ws.close()
+                        hb_fail = 0
         except asyncio.CancelledError:
             pass
 
