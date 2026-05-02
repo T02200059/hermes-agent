@@ -107,6 +107,7 @@ from agent.context_compressor import ContextCompressor
 from agent.subdirectory_hints import SubdirectoryHintTracker
 from agent.prompt_caching import apply_anthropic_cache_control
 from agent.prompt_builder import build_skills_system_prompt, build_context_files_prompt, build_environment_hints, load_soul_md, TOOL_USE_ENFORCEMENT_GUIDANCE, TOOL_USE_ENFORCEMENT_MODELS, GOOGLE_MODEL_OPERATIONAL_GUIDANCE, OPENAI_MODEL_EXECUTION_GUIDANCE
+from agent.skill_utils import SkillsUsageTracker
 from agent.usage_pricing import estimate_usage_cost, normalize_usage
 from agent.codex_responses_adapter import (
     _derive_responses_function_call_id as _codex_derive_responses_function_call_id,
@@ -2054,6 +2055,11 @@ class AIAgent:
                 "anthropic_base_url": self._anthropic_base_url,
                 "is_anthropic_oauth": self._is_anthropic_oauth,
             })
+
+        # ── Skills TF-IDF tracker ─────────────────────────────────────
+        self._skills_tracker = SkillsUsageTracker()
+        if self._skills_tracker.load():
+            logger.info("Skills TF-IDF tracker loaded for intent-based filtering")
 
     def reset_session_state(self):
         """Reset all session-scoped token counters to 0 for a fresh session.
@@ -4540,7 +4546,7 @@ class AIAgent:
 
 
 
-    def _build_system_prompt(self, system_message: str = None) -> str:
+    def _build_system_prompt(self, system_message: str = None, *, user_message: str = "") -> str:
         """
         Assemble the full system prompt from all layers.
         
@@ -4658,6 +4664,8 @@ class AIAgent:
             skills_prompt = build_skills_system_prompt(
                 available_tools=self.valid_tool_names,
                 available_toolsets=avail_toolsets,
+                user_message=user_message or None,
+                skills_tracker=self._skills_tracker if self._skills_tracker.is_loaded else None,
             )
         else:
             skills_prompt = ""
@@ -9799,7 +9807,7 @@ class AIAgent:
                 self._cached_system_prompt = stored_prompt
             else:
                 # First turn of a new session — build from scratch.
-                self._cached_system_prompt = self._build_system_prompt(system_message)
+                self._cached_system_prompt = self._build_system_prompt(system_message, user_message=user_message)
                 # Plugin hook: on_session_start
                 # Fired once when a brand-new session is created (not on
                 # continuation).  Plugins can use this to initialise
@@ -13045,6 +13053,31 @@ class AIAgent:
             )
         except Exception as exc:
             logger.warning("on_session_end hook failed: %s", exc)
+
+        # ── Record skills usage for TF-IDF learning ───────────────────
+        if self._skills_tracker.is_loaded and user_message and messages:
+            _invoked = []
+            for _msg in messages:
+                if _msg.get("role") != "assistant":
+                    continue
+                for _tc in _msg.get("tool_calls") or []:
+                    _fn = _tc.get("function", {})
+                    if _fn.get("name", "").lower() == "skill_view":
+                        try:
+                            _args = json.loads(_fn.get("arguments", "{}"))
+                            _sname = _args.get("name", "").strip()
+                            if _sname:
+                                _invoked.append(_sname)
+                        except (json.JSONDecodeError, TypeError):
+                            continue
+            if _invoked:
+                from datetime import datetime
+                self._skills_tracker.record(
+                    user_message=user_message,
+                    invoked_skills=list(set(_invoked)),
+                    model=self.model,
+                    timestamp=datetime.now().isoformat(),
+                )
 
         return result
 
