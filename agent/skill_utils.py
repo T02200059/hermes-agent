@@ -538,6 +538,7 @@ class SkillsUsageTracker:
         self.low_confidence = float(thresh.get("low_confidence", 0.4))
         self.max_history = int(cfg.get("max_history", 100))
         self.recency_exemption_hours = int(cfg.get("recency_exemption_hours", 72))
+        self.max_session_exemptions = int(cfg.get("max_session_exemptions", 5))
         raw_whitelist = cfg.get("whitelist", [])
         self.whitelist = self._DEFAULT_WHITELIST | (
             set(raw_whitelist) if isinstance(raw_whitelist, list) else set()
@@ -548,6 +549,14 @@ class SkillsUsageTracker:
         self._vectorizer = None
         self._tfidf_matrix = None
         self._loaded = False
+
+        # Session creation tracking (方案2)
+        self._created_this_session: Set[str] = set()
+        self.creations_path = Path(
+            os.path.expanduser(
+                str(cfg.get("creations_path", "~/.local/share/hermes/skills-creations.jsonl"))
+            )
+        )
 
     # ── Public API ─────────────────────────────────────────────────────
 
@@ -715,6 +724,79 @@ class SkillsUsageTracker:
                 len(recent), hours, sorted(recent),
             )
 
+        return recent
+
+    # ── 方案2: Session creation tracking ───────────────────────────────
+
+    def record_skill_creation(self, skill_name: str):
+        """Record that *skill_name* was created during this session.
+
+        Called by ``run_agent.py`` when ``skill_manage(action='create')``
+        succeeds.  Persisted to ``skills-creations.jsonl`` so future
+        sessions can also see the skill (within a 24h window).
+        """
+        if not skill_name:
+            return
+
+        # Layer A: in-memory (this session only)
+        self._created_this_session.add(skill_name)
+
+        # Layer B: persistent (cross-session, 24h window)
+        entry = {
+            "type": "skill_created",
+            "name": skill_name,
+            "ts": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime()),
+        }
+        try:
+            os.makedirs(self.creations_path.parent, exist_ok=True)
+            with open(self.creations_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+            logger.debug("Recorded skill creation: %s", skill_name)
+        except OSError as e:
+            logger.warning("Failed to persist skill creation record: %s", e)
+
+    def get_session_created_skills(self) -> Set[str]:
+        """Return skills created in this session (Layer A, in-memory).
+
+        Capped at ``max_session_exemptions`` to prevent unbounded growth
+        when the model creates many skills in a single conversation.
+        """
+        if len(self._created_this_session) <= self.max_session_exemptions:
+            return self._created_this_session.copy()
+        # Only keep first N (sorted for deterministic selection)
+        return set(sorted(self._created_this_session)[:self.max_session_exemptions])
+
+    def get_recently_created_skills(self, hours: int = 24) -> Set[str]:
+        """Return skills created in the last *hours* from the persistent
+        creations JSONL (Layer B).  Independent of the TF-IDF index.
+        """
+        if not self.creations_path.exists():
+            return set()
+        cutoff = time.time() - hours * 3600
+        recent: Set[str] = set()
+        try:
+            with open(self.creations_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        rec = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    ts_str = rec.get("ts", "")
+                    try:
+                        ts = time.mktime(
+                            time.strptime(ts_str, "%Y-%m-%dT%H:%M:%S")
+                        )
+                    except (ValueError, OverflowError):
+                        continue
+                    if ts >= cutoff:
+                        name = rec.get("name", "")
+                        if name:
+                            recent.add(name)
+        except OSError as e:
+            logger.debug("Failed to read skills-creations.jsonl: %s", e)
         return recent
 
     def record(self, user_message: str, invoked_skills: List[str],

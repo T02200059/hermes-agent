@@ -9061,6 +9061,21 @@ class AIAgent:
                 env=get_active_env(effective_task_id),
             )
 
+            # ── 方案2: track skill creation for TF-IDF exemption ──
+            if name == "skill_manage" and self._skills_tracker is not None:
+                try:
+                    if isinstance(args, str):
+                        args_parsed = json.loads(args)
+                    else:
+                        args_parsed = args
+                    if (isinstance(args_parsed, dict)
+                            and args_parsed.get("action") == "create"):
+                        skill_name = str(args_parsed.get("name", "")).strip()
+                        if skill_name:
+                            self._skills_tracker.record_skill_creation(skill_name)
+                except (json.JSONDecodeError, TypeError, AttributeError):
+                    pass
+
             subdir_hints = self._subdirectory_hints.check_tool_call(name, args)
             if subdir_hints:
                 function_result += subdir_hints
@@ -9423,6 +9438,17 @@ class AIAgent:
                 tool_use_id=tool_call.id,
                 env=get_active_env(effective_task_id),
             )
+
+            # ── 方案2: track skill creation for TF-IDF exemption ──
+            if function_name == "skill_manage" and self._skills_tracker is not None:
+                try:
+                    if (isinstance(function_args, dict)
+                            and function_args.get("action") == "create"):
+                        skill_name = str(function_args.get("name", "")).strip()
+                        if skill_name:
+                            self._skills_tracker.record_skill_creation(skill_name)
+                except (json.JSONDecodeError, TypeError, AttributeError):
+                    pass
 
             # Discover subdirectory context files from tool arguments
             subdir_hints = self._subdirectory_hints.check_tool_call(function_name, function_args)

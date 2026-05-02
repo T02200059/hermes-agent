@@ -709,6 +709,19 @@ def build_skills_system_prompt(
                 # filtered out while still exposing the new ones.
                 preferred = sorted(recently_modified)
 
+        # ── 方案2: Session creation tracking ──
+        # Union skills created this session + within the last 24h
+        session_created = skills_tracker.get_session_created_skills()
+        recently_created = skills_tracker.get_recently_created_skills()
+        if session_created or recently_created:
+            extra = session_created | recently_created
+            if preferred is not None:
+                preferred = sorted(set(preferred) | extra)
+            else:
+                # No TF-IDF match, but new skills exist — expose them
+                # without falling back to the full index
+                preferred = sorted(extra)
+
     # ── Layer 1: in-process LRU cache ─────────────────────────────────
     # Extend the cache key with the TF-IDF recommendation fingerprint so
     # different intent matches produce distinct cache entries.  When
@@ -853,18 +866,27 @@ def build_skills_system_prompt(
     # Uses the ``preferred`` list computed before the cache lookup above.
     if user_message and skills_tracker is not None and skills_tracker.is_loaded:
         if preferred is not None:
-            preferred_set = set(preferred)
-            filtered: dict[str, list[tuple[str, str]]] = {}
-            for category, skill_list in skills_by_category.items():
-                kept = [(n, d) for n, d in skill_list if n in preferred_set]
-                if kept:
-                    filtered[category] = kept
-            if filtered:
-                skills_by_category = filtered
-                logger.debug(
-                    "TF-IDF filtered skills: %d categories, %d skills kept",
-                    len(filtered), len(preferred),
-                )
+            # ── Survival filter: remove skill names that no longer exist ─
+            # (e.g., sre-damodel was deleted and merged into sre-king).
+            # Ghost names are naturally purged — they won't match any
+            # entry in skills_by_category so they silently disappear.
+            available_names = {
+                n for cat_list in skills_by_category.values()
+                for n, _d in cat_list
+            }
+            effective = {s for s in preferred if s in available_names}
+            if effective:
+                filtered: dict[str, list[tuple[str, str]]] = {}
+                for category, skill_list in skills_by_category.items():
+                    kept = [(n, d) for n, d in skill_list if n in effective]
+                    if kept:
+                        filtered[category] = kept
+                if filtered:
+                    skills_by_category = filtered
+                    logger.debug(
+                        "TF-IDF filtered skills: %d categories, %d skills kept",
+                        len(filtered), len(effective),
+                    )
 
     if not skills_by_category:
         result = ""
