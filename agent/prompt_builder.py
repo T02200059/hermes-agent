@@ -1149,3 +1149,77 @@ def build_context_files_prompt(cwd: Optional[str] = None, skip_soul: bool = Fals
     if not sections:
         return ""
     return "# Project Context\n\nThe following project context files have been loaded and should be followed:\n\n" + "\n".join(sections)
+
+
+# ── System prompt audit logging ──────────────────────────────────────────────
+_SYSPROMPT_AUDIT_DIR = Path(get_hermes_home()) / "logs"
+_SYSPROMPT_AUDIT_PATH = _SYSPROMPT_AUDIT_DIR / "sysprompt-audit.jsonl"
+_SYSPROMPT_AUDIT_MAX = 500  # keep last 500 entries
+_SYSPROMPT_AUDIT_LOCK = threading.Lock()
+
+
+def write_sysprompt_audit_entry(
+    session_id: str = "",
+    model: str = "",
+    *,
+    total_chars: int = 0,
+    skills_chars: int = 0,
+    memory_chars: int = 0,
+    user_chars: int = 0,
+    soul_chars: int = 0,
+    tfidf_triggered: bool = False,
+    platform: str = "",
+    user_message: str = "",
+) -> None:
+    """Append one JSONL entry to the system prompt audit log.
+
+    Records the breakdown of the final assembled system prompt so we can
+    track how many tokens are spent on each section and whether TF-IDF
+    filtering is active.
+
+    Auto-truncates when the file exceeds ``_SYSPROMPT_AUDIT_MAX * 3`` lines,
+    keeping the most recent ``_SYSPROMPT_AUDIT_MAX`` entries — same pattern
+    as ``SkillsUsageTracker.load()``.
+    """
+    from datetime import datetime
+
+    entry = {
+        "ts": datetime.now().isoformat(timespec="seconds"),
+        "session": session_id,
+        "model": model,
+        "platform": platform,
+        "total_chars": total_chars,
+        "skills_chars": skills_chars,
+        "memory_chars": memory_chars,
+        "user_chars": user_chars,
+        "soul_chars": soul_chars,
+        "tfidf": tfidf_triggered,
+        "est_tokens": (total_chars + 3) // 4,  # same as estimate_tokens_rough()
+        "msg": user_message[:60] if user_message else "",
+    }
+
+    try:
+        os.makedirs(_SYSPROMPT_AUDIT_DIR, exist_ok=True)
+        with _SYSPROMPT_AUDIT_LOCK:
+            with open(_SYSPROMPT_AUDIT_PATH, "a", encoding="utf-8") as f:
+                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+            # ── Auto-truncate to prevent unbounded growth ────────────
+            # Same approach as SkillsUsageTracker.load(): when the file
+            # exceeds max*3 lines, rewrite with only the last max entries.
+            try:
+                st = _SYSPROMPT_AUDIT_PATH.stat()
+                if st.st_size > 0:
+                    with open(_SYSPROMPT_AUDIT_PATH, "r", encoding="utf-8") as f:
+                        lines = f.readlines()
+                    if len(lines) > _SYSPROMPT_AUDIT_MAX * 3:
+                        with open(_SYSPROMPT_AUDIT_PATH, "w", encoding="utf-8") as f:
+                            f.writelines(lines[-_SYSPROMPT_AUDIT_MAX:])
+                        logger.info(
+                            "Truncated sysprompt audit from %d → %d lines",
+                            len(lines), _SYSPROMPT_AUDIT_MAX,
+                        )
+            except OSError:
+                pass  # non-fatal, skip truncation this time
+    except OSError as e:
+        logger.warning("Failed to write sysprompt audit entry: %s", e)

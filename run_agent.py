@@ -4727,7 +4727,32 @@ class AIAgent:
         if platform_key in PLATFORM_HINTS:
             prompt_parts.append(PLATFORM_HINTS[platform_key])
 
-        return "\n\n".join(p.strip() for p in prompt_parts if p.strip())
+        # ── System prompt audit (once per session build) ──────────────
+        _full_prompt = "\n\n".join(p.strip() for p in prompt_parts if p.strip())
+        _soul_chars = len(locals().get("_soul_content", "") or "")
+        _mem_chars = len(locals().get("mem_block", "") or "")
+        _user_chars = len(locals().get("user_block", "") or "")
+        _skills_chars = len(skills_prompt) if skills_prompt else 0
+        _tfidf_on = bool(
+            getattr(self, "_skills_tracker", None)
+            and self._skills_tracker.is_loaded
+            and user_message
+        )
+        from agent.prompt_builder import write_sysprompt_audit_entry
+        write_sysprompt_audit_entry(
+            session_id=self.session_id or "",
+            model=self.model or "",
+            total_chars=len(_full_prompt),
+            skills_chars=_skills_chars,
+            memory_chars=_mem_chars,
+            user_chars=_user_chars,
+            soul_chars=_soul_chars,
+            tfidf_triggered=_tfidf_on,
+            platform=self.platform or "",
+            user_message=user_message or "",
+        )
+
+        return _full_prompt
 
     # =========================================================================
     # Pre/post-call guardrails (inspired by PR #1321 — @alireza78a)
