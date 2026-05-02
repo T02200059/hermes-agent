@@ -285,6 +285,36 @@ _OFFICIAL_DOCS_PRICING: Dict[tuple[str, str], PricingEntry] = {
     ),
     (
         "xai",
+        "grok-4-fast-reasoning",
+    ): PricingEntry(
+        input_cost_per_million=Decimal("0.20"),
+        output_cost_per_million=Decimal("0.50"),
+        source="official_docs_snapshot",
+        source_url="https://docs.x.ai/developers/models",
+        pricing_version="xai-pricing-2026-04-30",
+    ),
+    (
+        "xai",
+        "grok-4-fast-non-reasoning",
+    ): PricingEntry(
+        input_cost_per_million=Decimal("0.20"),
+        output_cost_per_million=Decimal("0.50"),
+        source="official_docs_snapshot",
+        source_url="https://docs.x.ai/developers/models",
+        pricing_version="xai-pricing-2026-04-30",
+    ),
+    (
+        "xai",
+        "grok-4-fast",
+    ): PricingEntry(
+        input_cost_per_million=Decimal("0.20"),
+        output_cost_per_million=Decimal("0.50"),
+        source="official_docs_snapshot",
+        source_url="https://docs.x.ai/developers/models",
+        pricing_version="xai-pricing-2026-04-30",
+    ),
+    (
+        "xai",
         "grok-4.20-0309-reasoning",
     ): PricingEntry(
         input_cost_per_million=Decimal("2.00"),
@@ -342,6 +372,26 @@ _OFFICIAL_DOCS_PRICING: Dict[tuple[str, str], PricingEntry] = {
         source="official_docs_snapshot",
         source_url="https://docs.x.ai/developers/models",
         pricing_version="xai-pricing-2026-04-27",
+    ),
+    (
+        "xai",
+        "grok-2",
+    ): PricingEntry(
+        input_cost_per_million=Decimal("2.00"),
+        output_cost_per_million=Decimal("10.00"),
+        source="official_docs_snapshot",
+        source_url="https://docs.x.ai/developers/models",
+        pricing_version="xai-pricing-2026-04-30",
+    ),
+    (
+        "xai",
+        "grok-2-vision-1212",
+    ): PricingEntry(
+        input_cost_per_million=Decimal("2.00"),
+        output_cost_per_million=Decimal("10.00"),
+        source="official_docs_snapshot",
+        source_url="https://docs.x.ai/developers/models",
+        pricing_version="xai-pricing-2026-04-30",
     ),
     # Google Gemini
     (
