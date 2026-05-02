@@ -11,6 +11,7 @@ import os
 import re
 import sys
 import threading
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
@@ -536,6 +537,7 @@ class SkillsUsageTracker:
         self.high_confidence = float(thresh.get("high_confidence", 0.7))
         self.low_confidence = float(thresh.get("low_confidence", 0.4))
         self.max_history = int(cfg.get("max_history", 100))
+        self.recency_exemption_hours = int(cfg.get("recency_exemption_hours", 72))
         raw_whitelist = cfg.get("whitelist", [])
         self.whitelist = self._DEFAULT_WHITELIST | (
             set(raw_whitelist) if isinstance(raw_whitelist, list) else set()
@@ -663,6 +665,57 @@ class SkillsUsageTracker:
                 result.update(self._records[i].get("skills", []))
 
         return sorted(result)
+
+    def get_recently_modified_skills(self, recency_hours: Optional[int] = None) -> Set[str]:
+        """Return skill names whose SKILL.md was modified in the recency window.
+
+        Scans all skill directories, checks file modification times against
+        the exemption window (default: ``recency_exemption_hours`` from config,
+        or the *recency_hours* parameter).  Ensures newly created or recently
+        updated skills are always visible even when TF-IDF filtering would
+        otherwise exclude them.
+
+        Returns an empty set when the tracker is disabled or the window is 0.
+        """
+        if not self.enabled:
+            return set()
+
+        hours = recency_hours if recency_hours is not None else self.recency_exemption_hours
+        if hours <= 0:
+            return set()
+
+        cutoff = time.time() - hours * 3600
+        skills_dir = get_skills_dir()
+        recent: Set[str] = set()
+
+        for skill_file in iter_skill_index_files(skills_dir, "SKILL.md"):
+            try:
+                mtime = os.path.getmtime(skill_file)
+                if mtime < cutoff:
+                    continue
+
+                # Extract skill name — prefer frontmatter ``name`` field,
+                # fall back to the top-level parent directory name.
+                content = skill_file.read_text(encoding="utf-8")
+                fm, _ = parse_frontmatter(content)
+                name = fm.get("name", "")
+                if not name:
+                    rel = skill_file.relative_to(skills_dir)
+                    name = rel.parts[0] if len(rel.parts) > 1 else ""
+
+                if name:
+                    recent.add(name)
+            except (OSError, Exception) as e:
+                logger.debug("Error reading recent skill %s: %s", skill_file, e)
+                continue
+
+        if recent:
+            logger.debug(
+                "Recency exemption: %d skills modified within %dh — %s",
+                len(recent), hours, sorted(recent),
+            )
+
+        return recent
 
     def record(self, user_message: str, invoked_skills: List[str],
                model: str = "", timestamp: str = ""):

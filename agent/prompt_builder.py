@@ -697,6 +697,18 @@ def build_skills_system_prompt(
     if user_message and skills_tracker is not None and skills_tracker.is_loaded:
         preferred = skills_tracker.find_similar(user_message)
 
+        # ── Recency exemption: union recently created/modified skills ──
+        recently_modified = skills_tracker.get_recently_modified_skills()
+        if recently_modified:
+            if preferred is not None:
+                preferred = sorted(set(preferred) | recently_modified)
+            else:
+                # No TF-IDF match, but there are recent skills — promote them
+                # so the model knows these skills exist.  This is a minimal
+                # replacement for the full fallback, keeping most skills
+                # filtered out while still exposing the new ones.
+                preferred = sorted(recently_modified)
+
     # ── Layer 1: in-process LRU cache ─────────────────────────────────
     # Extend the cache key with the TF-IDF recommendation fingerprint so
     # different intent matches produce distinct cache entries.  When
