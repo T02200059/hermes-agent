@@ -16,6 +16,7 @@ from hermes_constants import get_hermes_home, get_skills_dir, is_wsl
 from typing import Optional
 
 from agent.skill_utils import (
+    SkillsUsageTracker,
     extract_skill_conditions,
     extract_skill_description,
     get_all_skills_dirs,
@@ -650,6 +651,9 @@ def _skill_should_show(
 def build_skills_system_prompt(
     available_tools: "set[str] | None" = None,
     available_toolsets: "set[str] | None" = None,
+    *,
+    user_message: Optional[str] = None,
+    skills_tracker: Optional[SkillsUsageTracker] = None,
 ) -> str:
     """Build a compact skill index for the system prompt.
 
@@ -821,6 +825,23 @@ def build_skills_system_prompt(
             except Exception as e:
                 logger.debug("Could not read external skill description %s: %s", desc_file, e)
 
+    # ── TF-IDF intent-based filtering ────────────────────────────────
+    if user_message and skills_tracker is not None and skills_tracker.is_loaded:
+        preferred = skills_tracker.find_similar(user_message)
+        if preferred is not None:
+            preferred_set = set(preferred)
+            filtered: dict[str, list[tuple[str, str]]] = {}
+            for category, skill_list in skills_by_category.items():
+                kept = [(n, d) for n, d in skill_list if n in preferred_set]
+                if kept:
+                    filtered[category] = kept
+            if filtered:
+                skills_by_category = filtered
+                logger.debug(
+                    "TF-IDF filtered skills: %d categories, %d skills kept",
+                    len(filtered), len(preferred),
+                )
+
     if not skills_by_category:
         result = ""
     else:
@@ -871,12 +892,13 @@ def build_skills_system_prompt(
             "Only proceed without loading a skill if genuinely none are relevant to the task."
         )
 
-    # ── Store in LRU cache ────────────────────────────────────────────
-    with _SKILLS_PROMPT_CACHE_LOCK:
-        _SKILLS_PROMPT_CACHE[cache_key] = result
-        _SKILLS_PROMPT_CACHE.move_to_end(cache_key)
-        while len(_SKILLS_PROMPT_CACHE) > _SKILLS_PROMPT_CACHE_MAX:
-            _SKILLS_PROMPT_CACHE.popitem(last=False)
+    # ── Store in LRU cache (skip when TF-IDF filtering is active) ─────
+    if not (user_message and skills_tracker is not None and skills_tracker.is_loaded):
+        with _SKILLS_PROMPT_CACHE_LOCK:
+            _SKILLS_PROMPT_CACHE[cache_key] = result
+            _SKILLS_PROMPT_CACHE.move_to_end(cache_key)
+            while len(_SKILLS_PROMPT_CACHE) > _SKILLS_PROMPT_CACHE_MAX:
+                _SKILLS_PROMPT_CACHE.popitem(last=False)
 
     return result
 

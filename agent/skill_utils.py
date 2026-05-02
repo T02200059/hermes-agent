@@ -5,6 +5,7 @@ heavy dependency chain.  It is safe to import at module level without triggering
 tool registration or provider resolution.
 """
 
+import json
 import logging
 import os
 import re
@@ -463,3 +464,195 @@ def is_valid_namespace(candidate: Optional[str]) -> bool:
     if not candidate:
         return False
     return bool(_NAMESPACE_RE.match(candidate))
+
+
+# ── TF-IDF Skill Usage Tracker ────────────────────────────────────────────
+
+
+class SkillsUsageTracker:
+    """Pre-computed TF-IDF index for intent-driven skill filtering.
+
+    Loads ``skills-usage-index.jsonl`` (built by
+    ``scripts/precompute-skills-usage.py``) and provides
+    ``find_similar(user_message)`` to predict which skills are relevant
+    for the current conversation.
+
+    Designed as a lightweight drop-in — sklearn is imported lazily inside
+    ``load()``, so the class is safe to import at module level even when
+    TF-IDF filtering is disabled.
+    """
+
+    _DEFAULT_WHITELIST = frozenset({
+        "hermes-agent",
+        "systematic-debugging",
+        "plan",
+        "writing-plans",
+    })
+
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
+        # Resolve config: use provided dict or auto-read from config.yaml
+        cfg = config or self._read_config()
+
+        self.enabled = bool(cfg.get("enabled", False))
+        self.index_path = Path(
+            os.path.expanduser(
+                str(cfg.get("index_path", "~/.local/share/hermes/skills-usage-index.jsonl"))
+            )
+        )
+        self.ngram_range = cfg.get("ngram_range", [2, 4])
+        self.max_features = cfg.get("max_features", 5000)
+        thresh = cfg.get("thresholds", {})
+        self.high_confidence = float(thresh.get("high_confidence", 0.7))
+        self.low_confidence = float(thresh.get("low_confidence", 0.4))
+        self.max_history = int(cfg.get("max_history", 100))
+        raw_whitelist = cfg.get("whitelist", [])
+        self.whitelist = self._DEFAULT_WHITELIST | (
+            set(raw_whitelist) if isinstance(raw_whitelist, list) else set()
+        )
+
+        # Runtime state (populated by load())
+        self._records: List[Dict[str, Any]] = []
+        self._vectorizer = None
+        self._tfidf_matrix = None
+        self._loaded = False
+
+    # ── Public API ─────────────────────────────────────────────────────
+
+    def load(self) -> bool:
+        """Load the pre-computed JSONL index and build TF-IDF vectors.
+
+        Returns ``True`` when data was loaded successfully, ``False``
+        when the index file is missing or empty (caller should fall back
+        to full skill loading).
+        """
+        if not self.enabled:
+            return False
+        if not self.index_path.exists():
+            logger.info("Skills TF-IDF index not found at %s (will fall back to full load)", self.index_path)
+            return False
+
+        try:
+            with open(self.index_path, "r", encoding="utf-8") as f:
+                self._records = [
+                    json.loads(line)
+                    for line in f
+                    if line.strip()
+                ]
+        except (OSError, json.JSONDecodeError) as e:
+            logger.warning("Failed to read skills TF-IDF index %s: %s", self.index_path, e)
+            return False
+
+        if not self._records:
+            return False
+
+        # Trim to max_history
+        if len(self._records) > self.max_history:
+            self._records = self._records[-self.max_history:]
+
+        # Lazy sklearn import — only when we actually need to vectorize
+        try:
+            from sklearn.feature_extraction.text import TfidfVectorizer  # type: ignore[import-untyped]
+            import numpy as np  # type: ignore[import-untyped]
+            from sklearn.metrics.pairwise import cosine_similarity  # type: ignore[import-untyped]
+        except ImportError:
+            logger.warning("scikit-learn not installed; skills TF-IDF filtering disabled")
+            return False
+
+        texts = [r["msg"] for r in self._records]
+        self._vectorizer = TfidfVectorizer(
+            analyzer="char",
+            ngram_range=tuple(self.ngram_range),
+            max_features=self.max_features,
+        )
+        self._tfidf_matrix = self._vectorizer.fit_transform(texts)
+        self._loaded = True
+        # Cache imports for hot path
+        self._np = np
+        self._cosine_similarity = cosine_similarity
+        logger.info(
+            "Skills TF-IDF tracker loaded: %d patterns, %d features",
+            len(self._records),
+            self._tfidf_matrix.shape[1],
+        )
+        return True
+
+    def find_similar(self, user_message: str) -> Optional[List[str]]:
+        """Match *user_message* against historical patterns.
+
+        Returns a list of recommended skill names when a match is found,
+        or ``None`` when no match meets the low-confidence threshold
+        (caller should fall back to full skill loading).
+        """
+        if not self._loaded or self._tfidf_matrix is None:
+            return None
+
+        query_vec = self._vectorizer.transform([user_message])
+        scores = self._cosine_similarity(query_vec, self._tfidf_matrix)[0]
+        best_score = float(scores.max())
+
+        if best_score < self.low_confidence:
+            return None  # No match — caller falls back to full load
+
+        # Collect matching skills from all records above threshold
+        result = set(self.whitelist)
+
+        if best_score >= self.high_confidence:
+            # High confidence: only records above high_confidence
+            for i in self._np.where(scores >= self.high_confidence)[0]:
+                result.update(self._records[i].get("skills", []))
+        else:
+            # Medium confidence: all records above low_confidence
+            for i in self._np.where(scores >= self.low_confidence)[0]:
+                result.update(self._records[i].get("skills", []))
+
+        return sorted(result)
+
+    def record(self, user_message: str, invoked_skills: List[str],
+               model: str = "", timestamp: str = ""):
+        """Append a usage record to the JSONL index file.
+
+        Called after a conversation finishes so future sessions can
+        benefit from this conversation's pattern.
+        """
+        if not self.enabled:
+            return
+        if not user_message or not invoked_skills:
+            return
+
+        record = {
+            "msg": user_message,
+            "skills": sorted(set(invoked_skills)),
+            "ts": timestamp,
+            "model": model,
+        }
+        try:
+            os.makedirs(self.index_path.parent, exist_ok=True)
+            with open(self.index_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(record, ensure_ascii=False) + "\n")
+        except OSError as e:
+            logger.warning("Failed to append skills usage record: %s", e)
+
+    @property
+    def is_loaded(self) -> bool:
+        """Whether the tracker has loaded data and is ready for queries."""
+        return self._loaded
+
+    # ── Internal helpers ──────────────────────────────────────────────
+
+    @staticmethod
+    def _read_config() -> Dict[str, Any]:
+        """Read ``skills.tfidf_filter`` from config.yaml."""
+        from hermes_constants import get_config_path
+        config_path = get_config_path()
+        if not config_path.exists():
+            return {}
+        try:
+            parsed = yaml_load(config_path.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+        if not isinstance(parsed, dict):
+            return {}
+        skills_cfg = parsed.get("skills")
+        if not isinstance(skills_cfg, dict):
+            return {}
+        return skills_cfg.get("tfidf_filter") or {}
