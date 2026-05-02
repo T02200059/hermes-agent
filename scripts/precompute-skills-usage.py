@@ -22,6 +22,14 @@ import argparse
 from collections import OrderedDict
 from datetime import datetime
 
+# Allow importing from the hermes-agent package when running from scripts/
+_script_dir = os.path.dirname(os.path.abspath(__file__))
+_repo_root = os.path.dirname(_script_dir)
+if _repo_root not in sys.path:
+    sys.path.insert(0, _repo_root)
+
+from agent.skill_utils import extract_skill_view_calls  # noqa: E402
+
 
 def extract_first_user_message(messages):
     """返回会话中第一条 role='user' 的消息文本。"""
@@ -38,36 +46,6 @@ def extract_first_user_message(messages):
                 ]
                 return " ".join(texts).strip()
     return ""
-
-
-def extract_skill_view_calls(messages):
-    """
-    提取所有通过 skill_view 工具调用加载过的 skill 名称。
-
-    匹配模式：
-        tool_calls → function.name == "skill_view"
-        → function.arguments == {"name": "...", ...}
-
-    也兼容 function.name 包含 skill_view 的其他变体。
-    """
-    skills = set()
-    for msg in messages:
-        if msg.get("role") != "assistant":
-            continue
-        for tc in msg.get("tool_calls") or []:
-            fn = tc.get("function", {})
-            name = fn.get("name", "")
-            if name.lower() == "skill_view":
-                try:
-                    args_raw = fn.get("arguments", "{}")
-                    args = json.loads(args_raw) if isinstance(args_raw, str) else args_raw
-                    if isinstance(args, dict):
-                        sname = args.get("name", "").strip()
-                        if sname:
-                            skills.add(sname)
-                except (json.JSONDecodeError, TypeError):
-                    continue
-    return skills
 
 
 def parse_timestamp(ts_str):
@@ -94,7 +72,7 @@ def build_index(sessions_dir, output_path, max_records=5000):
     去重策略：相同 msg 文本 → 合并 skills 集合 + 保留最新时间戳。
     """
     pattern = os.path.join(sessions_dir, "session_*.json")
-    files = sorted(glob.glob(pattern))
+    files = sorted(glob.glob(pattern), key=os.path.getmtime)
     print(f"Found {len(files)} session files in {sessions_dir}")
 
     # 时间/会话范围追踪

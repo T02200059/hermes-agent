@@ -10,6 +10,7 @@ import logging
 import os
 import re
 import sys
+import threading
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
@@ -466,6 +467,36 @@ def is_valid_namespace(candidate: Optional[str]) -> bool:
     return bool(_NAMESPACE_RE.match(candidate))
 
 
+# ── Shared: extract skill_view calls from messages ─────────────────────────
+
+
+def extract_skill_view_calls(messages: list) -> set:
+    """Extract skill names from all ``skill_view`` tool calls in *messages*.
+
+    Shared by ``scripts/precompute-skills-usage.py`` (离线索引构建)
+    and ``run_agent.py`` (会话结束时的在线反馈记录), so the extraction
+    logic stays consistent.
+    """
+    skills = set()
+    for msg in messages:
+        if msg.get("role") != "assistant":
+            continue
+        for tc in msg.get("tool_calls") or []:
+            fn = tc.get("function", {})
+            if fn.get("name", "").lower() != "skill_view":
+                continue
+            try:
+                args_raw = fn.get("arguments", "{}")
+                args = json.loads(args_raw) if isinstance(args_raw, str) else args_raw
+                if isinstance(args, dict):
+                    sname = args.get("name", "").strip()
+                    if sname:
+                        skills.add(sname)
+            except (json.JSONDecodeError, TypeError):
+                continue
+    return skills
+
+
 # ── TF-IDF Skill Usage Tracker ────────────────────────────────────────────
 
 
@@ -524,6 +555,11 @@ class SkillsUsageTracker:
         Returns ``True`` when data was loaded successfully, ``False``
         when the index file is missing or empty (caller should fall back
         to full skill loading).
+
+        When the JSONL file has grown beyond ``max_history * 3`` lines
+        (online feedback loop keeps appending), the file is automatically
+        truncated to the last ``max_history`` records to prevent unbounded
+        growth.
         """
         if not self.enabled:
             return False
@@ -531,23 +567,44 @@ class SkillsUsageTracker:
             logger.info("Skills TF-IDF index not found at %s (will fall back to full load)", self.index_path)
             return False
 
+        # Read JSONL — count lines so we can decide whether to truncate
+        _all_records: List[Dict[str, Any]] = []
+        _file_lines = 0
         try:
             with open(self.index_path, "r", encoding="utf-8") as f:
-                self._records = [
-                    json.loads(line)
-                    for line in f
-                    if line.strip()
-                ]
+                for line in f:
+                    _file_lines += 1
+                    stripped = line.strip()
+                    if stripped:
+                        _all_records.append(json.loads(stripped))
         except (OSError, json.JSONDecodeError) as e:
             logger.warning("Failed to read skills TF-IDF index %s: %s", self.index_path, e)
             return False
 
-        if not self._records:
+        if not _all_records:
             return False
 
-        # Trim to max_history
-        if len(self._records) > self.max_history:
-            self._records = self._records[-self.max_history:]
+        # Trim to max_history in memory
+        if len(_all_records) > self.max_history:
+            self._records = _all_records[-self.max_history:]
+        else:
+            self._records = _all_records
+
+        # ── Auto-truncate JSONL to prevent unbounded growth ──────────
+        # The online feedback loop keeps appending one line per session.
+        # When the file exceeds max_history * 3 (~15 KB), rewrite it
+        # with only the last max_history records so I/O cost stays flat.
+        if _file_lines > self.max_history * 3:
+            try:
+                with open(self.index_path, "w", encoding="utf-8") as f:
+                    for rec in self._records:
+                        f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+                logger.info(
+                    "Truncated skills-usage-index from %d → %d lines",
+                    _file_lines, len(self._records),
+                )
+            except OSError as e:
+                logger.warning("Failed to truncate skills-usage-index: %s", e)
 
         # Lazy sklearn import — only when we actually need to vectorize
         try:
@@ -656,3 +713,26 @@ class SkillsUsageTracker:
         if not isinstance(skills_cfg, dict):
             return {}
         return skills_cfg.get("tfidf_filter") or {}
+
+
+# ── Module-level singleton ────────────────────────────────────────────────
+
+_tracker_instance: Optional[SkillsUsageTracker] = None
+_tracker_lock = threading.Lock()
+
+
+def get_skills_usage_tracker() -> SkillsUsageTracker:
+    """Return the process-wide singleton ``SkillsUsageTracker``.
+
+    Lazy-initialises on first call: reads ``config.yaml``, loads the
+    JSONL index, and fits the TF-IDF vectorizer.  Subsequent calls return
+    the same instance without re-reading any files.
+    """
+    global _tracker_instance
+    if _tracker_instance is None:
+        with _tracker_lock:
+            if _tracker_instance is None:  # double-check
+                _tracker_instance = SkillsUsageTracker()
+                if _tracker_instance.load():
+                    logger.info("Skills TF-IDF tracker loaded (singleton)")
+    return _tracker_instance

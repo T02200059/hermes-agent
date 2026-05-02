@@ -675,9 +675,7 @@ def build_skills_system_prompt(
     if not skills_dir.exists() and not external_dirs:
         return ""
 
-    # ── Layer 1: in-process LRU cache ─────────────────────────────────
-    # Include the resolved platform so per-platform disabled-skill lists
-    # produce distinct cache entries (gateway serves multiple platforms).
+    # ── Build cache key (shared regardless of TF-IDF status) ─────────
     from gateway.session_context import get_session_env
     _platform_hint = (
         os.environ.get("HERMES_PLATFORM")
@@ -693,10 +691,24 @@ def build_skills_system_prompt(
         _platform_hint,
         tuple(sorted(disabled)),
     )
+
+    # ── TF-IDF recommendation (cheap, computed before cache lookup) ──
+    preferred: Optional[List[str]] = None
+    if user_message and skills_tracker is not None and skills_tracker.is_loaded:
+        preferred = skills_tracker.find_similar(user_message)
+
+    # ── Layer 1: in-process LRU cache ─────────────────────────────────
+    # Extend the cache key with the TF-IDF recommendation fingerprint so
+    # different intent matches produce distinct cache entries.  When
+    # preferred is None (no match / tracker disabled), the key is
+    # identical to the pre-TF-IDF era key for backward compatibility.
+    _effective_key = cache_key + (
+        (frozenset(preferred),) if preferred else ()
+    )
     with _SKILLS_PROMPT_CACHE_LOCK:
-        cached = _SKILLS_PROMPT_CACHE.get(cache_key)
+        cached = _SKILLS_PROMPT_CACHE.get(_effective_key)
         if cached is not None:
-            _SKILLS_PROMPT_CACHE.move_to_end(cache_key)
+            _SKILLS_PROMPT_CACHE.move_to_end(_effective_key)
             return cached
 
     # ── Layer 2: disk snapshot ────────────────────────────────────────
@@ -826,8 +838,8 @@ def build_skills_system_prompt(
                 logger.debug("Could not read external skill description %s: %s", desc_file, e)
 
     # ── TF-IDF intent-based filtering ────────────────────────────────
+    # Uses the ``preferred`` list computed before the cache lookup above.
     if user_message and skills_tracker is not None and skills_tracker.is_loaded:
-        preferred = skills_tracker.find_similar(user_message)
         if preferred is not None:
             preferred_set = set(preferred)
             filtered: dict[str, list[tuple[str, str]]] = {}
@@ -892,13 +904,12 @@ def build_skills_system_prompt(
             "Only proceed without loading a skill if genuinely none are relevant to the task."
         )
 
-    # ── Store in LRU cache (skip when TF-IDF filtering is active) ─────
-    if not (user_message and skills_tracker is not None and skills_tracker.is_loaded):
-        with _SKILLS_PROMPT_CACHE_LOCK:
-            _SKILLS_PROMPT_CACHE[cache_key] = result
-            _SKILLS_PROMPT_CACHE.move_to_end(cache_key)
-            while len(_SKILLS_PROMPT_CACHE) > _SKILLS_PROMPT_CACHE_MAX:
-                _SKILLS_PROMPT_CACHE.popitem(last=False)
+    # ── Store in LRU cache (uses extended key when TF-IDF active) ────
+    with _SKILLS_PROMPT_CACHE_LOCK:
+        _SKILLS_PROMPT_CACHE[_effective_key] = result
+        _SKILLS_PROMPT_CACHE.move_to_end(_effective_key)
+        while len(_SKILLS_PROMPT_CACHE) > _SKILLS_PROMPT_CACHE_MAX:
+            _SKILLS_PROMPT_CACHE.popitem(last=False)
 
     return result
 

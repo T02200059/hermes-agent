@@ -107,7 +107,7 @@ from agent.context_compressor import ContextCompressor
 from agent.subdirectory_hints import SubdirectoryHintTracker
 from agent.prompt_caching import apply_anthropic_cache_control
 from agent.prompt_builder import build_skills_system_prompt, build_context_files_prompt, build_environment_hints, load_soul_md, TOOL_USE_ENFORCEMENT_GUIDANCE, TOOL_USE_ENFORCEMENT_MODELS, GOOGLE_MODEL_OPERATIONAL_GUIDANCE, OPENAI_MODEL_EXECUTION_GUIDANCE
-from agent.skill_utils import SkillsUsageTracker
+from agent.skill_utils import get_skills_usage_tracker, extract_skill_view_calls
 from agent.usage_pricing import estimate_usage_cost, normalize_usage
 from agent.codex_responses_adapter import (
     _derive_responses_function_call_id as _codex_derive_responses_function_call_id,
@@ -2057,9 +2057,7 @@ class AIAgent:
             })
 
         # ── Skills TF-IDF tracker ─────────────────────────────────────
-        self._skills_tracker = SkillsUsageTracker()
-        if self._skills_tracker.load():
-            logger.info("Skills TF-IDF tracker loaded for intent-based filtering")
+        self._skills_tracker = get_skills_usage_tracker()
 
     def reset_session_state(self):
         """Reset all session-scoped token counters to 0 for a fresh session.
@@ -13056,20 +13054,7 @@ class AIAgent:
 
         # ── Record skills usage for TF-IDF learning ───────────────────
         if self._skills_tracker.is_loaded and user_message and messages:
-            _invoked = []
-            for _msg in messages:
-                if _msg.get("role") != "assistant":
-                    continue
-                for _tc in _msg.get("tool_calls") or []:
-                    _fn = _tc.get("function", {})
-                    if _fn.get("name", "").lower() == "skill_view":
-                        try:
-                            _args = json.loads(_fn.get("arguments", "{}"))
-                            _sname = _args.get("name", "").strip()
-                            if _sname:
-                                _invoked.append(_sname)
-                        except (json.JSONDecodeError, TypeError):
-                            continue
+            _invoked = list(extract_skill_view_calls(messages))
             if _invoked:
                 from datetime import datetime
                 self._skills_tracker.record(
