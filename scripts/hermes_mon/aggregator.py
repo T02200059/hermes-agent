@@ -19,9 +19,9 @@ import sys
 import time
 
 # ---- 配置 ----
-RAW_DIR = os.path.expanduser("~/.hermes/local/hermes_mon/raw")
-HOUR_DIR = os.path.expanduser("~/.hermes/local/hermes_mon/hourly")
-DAY_DIR = os.path.expanduser("~/.hermes/local/hermes_mon/daily")
+RAW_DIR = os.path.expanduser("~/.local/share/hermes/mon/raw")
+HOUR_DIR = os.path.expanduser("~/.local/share/hermes/mon/hourly")
+DAY_DIR = os.path.expanduser("~/.local/share/hermes/mon/daily")
 
 RAW_RETENTION_HOURS = 24       # 原始秒级数据保留 24 小时
 HOUR_RETENTION_DAYS = 30       # 小时聚合数据保留 30 天
@@ -69,6 +69,20 @@ def _aggregate(rows: list[dict]) -> dict:
     }
 
 
+def _get_processed_hours() -> set[int]:
+    """读取已有 hourly 文件，返回已聚合过的小时时间戳集合。"""
+    processed: set[int] = set()
+    if not os.path.isdir(HOUR_DIR):
+        return processed
+    for fname in os.listdir(HOUR_DIR):
+        if not fname.startswith("hourly_") or not fname.endswith(".csv"):
+            continue
+        ts = _hour_start(fname.replace("hourly_", "", 1))
+        if ts > 0:
+            processed.add(ts)
+    return processed
+
+
 def process_raw_files():
     """处理所有已关闭（past hour）的 raw CSV 文件。"""
     now = time.time()
@@ -76,12 +90,23 @@ def process_raw_files():
     current_hour = int(now // 3600) * 3600
     cutoff = current_hour - RAW_RETENTION_HOURS * 3600  # 24h 前的 cutoff
 
+    # 读取已聚合的小时集合，避免重复写入
+    processed_hours = _get_processed_hours()
+    if processed_hours:
+        print(f"[aggregator] 已聚合小时数: {len(processed_hours)}，跳过重复处理")
+
     files = sorted(glob.glob(os.path.join(RAW_DIR, "hermes_*.csv")))
 
     for fp in files:
         ts = _hour_start(fp)
         if ts <= 0 or ts >= current_hour:
             continue  # 跳过当前小时及无法解析的文件
+
+        # 如果该小时已聚合过，跳过处理（但仍执行超期清理）
+        if ts in processed_hours:
+            if ts < cutoff:
+                os.remove(fp)
+            continue
 
         try:
             with open(fp, "r") as f:

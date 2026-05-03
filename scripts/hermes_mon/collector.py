@@ -16,7 +16,7 @@ import subprocess
 import sys
 import time
 
-DATA_DIR = os.path.expanduser("~/.hermes/local/hermes_mon/raw")
+DATA_DIR = os.path.expanduser("~/.local/share/hermes/mon/raw")
 
 
 def get_hermes_pids():
