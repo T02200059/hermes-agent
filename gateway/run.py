@@ -7088,8 +7088,18 @@ class GatewayRunner:
             except Exception:
                 db_total_tokens = 0
 
-        model = session_meta.get("model", "default")
-        provider = session_meta.get("billing_provider", "auto")
+        model = session_meta.get("model") or _resolve_gateway_model()
+        provider = session_meta.get("billing_provider")
+        if not provider or provider in ("custom", "auto"):
+            try:
+                _fallback_cfg = _load_gateway_config()
+                _fb_prov = _fallback_cfg.get("model", {}).get("provider")
+                if _fb_prov:
+                    provider = _fb_prov
+                else:
+                    provider = "auto"
+            except Exception:
+                provider = "auto"
 
         lines = [
             "📊 **Hermes Gateway Status**",
