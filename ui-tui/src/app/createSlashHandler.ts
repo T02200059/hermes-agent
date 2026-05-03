@@ -45,30 +45,15 @@ export function createSlashHandler(ctx: SlashHandlerContext): (cmd: string) => b
       return true
     }
 
-    // 优先检查 quick_commands 精确匹配（从 catalog.canon 中）
-    if (catalog?.canon && parsed.name.toLowerCase() in catalog.canon) {
-      const exactCmd = `/${parsed.name}${argTail}`
-      gw.request<SlashExecResponse>('slash.exec', { command: exactCmd.slice(1), session_id: sid })
-        .then(r => {
-          if (stale()) return
-          const body = r?.output || `/${parsed.name}: no output`
-          const text = r?.warning ? `warning: ${r.warning}\n${body}` : body
-          const long = text.length > 180 || text.split('\n').filter(Boolean).length > 2
-          long ? page(text, parsed.name[0]!.toUpperCase() + parsed.name.slice(1)) : sys(text)
-        })
-        .catch(guardedErr)
-
-      return true
-    }
-
     if (catalog?.canon) {
       const needle = `/${parsed.name}`.toLowerCase()
+      const exact = Object.entries(catalog.canon).find(([alias]) => alias.toLowerCase() === needle)?.[1]
 
-      // 首先检查精确匹配 - 如果用户输入的正好是一个有效命令，直接放行
-      if (needle in catalog.canon) {
-        // 精确匹配，继续走 slash.exec 路径
+      if (exact) {
+        if (exact.toLowerCase() !== needle) {
+          return handler(`${exact}${argTail}`)
+        }
       } else {
-        // 前缀匹配：找到所有以 needle 开头的别名
         const matches = [
           ...new Set(
             Object.entries(catalog.canon)
@@ -119,19 +104,6 @@ export function createSlashHandler(ctx: SlashHandlerContext): (cmd: string) => b
             }
 
             if (d.type === 'alias') {
-              // Split ;; chained commands (e.g. "model X --global ;; think low")
-              // and execute each separately, so the backend doesn't receive
-              // the entire remainder as one arg with spaces.
-              const chained = d.target
-                .split(';;')
-                .map(c => c.trim())
-                .filter(Boolean)
-              if (chained.length > 1) {
-                for (const part of chained) {
-                  handler(`/${part}${argTail}`)
-                }
-                return true
-              }
               return handler(`/${d.target}${argTail}`)
             }
 
