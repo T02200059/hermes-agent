@@ -1,4 +1,4 @@
-import { AlternateScreen, Box, NoSelect, ScrollBox, Text, useSelection } from '@hermes/ink'
+import { AlternateScreen, Box, NoSelect, ScrollBox, Text, stringWidth, useSelection } from '@hermes/ink'
 import { useStore } from '@nanostores/react'
 import { Fragment, memo, useEffect, useMemo, useRef } from 'react'
 
@@ -124,7 +124,7 @@ const ComposerPane = memo(function ComposerPane({
   const ui = useStore($uiState)
   const isBlocked = useStore($isBlocked)
   const sh = (composer.inputBuf[0] ?? composer.input).startsWith('!')
-  const pw = 2
+  const pw = stringWidth(ui.theme.brand.prompt) + 1
   const inputColumns = stableComposerColumns(composer.cols, pw)
   const inputHeight = inputVisualHeight(composer.input, inputColumns)
   const inputMouseRef = useRef<null | TextInputMouseApi>(null)

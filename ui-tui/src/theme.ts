@@ -42,9 +42,15 @@ export interface ThemeBrand {
   helpHeader: string
 }
 
+export interface ThemeSpinner {
+  waitingFaces: string[]
+  thinkingVerbs: string[]
+}
+
 export interface Theme {
   color: ThemeColors
   brand: ThemeBrand
+  spinner: ThemeSpinner
   bannerLogo: string
   bannerHero: string
 }
@@ -132,6 +138,11 @@ export const DARK_THEME: Theme = {
 
   brand: BRAND,
 
+  spinner: {
+    waitingFaces: '(｡•́︿•̀｡) (◔_◔) (¬‿¬) ( •_•)>⌐■-■ (⌐■_■) (´･_･`) ◉_◉ (°ロ°) ( ˘⌣˘)♡ ヽ(>∀<☆)☆ ٩(๑❛ᴗ❛๑)۶ (⊙_⊙) (¬_¬) ( ͡° ͜ʖ ͡°) ಠ_ಠ'.split(' '),
+    thinkingVerbs: 'pondering contemplating musing cogitating ruminating deliberating mulling reflecting processing reasoning analyzing computing synthesizing formulating brainstorming'.split(' ')
+  },
+
   bannerLogo: '',
   bannerHero: ''
 }
@@ -175,6 +186,11 @@ export const LIGHT_THEME: Theme = {
 
   brand: BRAND,
 
+  spinner: {
+    waitingFaces: '(｡•́︿•̀｡) (◔_◔) (¬‿¬) ( •_•)>⌐■-■ (⌐■_■) (´･_･`) ◉_◉ (°ロ°) ( ˘⌣˘)♡ ヽ(>∀<☆)☆ ٩(๑❛ᴗ❛๑)۶ (⊙_⊙) (¬_¬) ( ͡° ͜ʖ ͡°) ಠ_ಠ'.split(' '),
+    thinkingVerbs: 'pondering contemplating musing cogitating ruminating deliberating mulling reflecting processing reasoning analyzing computing synthesizing formulating brainstorming'.split(' ')
+  },
+
   bannerLogo: '',
   bannerHero: ''
 }
@@ -208,7 +224,8 @@ export function fromSkin(
   bannerLogo = '',
   bannerHero = '',
   toolPrefix = '',
-  helpHeader = ''
+  helpHeader = '',
+  spinner: { waiting_faces?: string[]; thinking_verbs?: string[] } = {}
 ): Theme {
   const d = DEFAULT_THEME
   const c = (k: string) => colors[k]
@@ -262,6 +279,11 @@ export function fromSkin(
     },
 
     bannerLogo,
-    bannerHero
+    bannerHero,
+
+    spinner: {
+      waitingFaces: spinner.waiting_faces ?? d.spinner.waitingFaces,
+      thinkingVerbs: spinner.thinking_verbs ?? d.spinner.thinkingVerbs,
+    }
   }
 }

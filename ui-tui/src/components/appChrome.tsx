@@ -4,20 +4,18 @@ import { type ReactNode, type RefObject, useEffect, useMemo, useState } from 're
 
 import { $delegationState } from '../app/delegationStore.js'
 import { useTurnSelector } from '../app/turnStore.js'
-import { FACES } from '../content/faces.js'
-import { VERBS } from '../content/verbs.js'
 import { fmtDuration } from '../domain/messages.js'
 import { stickyPromptFromViewport } from '../domain/viewport.js'
 import { buildSubagentTree, treeTotals, widthByDepth } from '../lib/subagentTree.js'
 import { fmtK } from '../lib/text.js'
 import { useViewportSnapshot } from '../lib/viewportStore.js'
-import type { Theme } from '../theme.js'
+import type { Theme, ThemeSpinner } from '../theme.js'
 import type { Msg, Usage } from '../types.js'
 
 const FACE_TICK_MS = 2500
 const HEART_COLORS = ['#ff5fa2', '#ff4d6d']
 
-function FaceTicker({ color, startedAt }: { color: string; startedAt?: null | number }) {
+function FaceTicker({ color, startedAt, spinner }: { color: string; startedAt?: null | number; spinner: ThemeSpinner }) {
   const [tick, setTick] = useState(() => Math.floor(Math.random() * 1000))
   const [now, setNow] = useState(() => Date.now())
 
@@ -33,7 +31,7 @@ function FaceTicker({ color, startedAt }: { color: string; startedAt?: null | nu
 
   return (
     <Text color={color}>
-      {FACES[tick % FACES.length]} {VERBS[tick % VERBS.length]}…{startedAt ? ` · ${fmtDuration(now - startedAt)}` : ''}
+      {spinner.waitingFaces[tick % spinner.waitingFaces.length]} {spinner.thinkingVerbs[tick % spinner.thinkingVerbs.length]}…{startedAt ? ` · ${fmtDuration(now - startedAt)}` : ''}
     </Text>
   )
 }
@@ -220,7 +218,7 @@ export function StatusRule({
         <Text color={t.color.bronze} wrap="truncate-end">
           {'─ '}
           {busy ? (
-            <FaceTicker color={statusColor} startedAt={turnStartedAt} />
+            <FaceTicker color={statusColor} startedAt={turnStartedAt} spinner={t.spinner} />
           ) : (
             <Text color={statusColor}>{status}</Text>
           )}
