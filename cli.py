@@ -7692,7 +7692,8 @@ class HermesCLI:
         print(f"  Cost source:              {cost_result.source:>10}")
         if cost_result.amount_usd is not None:
             prefix = "~" if cost_result.status == "estimated" else ""
-            print(f"  Total cost:              {prefix}${float(cost_result.amount_usd):>10.4f}")
+            symbol = "¥" if cost_result.currency == "CNY" else "$"
+            print(f"  Total cost:              {prefix}{symbol}{float(cost_result.amount_usd):>10.4f}")
         elif cost_result.status == "included":
             print(f"  Total cost:              {'included':>10}")
         else:

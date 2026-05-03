@@ -67,6 +67,7 @@ class PricingEntry:
     cache_read_cost_per_million: Optional[Decimal] = None
     cache_write_cost_per_million: Optional[Decimal] = None
     request_cost: Optional[Decimal] = None
+    currency: str = "USD"
     source: CostSource = "none"
     source_url: Optional[str] = None
     pricing_version: Optional[str] = None
@@ -76,9 +77,10 @@ class PricingEntry:
 @dataclass(frozen=True)
 class CostResult:
     amount_usd: Optional[Decimal]
-    status: CostStatus
-    source: CostSource
-    label: str
+    currency: str = "USD"
+    status: CostStatus = "unknown"
+    source: CostSource = "none"
+    label: str = ""
     fetched_at: Optional[datetime] = None
     pricing_version: Optional[str] = None
     notes: tuple[str, ...] = ()
@@ -261,6 +263,26 @@ _OFFICIAL_DOCS_PRICING: Dict[tuple[str, str], PricingEntry] = {
         source="official_docs_snapshot",
         source_url="https://api-docs.deepseek.com/quick_start/pricing",
         pricing_version="deepseek-pricing-2026-03-16",
+    ),
+    (
+        "deepseek",
+        "deepseek-v4-flash",
+    ): PricingEntry(
+        input_cost_per_million=Decimal("0.14"),
+        output_cost_per_million=Decimal("0.28"),
+        source="official_docs_snapshot",
+        source_url="https://api-docs.deepseek.com/quick_start/pricing",
+        pricing_version="deepseek-pricing-2026-05-03",
+    ),
+    (
+        "deepseek",
+        "deepseek-v4-pro",
+    ): PricingEntry(
+        input_cost_per_million=Decimal("0.55"),
+        output_cost_per_million=Decimal("2.19"),
+        source="official_docs_snapshot",
+        source_url="https://api-docs.deepseek.com/quick_start/pricing",
+        pricing_version="deepseek-pricing-2026-05-03",
     ),
     # xAI Grok
     (
@@ -797,6 +819,9 @@ def _load_user_pricing() -> None:
         if not isinstance(models, dict):
             continue
         source_url = provider_cfg.get("source_url", "").strip() or None
+        provider_currency = str(provider_cfg.get("currency", "USD")).upper().strip()
+        if provider_currency not in ("USD", "CNY"):
+            provider_currency = "USD"
         for model_name, pricing in models.items():
             if not isinstance(pricing, dict):
                 continue
@@ -804,12 +829,17 @@ def _load_user_pricing() -> None:
             output_val = pricing.get("output")
             if input_val is None and output_val is None:
                 continue
+            # Per-model currency override, fall back to provider-level, then USD
+            model_currency = str(pricing.get("currency", provider_currency)).upper().strip()
+            if model_currency not in ("USD", "CNY"):
+                model_currency = "USD"
             key = (str(provider_name).strip().lower(), str(model_name).strip().lower())
             _USER_PRICING[key] = PricingEntry(
                 input_cost_per_million=_to_decimal(input_val),
                 output_cost_per_million=_to_decimal(output_val),
                 cache_read_cost_per_million=_to_decimal(pricing.get("cache_read")),
                 cache_write_cost_per_million=_to_decimal(pricing.get("cache_write")),
+                currency=model_currency,
                 source="user_override",
                 source_url=source_url,
                 pricing_version="user-pricing-yaml",
@@ -1091,7 +1121,9 @@ def estimate_usage_cost(
         amount += Decimal(usage.request_count) * entry.request_cost
 
     status: CostStatus = "estimated"
-    label = f"~${amount:.2f}"
+    currency = entry.currency or "USD"
+    symbol = "¥" if currency == "CNY" else "$"
+    label = f"~{symbol}{amount:.2f}"
     if entry.source == "none" and amount == _ZERO:
         status = "included"
         label = "included"
@@ -1101,6 +1133,7 @@ def estimate_usage_cost(
 
     return CostResult(
         amount_usd=amount,
+        currency=currency,
         status=status,
         source=entry.source,
         label=label,

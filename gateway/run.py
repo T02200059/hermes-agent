@@ -9623,6 +9623,11 @@ f"**Tokens:** {db_total_tokens:,}",
                 lines.append(f"Cache read tokens: {cache_read:,}")
             if cache_write:
                 lines.append(f"Cache write tokens: {cache_write:,}")
+            # Cache hit rate: cache_read / total_prompt (non-cached + cached)
+            total_prompt = input_tokens + cache_read + cache_write
+            if cache_read and total_prompt > 0:
+                hit_rate = cache_read / total_prompt * 100
+                lines.append(f"Cache hit rate: {hit_rate:.1f}%")
             lines.append(f"Output tokens: {output_tokens:,}")
             lines.append(f"Total: {agent.session_total_tokens:,}")
             lines.append(f"API calls: {agent.session_api_calls}")
@@ -9643,7 +9648,8 @@ f"**Tokens:** {db_total_tokens:,}",
                 )
                 if cost_result.amount_usd is not None:
                     prefix = "~" if cost_result.status == "estimated" else ""
-                    lines.append(f"Cost: {prefix}${float(cost_result.amount_usd):.4f}")
+                    symbol = "¥" if cost_result.currency == "CNY" else "$"
+                    lines.append(f"Cost: {prefix}{symbol}{float(cost_result.amount_usd):.4f}")
                 elif cost_result.status == "included":
                     lines.append("Cost: included")
             except Exception:
