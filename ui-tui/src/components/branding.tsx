@@ -31,7 +31,7 @@ export function Banner({ t }: { t: Theme }) {
         </Text>
       )}
 
-      <Text color={t.color.dim}>{t.brand.icon} Nous Research · Messenger of the Digital Gods</Text>
+      <Text color={t.color.dim}>{t.brand.tagline}</Text>
     </Box>
   )
 }

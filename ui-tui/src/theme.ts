@@ -40,6 +40,7 @@ export interface ThemeBrand {
   goodbye: string
   tool: string
   helpHeader: string
+  tagline: string
 }
 
 export interface ThemeSpinner {
@@ -91,7 +92,8 @@ const BRAND: ThemeBrand = {
   welcome: 'Type your message or /help for commands.',
   goodbye: 'Goodbye! ⚕',
   tool: '┊',
-  helpHeader: '(^_^)? Commands'
+  helpHeader: '(^_^)? Commands',
+  tagline: '⚕ Nous Research · Messenger of the Digital Gods'
 }
 
 export const DARK_THEME: Theme = {
@@ -275,7 +277,8 @@ export function fromSkin(
       welcome: branding.welcome ?? d.brand.welcome,
       goodbye: branding.goodbye ?? d.brand.goodbye,
       tool: toolPrefix || d.brand.tool,
-      helpHeader: branding.help_header ?? (helpHeader || d.brand.helpHeader)
+      helpHeader: branding.help_header ?? (helpHeader || d.brand.helpHeader),
+      tagline: branding.tagline ?? d.brand.tagline
     },
 
     bannerLogo,
