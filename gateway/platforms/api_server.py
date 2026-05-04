@@ -725,13 +725,58 @@ class APIServerAdapter(BasePlatformAdapter):
         base_url, etc. from config.yaml / env vars.  Toolsets are resolved
         from config.yaml platform_toolsets.api_server (same as all other
         gateway platforms), falling back to the hermes-api-server default.
+
+        Supports platform-specific model/provider overrides via
+        ``platforms.api_server.extra.model`` and ``.extra.provider`` in
+        config.yaml, so the API server can use a different model/provider
+        than the CLI / chat platforms.
         """
         from run_agent import AIAgent
         from gateway.run import _resolve_runtime_agent_kwargs, _resolve_gateway_model, _load_gateway_config
         from hermes_cli.tools_config import _get_platform_tools
+        from hermes_cli.runtime_provider import resolve_runtime_provider
 
         runtime_kwargs = _resolve_runtime_agent_kwargs()
         model = _resolve_gateway_model()
+
+        # Check for platform-specific model/provider override from
+        # config.yaml's platforms.api_server.extra section.
+        extra = self.config.extra if self.config else {}
+        platform_model = (extra.get("model") or "").strip()
+        platform_provider = (extra.get("provider") or "").strip()
+
+        if platform_provider:
+            try:
+                provider_runtime = resolve_runtime_provider(
+                    requested=platform_provider,
+                )
+                if provider_runtime and provider_runtime.get("api_key"):
+                    logger.info(
+                        "API server using platform-specific provider '%s' "
+                        "(overriding default provider)",
+                        platform_provider,
+                    )
+                    runtime_kwargs = provider_runtime
+                else:
+                    logger.warning(
+                        "Platform provider '%s' resolved but has no api_key — "
+                        "keeping default provider",
+                        platform_provider,
+                    )
+            except Exception as exc:
+                logger.warning(
+                    "Failed to resolve platform provider '%s': %s — "
+                    "falling back to default provider",
+                    platform_provider, exc,
+                )
+
+        if platform_model:
+            logger.info(
+                "API server using platform-specific model '%s' "
+                "(overriding default model '%s')",
+                platform_model, model,
+            )
+            model = platform_model
 
         user_config = _load_gateway_config()
         enabled_toolsets = sorted(_get_platform_tools(user_config, "api_server"))
@@ -742,6 +787,10 @@ class APIServerAdapter(BasePlatformAdapter):
         # same fallback behaviour as Telegram/Discord/Slack (fixes #4954).
         from gateway.run import GatewayRunner
         fallback_model = GatewayRunner._load_fallback_model()
+
+        # Strip keys that resolve_runtime_provider() returns but AIAgent doesn't accept
+        for _key in ("source", "requested_provider"):
+            runtime_kwargs.pop(_key, None)
 
         agent = AIAgent(
             model=model,
