@@ -405,6 +405,8 @@ class QQAdapter(BasePlatformAdapter):
                 "User-Agent": build_user_agent(),
             },
             timeout=CONNECT_TIMEOUT_SECONDS,
+            heartbeat=30,  # WebSocket protocol-level ping/pong — detects TCP half-open after sleep/wake
+            receive_timeout=120,  # Fallback: close if no frame received in 2 min
         )
         logger.info("[%s] WebSocket connected to %s", self._log_tag, gateway_url)
 
