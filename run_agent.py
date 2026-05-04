@@ -957,6 +957,7 @@ class AIAgent:
         checkpoints_enabled: bool = False,
         checkpoint_max_snapshots: int = 50,
         pass_session_id: bool = False,
+        provider_name: str = None,
     ):
         """
         Initialize the AI Agent.
@@ -1037,8 +1038,9 @@ class AIAgent:
         self.log_prefix = f"{log_prefix} " if log_prefix else ""
         # Store effective base URL for feature detection (prompt caching, reasoning, etc.)
         self.base_url = base_url or ""
-        provider_name = provider.strip().lower() if isinstance(provider, str) and provider.strip() else None
-        self.provider = provider_name or ""
+        _normed_provider = provider.strip().lower() if isinstance(provider, str) and provider.strip() else None
+        self.provider = _normed_provider or ""
+        self.provider_name = (provider_name or "").strip().lower() if provider_name else self.provider
         self.acp_command = acp_command or command
         self.acp_args = list(acp_args or args or [])
         if api_mode in {"chat_completions", "codex_responses", "anthropic_messages", "bedrock_converse"}:
@@ -1047,16 +1049,16 @@ class AIAgent:
             self.api_mode = "codex_responses"
         elif self.provider == "xai":
             self.api_mode = "codex_responses"
-        elif (provider_name is None) and (
+        elif (_normed_provider is None) and (
             self._base_url_hostname == "chatgpt.com"
             and "/backend-api/codex" in self._base_url_lower
         ):
             self.api_mode = "codex_responses"
             self.provider = "openai-codex"
-        elif (provider_name is None) and self._base_url_hostname == "api.x.ai":
+        elif (_normed_provider is None) and self._base_url_hostname == "api.x.ai":
             self.api_mode = "codex_responses"
             self.provider = "xai"
-        elif self.provider == "anthropic" or (provider_name is None and self._base_url_hostname == "api.anthropic.com"):
+        elif self.provider == "anthropic" or (_normed_provider is None and self._base_url_hostname == "api.anthropic.com"):
             self.api_mode = "anthropic_messages"
             self.provider = "anthropic"
         elif self._base_url_lower.rstrip("/").endswith("/anthropic"):
@@ -11771,6 +11773,7 @@ class AIAgent:
                                     cost_status=cost_result.status,
                                     cost_source=cost_result.source,
                                     billing_provider=self.provider,
+                                    provider_name=self.provider_name,
                                     billing_base_url=self.base_url,
                                     billing_mode="subscription_included"
                                     if cost_result.status == "included" else None,
