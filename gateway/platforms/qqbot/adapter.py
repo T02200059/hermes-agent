@@ -573,6 +573,34 @@ class QQAdapter(BasePlatformAdapter):
         await asyncio.sleep(delay)
 
         self._heartbeat_interval = 30.0  # reset until Hello
+        # Rebuild httpx client and clear token cache before reconnect.
+        # After WSL network reset (sleep/wake), the stale httpx connection
+        # pool can cause _ensure_token() / _get_gateway_url() to fail
+        # even though the network appears to be back.  Rebuild is safe
+        # and idempotent on all platforms.
+        logger.info(
+            "[%s] Rebuilding httpx client before reconnect",
+            self._log_tag,
+        )
+        if self._http_client:
+            await self._http_client.aclose()
+            self._http_client = None
+        try:
+            from gateway.platforms._http_client_limits import platform_httpx_limits
+            self._http_client = httpx.AsyncClient(
+                timeout=30.0,
+                follow_redirects=True,
+                event_hooks={"response": [_ssrf_redirect_guard]},
+                limits=platform_httpx_limits(),
+            )
+        except Exception:
+            pass  # fall through — _reconnect will report via exc
+
+        # Clear cached token so _ensure_token() forces a fresh
+        # OAuth2 exchange on the new httpx client.
+        self._access_token = None
+        self._token_expires_at = 0.0
+
         try:
             await self._ensure_token()
             gateway_url = await self._get_gateway_url()
