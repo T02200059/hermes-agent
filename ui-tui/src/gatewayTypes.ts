@@ -7,6 +7,8 @@ export interface GatewaySkin {
   colors?: Record<string, string>
   help_header?: string
   tool_prefix?: string
+  /** [owner-patch] spinner faces/verbs from skin YAML */
+  spinner?: Record<string, string[]>
 }
 
 export interface GatewayCompletionItem {

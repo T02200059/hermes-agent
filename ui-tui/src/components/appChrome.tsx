@@ -14,7 +14,7 @@ import { stickyPromptFromViewport } from '../domain/viewport.js'
 import { buildSubagentTree, treeTotals, widthByDepth } from '../lib/subagentTree.js'
 import { fmtK } from '../lib/text.js'
 import { useScrollbarSnapshot, useViewportSnapshot } from '../lib/viewportStore.js'
-import type { Theme } from '../theme.js'
+import type { Theme, ThemeSpinner } from '../theme.js'  // [owner-patch] +ThemeSpinner
 import type { Msg, Usage } from '../types.js'
 
 const FACE_TICK_MS = 2500
@@ -116,7 +116,7 @@ export const busyIndicatorWidth = (style: IndicatorStyle, hasDuration: boolean):
   return indicatorFrameWidth(style) + verb + duration
 }
 
-function FaceTicker({ color, startedAt, style }: { color: string; startedAt?: null | number; style: IndicatorStyle }) {
+function FaceTicker({ color, startedAt, style, spinner }: { color: string; startedAt?: null | number; style: IndicatorStyle; spinner: ThemeSpinner }) {  // [owner-patch] +spinner
   const [tick, setTick] = useState(() => Math.floor(Math.random() * 1000))
   const [verbTick, setVerbTick] = useState(() => Math.floor(Math.random() * VERBS.length))
   const [now, setNow] = useState(() => Date.now())
@@ -145,7 +145,7 @@ function FaceTicker({ color, startedAt, style }: { color: string; startedAt?: nu
   }, [intervalMs, showVerb])
 
   const { frame } = renderIndicator(style, tick)
-  const verb = VERBS[verbTick % VERBS.length] ?? ''
+  const verb = spinner.thinkingVerbs[verbTick % spinner.thinkingVerbs.length] ?? ''  // [owner-patch] skin-configurable verbs
   const verbSegment = showVerb ? ` ${padVerb(verb)}` : ''
   // Leading space keeps a gap between the frame and the duration when the
   // verb segment is hidden (e.g. `unicode` spinner style).  When the verb
@@ -540,7 +540,7 @@ export function StatusRule({
         <Box flexDirection="row" flexShrink={0}>
           <Text color={t.color.border}>{'─ '}</Text>
           {busy ? (
-            <FaceTicker color={statusColor} startedAt={turnStartedAt} style={indicatorStyle} />
+            <FaceTicker color={statusColor} startedAt={turnStartedAt} style={indicatorStyle} spinner={t.spinner} />  // [owner-patch]
           ) : showNotice ? null : (
             <Text color={statusColor} wrap="truncate-end">
               {status}

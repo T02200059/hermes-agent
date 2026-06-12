@@ -42,11 +42,19 @@ export interface ThemeBrand {
   goodbye: string
   tool: string
   helpHeader: string
+  tagline: string  // [owner-patch] skin-configurable banner subtitle
+}
+
+/** [owner-patch] spinner faces/verbs from skin YAML */
+export interface ThemeSpinner {
+  waitingFaces: string[]
+  thinkingVerbs: string[]
 }
 
 export interface Theme {
   color: ThemeColors
   brand: ThemeBrand
+  spinner: ThemeSpinner  // [owner-patch]
   bannerLogo: string
   bannerHero: string
 }
@@ -243,7 +251,14 @@ const BRAND: ThemeBrand = {
   welcome: 'Type your message or /help for commands.',
   goodbye: 'Goodbye! ⚕',
   tool: '┊',
-  helpHeader: '(^_^)? Commands'
+  helpHeader: '(^_^)? Commands',
+  tagline: '⚕ Nous Research · Messenger of the Digital Gods',  // [owner-patch]
+}
+
+// [owner-patch] DEFAULT_SPINNER — shared by DARK/LIGHT, overridable by skin
+const DEFAULT_SPINNER: ThemeSpinner = {
+  waitingFaces: '(｡•́︿•̀｡) (◔_◔) (¬‿¬) ( •_•)>⌐■-■ (⌐■_■) (´･_･`) ◉_◉ (°ロ°) ( ˘⌣˘)♡ ヽ(>∀<☆)☆ ٩(๑❛ᴗ❛๑)۶ (⊙_⊙) (¬_¬) ( ͡° ͜ʖ ͡°) ಠ_ಠ'.split(' '),
+  thinkingVerbs: 'pondering contemplating musing cogitating ruminating deliberating mulling reflecting processing reasoning analyzing computing synthesizing formulating brainstorming'.split(' '),
 }
 
 const cleanPromptSymbol = (s: string | undefined, fallback: string) => {
@@ -300,6 +315,7 @@ export const DARK_THEME: Theme = {
 
   brand: BRAND,
 
+  spinner: DEFAULT_SPINNER,  // [owner-patch]
   bannerLogo: '',
   bannerHero: ''
 }
@@ -345,6 +361,7 @@ export const LIGHT_THEME: Theme = {
 
   brand: BRAND,
 
+  spinner: DEFAULT_SPINNER,  // [owner-patch]
   bannerLogo: '',
   bannerHero: ''
 }
@@ -519,7 +536,8 @@ export function fromSkin(
   bannerLogo = '',
   bannerHero = '',
   toolPrefix = '',
-  helpHeader = ''
+  helpHeader = '',
+  spinner: Record<string, string[]> = {}  // [owner-patch]
 ): Theme {
   const d = DEFAULT_THEME
   const c = (k: string) => colors[k]
@@ -580,7 +598,14 @@ export function fromSkin(
       welcome: branding.welcome ?? d.brand.welcome,
       goodbye: branding.goodbye ?? d.brand.goodbye,
       tool: toolPrefix || d.brand.tool,
-      helpHeader: branding.help_header ?? (helpHeader || d.brand.helpHeader)
+      helpHeader: branding.help_header ?? (helpHeader || d.brand.helpHeader),
+      tagline: branding.tagline ?? d.brand.tagline  // [owner-patch]
+    },
+
+    // [owner-patch] parse spinner from skin
+    spinner: {
+      waitingFaces: spinner.waiting_faces ?? d.spinner.waitingFaces,
+      thinkingVerbs: spinner.thinking_verbs ?? d.spinner.thinkingVerbs,
     },
 
     bannerLogo,
