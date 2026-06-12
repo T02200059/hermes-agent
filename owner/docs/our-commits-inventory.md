@@ -387,7 +387,7 @@
 387|- [ ] `6c37b19` | 2026-05-02 | `tianbao.yang` | feat: integrate SkillsUsageTracker into run_agent.py | +35 | −2 |
 388|- [ ] `304a5ad` | 2026-05-02 | `tianbao.yang` | feat: add SkillsUsageTracker for TF-IDF skill filtering | +510 | −6 |
 389|- [x] ⚠️ 废弃：定价/AGENTS.md，不迁移 `18d81fb` | 2026-05-02 | `tianbao.yang` | add pricing entries for grok-4-fast-reasoning, grok-4-fast-non-reasoning, grok-4-fast, grok-2, grok-2-vision-1212 | +50 | −0 |
-390|- [ ] `b14a2ee` | 2026-04-30 | `tianbao.yang` | fix(feishu): return empty P2CardActionTriggerResponse to avoid CallBackToast NameError in WS client | +3 | −9 |
+390|- [x] ✅ 已迁移 `b14a2ee` | 2026-04-30 | `tianbao.yang` | fix(feishu): return empty P2CardActionTriggerResponse to avoid CallBackToast NameError in WS client | +3 | −9 |
 391|- [x] ⚠️ 废弃：定价/AGENTS.md，不迁移 `b65b962` | 2026-04-30 | `tianbao.yang` | feat(usage): extend pricing data with YAML-based provider pricing support | +314 | −0 |
 392|- [ ] `28e513d` | 2026-04-30 | `tianbao.yang` | feat(file_tools): add headings_only parameter for markdown heading extraction | +39 | −6 |
 393|- [ ] `a6b718b` | 2026-04-30 | `tianbao.yang` | fix(session_search): fast window mode around FTS5 hits for long sessions (#16671 workaround) | +149 | −2 |
