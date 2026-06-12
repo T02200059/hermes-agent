@@ -24,7 +24,8 @@ def get_hermes_pids():
     my_pid = os.getpid()
     try:
         result = subprocess.run(
-            ["pgrep", "-f", "hermes"],
+            # [review] CR-02: 收窄匹配 — 只匹配 Python hermes 进程，避免 cat/tail/editor 误匹配
+            ["pgrep", "-f", "python.*hermes"],
             capture_output=True,
             text=True,
             timeout=5,
