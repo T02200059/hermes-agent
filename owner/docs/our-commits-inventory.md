@@ -344,13 +344,13 @@
 358|- [x] ⏭️ 跳过 `915baf1` | 2026-05-07 | `tianbao.yang` | Merge upstream/main into yangtb (503 commits behind) | +0 | −0 |
 359|- [x] ⚠️ 废弃：OpenViking 插件已弃用，Qdrant 是当前 backing store `627f3e1` | 2026-05-07 | `tianbao.yang` | feat: add commit_all_on_new support via patch.yaml | +90 | −0 |
 360|- [⏸️ 已决策·待后续观察] `e87a6f1` | 2026-05-05 | `tianbao.yang` | feat(tfidf): add pin list support for always-loaded skills | +12 | −0 |
-361|- [ ] `c4fdf38` | 2026-05-05 | `tianbao.yang` | Fix UnboundLocalError: _classified nested inside skills_list_snapshot guard | +18 | −18 |
+361|- [x] ⏭️ 延后（classify_intent TF-IDF 代码不存在于 owner-v16） `c4fdf38` | 2026-05-05 | `tianbao.yang` | Fix UnboundLocalError: _classified nested inside skills_list_snapshot guard | +18 | −18 |
 362|- [⏸️ 已决策·待后续观察] `4fac935` | 2026-05-05 | `tianbao.yang` | Phase 3c: LLM fallback line-mode + platform-level disable | +84 | −35 |
 363|- [⏸️ 已决策·待后续观察] `e05beff` | 2026-05-05 | `tianbao.yang` | feat: enhance precompute to capture multi-message training data (Phase 3) | +52 | −27 |
-364|- [ ] `e0194a6` | 2026-05-05 | `tianbao.yang` | fix: add missing yaml_load import in prompt_builder (Layer 3 fallback was dead code) | +1 | −0 |
+364|- [x] ⏭️ 延后（yaml_load TF-IDF fallback 代码不存在于 owner-v16） `e0194a6` | 2026-05-05 | `tianbao.yang` | fix: add missing yaml_load import in prompt_builder (Layer 3 fallback was dead code) | +1 | −0 |
 365|- [⏸️ 已决策·待后续观察] `8b81f60` | 2026-05-05 | `tianbao.yang` | feat: integrate LLM fallback + skills snapshot into build_skills_system_prompt (Phase 3c) | +52 | −1 |
 366|- [⏸️ 已决策·待后续观察] `29e0d91` | 2026-05-05 | `tianbao.yang` | feat: add LLM intent classifier for Layer 3 fallback (Phase 3c) | +247 | −0 |
-367|- [ ] `cd3aa9c` | 2026-05-05 | `tianbao.yang` | fix: handle null skills in _get_top_usage_skills records | +1 | −1 |
+367|- [x] ⏭️ 延后（TF-IDF SkillsUsageTracker 代码不存在于 owner-v16） `cd3aa9c` | 2026-05-05 | `tianbao.yang` | fix: handle null skills in _get_top_usage_skills records | +1 | −1 |
 368|- [⏸️ 已决策·待后续观察] `ca110e6` | 2026-05-05 | `tianbao.yang` | feat: add Layer 0 Top-N always-on skills to TF-IDF tracker (Phase 3a) | +58 | −0 |
 369|- [⏸️ 已决策·待后续观察] `a06d719` | 2026-05-05 | `tianbao.yang` | feat: extract _is_high_info_message() as shared utility for TF-IDF pipeline | +74 | −0 |
 370|- [⏸️ 已决策·暂不迁移] `248bebe` | 2026-05-05 | `tianbao.yang` | fix: strip 'source' and 'requested_provider' from runtime_kwargs in api_server._create_agent | +49 | −0 |
