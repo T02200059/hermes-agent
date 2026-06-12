@@ -148,14 +148,19 @@ def process_raw_files():
                     agg["avg_vsz"], agg["sample_count"],
                 ])
 
-            # 超过 24h 的 raw 文件删除
-            if ts < cutoff:
-                os.remove(fp)
-
             print(f"[aggregator] 已聚合: {os.path.basename(fp)} → {agg['sample_count']} 采样点")
 
         except Exception as e:
             print(f"[aggregator] 处理 {fp} 失败: {e}", file=sys.stderr)
+
+        # [review] WR-03: 删除移到 try 外 — 聚合成功后独立清理，remove 失败不影响聚合结果
+        if ts >= cutoff:
+            pass  # 未过期，保留 raw 文件
+        elif os.path.isfile(fp):
+            try:
+                os.remove(fp)
+            except OSError as e:
+                print(f"[aggregator] 删除 {fp} 失败: {e}", file=sys.stderr)
 
 
 def process_hourly_files():
@@ -226,11 +231,17 @@ def process_hourly_files():
                         sum(int(r["sample_count"]) for r in grp),
                     ])
 
-            os.remove(fp)
             print(f"[aggregator] 已归档天级: {os.path.basename(fp)}")
 
         except Exception as e:
             print(f"[aggregator] 处理 {fp} 失败: {e}", file=sys.stderr)
+
+        # [review] WR-03: 删除独立于聚合 — remove 失败不影响已写入的 daily 数据
+        if os.path.isfile(fp):
+            try:
+                os.remove(fp)
+            except OSError as e:
+                print(f"[aggregator] 删除 {fp} 失败: {e}", file=sys.stderr)
 
 
 def main():
