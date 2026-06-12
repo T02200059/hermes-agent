@@ -361,10 +361,10 @@
 375|- [x] ⚠️ 废弃：定价/AGENTS.md，不迁移 `0b7742b` | 2026-05-04 | `tianbao.yang` | feat(pricing): dual-currency support (CNY/USD) + deepseek-v4 pricing + cache hit rate | +46 | −6 |
 376|- [ ] `e8841ac` | 2026-05-03 | `tianbao.yang` | chore: update package-lock after upstream merge | +25 | −16 |
 377|- [ ] `0d1302e` | 2026-05-03 | `tianbao.yang` | Merge upstream/main into yangtb (631 commits, 11 conflicts resolved) | +0 | −0 |
-378|- [ ] `e7d46fc` | 2026-05-03 | `tianbao.yang` | fix(hermes_mon): migrate data dir to ~/.local/share + dedup hourly aggregation | +29 | −4 |
+378|- [x] ✅ 已迁移 `e7d46fc` | 2026-05-03 | `tianbao.yang` | fix(hermes_mon): migrate data dir to ~/.local/share + dedup hourly aggregation | +29 | −4 |
 379|- [ ] `a8fc5d1` | 2026-05-03 | `tianbao.yang` | feat(skin): add tagline field for banner subtitle | +6 | −3 |
 380|- [ ] `889ef45` | 2026-05-03 | `tianbao.yang` | feat(skin): pipe spinner data (faces/verbs) from skin engine through to TUI FaceTicker | +39 | −11 |
-381|- [ ] `02278cd` | 2026-05-03 | `tianbao.yang` | feat(scripts): add hermes_mon - per-process perf monitoring with launchd | +483 | −0 |
+381|- [x] ✅ 已迁移 `02278cd` | 2026-05-03 | `tianbao.yang` | feat(scripts): add hermes_mon - per-process perf monitoring with launchd | +483 | −0 |
 382|- [x] ✅ 已迁移 `7c5bbdf` | 2026-05-02 | `tianbao.yang` | fix(qqbot): prevent silent dead-loop when WS closed after reconnect failure | +1 | −1 |
 383|- [ ] ❓ 待定：后续观察token消耗成本 `7d7e559` | 2026-05-02 | `tianbao.yang` | feat: 方案2 — 会话内 skill 创建跟踪 + 存活过滤 | +142 | −12 |
 384|- [ ] ❓ 待定：后续观察token消耗成本 `f81cca5` | 2026-05-02 | `tianbao.yang` | feat: recency exemption for TF-IDF skill filtering (72h mtime window) | +65 | −0 |
