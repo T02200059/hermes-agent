@@ -190,7 +190,7 @@
 204|- [ ] `1c887ef` | 2026-05-27 | `yangtb` | feat(feishu): approvals 卡片回调异步更新用户名，显示命令内容 | +67 | −17 |
 205|- [ ] `601e79e` | 2026-05-27 | `yangtb` | chore(owner): add xfyun rate limit config to patch.yaml | +3 | −0 |
 206|- [ ] `25f1996` | 2026-05-27 | `yangtb` | docs(owner): 同步 patch 清单 P35-P38 + P9 CallBackCard 升级 | +12 | −8 |
-207|- [ ] `2b801e5` | 2026-05-27 | `yangtb` | fix(gateway): eagerly load .env before any import that triggers load_config() | +15 | −0 |
+207|- [x] ⚠️ 废弃：上游已修复，.env 加载时机已无问题 `2b801e5` | 2026-05-27 | `yangtb` | fix(gateway): eagerly load .env before any import that triggers load_config() | +15 | −0 |
 208|- [ ] `c9cc868` | 2026-05-27 | `yangtb` | fix(feishu): return CallBackCard in approval card action to update card inline | +13 | −3 |
 209|- [ ] `b7a199b` | 2026-05-26 | `yangtb` | feat: Viking health report API rewrite + fix TUI Cmd+C on macOS | +276 | −3 |
 210|- [ ] `8d359ee` | 2026-05-26 | `yangtb` | docs(yangtb): register P35 — extract_local_files double-backtick code span fix | +4 | −3 |
