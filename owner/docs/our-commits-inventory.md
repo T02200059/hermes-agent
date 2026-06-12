@@ -324,7 +324,7 @@
 338|- [ ] `865b5fc` | 2026-05-09 | `tianbao.yang` | chore(yangtb): sre-archive hook, session skill tracking, config | +470 | −1 |
 339|- [x] ✅ 已迁移 `efd22de` | 2026-05-08 | `tianbao.yang` | feat: local customizations — skin engine, TUI tweaks, cron scheduler | +39 | −7 |
 340|- [x] ⏭️ 跳过 `2938886` | 2026-05-08 | `tianbao.yang` | Merge upstream/main into yangtb — v0.13.0 sync (237 commits) | +0 | −0 |
-341|- [ ] `21d4700` | 2026-05-08 | `tianbao.yang` | fix(feishu): wrap multi-item inline-code ref in code block for one-tap copy | +9 | −1 |
+341|- [x] ⏸️ 已决策·暂不迁移（依赖 _append_inline_code_reference 函数整体迁移） `21d4700` | 2026-05-08 | `tianbao.yang` | fix(feishu): wrap multi-item inline-code ref in code block for one-tap copy | +9 | −1 |
 342|- [ ] `085513e` | 2026-05-08 | `tianbao.yang` | fix(tui): FaceTicker verb reads from skin spinner instead of hardcoded VERBS import | +357 | −6 |
 343|- [ ] `3622735` | 2026-05-08 | `tianbao.yang` | refactor: move ruolin skins to yangtb/skins/ with symlinks | +236 | −8 |
 344|- [ ] `5ce1904` | 2026-05-08 | `tianbao.yang` | docs: add external assets inventory to yangtb/README.md | +57 | −10 |
