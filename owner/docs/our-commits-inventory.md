@@ -353,7 +353,7 @@
 367|- [ ] `cd3aa9c` | 2026-05-05 | `tianbao.yang` | fix: handle null skills in _get_top_usage_skills records | +1 | −1 |
 368|- [⏸️ 已决策·待后续观察] `ca110e6` | 2026-05-05 | `tianbao.yang` | feat: add Layer 0 Top-N always-on skills to TF-IDF tracker (Phase 3a) | +58 | −0 |
 369|- [⏸️ 已决策·待后续观察] `a06d719` | 2026-05-05 | `tianbao.yang` | feat: extract _is_high_info_message() as shared utility for TF-IDF pipeline | +74 | −0 |
-370|- [ ] `248bebe` | 2026-05-05 | `tianbao.yang` | fix: strip 'source' and 'requested_provider' from runtime_kwargs in api_server._create_agent | +49 | −0 |
+370|- [⏸️ 已决策·暂不迁移] `248bebe` | 2026-05-05 | `tianbao.yang` | fix: strip 'source' and 'requested_provider' from runtime_kwargs in api_server._create_agent | +49 | −0 |
 371|- [x] ✅ 已迁移 `9a95e21` | 2026-05-04 | `tianbao.yang` | fix(qqbot): add WebSocket heartbeat + receive_timeout to detect TCP half-open after WSL sleep/wake | +2 | −0 |
 372|- [x] ⚠️ 废弃: 上游 v0.14.0 billing_provider 替代 `c1effe4` | 2026-05-04 | `tianbao.yang` | fix: separate provider_name from provider to preserve custom provider identity | +16 | −5 |
 373|- [x] ✅ 已迁移 `97c43f6` | 2026-05-04 | `tianbao.yang` | fix(qqbot): rebuild httpx client on reconnect to fix WSL sleep/wake network reset | +28 | −0 |
