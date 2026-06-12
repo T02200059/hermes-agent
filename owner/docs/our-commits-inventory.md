@@ -346,7 +346,7 @@
 360|- [⏸️ 已决策·待后续观察] `e87a6f1` | 2026-05-05 | `tianbao.yang` | feat(tfidf): add pin list support for always-loaded skills | +12 | −0 |
 361|- [ ] `c4fdf38` | 2026-05-05 | `tianbao.yang` | Fix UnboundLocalError: _classified nested inside skills_list_snapshot guard | +18 | −18 |
 362|- [⏸️ 已决策·待后续观察] `4fac935` | 2026-05-05 | `tianbao.yang` | Phase 3c: LLM fallback line-mode + platform-level disable | +84 | −35 |
-363|- [ ] `e05beff` | 2026-05-05 | `tianbao.yang` | feat: enhance precompute to capture multi-message training data (Phase 3) | +52 | −27 |
+363|- [⏸️ 已决策·待后续观察] `e05beff` | 2026-05-05 | `tianbao.yang` | feat: enhance precompute to capture multi-message training data (Phase 3) | +52 | −27 |
 364|- [ ] `e0194a6` | 2026-05-05 | `tianbao.yang` | fix: add missing yaml_load import in prompt_builder (Layer 3 fallback was dead code) | +1 | −0 |
 365|- [⏸️ 已决策·待后续观察] `8b81f60` | 2026-05-05 | `tianbao.yang` | feat: integrate LLM fallback + skills snapshot into build_skills_system_prompt (Phase 3c) | +52 | −1 |
 366|- [⏸️ 已决策·待后续观察] `29e0d91` | 2026-05-05 | `tianbao.yang` | feat: add LLM intent classifier for Layer 3 fallback (Phase 3c) | +247 | −0 |
@@ -359,7 +359,7 @@
 373|- [x] ✅ 已迁移 `97c43f6` | 2026-05-04 | `tianbao.yang` | fix(qqbot): rebuild httpx client on reconnect to fix WSL sleep/wake network reset | +28 | −0 |
 374|- [⏸️ 已决策·暂不迁移] `b926356` | 2026-05-04 | `tianbao.yang` | fix(gateway): fallback /status model/provider display when DB values are None/custom | +12 | −2 |
 375|- [x] ⚠️ 废弃：定价/AGENTS.md，不迁移 `0b7742b` | 2026-05-04 | `tianbao.yang` | feat(pricing): dual-currency support (CNY/USD) + deepseek-v4 pricing + cache hit rate | +46 | −6 |
-376|- [ ] `e8841ac` | 2026-05-03 | `tianbao.yang` | chore: update package-lock after upstream merge | +25 | −16 |
+376|- [x] ⚠️ 废弃 `e8841ac` | 2026-05-03 | `tianbao.yang` | chore: update package-lock after upstream merge | +25 | −16 |
 377|- [x] ⏭️ 跳过 `0d1302e` | 2026-05-03 | `tianbao.yang` | Merge upstream/main into yangtb (631 commits, 11 conflicts resolved) | +0 | −0 |
 378|- [x] ✅ 已迁移 `e7d46fc` | 2026-05-03 | `tianbao.yang` | fix(hermes_mon): migrate data dir to ~/.local/share + dedup hourly aggregation | +29 | −4 |
 379|- [x] ✅ 已迁移 `a8fc5d1` | 2026-05-03 | `tianbao.yang` | feat(skin): add tagline field for banner subtitle | +6 | −3 |
