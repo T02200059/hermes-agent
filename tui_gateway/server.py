@@ -2229,8 +2229,10 @@ def _persist_model_switch(result) -> None:
     model_cfg["provider"] = result.target_provider
     if result.base_url:
         model_cfg["base_url"] = result.base_url
-    else:
-        model_cfg.pop("base_url", None)
+    # [owner-patch] P29: Don't pop base_url when switch_model returns empty.
+    # An empty result.base_url means it couldn't be resolved, but the existing
+    # value (typically ${VAR}) is still valid.  Popping it causes downstream
+    # resolution to fall back to hardcoded defaults (#17101).
     save_config(cfg)
 
 

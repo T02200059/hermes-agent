@@ -299,7 +299,7 @@
 313|- [ ] `a572c36` | 2026-05-12 | `tianbao.yang` | fix(feishu): emoji width compensation in _align_table | +9 | −1 |
 314|- [ ] `ea163c7` | 2026-05-11 | `tianbao.yang` | feat(token): bailing provider daily 500k free tier support | +134 | −27 |
 315|- [ ] `e7edb2f` | 2026-05-11 | `tianbao.yang` | docs(yangtb): update patch count and add P29 env-var template leak fix to README | +5 | −4 |
-316|- [ ] `85d345e` | 2026-05-11 | `tianbao.yang` | fix: guard against env-var template leak in base_url resolution (#17101) | +22 | −3 |
+316|- [x] ✅ 已迁移 `85d345e` | 2026-05-11 | `tianbao.yang` | fix: guard against env-var template leak in base_url resolution (#17101) | +22 | −3 |
 317|- [ ] `14b8a31` | 2026-05-11 | `tianbao.yang` | audit-agent: i18n docstring/comments, get_hermes_home, batch git diff, checkpoint trim | +100 | −49 |
 318|- [ ] `6b0c817` | 2026-05-11 | `tianbao.yang` | feat(credential-pool): add proactive sliding-window rate limiter per (provider, key) | +246 | −19 |
 319|- [ ] `acebc2c` | 2026-05-11 | `tianbao.yang` | audit-agent: filter remote/SSH paths from LLM prompt, add terminal to FILE_MODIFY_TOOLS | +16 | −3 |
@@ -315,7 +315,7 @@
 329|- [x] ⚠️ 废弃：定价/AGENTS.md，不迁移 `f64ae67` | 2026-05-10 | `tianbao.yang` | feat(yangtb): add update_exchange_rate.py script + top-level default_exchange_rate in pricing.yaml | +115 | −9 |
 330|- [ ] `3ea5daa` | 2026-05-10 | `tianbao.yang` | feat(api-server): expose model_aliases in /v1/models endpoint | +87 | −26 |
 331|- [ ] `6fe0530` | 2026-05-10 | `tianbao.yang` | fix(qqbot): abort reconnect on disconnect, fix CLOSE→UP state bug | +215 | −34 |
-332|- [ ] `beecdcd` | 2026-05-09 | `tianbao.yang` | fix(gateway): resolve env-var template base_url in _format_session_info | +5 | −1 |
+332|- [x] ✅ 已迁移 `beecdcd` | 2026-05-09 | `tianbao.yang` | fix(gateway): resolve env-var template base_url in _format_session_info | +5 | −1 |
 333|- [ ] `1fc7348` | 2026-05-09 | `tianbao.yang` | fix(qqbot): set proxy=None instead of proxies={} for httpx client | +1 | −1 |
 334|- [ ] `ccfcdab` | 2026-05-09 | `yangtb` | feat(api_server): model_aliases routing — route requests by body.model to different provider | +70 | −2 |
 335|- [ ] `c4071f9` | 2026-05-09 | `tianbao.yang` | fix(feishu): rebuild separator dashes from col_widths, not original dash count | +10 | −6 |

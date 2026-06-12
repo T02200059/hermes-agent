@@ -390,7 +390,10 @@ def _resolve_runtime_from_pool_entry(
         pool_url_is_default = pconfig and base_url.rstrip("/") == pconfig.inference_base_url.rstrip("/")
         if configured_provider == provider and pool_url_is_default:
             cfg_base_url = str(model_cfg.get("base_url") or "").strip().rstrip("/")
-            if cfg_base_url:
+            # [owner-patch] P29: Guard against env var templates (${VAR}) leaking
+            # from config.yaml into the resolved base_url.  The pool entry
+            # already has the correct resolved URL.  See #17101.
+            if cfg_base_url and "${" not in cfg_base_url:
                 base_url = cfg_base_url
         configured_mode = _parse_api_mode(model_cfg.get("api_mode"))
         if provider in {"opencode-zen", "opencode-go"}:

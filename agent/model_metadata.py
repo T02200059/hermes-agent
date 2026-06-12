@@ -1646,6 +1646,15 @@ def get_model_context_length(
     if config_context_length is not None and isinstance(config_context_length, int) and config_context_length > 0:
         return config_context_length
 
+    # [owner-patch] P29: Expand env var templates so ${VAR} strings from
+    # config.yaml don't leak into probe URLs or model-lookup keys.  See #17101.
+    if base_url and "${" in base_url:
+        try:
+            from hermes_cli.config import _expand_env_vars
+            base_url = str(_expand_env_vars(base_url))
+        except Exception:
+            pass
+
     # 0b. custom_providers per-model override — check before any probe.
     # This closes the gap where /model switch and display paths used to fall
     # back to 128K despite the user having a per-model context_length set.
