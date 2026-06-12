@@ -102,7 +102,7 @@
 102|- [ ] `6976b60` | 2026-06-08 | `yangtb` | tools: add auto_fix_header option to unified_diff_patch | +48 | −12 |
 103|- [ ] `2f97677` | 2026-06-08 | `yangtb` | hooks: skip synthetic gateway messages in qdrant recall | +20 | −0 |
 104|- [ ] `b47978f` | 2026-06-08 | `yangtb` | config: update default exchange rate to 6.7928 | +1 | −1 |
-105|- [ ] `2f1be0a` | 2026-06-07 | `yangtb` | minimax-cn: 收敛 catalog 到 M3/M2.7/M2.7-highspeed + aux 默认走 highspeed | +12 | −13 |
+105|- [x] ✅ 已迁移 `2f1be0a` | 2026-06-07 | `yangtb` | minimax-cn: 收敛 catalog 到 M3/M2.7/M2.7-highspeed + aux 默认走 highspeed | +12 | −13 |
 106|- [ ] `91460d8` | 2026-06-07 | `yangtb` | feat(feishu): model picker — alphabetical providers + back button | +22 | −0 |
 107|- [ ] `adc1f0e` | 2026-06-07 | `yangtb` | fix(qdrant-memory-recall): filter low_quality hits to reduce hallucination risk | +8 | −2 |
 108|- [ ] `0a2ea99` | 2026-06-06 | `yangtb` | docs(qdrant-memory-recall): clarify per-turn extra_context scope (CR-01) | +21 | −2 |
