@@ -1383,6 +1383,7 @@ def resolve_skin() -> dict:
             "banner_hero": skin.banner_hero,
             "tool_prefix": skin.tool_prefix,
             "help_header": (skin.branding or {}).get("help_header", ""),
+            "spinner": skin.spinner,  # [owner-patch] pipe spinner faces/verbs to TUI
         }
     except Exception:
         return {}
