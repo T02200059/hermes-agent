@@ -107,6 +107,13 @@ export function createSlashHandler(ctx: SlashHandlerContext): (cmd: string) => b
               return handler(`/${d.target}${argTail}`)
             }
 
+            if (d.type === 'chain') {
+              for (const cmd of d.commands) {
+                await handler(`/${cmd}`)
+              }
+              return
+            }
+
             if (d.type === 'skill') {
               sys(`⚡ loading skill: ${d.name}`)
 
