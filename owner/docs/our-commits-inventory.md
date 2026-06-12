@@ -357,7 +357,7 @@
 371|- [x] ✅ 已迁移 `9a95e21` | 2026-05-04 | `tianbao.yang` | fix(qqbot): add WebSocket heartbeat + receive_timeout to detect TCP half-open after WSL sleep/wake | +2 | −0 |
 372|- [ ] `c1effe4` | 2026-05-04 | `tianbao.yang` | fix: separate provider_name from provider to preserve custom provider identity | +16 | −5 |
 373|- [x] ✅ 已迁移 `97c43f6` | 2026-05-04 | `tianbao.yang` | fix(qqbot): rebuild httpx client on reconnect to fix WSL sleep/wake network reset | +28 | −0 |
-374|- [ ] `b926356` | 2026-05-04 | `tianbao.yang` | fix(gateway): fallback /status model/provider display when DB values are None/custom | +12 | −2 |
+374|- [⏸️ 已讨论·暂不迁移] `b926356` | 2026-05-04 | `tianbao.yang` | fix(gateway): fallback /status model/provider display when DB values are None/custom | +12 | −2 |
 375|- [x] ⚠️ 废弃：定价/AGENTS.md，不迁移 `0b7742b` | 2026-05-04 | `tianbao.yang` | feat(pricing): dual-currency support (CNY/USD) + deepseek-v4 pricing + cache hit rate | +46 | −6 |
 376|- [ ] `e8841ac` | 2026-05-03 | `tianbao.yang` | chore: update package-lock after upstream merge | +25 | −16 |
 377|- [ ] `0d1302e` | 2026-05-03 | `tianbao.yang` | Merge upstream/main into yangtb (631 commits, 11 conflicts resolved) | +0 | −0 |
@@ -366,17 +366,17 @@
 380|- [x] ✅ 已迁移 `889ef45` | 2026-05-03 | `tianbao.yang` | feat(skin): pipe spinner data (faces/verbs) from skin engine through to TUI FaceTicker | +39 | −11 |
 381|- [x] ✅ 已迁移 `02278cd` | 2026-05-03 | `tianbao.yang` | feat(scripts): add hermes_mon - per-process perf monitoring with launchd | +483 | −0 |
 382|- [x] ✅ 已迁移 `7c5bbdf` | 2026-05-02 | `tianbao.yang` | fix(qqbot): prevent silent dead-loop when WS closed after reconnect failure | +1 | −1 |
-383|- [ ] ❓ 待定：后续观察token消耗成本 `7d7e559` | 2026-05-02 | `tianbao.yang` | feat: 方案2 — 会话内 skill 创建跟踪 + 存活过滤 | +142 | −12 |
-384|- [ ] ❓ 待定：后续观察token消耗成本 `f81cca5` | 2026-05-02 | `tianbao.yang` | feat: recency exemption for TF-IDF skill filtering (72h mtime window) | +65 | −0 |
-385|- [ ] ❓ 待定：后续观察token消耗成本 `4e88521` | 2026-05-02 | `tianbao.yang` | feat: system prompt audit logging via write_sysprompt_audit_entry | +100 | −1 |
-386|- [ ] ❓ 待定：后续观察token消耗成本 `7634496` | 2026-05-02 | `tianbao.yang` | system prompt compression and skill utils refactor | +125 | −71 |
-387|- [ ] ❓ 待定：后续观察token消耗成本 `6c37b19` | 2026-05-02 | `tianbao.yang` | feat: integrate SkillsUsageTracker into run_agent.py | +35 | −2 |
-388|- [ ] ❓ 待定：后续观察token消耗成本 `304a5ad` | 2026-05-02 | `tianbao.yang` | feat: add SkillsUsageTracker for TF-IDF skill filtering | +510 | −6 |
+383|- [⏸️ 已讨论·暂不迁移] `7d7e559` | 2026-05-02 | `tianbao.yang` | feat: 方案2 — 会话内 skill 创建跟踪 + 存活过滤 | +142 | −12 |
+384|- [⏸️ 已讨论·暂不迁移] `f81cca5` | 2026-05-02 | `tianbao.yang` | feat: recency exemption for TF-IDF skill filtering (72h mtime window) | +65 | −0 |
+385|- [⏸️ 已讨论·暂不迁移] `4e88521` | 2026-05-02 | `tianbao.yang` | feat: system prompt audit logging via write_sysprompt_audit_entry | +100 | −1 |
+386|- [⏸️ 已讨论·暂不迁移] `7634496` | 2026-05-02 | `tianbao.yang` | system prompt compression and skill utils refactor | +125 | −71 |
+387|- [⏸️ 已讨论·暂不迁移] `6c37b19` | 2026-05-02 | `tianbao.yang` | feat: integrate SkillsUsageTracker into run_agent.py | +35 | −2 |
+388|- [⏸️ 已讨论·暂不迁移] `304a5ad` | 2026-05-02 | `tianbao.yang` | feat: add SkillsUsageTracker for TF-IDF skill filtering | +510 | −6 |
 389|- [x] ⚠️ 废弃：定价/AGENTS.md，不迁移 `18d81fb` | 2026-05-02 | `tianbao.yang` | add pricing entries for grok-4-fast-reasoning, grok-4-fast-non-reasoning, grok-4-fast, grok-2, grok-2-vision-1212 | +50 | −0 |
 390|- [x] ✅ 已迁移 `b14a2ee` | 2026-04-30 | `tianbao.yang` | fix(feishu): return empty P2CardActionTriggerResponse to avoid CallBackToast NameError in WS client | +3 | −9 |
 391|- [x] ⚠️ 废弃：定价/AGENTS.md，不迁移 `b65b962` | 2026-04-30 | `tianbao.yang` | feat(usage): extend pricing data with YAML-based provider pricing support | +314 | −0 |
-392|- [ ] ❓ 待定：headings_only，暂不迁移 `28e513d` | 2026-04-30 | `tianbao.yang` | feat(file_tools): add headings_only parameter for markdown heading extraction | +39 | −6 |
-393|- [ ] ❓ 待定：session_search window mode，等上游 #16671 `a6b718b` | 2026-04-30 | `tianbao.yang` | fix(session_search): fast window mode around FTS5 hits for long sessions (#16671 workaround) | +149 | −2 |
+392|- [⏸️ 已讨论·暂不迁移] `28e513d` | 2026-04-30 | `tianbao.yang` | feat(file_tools): add headings_only parameter for markdown heading extraction | +39 | −6 |
+393|- [⏸️ 已讨论·暂不迁移] `a6b718b` | 2026-04-30 | `tianbao.yang` | fix(session_search): fast window mode around FTS5 hits for long sessions (#16671 workaround) | +149 | −2 |
 394|- [x] ❌ DEPRECATED `0be2695` | 2026-04-30 | `tianbao.yang` | perf(agent): stabilize system prompt timestamp across compression cycles | +15 | −2 | (upstream PR #27675 merged as `4a3f13b`, date-only方案更简单无依赖)
 395|- [x] ✅ P15 已迁移 `a484c2c` | 2026-04-29 | `tianbao.yang` | feat(tui): support ;; chained commands in quick_commands aliases | +141 | −64 |
 396|- [x] ✅ 已迁移 `fbb98ae` | 2026-04-29 | `tianbao.yang` | feat(feishu): support channel_prompts from config.yaml | +4 | −0 |
