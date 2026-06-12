@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.yangtianbao.hermes-mon.collector</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/python3</string>
+        <string>/Users/yangtb/.hermes/hermes-agent/scripts/hermes_mon/collector.py</string>
+    </array>
+
+    <!-- 每 10 秒采集一次 -->
+    <key>StartInterval</key>
+    <integer>10</integer>
+
+    <!-- 用户登录时自动启动 -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- 保持低优先级，不要影响用户交互 -->
+    <key>LowPriorityIO</key>
+    <true/>
+    <key>Nice</key>
+    <integer>10</integer>
+
+    <!-- 日志 -->
+    <key>StandardOutPath</key>
+    <string>/tmp/hermes-mon-collector.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/hermes-mon-collector.log</string>
+</dict>
+</plist>
