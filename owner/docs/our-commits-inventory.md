@@ -194,8 +194,8 @@
 208|- [ ] `c9cc868` | 2026-05-27 | `yangtb` | fix(feishu): return CallBackCard in approval card action to update card inline | +13 | −3 |
 209|- [ ] `b7a199b` | 2026-05-26 | `yangtb` | feat: Viking health report API rewrite + fix TUI Cmd+C on macOS | +276 | −3 |
 210|- [ ] `8d359ee` | 2026-05-26 | `yangtb` | docs(yangtb): register P35 — extract_local_files double-backtick code span fix | +4 | −3 |
-211|- [ ] `ff19a78` | 2026-05-26 | `yangtb` | fix(gateway): add double-backtick code span detection in extract_local_files | +155 | −9 |
-212|- [ ] `ca3c24f` | 2026-05-26 | `yangtb` | fix(gateway): add double-backtick code span detection in extract_local_files | +146 | −5 |
+211|- [x] ✅ 已迁移 `ff19a78` | 2026-05-26 | `yangtb` | fix(gateway): add double-backtick code span detection in extract_local_files | +155 | −9 |
+212|- [x] ✅ 已迁移 `ca3c24f` | 2026-05-26 | `yangtb` | fix(gateway): add double-backtick code span detection in extract_local_files | +146 | −5 |
 213|- [ ] `d31f26b` | 2026-05-26 | `yangtb` | feat(i18n): translate all approval descriptions to Chinese via i18n | +333 | −16 |
 214|- [ ] `9ef510c` | 2026-05-26 | `yangtb` | chore(owner): pricing rate update + backup-configs mkdir fallback | +8 | −5 |
 215|- [ ] `8051cd9` | 2026-05-26 | `yangtb` | docs(owner): P33 approvals patch.yaml 白名单 — patch 清单更新 | +2 | −1 |
