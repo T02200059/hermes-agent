@@ -2037,6 +2037,9 @@ def _seed_from_env(provider: str, entries: List[PooledCredential]) -> Tuple[bool
         token = _get_env_prefer_dotenv(env_var)
         if not token:
             continue
+        # [owner-patch] P67: Classic PATs (ghp_*) are rejected by Copilot API.
+        if provider == "copilot" and token.startswith("ghp_"):
+            continue
         source = f"env:{env_var}"
         if _is_source_suppressed(provider, source):
             continue
