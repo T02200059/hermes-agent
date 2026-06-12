@@ -313,7 +313,7 @@
 327|- [x] ⚠️ 废弃：定价/AGENTS.md，不迁移 `f0176ae` | 2026-05-10 | `tianbao.yang` | refactor(token_stats): multi-currency pricing support + markdown output | +90 | −47 |
 328|- [x] ⚠️ 废弃：定价/AGENTS.md，不迁移 `32333de` | 2026-05-10 | `tianbao.yang` | docs(yangtb/config): note pricing.yaml fields updated by cron scripts | +1 | −1 |
 329|- [x] ⚠️ 废弃：定价/AGENTS.md，不迁移 `f64ae67` | 2026-05-10 | `tianbao.yang` | feat(yangtb): add update_exchange_rate.py script + top-level default_exchange_rate in pricing.yaml | +115 | −9 |
-330|- [ ] `3ea5daa` | 2026-05-10 | `tianbao.yang` | feat(api-server): expose model_aliases in /v1/models endpoint | +87 | −26 |
+330|- [⏸️ 已讨论·暂不迁移] `3ea5daa` | 2026-05-10 | `tianbao.yang` | feat(api-server): expose model_aliases in /v1/models endpoint | +87 | −26 |
 331|- [ ] `6fe0530` | 2026-05-10 | `tianbao.yang` | fix(qqbot): abort reconnect on disconnect, fix CLOSE→UP state bug | +215 | −34 |
 332|- [x] ✅ 已迁移 `beecdcd` | 2026-05-09 | `tianbao.yang` | fix(gateway): resolve env-var template base_url in _format_session_info | +5 | −1 |
 333|- [ ] `1fc7348` | 2026-05-09 | `tianbao.yang` | fix(qqbot): set proxy=None instead of proxies={} for httpx client | +1 | −1 |
