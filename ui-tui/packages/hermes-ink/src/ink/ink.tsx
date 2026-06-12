@@ -1805,6 +1805,8 @@ export default class Ink {
 
     return () => this.selectionListeners.delete(cb)
   }
+  private wasDragging = false
+
   private notifySelectionChange(): void {
     this.scheduleRender()
 
@@ -1812,11 +1814,14 @@ export default class Ink {
     // Listeners still fire unconditionally — useHasSelection() snapshots
     // through React, which dedupes via Object.is on the boolean value.
     const sig = selectionSignature(this.selection)
+    const dragging = this.selection.isDragging
+    const dragEnded = this.wasDragging && !dragging
 
-    if (sig !== this.lastSelectionSignature) {
+    if (sig !== this.lastSelectionSignature || dragEnded) {
       this.lastSelectionSignature = sig
       this.selectionVersion += 1
     }
+    this.wasDragging = dragging
 
     for (const cb of this.selectionListeners) {
       cb()
