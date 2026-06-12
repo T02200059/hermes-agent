@@ -8200,10 +8200,14 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
                 elif qcmd.get("type") == "alias":
                     target = qcmd.get("target", "").strip()
                     if target:
-                        target = target if target.startswith("/") else f"/{target}"
+                        from gateway.platforms.base import parse_chained_commands
                         user_args = cmd_original[len(base_cmd):].strip()
-                        aliased_command = f"{target} {user_args}".strip()
-                        return self.process_command(aliased_command)
+                        chain_text = f"{target} {user_args}".strip()
+                        chain = parse_chained_commands(chain_text)
+                        for cmd_text in chain:
+                            cmd_text = cmd_text if cmd_text.startswith("/") else f"/{cmd_text}"
+                            self.process_command(cmd_text)
+                        return
                     else:
                         self._console_print(f"[bold red]Quick command '{base_cmd}' has no target defined[/]")
                 else:
