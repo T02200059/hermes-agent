@@ -366,12 +366,12 @@
 380|- [ ] `889ef45` | 2026-05-03 | `tianbao.yang` | feat(skin): pipe spinner data (faces/verbs) from skin engine through to TUI FaceTicker | +39 | −11 |
 381|- [ ] `02278cd` | 2026-05-03 | `tianbao.yang` | feat(scripts): add hermes_mon - per-process perf monitoring with launchd | +483 | −0 |
 382|- [ ] `7c5bbdf` | 2026-05-02 | `tianbao.yang` | fix(qqbot): prevent silent dead-loop when WS closed after reconnect failure | +1 | −1 |
-383|- [ ] `7d7e559` | 2026-05-02 | `tianbao.yang` | feat: 方案2 — 会话内 skill 创建跟踪 + 存活过滤 | +142 | −12 |
-384|- [ ] `f81cca5` | 2026-05-02 | `tianbao.yang` | feat: recency exemption for TF-IDF skill filtering (72h mtime window) | +65 | −0 |
-385|- [ ] `4e88521` | 2026-05-02 | `tianbao.yang` | feat: system prompt audit logging via write_sysprompt_audit_entry | +100 | −1 |
-386|- [ ] `7634496` | 2026-05-02 | `tianbao.yang` | system prompt compression and skill utils refactor | +125 | −71 |
-387|- [ ] `6c37b19` | 2026-05-02 | `tianbao.yang` | feat: integrate SkillsUsageTracker into run_agent.py | +35 | −2 |
-388|- [ ] `304a5ad` | 2026-05-02 | `tianbao.yang` | feat: add SkillsUsageTracker for TF-IDF skill filtering | +510 | −6 |
+383|- [ ] ❓ 待定：后续观察token消耗成本 `7d7e559` | 2026-05-02 | `tianbao.yang` | feat: 方案2 — 会话内 skill 创建跟踪 + 存活过滤 | +142 | −12 |
+384|- [ ] ❓ 待定：后续观察token消耗成本 `f81cca5` | 2026-05-02 | `tianbao.yang` | feat: recency exemption for TF-IDF skill filtering (72h mtime window) | +65 | −0 |
+385|- [ ] ❓ 待定：后续观察token消耗成本 `4e88521` | 2026-05-02 | `tianbao.yang` | feat: system prompt audit logging via write_sysprompt_audit_entry | +100 | −1 |
+386|- [ ] ❓ 待定：后续观察token消耗成本 `7634496` | 2026-05-02 | `tianbao.yang` | system prompt compression and skill utils refactor | +125 | −71 |
+387|- [ ] ❓ 待定：后续观察token消耗成本 `6c37b19` | 2026-05-02 | `tianbao.yang` | feat: integrate SkillsUsageTracker into run_agent.py | +35 | −2 |
+388|- [ ] ❓ 待定：后续观察token消耗成本 `304a5ad` | 2026-05-02 | `tianbao.yang` | feat: add SkillsUsageTracker for TF-IDF skill filtering | +510 | −6 |
 389|- [x] ⚠️ 废弃：定价/AGENTS.md，不迁移 `18d81fb` | 2026-05-02 | `tianbao.yang` | add pricing entries for grok-4-fast-reasoning, grok-4-fast-non-reasoning, grok-4-fast, grok-2, grok-2-vision-1212 | +50 | −0 |
 390|- [x] ✅ 已迁移 `b14a2ee` | 2026-04-30 | `tianbao.yang` | fix(feishu): return empty P2CardActionTriggerResponse to avoid CallBackToast NameError in WS client | +3 | −9 |
 391|- [x] ⚠️ 废弃：定价/AGENTS.md，不迁移 `b65b962` | 2026-04-30 | `tianbao.yang` | feat(usage): extend pricing data with YAML-based provider pricing support | +314 | −0 |
