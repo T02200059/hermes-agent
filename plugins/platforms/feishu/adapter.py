@@ -2631,15 +2631,22 @@ class FeishuAdapter(BasePlatformAdapter):
         ):
             return P2CardActionTriggerResponse() if P2CardActionTriggerResponse else None
 
-        if P2CardActionTriggerResponse is None:
-            return None
-        response = P2CardActionTriggerResponse()
-        if CallBackCard is not None:
-            card = CallBackCard()
-            card.type = "raw"
-            card.data = self._build_resolved_approval_card(choice=choice, user_name=user_name)
-            response.card = card
-        return response
+        # [owner] Return empty response to avoid NameError on CallBackToast in Lark WS client.
+        # The original code below builds a CallBackCard, but P2CardActionTriggerResponse._types
+        # references CallBackToast which is not found during JSON.marshal → copy.deepcopy in the
+        # WS client thread, causing NameError and HTTP 500 (feishu error 200671).
+        # Approval is already resolved asynchronously via _submit_on_loop; no need to update card inline.
+        return P2CardActionTriggerResponse() if P2CardActionTriggerResponse else None
+        # ── original code (disabled) ──
+        # if P2CardActionTriggerResponse is None:
+        #     return None
+        # response = P2CardActionTriggerResponse()
+        # if CallBackCard is not None:
+        #     card = CallBackCard()
+        #     card.type = "raw"
+        #     card.data = self._build_resolved_approval_card(choice=choice, user_name=user_name)
+        #     response.card = card
+        # return response
 
     def _handle_update_prompt_card_action(self, *, event: Any, action_value: Dict[str, Any], loop: Any) -> Any:
         """Schedule update prompt resolution and build the synchronous callback response."""
