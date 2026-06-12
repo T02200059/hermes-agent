@@ -7,7 +7,7 @@ import { $delegationState } from '../app/delegationStore.js'
 import type { IndicatorStyle, Notice } from '../app/interfaces.js'
 import { useTurnSelector } from '../app/turnStore.js'
 import { DEV_CREDITS_MODE } from '../config/env.js'
-import { FACES } from '../content/faces.js'
+import { DEFAULT_SPINNER } from '../theme.js'  // [owner-patch] spinner faces
 import { VERBS } from '../content/verbs.js'
 import { fmtDuration } from '../domain/messages.js'
 import { stickyPromptFromViewport } from '../domain/viewport.js'
@@ -44,9 +44,9 @@ interface IndicatorRender {
   showVerb: boolean
 }
 
-const renderIndicator = (style: IndicatorStyle, tick: number): IndicatorRender => {
+const renderIndicator = (style: IndicatorStyle, tick: number, faces: readonly string[] = DEFAULT_SPINNER.waitingFaces): IndicatorRender => {  // [owner-patch] +faces
   if (style === 'kaomoji') {
-    return { frame: FACES[tick % FACES.length] ?? '', intervalMs: FACE_TICK_MS, showVerb: true }
+    return { frame: faces[tick % faces.length] ?? '', intervalMs: FACE_TICK_MS, showVerb: true }  // [owner-patch] faces from spinner
   }
 
   if (style === 'emoji') {
@@ -75,14 +75,13 @@ const renderIndicator = (style: IndicatorStyle, tick: number): IndicatorRender =
   return { frame, intervalMs: Math.max(SPINNER_TICK_MS, spinner.interval), showVerb: false }
 }
 
-// `FACES` / `EMOJI_FRAMES` are static, so measure their widest glyph once at
+// `EMOJI_FRAMES` are static, so measure their widest glyph once at
 // module load instead of rescanning on every status render.
-const KAOMOJI_FRAME_WIDTH = FACES.reduce((max, f) => Math.max(max, stringWidth(f)), 1)
 const EMOJI_FRAME_WIDTH = EMOJI_FRAMES.reduce((max, f) => Math.max(max, stringWidth(f)), 1)
 
-const indicatorFrameWidth = (style: IndicatorStyle): number => {
+const indicatorFrameWidth = (style: IndicatorStyle, faces: readonly string[] = DEFAULT_SPINNER.waitingFaces): number => {  // [owner-patch] +faces
   if (style === 'kaomoji') {
-    return KAOMOJI_FRAME_WIDTH
+    return faces.reduce((max, f) => Math.max(max, stringWidth(f)), 1)  // [owner-patch] dynamic faces width
   }
 
   if (style === 'emoji') {
@@ -107,25 +106,25 @@ export const MAX_DURATION_WIDTH = Math.max(
 // `unicode` is a bare 1-col braille spinner with no verb, while kaomoji/emoji/
 // ascii add a fixed-width verb; any style adds a bounded elapsed-time tail.
 // Mirrors FaceTicker's `frame + verbSegment + durationSegment` layout.
-export const busyIndicatorWidth = (style: IndicatorStyle, hasDuration: boolean): number => {
+export const busyIndicatorWidth = (style: IndicatorStyle, hasDuration: boolean, faces: readonly string[] = DEFAULT_SPINNER.waitingFaces): number => {  // [owner-patch] +faces
   const { showVerb } = renderIndicator(style, 0)
   const verb = showVerb ? 1 + VERB_PAD_LEN : 0
   // ` · ` plus the bounded clock (e.g. `59m 59s`).
   const duration = hasDuration ? stringWidth(' · ') + MAX_DURATION_WIDTH : 0
 
-  return indicatorFrameWidth(style) + verb + duration
+  return indicatorFrameWidth(style, faces) + verb + duration  // [owner-patch] pass faces
 }
 
 function FaceTicker({ color, startedAt, style, spinner }: { color: string; startedAt?: null | number; style: IndicatorStyle; spinner: ThemeSpinner }) {  // [owner-patch] +spinner
   const [tick, setTick] = useState(() => Math.floor(Math.random() * 1000))
-  const [verbTick, setVerbTick] = useState(() => Math.floor(Math.random() * VERBS.length))
+  const [verbTick, setVerbTick] = useState(() => Math.floor(Math.random() * spinner.thinkingVerbs.length))  // [owner-patch] spinner verbs
   const [now, setNow] = useState(() => Date.now())
 
   // Pre-compute cadence + verb-visibility for the active style so an
   // `/indicator` switch re-arms the interval (and skips the verb timer
   // for verb-less styles like `unicode`) without leaving the previous
   // timer dangling.
-  const { intervalMs, showVerb } = renderIndicator(style, 0)
+  const { intervalMs, showVerb } = renderIndicator(style, 0, spinner.waitingFaces)  // [owner-patch] pass faces
 
   useEffect(() => {
     const glyph = setInterval(() => setTick(n => n + 1), intervalMs)
@@ -144,7 +143,7 @@ function FaceTicker({ color, startedAt, style, spinner }: { color: string; start
     }
   }, [intervalMs, showVerb])
 
-  const { frame } = renderIndicator(style, tick)
+  const { frame } = renderIndicator(style, tick, spinner.waitingFaces)  // [owner-patch] pass faces
   const verbs = spinner.thinkingVerbs
   const verb = verbs[verbTick % verbs.length] ?? ''
   // Display-width-aware padding: padEnd() uses JS char length, but CJK
@@ -464,7 +463,7 @@ export function StatusRule({
   // (kaomoji is wide + verb; unicode is a bare 1-col spinner). When a notice
   // occupies the slot it reserves only `noticeReserve` (it shrinks/truncates).
   const slotWidth = busy
-    ? busyIndicatorWidth(indicatorStyle, turnStartedAt != null)
+    ? busyIndicatorWidth(indicatorStyle, turnStartedAt != null, t.spinner.waitingFaces)  // [owner-patch] pass faces
     : showNotice
       ? noticeReserve
       : stringWidth(status)
