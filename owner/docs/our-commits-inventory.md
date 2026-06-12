@@ -165,7 +165,7 @@
 165|- [ ] `0ef6b91` | 2026-05-31 | `yangtb` | fix(feishu): clarify card freeze buttons + store choices in _clarify_state | +120 | −1 |
 166|- [ ] `4130359` | 2026-05-31 | `yangtb` | fix(tool_executor): remove duplicate pre-tool-call block logic from merge | +1 | −15 |
 167|- [ ] `cb208c5` | 2026-05-31 | `yangtb` | docs(owner): fix 3 README discrepancies found during merge audit | +3 | −3 |
-168|- [ ] `a7ede52` | 2026-05-31 | `yangtb` | Merge main (synced with upstream) into owner | +0 | −0 |
+168|- [x] ⏭️ 跳过 `a7ede52` | 2026-05-31 | `yangtb` | Merge main (synced with upstream) into owner | +0 | −0 |
 169|- [ ] `6378913` | 2026-05-31 | `yangtb` | feat: memory proposal approval system + unified_diff_patch display support | +857 | −15 |
 170|- [ ] `091bb10` | 2026-05-30 | `yangtb` | fix: unified_diff_patch路径解析 + daily-report sessions格式 + 禁用旧patch工具 | +7 | −3 |
 171|- [ ] `3a9103b` | 2026-05-30 | `yangtb` | P54: add unified_diff_patch_tool record to owner/README | +9 | −1 |
@@ -180,7 +180,7 @@
 
 ... [OUTPUT TRUNCATED - 2046 chars omitted out of 52046 total] ...
 
-[ ] `a77231c` | 2026-05-28 | `yangtb` | Merge upstream/main into owner (v0.14.0+) | +0 | −0 |
+[x] ⏭️ 跳过 `a77231c` | 2026-05-28 | `yangtb` | Merge upstream/main into owner (v0.14.0+) | +0 | −0 |
 198|- [ ] `c5b6992` | 2026-05-28 | `yangtb` | chore: remove viking-hint hook (empty stub, never implemented) | +0 | −49 |
 199|- [ ] `0c23b27` | 2026-05-27 | `yangtb` | i18n(zh): add all 85 missing tirith rule translations, remove 2 stale entries | +193 | −9 |
 200|- [ ] `bf295cd` | 2026-05-27 | `yangtb` | refactor(gateway): 外部 restart 走 launchctl kickstart -k 原子化生命周期 | +24 | −13 |
@@ -208,7 +208,7 @@
 222|- [ ] `4e7faf4` | 2026-05-22 | `yangtb` | fix(xai-oauth): dual-field argument extraction for codex_responses normalize | +36 | −7 |
 223|- [ ] `611f972` | 2026-05-22 | `yangtb` | config: add damodel provider rate limiting to owner/yangtb profiles | +6 | −0 |
 224|- [ ] `288342c` | 2026-05-22 | `yangtb` | yangtb-patch: gateway session — add API disconnect recovery context + skills_loaded tracking | +26 | −1 |
-225|- [ ] `c03e8da` | 2026-05-22 | `yangtb` | Merge upstream/main into owner | +0 | −0 |
+225|- [x] ⏭️ 跳过 `c03e8da` | 2026-05-22 | `yangtb` | Merge upstream/main into owner | +0 | −0 |
 226|- [x] ⚠️ 废弃：上游已重构，_limiter 不存在 `30ab336` | 2026-05-22 | `yangtb` | fix(credential_pool): False sentinel bypasses _limiter None check in select() | +3 | −1 |
 227|- [ ] `1588a1e` | 2026-05-22 | `yangtb` | tools+prompt: harden patch schema descriptions; add Grok-4.3 tool-calling guidance | +41 | −2 |
 228|- [ ] `8968786` | 2026-05-22 | `yangtb` | display: per-chat override support with patch.yaml integration | +67 | −13 |
@@ -284,7 +284,7 @@
 298|- [ ] `923004a` | 2026-05-15 | `tianbao.yang` | refactor(hooks): extract shared utilities to hooks/common/ | +667 | −32 |
 299|- [ ] `05d2d06` | 2026-05-15 | `tianbao.yang` | feat: add feishu_get_messages tool for reading chat message history | +311 | −0 |
 300|- [ ] `67cf0fe` | 2026-05-15 | `tianbao.yang` | fix: add qwen3.6/3.5 family entries to DEFAULT_CONTEXT_LENGTHS | +6 | −3 |
-301|- [ ] `f36852f` | 2026-05-14 | `tianbao.yang` | Merge upstream/main into yangtb (4 conflicts resolved intelligently) | +0 | −0 |
+301|- [x] ⏭️ 跳过 `f36852f` | 2026-05-14 | `tianbao.yang` | Merge upstream/main into yangtb (4 conflicts resolved intelligently) | +0 | −0 |
 302|- [ ] `dd36093` | 2026-05-14 | `tianbao.yang` | chore: update daily viking health report script + add .serena config | +135 | −1 |
 303|- [ ] `1ca28d8` | 2026-05-14 | `tianbao.yang` | feat(yangtb): rewrite daily-viking-health-report with full OpenViking diagnostics | +263 | −31 |
 304|- [ ] `7b90874` | 2026-05-14 | `tianbao.yang` | refactor: remove channel field from config.yaml, centralize in patch.yaml | +78 | −144 |
@@ -323,7 +323,7 @@
 337|- [ ] `bf59dfc` | 2026-05-09 | `tianbao.yang` | fix(viking-remember): isolate viking_remember into temp session to avoid overlap with Hermes auto memory | +21 | −9 |
 338|- [ ] `865b5fc` | 2026-05-09 | `tianbao.yang` | chore(yangtb): sre-archive hook, session skill tracking, config | +470 | −1 |
 339|- [ ] `efd22de` | 2026-05-08 | `tianbao.yang` | feat: local customizations — skin engine, TUI tweaks, cron scheduler | +39 | −7 |
-340|- [ ] `2938886` | 2026-05-08 | `tianbao.yang` | Merge upstream/main into yangtb — v0.13.0 sync (237 commits) | +0 | −0 |
+340|- [x] ⏭️ 跳过 `2938886` | 2026-05-08 | `tianbao.yang` | Merge upstream/main into yangtb — v0.13.0 sync (237 commits) | +0 | −0 |
 341|- [ ] `21d4700` | 2026-05-08 | `tianbao.yang` | fix(feishu): wrap multi-item inline-code ref in code block for one-tap copy | +9 | −1 |
 342|- [ ] `085513e` | 2026-05-08 | `tianbao.yang` | fix(tui): FaceTicker verb reads from skin spinner instead of hardcoded VERBS import | +357 | −6 |
 343|- [ ] `3622735` | 2026-05-08 | `tianbao.yang` | refactor: move ruolin skins to yangtb/skins/ with symlinks | +236 | −8 |
@@ -341,7 +341,7 @@
 355|- [ ] `bf0832b` | 2026-05-08 | `tianbao.yang` | feat(feishu): append inline code spans as plain-text reference for mobile copy | +41 | −0 |
 356|- [ ] `526eea8` | 2026-05-08 | `tianbao.yang` | feat(feishu): align markdown table columns in code blocks using wcwidth | +88 | −1 |
 357|- [ ] `5031f9c` | 2026-05-08 | `tianbao.yang` | fix(feishu): prevent markdown format corruption from nested code fences and unsupported tables | +33 | −6 |
-358|- [ ] `915baf1` | 2026-05-07 | `tianbao.yang` | Merge upstream/main into yangtb (503 commits behind) | +0 | −0 |
+358|- [x] ⏭️ 跳过 `915baf1` | 2026-05-07 | `tianbao.yang` | Merge upstream/main into yangtb (503 commits behind) | +0 | −0 |
 359|- [ ] `627f3e1` | 2026-05-07 | `tianbao.yang` | feat: add commit_all_on_new support via patch.yaml | +90 | −0 |
 360|- [ ] `e87a6f1` | 2026-05-05 | `tianbao.yang` | feat(tfidf): add pin list support for always-loaded skills | +12 | −0 |
 361|- [ ] `c4fdf38` | 2026-05-05 | `tianbao.yang` | Fix UnboundLocalError: _classified nested inside skills_list_snapshot guard | +18 | −18 |
@@ -360,7 +360,7 @@
 374|- [⏸️ 已决策·暂不迁移] `b926356` | 2026-05-04 | `tianbao.yang` | fix(gateway): fallback /status model/provider display when DB values are None/custom | +12 | −2 |
 375|- [x] ⚠️ 废弃：定价/AGENTS.md，不迁移 `0b7742b` | 2026-05-04 | `tianbao.yang` | feat(pricing): dual-currency support (CNY/USD) + deepseek-v4 pricing + cache hit rate | +46 | −6 |
 376|- [ ] `e8841ac` | 2026-05-03 | `tianbao.yang` | chore: update package-lock after upstream merge | +25 | −16 |
-377|- [ ] `0d1302e` | 2026-05-03 | `tianbao.yang` | Merge upstream/main into yangtb (631 commits, 11 conflicts resolved) | +0 | −0 |
+377|- [x] ⏭️ 跳过 `0d1302e` | 2026-05-03 | `tianbao.yang` | Merge upstream/main into yangtb (631 commits, 11 conflicts resolved) | +0 | −0 |
 378|- [x] ✅ 已迁移 `e7d46fc` | 2026-05-03 | `tianbao.yang` | fix(hermes_mon): migrate data dir to ~/.local/share + dedup hourly aggregation | +29 | −4 |
 379|- [x] ✅ 已迁移 `a8fc5d1` | 2026-05-03 | `tianbao.yang` | feat(skin): add tagline field for banner subtitle | +6 | −3 |
 380|- [x] ✅ 已迁移 `889ef45` | 2026-05-03 | `tianbao.yang` | feat(skin): pipe spinner data (faces/verbs) from skin engine through to TUI FaceTicker | +39 | −11 |
@@ -383,9 +383,9 @@
 397|- [x] ✅ 已迁移 `dbb99d5` | 2026-04-29 | `tianbao.yang` | feat(tui): 选中即复制 (auto copy-on-select) | +49 | −4 |
 398|- [x] ✅ P15 已迁移 `1780ea8` | 2026-04-28 | `tianbao.yang` | refactor(gateway): canonical command routing in quick command handler | +131 | −6 |
 399|- [x] ✅ P15 已迁移 `0cbcb3e` | 2026-04-28 | `tianbao.yang` | fix(cli): add quick_commands autocomplete to SlashCommandCompleter | +26 | −0 |
-400|- [ ] `b1fff64` | 2026-04-28 | `tianbao.yang` | Merge remote-tracking branch 'upstream/main' into yangtb | +0 | −0 |
+400|- [x] ⏭️ 跳过 `b1fff64` | 2026-04-28 | `tianbao.yang` | Merge remote-tracking branch 'upstream/main' into yangtb | +0 | −0 |
 401|- [x] ⚠️ 废弃：/status model/provider 显示，不再需要 `c99f15f` | 2026-04-27 | `tianbao.yang` | fix(tui): resolve /status ambiguous command error | +36 | −14 |
-402|- [ ] `3f510d0` | 2026-04-27 | `tianbao.yang` | Merge remote-tracking branch 'upstream/main' | +0 | −0 |
+402|- [x] ⏭️ 跳过 `3f510d0` | 2026-04-27 | `tianbao.yang` | Merge remote-tracking branch 'upstream/main' | +0 | −0 |
 403|- [x] ✅ P15 已迁移 `0034173` | 2026-04-27 | `tianbao.yang` | fix(tui): resolve quick_commands alias in _mirror_slash_side_effects | +28 | −0 |
 404|- [x] ✅ P15 已迁移 `6efc6a8` | 2026-04-27 | `tianbao.yang` | fix(cli): support ;; chain in quick_commands alias type | +25 | −4 |
 405|- [x] ⚠️ 废弃：定价/AGENTS.md，不迁移 `736da3a` | 2026-04-27 | `tianbao.yang` | feat: add xAI Grok pricing entries | +185 | −0 |
