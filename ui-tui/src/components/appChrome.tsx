@@ -145,12 +145,17 @@ function FaceTicker({ color, startedAt, style, spinner }: { color: string; start
   }, [intervalMs, showVerb])
 
   const { frame } = renderIndicator(style, tick)
-  const verb = spinner.thinkingVerbs[verbTick % spinner.thinkingVerbs.length] ?? ''  // [owner-patch] skin-configurable verbs
-  const verbSegment = showVerb ? ` ${padVerb(verb)}` : ''
-  // Leading space keeps a gap between the frame and the duration when the
-  // verb segment is hidden (e.g. `unicode` spinner style).  When the verb
-  // IS shown, its trailing padding already provides the gap, so the extra
-  // space is harmless.
+  const verbs = spinner.thinkingVerbs
+  const verb = verbs[verbTick % verbs.length] ?? ''
+  // Display-width-aware padding: padEnd() uses JS char length, but CJK
+  // verbs (2-column chars per char) would get way too many trailing spaces.
+  // Compute pad target from stringWidth() so all verbs render at the same
+  // visible width regardless of script.
+  const maxVerbWidth = Math.max(0, ...verbs.map(v => stringWidth(v)))
+  const verbText = verb ? `${verb}…` : ''
+  const verbPadded = verbText +
+    ' '.repeat(Math.max(0, maxVerbWidth + 1 - stringWidth(verbText)))
+  const verbSegment = showVerb && verb ? ` ${verbPadded}` : ''
   const durationSegment = startedAt ? ` · ${fmtDuration(now - startedAt)}` : ''
 
   return (
