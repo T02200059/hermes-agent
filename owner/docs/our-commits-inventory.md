@@ -329,7 +329,7 @@
 343|- [x] ✅ 已迁移（skin YAML → owner/skins/） `3622735` | 2026-05-08 | `tianbao.yang` | refactor: move ruolin skins to yangtb/skins/ with symlinks | +236 | −8 |
 344|- [x] ⏭️ 跳过（yangtb/README.md 文档 + OpenViking 已废弃） `5ce1904` | 2026-05-08 | `tianbao.yang` | docs: add external assets inventory to yangtb/README.md | +57 | −10 |
 345|- [x] ⏭️ 跳过（yangtb/README.md 不存在于 owner-v16） `088ade4` | 2026-05-08 | `tianbao.yang` | docs: remove deprecated section from yangtb/README.md | +0 | −12 |
-346|- [ ] `3d438f8` | 2026-05-08 | `tianbao.yang` | docs: add OpenViking deployment and pitfalls to yangtb/README.md | +159 | −0 |
+346|- [x] ⚠️ 废弃（yangtb/README.md OpenViking 文档，OpenViking 已停用） `3d438f8` | 2026-05-08 | `tianbao.yang` | docs: add OpenViking deployment and pitfalls to yangtb/README.md | +159 | −0 |
 347|- [ ] `8735a40` | 2026-05-08 | `tianbao.yang` | docs: add yangtb/README.md with full customization inventory | +160 | −0 |
 348|- [ ] `2416220` | 2026-05-08 | `tianbao.yang` | refactor: move config files to yangtb/config/ | +226 | −1 |
 349|- [ ] `fcc9291` | 2026-05-08 | `tianbao.yang` | refactor: move personal scripts to yangtb/scripts/ | +1509 | −0 |
