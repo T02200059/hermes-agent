@@ -392,11 +392,11 @@
 392|- [ ] `28e513d` | 2026-04-30 | `tianbao.yang` | feat(file_tools): add headings_only parameter for markdown heading extraction | +39 | −6 |
 393|- [ ] `a6b718b` | 2026-04-30 | `tianbao.yang` | fix(session_search): fast window mode around FTS5 hits for long sessions (#16671 workaround) | +149 | −2 |
 394|- [ ] `0be2695` | 2026-04-30 | `tianbao.yang` | perf(agent): stabilize system prompt timestamp across compression cycles | +15 | −2 |
-395|- [ ] `a484c2c` | 2026-04-29 | `tianbao.yang` | feat(tui): support ;; chained commands in quick_commands aliases | +141 | −64 |
+395|- [x] ✅ P15 已迁移 `a484c2c` | 2026-04-29 | `tianbao.yang` | feat(tui): support ;; chained commands in quick_commands aliases | +141 | −64 |
 396|- [ ] `fbb98ae` | 2026-04-29 | `tianbao.yang` | feat(feishu): support channel_prompts from config.yaml | +4 | −0 |
 397|- [ ] `dbb99d5` | 2026-04-29 | `tianbao.yang` | feat(tui): 选中即复制 (auto copy-on-select) | +49 | −4 |
-398|- [ ] `1780ea8` | 2026-04-28 | `tianbao.yang` | refactor(gateway): canonical command routing in quick command handler | +131 | −6 |
-399|- [ ] `0cbcb3e` | 2026-04-28 | `tianbao.yang` | fix(cli): add quick_commands autocomplete to SlashCommandCompleter | +26 | −0 |
+398|- [x] ✅ P15 已迁移 `1780ea8` | 2026-04-28 | `tianbao.yang` | refactor(gateway): canonical command routing in quick command handler | +131 | −6 |
+399|- [x] ✅ P15 已迁移 `0cbcb3e` | 2026-04-28 | `tianbao.yang` | fix(cli): add quick_commands autocomplete to SlashCommandCompleter | +26 | −0 |
 400|- [ ] `b1fff64` | 2026-04-28 | `tianbao.yang` | Merge remote-tracking branch 'upstream/main' into yangtb | +0 | −0 |
 401|- [ ] `c99f15f` | 2026-04-27 | `tianbao.yang` | fix(tui): resolve /status ambiguous command error | +36 | −14 |
 402|- [ ] `3f510d0` | 2026-04-27 | `tianbao.yang` | Merge remote-tracking branch 'upstream/main' | +0 | −0 |
