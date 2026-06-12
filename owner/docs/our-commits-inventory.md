@@ -354,9 +354,9 @@
 368|- [ ] `ca110e6` | 2026-05-05 | `tianbao.yang` | feat: add Layer 0 Top-N always-on skills to TF-IDF tracker (Phase 3a) | +58 | −0 |
 369|- [ ] `a06d719` | 2026-05-05 | `tianbao.yang` | feat: extract _is_high_info_message() as shared utility for TF-IDF pipeline | +74 | −0 |
 370|- [ ] `248bebe` | 2026-05-05 | `tianbao.yang` | fix: strip 'source' and 'requested_provider' from runtime_kwargs in api_server._create_agent | +49 | −0 |
-371|- [ ] `9a95e21` | 2026-05-04 | `tianbao.yang` | fix(qqbot): add WebSocket heartbeat + receive_timeout to detect TCP half-open after WSL sleep/wake | +2 | −0 |
+371|- [x] ✅ 已迁移 `9a95e21` | 2026-05-04 | `tianbao.yang` | fix(qqbot): add WebSocket heartbeat + receive_timeout to detect TCP half-open after WSL sleep/wake | +2 | −0 |
 372|- [ ] `c1effe4` | 2026-05-04 | `tianbao.yang` | fix: separate provider_name from provider to preserve custom provider identity | +16 | −5 |
-373|- [ ] `97c43f6` | 2026-05-04 | `tianbao.yang` | fix(qqbot): rebuild httpx client on reconnect to fix WSL sleep/wake network reset | +28 | −0 |
+373|- [x] ✅ 已迁移 `97c43f6` | 2026-05-04 | `tianbao.yang` | fix(qqbot): rebuild httpx client on reconnect to fix WSL sleep/wake network reset | +28 | −0 |
 374|- [ ] `b926356` | 2026-05-04 | `tianbao.yang` | fix(gateway): fallback /status model/provider display when DB values are None/custom | +12 | −2 |
 375|- [x] ⚠️ 废弃：定价/AGENTS.md，不迁移 `0b7742b` | 2026-05-04 | `tianbao.yang` | feat(pricing): dual-currency support (CNY/USD) + deepseek-v4 pricing + cache hit rate | +46 | −6 |
 376|- [ ] `e8841ac` | 2026-05-03 | `tianbao.yang` | chore: update package-lock after upstream merge | +25 | −16 |
@@ -365,7 +365,7 @@
 379|- [ ] `a8fc5d1` | 2026-05-03 | `tianbao.yang` | feat(skin): add tagline field for banner subtitle | +6 | −3 |
 380|- [ ] `889ef45` | 2026-05-03 | `tianbao.yang` | feat(skin): pipe spinner data (faces/verbs) from skin engine through to TUI FaceTicker | +39 | −11 |
 381|- [ ] `02278cd` | 2026-05-03 | `tianbao.yang` | feat(scripts): add hermes_mon - per-process perf monitoring with launchd | +483 | −0 |
-382|- [ ] `7c5bbdf` | 2026-05-02 | `tianbao.yang` | fix(qqbot): prevent silent dead-loop when WS closed after reconnect failure | +1 | −1 |
+382|- [x] ✅ 已迁移 `7c5bbdf` | 2026-05-02 | `tianbao.yang` | fix(qqbot): prevent silent dead-loop when WS closed after reconnect failure | +1 | −1 |
 383|- [ ] ❓ 待定：后续观察token消耗成本 `7d7e559` | 2026-05-02 | `tianbao.yang` | feat: 方案2 — 会话内 skill 创建跟踪 + 存活过滤 | +142 | −12 |
 384|- [ ] ❓ 待定：后续观察token消耗成本 `f81cca5` | 2026-05-02 | `tianbao.yang` | feat: recency exemption for TF-IDF skill filtering (72h mtime window) | +65 | −0 |
 385|- [ ] ❓ 待定：后续观察token消耗成本 `4e88521` | 2026-05-02 | `tianbao.yang` | feat: system prompt audit logging via write_sysprompt_audit_entry | +100 | −1 |
