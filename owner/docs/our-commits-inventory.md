@@ -174,7 +174,7 @@
 174|- [ ] `3141715` | 2026-05-30 | `yangtb` | fix(feishu): resolve sender name for approval card using open_id instead of short user_id | +5 | −2 |
 175|- [ ] `90c9f20` | 2026-05-30 | `yangtb` | feat(patch): feishu: raise auto_card_threshold to 41, add interim/tool_progress settings | +7 | −1 |
 176|- [ ] `08253ae` | 2026-05-29 | `yangtb` | chore: remove obsolete yangtb/scripts/send_daily_report.py (was accidentally committed by daily-report cron, caused persistent merge conflicts) | +0 | −76 |
-177|- [ ] `2c383a2` | 2026-05-29 | `yangtb` | merge: resolve conflict with gitlab/yangtb — keep HEAD P35+P36, adopt yangtb's send_daily_report (5-26 version) | +0 | −0 |
+177|- [x] ✅ 已迁移 `2c383a2` | 2026-05-29 | `yangtb` | merge: resolve conflict with gitlab/yangtb — keep HEAD P35+P36, adopt yangtb's send_daily_report (5-26 version) | +0 | −0 |
 178|- [ ] `480bf03` | 2026-05-29 | `yangtb` | fix(qqbot): add 'dm' chat_type to approval authorization | +2 | −3291 |
 179|- [ 
 
@@ -189,11 +189,11 @@
 203|- [ ] `016bb35` | 2026-05-27 | `yangtb` | chore(config): 移除 nous rate limit 配置，damodel max_requests 提频 30→60 | +1 | −4 |
 204|- [ ] `1c887ef` | 2026-05-27 | `yangtb` | feat(feishu): approvals 卡片回调异步更新用户名，显示命令内容 | +67 | −17 |
 205|- [ ] `601e79e` | 2026-05-27 | `yangtb` | chore(owner): add xfyun rate limit config to patch.yaml | +3 | −0 |
-206|- [ ] `25f1996` | 2026-05-27 | `yangtb` | docs(owner): 同步 patch 清单 P35-P38 + P9 CallBackCard 升级 | +12 | −8 |
+206|- [x] ✅ 已迁移 `25f1996` | 2026-05-27 | `yangtb` | docs(owner): 同步 patch 清单 P35-P38 + P9 CallBackCard 升级 | +12 | −8 |
 207|- [x] ⚠️ 废弃：上游已修复，.env 加载时机已无问题 `2b801e5` | 2026-05-27 | `yangtb` | fix(gateway): eagerly load .env before any import that triggers load_config() | +15 | −0 |
 208|- [ ] `c9cc868` | 2026-05-27 | `yangtb` | fix(feishu): return CallBackCard in approval card action to update card inline | +13 | −3 |
 209|- [ ] `b7a199b` | 2026-05-26 | `yangtb` | feat: Viking health report API rewrite + fix TUI Cmd+C on macOS | +276 | −3 |
-210|- [ ] `8d359ee` | 2026-05-26 | `yangtb` | docs(yangtb): register P35 — extract_local_files double-backtick code span fix | +4 | −3 |
+210|- [x] ✅ 已迁移 `8d359ee` | 2026-05-26 | `yangtb` | docs(yangtb): register P35 — extract_local_files double-backtick code span fix | +4 | −3 |
 211|- [x] ✅ 已迁移 `ff19a78` | 2026-05-26 | `yangtb` | fix(gateway): add double-backtick code span detection in extract_local_files | +155 | −9 |
 212|- [x] ✅ 已迁移 `ca3c24f` | 2026-05-26 | `yangtb` | fix(gateway): add double-backtick code span detection in extract_local_files | +146 | −5 |
 213|- [ ] `d31f26b` | 2026-05-26 | `yangtb` | feat(i18n): translate all approval descriptions to Chinese via i18n | +333 | −16 |
@@ -298,7 +298,7 @@
 312|- [ ] `62ec570` | 2026-05-13 | `tianbao.yang` | refactor(hooks): 三根日志统一轮转为 DailySizeRotatingFileHandler | +334 | −18 |
 313|- [ ] `a572c36` | 2026-05-12 | `tianbao.yang` | fix(feishu): emoji width compensation in _align_table | +9 | −1 |
 314|- [ ] `ea163c7` | 2026-05-11 | `tianbao.yang` | feat(token): bailing provider daily 500k free tier support | +134 | −27 |
-315|- [ ] `e7edb2f` | 2026-05-11 | `tianbao.yang` | docs(yangtb): update patch count and add P29 env-var template leak fix to README | +5 | −4 |
+315|- [x] ✅ 已迁移 `e7edb2f` | 2026-05-11 | `tianbao.yang` | docs(yangtb): update patch count and add P29 env-var template leak fix to README | +5 | −4 |
 316|- [x] ✅ 已迁移 `85d345e` | 2026-05-11 | `tianbao.yang` | fix: guard against env-var template leak in base_url resolution (#17101) | +22 | −3 |
 317|- [ ] `14b8a31` | 2026-05-11 | `tianbao.yang` | audit-agent: i18n docstring/comments, get_hermes_home, batch git diff, checkpoint trim | +100 | −49 |
 318|- [ ] `6b0c817` | 2026-05-11 | `tianbao.yang` | feat(credential-pool): add proactive sliding-window rate limiter per (provider, key) | +246 | −19 |
