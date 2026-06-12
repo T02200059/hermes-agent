@@ -257,7 +257,7 @@ const BRAND: ThemeBrand = {
 }
 
 // [owner-patch] DEFAULT_SPINNER — shared by DARK/LIGHT, overridable by skin
-const DEFAULT_SPINNER: ThemeSpinner = {
+export const DEFAULT_SPINNER: ThemeSpinner = {
   waitingFaces: '(｡•́︿•̀｡) (◔_◔) (¬‿¬) ( •_•)>⌐■-■ (⌐■_■) (´･_･`) ◉_◉ (°ロ°) ( ˘⌣˘)♡ ヽ(>∀<☆)☆ ٩(๑❛ᴗ❛๑)۶ (⊙_⊙) (¬_¬) ( ͡° ͜ʖ ͡°) ಠ_ಠ'.split(' '),
   thinkingVerbs: 'pondering contemplating musing cogitating ruminating deliberating mulling reflecting processing reasoning analyzing computing synthesizing formulating brainstorming'.split(' '),
 }
@@ -579,8 +579,8 @@ export function fromSkin(
       sessionLabel: c('session_label') ?? muted,
       sessionBorder: c('session_border') ?? muted,
 
-      statusBg: d.color.statusBg,
-      statusFg: d.color.statusFg,
+      statusBg: c('status_bar_bg') ?? d.color.statusBg,  // [owner-patch] skin override
+      statusFg: c('status_bar_text') ?? d.color.statusFg,  // [owner-patch] skin override
       statusGood: c('ui_ok') ?? d.color.statusGood,
       statusWarn: c('ui_warn') ?? d.color.statusWarn,
       statusBad: d.color.statusBad,
