@@ -342,7 +342,7 @@
 356|- [ ] `526eea8` | 2026-05-08 | `tianbao.yang` | feat(feishu): align markdown table columns in code blocks using wcwidth | +88 | −1 |
 357|- [ ] `5031f9c` | 2026-05-08 | `tianbao.yang` | fix(feishu): prevent markdown format corruption from nested code fences and unsupported tables | +33 | −6 |
 358|- [x] ⏭️ 跳过 `915baf1` | 2026-05-07 | `tianbao.yang` | Merge upstream/main into yangtb (503 commits behind) | +0 | −0 |
-359|- [ ] `627f3e1` | 2026-05-07 | `tianbao.yang` | feat: add commit_all_on_new support via patch.yaml | +90 | −0 |
+359|- [x] ⚠️ 废弃：OpenViking 插件已弃用，Qdrant 是当前 backing store `627f3e1` | 2026-05-07 | `tianbao.yang` | feat: add commit_all_on_new support via patch.yaml | +90 | −0 |
 360|- [⏸️ 已决策·待后续观察] `e87a6f1` | 2026-05-05 | `tianbao.yang` | feat(tfidf): add pin list support for always-loaded skills | +12 | −0 |
 361|- [ ] `c4fdf38` | 2026-05-05 | `tianbao.yang` | Fix UnboundLocalError: _classified nested inside skills_list_snapshot guard | +18 | −18 |
 362|- [⏸️ 已决策·待后续观察] `4fac935` | 2026-05-05 | `tianbao.yang` | Phase 3c: LLM fallback line-mode + platform-level disable | +84 | −35 |
