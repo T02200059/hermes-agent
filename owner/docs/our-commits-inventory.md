@@ -176,25 +176,11 @@
 176|- [ ] `08253ae` | 2026-05-29 | `yangtb` | chore: remove obsolete yangtb/scripts/send_daily_report.py (was accidentally committed by daily-report cron, caused persistent merge conflicts) | +0 | −76 |
 177|- [ ] `2c383a2` | 2026-05-29 | `yangtb` | merge: resolve conflict with gitlab/yangtb — keep HEAD P35+P36, adopt yangtb's send_daily_report (5-26 version) | +0 | −0 |
 178|- [ ] `480bf03` | 2026-05-29 | `yangtb` | fix(qqbot): add 'dm' chat_type to approval authorization | +2 | −3291 |
-179|- [ ] `5a886a4` | 2026-05-29 | `yangtb` | docs: 更新 patch 总列表，新增 P53/P54/P55（37组/45项） | +6 | −3 |
-180|- [ ] `3198a71` | 2026-05-29 | `yangtb` | fix(agent): 向 system_prompt 注入 current_user 字段，消除 API 响应中的占位符 | +129 | −24 |
-181|- [ ] `d452156` | 2026-05-28 | `yangtb` | i18n: gateway lifecycle emoji → skyline series (🌇🌆🌃🏙) | +8 | −8 |
-182|- [ ] `43687be` | 2026-05-28 | `yangtb` | docs(owner): register P42 — QQ Bot diff markdown display | +3 | −2 |
-183|- [ ] `191183e` | 2026-05-28 | `yangtb` | chore: remove unused hooks (sre-archive, tool-call-logger) | +0 | −790 |
-184|- [ ] `7e7cb58` | 2026-05-28 | `yangtb` | feat(qqbot): diff markdown display for patch/write_file/skill_manage | +116 | −0 |
-185|- [ ] `07a584a` | 2026-05-28 | `yangtb` | style(i18n): 网关重启/关闭提示 emoji 从 ⚠️ 换成 ⏸️ | +2 | −2 |
-186|- [ ] `4c40f92` | 2026-05-28 | `yangtb` | docs: P39 更新 — 三阶段渐进展开交互 | +1 | −1 |
-187|- [ ] `bb542ba` | 2026-05-28 | `yangtb` | feat: diff 卡片三阶段渐进展开 (compact → expanded → full) | +189 | −39 |
-188|- [ ] `4a60dd1` | 2026-05-28 | `yangtb` | fix(model_metadata): support dict format provider models in get_model_context_length (P41) | +21 | −12 |
-189|- [ ] `de36b03` | 2026-05-28 | `yangtb` | refactor(feishu): resolve sender name synchronously before approval card response | +13 | −34 |
-190|- [ ] `dd0b53e` | 2026-05-28 | `yangtb` | fix(tui): pass missing spinner prop to FaceTicker in StatusRule | +1 | −1 |
-191|- [ ] `a422f7d` | 2026-05-28 | `yangtb` | docs(owner): 更新 P39 飞书 Diff 卡片描述 — 三工具触发+四色渲染+踩坑记录 | +2 | −2 |
-192|- [ ] `bec5b1e` | 2026-05-28 | `yangtb` | feat: feishu diff cards for write_file + skill_manage + purple header styling | +76 | −9 |
-193|- [ ] `0a3fa8c` | 2026-05-28 | `yangtb` | fix: gateway/run.py 对抗性 review 修复 | +15 | −5 |
-194|- [ ] `1b41e23` | 2026-05-28 | `yangtb` | fix: owner 分支定制化模块对抗性 review 修复 | +88 | −10 |
-195|- [ ] `ed7d88e` | 2026-05-28 | `yangtb` | chore: add xiaomi rate limit config to patch.yaml | +3 | −0 |
-196|- [ ] `082e0be` | 2026-05-28 | `yangtb` | feat(i18n): translate all tips to Chinese | +455 | −458 |
-197|- [ ] `a77231c` | 2026-05-28 | `yangtb` | Merge upstream/main into owner (v0.14.0+) | +0 | −0 |
+179|- [ 
+
+... [OUTPUT TRUNCATED - 2046 chars omitted out of 52046 total] ...
+
+[ ] `a77231c` | 2026-05-28 | `yangtb` | Merge upstream/main into owner (v0.14.0+) | +0 | −0 |
 198|- [ ] `c5b6992` | 2026-05-28 | `yangtb` | chore: remove viking-hint hook (empty stub, never implemented) | +0 | −49 |
 199|- [ ] `0c23b27` | 2026-05-27 | `yangtb` | i18n(zh): add all 85 missing tirith rule translations, remove 2 stale entries | +193 | −9 |
 200|- [ ] `bf295cd` | 2026-05-27 | `yangtb` | refactor(gateway): 外部 restart 走 launchctl kickstart -k 原子化生命周期 | +24 | −13 |
@@ -391,7 +377,7 @@
 391|- [x] ⚠️ 废弃：定价/AGENTS.md，不迁移 `b65b962` | 2026-04-30 | `tianbao.yang` | feat(usage): extend pricing data with YAML-based provider pricing support | +314 | −0 |
 392|- [ ] ❓ 待定：headings_only，暂不迁移 `28e513d` | 2026-04-30 | `tianbao.yang` | feat(file_tools): add headings_only parameter for markdown heading extraction | +39 | −6 |
 393|- [ ] ❓ 待定：session_search window mode，等上游 #16671 `a6b718b` | 2026-04-30 | `tianbao.yang` | fix(session_search): fast window mode around FTS5 hits for long sessions (#16671 workaround) | +149 | −2 |
-394|- [ ] `0be2695` | 2026-04-30 | `tianbao.yang` | perf(agent): stabilize system prompt timestamp across compression cycles | +15 | −2 |
+394|- [x] ❌ DEPRECATED `0be2695` | 2026-04-30 | `tianbao.yang` | perf(agent): stabilize system prompt timestamp across compression cycles | +15 | −2 | (upstream PR #27675 merged as `4a3f13b`, date-only方案更简单无依赖)
 395|- [x] ✅ P15 已迁移 `a484c2c` | 2026-04-29 | `tianbao.yang` | feat(tui): support ;; chained commands in quick_commands aliases | +141 | −64 |
 396|- [x] ✅ 已迁移 `fbb98ae` | 2026-04-29 | `tianbao.yang` | feat(feishu): support channel_prompts from config.yaml | +4 | −0 |
 397|- [x] ✅ 已迁移 `dbb99d5` | 2026-04-29 | `tianbao.yang` | feat(tui): 选中即复制 (auto copy-on-select) | +49 | −4 |
