@@ -326,9 +326,9 @@
 340|- [x] ⏭️ 跳过 `2938886` | 2026-05-08 | `tianbao.yang` | Merge upstream/main into yangtb — v0.13.0 sync (237 commits) | +0 | −0 |
 341|- [x] ⏸️ 已决策·暂不迁移（依赖 _append_inline_code_reference 函数整体迁移） `21d4700` | 2026-05-08 | `tianbao.yang` | fix(feishu): wrap multi-item inline-code ref in code block for one-tap copy | +9 | −1 |
 342|- [x] ✅ 已迁移·TUI部分（hooks在owner/单独处理） `085513e` | 2026-05-08 | `tianbao.yang` | fix(tui): FaceTicker verb reads from skin spinner instead of hardcoded VERBS import | +357 | −6 |
-343|- [ ] `3622735` | 2026-05-08 | `tianbao.yang` | refactor: move ruolin skins to yangtb/skins/ with symlinks | +236 | −8 |
-344|- [ ] `5ce1904` | 2026-05-08 | `tianbao.yang` | docs: add external assets inventory to yangtb/README.md | +57 | −10 |
-345|- [ ] `088ade4` | 2026-05-08 | `tianbao.yang` | docs: remove deprecated section from yangtb/README.md | +0 | −12 |
+343|- [x] ✅ 已迁移（skin YAML → owner/skins/） `3622735` | 2026-05-08 | `tianbao.yang` | refactor: move ruolin skins to yangtb/skins/ with symlinks | +236 | −8 |
+344|- [x] ⏭️ 跳过（yangtb/README.md 文档 + OpenViking 已废弃） `5ce1904` | 2026-05-08 | `tianbao.yang` | docs: add external assets inventory to yangtb/README.md | +57 | −10 |
+345|- [x] ⏭️ 跳过（yangtb/README.md 不存在于 owner-v16） `088ade4` | 2026-05-08 | `tianbao.yang` | docs: remove deprecated section from yangtb/README.md | +0 | −12 |
 346|- [ ] `3d438f8` | 2026-05-08 | `tianbao.yang` | docs: add OpenViking deployment and pitfalls to yangtb/README.md | +159 | −0 |
 347|- [ ] `8735a40` | 2026-05-08 | `tianbao.yang` | docs: add yangtb/README.md with full customization inventory | +160 | −0 |
 348|- [ ] `2416220` | 2026-05-08 | `tianbao.yang` | refactor: move config files to yangtb/config/ | +226 | −1 |
