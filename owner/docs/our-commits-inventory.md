@@ -338,9 +338,9 @@
 352|- [ ] `22ed810` | 2026-05-08 | `tianbao.yang` | fix: LLM API silent disconnect now notifies user in current chat | +67 | −0 |
 353|- [ ] `aed81f7` | 2026-05-08 | `tianbao.yang` | refactor: migrate tf-idf to patch.yaml + remove pin mechanism | +80 | −72 |
 354|- [ ] `3b8031c` | 2026-05-08 | `tianbao.yang` | fix(feishu): rewording — 兼容性参考 → 手机端复制粘贴兼容 | +1 | −1 |
-355|- [ ] `bf0832b` | 2026-05-08 | `tianbao.yang` | feat(feishu): append inline code spans as plain-text reference for mobile copy | +41 | −0 |
-356|- [ ] `526eea8` | 2026-05-08 | `tianbao.yang` | feat(feishu): align markdown table columns in code blocks using wcwidth | +88 | −1 |
-357|- [ ] `5031f9c` | 2026-05-08 | `tianbao.yang` | fix(feishu): prevent markdown format corruption from nested code fences and unsupported tables | +33 | −6 |
+355|- [x] ⚠️ 废弃 `bf0832b` | 2026-05-08 | `tianbao.yang` | feat(feishu): append inline code spans as plain-text reference for mobile copy | +41 | −0 |
+356|- [x] ⚠️ 废弃（被 `d682be1` 飞书原生表格方案替代） `526eea8` | 2026-05-08 | `tianbao.yang` | feat(feishu): align markdown table columns in code blocks using wcwidth | +88 | −1 |
+357|- [x] ⚠️ 废弃（被 `d682be1` 飞书原生表格方案替代） `5031f9c` | 2026-05-08 | `tianbao.yang` | fix(feishu): prevent markdown format corruption from nested code fences and unsupported tables | +33 | −6 |
 358|- [x] ⏭️ 跳过 `915baf1` | 2026-05-07 | `tianbao.yang` | Merge upstream/main into yangtb (503 commits behind) | +0 | −0 |
 359|- [x] ⚠️ 废弃：OpenViking 插件已弃用，Qdrant 是当前 backing store `627f3e1` | 2026-05-07 | `tianbao.yang` | feat: add commit_all_on_new support via patch.yaml | +90 | −0 |
 360|- [⏸️ 已决策·待后续观察] `e87a6f1` | 2026-05-05 | `tianbao.yang` | feat(tfidf): add pin list support for always-loaded skills | +12 | −0 |
