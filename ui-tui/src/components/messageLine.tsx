@@ -193,12 +193,14 @@ export const MessageLine = memo(function MessageLine({
   // segments) keep a blank line on both sides so the patch doesn't butt up
   // against the prose around it.
   const isDiffSegment = msg.kind === 'diff'
+  const showUserBg = msg.role === 'user' && t.color.userBg
 
   return (
     <Box
       flexDirection="column"
       marginBottom={msg.role === 'user' || isDiffSegment ? 1 : 0}
       marginTop={msg.role === 'user' || msg.kind === 'slash' || isDiffSegment || leadGap ? 1 : 0}
+      backgroundColor={showUserBg || undefined}
     >
       {showDetails && (
         <Box flexDirection="column" marginBottom={1}>
