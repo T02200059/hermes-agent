@@ -77,8 +77,8 @@
 77|- [ ] `fbfa354` | 2026-06-10 | `yangtb` | feat(feishu): use 🟥 for memory proposal deny button | +4 | −4 |
 78|- [ ] `84c7489` | 2026-06-10 | `yangtb` | chore(owner): restore local adjustments for qdrant hook (named vector search), session-archiver (DeepSeek/DashScope), pricing.yaml | +62 | −100 |
 79|- [ ] `c24c8ee` | 2026-06-09 | `yangtb` | docs(owner): patch inventory 69→73, add P70-P71 (clarify multi-profile, display_hook_message_receive) | +14 | −5 |
-80|- [ ] `825145f` | 2026-06-09 | `yangtb` | docs(owner): patch inventory 65→69, add P66-P69 (intent-guard, credential_pool, qdrant-recall, session-archiver) | +18 | −2 |
-81|- [ ] `c974c92` | 2026-06-09 | `yangtb` | docs(owner): update patch inventory to 65, add P65 yolo tri-state entry | +4 | −3 |
+80|- [x] ✅ 已迁移 `825145f` | 2026-06-09 | `yangtb` | docs(owner): patch inventory 65→69, add P66-P69 (intent-guard, credential_pool, qdrant-recall, session-archiver) | +18 | −2 |
+81|- [x] ✅ 已迁移 `c974c92` | 2026-06-09 | `yangtb` | docs(owner): update patch inventory to 65, add P65 yolo tri-state entry | +4 | −3 |
 82|- [x] ⚠️ 废弃：定价/AGENTS.md，不迁移 `9b4dda1` | 2026-06-09 | `yangtb` | docs(AGENTS): update project structure and development guide | +187 | −81 |
 83|- [ ] `ca0836e` | 2026-06-09 | `yangtb` | chore(config): add yolo_on/yolo_off ack text + sync patch.yaml | +17 | −1 |
 84|- [ ] `e7d351c` | 2026-06-09 | `yangtb` | fix(feishu): bot_menu synthetic event message_id → None | +1 | −1 |
