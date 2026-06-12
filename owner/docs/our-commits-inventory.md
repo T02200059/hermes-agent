@@ -332,7 +332,7 @@
 346|- [x] ⚠️ 废弃（yangtb/README.md OpenViking 文档，OpenViking 已停用） `3d438f8` | 2026-05-08 | `tianbao.yang` | docs: add OpenViking deployment and pitfalls to yangtb/README.md | +159 | −0 |
 347|- [x] ⚠️ 废弃（yangtb/README.md 初始文档，不存在于 owner-v16） `8735a40` | 2026-05-08 | `tianbao.yang` | docs: add yangtb/README.md with full customization inventory | +160 | −0 |
 348|- [x] ⏭️ 跳过（pricing废弃 + patch.yaml中TF-IDF延后单独处理） `2416220` | 2026-05-08 | `tianbao.yang` | refactor: move config files to yangtb/config/ | +226 | −1 |
-349|- [ ] `fcc9291` | 2026-05-08 | `tianbao.yang` | refactor: move personal scripts to yangtb/scripts/ | +1509 | −0 |
+349|- [x] ✅ 已迁移·部分（4脚本→owner/scripts/，token_stats/daily_memory废弃，viking废弃，tfidf延后） `fcc9291` | 2026-05-08 | `tianbao.yang` | refactor: move personal scripts to yangtb/scripts/ | +1509 | −0 |
 350|- [ ] `cc7f46a` | 2026-05-08 | `tianbao.yang` | fix(tui): pass missing spinner arg to renderIndicator | +1 | −1 |
 351|- [ ] `fad4db4` | 2026-05-08 | `tianbao.yang` | feat: auto-inject recovery context after LLM API disconnect | +78 | −1 |
 352|- [ ] `22ed810` | 2026-05-08 | `tianbao.yang` | fix: LLM API silent disconnect now notifies user in current chat | +67 | −0 |
