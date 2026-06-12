@@ -400,13 +400,13 @@
 400|- [ ] `b1fff64` | 2026-04-28 | `tianbao.yang` | Merge remote-tracking branch 'upstream/main' into yangtb | +0 | −0 |
 401|- [ ] `c99f15f` | 2026-04-27 | `tianbao.yang` | fix(tui): resolve /status ambiguous command error | +36 | −14 |
 402|- [ ] `3f510d0` | 2026-04-27 | `tianbao.yang` | Merge remote-tracking branch 'upstream/main' | +0 | −0 |
-403|- [ ] `0034173` | 2026-04-27 | `tianbao.yang` | fix(tui): resolve quick_commands alias in _mirror_slash_side_effects | +28 | −0 |
-404|- [ ] `6efc6a8` | 2026-04-27 | `tianbao.yang` | fix(cli): support ;; chain in quick_commands alias type | +25 | −4 |
+403|- [x] ✅ P15 已迁移 `0034173` | 2026-04-27 | `tianbao.yang` | fix(tui): resolve quick_commands alias in _mirror_slash_side_effects | +28 | −0 |
+404|- [x] ✅ P15 已迁移 `6efc6a8` | 2026-04-27 | `tianbao.yang` | fix(cli): support ;; chain in quick_commands alias type | +25 | −4 |
 405|- [x] ⚠️ 废弃：定价/AGENTS.md，不迁移 `736da3a` | 2026-04-27 | `tianbao.yang` | feat: add xAI Grok pricing entries | +185 | −0 |
-406|- [ ] `552ad0b` | 2026-04-27 | `tianbao.yang` | feat(gateway): support chained quick_commands with ;; | +67 | −14 |
+406|- [x] ✅ P15 已迁移 `552ad0b` | 2026-04-27 | `tianbao.yang` | feat(gateway): support chained quick_commands with ;; | +67 | −14 |
 407|- [ ] `cb0b2e7` | 2026-04-27 | `tianbao.yang` | fix: fetch model/provider from session_db instead of SessionEntry | +8 | −2 |
 408|- [ ] `67471f3` | 2026-04-27 | `tianbao.yang` | feat: add current session model and provider to /status output in gateway | +2 | −0 |
-409|- [ ] `22b90ab` | 2026-04-27 | `tianbao.yang` | fix(gateway): quick_command alias should explicitly call built-in command handlers | +10 | −2 |
+409|- [x] ✅ P15 已迁移 `22b90ab` | 2026-04-27 | `tianbao.yang` | fix(gateway): quick_command alias should explicitly call built-in command handlers | +10 | −2 |
 410|- [x] ⚠️ 废弃：定价/AGENTS.md，不迁移 `4a0997d` | 2026-04-26 | `tianbao.yang` | docs: update AGENTS.md development guide | +141 | −630 |
 411|
 412|## 复现方式
