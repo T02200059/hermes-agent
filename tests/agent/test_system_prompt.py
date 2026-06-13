@@ -22,6 +22,7 @@ def _make_agent(**overrides):
         platform="",
         pass_session_id=False,
         session_id="",
+        _user_name="",
     )
     base.update(overrides)
     return SimpleNamespace(**base)
@@ -67,6 +68,16 @@ def _stable_prompt(agent):
         return build_system_prompt_parts(agent)["stable"]
 
 
+def _volatile_prompt(agent):
+    with (
+        patch("run_agent.load_soul_md", return_value=""),
+        patch("run_agent.build_nous_subscription_prompt", return_value=""),
+        patch("run_agent.build_environment_hints", return_value=""),
+        patch("run_agent.build_context_files_prompt", return_value=""),
+    ):
+        return build_system_prompt_parts(agent)["volatile"]
+
+
 class TestCodingContextBlock:
     def test_injected_when_active(self, monkeypatch, tmp_path):
         import subprocess
@@ -96,3 +107,21 @@ class TestCodingContextBlock:
         monkeypatch.setenv("TERMINAL_CWD", str(tmp_path))
         agent = _make_agent(valid_tool_names=[], platform="cli")
         assert "coding agent" not in _stable_prompt(agent)
+
+
+class TestCurrentUserInjection:
+    """3198a71: the user's name appears in the volatile system-prompt tier."""
+
+    def test_injected_when_user_name_set(self):
+        volatile = _volatile_prompt(_make_agent(_user_name="杨天宝"))
+        assert "Current user: 杨天宝" in volatile
+
+    def test_absent_when_user_name_empty(self):
+        volatile = _volatile_prompt(_make_agent(_user_name=""))
+        assert "Current user:" not in volatile
+
+    def test_absent_when_user_name_missing(self):
+        agent = _make_agent()
+        del agent._user_name
+        volatile = _volatile_prompt(agent)
+        assert "Current user:" not in volatile
