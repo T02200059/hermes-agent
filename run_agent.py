@@ -1663,6 +1663,11 @@ class AIAgent:
                     tool_calls=tool_calls_data,
                     tool_call_id=msg.get("tool_call_id"),
                     finish_reason=msg.get("finish_reason"),
+                    # [owner-patch] attribution reconstruction — use owner helper
+                    # so the "how" is not duplicated across reconstruction sites.
+                    from owner.attribution import get_current_attribution
+                    # We still read the stored value from the message (for historical accuracy)
+                    # rather than calling get_current_attribution here.
                     owner_provider_name=msg.get("owner_provider_name") if role == "assistant" else None,
                     reasoning=msg.get("reasoning") if role == "assistant" else None,
                     reasoning_content=msg.get("reasoning_content") if role == "assistant" else None,
