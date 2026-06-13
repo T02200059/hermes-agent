@@ -2873,7 +2873,7 @@ class SlackAdapter(BasePlatformAdapter):
         The buttons call ``resolve_gateway_approval()`` to unblock the waiting
         agent thread — same mechanism as the text ``/approve`` flow.
         """
-        del sender_open_id, sender_is_bot  # [owner] 3198a71: unused on Slack, required by run.py
+        del sender_open_id, sender_is_bot  # [owner] approval: accept sender_* for Feishu name-cache pre-warm contract (see owner/feishu/sender_name_cache.py); unused here
         if not self._app:
             return SendResult(success=False, error="Not connected")
 
