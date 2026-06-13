@@ -245,10 +245,10 @@
 259|- [ ] `b30e774` | 2026-05-19 | `tianbao.yang` | Revert "fix: remove hardcoded extra_efforts from _resolve_reasoning_effort" | +15 | −5 |
 260|- [ ] `54657dc` | 2026-05-19 | `tianbao.yang` | fix: remove hardcoded extra_efforts from _resolve_reasoning_effort | +5 | −15 |
 261|- [ ] `5cbc280` | 2026-05-19 | `tianbao.yang` | refactor: extract _resolve_reasoning_effort helper, merge LKeap dual blocks | +79 | −61 |
-262|- [ ] `083bb20` | 2026-05-19 | `tianbao.yang` | misc(yangtb): update patch list, pricing, auditor-guard templates | +11 | −3 |
+262|- [x] ⚠️ 废弃：yangtb/ 目录不存在，pricing+auditor-guard 已废弃 `083bb20` | 2026-05-19 | `tianbao.yang` | misc(yangtb): update patch list, pricing, auditor-guard templates | +11 | −3 |
 263|- [ ] `1d00af0` | 2026-05-19 | `tianbao.yang` | feat(transports): add URL-based reasoning_effort support for LKeap/DeepSeek/DaModel | +51 | −0 |
-264|- [ ] `9407c34` | 2026-05-19 | `tianbao.yang` | docs(yangtb): align patch list with v0.14.0 merge (P12/P22/P27/P28 marked covered) | +17 | −3 |
-265|- [ ] `862b2cb` | 2026-05-19 | `tianbao.yang` | docs: bump patch count to 25 groups / 32 items, add P26 i18n gateway messages | +3 | −2 |
+264|- [x] ⚠️ 废弃：yangtb/README.md 纯文档 `9407c34` | 2026-05-19 | `tianbao.yang` | docs(yangtb): align patch list with v0.14.0 merge (P12/P22/P27/P28 marked covered) | +17 | −3 |
+265|- [x] ⚠️ 废弃：yangtb/README.md 纯文档 `862b2cb` | 2026-05-19 | `tianbao.yang` | docs: bump patch count to 25 groups / 32 items, add P26 i18n gateway messages | +3 | −2 |
 266|- [ ] `5110f6b` | 2026-05-19 | `tianbao.yang` | i18n: translate gateway lifecycle/busy-ack/steer/inactivity messages to Chinese | +480 | −36 |
 267|- [ ] `4d33091` | 2026-05-19 | `tianbao.yang` | fix(feishu): add early-typing reaction when chat_lock is held | +21 | −0 |
 268|- [ ] `e2fc1d0` | 2026-05-19 | `tianbao.yang` | auditor-guard: 修复 import 崩溃 + 新增 explain-only 模式 + JSON2 飞书卡片通知 | +349 | −70 |
