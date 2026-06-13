@@ -2098,9 +2098,8 @@ def expand_chained_quick_alias(target: str, user_args: str = "") -> list[str]:
     Central helper to avoid duplicating the 'f"{target} {user_args}".strip() + parse'
     pattern in quick command alias expansion across CLI, gateway, and TUI surfaces.
 
-    [owner-patch] Chained quick commands (Pxx general enhancement).
-    Parser and this expander live in base.py so all surfaces share the logic;
-    each surface still owns its own (sync vs async) dispatch of the resulting list.
+    # [owner] Chained quick commands support. Parser/expander here so surfaces
+    # share logic (each owns dispatch). See owner/ for related.
     """
     chain_text = f"{target} {user_args}".strip()
     return parse_chained_commands(chain_text)
@@ -3422,8 +3421,7 @@ class BasePlatformAdapter(ABC):
         code_spans: list = []
         for m in re.finditer(r'```[^\n]*\n.*?```', content, re.DOTALL):
             code_spans.append((m.start(), m.end()))
-        # [owner-patch] P35: CommonMark double-backtick inline code
-        # Without this, paths in `` `/tmp/file.png` `` get mis-extracted
+        # [owner] P35: skip CommonMark ``inline code`` from file extraction
         for m in re.finditer(r'``(?:[^`]|`[^`])+``', content):
             code_spans.append((m.start(), m.end()))
         for m in re.finditer(r'`[^`\n]+`', content):

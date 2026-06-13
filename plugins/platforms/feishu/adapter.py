@@ -1774,7 +1774,9 @@ class FeishuAdapter(BasePlatformAdapter):
     # =========================================================================
     # Outbound — send / edit / send_image / send_voice / …
     # =========================================================================
-    # [owner-patch] auto-card: send_card() REST API method (owner/feishu/auto_card.py)
+    # [owner] auto-card + card sending: thin delegation only.
+    # Real impl in owner/feishu/card_sender.py (keeps this file minimal for sync).
+    # See owner/feishu/ .
     async def send_card(
         self,
         chat_id: str,
@@ -1783,74 +1785,11 @@ class FeishuAdapter(BasePlatformAdapter):
     ) -> SendResult:
         """Send a Feishu interactive card message via REST API.
 
-        Uses ``message.create`` (never ``reply``) and acquires its own
-        tenant_access_token so it does not disturb the WebSocket connection's
-        credential state.
-
-        The ``card`` dict should follow the Feishu Card JSON structure
-        (schema + config + header + body/elements).
+        Thin wrapper — actual logic (own token + direct REST) is in owner/.
         """
-        try:
-            import requests as _requests
-        except ImportError:
-            return SendResult(success=False, error="requests library not available")
+        from owner.feishu.card_sender import send_card_via_rest
 
-        base_url = "https://open.feishu.cn/open-apis"
-
-        # Own token acquisition — independent of adapter's _client/WebSocket.
-        try:
-            token_resp = _requests.post(
-                f"{base_url}/auth/v3/tenant_access_token/internal",
-                json={"app_id": self._app_id, "app_secret": self._app_secret},
-                timeout=10,
-            )
-            token_data = token_resp.json()
-            access_token = token_data.get("tenant_access_token", "")
-            if not access_token:
-                return SendResult(
-                    success=False,
-                    error=f"Failed to get Feishu token: {token_data.get('msg', 'unknown')}",
-                )
-        except Exception as exc:
-            return SendResult(success=False, error=f"Feishu token request failed: {exc}")
-
-        # Determine receive_id_type from chat_id pattern.
-        if chat_id.startswith("ou_"):
-            receive_id_type = "open_id"
-        else:
-            receive_id_type = "chat_id"
-
-        # Send card via REST API (bypasses lark_oapi SDK entirely).
-        try:
-            payload = json.dumps(card, ensure_ascii=False)
-            send_resp = _requests.post(
-                f"{base_url}/im/v1/messages?receive_id_type={receive_id_type}",
-                headers={
-                    "Authorization": f"Bearer {access_token}",
-                    "Content-Type": "application/json",
-                },
-                json={"receive_id": chat_id, "msg_type": "interactive", "content": payload},
-                timeout=15,
-            )
-            send_data = send_resp.json()
-            code = send_data.get("code", -1)
-            if code != 0:
-                logger.warning(
-                    "[Feishu] send_card failed (code %d): %s",
-                    code, send_data.get("msg", "unknown"),
-                )
-                return SendResult(
-                    success=False,
-                    error=f"Feishu API error (code {code}): {send_data.get('msg', 'unknown')}",
-                )
-            message_id = ""
-            msg_data = send_data.get("data", {})
-            if isinstance(msg_data, dict):
-                message_id = str(msg_data.get("message_id", ""))
-            return SendResult(success=True, message_id=message_id)
-        except Exception as exc:
-            logger.warning("[Feishu] send_card exception: %s", exc)
-            return SendResult(success=False, error=f"Feishu card send failed: {exc}")
+        return await send_card_via_rest(self, chat_id, card, metadata)
 
 
     async def send(
@@ -1867,7 +1806,7 @@ class FeishuAdapter(BasePlatformAdapter):
         formatted = self.format_message(content)
 
         # Auto-card: wrap long text in an interactive card when streaming is
-        # [owner-patch] auto-card: try auto-card before plain-text fallback
+        # [owner] try auto-card before plain-text fallback
         # disabled. Threshold from patch.yaml → owner.feishu_card.auto_card_threshold.
         # Uses send_card() with REST API (not lark_oapi SDK) so it won't
         # invalidate the WebSocket connection's token.
@@ -2722,22 +2661,10 @@ class FeishuAdapter(BasePlatformAdapter):
         ):
             return P2CardActionTriggerResponse() if P2CardActionTriggerResponse else None
 
-        # [owner] Return empty response to avoid NameError on CallBackToast in Lark WS client.
-        # The original code below builds a CallBackCard, but P2CardActionTriggerResponse._types
-        # references CallBackToast which is not found during JSON.marshal → copy.deepcopy in the
-        # WS client thread, causing NameError and HTTP 500 (feishu error 200671).
-        # Approval is already resolved asynchronously via _submit_on_loop; no need to update card inline.
+        # [owner] early return to avoid SDK NameError on CallBackToast (full update
+        # is async via _submit_on_loop). Keeps official method minimal for sync.
+        # See owner/feishu/ .
         return P2CardActionTriggerResponse() if P2CardActionTriggerResponse else None
-        # ── original code (disabled) ──
-        # if P2CardActionTriggerResponse is None:
-        #     return None
-        # response = P2CardActionTriggerResponse()
-        # if CallBackCard is not None:
-        #     card = CallBackCard()
-        #     card.type = "raw"
-        #     card.data = self._build_resolved_approval_card(choice=choice, user_name=user_name)
-        #     response.card = card
-        # return response
 
     def _handle_update_prompt_card_action(self, *, event: Any, action_value: Dict[str, Any], loop: Any) -> Any:
         """Schedule update prompt resolution and build the synchronous callback response."""

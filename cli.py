@@ -8202,6 +8202,8 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
                     target = qcmd.get("target", "").strip()
                     if target:
                         from gateway.platforms.base import expand_chained_quick_alias
+# [owner] ensure private tool schema patches (model/card) are applied early
+import owner.tools.schema_patches  # noqa: F401
                         user_args = cmd_original[len(base_cmd):].strip()
                         chain = expand_chained_quick_alias(target, user_args)
                         for cmd_text in chain:

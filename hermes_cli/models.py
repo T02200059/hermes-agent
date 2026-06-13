@@ -333,7 +333,7 @@ _PROVIDER_MODELS: dict[str, list[str]] = {
     "minimax-cn": [
         "MiniMax-M3",
         "MiniMax-M2.7",
-        # [owner-patch] P73: M2.5/M2.1/M2 已从官方下架，替换为 M2.7-highspeed
+        # [owner] P73: MiniMax catalog update (M2.7-highspeed) — see owner/
         "MiniMax-M2.7-highspeed",
     ],
     "anthropic": [

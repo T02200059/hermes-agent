@@ -568,7 +568,7 @@ def run_conversation(
     codex_ack_continuations = 0
     length_continue_retries = 0
     truncated_tool_call_retries = 0
-    # [owner-patch] Clear silent-disconnect flag at turn start
+    # [owner] clear silent-disconnect flag at turn start
     agent._stream_was_empty = False
     truncated_response_parts: List[str] = []
     compression_attempts = 0
@@ -781,12 +781,9 @@ def run_conversation(
             # Keep 'reasoning_details' - OpenRouter uses this for multi-turn reasoning context
             # The signature field helps maintain reasoning continuity
 
-            # [owner-patch] owner_provider_name (and similar per-turn attribution
-            # fields like model/provider) are for internal use only: session DB,
-            # billing records, multi-profile routing, audit, qdrant recall etc.
-            # They must be stripped from the api_messages copy so they never
-            # affect the LLM request body, strict provider validation, or
-            # per-conversation prompt cache prefix.
+            # [owner] owner_provider_name (and similar per-turn attribution fields)
+            # is internal only (DB, billing, routing, audit...). Strip before API
+            # to protect prompt cache and strict providers. See owner/attribution.py
             api_msg.pop("owner_provider_name", None)
 
             api_messages.append(api_msg)
@@ -1916,7 +1913,7 @@ def run_conversation(
                                 cost_status=cost_result.status,
                                 cost_source=cost_result.source,
                                 billing_provider=agent.provider,
-                                # [owner-patch] attribution for billing record
+                                # [owner] attribution for billing record (owner/attribution.py)
                                 from owner.attribution import get_current_attribution
                                 owner_provider_name=get_current_attribution(agent),
                                 billing_base_url=agent.base_url,
@@ -4432,9 +4429,7 @@ def run_conversation(
                             "response after all retries. Returning empty."
                         )
                     else:
-                        # [owner-patch] Distinguish silent API disconnect
-                        # from genuine empty model response so the user
-                        # gets a more actionable message.
+                        # [owner] distinguish silent API disconnect vs empty response
                         if getattr(agent, "_stream_was_empty", False):
                             logger.warning(
                                 "Silent API disconnect detected — stream "

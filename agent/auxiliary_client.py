@@ -1936,10 +1936,7 @@ def _resolve_custom_runtime() -> Tuple[Optional[str], Optional[str], Optional[st
         return None, None, None
 
     custom_base = custom_base.strip().rstrip("/")
-    # [owner-patch] P30: auto-append /v1 for bare-domain base URLs (no path).
-    # Only apply when custom_mode is not anthropic_messages, because the
-    # Anthropic SDK handles /v1 internally and adding it here would cause a
-    # double /v1 in the final request URL.
+    # [owner] P30: auto-append /v1 for bare-domain base URLs (non-anthropic)
     if custom_mode != "anthropic_messages":
         from utils import normalize_bare_domain_base_url
         custom_base = normalize_bare_domain_base_url(custom_base)

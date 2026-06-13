@@ -1702,6 +1702,8 @@ from gateway.platforms.base import (
     # imported locally inside the quick-commands alias block to minimize
     # top-level coupling. The shared implementation lives in base.py.
 )
+# [owner] ensure private tool schema patches (model/card) are applied early
+import owner.tools.schema_patches  # noqa: F401
 from gateway.restart import (
     DEFAULT_GATEWAY_RESTART_DRAIN_TIMEOUT,
     GATEWAY_SERVICE_RESTART_EXIT_CODE,
@@ -9651,9 +9653,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             # produce visible content after exhausting all retries (nudge,
             # prefill, empty-retry, fallback).  Sending the raw sentinel
             # looks like a bug; a short explanation is more helpful.
-            # [owner-patch] When the root cause was a silent API disconnect
-            # (stream yielded zero chunks + no finish_reason), show a more
-            # specific message so the user knows it's a connectivity issue.
+            # [owner] silent API disconnect vs generic empty (for UX)
             if response == "(empty)" and not _intentional_silence:
                 if agent_result.get("stream_was_empty"):
                     response = t("gateway.silent_api_disconnect")

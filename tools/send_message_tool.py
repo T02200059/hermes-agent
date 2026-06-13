@@ -164,10 +164,8 @@ SEND_MESSAGE_SCHEMA = {
                 "type": "string",
                 "description": "The message text to send. To send an image or file, include MEDIA:<local_path> (e.g. 'MEDIA:/tmp/report.pdf') in the message — the platform will deliver it as a native media attachment."
             },
-            "card": {
-                "type": "object",
-                "description": "Feishu interactive card payload (JSON object with config + header + elements). When set, sends as an interactive card instead of plain text. Only supported on feishu platform. Example: {\"config\": {\"wide_screen_mode\": true}, \"header\": {\"title\": {\"tag\": \"plain_text\", \"content\": \"📊 Report\"}, \"template\": \"purple\"}, \"elements\": [{\"tag\": \"markdown\", \"content\": \"**Summary** data here\"}]}"
-            },
+            # [owner] "card" param added at runtime via owner/tools/schema_patches.py
+            # (keeps this literal clean vs upstream for sync)
             "emoji": {
                 "type": "string",
                 "description": "For action='react': the emoji to react with (e.g. '❤️'). On iMessage, ❤️👍👎😂‼️❓ render as native tapbacks; other emoji use custom-emoji reactions."
@@ -305,7 +303,7 @@ def _handle_send(args):
     message = args.get("message", "")
     card = args.get("card")
     if not target or (not message and not card):
-        return tool_error("Either 'message' (for text) or 'card' (for interactive card) is required when action='send'")
+        return tool_error("Either 'message' (for text) or 'card' (for interactive card) is required when action='send'")  # [owner] card support (schema patched via owner/tools/)
 
     parts = target.split(":", 1)
     platform_name = parts[0].strip().lower()

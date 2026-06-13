@@ -314,7 +314,7 @@ def init_agent(
     provider_name = provider.strip().lower() if isinstance(provider, str) and provider.strip() else None
     agent.provider = provider_name or ""
     agent.acp_command = acp_command or command
-    # [owner-patch] acp_args empty list should be stored as None, not [].
+    # [owner] acp_args empty list stored as None (not [])
     agent.acp_args = list(acp_args or args or []) or None
     if api_mode in {"chat_completions", "codex_responses", "anthropic_messages", "bedrock_converse", "codex_app_server"}:
         agent.api_mode = api_mode
@@ -349,11 +349,16 @@ def init_agent(
     else:
         agent.api_mode = "chat_completions"
 
-    # [owner-patch] Preserve the actual provider identity (e.g. xfyun, damodel)
-    # independently of the generic "custom" backend type.
+    # [owner] preserve actual custom provider identity (e.g. xfyun, damodel)
+    # via owner/attribution. See owner/attribution.py
     agent.owner_provider_name = (
         (owner_provider_name or "").strip().lower() or agent.provider
     )
+
+# [owner] apply private schema patches (e.g. image_generate model, send_message card)
+# early during agent init paths. This is post-registration mutation so the
+# source SCHEMA literals in tools/ stay identical to upstream.
+import owner.tools.schema_patches  # noqa: F401
 
     # Eagerly warm the transport cache so import errors surface at init,
     # not mid-conversation.  Also validates the api_mode is registered.

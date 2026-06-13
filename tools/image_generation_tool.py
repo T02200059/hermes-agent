@@ -1177,6 +1177,8 @@ IMAGE_GENERATE_SCHEMA = {
     # capabilities (whether the selected model supports image-to-image /
     # editing). See _build_dynamic_image_schema() below and the
     # dynamic-tool-schemas skill.
+    # [owner] 'model' param is also injected at runtime via
+    # owner/tools/schema_patches.py when not already present.
     "description": (
         "Generate high-quality images from text prompts (text-to-image), or "
         "edit / transform an existing image (image-to-image) when the active "
@@ -1188,8 +1190,7 @@ IMAGE_GENERATE_SCHEMA = {
         "result in the `image` field — either a URL or an absolute file path. "
         "To show it to the user, reference that path/URL in your response "
         "using the file-delivery convention for the current platform (your "
-        "platform guidance describes how files are delivered here). When "}  
-</invoke>
+        "platform guidance describes how files are delivered here). When "
         "the active terminal backend has a different filesystem, successful "
         "local-file results may also include `agent_visible_image` for "
         "follow-up terminal/file operations."
@@ -1233,7 +1234,7 @@ IMAGE_GENERATE_SCHEMA = {
                     "capped per-model; the description above indicates the max."
                 ),
             },
-            # [owner-patch] image_gen model param: optional model/alias override
+            # [owner] image_gen model param: optional model/alias override
             "model": {
                 "type": "string",
                 "description": (
@@ -1287,7 +1288,7 @@ def _read_configured_image_provider():
     return None
 
 
-# [owner-patch] image_gen model param: pass model override to provider
+# [owner] image_gen model param + image-to-image kwargs: pass override to provider
 def _dispatch_to_plugin_provider(
     prompt: str,
     aspect_ratio: str,
@@ -1428,7 +1429,7 @@ def _handle_image_generate(args, **kw):
     aspect_ratio = args.get("aspect_ratio", DEFAULT_ASPECT_RATIO)
     image_url = args.get("image_url")
     reference_image_urls = args.get("reference_image_urls")
-    # [owner-patch] image_gen model param: read optional model alias from args
+    # [owner] image_gen model param: read optional model alias from args
     model_from_args = args.get("model", "").strip() if isinstance(args.get("model"), str) else ""
     task_id = kw.get("task_id")
 

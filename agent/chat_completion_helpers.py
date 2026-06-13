@@ -1038,9 +1038,8 @@ def build_assistant_message(agent, assistant_message, finish_reason: str) -> dic
             tool_calls.append(tc_dict)
         msg["tool_calls"] = tool_calls
 
-    # [owner-patch] Per-turn attribution (owner_provider_name etc.)
-    # Real logic lives in owner/attribution.py so official message building
-    # only has a one-line call. Reduces merge surface vs upstream.
+    # [owner] per-turn attribution via owner/attribution.py (keeps official
+    # message build sites thin for sync)
     from owner.attribution import inject_attribution_into_message
     inject_attribution_into_message(agent, msg)
 
@@ -2085,9 +2084,7 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
             and not reasoning_parts
             and not tool_calls_acc
         ):
-            # [owner-patch] Flag this as a likely silent API disconnect so
-            # the empty-response handler can surface a more specific message.
-            # See owner/ for any related notification tweaks.
+            # [owner] flag silent API disconnect (for better UX in empty response path)
             agent._stream_was_empty = True
             raise RuntimeError(
                 "Provider returned an empty stream with no finish_reason "
