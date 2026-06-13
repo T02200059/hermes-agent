@@ -250,7 +250,7 @@
 264|- [x] ⚠️ 废弃：yangtb/README.md 纯文档 `9407c34` | 2026-05-19 | `tianbao.yang` | docs(yangtb): align patch list with v0.14.0 merge (P12/P22/P27/P28 marked covered) | +17 | −3 |
 265|- [x] ⚠️ 废弃：yangtb/README.md 纯文档 `862b2cb` | 2026-05-19 | `tianbao.yang` | docs: bump patch count to 25 groups / 32 items, add P26 i18n gateway messages | +3 | −2 |
 266|- [ ] `5110f6b` | 2026-05-19 | `tianbao.yang` | i18n: translate gateway lifecycle/busy-ack/steer/inactivity messages to Chinese | +480 | −36 |
-267|- [ ] `4d33091` | 2026-05-19 | `tianbao.yang` | fix(feishu): add early-typing reaction when chat_lock is held | +21 | −0 |
+267|- [x] `4d33091` | 2026-05-19 | `tianbao.yang` | fix(feishu): add early-typing reaction when chat_lock is held | +25 | −0 | ✅已迁移（改进：存 task 引用防 GC） |
 268|- [ ] `e2fc1d0` | 2026-05-19 | `tianbao.yang` | auditor-guard: 修复 import 崩溃 + 新增 explain-only 模式 + JSON2 飞书卡片通知 | +349 | −70 |
 269|- [x] ✅ 已迁移 `1a4aa7bf6` `d140932` | 2026-05-18 | `tianbao.yang` | feat(feishu): remove tool-activity filter from auto-card logic | +1 | −41 |
 270|- [x] ✅ 已迁移 `1a4aa7bf6` `becd553` | 2026-05-18 | `tianbao.yang` | fix(feishu): add auto-card retry (3 attempts) + logging before plain-text fallback | +31 | −4 |
