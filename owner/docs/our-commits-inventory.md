@@ -206,14 +206,14 @@
 - [ ] `38aa3ce` | 2026-05-23 | `yangtb` | chore: purge yangtb references — comments, paths, viking user → owner/default | +38 | −38 | ⚠️ 混有代码：credential_pool.py + usage_pricing.py + scheduler.py + run.py 等9文件
 - [ ] `10d296e` | 2026-05-23 | `yangtb` | feat(memory): owner.memory.prefetch_enabled — disable passive Viking recall | +24 | −5 |
 - [ ] `5311fe2` | 2026-05-23 | `yangtb` | feat: migrate personal profile from yangtb to owner | +49 | −12080 |
-- [ ] `4e7faf4` | 2026-05-22 | `yangtb` | fix(xai-oauth): dual-field argument extraction for codex_responses normalize | +36 | −7 |
+- [⏸️ 已决策·暂不迁移（xai-oauth/grok 相关，待上游稳定后评估）] `4e7faf4` | 2026-05-22 | `yangtb` | fix(xai-oauth): dual-field argument extraction for codex_responses normalize | +36 | −7 |
 - [⏸️ 已决策·暂不迁移（rate limiter 不存在于 owner-v16，需整体评估）] `611f972` | 2026-05-22 | `yangtb` | config: add damodel provider rate limiting to owner/yangtb profiles | +6 | −0 |
-- [ ] `288342c` | 2026-05-22 | `yangtb` | yangtb-patch: gateway session — add API disconnect recovery context + skills_loaded tracking | +26 | −1 |
+- [⏸️ 已决策·暂不迁移（recovery context 注入为独立功能，需与 fad4db4 一起评估）] `288342c` | 2026-05-22 | `yangtb` | yangtb-patch: gateway session — add API disconnect recovery context + skills_loaded tracking | +26 | −1 |
 - [x] ⏭️ 跳过 `c03e8da` | 2026-05-22 | `yangtb` | Merge upstream/main into owner | +0 | −0 |
 - [x] ⚠️ 废弃：上游已重构，_limiter 不存在 `30ab336` | 2026-05-22 | `yangtb` | fix(credential_pool): False sentinel bypasses _limiter None check in select() | +3 | −1 |
-- [ ] `1588a1e` | 2026-05-22 | `yangtb` | tools+prompt: harden patch schema descriptions; add Grok-4.3 tool-calling guidance | +41 | −2 |
+- [⏸️ 已决策·暂不迁移（xai-oauth/grok 相关，待上游稳定后评估）] `1588a1e` | 2026-05-22 | `yangtb` | tools+prompt: harden patch schema descriptions; add Grok-4.3 tool-calling guidance | +41 | −2 |
 - [ ] `8968786` | 2026-05-22 | `yangtb` | display: per-chat override support with patch.yaml integration | +67 | −13 |
-- [ ] `fb19877` | 2026-05-22 | `yangtb` | feat: migrate from yangtb to owner profile | +12109 | −61 |
+- [x] ✅ 已覆盖（owner/ 目录结构与命名迁移已由多个 commit 分散完成；auditor-guard/sre-archive/viking/token_stats/pricing 等按决策废弃）`fb19877` | 2026-05-22 | `yangtb` | feat: migrate from yangtb to owner profile | +12109 | −61 |
 - [ ] `478b66a` | 2026-05-22 | `yangtb` | feat(cron): replace todo-scan.py with robust todo-scan.sh (macFUSE timeout protection) | +58 | −0 |
 - [ ] `489aafd` | 2026-05-22 | `yangtb` | P31: 飞书审批卡片"永久允许"按钮可配置隐藏 | +61 | −28 |
 - [ ] `64f53b1` | 2026-05-22 | `yangtb` | feat: add message:receive hook scaffolding for Viking context hint | +68 | −1 |
