@@ -1183,11 +1183,13 @@ IMAGE_GENERATE_SCHEMA = {
         "model supports it. Pass `image_url` to edit that image; add "
         "`reference_image_urls` for style/composition references; omit both "
         "for text-to-image. The underlying backend (FAL, OpenAI, xAI, etc.) "
-        "and model are user-configured and not selectable by the agent. "
-        "Returns the result in the `image` field — either a URL or an absolute "
-        "file path. To show it to the user, reference that path/URL in your "
-        "response using the file-delivery convention for the current platform "
-        "(your platform guidance describes how files are delivered here). When "
+        "and model are user-configured; the agent may pass 'model' to override "
+        "the active preset's model or switch presets via alias. Returns the "
+        "result in the `image` field — either a URL or an absolute file path. "
+        "To show it to the user, reference that path/URL in your response "
+        "using the file-delivery convention for the current platform (your "
+        "platform guidance describes how files are delivered here). When "}  
+</invoke>
         "the active terminal backend has a different filesystem, successful "
         "local-file results may also include `agent_visible_image` for "
         "follow-up terminal/file operations."
@@ -1229,6 +1231,15 @@ IMAGE_GENERATE_SCHEMA = {
                     "(style, character, or composition references) to guide an "
                     "image-to-image edit. Supported only by some models and "
                     "capped per-model; the description above indicates the max."
+                ),
+            },
+            # [owner-patch] image_gen model param: optional model/alias override
+            "model": {
+                "type": "string",
+                "description": (
+                    "Optional model name or alias. Overrides the active "
+                    "preset's model. Use aliases like 'wan' or 'qwen' to "
+                    "switch presets entirely."
                 ),
             },
         },
@@ -1276,11 +1287,13 @@ def _read_configured_image_provider():
     return None
 
 
+# [owner-patch] image_gen model param: pass model override to provider
 def _dispatch_to_plugin_provider(
     prompt: str,
     aspect_ratio: str,
     image_url: Optional[str] = None,
     reference_image_urls: Optional[list] = None,
+    model_from_args: str = "",
 ):
     """Route the call to a plugin-registered provider when one is selected.
 
@@ -1340,7 +1353,9 @@ def _dispatch_to_plugin_provider(
 
     kwargs: Dict[str, Any] = {"prompt": prompt, "aspect_ratio": aspect_ratio}
     try:
-        if configured_model:
+        if model_from_args:
+            kwargs["model"] = model_from_args
+        elif configured_model:
             kwargs["model"] = configured_model
         if isinstance(image_url, str) and image_url.strip():
             kwargs["image_url"] = image_url.strip()
@@ -1413,6 +1428,8 @@ def _handle_image_generate(args, **kw):
     aspect_ratio = args.get("aspect_ratio", DEFAULT_ASPECT_RATIO)
     image_url = args.get("image_url")
     reference_image_urls = args.get("reference_image_urls")
+    # [owner-patch] image_gen model param: read optional model alias from args
+    model_from_args = args.get("model", "").strip() if isinstance(args.get("model"), str) else ""
     task_id = kw.get("task_id")
 
     # Route to a plugin-registered provider if one is active (and it's
@@ -1421,6 +1438,7 @@ def _handle_image_generate(args, **kw):
         prompt, aspect_ratio,
         image_url=image_url,
         reference_image_urls=reference_image_urls,
+        model_from_args=model_from_args,
     )
     if dispatched is not None:
         return _postprocess_image_generate_result(dispatched, task_id=task_id)
