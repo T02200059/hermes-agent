@@ -60,6 +60,7 @@ from agent.trajectory import has_incomplete_scratchpad
 from agent.usage_pricing import estimate_usage_cost, normalize_usage
 from hermes_constants import PARTIAL_STREAM_STUB_ID
 from hermes_logging import set_session_context
+from owner.attribution import get_current_attribution
 from tools.skill_provenance import set_current_write_origin
 from utils import base_url_host_matches, env_var_enabled
 
@@ -634,6 +635,8 @@ def run_conversation(
                                 "name": tc["function"]["name"],
                                 "result": _results_by_id.get(tc.get("id")),
                                 "arguments": tc["function"].get("arguments"),
+                                # [owner] diff cards: carry tool_call_id to correlate with edit snapshot
+                                "tool_call_id": tc.get("id"),
                             }
                             for tc in _m["tool_calls"]
                             if isinstance(tc, dict)
@@ -1914,7 +1917,6 @@ def run_conversation(
                                 cost_source=cost_result.source,
                                 billing_provider=agent.provider,
                                 # [owner] attribution for billing record (owner/attribution.py)
-                                from owner.attribution import get_current_attribution
                                 owner_provider_name=get_current_attribution(agent),
                                 billing_base_url=agent.base_url,
                                 billing_mode="subscription_included"

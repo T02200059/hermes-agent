@@ -43,7 +43,7 @@ from collections import OrderedDict
 from contextvars import copy_context
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, Optional, Any, List, Union
+from typing import Dict, Optional, Any, List, Set, Union
 
 # account_usage imports the OpenAI SDK chain (~230 ms). Only needed by
 # /usage; we still import it at module top in the gateway because test
@@ -15193,6 +15193,15 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         _loop_for_step = asyncio.get_running_loop()
         _hooks_ref = self.hooks
 
+        # [owner] diff cards: state for correlating tool results with snapshots
+        from owner.diff_card.dispatcher import (
+            make_tool_start_snapshot_callback,
+            maybe_send_diff_cards,
+        )
+        _edit_snapshots: Dict[str, Any] = {}
+        _edit_snapshots_lock = threading.Lock()
+        _sent_diff_tool_call_ids: Set[str] = set()
+
         def _step_callback_sync(iteration: int, prev_tools: list) -> None:
             if not _run_still_current():
                 return
@@ -15218,6 +15227,16 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 logger=logger,
                 log_message="agent:step hook scheduling error",
             )
+            # [owner] diff cards: dispatch platform diff cards after file edits
+            try:
+                maybe_send_diff_cards(
+                    self, source, prev_tools,
+                    _edit_snapshots, _edit_snapshots_lock,
+                    _loop_for_step,
+                    _sent_diff_tool_call_ids,
+                )
+            except Exception:
+                logger.debug("diff card dispatch error", exc_info=True)
 
         # Bridge sync event_callback → async hooks.emit for lifecycle events
         # (e.g. session:compress fires after context compression splits a session)
@@ -15562,10 +15581,15 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             agent.tool_progress_callback = progress_callback if tool_progress_enabled else None
             # Discord voice verbal-ack hook (fires once per turn on first tool
             # call; armed only when in a voice channel with the mixer running).
-            agent.tool_start_callback = (
+            _original_tool_start_cb = (
                 voice_ack_callback if _voice_ack_guild[0] is not None else None
             )
-            agent.step_callback = _step_callback_sync if _hooks_ref.loaded_hooks else None
+            # [owner] diff cards: capture before-state for file-mutating tools
+            agent.tool_start_callback = make_tool_start_snapshot_callback(
+                _original_tool_start_cb, _edit_snapshots, _edit_snapshots_lock
+            )
+            # [owner] diff cards: always register step_callback (not gated by loaded_hooks)
+            agent.step_callback = _step_callback_sync
             agent.stream_delta_callback = _stream_delta_cb
             agent.interim_assistant_callback = _interim_assistant_cb if _want_interim_messages else None
             agent.status_callback = _status_callback_sync

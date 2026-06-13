@@ -1472,6 +1472,8 @@ class FeishuAdapter(BasePlatformAdapter):
         # Update prompt button state (prompt_id → {session_key, message_id, chat_id})
         self._update_prompt_state: Dict[int, Dict[str, str]] = {}
         self._update_prompt_counter = itertools.count(1)
+        # [owner] diff cards: cache for interactive diff card callbacks
+        self._diff_card_cache: Dict[str, Dict[str, Any]] = {}
         # Feishu reaction deletion requires the opaque reaction_id returned
         # by create, so we cache it per message_id.
         self._pending_processing_reactions: "OrderedDict[str, str]" = OrderedDict()
@@ -1790,6 +1792,20 @@ class FeishuAdapter(BasePlatformAdapter):
         from owner.feishu.card_sender import send_card_via_rest
 
         return await send_card_via_rest(self, chat_id, card, metadata)
+
+    # [owner] diff cards: thin delegation (real impl in owner/diff_card/feishu.py)
+    async def send_diff_card(
+        self,
+        chat_id: str,
+        diff: str,
+        tool_name: str,
+        file_path: str,
+        max_lines: int,
+    ) -> SendResult:
+        """Send an interactive diff card for a file-mutating tool."""
+        from owner.diff_card.feishu import send_feishu_diff_card
+
+        return await send_feishu_diff_card(self, chat_id, diff, tool_name, file_path, max_lines)
 
 
     async def send(
@@ -2580,6 +2596,13 @@ class FeishuAdapter(BasePlatformAdapter):
                 action_value=action_value,
                 loop=loop,
             )
+
+        # [owner] diff cards: route expand/collapse/full callback actions
+        if isinstance(action_value, dict) and any(
+            action_value.get(k) for k in ("expand_diff", "collapse_diff", "show_full_diff")
+        ):
+            from owner.diff_card.feishu import handle_feishu_diff_action
+            return handle_feishu_diff_action(self, event, action_value)
 
         self._submit_on_loop(loop, self._handle_card_action_event(data))
         if P2CardActionTriggerResponse is None:
