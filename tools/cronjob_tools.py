@@ -398,6 +398,34 @@ def _normalize_deliver_param(value: Any) -> Optional[str]:
     return text or None
 
 
+def _normalize_cron_args(args: Optional[Dict[str, Any]]) -> tuple[Optional[str], Optional[Dict[str, Any]]]:
+    """Validate and normalize cron job ``args`` at the API boundary.
+
+    Returns ``(error, normalized_args)``. ``error`` is None on success.
+    ``normalized_args`` is None when the input is None or empty after
+    filtering. String values are scanned for injection patterns.
+    """
+    if args is None:
+        return None, None
+    if not isinstance(args, dict):
+        return "args must be a dict", None
+    normalized: Dict[str, Any] = {}
+    for key, value in args.items():
+        key_str = str(key).strip()
+        if not key_str:
+            continue
+        if value is None:
+            continue
+        if isinstance(value, str):
+            scan_error = _scan_cron_prompt(value)
+            if scan_error:
+                return f"args.{key_str}: {scan_error}", None
+        normalized[key_str] = value
+    if not normalized:
+        return None, None
+    return None, normalized
+
+
 def _validate_cron_script_path(script: Optional[str]) -> Optional[str]:
     """Validate a cron job script path at the API boundary.
 
@@ -473,6 +501,8 @@ def _format_job(job: Dict[str, Any]) -> Dict[str, Any]:
     }
     if job.get("script"):
         result["script"] = job["script"]
+    if job.get("args"):
+        result["args"] = job["args"]
     if job.get("no_agent"):
         result["no_agent"] = True
     if job.get("enabled_toolsets"):
@@ -543,13 +573,21 @@ def cronjob(
     base_url: Optional[str] = None,
     reason: Optional[str] = None,
     script: Optional[str] = None,
+    args: Optional[Dict[str, Any]] = None,
     context_from: Optional[Union[str, List[str]]] = None,
     enabled_toolsets: Optional[List[str]] = None,
     workdir: Optional[str] = None,
     no_agent: Optional[bool] = None,
     task_id: str = None,
 ) -> str:
-    """Unified cron job management tool."""
+    """Unified cron job management tool.
+
+    The ``args`` parameter allows passing runtime arguments to scripts. Args are
+    converted to CLI flags: ``{"days": 7, "verbose": true}`` becomes
+    ``--days 7 --verbose``. Boolean True becomes a flag without value;
+    False/None/empty-string values are skipped. String values are scanned for
+    injection patterns.
+    """
     del task_id  # unused but kept for handler signature compatibility
 
     try:
@@ -585,6 +623,11 @@ def cronjob(
                 if script_error:
                     return tool_error(script_error, success=False)
 
+            # [owner-patch] cron job args support: validate and normalize
+            err, normalized_args = _normalize_cron_args(args)
+            if err:
+                return tool_error(err, success=False)
+
             # Validate context_from references existing jobs
             if context_from:
                 from cron.jobs import get_job as _get_job
@@ -609,6 +652,7 @@ def cronjob(
                 provider=_normalize_optional_job_value(provider),
                 base_url=_normalize_optional_job_value(base_url, strip_trailing_slash=True),
                 script=_normalize_optional_job_value(script),
+                args=normalized_args,
                 context_from=context_from,
                 enabled_toolsets=enabled_toolsets or None,
                 workdir=_normalize_optional_job_value(workdir),
@@ -779,6 +823,12 @@ def cronjob(
                             success=False,
                         )
                 updates["no_agent"] = target_no_agent
+            if args is not None:
+                # [owner-patch] cron job args support: validate and store updates
+                err, normalized_args = _normalize_cron_args(args)
+                if err:
+                    return tool_error(err, success=False)
+                updates["args"] = normalized_args
             if repeat is not None:
                 # Normalize: treat 0 or negative as None (infinite)
                 normalized_repeat = None if repeat <= 0 else repeat
@@ -879,6 +929,10 @@ Important safety rule: cron-run sessions should not recursively schedule more cr
                 "type": "string",
                 "description": f"Optional path to a script that runs each tick. In the default mode its stdout is injected into the agent's prompt as context (data-collection / change-detection pattern). With no_agent=True, the script IS the job and its stdout is delivered verbatim (classic watchdog pattern). Relative paths resolve under {display_hermes_home()}/scripts/. ``.sh``/``.bash`` extensions run via bash, everything else via Python. On update, pass empty string to clear."
             },
+            "args": {
+                "type": "object",
+                "description": "Optional dict of arguments passed to ``script`` as CLI flags. Keys become ``--key`` flags. Boolean true becomes a flag without value; false/null/empty-string values are skipped. Example: {\"days\": 7, \"verbose\": true} → --days 7 --verbose. String values are scanned for injection patterns at create/update. On update, pass an empty object to clear."
+            },
             "no_agent": {
                 "type": "boolean",
                 "default": False,
@@ -970,6 +1024,7 @@ registry.register(
         base_url=args.get("base_url"),
         reason=args.get("reason"),
         script=args.get("script"),
+        args=args.get("args"),
         context_from=args.get("context_from"),
         enabled_toolsets=args.get("enabled_toolsets"),
         workdir=args.get("workdir"),

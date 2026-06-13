@@ -734,6 +734,7 @@ def create_job(
     provider: Optional[str] = None,
     base_url: Optional[str] = None,
     script: Optional[str] = None,
+    args: Optional[Dict[str, Any]] = None,
     context_from: Optional[Union[str, List[str]]] = None,
     enabled_toolsets: Optional[List[str]] = None,
     workdir: Optional[str] = None,
@@ -762,6 +763,12 @@ def create_job(
                 change-detection pattern). Paths resolve under
                 ~/.hermes/scripts/; ``.sh`` / ``.bash`` files run via bash,
                 anything else via Python.
+        args: Optional dict of arguments passed to ``script`` as CLI flags.
+              Keys become ``--key`` flags, values become the argument value.
+              Boolean ``True`` becomes a flag without value (``--verbose``);
+              ``False``/``None``/empty-string values are skipped. Example:
+              ``{"days": 7, "verbose": true}`` → ``--days 7 --verbose``.
+              String values are scanned for injection patterns at create/update.
         context_from: Optional job ID (or list of job IDs) whose most recent output
                       is injected into the prompt as context before each run.
                       Useful for chaining cron jobs: job A finds data, job B processes it.
@@ -834,6 +841,17 @@ def create_job(
     else:
         context_from = None
 
+    # [owner-patch] cron job args support: normalize optional script CLI flags
+    normalized_args = None
+    if args is not None:
+        if isinstance(args, dict):
+            normalized_args = {
+                str(k): v for k, v in args.items()
+                if str(k).strip() and v is not None
+            }
+            if not normalized_args:
+                normalized_args = None
+
     prompt_text = _coerce_job_text(prompt)
     label_source = (prompt_text or (normalized_skills[0] if normalized_skills else None) or (normalized_script if normalized_no_agent else None)) or "cron job"
     job = {
@@ -846,6 +864,7 @@ def create_job(
         "provider": normalized_provider,
         "base_url": normalized_base_url,
         "script": normalized_script,
+        "args": normalized_args,
         "no_agent": normalized_no_agent,
         "context_from": context_from,
         "schedule": parsed_schedule,
