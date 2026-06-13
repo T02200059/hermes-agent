@@ -40,6 +40,7 @@ _ensure_feishu_mocks()
 from gateway.config import PlatformConfig
 import plugins.platforms.feishu.adapter as feishu_module
 from plugins.platforms.feishu.adapter import FeishuAdapter
+from owner.feishu.sender_name_cache import FeishuSenderNameCache
 
 
 # ---------------------------------------------------------------------------
@@ -157,7 +158,8 @@ class TestFeishuExecApproval:
     @pytest.mark.asyncio
     async def test_pre_warms_sender_name_cache(self):
         adapter = _make_adapter()
-        adapter._sender_name_cache = {}
+        # Cleaned: no longer directly poke legacy private adapter._sender_name_cache.
+        # The thin implementation still schedules the (patched) delegate for this test's compatibility.
 
         mock_response = SimpleNamespace(
             success=lambda: True,
@@ -177,7 +179,6 @@ class TestFeishuExecApproval:
                 sender_is_bot=False,
             )
 
-        # after extraction the pre-warm uses cache, but we still fire the (patched) delegate in send for test compat
         mock_resolve.assert_called_once_with("ou_user1", is_bot=False)
 
     @pytest.mark.asyncio
@@ -542,7 +543,9 @@ class TestCardActionCallbackResponse:
             {"hermes_action": "approve_once", "approval_id": 1},
             open_id="ou_bob",
         )
-        adapter._sender_name_cache["ou_bob"] = ("Bob", 9999999999)
+        # Cleaned: use new owner cache instead of legacy adapter._sender_name_cache
+        adapter._name_cache = FeishuSenderNameCache(None)
+        adapter._name_cache._cache["ou_bob"] = ("Bob", 9999999999)
 
         with patch("asyncio.run_coroutine_threadsafe", side_effect=_close_submitted_coro):
             response = adapter._on_card_action_trigger(data)
@@ -637,7 +640,9 @@ class TestCardActionCallbackResponse:
             {"hermes_action": "approve_once", "approval_id": 4},
             open_id="ou_expired",
         )
-        adapter._sender_name_cache["ou_expired"] = ("Old Name", 1)
+        # Cleaned: use new owner cache instead of legacy adapter._sender_name_cache
+        adapter._name_cache = FeishuSenderNameCache(None)
+        adapter._name_cache._cache["ou_expired"] = ("Old Name", 1)
 
         with patch("asyncio.run_coroutine_threadsafe", side_effect=_close_submitted_coro):
             response = adapter._on_card_action_trigger(data)
@@ -705,7 +710,9 @@ class TestCardActionCallbackResponse:
             {"hermes_update_prompt_action": "y", "update_prompt_id": 1},
             open_id="ou_bob",
         )
-        adapter._sender_name_cache["ou_bob"] = ("Bob", 9999999999)
+        # Cleaned: use new owner cache instead of legacy adapter._sender_name_cache
+        adapter._name_cache = FeishuSenderNameCache(None)
+        adapter._name_cache._cache["ou_bob"] = ("Bob", 9999999999)
 
         with patch("asyncio.run_coroutine_threadsafe", side_effect=_close_submitted_coro):
             response = adapter._on_card_action_trigger(data)
