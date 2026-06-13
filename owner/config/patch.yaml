@@ -3,3 +3,26 @@ owner:
     auto_card_threshold: 57
     split_enabled: true
     split_max_chars: 24000
+
+  # ── Image Generation Presets ───────────────────────────────────────────────
+  # Presets for the DashScope image-gen plugin (plugins/image_gen/dashscope/).
+  # Select the active preset via config.yaml:
+  #   image_gen:
+  #     provider: dashscope
+  #     model: qwen          # or "wan"
+  # Or override per-call by passing model="wan" to the image_generate tool.
+  # api_key supports ${ENV_VAR} references; they are expanded at runtime.
+  image_gen:
+    presets:
+      dashscope-qwen:
+        alias:
+          - qwen
+        endpoint: https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation
+        model: qwen-image-2.0
+        api_key: ${DASHSCOPE_COMPANY_API_KEY}
+      dashscope-wan:
+        alias:
+          - wan
+        endpoint: https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation
+        model: wan2.6-t2i
+        api_key: ${DASHSCOPE_COMPANY_API_KEY}

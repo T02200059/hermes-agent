@@ -1,0 +1,409 @@
+"""DashScope image generation backend for Hermes.
+
+Implements an :class:`ImageGenProvider` that calls the DashScope
+``multimodal-generation/generation`` endpoint (Qwen-Image / Wan text-to-image).
+
+Configuration is read from ``~/.hermes/patch.yaml`` under
+``owner.image_gen.presets``.  Each preset may define ``endpoint``, ``model``,
+``api_key`` and optional ``size``/``alias`` entries.  The active preset is
+selected by the ``model`` argument passed to :meth:`generate` or by
+``image_gen.model`` in ``config.yaml``.
+"""
+
+from __future__ import annotations
+
+import base64
+import logging
+import os
+from typing import Any, Dict, List, Optional, Tuple
+
+import requests
+
+from agent.image_gen_provider import (
+    DEFAULT_ASPECT_RATIO,
+    ImageGenProvider,
+    error_response,
+    resolve_aspect_ratio,
+    save_b64_image,
+    save_url_image,
+    success_response,
+)
+
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Defaults
+# ---------------------------------------------------------------------------
+
+DEFAULT_ENDPOINT = "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
+DEFAULT_API_KEY_ENV = "DASHSCOPE_COMPANY_API_KEY"
+
+_ASPECT_RATIO_SIZES = {
+    "landscape": "1024*576",  # 16:9
+    "portrait": "576*1024",   # 9:16
+    "square": "1024*1024",    # 1:1
+}
+
+
+# ---------------------------------------------------------------------------
+# Config helpers
+# ---------------------------------------------------------------------------
+
+
+def _load_patch_owner_config() -> Dict[str, Any]:
+    """Load ``~/.hermes/patch.yaml`` and return the ``owner`` section.
+
+    Fail-open: returns an empty dict if the file is missing or unreadable.
+    """
+    try:
+        import yaml
+        from hermes_constants import get_hermes_home
+
+        path = get_hermes_home() / "patch.yaml"
+        if not path.exists():
+            return {}
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        if isinstance(data, dict) and isinstance(data.get("owner"), dict):
+            return data["owner"]
+    except Exception:
+        pass
+    return {}
+
+
+def _get_owner_image_gen_presets() -> Dict[str, Any]:
+    """Return ``owner.image_gen.presets`` from patch.yaml."""
+    owner_cfg = _load_patch_owner_config()
+    image_gen_cfg = owner_cfg.get("image_gen") if isinstance(owner_cfg.get("image_gen"), dict) else {}
+    presets = image_gen_cfg.get("presets") if isinstance(image_gen_cfg.get("presets"), dict) else {}
+    return presets
+
+
+def _expand_env(value: Any) -> Any:
+    """Expand ``${VAR}`` / ``$VAR`` placeholders in string values."""
+    if isinstance(value, str):
+        return os.path.expandvars(value)
+    return value
+
+
+def _is_dashscope_preset(cfg: Dict[str, Any]) -> bool:
+    """Return True when *cfg* looks like a DashScope preset.
+
+    Heuristic: endpoint is unset or points at a dashscope domain. This keeps
+    the dashscope provider from trying to use unrelated presets (e.g.
+    openrouter-grok) that may live in the same ``owner.image_gen.presets``
+    namespace.
+    """
+    endpoint = str(cfg.get("endpoint") or DEFAULT_ENDPOINT).strip().lower()
+    return "dashscope" in endpoint
+
+
+def _resolve_preset(model_id: str) -> Optional[Dict[str, Any]]:
+    """Find the DashScope preset matching *model_id* by alias or full preset name.
+
+    Returns the merged preset dict with env vars expanded, or ``None`` if no
+    match is found.
+    """
+    if not isinstance(model_id, str) or not model_id.strip():
+        return None
+
+    presets = _get_owner_image_gen_presets()
+    model_id = model_id.strip()
+
+    # First try to match a preset name exactly.
+    preset = presets.get(model_id)
+    if isinstance(preset, dict) and _is_dashscope_preset(preset):
+        return {k: _expand_env(v) for k, v in preset.items()}
+
+    # Otherwise match by alias.
+    for name, cfg in presets.items():
+        if not isinstance(cfg, dict) or not _is_dashscope_preset(cfg):
+            continue
+        aliases = cfg.get("alias") or cfg.get("aliases") or []
+        if isinstance(aliases, str):
+            aliases = [aliases]
+        if model_id in aliases:
+            return {k: _expand_env(v) for k, v in cfg.items()}
+
+    return None
+
+
+def _resolve_configured_model() -> str:
+    """Read ``image_gen.model`` from config.yaml as a fallback."""
+    try:
+        from hermes_cli.config import load_config
+
+        cfg = load_config()
+        section = cfg.get("image_gen") if isinstance(cfg, dict) else None
+        if isinstance(section, dict):
+            value = section.get("model")
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    except Exception as exc:
+        logger.debug("Could not read image_gen.model: %s", exc)
+    return ""
+
+
+# ---------------------------------------------------------------------------
+# Provider
+# ---------------------------------------------------------------------------
+
+
+class DashScopeImageGenProvider(ImageGenProvider):
+    """DashScope ``multimodal-generation/generation`` image backend."""
+
+    @property
+    def name(self) -> str:
+        return "dashscope"
+
+    @property
+    def display_name(self) -> str:
+        return "DashScope (Qwen / Wan)"
+
+    def is_available(self) -> bool:
+        # Check env var first, then DashScope presets in patch.yaml.
+        if os.environ.get(DEFAULT_API_KEY_ENV):
+            return True
+        presets = _get_owner_image_gen_presets()
+        for cfg in presets.values():
+            if isinstance(cfg, dict) and _is_dashscope_preset(cfg) and _expand_env(cfg.get("api_key")):
+                return True
+        return False
+
+    def list_models(self) -> List[Dict[str, Any]]:
+        presets = _get_owner_image_gen_presets()
+        models: List[Dict[str, Any]] = []
+        for preset_name, cfg in presets.items():
+            if not isinstance(cfg, dict) or not _is_dashscope_preset(cfg):
+                continue
+            aliases = cfg.get("alias") or cfg.get("aliases") or []
+            if isinstance(aliases, str):
+                aliases = [aliases]
+            model_id = aliases[0] if aliases else preset_name
+            models.append(
+                {
+                    "id": model_id,
+                    "display": cfg.get("display") or preset_name,
+                    "speed": cfg.get("speed", ""),
+                    "strengths": cfg.get("strengths", ""),
+                }
+            )
+        return models
+
+    def get_setup_schema(self) -> Dict[str, Any]:
+        return {
+            "name": self.display_name,
+            "badge": "paid",
+            "tag": "DashScope Qwen-Image / Wan text-to-image via owner.image_gen.presets",
+            "env_vars": [
+                {
+                    "key": DEFAULT_API_KEY_ENV,
+                    "prompt": "DashScope API key",
+                    "url": "https://dashscope.aliyun.com/",
+                },
+            ],
+        }
+
+    def generate(
+        self,
+        prompt: str,
+        aspect_ratio: str = DEFAULT_ASPECT_RATIO,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        """Generate an image via DashScope multimodal generation API."""
+        aspect = resolve_aspect_ratio(aspect_ratio)
+
+        # Determine active model / preset.
+        model_arg = str(kwargs.get("model") or "").strip()
+        configured_model = _resolve_configured_model()
+        model_id = model_arg or configured_model
+
+        preset = _resolve_preset(model_id) if model_id else None
+        if preset is None and configured_model:
+            preset = _resolve_preset(configured_model)
+
+        if preset is None:
+            return error_response(
+                error=(
+                    f"No DashScope preset found for model '{model_id}'. "
+                    "Add it to owner.image_gen.presets in ~/.hermes/patch.yaml."
+                ),
+                error_type="missing_preset",
+                provider=self.name,
+                model=model_id,
+                prompt=prompt,
+                aspect_ratio=aspect,
+            )
+
+        endpoint = str(preset.get("endpoint") or DEFAULT_ENDPOINT).strip()
+        api_key = str(preset.get("api_key") or "").strip()
+        if not api_key:
+            api_key = os.environ.get(DEFAULT_API_KEY_ENV, "")
+        actual_model = str(preset.get("model") or model_id).strip()
+
+        if not api_key:
+            return error_response(
+                error=(
+                    "DashScope API key not configured. Set "
+                    f"{DEFAULT_API_KEY_ENV} or add api_key to the preset."
+                ),
+                error_type="missing_api_key",
+                provider=self.name,
+                model=actual_model,
+                prompt=prompt,
+                aspect_ratio=aspect,
+            )
+
+        size = str(preset.get("size") or _ASPECT_RATIO_SIZES.get(aspect, "1024*1024")).strip()
+
+        payload: Dict[str, Any] = {
+            "model": actual_model,
+            "input": {"prompt": prompt},
+            "parameters": {"size": size},
+        }
+
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+
+        try:
+            response = requests.post(
+                endpoint,
+                headers=headers,
+                json=payload,
+                timeout=120,
+            )
+            response.raise_for_status()
+        except requests.HTTPError as exc:
+            resp = exc.response
+            status = resp.status_code if resp is not None else 0
+            try:
+                err_msg = resp.json().get("message", resp.text[:300]) if resp is not None else str(exc)
+            except Exception:
+                err_msg = resp.text[:300] if resp is not None else str(exc)
+            logger.error("DashScope image gen failed (%d): %s", status, err_msg)
+            return error_response(
+                error=f"DashScope image generation failed ({status}): {err_msg}",
+                error_type="api_error",
+                provider=self.name,
+                model=actual_model,
+                prompt=prompt,
+                aspect_ratio=aspect,
+            )
+        except requests.Timeout:
+            return error_response(
+                error="DashScope image generation timed out (120s)",
+                error_type="timeout",
+                provider=self.name,
+                model=actual_model,
+                prompt=prompt,
+                aspect_ratio=aspect,
+            )
+        except requests.ConnectionError as exc:
+            return error_response(
+                error=f"DashScope connection error: {exc}",
+                error_type="connection_error",
+                provider=self.name,
+                model=actual_model,
+                prompt=prompt,
+                aspect_ratio=aspect,
+            )
+
+        try:
+            result = response.json()
+        except Exception as exc:
+            return error_response(
+                error=f"DashScope returned invalid JSON: {exc}",
+                error_type="invalid_response",
+                provider=self.name,
+                model=actual_model,
+                prompt=prompt,
+                aspect_ratio=aspect,
+            )
+
+        output = result.get("output") if isinstance(result, dict) else None
+        if not isinstance(output, dict):
+            return error_response(
+                error="DashScope response missing output field",
+                error_type="empty_response",
+                provider=self.name,
+                model=actual_model,
+                prompt=prompt,
+                aspect_ratio=aspect,
+            )
+
+        task_status = output.get("task_status")
+        if task_status and str(task_status).upper() != "SUCCEEDED":
+            return error_response(
+                error=f"DashScope task status: {task_status}",
+                error_type="api_error",
+                provider=self.name,
+                model=actual_model,
+                prompt=prompt,
+                aspect_ratio=aspect,
+            )
+
+        results = output.get("results")
+        if not isinstance(results, list) or not results:
+            return error_response(
+                error="DashScope returned no image results",
+                error_type="empty_response",
+                provider=self.name,
+                model=actual_model,
+                prompt=prompt,
+                aspect_ratio=aspect,
+            )
+
+        first = results[0]
+        b64 = first.get("b64_image")
+        url = first.get("url")
+
+        image_ref: str
+        if b64:
+            try:
+                saved_path = save_b64_image(b64, prefix=f"dashscope_{actual_model}")
+            except Exception as exc:
+                return error_response(
+                    error=f"Could not save image to cache: {exc}",
+                    error_type="io_error",
+                    provider=self.name,
+                    model=actual_model,
+                    prompt=prompt,
+                    aspect_ratio=aspect,
+                )
+            image_ref = str(saved_path)
+        elif url:
+            try:
+                saved_path = save_url_image(url, prefix=f"dashscope_{actual_model}")
+            except Exception as exc:
+                logger.warning(
+                    "DashScope image URL %s could not be cached (%s); falling back to bare URL.",
+                    url,
+                    exc,
+                )
+                image_ref = url
+            else:
+                image_ref = str(saved_path)
+        else:
+            return error_response(
+                error="DashScope response contained neither b64_image nor URL",
+                error_type="empty_response",
+                provider=self.name,
+                model=actual_model,
+                prompt=prompt,
+                aspect_ratio=aspect,
+            )
+
+        extra: Dict[str, Any] = {"size": size}
+        if task_status:
+            extra["task_status"] = task_status
+
+        return success_response(
+            image=image_ref,
+            model=actual_model,
+            prompt=prompt,
+            aspect_ratio=aspect,
+            provider=self.name,
+            extra=extra,
+        )
