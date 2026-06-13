@@ -314,7 +314,7 @@
 328|- [x] ⚠️ 废弃：定价/AGENTS.md，不迁移 `32333de` | 2026-05-10 | `tianbao.yang` | docs(yangtb/config): note pricing.yaml fields updated by cron scripts | +1 | −1 |
 329|- [x] ⚠️ 废弃：定价/AGENTS.md，不迁移 `f64ae67` | 2026-05-10 | `tianbao.yang` | feat(yangtb): add update_exchange_rate.py script + top-level default_exchange_rate in pricing.yaml | +115 | −9 |
 330|- [⏸️ 已决策·暂不迁移] `3ea5daa` | 2026-05-10 | `tianbao.yang` | feat(api-server): expose model_aliases in /v1/models endpoint | +87 | −26 |
-331|- [ ] `6fe0530` | 2026-05-10 | `tianbao.yang` | fix(qqbot): abort reconnect on disconnect, fix CLOSE→UP state bug | +215 | −34 |
+331|- [x] ✅ 已迁移·部分（qqbot _stop_retry 已在 owner-v16，scripts 3个已迁移到 owner/scripts/，token_stats 废弃）`6fe0530` | 2026-05-10 | `tianbao.yang` | fix(qqbot): abort reconnect on disconnect, fix CLOSE→UP state bug | +215 | −34 |
 332|- [x] ✅ 已迁移 `beecdcd` | 2026-05-09 | `tianbao.yang` | fix(gateway): resolve env-var template base_url in _format_session_info | +5 | −1 |
 333|- [x] ✅ 已迁移（proxy=None 已在 owner-v16 qqbot adapter 中）`1fc7348` | 2026-05-09 | `tianbao.yang` | fix(qqbot): set proxy=None instead of proxies={} for httpx client | +1 | −1 |
 334|- [⏸️ 已决策·暂不迁移（model_aliases P24 为 local-only 功能，qqbot proxy 已迁移，yangtb/ 文件废弃）] `ccfcdab` | 2026-05-09 | `yangtb` | feat(api_server): model_aliases routing — route requests by body.model to different provider | +70 | −2 |
