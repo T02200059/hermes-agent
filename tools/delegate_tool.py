@@ -1155,6 +1155,10 @@ def _build_child_agent(
         if override_acp_args is not None
         else (getattr(parent_agent, "acp_args", []) or [])
     )
+    effective_owner_provider_name = (
+        creds.get("owner_provider_name")
+        or getattr(parent_agent, "owner_provider_name", None)
+    )
 
     # When override_provider is set (e.g. delegation.provider: minimax-cn),
     # the subagent must use direct API calls — not the parent's ACP transport.
@@ -1221,6 +1225,7 @@ def _build_child_agent(
         api_key=effective_api_key,
         model=effective_model,
         provider=effective_provider,
+        owner_provider_name=effective_owner_provider_name,
         api_mode=effective_api_mode,
         acp_command=effective_acp_command,
         acp_args=effective_acp_args,
@@ -2762,6 +2767,7 @@ def _resolve_delegation_credentials(cfg: dict, parent_agent) -> dict:
         return {
             "model": configured_model,
             "provider": provider,
+            "owner_provider_name": configured_provider or None,
             "base_url": configured_base_url,
             "api_key": api_key,
             "api_mode": api_mode,
@@ -2800,6 +2806,7 @@ def _resolve_delegation_credentials(cfg: dict, parent_agent) -> dict:
     return {
         "model": configured_model or runtime.get("model") or None,
         "provider": configured_provider if runtime.get("provider") == _RUNTIME_PROVIDER_CUSTOM else runtime.get("provider"),
+        "owner_provider_name": runtime.get("owner_provider_name"),
         "base_url": runtime.get("base_url"),
         "api_key": api_key,
         "api_mode": runtime.get("api_mode"),

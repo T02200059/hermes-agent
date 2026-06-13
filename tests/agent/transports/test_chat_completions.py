@@ -1044,3 +1044,80 @@ class TestChatCompletionsGeminiNativeExtraBodyStrip:
         )
         eb = kw.get("extra_body")
         assert eb and "tags" in eb
+
+
+class TestOwnerModelExtraBody:
+    """Model-level extra_body injection from owner/config/patch.yaml.
+
+    These tests use a temporary HERMES_HOME so the user's real patch.yaml does
+    not interfere with assertions.
+    """
+
+    @pytest.fixture
+    def hermes_home_with_model_extra_body(self, tmp_path, monkeypatch):
+        patch_yaml = tmp_path / "patch.yaml"
+        patch_yaml.write_text(
+            "owner:\n"
+            "  model_extra_body:\n"
+            "    xfyun:\n"
+            "      astron-code-latest:\n"
+            "        enable_thinking: true\n"
+            "    nous:\n"
+            "      hermes-3-405b:\n"
+            "        custom_tag: value\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+        from owner.patch_config import invalidate_patch_owner_config_cache
+        invalidate_patch_owner_config_cache()
+        yield tmp_path
+        invalidate_patch_owner_config_cache()
+
+    def test_legacy_path_injects_model_extra_body(
+        self, transport, hermes_home_with_model_extra_body
+    ):
+        kw = transport.build_kwargs(
+            "astron-code-latest",
+            [{"role": "user", "content": "hi"}],
+            None,
+            owner_provider_name="xfyun",
+        )
+        assert kw.get("extra_body", {}).get("enable_thinking") is True
+
+    def test_profile_path_injects_model_extra_body(
+        self, transport, hermes_home_with_model_extra_body
+    ):
+        from providers import get_provider_profile
+        profile = get_provider_profile("nous")
+        kw = transport.build_kwargs(
+            "hermes-3-405b",
+            [{"role": "user", "content": "hi"}],
+            None,
+            provider_profile=profile,
+            base_url="https://inference.nousresearch.com/v1",
+            session_id="s1",
+            max_tokens=None,
+            owner_provider_name="nous",
+        )
+        assert kw.get("extra_body", {}).get("custom_tag") == "value"
+
+    def test_missing_config_does_not_inject(
+        self, transport, hermes_home_with_model_extra_body
+    ):
+        kw = transport.build_kwargs(
+            "unknown-model",
+            [{"role": "user", "content": "hi"}],
+            None,
+            owner_provider_name="xfyun",
+        )
+        assert "enable_thinking" not in kw.get("extra_body", {})
+
+    def test_no_owner_provider_name_does_not_inject(
+        self, transport, hermes_home_with_model_extra_body
+    ):
+        kw = transport.build_kwargs(
+            "astron-code-latest",
+            [{"role": "user", "content": "hi"}],
+            None,
+        )
+        assert "enable_thinking" not in kw.get("extra_body", {})

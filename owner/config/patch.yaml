@@ -26,3 +26,15 @@ owner:
         endpoint: https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation
         model: wan2.6-t2i
         api_key: ${DASHSCOPE_API_KEY}
+
+  # ── Model-level extra_body injection ───────────────────────────────────────
+  # Per-provider, per-model extra_body merges. Use the *real* provider name
+  # (owner_provider_name) as the key, e.g. xfyun / damodel / deepseek-company.
+  # This is injected by owner/extra_body_injection.py in the chat_completions
+  # transport, after the provider profile's own extra_body but before request
+  # overrides. It lets you turn on provider-specific features like thinking
+  # mode for one model without touching the global config.
+  model_extra_body:
+    xfyun:
+      astron-code-latest:
+        enable_thinking: true
