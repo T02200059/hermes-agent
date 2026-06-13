@@ -8201,10 +8201,9 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
                 elif qcmd.get("type") == "alias":
                     target = qcmd.get("target", "").strip()
                     if target:
-                        from gateway.platforms.base import parse_chained_commands
+                        from gateway.platforms.base import expand_chained_quick_alias
                         user_args = cmd_original[len(base_cmd):].strip()
-                        chain_text = f"{target} {user_args}".strip()
-                        chain = parse_chained_commands(chain_text)
+                        chain = expand_chained_quick_alias(target, user_args)
                         for cmd_text in chain:
                             cmd_text = cmd_text if cmd_text.startswith("/") else f"/{cmd_text}"
                             self.process_command(cmd_text)
