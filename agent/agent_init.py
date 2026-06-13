@@ -156,6 +156,7 @@ def init_agent(
     base_url: str = None,
     api_key: str = None,
     provider: str = None,
+    owner_provider_name: str = None,
     api_mode: str = None,
     acp_command: str = None,
     acp_args: list[str] | None = None,
@@ -347,6 +348,12 @@ def init_agent(
         agent.api_mode = "bedrock_converse"
     else:
         agent.api_mode = "chat_completions"
+
+    # [owner-patch] Preserve the actual provider identity (e.g. xfyun, damodel)
+    # independently of the generic "custom" backend type.
+    agent.owner_provider_name = (
+        (owner_provider_name or "").strip().lower() or agent.provider
+    )
 
     # Eagerly warm the transport cache so import errors surface at init,
     # not mid-conversation.  Also validates the api_mode is registered.
@@ -1754,6 +1761,7 @@ def init_agent(
     agent._primary_runtime = {
         "model": agent.model,
         "provider": agent.provider,
+        "owner_provider_name": agent.owner_provider_name,
         "base_url": agent.base_url,
         "api_mode": agent.api_mode,
         "api_key": getattr(agent, "api_key", ""),

@@ -1907,6 +1907,7 @@ def run_conversation(
                                 cost_status=cost_result.status,
                                 cost_source=cost_result.source,
                                 billing_provider=agent.provider,
+                                owner_provider_name=getattr(agent, "owner_provider_name", None),
                                 billing_base_url=agent.base_url,
                                 billing_mode="subscription_included"
                                 if cost_result.status == "included" else None,

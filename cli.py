@@ -6398,6 +6398,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
                         session_id=self.session_id,
                         source=os.environ.get("HERMES_SESSION_SOURCE", "cli"),
                         model=self.model,
+                        owner_provider_name=getattr(self.agent, "owner_provider_name", None),
                         model_config={
                             "max_iterations": self.max_turns,
                             "reasoning_config": self.reasoning_config,
