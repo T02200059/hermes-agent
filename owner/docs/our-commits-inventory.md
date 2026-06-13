@@ -406,8 +406,8 @@
 - [⏸️ 已决策·待后续 i18n 统一处理] `07a584a` | 2026-05-28 | `yangtb` | style(i18n): 网关重启/关闭提示 emoji 从 ⚠️ 换成 ⏸️ | +2 | −2 |
 - [⏸️ 已决策·待后续 i18n 统一处理] `082e0be` | 2026-05-28 | `yangtb` | feat(i18n): translate all tips to Chinese | +455 | −458 |
 - [x] ⚠️ 废弃（.env 加载时机 v16 已解决；Bearer 正则改动会导致 token 泄漏回归）`0a3fa8c` | 2026-05-28 | `yangtb` | fix: gateway/run.py 对抗性 review 修复 | +15 | −5 |
-- [ ] `191183e` | 2026-05-28 | `yangtb` | chore: remove unused hooks (sre-archive, tool-call-logger) | +0 | −790 |
-- [ ] `1b41e23` | 2026-05-28 | `yangtb` | fix: owner 分支定制化模块对抗性 review 修复 | +88 | −10 |
+- [x] ⚠️ 废弃（owner-v16 已无 sre-archive/tool-call-logger 相关文件）`191183e` | 2026-05-28 | `yangtb` | chore: remove unused hooks (sre-archive, tool-call-logger) | +0 | −790 |
+- [x] ⚠️ 废弃（auditor-guard/rate_limiter/_align_table 在 v16 已不存在；backup 脚本修复已存在于 owner-v16）`1b41e23` | 2026-05-28 | `yangtb` | fix: owner 分支定制化模块对抗性 review 修复 | +88 | −10 |
 - [x] ⚠️ 废弃（纯文档 owner/README.md，不迁移）`43687be` | 2026-05-28 | `yangtb` | docs(owner): register P42 — QQ Bot diff markdown display | +3 | −2 |
 - [x] ⚠️ 废弃（纯文档 owner/README.md，不迁移）`4c40f92` | 2026-05-28 | `yangtb` | docs: P39 更新 — 三阶段渐进展开交互 | +1 | −1 |
 - [ ] `7e7cb58` | 2026-05-28 | `yangtb` | feat(qqbot): diff markdown display for patch/write_file/skill_manage | +116 | −0 |
