@@ -120,13 +120,65 @@ class TestFeishuExecApproval:
         assert "rm -rf /important" in card["elements"][0]["content"]
         assert "dangerous deletion" in card["elements"][0]["content"]
 
-        # Check buttons
+        # Check buttons — default allow_permanent=false shows 3 buttons
+        actions = card["elements"][1]["actions"]
+        assert len(actions) == 3
+        action_names = [a["value"]["hermes_action"] for a in actions]
+        assert action_names == ["approve_once", "approve_session", "deny"]
+        assert "permanently" in card["elements"][0]["content"].lower() or "disabled" in card["elements"][0]["content"].lower()
+
+    @pytest.mark.asyncio
+    async def test_allow_permanent_true_shows_always_button(self):
+        adapter = _make_adapter()
+
+        mock_response = SimpleNamespace(
+            success=lambda: True,
+            data=SimpleNamespace(message_id="msg_001"),
+        )
+        with patch.object(
+            adapter, "_is_approval_allow_permanent", return_value=True,
+        ), patch.object(
+            adapter, "_feishu_send_with_retry", new_callable=AsyncMock,
+            return_value=mock_response,
+        ) as mock_send:
+            await adapter.send_exec_approval(
+                chat_id="oc_12345",
+                command="ls",
+                session_key="s",
+            )
+
+        card = json.loads(mock_send.call_args[1]["payload"])
         actions = card["elements"][1]["actions"]
         assert len(actions) == 4
-        action_names = [a["value"]["hermes_action"] for a in actions]
-        assert action_names == [
+        assert [a["value"]["hermes_action"] for a in actions] == [
             "approve_once", "approve_session", "approve_always", "deny"
         ]
+        assert "disabled" not in card["elements"][0]["content"].lower()
+
+    @pytest.mark.asyncio
+    async def test_pre_warms_sender_name_cache(self):
+        adapter = _make_adapter()
+        adapter._sender_name_cache = {}
+
+        mock_response = SimpleNamespace(
+            success=lambda: True,
+            data=SimpleNamespace(message_id="msg_001"),
+        )
+        with patch.object(
+            adapter, "_feishu_send_with_retry", new_callable=AsyncMock,
+            return_value=mock_response,
+        ), patch.object(
+            adapter, "_resolve_sender_name_from_api", new_callable=AsyncMock,
+        ) as mock_resolve:
+            await adapter.send_exec_approval(
+                chat_id="oc_12345",
+                command="ls",
+                session_key="s",
+                sender_open_id="ou_user1",
+                sender_is_bot=False,
+            )
+
+        mock_resolve.assert_called_once_with("ou_user1", is_bot=False)
 
     @pytest.mark.asyncio
     async def test_stores_approval_state(self):
@@ -152,6 +204,7 @@ class TestFeishuExecApproval:
         assert state["session_key"] == "my-session-key"
         assert state["message_id"] == "msg_002"
         assert state["chat_id"] == "oc_12345"
+        assert state["command"] == "echo test"
 
     @pytest.mark.asyncio
     async def test_not_connected(self):

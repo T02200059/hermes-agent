@@ -14,6 +14,21 @@ approval:
   denied:          "      ✗ 已拒絕"
   cancelled:       "      ✗ 已取消"
   blocklist_message: "此指令位於無條件封鎖清單中，無法被批准。"
+  # 飛書互動式審批卡片文案
+  feishu_card_title: "⚠️ 命令需要審批"
+  feishu_reason_label: "**原因：** {description}"
+  feishu_btn_once: "✅ 允許一次"
+  feishu_btn_session: "✅ 本次會話"
+  feishu_btn_always: "✅ 永久允許"
+  feishu_btn_deny: "❌ 拒絕"
+  feishu_resolved_once: "已允許一次"
+  feishu_resolved_session: "已允許本次會話"
+  feishu_resolved_always: "已永久允許"
+  feishu_resolved_deny: "已拒絕"
+  feishu_resolved_default: "已處理"
+  feishu_resolved_body: "由 {user_name} 操作\n\n```\n{command}\n```"
+  feishu_permanent_disabled: "💡 永久允許已停用，請選擇允許一次或本次會話"
+
 
 gateway:
   approval_expired: "⚠️ 批准已逾期（代理不再等待）。請讓代理重試。"
