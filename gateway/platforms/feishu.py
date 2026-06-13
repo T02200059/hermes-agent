@@ -143,6 +143,7 @@ from gateway.platforms.base import (
 from gateway.status import acquire_scoped_lock, release_scoped_lock
 from hermes_constants import get_hermes_home
 from utils import atomic_json_write
+# [owner-patch] auto-card: import try_auto_card from owner/feishu/auto_card.py
 from owner.feishu.auto_card import try_auto_card
 
 logger = logging.getLogger(__name__)
@@ -1771,6 +1772,7 @@ class FeishuAdapter(BasePlatformAdapter):
     # =========================================================================
     # Outbound — send / edit / send_image / send_voice / …
     # =========================================================================
+    # [owner-patch] auto-card: send_card() REST API method (owner/feishu/auto_card.py)
     async def send_card(
         self,
         chat_id: str,
@@ -1863,6 +1865,7 @@ class FeishuAdapter(BasePlatformAdapter):
         formatted = self.format_message(content)
 
         # Auto-card: wrap long text in an interactive card when streaming is
+        # [owner-patch] auto-card: try auto-card before plain-text fallback
         # disabled. Threshold from patch.yaml → owner.feishu_card.auto_card_threshold.
         # Uses send_card() with REST API (not lark_oapi SDK) so it won't
         # invalidate the WebSocket connection's token.
