@@ -1702,7 +1702,7 @@ from gateway.platforms.base import (
     # imported locally inside the quick-commands alias block to minimize
     # top-level coupling. The shared implementation lives in base.py.
 )
-# [owner] ensure private tool schema patches (model/card) are applied early
+# [owner] apply schema patches early (see owner/tools/schema_patches.py)
 import owner.tools.schema_patches  # noqa: F401
 from gateway.restart import (
     DEFAULT_GATEWAY_RESTART_DRAIN_TIMEOUT,
@@ -15193,15 +15193,6 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         _loop_for_step = asyncio.get_running_loop()
         _hooks_ref = self.hooks
 
-        # [owner] diff cards: state for correlating tool results with snapshots
-        from owner.diff_card.dispatcher import (
-            make_tool_start_snapshot_callback,
-            maybe_send_diff_cards,
-        )
-        _edit_snapshots: Dict[str, Any] = {}
-        _edit_snapshots_lock = threading.Lock()
-        _sent_diff_tool_call_ids: Set[str] = set()
-
         def _step_callback_sync(iteration: int, prev_tools: list) -> None:
             if not _run_still_current():
                 return
@@ -15227,16 +15218,6 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 logger=logger,
                 log_message="agent:step hook scheduling error",
             )
-            # [owner] diff cards: dispatch platform diff cards after file edits
-            try:
-                maybe_send_diff_cards(
-                    self, source, prev_tools,
-                    _edit_snapshots, _edit_snapshots_lock,
-                    _loop_for_step,
-                    _sent_diff_tool_call_ids,
-                )
-            except Exception:
-                logger.debug("diff card dispatch error", exc_info=True)
 
         # Bridge sync event_callback → async hooks.emit for lifecycle events
         # (e.g. session:compress fires after context compression splits a session)
@@ -15584,12 +15565,13 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             _original_tool_start_cb = (
                 voice_ack_callback if _voice_ack_guild[0] is not None else None
             )
-            # [owner] diff cards: capture before-state for file-mutating tools
-            agent.tool_start_callback = make_tool_start_snapshot_callback(
-                _original_tool_start_cb, _edit_snapshots, _edit_snapshots_lock
+            # [owner] diff cards: thin install (see owner/diff_card/dispatcher.py)
+            from owner.diff_card.dispatcher import install_diff_card_support
+            wrapped_start, wrapped_step = install_diff_card_support(
+                self, source, _original_tool_start_cb, _step_callback_sync, _loop_for_step
             )
-            # [owner] diff cards: always register step_callback (not gated by loaded_hooks)
-            agent.step_callback = _step_callback_sync
+            agent.tool_start_callback = wrapped_start
+            agent.step_callback = wrapped_step
             agent.stream_delta_callback = _stream_delta_cb
             agent.interim_assistant_callback = _interim_assistant_cb if _want_interim_messages else None
             agent.status_callback = _status_callback_sync

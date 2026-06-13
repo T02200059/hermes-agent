@@ -635,7 +635,7 @@ def run_conversation(
                                 "name": tc["function"]["name"],
                                 "result": _results_by_id.get(tc.get("id")),
                                 "arguments": tc["function"].get("arguments"),
-                                # [owner] diff cards: carry tool_call_id to correlate with edit snapshot
+                                # [owner] diff cards: tool_call_id for snapshot correlation (see owner/diff_card/)
                                 "tool_call_id": tc.get("id"),
                             }
                             for tc in _m["tool_calls"]

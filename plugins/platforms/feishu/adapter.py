@@ -143,6 +143,7 @@ from gateway.platforms.base import (
 from gateway.status import acquire_scoped_lock, release_scoped_lock
 from hermes_constants import get_hermes_home
 from utils import atomic_json_write, env_float, env_int
+# [owner] import try_auto_card (see owner/feishu/auto_card.py)
 from owner.feishu.auto_card import try_auto_card
 
 logger = logging.getLogger(__name__)
@@ -1472,8 +1473,6 @@ class FeishuAdapter(BasePlatformAdapter):
         # Update prompt button state (prompt_id → {session_key, message_id, chat_id})
         self._update_prompt_state: Dict[int, Dict[str, str]] = {}
         self._update_prompt_counter = itertools.count(1)
-        # [owner] diff cards: cache for interactive diff card callbacks
-        self._diff_card_cache: Dict[str, Dict[str, Any]] = {}
         # Feishu reaction deletion requires the opaque reaction_id returned
         # by create, so we cache it per message_id.
         self._pending_processing_reactions: "OrderedDict[str, str]" = OrderedDict()
@@ -1776,8 +1775,7 @@ class FeishuAdapter(BasePlatformAdapter):
     # =========================================================================
     # Outbound — send / edit / send_image / send_voice / …
     # =========================================================================
-    # [owner] auto-card + card sending: thin delegation only.
-    # Real impl in owner/feishu/card_sender.py (keeps this file minimal for sync).
+    # [owner] auto-card + card sending: thin delegation (see owner/feishu/card_sender.py)
     # See owner/feishu/ .
     async def send_card(
         self,
@@ -1793,21 +1791,6 @@ class FeishuAdapter(BasePlatformAdapter):
 
         return await send_card_via_rest(self, chat_id, card, metadata)
 
-    # [owner] diff cards: thin delegation (real impl in owner/diff_card/feishu.py)
-    async def send_diff_card(
-        self,
-        chat_id: str,
-        diff: str,
-        tool_name: str,
-        file_path: str,
-        max_lines: int,
-    ) -> SendResult:
-        """Send an interactive diff card for a file-mutating tool."""
-        from owner.diff_card.feishu import send_feishu_diff_card
-
-        return await send_feishu_diff_card(self, chat_id, diff, tool_name, file_path, max_lines)
-
-
     async def send(
         self,
         chat_id: str,
@@ -1822,10 +1805,7 @@ class FeishuAdapter(BasePlatformAdapter):
         formatted = self.format_message(content)
 
         # Auto-card: wrap long text in an interactive card when streaming is
-        # [owner] try auto-card before plain-text fallback
-        # disabled. Threshold from patch.yaml → owner.feishu_card.auto_card_threshold.
-        # Uses send_card() with REST API (not lark_oapi SDK) so it won't
-        # invalidate the WebSocket connection's token.
+        # [owner] try auto-card before plain-text (see owner/feishu/auto_card.py)
         auto_card_result = await try_auto_card(self, formatted, metadata)
         if auto_card_result is not None:
             return auto_card_result
@@ -2597,7 +2577,7 @@ class FeishuAdapter(BasePlatformAdapter):
                 loop=loop,
             )
 
-        # [owner] diff cards: route expand/collapse/full callback actions
+        # [owner] diff cards: route expand/collapse/full actions (see owner/diff_card/feishu.py)
         if isinstance(action_value, dict) and any(
             action_value.get(k) for k in ("expand_diff", "collapse_diff", "show_full_diff")
         ):
@@ -2684,9 +2664,7 @@ class FeishuAdapter(BasePlatformAdapter):
         ):
             return P2CardActionTriggerResponse() if P2CardActionTriggerResponse else None
 
-        # [owner] early return to avoid SDK NameError on CallBackToast (full update
-        # is async via _submit_on_loop). Keeps official method minimal for sync.
-        # See owner/feishu/ .
+        # [owner] early return to avoid SDK NameError (see owner/feishu/)
         return P2CardActionTriggerResponse() if P2CardActionTriggerResponse else None
 
     def _handle_update_prompt_card_action(self, *, event: Any, action_value: Dict[str, Any], loop: Any) -> Any:
