@@ -240,13 +240,13 @@
 254|- [ ] `b917674` | 2026-05-20 | `tianbao.yang` | fix(agent): acp_args 空列表应存为 None 而非 [] | +1 | −1 |
 255|- [ ] `022d45b` | 2026-05-20 | `tianbao.yang` | feat(image_gen): add model param to image_generate tool + yaml presets; update exchange rate | +52 | −9 |
 256|- [ ] `f248f27` | 2026-05-20 | `tianbao.yang` | fix(auditor): 飞书卡片段落间 hr 重复横线问题 | +10 | −15 |
-257|- [ ] `a6a18b3` | 2026-05-19 | `tianbao.yang` | Revert "feat(transports): add URL-based reasoning_effort support for LKeap/DeepSeek/DaModel" | +0 | −51 |
+257|- [x] ⏭️ 跳过：revert commit `a6a18b3` | 2026-05-19 | `tianbao.yang` | Revert "feat(transports): add URL-based reasoning_effort support for LKeap/DeepSeek/DaModel" | +0 | −51 |
 258|- [ ] `eb1df5d` | 2026-05-19 | `tianbao.yang` | Revert "refactor: extract _resolve_reasoning_effort helper, merge LKeap dual blocks" | +61 | −79 |
-259|- [ ] `b30e774` | 2026-05-19 | `tianbao.yang` | Revert "fix: remove hardcoded extra_efforts from _resolve_reasoning_effort" | +15 | −5 |
-260|- [ ] `54657dc` | 2026-05-19 | `tianbao.yang` | fix: remove hardcoded extra_efforts from _resolve_reasoning_effort | +5 | −15 |
-261|- [ ] `5cbc280` | 2026-05-19 | `tianbao.yang` | refactor: extract _resolve_reasoning_effort helper, merge LKeap dual blocks | +79 | −61 |
+259|- [x] ⏭️ 跳过：revert commit `b30e774` | 2026-05-19 | `tianbao.yang` | Revert "fix: remove hardcoded extra_efforts from _resolve_reasoning_effort" | +15 | −5 |
+260|- [x] ⚠️ 废弃：reasoning_effort 链被 revert `54657dc` | 2026-05-19 | `tianbao.yang` | fix: remove hardcoded extra_efforts from _resolve_reasoning_effort | +5 | −15 |
+261|- [x] ⚠️ 废弃：reasoning_effort 链被 revert `5cbc280` | 2026-05-19 | `tianbao.yang` | refactor: extract _resolve_reasoning_effort helper, merge LKeap dual blocks | +79 | −61 |
 262|- [x] ⚠️ 废弃：yangtb/ 目录不存在，pricing+auditor-guard 已废弃 `083bb20` | 2026-05-19 | `tianbao.yang` | misc(yangtb): update patch list, pricing, auditor-guard templates | +11 | −3 |
-263|- [ ] `1d00af0` | 2026-05-19 | `tianbao.yang` | feat(transports): add URL-based reasoning_effort support for LKeap/DeepSeek/DaModel | +51 | −0 |
+263|- [x] ⚠️ 废弃：reasoning_effort 链被 revert `1d00af0` | 2026-05-19 | `tianbao.yang` | feat(transports): add URL-based reasoning_effort support for LKeap/DeepSeek/DaModel | +51 | −0 |
 264|- [x] ⚠️ 废弃：yangtb/README.md 纯文档 `9407c34` | 2026-05-19 | `tianbao.yang` | docs(yangtb): align patch list with v0.14.0 merge (P12/P22/P27/P28 marked covered) | +17 | −3 |
 265|- [x] ⚠️ 废弃：yangtb/README.md 纯文档 `862b2cb` | 2026-05-19 | `tianbao.yang` | docs: bump patch count to 25 groups / 32 items, add P26 i18n gateway messages | +3 | −2 |
 266|- [ ] `5110f6b` | 2026-05-19 | `tianbao.yang` | i18n: translate gateway lifecycle/busy-ack/steer/inactivity messages to Chinese | +480 | −36 |
