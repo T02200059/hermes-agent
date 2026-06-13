@@ -1665,7 +1665,6 @@ class AIAgent:
                     finish_reason=msg.get("finish_reason"),
                     # [owner-patch] attribution reconstruction — use owner helper
                     # so the "how" is not duplicated across reconstruction sites.
-                    from owner.attribution import get_current_attribution
                     # We still read the stored value from the message (for historical accuracy)
                     # rather than calling get_current_attribution here.
                     owner_provider_name=msg.get("owner_provider_name") if role == "assistant" else None,
