@@ -164,6 +164,10 @@ SEND_MESSAGE_SCHEMA = {
                 "type": "string",
                 "description": "The message text to send. To send an image or file, include MEDIA:<local_path> (e.g. 'MEDIA:/tmp/report.pdf') in the message — the platform will deliver it as a native media attachment."
             },
+            "card": {
+                "type": "object",
+                "description": "Feishu interactive card payload (JSON object with config + header + elements). When set, sends as an interactive card instead of plain text. Only supported on feishu platform. Example: {\"config\": {\"wide_screen_mode\": true}, \"header\": {\"title\": {\"tag\": \"plain_text\", \"content\": \"📊 Report\"}, \"template\": \"purple\"}, \"elements\": [{\"tag\": \"markdown\", \"content\": \"**Summary** data here\"}]}"
+            },
             "emoji": {
                 "type": "string",
                 "description": "For action='react': the emoji to react with (e.g. '❤️'). On iMessage, ❤️👍👎😂‼️❓ render as native tapbacks; other emoji use custom-emoji reactions."
@@ -299,8 +303,9 @@ def _handle_send(args):
     """Send a message to a platform target."""
     target = args.get("target", "")
     message = args.get("message", "")
-    if not target or not message:
-        return tool_error("Both 'target' and 'message' are required when action='send'")
+    card = args.get("card")
+    if not target or (not message and not card):
+        return tool_error("Either 'message' (for text) or 'card' (for interactive card) is required when action='send'")
 
     parts = target.split(":", 1)
     platform_name = parts[0].strip().lower()
@@ -441,6 +446,7 @@ def _handle_send(args):
                 thread_id=thread_id,
                 media_files=media_files,
                 force_document=force_document_attachments,
+                card=card,
             )
         )
         if used_home_channel and isinstance(result, dict) and result.get("success"):
@@ -713,7 +719,7 @@ async def _send_via_adapter(
     }
 
 
-async def _send_to_platform(platform, pconfig, chat_id, message, thread_id=None, media_files=None, force_document=False):
+async def _send_to_platform(platform, pconfig, chat_id, message, thread_id=None, media_files=None, force_document=False, card=None):
     """Route a message to the appropriate platform sender.
 
     Long messages are automatically chunked to fit within platform limits
@@ -872,9 +878,9 @@ async def _send_to_platform(platform, pconfig, chat_id, message, thread_id=None,
             last_result = result
         return last_result
 
-    # --- Feishu: native media attachment support via the registry's
+    # --- Feishu: native media/card attachment support via the registry's
     # standalone_sender_fn (plugins/platforms/feishu/adapter.py::_standalone_send). #41112
-    if platform == Platform.FEISHU and media_files:
+    if platform == Platform.FEISHU and (media_files or card):
         from gateway.platform_registry import platform_registry as _pr_feishu
         from hermes_cli.plugins import discover_plugins as _dp_feishu
         _dp_feishu()
@@ -890,6 +896,7 @@ async def _send_to_platform(platform, pconfig, chat_id, message, thread_id=None,
                 chunk,
                 media_files=media_files if is_last else None,
                 thread_id=thread_id,
+                card=card if is_last else None,
             )
             if isinstance(result, dict) and result.get("error"):
                 return result
@@ -938,7 +945,7 @@ async def _send_to_platform(platform, pconfig, chat_id, message, thread_id=None,
         elif platform == Platform.DINGTALK:
             result = await _registry_standalone_send("dingtalk", pconfig, chat_id, chunk, thread_id)
         elif platform == Platform.FEISHU:
-            result = await _registry_standalone_send("feishu", pconfig, chat_id, chunk, thread_id)
+            result = await _registry_standalone_send("feishu", pconfig, chat_id, chunk, thread_id, card=card)
         elif platform == Platform.WECOM:
             result = await _registry_standalone_send("wecom", pconfig, chat_id, chunk, thread_id)
         elif platform == Platform.BLUEBUBBLES:
@@ -1208,7 +1215,7 @@ async def _send_telegram(token, chat_id, message, media_files=None, thread_id=No
 # (plugins/platforms/slack/adapter.py), wired via standalone_sender_fn. #41112.
 
 
-async def _registry_standalone_send(platform_name, pconfig, chat_id, message, thread_id=None):
+async def _registry_standalone_send(platform_name, pconfig, chat_id, message, thread_id=None, media_files=None, card=None):
     """Dispatch a one-shot send through a migrated platform plugin's
     standalone_sender_fn (registry hook).  Used for platforms whose adapter
     moved out of gateway/platforms/ into plugins/platforms/<name>/ (#41112):
@@ -1221,7 +1228,9 @@ async def _registry_standalone_send(platform_name, pconfig, chat_id, message, th
     entry = platform_registry.get(platform_name)
     if entry is None or entry.standalone_sender_fn is None:
         return {"error": f"{platform_name} plugin not registered or missing standalone_sender_fn"}
-    return await entry.standalone_sender_fn(pconfig, chat_id, message, thread_id=thread_id)
+    return await entry.standalone_sender_fn(
+        pconfig, chat_id, message, thread_id=thread_id, media_files=media_files, card=card
+    )
 
 
 # _send_whatsapp moved to plugins/platforms/whatsapp/adapter.py::_standalone_send,

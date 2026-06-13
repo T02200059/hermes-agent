@@ -143,6 +143,7 @@ from gateway.platforms.base import (
 from gateway.status import acquire_scoped_lock, release_scoped_lock
 from hermes_constants import get_hermes_home
 from utils import atomic_json_write, env_float, env_int
+from owner.feishu.auto_card import try_auto_card
 
 logger = logging.getLogger(__name__)
 
@@ -1771,6 +1772,83 @@ class FeishuAdapter(BasePlatformAdapter):
     # =========================================================================
     # Outbound — send / edit / send_image / send_voice / …
     # =========================================================================
+    async def send_card(
+        self,
+        chat_id: str,
+        card: Dict[str, Any],
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> SendResult:
+        """Send a Feishu interactive card message via REST API.
+
+        Uses ``message.create`` (never ``reply``) and acquires its own
+        tenant_access_token so it does not disturb the WebSocket connection's
+        credential state.
+
+        The ``card`` dict should follow the Feishu Card JSON structure
+        (schema + config + header + body/elements).
+        """
+        try:
+            import requests as _requests
+        except ImportError:
+            return SendResult(success=False, error="requests library not available")
+
+        base_url = "https://open.feishu.cn/open-apis"
+
+        # Own token acquisition — independent of adapter's _client/WebSocket.
+        try:
+            token_resp = _requests.post(
+                f"{base_url}/auth/v3/tenant_access_token/internal",
+                json={"app_id": self._app_id, "app_secret": self._app_secret},
+                timeout=10,
+            )
+            token_data = token_resp.json()
+            access_token = token_data.get("tenant_access_token", "")
+            if not access_token:
+                return SendResult(
+                    success=False,
+                    error=f"Failed to get Feishu token: {token_data.get('msg', 'unknown')}",
+                )
+        except Exception as exc:
+            return SendResult(success=False, error=f"Feishu token request failed: {exc}")
+
+        # Determine receive_id_type from chat_id pattern.
+        if chat_id.startswith("ou_"):
+            receive_id_type = "open_id"
+        else:
+            receive_id_type = "chat_id"
+
+        # Send card via REST API (bypasses lark_oapi SDK entirely).
+        try:
+            payload = json.dumps(card, ensure_ascii=False)
+            send_resp = _requests.post(
+                f"{base_url}/im/v1/messages?receive_id_type={receive_id_type}",
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Content-Type": "application/json",
+                },
+                json={"receive_id": chat_id, "msg_type": "interactive", "content": payload},
+                timeout=15,
+            )
+            send_data = send_resp.json()
+            code = send_data.get("code", -1)
+            if code != 0:
+                logger.warning(
+                    "[Feishu] send_card failed (code %d): %s",
+                    code, send_data.get("msg", "unknown"),
+                )
+                return SendResult(
+                    success=False,
+                    error=f"Feishu API error (code {code}): {send_data.get('msg', 'unknown')}",
+                )
+            message_id = ""
+            msg_data = send_data.get("data", {})
+            if isinstance(msg_data, dict):
+                message_id = str(msg_data.get("message_id", ""))
+            return SendResult(success=True, message_id=message_id)
+        except Exception as exc:
+            logger.warning("[Feishu] send_card exception: %s", exc)
+            return SendResult(success=False, error=f"Feishu card send failed: {exc}")
+
 
     async def send(
         self,
@@ -1784,6 +1862,15 @@ class FeishuAdapter(BasePlatformAdapter):
             return SendResult(success=False, error="Not connected")
 
         formatted = self.format_message(content)
+
+        # Auto-card: wrap long text in an interactive card when streaming is
+        # disabled. Threshold from patch.yaml → owner.feishu_card.auto_card_threshold.
+        # Uses send_card() with REST API (not lark_oapi SDK) so it won't
+        # invalidate the WebSocket connection's token.
+        auto_card_result = await try_auto_card(self, formatted, metadata)
+        if auto_card_result is not None:
+            return auto_card_result
+
         chunks = self.truncate_message(formatted, self.MAX_MESSAGE_LENGTH)
         last_response = None
 
@@ -5253,13 +5340,15 @@ async def _standalone_send(
     thread_id=None,
     media_files=None,
     force_document=False,
+    card=None,
 ):
     """Out-of-process Feishu/Lark delivery via the adapter's send pipeline.
 
     Implements the standalone_sender_fn contract so deliver=feishu cron jobs
     succeed when cron runs separately from the gateway. Builds a transient
     FeishuAdapter, hydrates its lark client, and sends text + native media
-    (images, video, voice, documents). Replaces the legacy _send_feishu helper.
+    (images, video, voice, documents) or interactive cards. Replaces the
+    legacy _send_feishu helper.
     """
     if not FEISHU_AVAILABLE:
         return {"error": "Feishu dependencies not installed. Run: pip install 'hermes-agent[feishu]'"}
@@ -5271,6 +5360,18 @@ async def _standalone_send(
         domain = FEISHU_DOMAIN if domain_name != "lark" else LARK_DOMAIN
         adapter._client = adapter._build_lark_client(domain)
         metadata = {"thread_id": thread_id} if thread_id else None
+
+        # Card send path — bypass chunking, send as interactive card
+        if card:
+            result = await adapter.send_card(chat_id=chat_id, card=card, metadata=metadata)
+            if not result.success:
+                return {"error": f"Feishu card send failed: {result.error}"}
+            return {
+                "success": True,
+                "platform": "feishu",
+                "chat_id": chat_id,
+                "message_id": result.message_id,
+            }
 
         last_result = None
         if message.strip():

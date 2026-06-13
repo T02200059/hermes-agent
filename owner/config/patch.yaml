@@ -1,0 +1,5 @@
+owner:
+  feishu_card:
+    auto_card_threshold: 57
+    split_enabled: true
+    split_max_chars: 24000
