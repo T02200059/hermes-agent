@@ -436,6 +436,7 @@
 - [x] ✅ 已迁移 `e64a1aeac` `1c887efaa` | 2026-05-27 | `yangtb` | feat(feishu): approvals 卡片回调异步更新用户名，显示命令内容 | +67 | −17 |
 - [x] ✅ 已迁移 `e64a1aeac` `de36b0341` | 2026-05-28 | `yangtb` | refactor(feishu): resolve sender name synchronously before approval card response | +13 | −34 |
 - [x] ✅ 已迁移 `e64a1aeac` `31417156d` | 2026-05-30 | `yangtb` | fix(feishu): resolve sender name for approval card using open_id instead of short user_id | +5 | −2 |
+- [x] ✅ 已薄化提取 (e64a1aeac 之后重构) | 2026-06 | `yangtb` | refactor(owner): 审批卡片 + open_id->中文名 cache 完整提取到 owner/feishu/ (sender_name_cache.py + approval.py)，feishu.py 只剩薄胶水 + 委托 + 统一短 [owner] 标记（对齐 diff_card 模式）；chat_id 缓存部分按补充推后实现。官方 diff 显著缩小，便于 upstream sync。 | (extraction) | (extraction)
 
 ### Memory 提案审批（P55）
 
