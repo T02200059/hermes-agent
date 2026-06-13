@@ -321,7 +321,7 @@
 335|- [ ] `c4071f9` | 2026-05-09 | `tianbao.yang` | fix(feishu): rebuild separator dashes from col_widths, not original dash count | +10 | −6 |
 336|- [ ] `52b8356` | 2026-05-09 | `tianbao.yang` | fix(feishu): set wcswidth ambiguous_width=2 for CJK table alignment | +5 | −3 |
 337|- [ ] `bf59dfc` | 2026-05-09 | `tianbao.yang` | fix(viking-remember): isolate viking_remember into temp session to avoid overlap with Hermes auto memory | +21 | −9 |
-338|- [ ] `865b5fc` | 2026-05-09 | `tianbao.yang` | chore(yangtb): sre-archive hook, session skill tracking, config | +470 | −1 |
+338|- [x] ⚠️ 废弃（sre-archive hook 已删除 0b160cd，_extract_ai_invoked_skills + skills_loaded 不存在于 owner-v16）`865b5fc` | 2026-05-09 | `tianbao.yang` | chore(yangtb): sre-archive hook, session skill tracking, config | +470 | −1 |
 339|- [x] ✅ 已迁移 `efd22de` | 2026-05-08 | `tianbao.yang` | feat: local customizations — skin engine, TUI tweaks, cron scheduler | +39 | −7 |
 340|- [x] ⏭️ 跳过 `2938886` | 2026-05-08 | `tianbao.yang` | Merge upstream/main into yangtb — v0.13.0 sync (237 commits) | +0 | −0 |
 341|- [x] ⏸️ 已决策·暂不迁移（依赖 _append_inline_code_reference 函数整体迁移） `21d4700` | 2026-05-08 | `tianbao.yang` | fix(feishu): wrap multi-item inline-code ref in code block for one-tap copy | +9 | −1 |
