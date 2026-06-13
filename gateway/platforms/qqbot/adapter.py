@@ -103,7 +103,7 @@ from gateway.platforms.qqbot.constants import (
     RATE_LIMIT_DELAY,
     QUICK_DISCONNECT_THRESHOLD,
     MAX_QUICK_DISCONNECT_COUNT,
-    HEARTBEAT_MAX_FAILURES,  # [owner-patch]
+    HEARTBEAT_MAX_FAILURES,  # [owner]
     MAX_MESSAGE_LENGTH,
     DEDUP_WINDOW_SECONDS,
     DEDUP_MAX_SIZE,
