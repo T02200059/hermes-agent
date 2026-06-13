@@ -223,12 +223,22 @@ _APPROVAL_CHOICE_MAP: Dict[str, str] = {
     "approve_always": "always",
     "deny": "deny",
 }
-_APPROVAL_LABEL_MAP: Dict[str, str] = {
-    "once": "Approved once",
-    "session": "Approved for session",
-    "always": "Approved permanently",
-    "deny": "Denied",
-}
+
+
+def _approval_label(choice: str) -> str:
+    """Return an i18n label for a resolved approval choice."""
+    from agent.i18n import t
+
+    # [owner] P9: resolved card labels via i18n (locales: approval.feishu_resolved_*)
+    key_map = {
+        "once": "feishu_resolved_once",
+        "session": "feishu_resolved_session",
+        "always": "feishu_resolved_always",
+        "deny": "feishu_resolved_deny",
+    }
+    return t(f"approval.{key_map.get(choice, 'feishu_resolved_default')}")
+
+
 _FEISHU_BOT_MSG_TRACK_SIZE = 512                   # LRU size for tracking sent message IDs
 _FEISHU_REPLY_FALLBACK_CODES = frozenset({230011, 231003})  # reply target withdrawn/missing → create fallback
 
@@ -1891,9 +1901,14 @@ class FeishuAdapter(BasePlatformAdapter):
             return SendResult(success=False, error=str(exc))
 
     async def send_exec_approval(
-        self, chat_id: str, command: str, session_key: str,
+        self,
+        chat_id: str,
+        command: str,
+        session_key: str,
         description: str = "dangerous command",
         metadata: Optional[Dict[str, Any]] = None,
+        sender_open_id: str = "",
+        sender_is_bot: bool = False,
     ) -> SendResult:
         """Send an interactive card with approval buttons.
 
@@ -1905,8 +1920,19 @@ class FeishuAdapter(BasePlatformAdapter):
             return SendResult(success=False, error="Not connected")
 
         try:
+            # [owner] P45: pre-warm sender name cache so callback reads real name with zero delay
+            if sender_open_id and not self._get_cached_sender_name(sender_open_id):
+                asyncio.create_task(
+                    self._resolve_sender_name_from_api(sender_open_id, is_bot=sender_is_bot)
+                )
+
             approval_id = next(self._approval_counter)
             cmd_preview = command[:3000] + "..." if len(command) > 3000 else command
+
+            # [owner] P31: allow hiding the permanent-approval button via patch.yaml
+            allow_permanent = self._is_approval_allow_permanent()
+
+            from agent.i18n import t
 
             def _btn(label: str, action_name: str, btn_type: str = "default") -> dict:
                 return {
@@ -1916,25 +1942,34 @@ class FeishuAdapter(BasePlatformAdapter):
                     "value": {"hermes_action": action_name, "approval_id": approval_id},
                 }
 
+            buttons = [
+                _btn(t("approval.feishu_btn_once"), "approve_once", "primary"),
+                _btn(t("approval.feishu_btn_session"), "approve_session"),
+            ]
+            if allow_permanent:
+                buttons.append(_btn(t("approval.feishu_btn_always"), "approve_always"))
+            buttons.append(_btn(t("approval.feishu_btn_deny"), "deny", "danger"))
+
+            md_content = f"```\n{cmd_preview}\n```\n" + t(
+                "approval.feishu_reason_label", description=description
+            )
+            if not allow_permanent:
+                md_content += "\n\n" + t("approval.feishu_permanent_disabled")
+
             card = {
                 "config": {"wide_screen_mode": True},
                 "header": {
-                    "title": {"content": "⚠️ Command Approval Required", "tag": "plain_text"},
+                    "title": {"content": t("approval.feishu_card_title"), "tag": "plain_text"},
                     "template": "orange",
                 },
                 "elements": [
                     {
                         "tag": "markdown",
-                        "content": f"```\n{cmd_preview}\n```\n**Reason:** {description}",
+                        "content": md_content,
                     },
                     {
                         "tag": "action",
-                        "actions": [
-                            _btn("✅ Allow Once", "approve_once", "primary"),
-                            _btn("✅ Session", "approve_session"),
-                            _btn("✅ Always", "approve_always"),
-                            _btn("❌ Deny", "deny", "danger"),
-                        ],
+                        "actions": buttons,
                     },
                 ],
             }
@@ -1950,10 +1985,12 @@ class FeishuAdapter(BasePlatformAdapter):
 
             result = self._finalize_send_result(response, "send_exec_approval failed")
             if result.success:
+                # [owner] P9: keep command for resolved card body
                 self._approval_state[approval_id] = {
                     "session_key": session_key,
                     "message_id": result.message_id or "",
                     "chat_id": chat_id,
+                    "command": command,
                 }
             return result
         except Exception as exc:
@@ -2029,10 +2066,32 @@ class FeishuAdapter(BasePlatformAdapter):
             return SendResult(success=False, error=str(exc))
 
     @staticmethod
-    def _build_resolved_approval_card(*, choice: str, user_name: str) -> Dict[str, Any]:
+    def _is_approval_allow_permanent() -> bool:
+        """Return whether the 'Always' approval button should be shown.
+
+        Defaults to False so users must explicitly choose Once or Session.
+        """
+        # [owner] P31: configurable permanent-approval button (owner/config/patch.yaml)
+        try:
+            from owner.patch_config import _load_patch_owner_config
+
+            patch = _load_patch_owner_config()
+            return bool(patch.get("approvals", {}).get("allow_permanent", False))
+        except Exception:
+            return False
+
+    @staticmethod
+    def _build_resolved_approval_card(
+        *, choice: str, user_name: str, command: str = ""
+    ) -> Dict[str, Any]:
         """Build raw card JSON for a resolved approval action."""
+        from agent.i18n import t
+
         icon = "❌" if choice == "deny" else "✅"
-        label = _APPROVAL_LABEL_MAP.get(choice, "Resolved")
+        # [owner] P9: i18n resolved label
+        label = _approval_label(choice)
+        # [owner] P9: resolved body shows operator + executed command
+        body = t("approval.feishu_resolved_body", user_name=user_name, command=command)
         return {
             "config": {"wide_screen_mode": True},
             "header": {
@@ -2042,7 +2101,7 @@ class FeishuAdapter(BasePlatformAdapter):
             "elements": [
                 {
                     "tag": "markdown",
-                    "content": f"{icon} **{label}** by {user_name}",
+                    "content": body,
                 },
             ],
         }
@@ -2648,6 +2707,12 @@ class FeishuAdapter(BasePlatformAdapter):
             )
             return P2CardActionTriggerResponse() if P2CardActionTriggerResponse else None
 
+        # [owner] P45: log operator identity to aid cache-key debugging
+        logger.info(
+            "[Feishu] approval callback: operator open_id=%r cached=%r",
+            open_id,
+            self._get_cached_sender_name(open_id),
+        )
         user_name = self._get_cached_sender_name(open_id) or open_id
 
         chat_context = getattr(event, "context", None)
@@ -2664,8 +2729,19 @@ class FeishuAdapter(BasePlatformAdapter):
         ):
             return P2CardActionTriggerResponse() if P2CardActionTriggerResponse else None
 
-        # [owner] early return to avoid SDK NameError (see owner/feishu/)
-        return P2CardActionTriggerResponse() if P2CardActionTriggerResponse else None
+        # [owner] P9: return CallBackCard to update the approval card inline
+        command = state.get("command", "") if isinstance(state, dict) else ""
+        if P2CardActionTriggerResponse is None:
+            return None
+        response = P2CardActionTriggerResponse()
+        if CallBackCard is not None:
+            card = CallBackCard()
+            card.type = "raw"
+            card.data = self._build_resolved_approval_card(
+                choice=choice, user_name=user_name, command=command
+            )
+            response.card = card
+        return response
 
     def _handle_update_prompt_card_action(self, *, event: Any, action_value: Dict[str, Any], loop: Any) -> Any:
         """Schedule update prompt resolution and build the synchronous callback response."""
@@ -3955,8 +4031,8 @@ class FeishuAdapter(BasePlatformAdapter):
         """Map Feishu's three-tier user IDs onto Hermes' SessionSource fields.
 
         Preference order for the primary ``user_id`` field:
-          1. user_id  (tenant-scoped, most stable — requires permission scope)
-          2. open_id  (app-scoped, always available — different per bot app)
+          1. open_id  (app-scoped, stable for the bot's app context)
+          2. user_id  (tenant-scoped short alphanumeric, not usable as API key)
 
         ``user_id_alt`` carries the union_id (developer-scoped, stable across
         all apps by the same developer).  Session-key generation prefers
@@ -3966,8 +4042,8 @@ class FeishuAdapter(BasePlatformAdapter):
         open_id = getattr(sender_id, "open_id", None) or None
         user_id = getattr(sender_id, "user_id", None) or None
         union_id = getattr(sender_id, "union_id", None) or None
-        # Prefer tenant-scoped user_id; fall back to app-scoped open_id.
-        primary_id = user_id or open_id
+        # [owner] P45: prefer open_id so approval callback/cache keys align with event.operator.open_id
+        primary_id = open_id or user_id
         # bot/v3/bots/basic_batch only accepts open_id.
         name_lookup_id = open_id if is_bot else (primary_id or union_id)
         display_name = await self._resolve_sender_name_from_api(

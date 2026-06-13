@@ -4,6 +4,12 @@ owner:
     split_enabled: true
     split_max_chars: 24000
 
+  # ── Approval configuration ─────────────────────────────────────────────────
+  approvals:
+    # Whether to show the "Always" (permanent) approval button on Feishu cards.
+    # When false, only "Once" / "Session" / "Deny" are shown.
+    allow_permanent: false
+
   # ── Image Generation Presets ───────────────────────────────────────────────
   # Presets for the DashScope image-gen plugin (plugins/image_gen/dashscope/).
   # Select the active preset via config.yaml:

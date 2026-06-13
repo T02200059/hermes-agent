@@ -14,6 +14,21 @@ approval:
   denied:          "      ✗ Geweier"
   cancelled:       "      ✗ Gekanselleer"
   blocklist_message: "Hierdie opdrag is op die onvoorwaardelike blokkeerlys en kan nie goedgekeur word nie."
+  # Feishu interactive approval card UI text.
+  feishu_card_title: "⚠️ Command Approval Required"
+  feishu_reason_label: "**Reason:** {description}"
+  feishu_btn_once: "✅ Allow Once"
+  feishu_btn_session: "✅ Session"
+  feishu_btn_always: "✅ Always"
+  feishu_btn_deny: "❌ Deny"
+  feishu_resolved_once: "Approved once"
+  feishu_resolved_session: "Approved for session"
+  feishu_resolved_always: "Approved permanently"
+  feishu_resolved_deny: "Denied"
+  feishu_resolved_default: "Resolved"
+  feishu_resolved_body: "by {user_name}\n\n```\n{command}\n```"
+  feishu_permanent_disabled: "💡 Permanent approval is disabled. Choose Allow Once or Session instead."
+
 
 gateway:
   approval_expired: "⚠️ Goedkeuring het verval (die agent wag nie meer nie). Vra die agent om weer te probeer."

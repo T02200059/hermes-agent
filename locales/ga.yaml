@@ -18,6 +18,21 @@ approval:
   denied:          "      ✗ Diúltaithe"
   cancelled:       "      ✗ Cealaithe"
   blocklist_message: "Tá an t-ordú seo ar an liosta cosc gan choinníoll agus ní féidir é a cheadú."
+  # Feishu interactive approval card UI text.
+  feishu_card_title: "⚠️ Command Approval Required"
+  feishu_reason_label: "**Reason:** {description}"
+  feishu_btn_once: "✅ Allow Once"
+  feishu_btn_session: "✅ Session"
+  feishu_btn_always: "✅ Always"
+  feishu_btn_deny: "❌ Deny"
+  feishu_resolved_once: "Approved once"
+  feishu_resolved_session: "Approved for session"
+  feishu_resolved_always: "Approved permanently"
+  feishu_resolved_deny: "Denied"
+  feishu_resolved_default: "Resolved"
+  feishu_resolved_body: "by {user_name}\n\n```\n{command}\n```"
+  feishu_permanent_disabled: "💡 Permanent approval is disabled. Choose Allow Once or Session instead."
+
 
 gateway:
   approval_expired: "⚠️ Tá an cead imithe in éag (níl an gníomhaire ag fanacht níos mó). Iarr ar an ngníomhaire iarracht eile a dhéanamh."

@@ -15824,14 +15824,20 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 # false positives from MagicMock auto-attribute creation in tests.
                 if getattr(type(_status_adapter), "send_exec_approval", None) is not None:
                     try:
+                        # [owner] P45: pass sender identity so Feishu can pre-warm name cache
+                        _approval_kwargs = {
+                            "chat_id": _status_chat_id,
+                            "command": cmd,
+                            "session_key": _approval_session_key,
+                            "description": desc,
+                            "metadata": _status_thread_metadata,
+                        }
+                        if getattr(source, "platform", None) == Platform.FEISHU:
+                            _approval_kwargs["sender_open_id"] = source.user_id or ""
+                            _approval_kwargs["sender_is_bot"] = source.is_bot
+
                         _approval_fut = safe_schedule_threadsafe(
-                            _status_adapter.send_exec_approval(
-                                chat_id=_status_chat_id,
-                                command=cmd,
-                                session_key=_approval_session_key,
-                                description=desc,
-                                metadata=_status_thread_metadata,
-                            ),
+                            _status_adapter.send_exec_approval(**_approval_kwargs),
                             _loop_for_step,
                             logger=logger,
                             log_message="send_exec_approval scheduling error",
