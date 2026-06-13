@@ -220,11 +220,11 @@
 - [ ] `287a391` | 2026-05-22 | `yangtb` | feat(feishu): inline_code_copy configurable via patch.yaml, default off | +24 | −4 |
 - [⏸️ 已决策·暂不迁移（rate limiter 不存在于 owner-v16，需整体评估）] `40e43ab` | 2026-05-22 | `yangtb` | feat(rate-limiter): add stepped cooldown + sliding window fixes | +574 | −15 |
 - [ ] `89476ee` | 2026-05-22 | `yangtb` | 删除废弃的 viking-commit-runner.py wrapper | +0 | −5 |
-- [ ] `5cd5d81` | 2026-05-21 | `yangtb` | chore(scripts): reorganize mac-specific scripts + add backup config | +227 | −111 |
-- [ ] `54af397` | 2026-05-21 | `yangtb` | refactor(patch): consolidate hook configs under yangtb.hook namespace | +27 | −22 |
-- [ ] `cdddbe2` | 2026-05-21 | `yangtb` | 修复auditor guard hook | +90 | −0 |
-- [ ] `75eda7d` | 2026-05-21 | `yangtb` | refactor(hooks): remove mac/shell fallbacks, flatten viking-remember-guard | +93 | −211 |
-- [ ] `b791919` | 2026-05-21 | `yangtb` | chore(hooks): switch auditor-guard/memory-guard to DAMODEL API, remove memory-guard | +8 | −174 |
+- [x] ⚠️ 废弃（auditor-guard / sre-archive / viking / memory-guard 已不存在于 owner-v16）`5cd5d81` | 2026-05-21 | `yangtb` | chore(scripts): reorganize mac-specific scripts + add backup config | +227 | −111 |
+- [x] ⚠️ 废弃（auditor-guard / sre-archive / viking / memory-guard 已不存在于 owner-v16）`54af397` | 2026-05-21 | `yangtb` | refactor(patch): consolidate hook configs under yangtb.hook namespace | +27 | −22 |
+- [x] ⚠️ 废弃（auditor-guard / sre-archive / viking / memory-guard 已不存在于 owner-v16）`cdddbe2` | 2026-05-21 | `yangtb` | 修复auditor guard hook | +90 | −0 |
+- [x] ⚠️ 废弃（auditor-guard / sre-archive / viking / memory-guard 已不存在于 owner-v16）`75eda7d` | 2026-05-21 | `yangtb` | refactor(hooks): remove mac/shell fallbacks, flatten viking-remember-guard | +93 | −211 |
+- [x] ⚠️ 废弃（auditor-guard / sre-archive / viking / memory-guard 已不存在于 owner-v16）`b791919` | 2026-05-21 | `yangtb` | chore(hooks): switch auditor-guard/memory-guard to DAMODEL API, remove memory-guard | +8 | −174 |
 - [x] ✅ 已迁移（cron args + model_extra_body；backup scripts 按决策忽略）`37e6fba` → `b84b43927` | 2026-05-21 | `yangtb` | feat: model-level extra_body injection + cron args + backup scripts | +634 | −112 |
 - [x] ✅ 已迁移（改为 owner_provider_name，保持 agent.provider 不变，新增 DB 字段写入 sessions/messages）`9e96955` | 2026-05-21 | `yangtb` | feat(provider): add provider_custom_name field for custom provider identity | +17 | −6 |
 - [x] ⚠️ 废弃（probe fall-through 已被 2e61de063 覆盖，P41 完整功能已被 custom_providers Step 0b 覆盖）`c7e5aaa` | 2026-05-20 | `yangtb` | fix: fall through to hardcoded defaults when model context length probe fails (prevent deepseek-v4-flash 1M default from being bypassed) | +50 | −6 |
