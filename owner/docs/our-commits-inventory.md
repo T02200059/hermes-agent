@@ -287,8 +287,8 @@
 301|- [x] ⏭️ 跳过 `f36852f` | 2026-05-14 | `tianbao.yang` | Merge upstream/main into yangtb (4 conflicts resolved intelligently) | +0 | −0 |
 302|- [x] ⚠️ 废弃（Viking 已停用）`dd36093` | 2026-05-14 | `tianbao.yang` | chore: update daily viking health report script + add .serena config | +135 | −1 |
 303|- [x] ⚠️ 废弃（Viking 已停用）`1ca28d8` | 2026-05-14 | `tianbao.yang` | feat(yangtb): rewrite daily-viking-health-report with full OpenViking diagnostics | +263 | −31 |
-304|- [ ] `7b90874` | 2026-05-14 | `tianbao.yang` | refactor: remove channel field from config.yaml, centralize in patch.yaml | +78 | −144 |
-305|- [ ] `f800b5a` | 2026-05-14 | `tianbao.yang` | feat(tui): dynamic provider name in banner from config.yaml model.provider | +20 | −1 |
+304|- [x] ⚠️ 废弃：定价/token_stats，不迁移 `7b90874` | 2026-05-14 | `tianbao.yang` | refactor: remove channel field from config.yaml, centralize in patch.yaml | +78 | −144 |
+305|- [⏸️ 已决策·暂不迁移（TUI banner 仍硬编码 Nous Research，需整体评估）] `f800b5a` | 2026-05-14 | `tianbao.yang` | feat(tui): dynamic provider name in banner from config.yaml model.provider | +20 | −1 |
 306|- [x] ⚠️ 废弃：定价/AGENTS.md，不迁移 `2e163aa` | 2026-05-14 | `tianbao.yang` | feat(token_stats): add --card mode for Feishu interactive card delivery | +183 | −1 |
 307|- [x] ⚠️ 废弃（sre-archive hook 已删除 0b160cd）`b242719` | 2026-05-14 | `tianbao.yang` | fix(sre-archive): async subprocess + retry + SKIP exit code + misc hardening | +592 | −62 |
 308|- [x] ✅ 已覆盖（conversation_loop.py 已 pop _thinking_prefill）`c822adb` | 2026-05-13 | `tianbao.yang` | fix(session): source-level thinking-prefill filtering instead of dead read-path check | +7 | −0 |
