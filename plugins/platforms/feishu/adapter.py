@@ -1772,6 +1772,7 @@ class FeishuAdapter(BasePlatformAdapter):
     # =========================================================================
     # Outbound — send / edit / send_image / send_voice / …
     # =========================================================================
+    # [owner-patch] auto-card: send_card() REST API method (owner/feishu/auto_card.py)
     async def send_card(
         self,
         chat_id: str,
@@ -1864,6 +1865,7 @@ class FeishuAdapter(BasePlatformAdapter):
         formatted = self.format_message(content)
 
         # Auto-card: wrap long text in an interactive card when streaming is
+        # [owner-patch] auto-card: try auto-card before plain-text fallback
         # disabled. Threshold from patch.yaml → owner.feishu_card.auto_card_threshold.
         # Uses send_card() with REST API (not lark_oapi SDK) so it won't
         # invalidate the WebSocket connection's token.
