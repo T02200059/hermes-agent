@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 BASE = Path(__file__).parent.resolve()
-MAIN_SCRIPT = BASE / "cache-cleanup.py"
+MAIN_SCRIPT = BASE / "mac" / "cache-cleanup.py"
 
 r = subprocess.run(
     [sys.executable, str(MAIN_SCRIPT), "--disk-watch"],
