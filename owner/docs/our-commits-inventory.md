@@ -336,7 +336,7 @@
 350|- [x] ✅ 已覆盖（由 `03b25424` spinner faces 迁移一并处理） `cc7f46a` | 2026-05-08 | `tianbao.yang` | fix(tui): pass missing spinner arg to renderIndicator | +1 | −1 |
 351|- [⏸️ 已决策·暂不迁移（recovery context 注入为独立功能，需单独评估）] `fad4db4` | 2026-05-08 | `tianbao.yang` | feat: auto-inject recovery context after LLM API disconnect | +78 | −1 |
 352|- [x] ✅ 部分迁移（仅 empty-response 断连文案区分，stream drop 通知上游已覆盖）`22ed810` | 2026-05-08 | `tianbao.yang` | fix: LLM API silent disconnect now notifies user in current chat | +67 | −0 |
-353|- [ ] `aed81f7` | 2026-05-08 | `tianbao.yang` | refactor: migrate tf-idf to patch.yaml + remove pin mechanism | +80 | −72 |
+353|- [x] ⏭️ 延后（TF-IDF SkillsUsageTracker + OpenViking 均不存在于 owner-v16，get_patch_yangtb_config 已被 config_cache.py 替代）`aed81f7` | 2026-05-08 | `tianbao.yang` | refactor: migrate tf-idf to patch.yaml + remove pin mechanism | +80 | −72 |
 354|- [ ] `3b8031c` | 2026-05-08 | `tianbao.yang` | fix(feishu): rewording — 兼容性参考 → 手机端复制粘贴兼容 | +1 | −1 |
 355|- [x] ⚠️ 废弃 `bf0832b` | 2026-05-08 | `tianbao.yang` | feat(feishu): append inline code spans as plain-text reference for mobile copy | +41 | −0 |
 356|- [x] ⚠️ 废弃（被 `d682be1` 飞书原生表格方案替代） `526eea8` | 2026-05-08 | `tianbao.yang` | feat(feishu): align markdown table columns in code blocks using wcwidth | +88 | −1 |
