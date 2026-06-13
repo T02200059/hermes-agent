@@ -1698,7 +1698,9 @@ from gateway.platforms.base import (
     MessageType,
     _reply_anchor_for_event,
     merge_pending_message_event,
-    parse_chained_commands,
+    # Note: expand_chained_quick_alias (and parse_chained_commands) are
+    # imported locally inside the quick-commands alias block to minimize
+    # top-level coupling. The shared implementation lives in base.py.
 )
 from gateway.restart import (
     DEFAULT_GATEWAY_RESTART_DRAIN_TIMEOUT,
@@ -7978,8 +7980,8 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     target = qcmd.get("target", "").strip()
                     if target:
                         user_args = event.get_command_args().strip()
-                        chain_text = f"{target} {user_args}".strip()
-                        chain = parse_chained_commands(chain_text)
+                        from gateway.platforms.base import expand_chained_quick_alias
+                        chain = expand_chained_quick_alias(target, user_args)
                         if len(chain) > 1:
                             # Chained commands: execute each sequentially
                             import dataclasses as _dc
