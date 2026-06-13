@@ -259,14 +259,14 @@
 273|- [ ] `429c8d5` | 2026-05-18 | `tianbao.yang` | feat(feishu): upgrade auto-card to JSON 2.0 schema for heading/table support | +4 | −1 |
 274|- [ ] `06e17c1` | 2026-05-18 | `tianbao.yang` | feat(feishu): auto-card for long text responses when streaming disabled | +251 | −6 |
 275|- [ ] `6dee454` | 2026-05-18 | `tianbao.yang` | refactor(auditor-guard): modular architecture v2 | +2644 | −969 |
-276|- [ ] `2d941f4` | 2026-05-17 | `tianbao.yang` | fix: disk-watch-cron.py 路径修正 — cache-cleanup.py 已移至 mac/ 子目录 | +2 | −2 |
-277|- [ ] `b5cbb31` | 2026-05-17 | `tianbao.yang` | fix(auditor): tirith detection + platform-aware delivery | +69 | −21 |
-278|- [ ] `0214365` | 2026-05-17 | `tianbao.yang` | fix(feishu): preserve inline-code order when merging short spans for mobile copy-paste | +23 | −0 |
+276|- [x] ✅ 已迁移 `2d941f4` | 2026-05-17 | `tianbao.yang` | fix: disk-watch-cron.py 路径修正 — cache-cleanup.py 已移至 mac/ 子目录 | +2 | −2 |
+277|- [x] ⚠️ 废弃（auditor-guard + delivery_helpers 均不存在于 owner-v16）`b5cbb31` | 2026-05-17 | `tianbao.yang` | fix(auditor): tirith detection + platform-aware delivery | +69 | −21 |
+278|- [x] ⚠️ 废弃（_append_inline_code_reference 不存在于 owner-v16）`0214365` | 2026-05-17 | `tianbao.yang` | fix(feishu): preserve inline-code order when merging short spans for mobile copy-paste | +23 | −0 |
 279|- [x] ⚠️ 废弃：定价/AGENTS.md，不迁移 `d83c45b` | 2026-05-17 | `tianbao.yang` | refactor(token_stats): 移除pricing/cost计算，改为纯token用量统计，新增飞书卡片table支持 | +454 | −783 |
-280|- [ ] `01dc1cf` | 2026-05-17 | `tianbao.yang` | feat(auditor): emotion auto-stop via API Server + session_id fix + 文案优化 | +174 | −28 |
-281|- [ ] `5dc4608` | 2026-05-16 | `tianbao.yang` | fix(auditor-guard): merge session_id into extra for deliver_sync in qqbot | +330 | −158 |
-282|- [ ] `edb1661` | 2026-05-16 | `tianbao.yang` | chore: sync hooks path fixes, update CHANGES.md with timeout→hard block design | +343 | −95 |
-283|- [ ] `ca2cbe1` | 2026-05-16 | `tianbao.yang` | fix(auditor-guard): Stage 1 detected sensitive path should always trigger LLM audit even when fallback path string fails is_sensitive_path check | +3 | −1 |
+280|- [x] ⚠️ 废弃（auditor-guard + delivery_helpers 均不存在于 owner-v16）`01dc1cf` | 2026-05-17 | `tianbao.yang` | feat(auditor): emotion auto-stop via API Server + session_id fix + 文案优化 | +174 | −28 |
+281|- [x] ⚠️ 废弃（auditor-guard 不存在于 owner-v16）`5dc4608` | 2026-05-16 | `tianbao.yang` | fix(auditor-guard): merge session_id into extra for deliver_sync in qqbot | +330 | −158 |
+282|- [x] ⚠️ 废弃（auditor/sre-archive hooks 均不存在于 owner-v16）`edb1661` | 2026-05-16 | `tianbao.yang` | chore: sync hooks path fixes, update CHANGES.md with timeout→hard block design | +343 | −95 |
+283|- [x] ⚠️ 废弃（auditor-guard 不存在于 owner-v16）`ca2cbe1` | 2026-05-16 | `tianbao.yang` | fix(auditor-guard): Stage 1 detected sensitive path should always trigger LLM audit even when fallback path string fails is_sensitive_path check | +3 | −1 |
 284|- [x] ⚠️ 废弃（token_stats 整体废弃）`979d7b2` | 2026-05-16 | `tianbao.yang` | feat(token_stats): add --from-date parameter for clean start date | +32 | −10 |
 285|- [x] ⚠️ 废弃：定价/AGENTS.md，不迁移 `73e2d37` | 2026-05-16 | `tianbao.yang` | fix: provider_name column now stores actual config name (fixes custom→custom bug) fix(token_stats): resolve env vars in ProviderRegistry URL index (case-sensitive) feat(pricing): add deepseek-company pricing (same as deepseek) fix(pricing): correct deepseek cache_read rates (/bin/zsh.0028//bin/zsh.003625 per official docs) | +133 | −10 |
 286|- [x] ⚠️ 废弃（auditor-guard hook 不存在于 owner-v16）`dae8cd2` | 2026-05-16 | `tianbao.yang` | fix(auditor-guard): increase LLM timeout 15→60s, block on timeout instead of silent allow | +43 | −24 |
