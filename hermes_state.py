@@ -456,6 +456,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     cache_write_tokens INTEGER DEFAULT 0,
     reasoning_tokens INTEGER DEFAULT 0,
     cwd TEXT,
+    owner_provider_name TEXT,
     billing_provider TEXT,
     billing_base_url TEXT,
     billing_mode TEXT,
@@ -485,6 +486,7 @@ CREATE TABLE IF NOT EXISTS messages (
     timestamp REAL NOT NULL,
     token_count INTEGER,
     finish_reason TEXT,
+    owner_provider_name TEXT,
     reasoning TEXT,
     reasoning_content TEXT,
     reasoning_details TEXT,
@@ -1182,13 +1184,14 @@ class SessionDB:
         user_id: str = None,
         parent_session_id: str = None,
         cwd: str = None,
+        owner_provider_name: str = None,
     ) -> None:
         """Shared INSERT OR IGNORE for session rows."""
         def _do(conn):
             conn.execute(
                 """INSERT OR IGNORE INTO sessions (id, source, user_id, model, model_config,
-                   system_prompt, parent_session_id, cwd, started_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   system_prompt, parent_session_id, cwd, owner_provider_name, started_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     session_id,
                     source,
@@ -1198,6 +1201,7 @@ class SessionDB:
                     system_prompt,
                     parent_session_id,
                     cwd,
+                    owner_provider_name,
                     time.time(),
                 ),
             )
@@ -1428,6 +1432,7 @@ class SessionDB:
         billing_provider: Optional[str] = None,
         billing_base_url: Optional[str] = None,
         billing_mode: Optional[str] = None,
+        owner_provider_name: Optional[str] = None,
         api_call_count: int = 0,
         absolute: bool = False,
     ) -> None:
@@ -1463,6 +1468,7 @@ class SessionDB:
                    billing_provider = COALESCE(billing_provider, ?),
                    billing_base_url = COALESCE(billing_base_url, ?),
                    billing_mode = COALESCE(billing_mode, ?),
+                   owner_provider_name = COALESCE(?, owner_provider_name),
                    model = COALESCE(model, ?),
                    api_call_count = ?
                    WHERE id = ?"""
@@ -1484,6 +1490,7 @@ class SessionDB:
                    billing_provider = COALESCE(billing_provider, ?),
                    billing_base_url = COALESCE(billing_base_url, ?),
                    billing_mode = COALESCE(billing_mode, ?),
+                   owner_provider_name = COALESCE(?, owner_provider_name),
                    model = COALESCE(model, ?),
                    api_call_count = COALESCE(api_call_count, 0) + ?
                    WHERE id = ?"""
@@ -1502,6 +1509,7 @@ class SessionDB:
             billing_provider,
             billing_base_url,
             billing_mode,
+            owner_provider_name,
             model,
             api_call_count,
             session_id,
@@ -2273,6 +2281,7 @@ class SessionDB:
         tool_call_id: str = None,
         token_count: int = None,
         finish_reason: str = None,
+        owner_provider_name: str = None,
         reasoning: str = None,
         reasoning_content: str = None,
         reasoning_details: Any = None,
@@ -2320,9 +2329,9 @@ class SessionDB:
             cursor = conn.execute(
                 """INSERT INTO messages (session_id, role, content, tool_call_id,
                    tool_calls, tool_name, timestamp, token_count, finish_reason,
-                   reasoning, reasoning_content, reasoning_details, codex_reasoning_items,
-                   codex_message_items, platform_message_id, observed)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   owner_provider_name, reasoning, reasoning_content, reasoning_details,
+                   codex_reasoning_items, codex_message_items, platform_message_id, observed)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     session_id,
                     role,
@@ -2333,6 +2342,7 @@ class SessionDB:
                     time.time(),
                     token_count,
                     finish_reason,
+                    owner_provider_name,
                     reasoning,
                     reasoning_content,
                     reasoning_details_json,
@@ -2410,9 +2420,9 @@ class SessionDB:
                 conn.execute(
                     """INSERT INTO messages (session_id, role, content, tool_call_id,
                        tool_calls, tool_name, timestamp, token_count, finish_reason,
-                       reasoning, reasoning_content, reasoning_details, codex_reasoning_items,
-                       codex_message_items, platform_message_id, observed)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                       owner_provider_name, reasoning, reasoning_content, reasoning_details,
+                       codex_reasoning_items, codex_message_items, platform_message_id, observed)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         session_id,
                         role,
@@ -2423,6 +2433,7 @@ class SessionDB:
                         now_ts,
                         msg.get("token_count"),
                         msg.get("finish_reason"),
+                        msg.get("owner_provider_name") if role == "assistant" else None,
                         msg.get("reasoning") if role == "assistant" else None,
                         msg.get("reasoning_content") if role == "assistant" else None,
                         reasoning_details_json,
