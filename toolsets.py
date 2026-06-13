@@ -37,7 +37,8 @@ _HERMES_CORE_TOOLS = [
     # via check_fn in tools/read_terminal_tool.py — hidden outside the GUI).
     "read_terminal",
     # File manipulation
-    "read_file", "write_file", "patch", "search_files",
+    # [owner] unified_diff_patch: add exact line-number patch tool alongside legacy patch
+    "read_file", "write_file", "patch", "unified_diff_patch", "search_files",
     # Vision + image generation
     "vision_analyze", "image_generate",
     # Skills
@@ -188,8 +189,9 @@ TOOLSETS = {
     
 
     "file": {
-        "description": "File manipulation tools: read, write, patch (with fuzzy matching), and search (content + files)",
-        "tools": ["read_file", "write_file", "patch", "search_files"],
+        # [owner] unified_diff_patch: include in the file toolset
+        "description": "File manipulation tools: read, write, patch (with fuzzy matching), unified_diff_patch (exact line-number), and search (content + files)",
+        "tools": ["read_file", "write_file", "patch", "unified_diff_patch", "search_files"],
         "includes": []
     },
     
@@ -341,7 +343,8 @@ TOOLSETS = {
         "tools": [
             "web_search", "web_extract",
             "terminal", "process", "read_terminal",
-            "read_file", "write_file", "patch", "search_files",
+            # [owner] unified_diff_patch: include in coding posture
+            "read_file", "write_file", "patch", "unified_diff_patch", "search_files",
             "vision_analyze",
             "skills_list", "skill_view", "skill_manage",
             "browser_navigate", "browser_snapshot", "browser_click",
@@ -395,7 +398,8 @@ TOOLSETS = {
             # Terminal + process management
             "terminal", "process",
             # File manipulation
-            "read_file", "write_file", "patch", "search_files",
+            # [owner] unified_diff_patch: include in API server toolset
+            "read_file", "write_file", "patch", "unified_diff_patch", "search_files",
             # Vision + image generation
             "vision_analyze", "image_generate",
             # Skills
