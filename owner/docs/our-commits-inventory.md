@@ -316,8 +316,8 @@
 330|- [⏸️ 已决策·暂不迁移] `3ea5daa` | 2026-05-10 | `tianbao.yang` | feat(api-server): expose model_aliases in /v1/models endpoint | +87 | −26 |
 331|- [ ] `6fe0530` | 2026-05-10 | `tianbao.yang` | fix(qqbot): abort reconnect on disconnect, fix CLOSE→UP state bug | +215 | −34 |
 332|- [x] ✅ 已迁移 `beecdcd` | 2026-05-09 | `tianbao.yang` | fix(gateway): resolve env-var template base_url in _format_session_info | +5 | −1 |
-333|- [ ] `1fc7348` | 2026-05-09 | `tianbao.yang` | fix(qqbot): set proxy=None instead of proxies={} for httpx client | +1 | −1 |
-334|- [ ] `ccfcdab` | 2026-05-09 | `yangtb` | feat(api_server): model_aliases routing — route requests by body.model to different provider | +70 | −2 |
+333|- [x] ✅ 已迁移（proxy=None 已在 owner-v16 qqbot adapter 中）`1fc7348` | 2026-05-09 | `tianbao.yang` | fix(qqbot): set proxy=None instead of proxies={} for httpx client | +1 | −1 |
+334|- [⏸️ 已决策·暂不迁移（model_aliases P24 为 local-only 功能，qqbot proxy 已迁移，yangtb/ 文件废弃）] `ccfcdab` | 2026-05-09 | `yangtb` | feat(api_server): model_aliases routing — route requests by body.model to different provider | +70 | −2 |
 335|- [x] ⚠️ 废弃（_align_table 被 d682be1 飞书原生表格方案替代）`c4071f9` | 2026-05-09 | `tianbao.yang` | fix(feishu): rebuild separator dashes from col_widths, not original dash count | +10 | −6 |
 336|- [x] ⚠️ 废弃（_align_table 被 d682be1 飞书原生表格方案替代）`52b8356` | 2026-05-09 | `tianbao.yang` | fix(feishu): set wcswidth ambiguous_width=2 for CJK table alignment | +5 | −3 |
 337|- [x] ⚠️ 废弃（OpenViking 插件已弃用，Qdrant 是当前 backing store）`bf59dfc` | 2026-05-09 | `tianbao.yang` | fix(viking-remember): isolate viking_remember into temp session to avoid overlap with Hermes auto memory | +21 | −9 |
