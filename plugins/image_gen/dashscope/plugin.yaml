@@ -4,4 +4,4 @@ description: "DashScope image generation backend (Qwen-Image / Wan). Saves gener
 author: owner
 kind: backend
 requires_env:
-  - DASHSCOPE_COMPANY_API_KEY
+  - DASHSCOPE_API_KEY
