@@ -19,6 +19,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 
+from owner.patch_config import _load_patch_owner_config
+
 from agent.image_gen_provider import (
     DEFAULT_ASPECT_RATIO,
     ImageGenProvider,
@@ -49,26 +51,6 @@ _ASPECT_RATIO_SIZES = {
 # ---------------------------------------------------------------------------
 # Config helpers
 # ---------------------------------------------------------------------------
-
-
-def _load_patch_owner_config() -> Dict[str, Any]:
-    """Load ``~/.hermes/patch.yaml`` and return the ``owner`` section.
-
-    Fail-open: returns an empty dict if the file is missing or unreadable.
-    """
-    try:
-        import yaml
-        from hermes_constants import get_hermes_home
-
-        path = get_hermes_home() / "patch.yaml"
-        if not path.exists():
-            return {}
-        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-        if isinstance(data, dict) and isinstance(data.get("owner"), dict):
-            return data["owner"]
-    except Exception:
-        pass
-    return {}
 
 
 def _get_owner_image_gen_presets() -> Dict[str, Any]:
