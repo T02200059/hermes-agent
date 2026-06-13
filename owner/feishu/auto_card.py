@@ -21,6 +21,8 @@ import time
 from dataclasses import dataclass
 from typing import Any, Dict, FrozenSet, List, Optional, Tuple, TYPE_CHECKING
 
+from owner.patch_config import _load_patch_owner_config
+
 if TYPE_CHECKING:
     from gateway.platforms.feishu import FeishuAdapter
 
@@ -74,25 +76,6 @@ class _FeishuCardPlan:
 # ---------------------------------------------------------------------------
 # Config readers (fail-open, never block main flow)
 # ---------------------------------------------------------------------------
-
-def _load_patch_owner_config() -> Dict[str, Any]:
-    """Load ``~/.hermes/patch.yaml`` and return the ``owner`` section.
-
-    Fail-open: returns an empty dict if the file is missing or unreadable.
-    """
-    try:
-        import yaml
-        from hermes_constants import get_hermes_home
-        path = get_hermes_home() / "patch.yaml"
-        if not path.exists():
-            return {}
-        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-        if isinstance(data, dict) and isinstance(data.get("owner"), dict):
-            return data["owner"]
-    except Exception:
-        pass
-    return {}
-
 
 def get_auto_card_threshold() -> int:
     """Read auto-card threshold from patch.yaml.
