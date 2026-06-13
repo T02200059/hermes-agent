@@ -568,6 +568,8 @@ def run_conversation(
     codex_ack_continuations = 0
     length_continue_retries = 0
     truncated_tool_call_retries = 0
+    # [owner-patch] Clear silent-disconnect flag at turn start
+    agent._stream_was_empty = False
     truncated_response_parts: List[str] = []
     compression_attempts = 0
     _turn_exit_reason = "unknown"  # Diagnostic: why the loop ended
@@ -4418,18 +4420,33 @@ def run_conversation(
                             "response after all retries. Returning empty."
                         )
                     else:
-                        logger.warning(
-                            "Empty response (no content or reasoning) "
-                            "after %d retries. No fallback available. "
-                            "model=%s provider=%s",
-                            agent._empty_content_retries, agent.model,
-                            agent.provider,
-                        )
-                        agent._emit_status(
-                            "❌ Model returned no content after all retries"
-                            + (" and fallback attempts." if agent._fallback_chain else
-                               ". No fallback providers configured.")
-                        )
+                        # [owner-patch] Distinguish silent API disconnect
+                        # from genuine empty model response so the user
+                        # gets a more actionable message.
+                        if getattr(agent, "_stream_was_empty", False):
+                            logger.warning(
+                                "Silent API disconnect detected — stream "
+                                "returned no data and no finish_reason. "
+                                "model=%s provider=%s",
+                                agent.model, agent.provider,
+                            )
+                            agent._emit_status(
+                                f"⚠️ API 无响应 ({agent.model}) — 连接可能已静默断开。"
+                                "请稍后重试，或发送任意消息继续。"
+                            )
+                        else:
+                            logger.warning(
+                                "Empty response (no content or reasoning) "
+                                "after %d retries. No fallback available. "
+                                "model=%s provider=%s",
+                                agent._empty_content_retries, agent.model,
+                                agent.provider,
+                            )
+                            agent._emit_status(
+                                "❌ Model returned no content after all retries"
+                                + (" and fallback attempts." if agent._fallback_chain else
+                                   ". No fallback providers configured.")
+                            )
 
                     final_response = "(empty)"
                     break

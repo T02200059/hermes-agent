@@ -297,6 +297,8 @@ gateway:
     stopped:               "⚡ Stopped. You can continue this session."
     no_active:             "No active task to stop."
 
+  silent_api_disconnect:   "⚠️ API unresponsive — connection may have been silently dropped. Please try again later, or send any message to continue."
+
   title:
     db_unavailable:        "Session database not available."
     warn_prefix:           "⚠️ {error}"

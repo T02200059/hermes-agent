@@ -285,6 +285,8 @@ Future messages in this room will use that transcript until `/reset` or another 
     stopped:               "⚡ 已停止。你可以继续此会话。"
     no_active:             "没有可停止的活跃任务。"
 
+  silent_api_disconnect:   "⚠️ API 无响应 — 连接可能已静默断开。请稍后重试，或发送任意消息继续。"
+
   title:
     db_unavailable:        "会话数据库不可用。"
     warn_prefix:           "⚠️ {error}"

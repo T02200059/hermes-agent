@@ -9647,12 +9647,18 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             # produce visible content after exhausting all retries (nudge,
             # prefill, empty-retry, fallback).  Sending the raw sentinel
             # looks like a bug; a short explanation is more helpful.
+            # [owner-patch] When the root cause was a silent API disconnect
+            # (stream yielded zero chunks + no finish_reason), show a more
+            # specific message so the user knows it's a connectivity issue.
             if response == "(empty)" and not _intentional_silence:
-                response = (
-                    "⚠️ The model returned no response after processing tool "
-                    "results. This can happen with some models — try again or "
-                    "rephrase your question."
-                )
+                if agent_result.get("stream_was_empty"):
+                    response = t("gateway.silent_api_disconnect")
+                else:
+                    response = (
+                        "⚠️ The model returned no response after processing tool "
+                        "results. This can happen with some models — try again or "
+                        "rephrase your question."
+                    )
             agent_messages = agent_result.get("messages", [])
             _response_time = time.time() - _msg_start_time
             _api_calls = agent_result.get("api_calls", 0)

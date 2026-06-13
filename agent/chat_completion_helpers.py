@@ -2079,6 +2079,10 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
             and not reasoning_parts
             and not tool_calls_acc
         ):
+            # [owner-patch] Flag this as a likely silent API disconnect so
+            # the empty-response handler can surface a more specific message
+            # instead of the generic "model returned empty" warning.
+            agent._stream_was_empty = True
             raise RuntimeError(
                 "Provider returned an empty stream with no finish_reason "
                 "(possible upstream error or malformed SSE response)."
