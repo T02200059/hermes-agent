@@ -255,7 +255,7 @@
 268|- [x] ⚠️ 废弃（auditor-guard 不存在于 owner-v16）`e2fc1d0` | 2026-05-19 | `tianbao.yang` | auditor-guard: 修复 import 崩溃 + 新增 explain-only 模式 + JSON2 飞书卡片通知 | +349 | −70 |
 269|- [x] ✅ 已迁移 `1a4aa7bf6` `d140932` | 2026-05-18 | `tianbao.yang` | feat(feishu): remove tool-activity filter from auto-card logic | +1 | −41 |
 270|- [x] ✅ 已迁移 `1a4aa7bf6` `becd553` | 2026-05-18 | `tianbao.yang` | fix(feishu): add auto-card retry (3 attempts) + logging before plain-text fallback | +31 | −4 |
-271|- [x] ⚠️ 废弃：上游已重构 provider_name，无残留 `14d7ea7` | 2026-05-18 | `tianbao.yang` | fix: remove remaining provider_name traces after v0.14.0 merge | +0 | −2 |
+271|- [x] ⚠️ 废弃：上游已重构 provider_name，无残留；owner-v16 用 `owner_provider_name` 独立字段实现 `9e96955` `14d7ea7` | 2026-05-18 | `tianbao.yang` | fix: remove remaining provider_name traces after v0.14.0 merge | +0 | −2 |
 272|- [x] ⏭️ 跳过 `c4d72ab` | 2026-05-18 | `tianbao.yang` | merge: sync yangtb with upstream v0.14.0 (v2026.5.16) | +0 | −0 |
 273|- [x] ✅ 已迁移 `1a4aa7bf6` `429c8d5` | 2026-05-18 | `tianbao.yang` | feat(feishu): upgrade auto-card to JSON 2.0 schema for heading/table support | +4 | −1 |
 274|- [x] ✅ 已迁移 `1a4aa7bf6` `06e17c1` | 2026-05-18 | `tianbao.yang` | feat(feishu): auto-card for long text responses when streaming disabled | +251 | −6 |
@@ -269,7 +269,7 @@
 282|- [x] ⚠️ 废弃（auditor-guard 适配，混入 token-stats-cron.py 等无关改动）`edb1661` | 2026-05-16 | `tianbao.yang` | chore: sync hooks path fixes, update CHANGES.md with timeout→hard block design | +343 | −95 |
 283|- [x] ⚠️ 废弃（auditor-guard 不存在于 owner-v16）`ca2cbe1` | 2026-05-16 | `tianbao.yang` | fix(auditor-guard): Stage 1 detected sensitive path should always trigger LLM audit even when fallback path string fails is_sensitive_path check | +3 | −1 |
 284|- [x] ⚠️ 废弃（token_stats 整体废弃）`979d7b2` | 2026-05-16 | `tianbao.yang` | feat(token_stats): add --from-date parameter for clean start date | +32 | −10 |
-285|- [x] ⚠️ 废弃：定价/AGENTS.md，不迁移 `73e2d37` | 2026-05-16 | `tianbao.yang` | fix: provider_name column now stores actual config name (fixes custom→custom bug) fix(token_stats): resolve env vars in ProviderRegistry URL index (case-sensitive) feat(pricing): add deepseek-company pricing (same as deepseek) fix(pricing): correct deepseek cache_read rates (/bin/zsh.0028//bin/zsh.003625 per official docs) | +133 | −10 |
+285|- [x] ✅ 已覆盖（provider_name 保存真实身份的需求由 `owner_provider_name` 实现；定价/token_stats 部分仍废弃）`73e2d37` | 2026-05-16 | `tianbao.yang` | fix: provider_name column now stores actual config name (fixes custom→custom bug) fix(token_stats): resolve env vars in ProviderRegistry URL index (case-sensitive) feat(pricing): add deepseek-company pricing (same as deepseek) fix(pricing): correct deepseek cache_read rates (/bin/zsh.0028//bin/zsh.003625 per official docs) | +133 | −10 |
 286|- [x] ⚠️ 废弃（auditor-guard hook 不存在于 owner-v16）`dae8cd2` | 2026-05-16 | `tianbao.yang` | fix(auditor-guard): increase LLM timeout 15→60s, block on timeout instead of silent allow | +43 | −24 |
 287|- [x] ✅ 部分采纳（仅 backup-hermes-config.py、mac/cache-cleanup.py、daily-report.py 取最新版）`cae1a7c` | 2026-05-16 | `tianbao.yang` | refactor(scripts): migrate ~/.hermes/scripts/ to yangtb/scripts/ | +2926 | −8 |
 288|- [x] ✅ 部分覆盖（_convert_tables_to_code_blocks 已删除，当前强制 text mode 绕过）`d682be1` | 2026-05-16 | `tianbao.yang` | fix(feishu): render markdown tables natively in post md elements | +27 | −43 |
@@ -356,7 +356,7 @@
 369|- [⏸️ 已决策·待后续观察] `a06d719` | 2026-05-05 | `tianbao.yang` | feat: extract _is_high_info_message() as shared utility for TF-IDF pipeline | +74 | −0 |
 370|- [⏸️ 已决策·暂不迁移] `248bebe` | 2026-05-05 | `tianbao.yang` | fix: strip 'source' and 'requested_provider' from runtime_kwargs in api_server._create_agent | +49 | −0 |
 371|- [x] ✅ 已迁移 `9a95e21` | 2026-05-04 | `tianbao.yang` | fix(qqbot): add WebSocket heartbeat + receive_timeout to detect TCP half-open after WSL sleep/wake | +2 | −0 |
-372|- [x] ⚠️ 废弃: 上游 v0.14.0 billing_provider 替代 `c1effe4` | 2026-05-04 | `tianbao.yang` | fix: separate provider_name from provider to preserve custom provider identity | +16 | −5 |
+372|- [x] ✅ 已覆盖（由 `owner_provider_name` 实现替代，避免改动 `agent.provider`）`c1effe4` | 2026-05-04 | `tianbao.yang` | fix: separate provider_name from provider to preserve custom provider identity | +16 | −5 |
 373|- [x] ✅ 已迁移 `97c43f6` | 2026-05-04 | `tianbao.yang` | fix(qqbot): rebuild httpx client on reconnect to fix WSL sleep/wake network reset | +28 | −0 |
 374|- [⏸️ 已决策·暂不迁移] `b926356` | 2026-05-04 | `tianbao.yang` | fix(gateway): fallback /status model/provider display when DB values are None/custom | +12 | −2 |
 375|- [x] ⚠️ 废弃：定价/AGENTS.md，不迁移 `0b7742b` | 2026-05-04 | `tianbao.yang` | feat(pricing): dual-currency support (CNY/USD) + deepseek-v4 pricing + cache hit rate | +46 | −6 |
