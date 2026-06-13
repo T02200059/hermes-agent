@@ -442,6 +442,9 @@ def extract_edit_diff(
     snapshot: LocalEditSnapshot | None = None,
 ) -> str | None:
     """Extract a unified diff from a file-edit tool result."""
+    # [owner] unified_diff_patch: support inline diff extraction (result["diff"]) and
+    # fallback _diff_from_snapshot for the owner-owned exact line-number patch tool
+    # (implementation: owner/tools/unified_diff_patch/; migration: 7646add45 + 97b82f4cc)
     if tool_name in {"patch", "unified_diff_patch"} and result:
         data = safe_json_loads(result)
         if isinstance(data, dict):
