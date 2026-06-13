@@ -396,6 +396,30 @@
 409|- [x] ✅ P15 已迁移 `22b90ab` | 2026-04-27 | `tianbao.yang` | fix(gateway): quick_command alias should explicitly call built-in command handlers | +10 | −2 |
 410|- [x] ⚠️ 废弃：定价/AGENTS.md，不迁移 `4a0997d` | 2026-04-26 | `tianbao.yang` | docs: update AGENTS.md development guide | +141 | −630 |
 411|
+## 追加：inventory 生成器跳过的遗漏 commit（按 commit date 升序）
+
+> 由 inventory gap 分析脚本（`/tmp/emit_appendix.py`）于 2026-06-13 输出。
+> 这些 commit 在原 inventory 生成时（2026-06-12 21:02:34）未被收录。
+> 全部为 yangtb 在 2026-05-28 / 2026-05-29 的 commit，疑似 generator 当日运行异常。
+> 行号前缀省略（与原 inventory 的 `369|- [ ]` 格式不同）；下次重生成时统一编号。
+
+- [ ] `07a584a` | 2026-05-28 | `yangtb` | style(i18n): 网关重启/关闭提示 emoji 从 ⚠️ 换成 ⏸️ | +2 | −2 |
+- [ ] `082e0be` | 2026-05-28 | `yangtb` | feat(i18n): translate all tips to Chinese | +455 | −458 |
+- [ ] `0a3fa8c` | 2026-05-28 | `yangtb` | fix: gateway/run.py 对抗性 review 修复 | +15 | −5 |
+- [ ] `191183e` | 2026-05-28 | `yangtb` | chore: remove unused hooks (sre-archive, tool-call-logger) | +0 | −790 |
+- [ ] `1b41e23` | 2026-05-28 | `yangtb` | fix: owner 分支定制化模块对抗性 review 修复 | +88 | −10 |
+- [ ] `43687be` | 2026-05-28 | `yangtb` | docs(owner): register P42 — QQ Bot diff markdown display | +3 | −2 |
+- [ ] `4c40f92` | 2026-05-28 | `yangtb` | docs: P39 更新 — 三阶段渐进展开交互 | +1 | −1 |
+- [ ] `7e7cb58` | 2026-05-28 | `yangtb` | feat(qqbot): diff markdown display for patch/write_file/skill_manage | +116 | −0 |
+- [ ] `a422f7d` | 2026-05-28 | `yangtb` | docs(owner): 更新 P39 飞书 Diff 卡片描述 — 三工具触发+四色渲染+踩坑记录 | +2 | −2 |
+- [ ] `bb542ba` | 2026-05-28 | `yangtb` | feat: diff 卡片三阶段渐进展开 (compact → expanded → full) | +189 | −39 |
+- [ ] `bec5b1e` | 2026-05-28 | `yangtb` | feat: feishu diff cards for write_file + skill_manage + purple header styling | +76 | −9 |
+- [ ] `d452156` | 2026-05-28 | `yangtb` | i18n: gateway lifecycle emoji → skyline series (🌇🌆🌃🏙) | +8 | −8 |
+- [ ] `dd0b53e` | 2026-05-28 | `yangtb` | fix(tui): pass missing spinner prop to FaceTicker in StatusRule | +1 | −1 |
+- [ ] `de36b03` | 2026-05-28 | `yangtb` | refactor(feishu): resolve sender name synchronously before approval card response | +13 | −34 |
+- [ ] `ed7d88e` | 2026-05-28 | `yangtb` | chore: add xiaomi rate limit config to patch.yaml | +3 | −0 |
+- [ ] `3198a71` | 2026-05-29 | `yangtb` | fix(agent): 向 system_prompt 注入 current_user 字段，消除 API 响应中的占位符 | +129 | −24 |
+- [ ] `5a886a4` | 2026-05-29 | `yangtb` | docs: 更新 patch 总列表，新增 P53/P54/P55（37组/45项） | +6 | −3 |
 412|## 复现方式
 413|
 414|```bash
