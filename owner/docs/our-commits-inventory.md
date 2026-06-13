@@ -273,12 +273,12 @@
 287|- [ ] `cae1a7c` | 2026-05-16 | `tianbao.yang` | refactor(scripts): migrate ~/.hermes/scripts/ to yangtb/scripts/ | +2926 | −8 |
 288|- [ ] `d682be1` | 2026-05-16 | `tianbao.yang` | fix(feishu): render markdown tables natively in post md elements | +27 | −43 |
 289|- [ ] `afbd94f` | 2026-05-15 | `tianbao.yang` | docs(auditor-guard): add CHANGES.md implementation changelog | +105 | −0 |
-290|- [ ] `a7c635a` | 2026-05-15 | `tianbao.yang` | style(auditor-guard): move emoji to beginning of notification titles | +4 | −4 |
-291|- [ ] `18e0591` | 2026-05-15 | `tianbao.yang` | style(auditor-guard): unify notification message format | +4 | −4 |
-292|- [ ] `3860f6d` | 2026-05-15 | `tianbao.yang` | feat(auditor-guard): pass user_message through hook for real-time approval check | +1726 | −687 |
-293|- [ ] `7a05837` | 2026-05-15 | `tianbao.yang` | fix(delivery_helpers): set chat_id in extra dict for _build_headers | +2 | −0 |
-294|- [ ] `50880df` | 2026-05-15 | `tianbao.yang` | fix(delivery_helpers): resolve chat_id from HERMES_SESSION_KEY fallback | +55 | −1 |
-295|- [ ] `8f5e18e` | 2026-05-15 | `tianbao.yang` | fix(auditor-guard): deliver hard block message to Feishu chat | +2 | −0 |
+290|- [x] ⚠️ 废弃（auditor-guard hook 不存在于 owner-v16）`a7c635a` | 2026-05-15 | `tianbao.yang` | style(auditor-guard): move emoji to beginning of notification titles | +4 | −4 |
+291|- [x] ⚠️ 废弃（auditor-guard hook 不存在于 owner-v16）`18e0591` | 2026-05-15 | `tianbao.yang` | style(auditor-guard): unify notification message format | +4 | −4 |
+292|- [x] ⚠️ 废弃（auditor-guard hook 不存在于 owner-v16）`3860f6d` | 2026-05-15 | `tianbao.yang` | feat(auditor-guard): pass user_message through hook for real-time approval check | +1726 | −687 |
+293|- [x] ⚠️ 废弃（delivery_helpers 不存在于 owner-v16）`7a05837` | 2026-05-15 | `tianbao.yang` | fix(delivery_helpers): set chat_id in extra dict for _build_headers | +2 | −0 |
+294|- [x] ⚠️ 废弃（delivery_helpers 不存在于 owner-v16）`50880df` | 2026-05-15 | `tianbao.yang` | fix(delivery_helpers): resolve chat_id from HERMES_SESSION_KEY fallback | +55 | −1 |
+295|- [x] ⚠️ 废弃（auditor-guard hook 不存在于 owner-v16）`8f5e18e` | 2026-05-15 | `tianbao.yang` | fix(auditor-guard): deliver hard block message to Feishu chat | +2 | −0 |
 296|- [x] ⚠️ 废弃（auditor-guard hook 不存在于 owner-v16）`f8a5208` | 2026-05-15 | `tianbao.yang` | feat(auditor-guard): enhanced observability logging | +26 | −3 |
 297|- [x] ⚠️ 废弃（auditor-guard hook 不存在于 owner-v16）`68e12e8` | 2026-05-15 | `tianbao.yang` | feat(auditor-guard): emotion-based blocking + user approval check | +86 | −16 |
 298|- [x] ⚠️ 废弃（hooks/common/ 不存在于 owner-v16）`923004a` | 2026-05-15 | `tianbao.yang` | refactor(hooks): extract shared utilities to hooks/common/ | +667 | −32 |
