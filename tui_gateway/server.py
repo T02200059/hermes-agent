@@ -8901,9 +8901,11 @@ def _(rid, params: dict) -> dict:
                 )
             return _ok(rid, {"type": "exec", "output": output})
         if qc.get("type") == "alias":
-            from gateway.platforms.base import parse_chained_commands
+            from gateway.platforms.base import expand_chained_quick_alias
             target = qc.get("target", "")
-            chain = parse_chained_commands(target)
+            # Use expander (even with no extra args) so all quick alias chain
+            # preparation goes through the shared implementation in base.py.
+            chain = expand_chained_quick_alias(target, "")
             if len(chain) > 1:
                 return _ok(rid, {"type": "chain", "commands": chain})
             return _ok(rid, {"type": "alias", "target": target})
