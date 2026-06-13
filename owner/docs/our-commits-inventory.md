@@ -254,11 +254,11 @@
 268|- [ ] `e2fc1d0` | 2026-05-19 | `tianbao.yang` | auditor-guard: 修复 import 崩溃 + 新增 explain-only 模式 + JSON2 飞书卡片通知 | +349 | −70 |
 269|- [x] ✅ 已迁移 `1a4aa7bf6` `d140932` | 2026-05-18 | `tianbao.yang` | feat(feishu): remove tool-activity filter from auto-card logic | +1 | −41 |
 270|- [x] ✅ 已迁移 `1a4aa7bf6` `becd553` | 2026-05-18 | `tianbao.yang` | fix(feishu): add auto-card retry (3 attempts) + logging before plain-text fallback | +31 | −4 |
-271|- [ ] `14d7ea7` | 2026-05-18 | `tianbao.yang` | fix: remove remaining provider_name traces after v0.14.0 merge | +0 | −2 |
-272|- [ ] `c4d72ab` | 2026-05-18 | `tianbao.yang` | merge: sync yangtb with upstream v0.14.0 (v2026.5.16) | +0 | −0 |
+271|- [x] ⚠️ 废弃：上游已重构 provider_name，无残留 `14d7ea7` | 2026-05-18 | `tianbao.yang` | fix: remove remaining provider_name traces after v0.14.0 merge | +0 | −2 |
+272|- [x] ⏭️ 跳过 `c4d72ab` | 2026-05-18 | `tianbao.yang` | merge: sync yangtb with upstream v0.14.0 (v2026.5.16) | +0 | −0 |
 273|- [x] ✅ 已迁移 `1a4aa7bf6` `429c8d5` | 2026-05-18 | `tianbao.yang` | feat(feishu): upgrade auto-card to JSON 2.0 schema for heading/table support | +4 | −1 |
 274|- [x] ✅ 已迁移 `1a4aa7bf6` `06e17c1` | 2026-05-18 | `tianbao.yang` | feat(feishu): auto-card for long text responses when streaming disabled | +251 | −6 |
-275|- [ ] `6dee454` | 2026-05-18 | `tianbao.yang` | refactor(auditor-guard): modular architecture v2 | +2644 | −969 |
+275|- [x] ⚠️ 废弃：auditor-guard hook 已删除 `6dee454` | 2026-05-18 | `tianbao.yang` | refactor(auditor-guard): modular architecture v2 | +2644 | −969 |
 276|- [x] ✅ 已迁移 `2d941f4` | 2026-05-17 | `tianbao.yang` | fix: disk-watch-cron.py 路径修正 — cache-cleanup.py 已移至 mac/ 子目录 | +2 | −2 |
 277|- [x] ⚠️ 废弃（auditor-guard 适配，混入 plugins.py + run_agent.py 参数扩展）`b5cbb31` | 2026-05-17 | `tianbao.yang` | fix(auditor): tirith detection + platform-aware delivery | +69 | −21 |
 278|- [x] ⚠️ 废弃（_append_inline_code_reference 不存在于 owner-v16）`0214365` | 2026-05-17 | `tianbao.yang` | fix(feishu): preserve inline-code order when merging short spans for mobile copy-paste | +23 | −0 |
