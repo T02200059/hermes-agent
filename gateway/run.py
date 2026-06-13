@@ -3826,6 +3826,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 _platform_config_key(event.source.platform),
                 "busy_ack_detail",
                 True,
+                chat_id=event.source.chat_id,  # [owner] per-chat display override
             )
         )
 
@@ -8688,6 +8689,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     _platform_config_key(source.platform),
                     "show_reasoning",
                     getattr(self, "_show_reasoning", False),
+                    chat_id=source.chat_id,  # [owner] per-chat display override
                 )
             except Exception:
                 _show_reasoning_effective = getattr(self, "_show_reasoning", False)
@@ -12880,7 +12882,8 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         user_config = _load_gateway_config()
         from gateway.display_config import resolve_display_setting
         _plat_streaming = resolve_display_setting(
-            user_config, platform_key, "streaming"
+            user_config, platform_key, "streaming",
+            chat_id=source.chat_id,  # [owner] per-chat display override
         )
         _streaming_enabled = (
             _scfg.enabled and _scfg.transport != "off"
@@ -13135,13 +13138,19 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         # Apply tool preview length config (0 = no limit)
         try:
             from agent.display import set_tool_preview_max_len
-            _tpl = resolve_display_setting(user_config, platform_key, "tool_preview_length", 0)
+            _tpl = resolve_display_setting(
+                user_config, platform_key, "tool_preview_length", 0,
+                chat_id=source.chat_id,  # [owner] per-chat display override
+            )
             set_tool_preview_max_len(int(_tpl) if _tpl else 0)
         except Exception:
             pass
 
         # Tool progress mode — resolved per-platform with env var fallback
-        _resolved_tp = resolve_display_setting(user_config, platform_key, "tool_progress")
+        _resolved_tp = resolve_display_setting(
+            user_config, platform_key, "tool_progress",
+            chat_id=source.chat_id,  # [owner] per-chat display override
+        )
         _env_tp = os.getenv("HERMES_TOOL_PROGRESS_MODE")
         _display_cfg = display_config if isinstance(display_config, dict) else {}
         _platforms_cfg = _display_cfg.get("platforms") or {}
@@ -13178,6 +13187,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     platform_key,
                     "interim_assistant_messages",
                     True,
+                    chat_id=source.chat_id,  # [owner] per-chat display override
                 )
             )
         )
@@ -13240,7 +13250,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         # are collected here and deleted after the final response lands.
         # Failed runs skip cleanup so the bubbles remain as breadcrumbs.
         _cleanup_progress = bool(
-            resolve_display_setting(user_config, platform_key, "cleanup_progress")
+            resolve_display_setting(
+                user_config, platform_key, "cleanup_progress",
+                chat_id=source.chat_id,  # [owner] per-chat display override
+            )
         )
         _cleanup_adapter = self.adapters.get(source.platform) if _cleanup_progress else None
         if _cleanup_adapter is not None and (
@@ -13937,7 +13950,8 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             # can disable streaming for specific platforms even when the global
             # streaming config is enabled.
             _plat_streaming = resolve_display_setting(
-                user_config, platform_key, "streaming"
+                user_config, platform_key, "streaming",
+                chat_id=source.chat_id,  # [owner] per-chat display override
             )
             # None = no per-platform override → follow global config
             _streaming_enabled = (
@@ -14923,6 +14937,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 platform_key,
                 "long_running_notifications",
                 True,
+                chat_id=source.chat_id,  # [owner] per-chat display override
             )
         ):
             _NOTIFY_INTERVAL = None
