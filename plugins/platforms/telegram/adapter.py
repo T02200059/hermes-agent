@@ -3461,15 +3461,18 @@ class TelegramAdapter(BasePlatformAdapter):
         self, chat_id: str, command: str, session_key: str,
         description: str = "dangerous command",
         metadata: Optional[Dict[str, Any]] = None,
-        sender_open_id: str = "",
-        sender_is_bot: bool = False,
+        **kwargs,
     ) -> SendResult:
         """Send an inline-keyboard approval prompt with interactive buttons.
 
         The buttons call ``resolve_gateway_approval()`` to unblock the waiting
         agent thread — same mechanism as the text ``/approve`` flow.
         """
-        del sender_open_id, sender_is_bot  # [owner] approval: accept sender_* for Feishu name-cache pre-warm contract (see owner/feishu/sender_name_cache.py); unused here
+        # [owner] approval: accept (but ignore) Feishu-specific sender_open_id/sender_is_bot
+        # for name-cache pre-warm contract. Using **kwargs keeps non-Feishu adapters clean.
+        # See owner/feishu/sender_name_cache.py
+        kwargs.pop("sender_open_id", None)
+        kwargs.pop("sender_is_bot", None)
         if not self._bot:
             return SendResult(success=False, error="Not connected")
 
