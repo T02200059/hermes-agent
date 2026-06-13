@@ -1913,7 +1913,7 @@ class MatrixAdapter(BasePlatformAdapter):
         sender_is_bot: bool = False,
     ) -> SendResult:
         """Send a reaction-based exec approval prompt for Matrix."""
-        del sender_open_id, sender_is_bot  # [owner] 3198a71: unused on Matrix, required by run.py
+        del sender_open_id, sender_is_bot  # [owner] approval: accept sender_* for Feishu name-cache pre-warm contract (see owner/feishu/sender_name_cache.py); unused here
         if not self._client:
             return SendResult(success=False, error="Not connected")
 
