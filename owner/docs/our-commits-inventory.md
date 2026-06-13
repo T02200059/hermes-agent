@@ -308,7 +308,7 @@
 322|- [ ] `dae821a` | 2026-05-11 | `tianbao.yang` | refactor(audit-agent): plugin-style auditor architecture with error isolation | +423 | −293 |
 323|- [ ] `8f8b76c` | 2026-05-10 | `tianbao.yang` | feat(audit-agent): move audit-agent hook source to yangtb/hooks/ | +652 | −1 |
 324|- [ ] `f329993` | 2026-05-10 | `tianbao.yang` | feat(yangtb/scripts): 新增 daily-viking-health-report.py — 每日Memory整理报告脚本，对比Viking而非本地KB | +44 | −0 |
-325|- [ ] `1284034` | 2026-05-10 | `tianbao.yang` | fix(cron): add yangtb/scripts/ symlink exemption to _validate_cron_script_path | +9 | −0 |
+325|- [x] ✅ 已迁移（owner/scripts/ 替代 yangtb/scripts/，exemption 已在 cronjob_tools.py）`1284034` | 2026-05-10 | `tianbao.yang` | fix(cron): add yangtb/scripts/ symlink exemption to _validate_cron_script_path | +9 | −0 |
 326|- [x] ✅ 已迁移·部分（clarify_callback 已在 owner-v16，emoji ❓→🤔 未迁移）`281e6fc` | 2026-05-10 | `tianbao.yang` | fix(gateway): add clarify_callback for messaging platforms | +12 | −2 |
 327|- [x] ⚠️ 废弃：定价/AGENTS.md，不迁移 `f0176ae` | 2026-05-10 | `tianbao.yang` | refactor(token_stats): multi-currency pricing support + markdown output | +90 | −47 |
 328|- [x] ⚠️ 废弃：定价/AGENTS.md，不迁移 `32333de` | 2026-05-10 | `tianbao.yang` | docs(yangtb/config): note pricing.yaml fields updated by cron scripts | +1 | −1 |
