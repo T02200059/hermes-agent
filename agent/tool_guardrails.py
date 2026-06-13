@@ -245,6 +245,8 @@ class ToolCallGuardrailController:
 
         exact_count = self._exact_failure_counts.get(signature, 0)
         if exact_count >= self.config.exact_failure_block_after:
+            # [owner] guardrails UX: include counter name + threshold value + config.yaml path
+            # in block/halt messages (extracted polish from unified_diff_patch migration chain)
             decision = ToolGuardrailDecision(
                 action="block",
                 code="repeated_exact_failure_block",
@@ -268,6 +270,8 @@ class ToolCallGuardrailController:
             if record is not None:
                 _result_hash, repeat_count = record
                 if repeat_count >= self.config.no_progress_block_after:
+                    # [owner] guardrails UX: include counter name + threshold value + config.yaml path
+                    # in block/halt messages (extracted polish from unified_diff_patch migration chain)
                     decision = ToolGuardrailDecision(
                         action="block",
                         code="idempotent_no_progress_block",
@@ -311,6 +315,8 @@ class ToolCallGuardrailController:
             self._same_tool_failure_counts[tool_name] = same_count
 
             if self.config.hard_stop_enabled and same_count >= self.config.same_tool_failure_halt_after:
+                # [owner] guardrails UX: include counter name + threshold value + config.yaml path
+                # in block/halt messages (extracted polish from unified_diff_patch migration chain)
                 decision = ToolGuardrailDecision(
                     action="halt",
                     code="same_tool_failure_halt",
