@@ -334,8 +334,8 @@
 348|- [x] ⏭️ 跳过（pricing废弃 + patch.yaml中TF-IDF延后单独处理） `2416220` | 2026-05-08 | `tianbao.yang` | refactor: move config files to yangtb/config/ | +226 | −1 |
 349|- [x] ✅ 已迁移·部分（4脚本→owner/scripts/，token_stats/daily_memory废弃，viking废弃，tfidf延后） `fcc9291` | 2026-05-08 | `tianbao.yang` | refactor: move personal scripts to yangtb/scripts/ | +1509 | −0 |
 350|- [x] ✅ 已覆盖（由 `03b25424` spinner faces 迁移一并处理） `cc7f46a` | 2026-05-08 | `tianbao.yang` | fix(tui): pass missing spinner arg to renderIndicator | +1 | −1 |
-351|- [ ] `fad4db4` | 2026-05-08 | `tianbao.yang` | feat: auto-inject recovery context after LLM API disconnect | +78 | −1 |
-352|- [ ] `22ed810` | 2026-05-08 | `tianbao.yang` | fix: LLM API silent disconnect now notifies user in current chat | +67 | −0 |
+351|- [⏸️ 已决策·暂不迁移（recovery context 注入为独立功能，需单独评估）] `fad4db4` | 2026-05-08 | `tianbao.yang` | feat: auto-inject recovery context after LLM API disconnect | +78 | −1 |
+352|- [x] ✅ 部分迁移（仅 empty-response 断连文案区分，stream drop 通知上游已覆盖）`22ed810` | 2026-05-08 | `tianbao.yang` | fix: LLM API silent disconnect now notifies user in current chat | +67 | −0 |
 353|- [ ] `aed81f7` | 2026-05-08 | `tianbao.yang` | refactor: migrate tf-idf to patch.yaml + remove pin mechanism | +80 | −72 |
 354|- [ ] `3b8031c` | 2026-05-08 | `tianbao.yang` | fix(feishu): rewording — 兼容性参考 → 手机端复制粘贴兼容 | +1 | −1 |
 355|- [x] ⚠️ 废弃 `bf0832b` | 2026-05-08 | `tianbao.yang` | feat(feishu): append inline code spans as plain-text reference for mobile copy | +41 | −0 |
