@@ -19,10 +19,10 @@ owner:
           - qwen
         endpoint: https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation
         model: qwen-image-2.0
-        api_key: ${DASHSCOPE_COMPANY_API_KEY}
+        api_key: ${DASHSCOPE_API_KEY}
       dashscope-wan:
         alias:
           - wan
         endpoint: https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation
         model: wan2.6-t2i
-        api_key: ${DASHSCOPE_COMPANY_API_KEY}
+        api_key: ${DASHSCOPE_API_KEY}
