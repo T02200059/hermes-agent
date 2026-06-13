@@ -267,9 +267,9 @@
 281|- [ ] `5dc4608` | 2026-05-16 | `tianbao.yang` | fix(auditor-guard): merge session_id into extra for deliver_sync in qqbot | +330 | −158 |
 282|- [ ] `edb1661` | 2026-05-16 | `tianbao.yang` | chore: sync hooks path fixes, update CHANGES.md with timeout→hard block design | +343 | −95 |
 283|- [ ] `ca2cbe1` | 2026-05-16 | `tianbao.yang` | fix(auditor-guard): Stage 1 detected sensitive path should always trigger LLM audit even when fallback path string fails is_sensitive_path check | +3 | −1 |
-284|- [ ] `979d7b2` | 2026-05-16 | `tianbao.yang` | feat(token_stats): add --from-date parameter for clean start date | +32 | −10 |
+284|- [x] ⚠️ 废弃（token_stats 整体废弃）`979d7b2` | 2026-05-16 | `tianbao.yang` | feat(token_stats): add --from-date parameter for clean start date | +32 | −10 |
 285|- [x] ⚠️ 废弃：定价/AGENTS.md，不迁移 `73e2d37` | 2026-05-16 | `tianbao.yang` | fix: provider_name column now stores actual config name (fixes custom→custom bug) fix(token_stats): resolve env vars in ProviderRegistry URL index (case-sensitive) feat(pricing): add deepseek-company pricing (same as deepseek) fix(pricing): correct deepseek cache_read rates (/bin/zsh.0028//bin/zsh.003625 per official docs) | +133 | −10 |
-286|- [ ] `dae8cd2` | 2026-05-16 | `tianbao.yang` | fix(auditor-guard): increase LLM timeout 15→60s, block on timeout instead of silent allow | +43 | −24 |
+286|- [x] ⚠️ 废弃（auditor-guard hook 不存在于 owner-v16）`dae8cd2` | 2026-05-16 | `tianbao.yang` | fix(auditor-guard): increase LLM timeout 15→60s, block on timeout instead of silent allow | +43 | −24 |
 287|- [ ] `cae1a7c` | 2026-05-16 | `tianbao.yang` | refactor(scripts): migrate ~/.hermes/scripts/ to yangtb/scripts/ | +2926 | −8 |
 288|- [x] ✅ 部分覆盖（_convert_tables_to_code_blocks 已删除，当前强制 text mode 绕过）`d682be1` | 2026-05-16 | `tianbao.yang` | fix(feishu): render markdown tables natively in post md elements | +27 | −43 |
 289|- [x] ⚠️ 废弃（auditor-guard hook 不存在于 owner-v16）`afbd94f` | 2026-05-15 | `tianbao.yang` | docs(auditor-guard): add CHANGES.md implementation changelog | +105 | −0 |
