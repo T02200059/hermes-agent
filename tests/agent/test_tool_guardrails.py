@@ -256,3 +256,68 @@ def test_reset_for_turn_clears_bounded_guardrail_state():
 
     assert controller.before_call("web_search", {"query": "same"}).action == "allow"
     assert controller.before_call("read_file", {"path": "/tmp/x"}).action == "allow"
+
+
+
+def test_exact_failure_block_message_names_counter_and_threshold():
+    """Regression: block message must identify which counter tripped and where to tune it."""
+    controller = ToolCallGuardrailController(
+        ToolCallGuardrailConfig(
+            hard_stop_enabled=True,
+            exact_failure_warn_after=2,
+            exact_failure_block_after=2,
+            same_tool_failure_halt_after=99,
+        )
+    )
+    args = {"query": "same"}
+    controller.after_call("web_search", args, '{"error":"boom"}', failed=True)
+    controller.after_call("web_search", args, '{"error":"boom"}', failed=True)
+
+    blocked = controller.before_call("web_search", args)
+    assert blocked.action == "block"
+    assert blocked.code == "repeated_exact_failure_block"
+    assert "`exact_failure` counter" in blocked.message
+    assert "exact_failure_block_after=2" in blocked.message
+    assert "tool_loop_guardrails.hard_stop_after.exact_failure" in blocked.message
+
+
+def test_same_tool_failure_halt_message_names_counter_and_threshold():
+    """Regression: halt message must identify same_tool_failure counter and config location."""
+    controller = ToolCallGuardrailController(
+        ToolCallGuardrailConfig(
+            hard_stop_enabled=True,
+            exact_failure_block_after=99,
+            same_tool_failure_warn_after=2,
+            same_tool_failure_halt_after=3,
+        )
+    )
+    controller.after_call("terminal", {"command": "cmd-1"}, '{"exit_code":1}', failed=True)
+    controller.after_call("terminal", {"command": "cmd-2"}, '{"exit_code":1}', failed=True)
+    third = controller.after_call("terminal", {"command": "cmd-3"}, '{"exit_code":1}', failed=True)
+
+    assert third.action == "halt"
+    assert third.code == "same_tool_failure_halt"
+    assert "`same_tool_failure` counter" in third.message
+    assert "same_tool_failure_halt_after=3" in third.message
+    assert "tool_loop_guardrails.hard_stop_after.same_tool_failure" in third.message
+
+
+def test_idempotent_no_progress_block_message_names_counter_and_threshold():
+    """Regression: no_progress block message must identify idempotent_no_progress counter."""
+    controller = ToolCallGuardrailController(
+        ToolCallGuardrailConfig(
+            hard_stop_enabled=True,
+            no_progress_warn_after=1,
+            no_progress_block_after=2,
+        )
+    )
+    args = {"path": "/tmp/same.txt"}
+    controller.after_call("read_file", args, "same", failed=False)
+    controller.after_call("read_file", args, "same", failed=False)
+
+    blocked = controller.before_call("read_file", args)
+    assert blocked.action == "block"
+    assert blocked.code == "idempotent_no_progress_block"
+    assert "`idempotent_no_progress` counter" in blocked.message
+    assert "no_progress_block_after=2" in blocked.message
+    assert "tool_loop_guardrails.hard_stop_after.idempotent_no_progress" in blocked.message
