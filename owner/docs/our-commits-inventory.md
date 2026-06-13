@@ -293,7 +293,7 @@
 307|- [ ] `b242719` | 2026-05-14 | `tianbao.yang` | fix(sre-archive): async subprocess + retry + SKIP exit code + misc hardening | +592 | −62 |
 308|- [ ] `c822adb` | 2026-05-13 | `tianbao.yang` | fix(session): source-level thinking-prefill filtering instead of dead read-path check | +7 | −0 |
 309|- [ ] `4fee7db` | 2026-05-13 | `tianbao.yang` | fix(session): filter _thinking_prefill messages from get_messages() to prevent thinking leakage | +8 | −1 |
-310|- [ ] `5a654df` | 2026-05-13 | `tianbao.yang` | fix(gateway): 过滤 thinking prefill 消息，防止污染会话历史 | +7 | −3 |
+310|- [x] ✅ 已覆盖（conversation_loop.py 已在消息层面 pop _thinking_prefill）`5a654df` | 2026-05-13 | `tianbao.yang` | fix(gateway): 过滤 thinking prefill 消息，防止污染会话历史 | +7 | −3 |
 311|- [x] ⚠️ 废弃（sre-archive hook 已删除 0b160cd）`a5246ae` | 2026-05-13 | `tianbao.yang` | fix(sre-archive): use gateway/run.py's skill extraction logic instead of custom parser | +83 | −13 |
 312|- [x] ⚠️ 废弃（yangtb/ 目录 + audit-agent 依赖，均不存在于 owner-v16）`62ec570` | 2026-05-13 | `tianbao.yang` | refactor(hooks): 三根日志统一轮转为 DailySizeRotatingFileHandler | +334 | −18 |
 313|- [x] ⚠️ 废弃（_align_table 被 d682be1 飞书原生表格方案替代）`a572c36` | 2026-05-12 | `tianbao.yang` | fix(feishu): emoji width compensation in _align_table | +9 | −1 |
