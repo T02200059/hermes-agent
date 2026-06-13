@@ -267,9 +267,6 @@ class FeishuAdapter(BasePlatformAdapter):
 
 ## 八、迁移进度
 
-| 功能 | 状态 | Commit | 备注 |
-|------|------|--------|------|
-| Auto-Card（P64） | ✅ 已迁移 | `1a4aa7bf6` | 阶段 A/B/C 全部完成 |
-| ... | ... | ... | ... |
-
-（持续更新）
+> 迁移进度统一在 `owner/docs/our-commits-inventory.md` 中维护。
+> 每个 owner 分支 commit 的状态标记（✅ 已迁移 / ⚠️ 废弃 / ⏸️ 待定 等）
+> 即为进度记录，不在本文档重复维护。
