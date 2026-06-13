@@ -180,3 +180,69 @@ def maybe_send_diff_cards(
             logger.debug("diff card dispatch error for %s", tool_name, exc_info=True)
 
     return sent_ids
+
+
+class DiffCardContext:
+    """Encapsulates all per-session state and wrapped callbacks for diff cards.
+
+    This keeps the state (_snapshots, lock, sent set) and wrapper logic
+    out of official gateway code. Official files only call install and
+    assign the returned callbacks.
+    """
+
+    def __init__(self) -> None:
+        self.snapshots: Dict[str, Optional[LocalEditSnapshot]] = {}
+        self.lock = threading.Lock()
+        self.sent_ids: Set[str] = set()
+
+    def make_tool_start_snapshot_callback(
+        self, original_cb: Optional[_ToolStartCallback]
+    ) -> _ToolStartCallback:
+        return make_tool_start_snapshot_callback(
+            original_cb, self.snapshots, self.lock
+        )
+
+    def make_step_callback(
+        self,
+        original_step: Optional[Callable[[int, list], None]],
+        runner: Any,
+        source: Any,
+        loop: Any,
+    ) -> Callable[[int, list], None]:
+        def _wrapped(iteration: int, prev_tools: list) -> None:
+            if original_step is not None:
+                try:
+                    original_step(iteration, prev_tools)
+                except Exception:
+                    logger.debug("original step_callback error", exc_info=True)
+            try:
+                maybe_send_diff_cards(
+                    runner,
+                    source,
+                    prev_tools,
+                    self.snapshots,
+                    self.lock,
+                    loop,
+                    self.sent_ids,
+                )
+            except Exception:
+                logger.debug("diff card dispatch error", exc_info=True)
+        return _wrapped
+
+
+def install_diff_card_support(
+    runner: Any,
+    source: Any,
+    original_tool_start: Optional[_ToolStartCallback],
+    original_step: Optional[Callable[[int, list], None]],
+    loop: Any,
+) -> tuple[_ToolStartCallback, Callable[[int, list], None]]:
+    """Return (wrapped_tool_start, wrapped_step) for diff cards support.
+
+    All internal state is hidden inside the returned wrappers.
+    To be used from gateway session setup (P1 thin glue).
+    """
+    ctx = DiffCardContext()
+    wrapped_start = ctx.make_tool_start_snapshot_callback(original_tool_start)
+    wrapped_step = ctx.make_step_callback(original_step, runner, source, loop)
+    return wrapped_start, wrapped_step
