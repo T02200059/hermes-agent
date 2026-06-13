@@ -33,6 +33,19 @@ owner:
         model: wan2.6-t2i
         api_key: ${DASHSCOPE_API_KEY}
 
+  # ── Per-chat display overrides ─────────────────────────────────────────────
+  # Override display settings for individual chats/groups. Highest priority.
+  # Useful for Feishu groups where tool_progress / interim messages should be
+  # suppressed. The chat_id is the platform's native chat/group identifier.
+  # display:
+  #   per_chat:
+  #     feishu:
+  #       oc_xxxxxxxxxxxxxxxx:
+  #         tool_progress: off
+  #         interim_assistant_messages: false
+  #         tool_preview_length: 0
+  #         streaming: false
+
   # ── Model-level extra_body injection ───────────────────────────────────────
   # Per-provider, per-model extra_body merges. Use the *real* provider name
   # (owner_provider_name) as the key, e.g. xfyun / damodel / deepseek-company.

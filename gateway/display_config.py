@@ -1,13 +1,14 @@
 """Per-platform display/verbosity configuration resolver.
 
 Provides ``resolve_display_setting()`` — the single entry-point for reading
-display settings with platform-specific overrides and sensible defaults.
+display settings with per-chat, per-platform, and global overrides.
 
 Resolution order (first non-None wins):
-    1. ``display.platforms.<platform>.<key>``  — explicit per-platform user override
-    2. ``display.<key>``                       — global user setting
-    3. ``_PLATFORM_DEFAULTS[<platform>][<key>]``  — built-in sensible default
-    4. ``_GLOBAL_DEFAULTS[<key>]``              — built-in global default
+    0. ``display.per_chat.<platform>.<chat_id>.<key>`` — per-chat override (highest)
+    1. ``display.platforms.<platform>.<key>``          — explicit per-platform user override
+    2. ``display.<key>``                               — global user setting
+    3. ``_PLATFORM_DEFAULTS[<platform>][<key>]``       — built-in sensible default
+    4. ``_GLOBAL_DEFAULTS[<key>]``                     — built-in global default
 
 Exception: ``display.streaming`` is CLI-only.  Gateway streaming follows the
 top-level ``streaming`` config unless ``display.platforms.<platform>.streaming``
@@ -17,11 +18,21 @@ Backward compatibility: ``display.tool_progress_overrides`` is still read as a
 fallback for ``tool_progress`` when no ``display.platforms`` entry exists.  A
 config migration (version bump) automatically moves the old format into the new
 ``display.platforms`` structure.
+
+Patch.yaml integration: per-chat overrides defined in
+``patch.yaml``'s ``owner.display`` section are merged into the display
+config at call time, participating in the standard resolution order.
 """
 
 from __future__ import annotations
 
 from typing import Any
+
+# [owner] per-chat display overrides from patch.yaml
+from owner.display_overrides import (
+    merge_owner_display_config,
+    resolve_per_chat_override,
+)
 
 # ---------------------------------------------------------------------------
 # Overrideable display settings and their global defaults
@@ -153,8 +164,9 @@ def resolve_display_setting(
     platform_key: str,
     setting: str,
     fallback: Any = None,
+    chat_id: str | None = None,
 ) -> Any:
-    """Resolve a display setting with per-platform override support.
+    """Resolve a display setting with per-chat and per-platform override support.
 
     Parameters
     ----------
@@ -167,12 +179,25 @@ def resolve_display_setting(
         Display setting name (e.g. ``"tool_progress"``, ``"show_reasoning"``).
     fallback : Any
         Fallback value when the setting isn't found anywhere.
+    chat_id : str or None
+        Optional chat/group ID for per-chat overrides
+        (``display.per_chat.<platform>.<chat_id>.<key>``). When provided,
+        this is the highest-priority resolution tier.
 
     Returns
     -------
     The resolved value, or *fallback* if nothing is configured.
     """
     display_cfg = user_config.get("display") or {}
+
+    # [owner] merge patch.yaml owner.display into config at call time
+    display_cfg = merge_owner_display_config(display_cfg)
+
+    # [owner] per-chat override (highest priority)
+    if chat_id:
+        val = resolve_per_chat_override(display_cfg, platform_key, chat_id, setting)
+        if val is not None:
+            return _normalise(setting, val)
 
     # 1. Explicit per-platform override (display.platforms.<platform>.<key>)
     platforms = display_cfg.get("platforms") or {}

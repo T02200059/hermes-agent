@@ -212,7 +212,7 @@
 - [x] ⏭️ 跳过 `c03e8da` | 2026-05-22 | `yangtb` | Merge upstream/main into owner | +0 | −0 |
 - [x] ⚠️ 废弃：上游已重构，_limiter 不存在 `30ab336` | 2026-05-22 | `yangtb` | fix(credential_pool): False sentinel bypasses _limiter None check in select() | +3 | −1 |
 - [⏸️ 已决策·暂不迁移（xai-oauth/grok 相关，待上游稳定后评估）] `1588a1e` | 2026-05-22 | `yangtb` | tools+prompt: harden patch schema descriptions; add Grok-4.3 tool-calling guidance | +41 | −2 |
-- [ ] `8968786` | 2026-05-22 | `yangtb` | display: per-chat override support with patch.yaml integration | +67 | −13 |
+- [x] ✅ 已迁移（实现于 owner/display_overrides.py；gateway/display_config.py 与 gateway/run.py 仅保留 [owner] 胶水）`8968786` | 2026-05-22 | `yangtb` | display: per-chat override support with patch.yaml integration | +67 | −13 |
 - [x] ✅ 已覆盖（owner/ 目录结构与命名迁移已由多个 commit 分散完成；auditor-guard/sre-archive/viking/token_stats/pricing 等按决策废弃）`fb19877` | 2026-05-22 | `yangtb` | feat: migrate from yangtb to owner profile | +12109 | −61 |
 - [ ] `478b66a` | 2026-05-22 | `yangtb` | feat(cron): replace todo-scan.py with robust todo-scan.sh (macFUSE timeout protection) | +58 | −0 |
 - [ ] `489aafd` | 2026-05-22 | `yangtb` | P31: 飞书审批卡片"永久允许"按钮可配置隐藏 | +61 | −28 |
