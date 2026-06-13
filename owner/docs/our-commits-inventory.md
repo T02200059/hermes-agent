@@ -182,7 +182,7 @@
 
 [x] ⏭️ 跳过 `a77231c` | 2026-05-28 | `yangtb` | Merge upstream/main into owner (v0.14.0+) | +0 | −0 |
 198|- [ ] `c5b6992` | 2026-05-28 | `yangtb` | chore: remove viking-hint hook (empty stub, never implemented) | +0 | −49 |
-199|- [ ] `0c23b27` | 2026-05-27 | `yangtb` | i18n(zh): add all 85 missing tirith rule translations, remove 2 stale entries | +193 | −9 |
+199|- [x] 📌 待统一处理i18n（纯i18n，仅locales文件）`0c23b27` | 2026-05-27 | `yangtb` | i18n(zh): add all 85 missing tirith rule translations, remove 2 stale entries | +193 | −9 |
 200|- [ ] `bf295cd` | 2026-05-27 | `yangtb` | refactor(gateway): 外部 restart 走 launchctl kickstart -k 原子化生命周期 | +24 | −13 |
 201|- [ ] `67373f7` | 2026-05-27 | `yangtb` | docs(owner): 新增 P39 飞书 Diff 卡片 + P40 step_callback 去 hooks 依赖 | +4 | −2 |
 202|- [ ] `06c911a` | 2026-05-27 | `yangtb` | feat(feishu): patch/write_file 完成后发送 diff 卡片（红绿背景 + 查看完整 diff 按钮） | +207 | −1 |
@@ -230,7 +230,7 @@
 244|- [ ] `ed95a26` | 2026-05-20 | `yangtb` | chore: remove audit-agent hook (agent:end file-change detection) | +1 | −973 |
 245|- [ ] `2218a70` | 2026-05-20 | `yangtb` | fix: agent.chat_id -> agent._chat_id (AIAgent stores as _chat_id) | +6 | −6 |
 246|- [ ] `b6e9852` | 2026-05-20 | `yangtb` | fix: pass platform/chat_id/user_message through pre_tool_call hook chain | +118 | −3 |
-247|- [ ] `188be9d` | 2026-05-20 | `yangtb` | refactor: extract destructive_slash_confirm hardcoded strings into i18n locale files | +100 | −14 |
+247|- [x] 📌 待统一处理i18n（纯i18n，run.py字符串替换+locales）`188be9d` | 2026-05-20 | `yangtb` | refactor: extract destructive_slash_confirm hardcoded strings into i18n locale files | +100 | −14 |
 248|- [ ] `7d7cc28` | 2026-05-20 | `tianbao.yang` | feat(auditor-guard): suppress Branch D notification when built-in Approvals already approved the pattern | +42 | −10 |
 249|- [ ] `94ccc55` | 2026-05-20 | `tianbao.yang` | fix(auditor-guard): align APPROVAL_FALLBACK_PATTERNS with Hermes DANGEROUS_PATTERNS + suppress Tirith variation_selector noise | +66 | −51 |
 250|- [ ] `bb19362` | 2026-05-20 | `tianbao.yang` | feat(i18n): approvals 文案中文化 — 硬编码英文全部接入 t() 翻译 | +111 | −59 |
