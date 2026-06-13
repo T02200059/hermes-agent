@@ -1758,4 +1758,6 @@ registry.register(name="read_file", toolset="file", schema=READ_FILE_SCHEMA, han
 registry.register(name="write_file", toolset="file", schema=WRITE_FILE_SCHEMA, handler=_handle_write_file, check_fn=_check_file_reqs, emoji="✍️", max_result_size_chars=100_000)
 # [owner] unified_diff_patch: legacy patch tool disabled; unified_diff_patch replaces it.
 # registry.register(name="patch", toolset="file", schema=PATCH_SCHEMA, handler=_handle_patch, check_fn=_check_file_reqs, emoji="🔧", max_result_size_chars=100_000)
+# (full patch_tool + PATCH_SCHEMA + _handle_patch left in place as dead code — removing them would create
+#  large literal diffs against upstream on future syncs; only registration is suppressed)
 registry.register(name="search_files", toolset="file", schema=SEARCH_FILES_SCHEMA, handler=_handle_search_files, check_fn=_check_file_reqs, emoji="🔎", max_result_size_chars=100_000)

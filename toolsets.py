@@ -376,7 +376,8 @@ TOOLSETS = {
         "tools": [
             "web_search", "web_extract",
             "terminal", "process",
-            "read_file", "write_file", "patch", "search_files",
+            # [owner] unified_diff_patch: include exact line-number patch tool in ACP/editor coding toolset
+            "read_file", "write_file", "patch", "unified_diff_patch", "search_files",
             "vision_analyze",
             "skills_list", "skill_view", "skill_manage",
             "browser_navigate", "browser_snapshot", "browser_click",
