@@ -2746,8 +2746,8 @@ class QQAdapter(BasePlatformAdapter):
         :func:`tools.approval.resolve_gateway_approval` — dispatched by the
         adapter's interaction callback (:meth:`_default_interaction_dispatch`).
         """
-        # [owner] 3198a71: QQ ignores sender identity, but accepts it for the
-        # unified ``send_exec_approval`` contract used by gateway/run.py.
+        # [owner] approval: accept sender_* for Feishu name-cache pre-warm (see owner/feishu/sender_name_cache.py);
+        # QQ ignores for its button flow.
         del metadata, sender_open_id, sender_is_bot
 
         # Use the reply-to message for passive-message context when we have one.
