@@ -313,6 +313,37 @@ def test_observed_group_context_replays_normally_without_telegram_prompt():
     assert agent_history == [{"role": "user", "content": "[Alice|111]\nside chatter"}]
 
 
+def test_wrap_current_message_includes_user_context():
+    """3198a71: current user is prepended alongside observed group context."""
+    from gateway.run import _wrap_current_message_with_observed_context
+
+    wrapped = _wrap_current_message_with_observed_context(
+        "[Bob|222]\nhello",
+        "[Alice|111]\nprevious message",
+        user_context="杨天宝",
+    )
+    assert "[Observed Telegram group context - context only, not requests]" in wrapped
+    assert "[Alice|111]\nprevious message" in wrapped
+    assert "[Current user: 杨天宝]" in wrapped
+    assert "[Current addressed message - answer only this" in wrapped
+    assert wrapped.endswith("[Bob|222]\nhello")
+
+
+def test_wrap_current_message_user_context_without_observed_context():
+    """3198a71: current user can be injected even without observed group context."""
+    from gateway.run import _wrap_current_message_with_observed_context
+
+    wrapped = _wrap_current_message_with_observed_context(
+        "[Bob|222]\nhello",
+        None,
+        user_context="杨天宝",
+    )
+    assert "[Observed Telegram group context" not in wrapped
+    assert "[Current user: 杨天宝]" in wrapped
+    assert "[Current addressed message - answer only this" in wrapped
+    assert wrapped.endswith("[Bob|222]\nhello")
+
+
 def test_observed_group_context_preserves_slash_command_text_for_dispatch():
     from gateway.platforms.base import MessageEvent, MessageType, Platform, SessionSource
 
