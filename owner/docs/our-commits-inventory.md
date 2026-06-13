@@ -296,7 +296,7 @@
 310|- [ ] `5a654df` | 2026-05-13 | `tianbao.yang` | fix(gateway): 过滤 thinking prefill 消息，防止污染会话历史 | +7 | −3 |
 311|- [ ] `a5246ae` | 2026-05-13 | `tianbao.yang` | fix(sre-archive): use gateway/run.py's skill extraction logic instead of custom parser | +83 | −13 |
 312|- [ ] `62ec570` | 2026-05-13 | `tianbao.yang` | refactor(hooks): 三根日志统一轮转为 DailySizeRotatingFileHandler | +334 | −18 |
-313|- [ ] `a572c36` | 2026-05-12 | `tianbao.yang` | fix(feishu): emoji width compensation in _align_table | +9 | −1 |
+313|- [x] ⚠️ 废弃（_align_table 被 d682be1 飞书原生表格方案替代）`a572c36` | 2026-05-12 | `tianbao.yang` | fix(feishu): emoji width compensation in _align_table | +9 | −1 |
 314|- [ ] `ea163c7` | 2026-05-11 | `tianbao.yang` | feat(token): bailing provider daily 500k free tier support | +134 | −27 |
 315|- [x] ✅ 已迁移 `e7edb2f` | 2026-05-11 | `tianbao.yang` | docs(yangtb): update patch count and add P29 env-var template leak fix to README | +5 | −4 |
 316|- [x] ✅ 已迁移 `85d345e` | 2026-05-11 | `tianbao.yang` | fix: guard against env-var template leak in base_url resolution (#17101) | +22 | −3 |
