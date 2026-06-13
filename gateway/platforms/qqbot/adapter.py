@@ -2736,8 +2736,7 @@ class QQAdapter(BasePlatformAdapter):
             session_key: str,
             description: str = "dangerous command",
             metadata: Optional[Dict[str, Any]] = None,
-            sender_open_id: str = "",
-            sender_is_bot: bool = False,
+            **kwargs,
     ) -> SendResult:
         """Send a button-based exec-approval prompt for a dangerous command.
 
@@ -2746,9 +2745,12 @@ class QQAdapter(BasePlatformAdapter):
         :func:`tools.approval.resolve_gateway_approval` — dispatched by the
         adapter's interaction callback (:meth:`_default_interaction_dispatch`).
         """
-        # [owner] approval: accept sender_* for Feishu name-cache pre-warm (see owner/feishu/sender_name_cache.py);
-        # QQ ignores for its button flow.
-        del metadata, sender_open_id, sender_is_bot
+        # [owner] approval: accept (but ignore) Feishu-specific sender_open_id/sender_is_bot
+        # for name-cache pre-warm contract. Using **kwargs keeps non-Feishu adapters clean.
+        # See owner/feishu/sender_name_cache.py
+        kwargs.pop("sender_open_id", None)
+        kwargs.pop("sender_is_bot", None)
+        del metadata
 
         # Use the reply-to message for passive-message context when we have one.
         # QQ requires a msg_id on outbound messages to a user we've never
