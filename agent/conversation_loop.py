@@ -1916,7 +1916,9 @@ def run_conversation(
                                 cost_status=cost_result.status,
                                 cost_source=cost_result.source,
                                 billing_provider=agent.provider,
-                                owner_provider_name=getattr(agent, "owner_provider_name", None),
+                                # [owner-patch] attribution for billing record
+                                from owner.attribution import get_current_attribution
+                                owner_provider_name=get_current_attribution(agent),
                                 billing_base_url=agent.base_url,
                                 billing_mode="subscription_included"
                                 if cost_result.status == "included" else None,
