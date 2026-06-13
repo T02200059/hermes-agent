@@ -410,10 +410,10 @@
 - [x] ⚠️ 废弃（auditor-guard/rate_limiter/_align_table 在 v16 已不存在；backup 脚本修复已存在于 owner-v16）`1b41e23` | 2026-05-28 | `yangtb` | fix: owner 分支定制化模块对抗性 review 修复 | +88 | −10 |
 - [x] ⚠️ 废弃（纯文档 owner/README.md，不迁移）`43687be` | 2026-05-28 | `yangtb` | docs(owner): register P42 — QQ Bot diff markdown display | +3 | −2 |
 - [x] ⚠️ 废弃（纯文档 owner/README.md，不迁移）`4c40f92` | 2026-05-28 | `yangtb` | docs: P39 更新 — 三阶段渐进展开交互 | +1 | −1 |
-- [ ] `7e7cb58` | 2026-05-28 | `yangtb` | feat(qqbot): diff markdown display for patch/write_file/skill_manage | +116 | −0 |
+- [x] ✅ 已迁移 `1da7ada8e` `7e7cb58` | 2026-05-28 | `yangtb` | feat(qqbot): diff markdown display for patch/write_file/skill_manage | +116 | −0 |
 - [x] ⚠️ 废弃（纯文档 owner/README.md，不迁移）`a422f7d` | 2026-05-28 | `yangtb` | docs(owner): 更新 P39 飞书 Diff 卡片描述 — 三工具触发+四色渲染+踩坑记录 | +2 | −2 |
-- [ ] `bb542ba` | 2026-05-28 | `yangtb` | feat: diff 卡片三阶段渐进展开 (compact → expanded → full) | +189 | −39 |
-- [ ] `bec5b1e` | 2026-05-28 | `yangtb` | feat: feishu diff cards for write_file + skill_manage + purple header styling | +76 | −9 |
+- [x] ✅ 已迁移 `1da7ada8e` `bb542ba` | 2026-05-28 | `yangtb` | feat: diff 卡片三阶段渐进展开 (compact → expanded → full) | +189 | −39 |
+- [x] ✅ 已迁移 `1da7ada8e` `bec5b1e` | 2026-05-28 | `yangtb` | feat: feishu diff cards for write_file + skill_manage + purple header styling | +76 | −9 |
 - [⏸️ 已决策·待后续 i18n 统一处理] `d452156` | 2026-05-28 | `yangtb` | i18n: gateway lifecycle emoji → skyline series (🌇🌆🌃🏙) | +8 | −8 |
 - [x] ⏭️ 跳过（已被 owner-v16 P14 迁移 commit 59ebc9954 完整覆盖）`dd0b53e` | 2026-05-28 | `yangtb` | fix(tui): pass missing spinner prop to FaceTicker in StatusRule | +1 | −1 |
 - [ ] `de36b03` | 2026-05-28 | `yangtb` | refactor(feishu): resolve sender name synchronously before approval card response | +13 | −34 |
