@@ -233,7 +233,7 @@
 246|- [x] ⚠️ 废弃（yangtb/hooks/auditor-guard 不存在于 owner-v16 — owner-v16 hook chain 已重构，P66 Intent Guard 替代）`b6e9852` | 2026-05-20 | `yangtb` | fix: pass platform/chat_id/user_message through pre_tool_call hook chain | +118 | −3 |
 247|- [x] 📌 待统一处理i18n（纯i18n，run.py字符串替换+locales）`188be9d` | 2026-05-20 | `yangtb` | refactor: extract destructive_slash_confirm hardcoded strings into i18n locale files | +100 | −14 |
 248|- [x] ⚠️ 废弃（yangtb/hooks/auditor-guard 不存在于 owner-v16 — P66 Intent Guard 替代）`7d7cc28` | 2026-05-20 | `tianbao.yang` | feat(auditor-guard): suppress Branch D notification when built-in Approvals already approved the pattern | +42 | −10 |
-249|- [ ] `94ccc55` | 2026-05-20 | `tianbao.yang` | fix(auditor-guard): align APPROVAL_FALLBACK_PATTERNS with Hermes DANGEROUS_PATTERNS + suppress Tirith variation_selector noise | +66 | −51 |
+249|- [x] ⏭️ 跳过（仅改 yangtb/hooks/auditor-guard/rules.py；auditor-guard 不存在于 owner-v16，已被 P66 Intent Guard 替代）`94ccc55` | 2026-05-20 | `tianbao.yang` | fix(auditor-guard): align APPROVAL_FALLBACK_PATTERNS with Hermes DANGEROUS_PATTERNS + suppress Tirith variation_selector noise | +66 | −51 |
 250|- [ ] `bb19362` | 2026-05-20 | `tianbao.yang` | feat(i18n): approvals 文案中文化 — 硬编码英文全部接入 t() 翻译 | +111 | −59 |
 251|- [ ] `f138db1` | 2026-05-20 | `tianbao.yang` | refactor: replace plugins/image_gen/openai with openai_native | +388 | −38 |
 252|- [x] ⚠️ 废弃（纯文档md，不迁移）`befa350` | 2026-05-20 | `tianbao.yang` | docs(yangtb): add P30 (bare-domain base_url /v1 auto-append) to patch list | +4 | −3 |
