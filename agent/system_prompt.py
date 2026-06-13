@@ -460,8 +460,8 @@ def build_system_prompt_parts(agent: Any, system_message: Optional[str] = None) 
         timestamp_line += f"\nProvider: {agent.provider}"
     volatile_parts.append(timestamp_line)
 
-    # [owner] 3198a71: expose the current user's name to the model so it can
-    # address them correctly and avoid placeholder text like "current user".
+    # [owner] current-user: expose name (from gateway source) so model can address user directly
+    # (in volatile tier; pairs with per-message wrap for groups; see owner/feishu/ + approval pre-warm path)
     _user_name = getattr(agent, "_user_name", None)
     if _user_name:
         volatile_parts.append(f"Current user: {_user_name}")
