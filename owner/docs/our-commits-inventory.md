@@ -241,7 +241,7 @@
 255|- [ ] `022d45b` | 2026-05-20 | `tianbao.yang` | feat(image_gen): add model param to image_generate tool + yaml presets; update exchange rate | +52 | −9 |
 256|- [ ] `f248f27` | 2026-05-20 | `tianbao.yang` | fix(auditor): 飞书卡片段落间 hr 重复横线问题 | +10 | −15 |
 257|- [x] ⏭️ 跳过：revert commit `a6a18b3` | 2026-05-19 | `tianbao.yang` | Revert "feat(transports): add URL-based reasoning_effort support for LKeap/DeepSeek/DaModel" | +0 | −51 |
-258|- [ ] `eb1df5d` | 2026-05-19 | `tianbao.yang` | Revert "refactor: extract _resolve_reasoning_effort helper, merge LKeap dual blocks" | +61 | −79 |
+258|- [x] ⚠️ 跳过（revert commit）`eb1df5d` | 2026-05-19 | `tianbao.yang` | Revert "refactor: extract _resolve_reasoning_effort helper, merge LKeap dual blocks" | +61 | −79 |
 259|- [x] ⏭️ 跳过：revert commit `b30e774` | 2026-05-19 | `tianbao.yang` | Revert "fix: remove hardcoded extra_efforts from _resolve_reasoning_effort" | +15 | −5 |
 260|- [x] ⚠️ 废弃：reasoning_effort 链被 revert `54657dc` | 2026-05-19 | `tianbao.yang` | fix: remove hardcoded extra_efforts from _resolve_reasoning_effort | +5 | −15 |
 261|- [x] ⚠️ 废弃：reasoning_effort 链被 revert `5cbc280` | 2026-05-19 | `tianbao.yang` | refactor: extract _resolve_reasoning_effort helper, merge LKeap dual blocks | +79 | −61 |
