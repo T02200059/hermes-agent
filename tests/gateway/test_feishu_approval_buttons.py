@@ -135,9 +135,8 @@ class TestFeishuExecApproval:
             success=lambda: True,
             data=SimpleNamespace(message_id="msg_001"),
         )
-        with patch.object(
-            adapter, "_is_approval_allow_permanent", return_value=True,
-        ), patch.object(
+        # patch the owner free function (the static was moved during extraction)
+        with patch("owner.feishu.approval.get_allow_permanent", return_value=True), patch.object(
             adapter, "_feishu_send_with_retry", new_callable=AsyncMock,
             return_value=mock_response,
         ) as mock_send:
@@ -178,6 +177,7 @@ class TestFeishuExecApproval:
                 sender_is_bot=False,
             )
 
+        # after extraction the pre-warm uses cache, but we still fire the (patched) delegate in send for test compat
         mock_resolve.assert_called_once_with("ou_user1", is_bot=False)
 
     @pytest.mark.asyncio
