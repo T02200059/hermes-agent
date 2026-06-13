@@ -418,7 +418,7 @@
 - [x] ⏭️ 跳过（已被 owner-v16 P14 迁移 commit 59ebc9954 完整覆盖）`dd0b53e` | 2026-05-28 | `yangtb` | fix(tui): pass missing spinner prop to FaceTicker in StatusRule | +1 | −1 |
 - [⏸️ 已决策·见下表“审批卡片相关遗漏 commit”] `de36b03` | 2026-05-28 | `yangtb` | refactor(feishu): resolve sender name synchronously before approval card response | +13 | −34 |
 - [⏸️ 已决策·暂不迁移（rate limiter 不存在于 owner-v16，需整体评估）] `ed7d88e` | 2026-05-28 | `yangtb` | chore: add xiaomi rate limit config to patch.yaml | +3 | −0 |
-- [ ] `3198a71` | 2026-05-29 | `yangtb` | fix(agent): 向 system_prompt 注入 current_user 字段，消除 API 响应中的占位符 | +129 | −24 |
+- [x] ✅ 已迁移 `9fbba42b6` `3198a71` | 2026-05-29 | `yangtb` | fix(agent): 向 system_prompt 注入 current_user 字段，消除 API 响应中的占位符 | +129 | −24 |
 - [x] ⚠️ 废弃（纯文档md，不迁移）`5a886a4` | 2026-05-29 | `yangtb` | docs: 更新 patch 总列表，新增 P53/P54/P55（37组/45项） | +6 | −3 |
 
 ## 追加 2：审批卡片相关遗漏 commit
