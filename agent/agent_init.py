@@ -313,7 +313,8 @@ def init_agent(
     provider_name = provider.strip().lower() if isinstance(provider, str) and provider.strip() else None
     agent.provider = provider_name or ""
     agent.acp_command = acp_command or command
-    agent.acp_args = list(acp_args or args or [])
+    # [owner-patch] acp_args empty list should be stored as None, not [].
+    agent.acp_args = list(acp_args or args or []) or None
     if api_mode in {"chat_completions", "codex_responses", "anthropic_messages", "bedrock_converse", "codex_app_server"}:
         agent.api_mode = api_mode
     elif agent.provider == "openai-codex":
