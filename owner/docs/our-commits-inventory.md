@@ -65,7 +65,7 @@
 65|- [ ] `dfae252` | 2026-06-12 | `yangtb` | chore(feishu): remove feishu_profile_router.py (v6 cleanup) | +0 | −403 |
 66|- [ ] `71b0869` | 2026-06-11 | `yangtb` | test(providers): update DeepSeek thinking test for MiniMax carve-out | +9 | −4 |
 67|- [ ] `a311083` | 2026-06-11 | `yangtb` | feat(providers): MiniMax Anthropic endpoint thinking-block support | +32 | −4 |
-68|- [ ] `b263fd5` | 2026-06-11 | `yangtb` | config: reduce openrouter rate limit to 20 req/min | +1 | −1 |
+68|- [⏸️ 已决策·暂不迁移（rate limiter 不存在于 owner-v16，需整体评估）] `b263fd5` | 2026-06-11 | `yangtb` | config: reduce openrouter rate limit to 20 req/min | +1 | −1 |
 69|- [ ] `25561ad` | 2026-06-11 | `yangtb` | feat(providers): credential validation + model list overrides in /providers | +97 | −9 |
 70|- [ ] `fc9c899` | 2026-06-10 | `yangtb` | feat(qdrant-recall): patch.yaml 配置化 + bot_menu 命令跳过 | +72 | −1 |
 71|- [ ] `1fe0bf4` | 2026-06-10 | `yangtb` | feat(recall-card): compact标题增加 content 首行 # 提取 fallback | +8 | −5 |
@@ -187,9 +187,9 @@
 200|- [ ] `bf295cd` | 2026-05-27 | `yangtb` | refactor(gateway): 外部 restart 走 launchctl kickstart -k 原子化生命周期 | +24 | −13 |
 201|- [x] ⚠️ 废弃（纯文档md，不迁移）`67373f7` | 2026-05-27 | `yangtb` | docs(owner): 新增 P39 飞书 Diff 卡片 + P40 step_callback 去 hooks 依赖 | +4 | −2 |
 202|- [ ] `06c911a` | 2026-05-27 | `yangtb` | feat(feishu): patch/write_file 完成后发送 diff 卡片（红绿背景 + 查看完整 diff 按钮） | +207 | −1 |
-203|- [ ] `016bb35` | 2026-05-27 | `yangtb` | chore(config): 移除 nous rate limit 配置，damodel max_requests 提频 30→60 | +1 | −4 |
+203|- [⏸️ 已决策·暂不迁移（rate limiter 不存在于 owner-v16，需整体评估）] `016bb35` | 2026-05-27 | `yangtb` | chore(config): 移除 nous rate limit 配置，damodel max_requests 提频 30→60 | +1 | −4 |
 204|- [ ] `1c887ef` | 2026-05-27 | `yangtb` | feat(feishu): approvals 卡片回调异步更新用户名，显示命令内容 | +67 | −17 |
-205|- [ ] `601e79e` | 2026-05-27 | `yangtb` | chore(owner): add xfyun rate limit config to patch.yaml | +3 | −0 |
+205|- [⏸️ 已决策·暂不迁移（rate limiter 不存在于 owner-v16，需整体评估）] `601e79e` | 2026-05-27 | `yangtb` | chore(owner): add xfyun rate limit config to patch.yaml | +3 | −0 |
 206|- [x] ✅ 已迁移 `25f1996` | 2026-05-27 | `yangtb` | docs(owner): 同步 patch 清单 P35-P38 + P9 CallBackCard 升级 | +12 | −8 |
 207|- [x] ⚠️ 废弃：上游已修复，.env 加载时机已无问题 `2b801e5` | 2026-05-27 | `yangtb` | fix(gateway): eagerly load .env before any import that triggers load_config() | +15 | −0 |
 208|- [ ] `c9cc868` | 2026-05-27 | `yangtb` | fix(feishu): return CallBackCard in approval card action to update card inline | +13 | −3 |
@@ -207,7 +207,7 @@
 220|- [ ] `10d296e` | 2026-05-23 | `yangtb` | feat(memory): owner.memory.prefetch_enabled — disable passive Viking recall | +24 | −5 |
 221|- [ ] `5311fe2` | 2026-05-23 | `yangtb` | feat: migrate personal profile from yangtb to owner | +49 | −12080 |
 222|- [ ] `4e7faf4` | 2026-05-22 | `yangtb` | fix(xai-oauth): dual-field argument extraction for codex_responses normalize | +36 | −7 |
-223|- [ ] `611f972` | 2026-05-22 | `yangtb` | config: add damodel provider rate limiting to owner/yangtb profiles | +6 | −0 |
+223|- [⏸️ 已决策·暂不迁移（rate limiter 不存在于 owner-v16，需整体评估）] `611f972` | 2026-05-22 | `yangtb` | config: add damodel provider rate limiting to owner/yangtb profiles | +6 | −0 |
 224|- [ ] `288342c` | 2026-05-22 | `yangtb` | yangtb-patch: gateway session — add API disconnect recovery context + skills_loaded tracking | +26 | −1 |
 225|- [x] ⏭️ 跳过 `c03e8da` | 2026-05-22 | `yangtb` | Merge upstream/main into owner | +0 | −0 |
 226|- [x] ⚠️ 废弃：上游已重构，_limiter 不存在 `30ab336` | 2026-05-22 | `yangtb` | fix(credential_pool): False sentinel bypasses _limiter None check in select() | +3 | −1 |
@@ -218,7 +218,7 @@
 231|- [ ] `489aafd` | 2026-05-22 | `yangtb` | P31: 飞书审批卡片"永久允许"按钮可配置隐藏 | +61 | −28 |
 232|- [ ] `64f53b1` | 2026-05-22 | `yangtb` | feat: add message:receive hook scaffolding for Viking context hint | +68 | −1 |
 233|- [ ] `287a391` | 2026-05-22 | `yangtb` | feat(feishu): inline_code_copy configurable via patch.yaml, default off | +24 | −4 |
-234|- [ ] `40e43ab` | 2026-05-22 | `yangtb` | feat(rate-limiter): add stepped cooldown + sliding window fixes | +574 | −15 |
+234|- [⏸️ 已决策·暂不迁移（rate limiter 不存在于 owner-v16，需整体评估）] `40e43ab` | 2026-05-22 | `yangtb` | feat(rate-limiter): add stepped cooldown + sliding window fixes | +574 | −15 |
 235|- [ ] `89476ee` | 2026-05-22 | `yangtb` | 删除废弃的 viking-commit-runner.py wrapper | +0 | −5 |
 236|- [ ] `5cd5d81` | 2026-05-21 | `yangtb` | chore(scripts): reorganize mac-specific scripts + add backup config | +227 | −111 |
 237|- [ ] `54af397` | 2026-05-21 | `yangtb` | refactor(patch): consolidate hook configs under yangtb.hook namespace | +27 | −22 |
