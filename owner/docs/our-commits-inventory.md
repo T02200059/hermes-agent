@@ -172,7 +172,7 @@
 172|- [ ] `d399df6` | 2026-05-30 | `yangtb` | feat(tools): add unified_diff_patch tool with exact line-number replacement | +551 | −5 |
 173|- [ ] `2458489` | 2026-05-30 | `yangtb` | chore(owner): P12 orphan removal + Phase1 docs + minor config updates | +39 | −116 |
 174|- [ ] `3141715` | 2026-05-30 | `yangtb` | fix(feishu): resolve sender name for approval card using open_id instead of short user_id | +5 | −2 |
-175|- [ ] `90c9f20` | 2026-05-30 | `yangtb` | feat(patch): feishu: raise auto_card_threshold to 41, add interim/tool_progress settings | +7 | −1 |
+175|- [x] ✅ 已迁移 `1a4aa7bf6` `90c9f20` | 2026-05-30 | `yangtb` | feat(patch): feishu: raise auto_card_threshold to 41, add interim/tool_progress settings | +7 | −1 |
 176|- [ ] `08253ae` | 2026-05-29 | `yangtb` | chore: remove obsolete yangtb/scripts/send_daily_report.py (was accidentally committed by daily-report cron, caused persistent merge conflicts) | +0 | −76 |
 177|- [x] ✅ 已迁移 `2c383a2` | 2026-05-29 | `yangtb` | merge: resolve conflict with gitlab/yangtb — keep HEAD P35+P36, adopt yangtb's send_daily_report (5-26 version) | +0 | −0 |
 178|- [ ] `480bf03` | 2026-05-29 | `yangtb` | fix(qqbot): add 'dm' chat_type to approval authorization | +2 | −3291 |
@@ -252,12 +252,12 @@
 266|- [ ] `5110f6b` | 2026-05-19 | `tianbao.yang` | i18n: translate gateway lifecycle/busy-ack/steer/inactivity messages to Chinese | +480 | −36 |
 267|- [ ] `4d33091` | 2026-05-19 | `tianbao.yang` | fix(feishu): add early-typing reaction when chat_lock is held | +21 | −0 |
 268|- [ ] `e2fc1d0` | 2026-05-19 | `tianbao.yang` | auditor-guard: 修复 import 崩溃 + 新增 explain-only 模式 + JSON2 飞书卡片通知 | +349 | −70 |
-269|- [ ] `d140932` | 2026-05-18 | `tianbao.yang` | feat(feishu): remove tool-activity filter from auto-card logic | +1 | −41 |
-270|- [ ] `becd553` | 2026-05-18 | `tianbao.yang` | fix(feishu): add auto-card retry (3 attempts) + logging before plain-text fallback | +31 | −4 |
+269|- [x] ✅ 已迁移 `1a4aa7bf6` `d140932` | 2026-05-18 | `tianbao.yang` | feat(feishu): remove tool-activity filter from auto-card logic | +1 | −41 |
+270|- [x] ✅ 已迁移 `1a4aa7bf6` `becd553` | 2026-05-18 | `tianbao.yang` | fix(feishu): add auto-card retry (3 attempts) + logging before plain-text fallback | +31 | −4 |
 271|- [ ] `14d7ea7` | 2026-05-18 | `tianbao.yang` | fix: remove remaining provider_name traces after v0.14.0 merge | +0 | −2 |
 272|- [ ] `c4d72ab` | 2026-05-18 | `tianbao.yang` | merge: sync yangtb with upstream v0.14.0 (v2026.5.16) | +0 | −0 |
-273|- [ ] `429c8d5` | 2026-05-18 | `tianbao.yang` | feat(feishu): upgrade auto-card to JSON 2.0 schema for heading/table support | +4 | −1 |
-274|- [ ] `06e17c1` | 2026-05-18 | `tianbao.yang` | feat(feishu): auto-card for long text responses when streaming disabled | +251 | −6 |
+273|- [x] ✅ 已迁移 `1a4aa7bf6` `429c8d5` | 2026-05-18 | `tianbao.yang` | feat(feishu): upgrade auto-card to JSON 2.0 schema for heading/table support | +4 | −1 |
+274|- [x] ✅ 已迁移 `1a4aa7bf6` `06e17c1` | 2026-05-18 | `tianbao.yang` | feat(feishu): auto-card for long text responses when streaming disabled | +251 | −6 |
 275|- [ ] `6dee454` | 2026-05-18 | `tianbao.yang` | refactor(auditor-guard): modular architecture v2 | +2644 | −969 |
 276|- [x] ✅ 已迁移 `2d941f4` | 2026-05-17 | `tianbao.yang` | fix: disk-watch-cron.py 路径修正 — cache-cleanup.py 已移至 mac/ 子目录 | +2 | −2 |
 277|- [x] ⚠️ 废弃（auditor-guard 适配，混入 plugins.py + run_agent.py 参数扩展）`b5cbb31` | 2026-05-17 | `tianbao.yang` | fix(auditor): tirith detection + platform-aware delivery | +69 | −21 |
