@@ -235,11 +235,11 @@
 248|- [x] ⚠️ 废弃（yangtb/hooks/auditor-guard 不存在于 owner-v16 — P66 Intent Guard 替代）`7d7cc28` | 2026-05-20 | `tianbao.yang` | feat(auditor-guard): suppress Branch D notification when built-in Approvals already approved the pattern | +42 | −10 |
 249|- [x] ⏭️ 跳过（仅改 yangtb/hooks/auditor-guard/rules.py；auditor-guard 不存在于 owner-v16，已被 P66 Intent Guard 替代）`94ccc55` | 2026-05-20 | `tianbao.yang` | fix(auditor-guard): align APPROVAL_FALLBACK_PATTERNS with Hermes DANGEROUS_PATTERNS + suppress Tirith variation_selector noise | +66 | −51 |
 250|- [x] 📌 待统一处理i18n（纯i18n：approval.py BLOCKED 文案 + feishu.py 审批卡片文案走 t()，en/zh.yaml 各 +25 key，零功能改动）`bb19362` | 2026-05-20 | `tianbao.yang` | feat(i18n): approvals 文案中文化 — 硬编码英文全部接入 t() 翻译 | +111 | −59 |
-251|- [ ] `f138db1` | 2026-05-20 | `tianbao.yang` | refactor: replace plugins/image_gen/openai with openai_native | +388 | −38 |
+251|- [x] ⚠️ 废弃（重命名无真实冲突，且会增加 upstream merge 成本；核心 model 参数已单独迁移）`f138db1` | 2026-05-20 | `tianbao.yang` | refactor: replace plugins/image_gen/openai with openai_native | +388 | −38 |
 252|- [x] ⚠️ 废弃（纯文档md，不迁移）`befa350` | 2026-05-20 | `tianbao.yang` | docs(yangtb): add P30 (bare-domain base_url /v1 auto-append) to patch list | +4 | −3 |
-253|- [ ] `a16843e` | 2026-05-20 | `tianbao.yang` | feat: auto-append /v1 for bare-domain base URLs (normalize_bare_domain_base_url) | +62 | −0 |
-254|- [ ] `b917674` | 2026-05-20 | `tianbao.yang` | fix(agent): acp_args 空列表应存为 None 而非 [] | +1 | −1 |
-255|- [ ] `022d45b` | 2026-05-20 | `tianbao.yang` | feat(image_gen): add model param to image_generate tool + yaml presets; update exchange rate | +52 | −9 |
+253|- [x] ✅ 已迁移 `a16843e` | 2026-05-20 | `tianbao.yang` | feat: auto-append /v1 for bare-domain base URLs (normalize_bare_domain_base_url) | +62 | −0 |
+254|- [x] ✅ 已迁移 `b917674` | 2026-05-20 | `tianbao.yang` | fix(agent): acp_args 空列表应存为 None 而非 [] | +1 | −1 |
+255|- [x] ✅ 已迁移（代码：model 参数；配置：dashscope presets；汇率更新未迁移；openrouter 预留未实现）`022d45b` | 2026-05-20 | `tianbao.yang` | feat(image_gen): add model param to image_generate tool + yaml presets; update exchange rate | +52 | −9 |
 256|- [x] ⏭️ 跳过（混合 commit，各部分均无需迁移：auditor-guard notification/templates 不存在于 v16；backup-hermes-config 静默模式已在 owner/scripts/；backup-viking 已废弃；locales/zh.yaml 单条归 i18n 批次）`f248f27` | 2026-05-20 | `tianbao.yang` | fix(auditor): 飞书卡片段落间 hr 重复横线问题 | +10 | −15 |
 257|- [x] ⏭️ 跳过：revert commit `a6a18b3` | 2026-05-19 | `tianbao.yang` | Revert "feat(transports): add URL-based reasoning_effort support for LKeap/DeepSeek/DaModel" | +0 | −51 |
 258|- [x] ⚠️ 跳过（revert commit）`eb1df5d` | 2026-05-19 | `tianbao.yang` | Revert "refactor: extract _resolve_reasoning_effort helper, merge LKeap dual blocks" | +61 | −79 |
