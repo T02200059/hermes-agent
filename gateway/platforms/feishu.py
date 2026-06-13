@@ -1475,6 +1475,8 @@ class FeishuAdapter(BasePlatformAdapter):
         # Feishu reaction deletion requires the opaque reaction_id returned
         # by create, so we cache it per message_id.
         self._pending_processing_reactions: "OrderedDict[str, str]" = OrderedDict()
+        # Track background early-typing tasks to prevent GC before completion.
+        self._early_typing_tasks: set[asyncio.Task] = set()
         self._load_seen_message_ids()
 
     @staticmethod
@@ -3030,11 +3032,34 @@ class FeishuAdapter(BasePlatformAdapter):
 
         Per-chat lock ensures messages in the same chat are processed one at a
         time (matches openclaw's createChatQueue serial queue behaviour).
+
+        When the lock is held by a previous message's cleanup (e.g. /stop's
+        5-second cancel wait), show Typing immediately so the user knows their
+        message was received and will be processed shortly.
         """
         chat_id = getattr(event.source, "chat_id", "") or "" if event.source else ""
         chat_lock = self._get_chat_lock(chat_id)
+        if chat_lock.locked() and self._reactions_enabled():
+            task = asyncio.create_task(self._early_typing_reaction(event))
+            self._early_typing_tasks.add(task)
+            task.add_done_callback(self._early_typing_tasks.discard)
         async with chat_lock:
             await self.handle_message(event)
+
+    async def _early_typing_reaction(self, event: MessageEvent) -> None:
+        """Add a Typing reaction before chat_lock is acquired.
+
+        The reaction is tracked in _pending_processing_reactions so that the
+        normal on_processing_start / on_processing_complete lifecycle handles
+        dedup and cleanup -- on_processing_start sees the existing entry and
+        skips, on_processing_complete deletes it as usual.
+        """
+        message_id = event.message_id
+        if not message_id or message_id in self._pending_processing_reactions:
+            return
+        reaction_id = await self._add_reaction(message_id, _FEISHU_REACTION_IN_PROGRESS)
+        if reaction_id:
+            self._remember_processing_reaction(message_id, reaction_id)
 
     # =========================================================================
     # Processing status reactions
