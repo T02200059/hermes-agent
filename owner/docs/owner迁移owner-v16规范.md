@@ -2,7 +2,7 @@
 
 > 启动日期：2026-06-12
 > 状态：进行中
-> 最后更新：2026-06-13（加入实战经验）
+> 最后更新：2026-06-13（同步 二次开发规范 迭代：统一 [owner] 注释、强化运行时 patch、官方源码字面干净度优先）
 
 ---
 
@@ -152,7 +152,7 @@ kimi 完成代码后，主 agent 必须检查以下几点：
 | **P2 源码改动最小化** | 源码改动是否只限于必要的集成点？ | 精简源码改动，把逻辑移到 owner/ |
 | **owner/ 目录** | 自定义文件是否放在 owner/ 下？ | 移动文件到 owner/ 对应子目录 |
 | **可移除性** | 删除 owner/ 下的功能目录后，其余部分能否正常运行？ | 解耦依赖 |
-| **[owner-patch] 注释** | 源码中的改动点是否标注了 `[owner-patch]`？ | 补充注释 |
+| **[owner] 注释** | 源码中的改动点是否都加了简洁的 `# [owner] ` 标记（短描述 + 指向 owner/ 位置）？ | 补充并统一为 [owner] 风格 |
 
 **反例**（auto-card 第一次 kimi 改法）：
 - ❌ 181 行新功能代码全部内联到 feishu.py
@@ -164,42 +164,48 @@ kimi 完成代码后，主 agent 必须检查以下几点：
 - ✅ feishu.py 只加了 import + send_card() + 5 行调用（共 87 行）
 - ✅ 删除 `owner/feishu/` 即可移除整个功能
 
-### 7.3 [owner-patch] 注释规范
+### 7.3 [owner] 注释规范
 
-**所有在官方源码中的改动点**，必须在改动行附近添加 `[owner-patch]` 注释，方便后续 sync fork 时快速识别定制改动。
+**所有在官方源码中的改动点**，必须在改动行附近添加简洁的 `# [owner] ` 注释，方便后续 sync fork 时快速识别定制改动，并保持官方文件与上游的字面 diff 尽可能小。
 
-**格式**：
+**格式**（统一为短描述 + 指向 owner/）：
 ```python
-# [owner-patch] auto-card: try auto-card before plain-text fallback
+# [owner] auto-card: try auto-card before plain-text fallback
 auto_card_result = await try_auto_card(self, formatted, metadata)
 if auto_card_result is not None:
     return auto_card_result
 ```
 
 **规则**：
-- 每个改动点（import、方法新增、逻辑插入）都要标注
-- 注释放在改动行的**上一行**或**同一行行尾**
-- 纯新增的方法（如 `send_card()`）在方法定义上方标注
-- import 语句在同一行行尾标注
+- 优先使用运行时 patch / 委托方式，官方文件只留极薄胶水（import + 调用 + 早期返回）。
+- 每个改动点（import、方法新增、逻辑插入、schema 扩展点）都要标注。
+- 注释放在改动行的**上一行**或**同一行行尾**。
+- 纯新增的方法（如 `send_card()`）在方法定义上方标注。
+- import 语句在同一行行尾标注。
+- 对于 schema / 常量等官方定义，**不要在官方文件里直接改字面定义**，而是通过 owner/ 模块做运行时 post-registration patch，并在胶水处加 `[owner]` 标记。
 
 **示例**：
 ```python
-# [owner-patch] auto-card: REST API card sending (owner/feishu/auto_card.py)
-from owner.feishu.auto_card import try_auto_card
+# [owner] auto-card: REST API card sending (owner/feishu/card_sender.py)
+from owner.feishu.card_sender import send_card_via_rest
 
 class FeishuAdapter(BasePlatformAdapter):
-    # [owner-patch] auto-card: send_card() REST API method
+    # [owner] auto-card + card sending: thin delegation only
     async def send_card(self, chat_id, card, metadata=None):
-        ...
+        return await send_card_via_rest(self, chat_id, card, metadata)
 
     async def send(self, chat_id, content, ...):
         formatted = self.format_message(content)
-        # [owner-patch] auto-card: try auto-card before plain-text fallback
+        # [owner] try auto-card before plain-text fallback
         auto_card_result = await try_auto_card(self, formatted, metadata)
         if auto_card_result is not None:
             return auto_card_result
         chunks = self.truncate_message(...)
 ```
+
+**schema 扩展反例 → 正例**：
+- ❌ 在 `tools/image_generation_tool.py` 里直接修改 `IMAGE_GENERATE_SCHEMA` 字面定义加 "model" 字段。
+- ✅ 官方文件 schema 保持与上游一致；在 `owner/tools/schema_patches.py` 中运行时 mutate，并在胶水导入处加 `# [owner]` 注释。
 
 ### 7.4 Commit 工作流
 
@@ -243,9 +249,11 @@ class FeishuAdapter(BasePlatformAdapter):
 ## 注意事项
 - 先用 `git show owner:<file>` 查看源代码，不要直接改 owner 分支
 - 核心逻辑放在 owner/ 下的对应子目录
-- gateway/platforms/feishu.py 等官方源码只做 import 编排
+- 官方源码（feishu.py、tools/*.py 等）只做极薄的 import + 委托/早期返回，**不要直接修改 schema/常量字面定义**
+- 所有官方改动点必须加简洁的 `# [owner] ` 标记
+- 能用运行时 post-registration patch 的（尤其是 schema 扩展），就不要改官方文件源码
 - 改完后跑测试确认没破坏
-- 每个文件改完后用 git diff 确认改动合理
+- 每个文件改完后用 git diff 确认官方文件字面 diff 已最小化
 
 ## 输出要求
 完成后把结果写到 /tmp/kimi-<feature>-result.md
@@ -262,6 +270,8 @@ class FeishuAdapter(BasePlatformAdapter):
 4. **配置命名空间**：owner 分支用 `owner.feishu.card.*`，但 owner-v16 可能用 `owner.feishu_card.*`。迁移时保持与目标分支一致。
 
 5. **send_card() 必须用 REST API**：不能用 lark_oapi SDK，否则会触发 WebSocket token 刷新导致断连。必须用 `message.create` API，不能用 `reply` API。
+
+6. **schema 扩展不要直接改官方文件字面**：image_generate 的 "model" 参数、send_message 的 "card" 参数等，必须通过 `owner/tools/schema_patches.py` 做运行时 patch，官方 tool 文件的 SCHEMA 常量保持与上游一致。这是本次 sync 清理验证的最有效模式之一。
 
 ---
 
