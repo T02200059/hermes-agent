@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 DEFAULT_ENDPOINT = "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
-DEFAULT_API_KEY_ENV = "DASHSCOPE_COMPANY_API_KEY"
+DEFAULT_API_KEY_ENV = "DASHSCOPE_API_KEY"
 
 _ASPECT_RATIO_SIZES = {
     "landscape": "1024*576",  # 16:9
