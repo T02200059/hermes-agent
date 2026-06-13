@@ -279,11 +279,11 @@
 293|- [ ] `7a05837` | 2026-05-15 | `tianbao.yang` | fix(delivery_helpers): set chat_id in extra dict for _build_headers | +2 | −0 |
 294|- [ ] `50880df` | 2026-05-15 | `tianbao.yang` | fix(delivery_helpers): resolve chat_id from HERMES_SESSION_KEY fallback | +55 | −1 |
 295|- [ ] `8f5e18e` | 2026-05-15 | `tianbao.yang` | fix(auditor-guard): deliver hard block message to Feishu chat | +2 | −0 |
-296|- [ ] `f8a5208` | 2026-05-15 | `tianbao.yang` | feat(auditor-guard): enhanced observability logging | +26 | −3 |
-297|- [ ] `68e12e8` | 2026-05-15 | `tianbao.yang` | feat(auditor-guard): emotion-based blocking + user approval check | +86 | −16 |
-298|- [ ] `923004a` | 2026-05-15 | `tianbao.yang` | refactor(hooks): extract shared utilities to hooks/common/ | +667 | −32 |
-299|- [ ] `05d2d06` | 2026-05-15 | `tianbao.yang` | feat: add feishu_get_messages tool for reading chat message history | +311 | −0 |
-300|- [ ] `67cf0fe` | 2026-05-15 | `tianbao.yang` | fix: add qwen3.6/3.5 family entries to DEFAULT_CONTEXT_LENGTHS | +6 | −3 |
+296|- [x] ⚠️ 废弃（auditor-guard hook 不存在于 owner-v16）`f8a5208` | 2026-05-15 | `tianbao.yang` | feat(auditor-guard): enhanced observability logging | +26 | −3 |
+297|- [x] ⚠️ 废弃（auditor-guard hook 不存在于 owner-v16）`68e12e8` | 2026-05-15 | `tianbao.yang` | feat(auditor-guard): emotion-based blocking + user approval check | +86 | −16 |
+298|- [x] ⚠️ 废弃（hooks/common/ 不存在于 owner-v16）`923004a` | 2026-05-15 | `tianbao.yang` | refactor(hooks): extract shared utilities to hooks/common/ | +667 | −32 |
+299|- [⏸️ 已决策·暂不迁移（feishu_get_messages 不存在于 owner-v16，需评估必要性）] `05d2d06` | 2026-05-15 | `tianbao.yang` | feat: add feishu_get_messages tool for reading chat message history | +311 | −0 |
+300|- [x] ✅ 已覆盖（qwen3.6-plus 已在 model_metadata.py）`67cf0fe` | 2026-05-15 | `tianbao.yang` | fix: add qwen3.6/3.5 family entries to DEFAULT_CONTEXT_LENGTHS | +6 | −3 |
 301|- [x] ⏭️ 跳过 `f36852f` | 2026-05-14 | `tianbao.yang` | Merge upstream/main into yangtb (4 conflicts resolved intelligently) | +0 | −0 |
 302|- [x] ⚠️ 废弃（Viking 已停用）`dd36093` | 2026-05-14 | `tianbao.yang` | chore: update daily viking health report script + add .serena config | +135 | −1 |
 303|- [x] ⚠️ 废弃（Viking 已停用）`1ca28d8` | 2026-05-14 | `tianbao.yang` | feat(yangtb): rewrite daily-viking-health-report with full OpenViking diagnostics | +263 | −31 |
