@@ -2,7 +2,7 @@
 
 > 本文档记录在完成核心提取（如 diff cards、审批卡片 + open_id→中文名缓存）之后，计划在**后续迁移阶段**再处理的非 P0 优化项。
 > 目标是持续降低官方文件（尤其是 gateway/platforms/）的 owner 痕迹，便于未来 upstream sync。
-> 最后更新：2026-06
+> 最后更新：2026-06-14（unified_diff_patch 迁移规范合规收尾）
 
 ## 当前已完成（参考）
 
@@ -11,6 +11,18 @@
   - feishu.py 只剩薄胶水 + 委托 + 统一短 `[owner]` 标记
   - 5 个非飞书 adapter 已改用 `**kwargs` 减少显式污染（本次 1+3 项完成）
   - 测试已清理对 legacy `_sender_name_cache` 的直接依赖
+
+- unified_diff_patch 迁移后规范合规收尾（2026-06-14，按 review 建议逐个补齐）
+  - `agent/display.py`：在 `extract_edit_diff` 两处 if 条件上补短 `# [owner]` 标记（说明 inline diff 支持来自 owner/tools/unified_diff_patch/）
+  - `agent/tool_guardrails.py`：在三个 block/halt 消息增强点（exact_failure / no_progress / same_tool_failure）各加 `# [owner] guardrails UX` 短标记 + 说明来源
+  - `toolsets.py`：补齐 hermes-acp（ACP/编辑器 coding 姿势）列表中的 "unified_diff_patch" + 对应 `[owner]` 注释（此前遗漏）
+  - `tools/file_tools.py`：在 legacy patch register 注释处补充说明“保留死代码是为了最小化未来 upstream sync 的 textual diff”
+  - 所有改动均遵循《二次开发规范》“官方文件字面干净 + 短统一 [owner] 标记 + 指向 owner/”要求
+  - 经验教训（记录供后续迁移参考）：
+    - 即使是迁移后的小 polish fix（fix(agent):），只要触碰 agent/、toolsets.py 等官方文件，必须**立即**加标记，不能裸奔。
+    - 大迁移 commit 后必须全量 grep 扫描所有显式 toolset 列表（包括 hermes-acp、各种 posture），不能只改 _HERMES_CORE_TOOLS 和 "file"。
+    - legacy 实现留在官方文件（只禁注册）是权衡 sync 冲突 vs. 可移除性的结果；删除需谨慎。
+    - per-file commit 纪律和迁移 checklist（规范 7.2）在收尾阶段同样适用。
 
 ## 待办项（按推荐优先级）
 
