@@ -415,7 +415,7 @@
 - [ ] `bb542ba` | 2026-05-28 | `yangtb` | feat: diff 卡片三阶段渐进展开 (compact → expanded → full) | +189 | −39 |
 - [ ] `bec5b1e` | 2026-05-28 | `yangtb` | feat: feishu diff cards for write_file + skill_manage + purple header styling | +76 | −9 |
 - [ ] `d452156` | 2026-05-28 | `yangtb` | i18n: gateway lifecycle emoji → skyline series (🌇🌆🌃🏙) | +8 | −8 |
-- [ ] `dd0b53e` | 2026-05-28 | `yangtb` | fix(tui): pass missing spinner prop to FaceTicker in StatusRule | +1 | −1 |
+- [x] ⏭️ 跳过（已被 owner-v16 P14 迁移 commit 59ebc9954 完整覆盖）`dd0b53e` | 2026-05-28 | `yangtb` | fix(tui): pass missing spinner prop to FaceTicker in StatusRule | +1 | −1 |
 - [ ] `de36b03` | 2026-05-28 | `yangtb` | refactor(feishu): resolve sender name synchronously before approval card response | +13 | −34 |
 - [ ] `ed7d88e` | 2026-05-28 | `yangtb` | chore: add xiaomi rate limit config to patch.yaml | +3 | −0 |
 - [ ] `3198a71` | 2026-05-29 | `yangtb` | fix(agent): 向 system_prompt 注入 current_user 字段，消除 API 响应中的占位符 | +129 | −24 |
