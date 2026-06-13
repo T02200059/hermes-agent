@@ -182,6 +182,7 @@
 
 [x] ⏭️ 跳过 `a77231c` | 2026-05-28 | `yangtb` | Merge upstream/main into owner (v0.14.0+) | +0 | −0 |
 198|- [ ] `c5b6992` | 2026-05-28 | `yangtb` | chore: remove viking-hint hook (empty stub, never implemented) | +0 | −49 |
+199|- [x] ⚠️ 废弃（手动补录 — 功能已被 upstream #15844 + custom_providers Step 0b 覆盖）`4a60dd1c` | 2026-05-28 | `yangtb` | fix(model_metadata): support dict format provider models in get_model_context_length (P41) | +21 | −12 |
 199|- [x] 📌 待统一处理i18n（纯i18n，仅locales文件）`0c23b27` | 2026-05-27 | `yangtb` | i18n(zh): add all 85 missing tirith rule translations, remove 2 stale entries | +193 | −9 |
 200|- [ ] `bf295cd` | 2026-05-27 | `yangtb` | refactor(gateway): 外部 restart 走 launchctl kickstart -k 原子化生命周期 | +24 | −13 |
 201|- [x] ⚠️ 废弃（纯文档md，不迁移）`67373f7` | 2026-05-27 | `yangtb` | docs(owner): 新增 P39 飞书 Diff 卡片 + P40 step_callback 去 hooks 依赖 | +4 | −2 |
@@ -226,7 +227,7 @@
 240|- [ ] `b791919` | 2026-05-21 | `yangtb` | chore(hooks): switch auditor-guard/memory-guard to DAMODEL API, remove memory-guard | +8 | −174 |
 241|- [ ] `37e6fba` | 2026-05-21 | `yangtb` | feat: model-level extra_body injection + cron args + backup scripts | +634 | −112 |
 242|- [ ] `9e96955` | 2026-05-21 | `yangtb` | feat(provider): add provider_custom_name field for custom provider identity | +17 | −6 |
-243|- [ ] `c7e5aaa` | 2026-05-20 | `yangtb` | fix: fall through to hardcoded defaults when model context length probe fails (prevent deepseek-v4-flash 1M default from being bypassed) | +50 | −6 |
+243|- [x] ⚠️ 废弃（probe fall-through 已被 2e61de063 覆盖，P41 完整功能已被 custom_providers Step 0b 覆盖）`c7e5aaa` | 2026-05-20 | `yangtb` | fix: fall through to hardcoded defaults when model context length probe fails (prevent deepseek-v4-flash 1M default from being bypassed) | +50 | −6 |
 244|- [x] ⚠️ 废弃（yangtb/hooks/audit-agent 不存在于 owner-v16）`ed95a26` | 2026-05-20 | `yangtb` | chore: remove audit-agent hook (agent:end file-change detection) | +1 | −973 |
 245|- [x] ⚠️ 废弃（修 b6e9852 hook chain 传参 bug — b6e9852 已废弃，hook chain 在 owner-v16 已重构）`2218a70` | 2026-05-20 | `yangtb` | fix: agent.chat_id -> agent._chat_id (AIAgent stores as _chat_id) | +6 | −6 |
 246|- [x] ⚠️ 废弃（yangtb/hooks/auditor-guard 不存在于 owner-v16 — owner-v16 hook chain 已重构，P66 Intent Guard 替代）`b6e9852` | 2026-05-20 | `yangtb` | fix: pass platform/chat_id/user_message through pre_tool_call hook chain | +118 | −3 |
