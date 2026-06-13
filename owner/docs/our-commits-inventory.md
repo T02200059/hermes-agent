@@ -431,11 +431,11 @@
 - [x] ⚠️ 废弃（临时绕过，已被 `c9cc868a9` 覆盖）`b14a2ee1a` | 2026-04-30 | `tianbao.yang` | fix(feishu): return empty P2CardActionTriggerResponse to avoid CallBackToast NameError in WS client | +3 | −9 |
 - [x] ⚠️ 废弃（临时 revert，已被最终方案覆盖）`598197f91` | 2026-06-12 | `杨天宝` | fix(feishu): comment out CallBackCard response to avoid NameError on CallBackToast | +16 | −9 |
 - [⏸️ 已决策·待后续 i18n 统一处理] `bb19362eb` | 2026-05-20 | `tianbao.yang` | feat(i18n): approvals 文案中文化 — 硬编码英文全部接入 t() 翻译 | +111 | −59 |
-- [ ] `489aafd05` | 2026-05-22 | `yangtb` | P31: 飞书审批卡片"永久允许"按钮可配置隐藏 | +61 | −28 |
-- [ ] `c9cc868a9` | 2026-05-27 | `yangtb` | fix(feishu): return CallBackCard in approval card action to update card inline | +13 | −3 |
-- [ ] `1c887efaa` | 2026-05-27 | `yangtb` | feat(feishu): approvals 卡片回调异步更新用户名，显示命令内容 | +67 | −17 |
-- [ ] `de36b0341` | 2026-05-28 | `yangtb` | refactor(feishu): resolve sender name synchronously before approval card response | +13 | −34 |
-- [ ] `31417156d` | 2026-05-30 | `yangtb` | fix(feishu): resolve sender name for approval card using open_id instead of short user_id | +5 | −2 |
+- [x] ✅ 已迁移 `e64a1aeac` `489aafd05` | 2026-05-22 | `yangtb` | P31: 飞书审批卡片"永久允许"按钮可配置隐藏 | +61 | −28 |
+- [x] ✅ 已迁移 `e64a1aeac` `c9cc868a9` | 2026-05-27 | `yangtb` | fix(feishu): return CallBackCard in approval card action to update card inline | +13 | −3 |
+- [x] ✅ 已迁移 `e64a1aeac` `1c887efaa` | 2026-05-27 | `yangtb` | feat(feishu): approvals 卡片回调异步更新用户名，显示命令内容 | +67 | −17 |
+- [x] ✅ 已迁移 `e64a1aeac` `de36b0341` | 2026-05-28 | `yangtb` | refactor(feishu): resolve sender name synchronously before approval card response | +13 | −34 |
+- [x] ✅ 已迁移 `e64a1aeac` `31417156d` | 2026-05-30 | `yangtb` | fix(feishu): resolve sender name for approval card using open_id instead of short user_id | +5 | −2 |
 
 ### Memory 提案审批（P55）
 
