@@ -240,7 +240,7 @@
 253|- [ ] `a16843e` | 2026-05-20 | `tianbao.yang` | feat: auto-append /v1 for bare-domain base URLs (normalize_bare_domain_base_url) | +62 | −0 |
 254|- [ ] `b917674` | 2026-05-20 | `tianbao.yang` | fix(agent): acp_args 空列表应存为 None 而非 [] | +1 | −1 |
 255|- [ ] `022d45b` | 2026-05-20 | `tianbao.yang` | feat(image_gen): add model param to image_generate tool + yaml presets; update exchange rate | +52 | −9 |
-256|- [ ] `f248f27` | 2026-05-20 | `tianbao.yang` | fix(auditor): 飞书卡片段落间 hr 重复横线问题 | +10 | −15 |
+256|- [x] ⏭️ 跳过（混合 commit，各部分均无需迁移：auditor-guard notification/templates 不存在于 v16；backup-hermes-config 静默模式已在 owner/scripts/；backup-viking 已废弃；locales/zh.yaml 单条归 i18n 批次）`f248f27` | 2026-05-20 | `tianbao.yang` | fix(auditor): 飞书卡片段落间 hr 重复横线问题 | +10 | −15 |
 257|- [x] ⏭️ 跳过：revert commit `a6a18b3` | 2026-05-19 | `tianbao.yang` | Revert "feat(transports): add URL-based reasoning_effort support for LKeap/DeepSeek/DaModel" | +0 | −51 |
 258|- [x] ⚠️ 跳过（revert commit）`eb1df5d` | 2026-05-19 | `tianbao.yang` | Revert "refactor: extract _resolve_reasoning_effort helper, merge LKeap dual blocks" | +61 | −79 |
 259|- [x] ⏭️ 跳过：revert commit `b30e774` | 2026-05-19 | `tianbao.yang` | Revert "fix: remove hardcoded extra_efforts from _resolve_reasoning_effort" | +15 | −5 |
