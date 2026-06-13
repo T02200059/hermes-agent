@@ -419,7 +419,7 @@
 - [ ] `de36b03` | 2026-05-28 | `yangtb` | refactor(feishu): resolve sender name synchronously before approval card response | +13 | −34 |
 - [ ] `ed7d88e` | 2026-05-28 | `yangtb` | chore: add xiaomi rate limit config to patch.yaml | +3 | −0 |
 - [ ] `3198a71` | 2026-05-29 | `yangtb` | fix(agent): 向 system_prompt 注入 current_user 字段，消除 API 响应中的占位符 | +129 | −24 |
-- [ ] `5a886a4` | 2026-05-29 | `yangtb` | docs: 更新 patch 总列表，新增 P53/P54/P55（37组/45项） | +6 | −3 |
+- [x] ⚠️ 废弃（纯文档md，不迁移）`5a886a4` | 2026-05-29 | `yangtb` | docs: 更新 patch 总列表，新增 P53/P54/P55（37组/45项） | +6 | −3 |
 412|## 复现方式
 413|
 414|```bash
