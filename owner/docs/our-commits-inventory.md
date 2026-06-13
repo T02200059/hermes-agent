@@ -225,7 +225,7 @@
 238|- [ ] `cdddbe2` | 2026-05-21 | `yangtb` | 修复auditor guard hook | +90 | −0 |
 239|- [ ] `75eda7d` | 2026-05-21 | `yangtb` | refactor(hooks): remove mac/shell fallbacks, flatten viking-remember-guard | +93 | −211 |
 240|- [ ] `b791919` | 2026-05-21 | `yangtb` | chore(hooks): switch auditor-guard/memory-guard to DAMODEL API, remove memory-guard | +8 | −174 |
-241|- [ ] `37e6fba` | 2026-05-21 | `yangtb` | feat: model-level extra_body injection + cron args + backup scripts | +634 | −112 |
+241|- [x] ✅ 部分已迁移（cron args 已迁移；model_extra_body + backup scripts 仍待处理）`37e6fba` | 2026-05-21 | `yangtb` | feat: model-level extra_body injection + cron args + backup scripts | +634 | −112 |
 242|- [x] ✅ 已迁移（改为 owner_provider_name，保持 agent.provider 不变，新增 DB 字段写入 sessions/messages）`9e96955` | 2026-05-21 | `yangtb` | feat(provider): add provider_custom_name field for custom provider identity | +17 | −6 |
 243|- [x] ⚠️ 废弃（probe fall-through 已被 2e61de063 覆盖，P41 完整功能已被 custom_providers Step 0b 覆盖）`c7e5aaa` | 2026-05-20 | `yangtb` | fix: fall through to hardcoded defaults when model context length probe fails (prevent deepseek-v4-flash 1M default from being bypassed) | +50 | −6 |
 244|- [x] ⚠️ 废弃（yangtb/hooks/audit-agent 不存在于 owner-v16）`ed95a26` | 2026-05-20 | `yangtb` | chore: remove audit-agent hook (agent:end file-change detection) | +1 | −973 |
