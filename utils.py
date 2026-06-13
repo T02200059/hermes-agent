@@ -392,6 +392,47 @@ def base_url_hostname(base_url: str) -> str:
     return (parsed.hostname or "").lower().rstrip(".")
 
 
+def normalize_bare_domain_base_url(base_url: str) -> str:
+    """Auto-append ``/v1`` for bare-domain base URLs that have no path component.
+
+    The OpenAI Python SDK defaults to ``https://api.openai.com/v1/`` when no
+    custom ``base_url`` is provided, but when a custom ``base_url`` *is*
+    supplied it uses it verbatim — appending ``/chat/completions`` directly.
+    A bare domain like ``https://api.example.com`` therefore produces
+    ``https://api.example.com/chat/completions`` (missing ``/v1``), causing
+    404 errors on OpenAI-compatible providers.
+
+    This helper detects bare domains (no URL path) and appends ``/v1`` so
+    the resulting URL works with the OpenAI SDK out of the box.  URLs that
+    already carry a path (``/v1``, ``/v4``, ``/v3/openai``, ``/anthropic``,
+    etc.) are left untouched — the user's explicit path is respected.
+
+    Examples::
+
+        normalize_bare_domain_base_url("https://api.example.com")
+        → "https://api.example.com/v1"
+        normalize_bare_domain_base_url("https://api.example.com:8080")
+        → "https://api.example.com:8080/v1"
+        normalize_bare_domain_base_url("https://api.example.com/")
+        → "https://api.example.com/v1"
+        normalize_bare_domain_base_url("https://api.example.com/v1")
+        → "https://api.example.com/v1"   # path already present
+        normalize_bare_domain_base_url("https://api.ppinfra.com/v3/openai")
+        → "https://api.ppinfra.com/v3/openai"  # path already present
+    """
+    candidate = str(base_url or "").strip()
+    if not candidate:
+        return candidate
+    try:
+        parsed = urlparse(candidate)
+        if parsed.scheme in ("http", "https") and not parsed.path.strip("/"):
+            normalized = candidate.rstrip("/") + "/v1"
+            return normalized
+    except Exception:
+        pass
+    return candidate
+
+
 # ─── Model Capability Detection ──────────────────────────────────────────────
 
 

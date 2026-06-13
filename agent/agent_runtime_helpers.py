@@ -1367,6 +1367,19 @@ def create_openai_client(agent, client_kwargs: dict, *, reason: str, shared: boo
     client_kwargs = dict(client_kwargs)
     _validate_proxy_env_urls()
     _validate_base_url(client_kwargs.get("base_url"))
+    # [owner-patch] P30: auto-append /v1 for bare-domain base URLs (no path).
+    # The OpenAI SDK only adds /v1/ to its default base_url; custom base_urls
+    # are used verbatim, so a bare domain like https://api.example.com produces
+    # https://api.example.com/chat/completions (missing /v1) and 404s.
+    from utils import normalize_bare_domain_base_url
+    _raw_bu = client_kwargs.get("base_url") or ""
+    _norm_bu = normalize_bare_domain_base_url(_raw_bu)
+    if _norm_bu != _raw_bu:
+        client_kwargs["base_url"] = _norm_bu
+        _ra().logger.info(
+            "Auto-appended /v1 to bare-domain base_url: %s → %s (%s)",
+            _raw_bu, _norm_bu, reason,
+        )
     if agent.provider == "copilot-acp" or str(client_kwargs.get("base_url", "")).startswith("acp://copilot"):
         from agent.copilot_acp_client import CopilotACPClient
 
