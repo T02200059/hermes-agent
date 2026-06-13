@@ -1001,12 +1001,12 @@ from tools.registry import registry, tool_error
 
 IMAGE_GENERATE_SCHEMA = {
     "name": "image_generate",
-    # [owner-patch] image_gen model param: schema description updated
+    # [owner] schema extended at runtime via owner/tools/schema_patches.py
+    # (keeps this literal identical to upstream for easier sync)
     "description": (
         "Generate high-quality images from text prompts. The underlying "
-        "backend (FAL, OpenAI, etc.) and model are user-configured; the "
-        "agent may pass 'model' to override the active preset's model or "
-        "switch presets via alias. Returns either a URL or an absolute file "
+        "backend (FAL, OpenAI, etc.) and model are user-configured and not "
+        "selectable by the agent. Returns either a URL or an absolute file "
         "path in the `image` field; display it with markdown "
         "![description](url-or-path) and the gateway will deliver it. When "
         "the active terminal backend has a different filesystem, successful "
@@ -1025,15 +1025,6 @@ IMAGE_GENERATE_SCHEMA = {
                 "enum": list(VALID_ASPECT_RATIOS),
                 "description": "The aspect ratio of the generated image. 'landscape' is 16:9 wide, 'portrait' is 16:9 tall, 'square' is 1:1.",
                 "default": DEFAULT_ASPECT_RATIO,
-            },
-            # [owner-patch] image_gen model param: optional model/alias override
-            "model": {
-                "type": "string",
-                "description": (
-                    "Optional model name or alias. Overrides the active "
-                    "preset's model. Use aliases like 'wan' or 'qwen' to "
-                    "switch presets entirely."
-                ),
             },
         },
         "required": ["prompt"],
@@ -1080,7 +1071,7 @@ def _read_configured_image_provider():
     return None
 
 
-# [owner-patch] image_gen model param: pass model override to provider
+# [owner] pass model override to provider (private extension)
 def _dispatch_to_plugin_provider(prompt: str, aspect_ratio: str, model_from_args: str = ""):
     """Route the call to a plugin-registered provider when one is selected.
 
@@ -1167,7 +1158,7 @@ def _handle_image_generate(args, **kw):
     if not prompt:
         return tool_error("prompt is required for image generation")
     aspect_ratio = args.get("aspect_ratio", DEFAULT_ASPECT_RATIO)
-    # [owner-patch] image_gen model param: read optional model alias from args
+    # [owner] read optional model alias (for private preset switching; schema patched in owner/tools/)
     model_from_args = args.get("model", "").strip() if isinstance(args.get("model"), str) else ""
     task_id = kw.get("task_id")
 
