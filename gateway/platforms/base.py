@@ -2092,6 +2092,20 @@ def parse_chained_commands(text: str, sep: str = ";;") -> list[str]:
     return [cmd.strip() for cmd in text.split(sep) if cmd.strip()]
 
 
+def expand_chained_quick_alias(target: str, user_args: str = "") -> list[str]:
+    """Build chain_text from alias target + user args and split on ;;.
+
+    Central helper to avoid duplicating the 'f"{target} {user_args}".strip() + parse'
+    pattern in quick command alias expansion across CLI, gateway, and TUI surfaces.
+
+    [owner-patch] Chained quick commands (Pxx general enhancement).
+    Parser and this expander live in base.py so all surfaces share the logic;
+    each surface still owns its own (sync vs async) dispatch of the resulting list.
+    """
+    chain_text = f"{target} {user_args}".strip()
+    return parse_chained_commands(chain_text)
+
+
 class BasePlatformAdapter(ABC):
     """
     Base class for platform adapters.
