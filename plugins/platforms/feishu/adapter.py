@@ -145,6 +145,13 @@ from hermes_constants import get_hermes_home
 from utils import atomic_json_write, env_float, env_int
 # [owner] import try_auto_card (see owner/feishu/auto_card.py)
 from owner.feishu.auto_card import try_auto_card
+# [owner] approval: open_id -> 中文名 cache + card builders (see owner/feishu/sender_name_cache.py + owner/feishu/approval.py)
+from owner.feishu.approval import (
+    build_approval_card,
+    build_resolved_approval_card,
+    get_allow_permanent,
+)
+from owner.feishu.sender_name_cache import FeishuSenderNameCache
 
 logger = logging.getLogger(__name__)
 
@@ -207,7 +214,7 @@ _DEFAULT_WEBHOOK_PATH = "/feishu/webhook"
 # ---------------------------------------------------------------------------
 
 _FEISHU_DEDUP_TTL_SECONDS = 24 * 60 * 60          # 24 hours — matches openclaw
-_FEISHU_SENDER_NAME_TTL_SECONDS = 10 * 60          # 10 minutes sender-name cache
+# _FEISHU_SENDER_NAME_TTL_SECONDS moved into owner/feishu/sender_name_cache.py (encapsulated)
 _FEISHU_WEBHOOK_MAX_BODY_BYTES = 1 * 1024 * 1024   # 1 MB body limit
 _FEISHU_WEBHOOK_RATE_WINDOW_SECONDS = 60            # sliding window for rate limiter
 _FEISHU_WEBHOOK_RATE_LIMIT_MAX = 120               # max requests per window per IP — matches openclaw
@@ -225,19 +232,8 @@ _APPROVAL_CHOICE_MAP: Dict[str, str] = {
 }
 
 
-def _approval_label(choice: str) -> str:
-    """Return an i18n label for a resolved approval choice."""
-    from agent.i18n import t
-
-    # [owner] P9: resolved card labels via i18n (locales: approval.feishu_resolved_*)
-    key_map = {
-        "once": "feishu_resolved_once",
-        "session": "feishu_resolved_session",
-        "always": "feishu_resolved_always",
-        "deny": "feishu_resolved_deny",
-    }
-    return t(f"approval.{key_map.get(choice, 'feishu_resolved_default')}")
-
+# _approval_label and approval card builders moved to owner/feishu/approval.py
+# (see build_resolved_approval_card + get_allow_permanent for thin delegation)
 
 _FEISHU_BOT_MSG_TRACK_SIZE = 512                   # LRU size for tracking sent message IDs
 _FEISHU_REPLY_FALLBACK_CODES = frozenset({230011, 231003})  # reply target withdrawn/missing → create fallback
@@ -1453,7 +1449,9 @@ class FeishuAdapter(BasePlatformAdapter):
         self._seen_message_order: List[str] = []
         self._dedup_state_path = get_hermes_home() / "feishu_seen_message_ids.json"
         self._dedup_lock = threading.Lock()
-        self._sender_name_cache: Dict[str, tuple[str, float]] = {}  # sender_id → (name, expire_at)
+        # [owner] approval: name cache instance (open_id -> 中文名 only; see owner/feishu/sender_name_cache.py)
+        # created lazily on first use (or bind after connect) so we don't depend on client at __init__ time
+        self._name_cache: "FeishuSenderNameCache" = None  # type: ignore[assignment]
         self._webhook_rate_counts: Dict[str, tuple[int, float]] = {}  # rate_key → (count, window_start)
         self._webhook_anomaly_counts: Dict[str, tuple[int, str, float]] = {}  # ip → (count, last_status, first_seen)
         self._card_action_tokens: Dict[str, float] = {}  # token → first_seen_time
@@ -1912,67 +1910,29 @@ class FeishuAdapter(BasePlatformAdapter):
     ) -> SendResult:
         """Send an interactive card with approval buttons.
 
-        The buttons carry ``hermes_action`` in their value dict so that
-        ``_handle_card_action_event`` can intercept them and call
-        ``resolve_gateway_approval()`` to unblock the waiting agent thread.
+        Thin glue only — real card construction, i18n, permanent config and
+        name pre-warm live in owner/ (see owner/feishu/approval.py + sender_name_cache.py).
         """
         if not self._client:
             return SendResult(success=False, error="Not connected")
 
         try:
-            # [owner] P45: pre-warm sender name cache so callback reads real name with zero delay
-            if sender_open_id and not self._get_cached_sender_name(sender_open_id):
-                asyncio.create_task(
-                    self._resolve_sender_name_from_api(sender_open_id, is_bot=sender_is_bot)
-                )
+            # [owner] approval: ensure name cache + pre-warm open_id -> 中文名 for zero-delay in callback
+            # (see owner/feishu/sender_name_cache.py)
+            if self._name_cache is None:
+                self._name_cache = FeishuSenderNameCache(self._client)
+            if sender_open_id and self._name_cache:
+                self._name_cache.pre_warm(sender_open_id, is_bot=sender_is_bot)
 
             approval_id = next(self._approval_counter)
-            cmd_preview = command[:3000] + "..." if len(command) > 3000 else command
 
-            # [owner] P31: allow hiding the permanent-approval button via patch.yaml
-            allow_permanent = self._is_approval_allow_permanent()
-
-            from agent.i18n import t
-
-            def _btn(label: str, action_name: str, btn_type: str = "default") -> dict:
-                return {
-                    "tag": "button",
-                    "text": {"tag": "plain_text", "content": label},
-                    "type": btn_type,
-                    "value": {"hermes_action": action_name, "approval_id": approval_id},
-                }
-
-            buttons = [
-                _btn(t("approval.feishu_btn_once"), "approve_once", "primary"),
-                _btn(t("approval.feishu_btn_session"), "approve_session"),
-            ]
-            if allow_permanent:
-                buttons.append(_btn(t("approval.feishu_btn_always"), "approve_always"))
-            buttons.append(_btn(t("approval.feishu_btn_deny"), "deny", "danger"))
-
-            md_content = f"```\n{cmd_preview}\n```\n" + t(
-                "approval.feishu_reason_label", description=description
+            # [owner] approval: build full interactive card (preview, buttons, title, reason, permanent note)
+            # via owner helper (see owner/feishu/approval.py). Keeps official file diff minimal.
+            card = build_approval_card(
+                command=command,
+                description=description,
+                approval_id=approval_id,
             )
-            if not allow_permanent:
-                md_content += "\n\n" + t("approval.feishu_permanent_disabled")
-
-            card = {
-                "config": {"wide_screen_mode": True},
-                "header": {
-                    "title": {"content": t("approval.feishu_card_title"), "tag": "plain_text"},
-                    "template": "orange",
-                },
-                "elements": [
-                    {
-                        "tag": "markdown",
-                        "content": md_content,
-                    },
-                    {
-                        "tag": "action",
-                        "actions": buttons,
-                    },
-                ],
-            }
 
             payload = json.dumps(card, ensure_ascii=False)
             response = await self._feishu_send_with_retry(
@@ -1985,7 +1945,7 @@ class FeishuAdapter(BasePlatformAdapter):
 
             result = self._finalize_send_result(response, "send_exec_approval failed")
             if result.success:
-                # [owner] P9: keep command for resolved card body
+                # [owner] approval: store command so resolved CallBackCard can show what was executed
                 self._approval_state[approval_id] = {
                     "session_key": session_key,
                     "message_id": result.message_id or "",
@@ -2065,46 +2025,9 @@ class FeishuAdapter(BasePlatformAdapter):
             logger.warning("[Feishu] send_update_prompt failed: %s", exc)
             return SendResult(success=False, error=str(exc))
 
-    @staticmethod
-    def _is_approval_allow_permanent() -> bool:
-        """Return whether the 'Always' approval button should be shown.
-
-        Defaults to False so users must explicitly choose Once or Session.
-        """
-        # [owner] P31: configurable permanent-approval button (owner/config/patch.yaml)
-        try:
-            from owner.patch_config import _load_patch_owner_config
-
-            patch = _load_patch_owner_config()
-            return bool(patch.get("approvals", {}).get("allow_permanent", False))
-        except Exception:
-            return False
-
-    @staticmethod
-    def _build_resolved_approval_card(
-        *, choice: str, user_name: str, command: str = ""
-    ) -> Dict[str, Any]:
-        """Build raw card JSON for a resolved approval action."""
-        from agent.i18n import t
-
-        icon = "❌" if choice == "deny" else "✅"
-        # [owner] P9: i18n resolved label
-        label = _approval_label(choice)
-        # [owner] P9: resolved body shows operator + executed command
-        body = t("approval.feishu_resolved_body", user_name=user_name, command=command)
-        return {
-            "config": {"wide_screen_mode": True},
-            "header": {
-                "title": {"content": f"{icon} {label}", "tag": "plain_text"},
-                "template": "red" if choice == "deny" else "green",
-            },
-            "elements": [
-                {
-                    "tag": "markdown",
-                    "content": body,
-                },
-            ],
-        }
+    # _is_approval_allow_permanent and _build_resolved_approval_card fully moved to
+    # owner/feishu/approval.py (get_allow_permanent + build_resolved_approval_card).
+    # Only the update-prompt variant remains here (unrelated to approvals).
 
     @staticmethod
     def _build_resolved_update_prompt_card(*, answer: str, user_name: str) -> Dict[str, Any]:
@@ -2707,7 +2630,8 @@ class FeishuAdapter(BasePlatformAdapter):
             )
             return P2CardActionTriggerResponse() if P2CardActionTriggerResponse else None
 
-        # [owner] P45: log operator identity to aid cache-key debugging
+        # [owner] approval: log + read cached 中文名 (open_id key) for resolved card
+        # (see owner/feishu/sender_name_cache.py)
         logger.info(
             "[Feishu] approval callback: operator open_id=%r cached=%r",
             open_id,
@@ -2729,7 +2653,8 @@ class FeishuAdapter(BasePlatformAdapter):
         ):
             return P2CardActionTriggerResponse() if P2CardActionTriggerResponse else None
 
-        # [owner] P9: return CallBackCard to update the approval card inline
+        # [owner] approval: use owner builder for resolved card data, keep SDK CallBackCard glue here (thin)
+        # (see owner/feishu/approval.py)
         command = state.get("command", "") if isinstance(state, dict) else ""
         if P2CardActionTriggerResponse is None:
             return None
@@ -2737,7 +2662,7 @@ class FeishuAdapter(BasePlatformAdapter):
         if CallBackCard is not None:
             card = CallBackCard()
             card.type = "raw"
-            card.data = self._build_resolved_approval_card(
+            card.data = build_resolved_approval_card(
                 choice=choice, user_name=user_name, command=command
             )
             response.card = card
@@ -4042,7 +3967,8 @@ class FeishuAdapter(BasePlatformAdapter):
         open_id = getattr(sender_id, "open_id", None) or None
         user_id = getattr(sender_id, "user_id", None) or None
         union_id = getattr(sender_id, "union_id", None) or None
-        # [owner] P45: prefer open_id so approval callback/cache keys align with event.operator.open_id
+        # [owner] approval: prefer open_id so approval callback/cache keys (open_id -> 中文名) align
+        # (see owner/feishu/sender_name_cache.py)
         primary_id = open_id or user_id
         # bot/v3/bots/basic_batch only accepts open_id.
         name_lookup_id = open_id if is_bot else (primary_id or union_id)
@@ -4055,18 +3981,14 @@ class FeishuAdapter(BasePlatformAdapter):
             "user_id_alt": union_id,
         }
 
+    # --- thin delegates for name cache (open_id -> 中文名 only) ---
+    # All real logic + pre_warm + TTL + bot batch + contact v3 in owner/feishu/sender_name_cache.py
+
     def _get_cached_sender_name(self, sender_id: Optional[str]) -> Optional[str]:
-        """Return a cached sender name only while its TTL is still valid."""
-        if not sender_id:
+        # [owner] approval: open_id -> 中文名 cache lookup (see owner/feishu/sender_name_cache.py)
+        if self._name_cache is None:
             return None
-        cached = self._sender_name_cache.get(sender_id)
-        if cached is None:
-            return None
-        name, expire_at = cached
-        if time.time() < expire_at:
-            return name
-        self._sender_name_cache.pop(sender_id, None)
-        return None
+        return self._name_cache.get(sender_id)
 
     async def _resolve_sender_name_from_api(
         self,
@@ -4076,81 +3998,17 @@ class FeishuAdapter(BasePlatformAdapter):
     ) -> Optional[str]:
         """Bots divert to bot/basic_batch — contact API doesn't return bot names.
         Failures are silent so the pipeline never blocks on name resolution.
+        Thin delegate.
         """
-        if not sender_id or not self._client:
-            return None
-        trimmed = sender_id.strip()
-        if not trimmed:
-            return None
-        now = time.time()
-        cached_name = self._get_cached_sender_name(trimmed)
-        if cached_name is not None:
-            return cached_name or None  # "" cached means "known nameless"
-        if is_bot:
-            names = await self._fetch_bot_names([trimmed])
-            if names is None:
-                return None
-            expire_at = now + _FEISHU_SENDER_NAME_TTL_SECONDS
-            for oid, name in names.items():
-                self._sender_name_cache[oid] = (name, expire_at)
-            hit = self._sender_name_cache.get(trimmed)
-            return (hit[0] or None) if hit else None
-        try:
-            from lark_oapi.api.contact.v3 import GetUserRequest  # lazy import
-            if trimmed.startswith("ou_"):
-                id_type = "open_id"
-            elif trimmed.startswith("on_"):
-                id_type = "union_id"
+        # [owner] approval: open_id -> 中文名 resolution + cache populate (see owner/feishu/sender_name_cache.py)
+        if self._name_cache is None:
+            if self._client:
+                self._name_cache = FeishuSenderNameCache(self._client)
             else:
-                id_type = "user_id"
-            request = GetUserRequest.builder().user_id(trimmed).user_id_type(id_type).build()
-            response = await asyncio.to_thread(self._client.contact.v3.user.get, request)
-            if not response or not response.success():
                 return None
-            user = getattr(getattr(response, "data", None), "user", None)
-            name = (
-                getattr(user, "name", None)
-                or getattr(user, "display_name", None)
-                or getattr(user, "nickname", None)
-                or getattr(user, "en_name", None)
-            )
-            if name and isinstance(name, str):
-                name = name.strip()
-                if name:
-                    self._sender_name_cache[trimmed] = (name, now + _FEISHU_SENDER_NAME_TTL_SECONDS)
-                    return name
-        except Exception:
-            logger.debug("[Feishu] Failed to resolve sender name for %s", sender_id, exc_info=True)
-        return None
+        return await self._name_cache.resolve(sender_id, is_bot=is_bot)
 
-    async def _fetch_bot_names(self, bot_ids: List[str]) -> Optional[Dict[str, str]]:
-        if not self._client or not bot_ids:
-            return None
-        try:
-            req = (
-                BaseRequest.builder()
-                .http_method(HttpMethod.GET)
-                .uri("/open-apis/bot/v3/bots/basic_batch")
-                .queries([("bot_ids", oid) for oid in bot_ids])
-                .token_types({AccessTokenType.TENANT})
-                .build()
-            )
-            resp = await asyncio.to_thread(self._client.request, req)
-            content = getattr(getattr(resp, "raw", None), "content", None)
-            if not content:
-                return None
-            payload = json.loads(content)
-            if payload.get("code") != 0:
-                return None
-            bots = (payload.get("data") or {}).get("bots") or {}
-            return {
-                oid: str(info.get("name") or "").strip()
-                for oid, info in bots.items()
-                if oid
-            }
-        except Exception:
-            logger.debug("[Feishu] Failed to fetch bot names for %s", bot_ids, exc_info=True)
-            return None
+    # _fetch_bot_names is now private inside FeishuSenderNameCache (no longer needed on adapter)
 
     async def _fetch_message_text(self, message_id: str) -> Optional[str]:
         if not self._client or not message_id:
