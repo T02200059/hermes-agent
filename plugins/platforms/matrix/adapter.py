@@ -1909,8 +1909,11 @@ class MatrixAdapter(BasePlatformAdapter):
         session_key: str,
         description: str = "dangerous command",
         metadata: Optional[dict] = None,
+        sender_open_id: str = "",
+        sender_is_bot: bool = False,
     ) -> SendResult:
         """Send a reaction-based exec approval prompt for Matrix."""
+        del sender_open_id, sender_is_bot  # [owner] 3198a71: unused on Matrix, required by run.py
         if not self._client:
             return SendResult(success=False, error="Not connected")
 

@@ -460,6 +460,12 @@ def build_system_prompt_parts(agent: Any, system_message: Optional[str] = None) 
         timestamp_line += f"\nProvider: {agent.provider}"
     volatile_parts.append(timestamp_line)
 
+    # [owner] 3198a71: expose the current user's name to the model so it can
+    # address them correctly and avoid placeholder text like "current user".
+    _user_name = getattr(agent, "_user_name", None)
+    if _user_name:
+        volatile_parts.append(f"Current user: {_user_name}")
+
     return {
         "stable":   "\n\n".join(p.strip() for p in stable_parts   if p and p.strip()),
         "context":  "\n\n".join(p.strip() for p in context_parts  if p and p.strip()),

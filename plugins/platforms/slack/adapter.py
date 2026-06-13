@@ -2865,12 +2865,15 @@ class SlackAdapter(BasePlatformAdapter):
         session_key: str,
         description: str = "dangerous command",
         metadata: Optional[Dict[str, Any]] = None,
+        sender_open_id: str = "",
+        sender_is_bot: bool = False,
     ) -> SendResult:
         """Send a Block Kit approval prompt with interactive buttons.
 
         The buttons call ``resolve_gateway_approval()`` to unblock the waiting
         agent thread — same mechanism as the text ``/approve`` flow.
         """
+        del sender_open_id, sender_is_bot  # [owner] 3198a71: unused on Slack, required by run.py
         if not self._app:
             return SendResult(success=False, error="Not connected")
 

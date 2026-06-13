@@ -832,17 +832,30 @@ def _build_gateway_agent_history(
     return agent_history, observed_context
 
 
-def _wrap_current_message_with_observed_context(message: Any, observed_context: Optional[str]) -> Any:
-    """Prepend observed Telegram context to the API-only current user turn."""
+def _wrap_current_message_with_observed_context(
+    message: Any,
+    observed_context: Optional[str],
+    user_context: Optional[str] = None,
+) -> Any:
+    """Prepend observed group context and current user to the API-only current user turn."""
 
-    if not observed_context:
+    if not observed_context and not user_context:
         return message
 
-    prefix = (
-        f"{_OBSERVED_GROUP_CONTEXT_HEADER}\n"
-        f"{observed_context}\n\n"
-        f"{_CURRENT_ADDRESSED_MESSAGE_HEADER}\n"
-    )
+    parts = []
+    if observed_context:
+        parts.extend([
+            f"{_OBSERVED_GROUP_CONTEXT_HEADER}",
+            f"{observed_context}",
+            "",
+        ])
+    # [owner] 3198a71: include the current user's name in the API message so the
+    # model sees it even when the system prompt is not rebuilt mid-session.
+    if user_context:
+        parts.append(f"[Current user: {user_context}]")
+    parts.append(f"{_CURRENT_ADDRESSED_MESSAGE_HEADER}")
+
+    prefix = "\n".join(parts) + "\n"
 
     if isinstance(message, str):
         return f"{prefix}{message}"
@@ -15824,20 +15837,18 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 # false positives from MagicMock auto-attribute creation in tests.
                 if getattr(type(_status_adapter), "send_exec_approval", None) is not None:
                     try:
-                        # [owner] P45: pass sender identity so Feishu can pre-warm name cache
-                        _approval_kwargs = {
-                            "chat_id": _status_chat_id,
-                            "command": cmd,
-                            "session_key": _approval_session_key,
-                            "description": desc,
-                            "metadata": _status_thread_metadata,
-                        }
-                        if getattr(source, "platform", None) == Platform.FEISHU:
-                            _approval_kwargs["sender_open_id"] = source.user_id or ""
-                            _approval_kwargs["sender_is_bot"] = source.is_bot
-
+                        # [owner] 3198a71 / P45: pass sender identity so Feishu can
+                        # pre-warm its name cache; other adapters accept and ignore.
                         _approval_fut = safe_schedule_threadsafe(
-                            _status_adapter.send_exec_approval(**_approval_kwargs),
+                            _status_adapter.send_exec_approval(
+                                chat_id=_status_chat_id,
+                                command=cmd,
+                                session_key=_approval_session_key,
+                                description=desc,
+                                metadata=_status_thread_metadata,
+                                sender_open_id=source.user_id or "",
+                                sender_is_bot=source.is_bot,
+                            ),
                             _loop_for_step,
                             logger=logger,
                             log_message="send_exec_approval scheduling error",
@@ -16034,6 +16045,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 _api_run_message = _wrap_current_message_with_observed_context(
                     _run_message,
                     observed_group_context,
+                    user_context=source.user_name if observed_group_context else None,
                 )
                 _conversation_kwargs = {
                     "conversation_history": agent_history,

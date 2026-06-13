@@ -2736,6 +2736,8 @@ class QQAdapter(BasePlatformAdapter):
             session_key: str,
             description: str = "dangerous command",
             metadata: Optional[Dict[str, Any]] = None,
+            sender_open_id: str = "",
+            sender_is_bot: bool = False,
     ) -> SendResult:
         """Send a button-based exec-approval prompt for a dangerous command.
 
@@ -2744,7 +2746,9 @@ class QQAdapter(BasePlatformAdapter):
         :func:`tools.approval.resolve_gateway_approval` — dispatched by the
         adapter's interaction callback (:meth:`_default_interaction_dispatch`).
         """
-        del metadata  # QQ doesn't have thread_id / DM targeting overrides.
+        # [owner] 3198a71: QQ ignores sender identity, but accepts it for the
+        # unified ``send_exec_approval`` contract used by gateway/run.py.
+        del metadata, sender_open_id, sender_is_bot
 
         # Use the reply-to message for passive-message context when we have one.
         # QQ requires a msg_id on outbound messages to a user we've never

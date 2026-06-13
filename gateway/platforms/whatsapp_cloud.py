@@ -752,14 +752,21 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
         session_key: str,
         description: str = "dangerous command",
         metadata: Optional[Dict[str, Any]] = None,
+        sender_open_id: str = "",
+        sender_is_bot: bool = False,
     ) -> SendResult:
         """Render a dangerous-command approval prompt with native buttons.
+
+        ``sender_open_id``/``sender_is_bot`` are ignored — WhatsApp does not
+        share a name-cache with Feishu — but accepted to keep the unified
+        gateway/run.py contract.  # [owner] 3198a71
 
         Two quick-reply buttons (Approve / Deny). Tapping resolves the
         waiting agent via ``tools.approval.resolve_gateway_approval`` —
         same mechanism as the text ``/approve`` flow. The agent thread
         is blocked until the user taps or types a response.
         """
+        del sender_open_id, sender_is_bot  # [owner] 3198a71: unused on WhatsApp, required by run.py
         if self._http_client is None:
             return SendResult(success=False, error="Not connected")
 
