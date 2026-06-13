@@ -300,13 +300,13 @@
 314|- [ ] `ea163c7` | 2026-05-11 | `tianbao.yang` | feat(token): bailing provider daily 500k free tier support | +134 | −27 |
 315|- [x] ✅ 已迁移 `e7edb2f` | 2026-05-11 | `tianbao.yang` | docs(yangtb): update patch count and add P29 env-var template leak fix to README | +5 | −4 |
 316|- [x] ✅ 已迁移 `85d345e` | 2026-05-11 | `tianbao.yang` | fix: guard against env-var template leak in base_url resolution (#17101) | +22 | −3 |
-317|- [ ] `14b8a31` | 2026-05-11 | `tianbao.yang` | audit-agent: i18n docstring/comments, get_hermes_home, batch git diff, checkpoint trim | +100 | −49 |
+317|- [x] ⚠️ 废弃（audit-agent hook 已删除 ed95a26）`14b8a31` | 2026-05-11 | `tianbao.yang` | audit-agent: i18n docstring/comments, get_hermes_home, batch git diff, checkpoint trim | +100 | −49 |
 318|- [ ] `6b0c817` | 2026-05-11 | `tianbao.yang` | feat(credential-pool): add proactive sliding-window rate limiter per (provider, key) | +246 | −19 |
-319|- [ ] `acebc2c` | 2026-05-11 | `tianbao.yang` | audit-agent: filter remote/SSH paths from LLM prompt, add terminal to FILE_MODIFY_TOOLS | +16 | −3 |
-320|- [ ] `c1a60da` | 2026-05-11 | `tianbao.yang` | audit-agent: add LLM extraction error alert + mv/rm rename tracking | +172 | −17 |
-321|- [ ] `3dd85dd` | 2026-05-11 | `tianbao.yang` | fix(audit-agent): per-auditor rate limiter, aiohttp delivery, alert improvements | +53 | −24 |
-322|- [ ] `dae821a` | 2026-05-11 | `tianbao.yang` | refactor(audit-agent): plugin-style auditor architecture with error isolation | +423 | −293 |
-323|- [ ] `8f8b76c` | 2026-05-10 | `tianbao.yang` | feat(audit-agent): move audit-agent hook source to yangtb/hooks/ | +652 | −1 |
+319|- [x] ⚠️ 废弃（audit-agent hook 已删除 ed95a26）`acebc2c` | 2026-05-11 | `tianbao.yang` | audit-agent: filter remote/SSH paths from LLM prompt, add terminal to FILE_MODIFY_TOOLS | +16 | −3 |
+320|- [x] ⚠️ 废弃（audit-agent hook 已删除 ed95a26）`c1a60da` | 2026-05-11 | `tianbao.yang` | audit-agent: add LLM extraction error alert + mv/rm rename tracking | +172 | −17 |
+321|- [x] ⚠️ 废弃（audit-agent hook 已删除 ed95a26）`3dd85dd` | 2026-05-11 | `tianbao.yang` | fix(audit-agent): per-auditor rate limiter, aiohttp delivery, alert improvements | +53 | −24 |
+322|- [x] ⚠️ 废弃（audit-agent hook 已删除 ed95a26）`dae821a` | 2026-05-11 | `tianbao.yang` | refactor(audit-agent): plugin-style auditor architecture with error isolation | +423 | −293 |
+323|- [x] ⚠️ 废弃（audit-agent hook 已删除 ed95a26）`8f8b76c` | 2026-05-10 | `tianbao.yang` | feat(audit-agent): move audit-agent hook source to yangtb/hooks/ | +652 | −1 |
 324|- [x] ⚠️ 废弃（Viking 已停用，Qdrant 是当前 backing store）`f329993` | 2026-05-10 | `tianbao.yang` | feat(yangtb/scripts): 新增 daily-viking-health-report.py — 每日Memory整理报告脚本，对比Viking而非本地KB | +44 | −0 |
 325|- [x] ✅ 已迁移（owner/scripts/ 替代 yangtb/scripts/，exemption 已在 cronjob_tools.py）`1284034` | 2026-05-10 | `tianbao.yang` | fix(cron): add yangtb/scripts/ symlink exemption to _validate_cron_script_path | +9 | −0 |
 326|- [x] ✅ 已迁移·部分（clarify_callback 已在 owner-v16，emoji ❓→🤔 未迁移）`281e6fc` | 2026-05-10 | `tianbao.yang` | fix(gateway): add clarify_callback for messaging platforms | +12 | −2 |
