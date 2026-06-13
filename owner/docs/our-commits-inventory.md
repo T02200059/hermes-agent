@@ -92,14 +92,14 @@
 92|- [x] ⚠️ 废弃：定价/AGENTS.md，不迁移 `ab5cda7` | 2026-06-08 | `yangtb` | chore(owner): pricing.yaml daily exchange rate update | +1 | −1 |
 93|- [x] ⚠️ 废弃（纯文档md，不迁移）`86f575e` | 2026-06-08 | `yangtb` | docs(owner): archive rolled-back clarify-timeout-abort design | +108 | −0 |
 94|- [ ] `e49f512` | 2026-06-08 | `yangtb` | feat(feishu): expire_clarify on timeout — grey card + interrupt turn | +145 | −3 |
-95|- [ ] `5022ef4` | 2026-06-08 | `yangtb` | feat(tools): auto_fix_start option to unified_diff_patch | +124 | −21 |
+95|- [x] ✅ 已迁移 `7646add45` `5022ef4` | 2026-06-08 | `yangtb` | feat(tools): auto_fix_start option to unified_diff_patch | +124 | −21 |
 96|- [ ] `b845c7a` | 2026-06-08 | `yangtb` | fix(code_execution): 🐍 → 🛠️ execute_code tool emoji | +1 | −1 |
 97|- [ ] `16ae8a0` | 2026-06-08 | `yangtb` | chore(skills): remove custom skills from source tree | +0 | −1054 |
 98|- [ ] `d490793` | 2026-06-08 | `yangtb` | scripts(backup-hermes-config): graceful fallback on patch.yaml parse error | +18 | −10 |
 99|- [ ] `c09616f` | 2026-06-08 | `yangtb` | hooks(qdrant-memory-recall): filter disabled=true points | +5 | −1 |
 100|- [x] ⚠️ 废弃（纯文档md，不迁移）`5af60e9` | 2026-06-08 | `yangtb` | skills: add claude-code reference docs | +578 | −0 |
 101|- [ ] `8333e30` | 2026-06-08 | `yangtb` | scripts: add skills_sync_preview utility | +218 | −0 |
-102|- [ ] `6976b60` | 2026-06-08 | `yangtb` | tools: add auto_fix_header option to unified_diff_patch | +48 | −12 |
+102|- [x] ✅ 已迁移 `7646add45` `6976b60` | 2026-06-08 | `yangtb` | tools: add auto_fix_header option to unified_diff_patch | +48 | −12 |
 103|- [ ] `2f97677` | 2026-06-08 | `yangtb` | hooks: skip synthetic gateway messages in qdrant recall | +20 | −0 |
 104|- [ ] `b47978f` | 2026-06-08 | `yangtb` | config: update default exchange rate to 6.7928 | +1 | −1 |
 105|- [x] ✅ 已迁移 `2f1be0a` | 2026-06-07 | `yangtb` | minimax-cn: 收敛 catalog 到 M3/M2.7/M2.7-highspeed + aux 默认走 highspeed | +12 | −13 |
@@ -108,8 +108,8 @@
 108|- [ ] `0a2ea99` | 2026-06-06 | `yangtb` | docs(qdrant-memory-recall): clarify per-turn extra_context scope (CR-01) | +21 | −2 | ⚠️ 混有代码：hooks/qdrant-memory-recall/HOOK.yaml + handler.py
 109|- [ ] `4626a1a` | 2026-06-06 | `yangtb` | fix(feishu-clarify): prepend full-text markdown options block before button row | +175 | −21 | ⚠️ 混有代码：feishu.py + test_feishu_clarify_frozen_card.py
 110|- [ ] `111f767` | 2026-06-06 | `yangtb` | fix(tool_guardrails): name the counter and threshold in warn messages | +78 | −5 |
-111|- [ ] `6f64470` | 2026-06-06 | `yangtb` | docs(unified_diff_patch): clarify schema descriptions (5 fixes) | +79 | −61 | ⚠️ 混有代码：tools/unified_diff_patch_tool.py
-112|- [ ] `a3b95e7` | 2026-06-06 | `yangtb` | fix(unified_diff_patch): 4 quality fixes (strict priority, line numbers, CRLF, dry_run) | +352 | −8 |
+111|- [x] ✅ 已迁移 `7646add45` `6f64470` | 2026-06-06 | `yangtb` | docs(unified_diff_patch): clarify schema descriptions (5 fixes) | +79 | −61 | ⚠️ 混有代码：tools/unified_diff_patch_tool.py
+112|- [x] ✅ 已迁移 `7646add45` `a3b95e7` | 2026-06-06 | `yangtb` | fix(unified_diff_patch): 4 quality fixes (strict priority, line numbers, CRLF, dry_run) | +352 | −8 |
 113|- [ ] `c536033` | 2026-06-06 | `yangtb` | feat(session-archiver): add ts field to event payload for Qdrant time-ordering | +1 | −0 |
 114|- [x] ⚠️ 废弃：定价/AGENTS.md，不迁移 `750ceb9` | 2026-06-06 | `yangtb` | chore(owner): pricing.yaml daily exchange rate update | +1 | −1 |
 115|- [ ] `2a6f213` | 2026-06-06 | `yangtb` | feat(owner): qdrant-memory-recall hook 部署 | +346 | −0 |
@@ -127,7 +127,7 @@
 127|- [ ] `2172689` | 2026-06-05 | `yangtb` | feat(intent-guard): integrate interrupt protocol into Hermes core | +193 | −44 |
 128|- [ ] `97ab075` | 2026-06-05 | `yangtb` | feat(intent-guard): add pre_tool_call hook with hard rules + LLM audit | +1006 | −5 |
 129|- [ ] `c6b87d9` | 2026-06-04 | `yangtb` | feat(clarify): 飞书 clarify 卡片 + 多 profile 路由 + 跨平台 choice display | +1339 | −67 |
-130|- [ ] `675f180` | 2026-06-04 | `yangtb` | fix(unified_diff_patch): add strict mode, clarify path resolution and guardrail errors | +255 | −17 |
+130|- [x] ✅ 已迁移 `7646add45` `675f180` | 2026-06-04 | `yangtb` | fix(unified_diff_patch): add strict mode, clarify path resolution and guardrail errors | +255 | −17 |
 131|- [ ] `77862a9` | 2026-06-04 | `yangtb` | feat(qdrant-insert): add skill source files (from feishu ff47ea5f3) | +476 | −0 |
 132|- [ ] `df5471a` | 2026-06-04 | `yangtb` | chore(owner): cleanup hooks and scripts | +450 | −273 |
 133|- [ ] `0b160cd` | 2026-06-04 | `yangtb` | chore(scripts): remove sre-archive.py (deployment removed 2026-05-28; orphan source cleanup) | +0 | −490 |
@@ -142,7 +142,7 @@
 142|- [ ] `aad84a1` | 2026-06-04 | `yangtb` | fix(feishu): persist p2p_chat_id to disk cache | +39 | −1 |
 143|- [ ] `c0d5e2a` | 2026-06-04 | `yangtb` | feishu: aiohttp timeout 10→60s; pricing: 汇率更新; patch: inspect_gpu_cluster ack; 新增 hy3 成本估算脚本 | +176 | −2 |
 144|- [ ] `b933cd6` | 2026-06-03 | `yangtb` | feat: add session-archiver plugin | +727 | −0 |
-145|- [ ] `248bdb4` | 2026-06-03 | `yangtb` | docs: enhance unified_diff_patch schema with hunk counting rule and absolute path trick | +18 | −1 | ⚠️ 混有代码：tools/unified_diff_patch_tool.py
+145|- [x] ✅ 已迁移 `7646add45` `248bdb4` | 2026-06-03 | `yangtb` | docs: enhance unified_diff_patch schema with hunk counting rule and absolute path trick | +18 | −1 | ⚠️ 混有代码：tools/unified_diff_patch_tool.py
 146|- [ ] `ab8fd79` | 2026-06-03 | `yangtb` | feat(feishu): bot menu dedup + configurable ack + reasoning xhigh | +384 | −1 |
 147|- [ ] `fd20634` | 2026-06-03 | `yangtb` | fix(feishu): allow non-slash commands in bot_menu mapping | +1 | −1 |
 148|- [ ] `a612263` | 2026-06-03 | `yangtb` | feat(feishu): add built-in bot_menu fallback + inspect_gpu_cluster menu item | +31 | −4 |
@@ -167,9 +167,9 @@
 167|- [x] ⚠️ 废弃（纯文档md，不迁移）`cb208c5` | 2026-05-31 | `yangtb` | docs(owner): fix 3 README discrepancies found during merge audit | +3 | −3 |
 168|- [x] ⏭️ 跳过 `a7ede52` | 2026-05-31 | `yangtb` | Merge main (synced with upstream) into owner | +0 | −0 |
 169|- [ ] `6378913` | 2026-05-31 | `yangtb` | feat: memory proposal approval system + unified_diff_patch display support | +857 | −15 |
-170|- [ ] `091bb10` | 2026-05-30 | `yangtb` | fix: unified_diff_patch路径解析 + daily-report sessions格式 + 禁用旧patch工具 | +7 | −3 |
+170|- [x] ✅ 已迁移 `7646add45` `091bb10` | 2026-05-30 | `yangtb` | fix: unified_diff_patch路径解析 + daily-report sessions格式 + 禁用旧patch工具 | +7 | −3 |
 171|- [x] ⚠️ 废弃（纯文档md，不迁移）`3a9103b` | 2026-05-30 | `yangtb` | P54: add unified_diff_patch_tool record to owner/README | +9 | −1 |
-172|- [ ] `d399df6` | 2026-05-30 | `yangtb` | feat(tools): add unified_diff_patch tool with exact line-number replacement | +551 | −5 |
+172|- [x] ✅ 已迁移 `7646add45` `d399df6` | 2026-05-30 | `yangtb` | feat(tools): add unified_diff_patch tool with exact line-number replacement | +551 | −5 |
 173|- [ ] `2458489` | 2026-05-30 | `yangtb` | chore(owner): P12 orphan removal + Phase1 docs + minor config updates | +39 | −116 | ⚠️ 混有代码：hermes_state.py + patch.yaml + pricing.yaml + file_tools.py
 174|- [ ] `3141715` | 2026-05-30 | `yangtb` | fix(feishu): resolve sender name for approval card using open_id instead of short user_id | +5 | −2 |
 175|- [x] ✅ 已迁移 `1a4aa7bf6` `90c9f20` | 2026-05-30 | `yangtb` | feat(patch): feishu: raise auto_card_threshold to 41, add interim/tool_progress settings | +7 | −1 |
