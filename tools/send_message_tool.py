@@ -149,6 +149,10 @@ SEND_MESSAGE_SCHEMA = {
                 "type": "string",
                 "description": "The message text to send. To send an image or file, include MEDIA:<local_path> (e.g. 'MEDIA:/tmp/report.pdf') in the message — the platform will deliver it as a native media attachment."
             },
+            "card": {
+                "type": "object",
+                "description": "Feishu interactive card payload (JSON object with config + header + elements). When set, sends as an interactive card instead of plain text. Only supported on feishu platform. Example: {\"config\": {\"wide_screen_mode\": true}, \"header\": {\"title\": {\"tag\": \"plain_text\", \"content\": \"📊 Report\"}, \"template\": \"purple\"}, \"elements\": [{\"tag\": \"markdown\", \"content\": \"**Summary** data here\"}]}"
+            },
             "emoji": {
                 "type": "string",
                 "description": "For action='react': the emoji to react with (e.g. '❤️'). On iMessage, ❤️👍👎😂‼️❓ render as native tapbacks; other emoji use custom-emoji reactions."
@@ -284,8 +288,9 @@ def _handle_send(args):
     """Send a message to a platform target."""
     target = args.get("target", "")
     message = args.get("message", "")
-    if not target or not message:
-        return tool_error("Both 'target' and 'message' are required when action='send'")
+    card = args.get("card")
+    if not target or (not message and not card):
+        return tool_error("Either 'message' (for text) or 'card' (for interactive card) is required when action='send'")
 
     parts = target.split(":", 1)
     platform_name = parts[0].strip().lower()
@@ -426,6 +431,7 @@ def _handle_send(args):
                 thread_id=thread_id,
                 media_files=media_files,
                 force_document=force_document_attachments,
+                card=card,
             )
         )
         if used_home_channel and isinstance(result, dict) and result.get("success"):
@@ -686,7 +692,7 @@ async def _send_via_adapter(
     }
 
 
-async def _send_to_platform(platform, pconfig, chat_id, message, thread_id=None, media_files=None, force_document=False):
+async def _send_to_platform(platform, pconfig, chat_id, message, thread_id=None, media_files=None, force_document=False, card=None):
     """Route a message to the appropriate platform sender.
 
     Long messages are automatically chunked to fit within platform limits
@@ -853,7 +859,7 @@ async def _send_to_platform(platform, pconfig, chat_id, message, thread_id=None,
         return last_result
 
     # --- Feishu: native media attachment support via adapter ---
-    if platform == Platform.FEISHU and media_files:
+    if platform == Platform.FEISHU and (media_files or card):
         last_result = None
         for i, chunk in enumerate(chunks):
             is_last = (i == len(chunks) - 1)
@@ -863,6 +869,7 @@ async def _send_to_platform(platform, pconfig, chat_id, message, thread_id=None,
                 chunk,
                 media_files=media_files if is_last else None,
                 thread_id=thread_id,
+                card=card if is_last else None,
             )
             if isinstance(result, dict) and result.get("error"):
                 return result
@@ -901,7 +908,7 @@ async def _send_to_platform(platform, pconfig, chat_id, message, thread_id=None,
         elif platform == Platform.DINGTALK:
             result = await _send_dingtalk(pconfig.extra, chat_id, chunk)
         elif platform == Platform.FEISHU:
-            result = await _send_feishu(pconfig, chat_id, chunk, thread_id=thread_id)
+            result = await _send_feishu(pconfig, chat_id, chunk, thread_id=thread_id, card=card)
         elif platform == Platform.WECOM:
             result = await _send_wecom(pconfig.extra, chat_id, chunk)
         elif platform == Platform.BLUEBUBBLES:
@@ -1700,7 +1707,7 @@ async def _send_bluebubbles(extra, chat_id, message):
         return _error(f"BlueBubbles send failed: {e}")
 
 
-async def _send_feishu(pconfig, chat_id, message, media_files=None, thread_id=None):
+async def _send_feishu(pconfig, chat_id, message, media_files=None, thread_id=None, card=None):
     """Send via Feishu/Lark using the adapter's send pipeline."""
     try:
         from gateway.platforms.feishu import FeishuAdapter, FEISHU_AVAILABLE
@@ -1718,6 +1725,18 @@ async def _send_feishu(pconfig, chat_id, message, media_files=None, thread_id=No
         domain = FEISHU_DOMAIN if domain_name != "lark" else LARK_DOMAIN
         adapter._client = adapter._build_lark_client(domain)
         metadata = {"thread_id": thread_id} if thread_id else None
+
+        # Card send path — bypass chunking, send as interactive card
+        if card:
+            result = await adapter.send_card(chat_id=chat_id, card=card, metadata=metadata)
+            if not result.success:
+                return _error(f"Feishu card send failed: {result.error}")
+            return {
+                "success": True,
+                "platform": "feishu",
+                "chat_id": chat_id,
+                "message_id": result.message_id,
+            }
 
         last_result = None
         if message.strip():
