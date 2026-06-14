@@ -7958,11 +7958,10 @@ def _(rid, params: dict) -> dict:
                 current = is_session_yolo_enabled(session["session_key"])
                 enable = _resolve_toggle(current)
                 if enable:
-                    enable_session_yolo(session["session_key"])
-                    nv = "1"
+                    resolved = enable_session_yolo(session["session_key"])
                 else:
                     disable_session_yolo(session["session_key"])
-                    nv = "0"
+                nv = "1" if enable else "0"
                 agent = session.get("agent")
                 if agent is not None:
                     _emit(

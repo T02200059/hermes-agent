@@ -12,6 +12,12 @@ owner:
     # Permanent approval allowlist (merged with config.yaml command_allowlist).
     # Format: "tirith:<rule_id>" or the exact DANGEROUS_PATTERNS description.
     command_allowlist: []
+    # [owner] Skill script auto-approval allowlist
+    # 匹配逻辑：命令中所有脚本文件名都来自本 session 已加载的 skill 时自动批准。
+    skill_script_allowlist:
+      - skill: sre-king
+        paths: []
+        extensions: [".sh", ".py"]
     # command_allowlist:
     #   - "tirith:raw_ip_url"          # suppress internal IP curl/wget approvals
 

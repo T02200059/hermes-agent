@@ -669,6 +669,13 @@ class AIAgent:
             reset_engine=True,
         )
 
+        # [owner] skill-script auto-approval: reset the session-scoped viewed set
+        try:
+            from owner.approval.skill_script_approval import reset_session_skills_viewed
+            reset_session_skills_viewed()
+        except Exception:
+            pass
+
     def _ensure_lmstudio_runtime_loaded(self, config_context_length: Optional[int] = None) -> None:
         """
         Preload the LM Studio model with at least Hermes' minimum context.

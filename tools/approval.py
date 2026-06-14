@@ -773,12 +773,32 @@ def approve_session(session_key: str, pattern_key: str):
         _session_approved.setdefault(session_key, set()).add(pattern_key)
 
 
-def enable_session_yolo(session_key: str) -> None:
-    """Enable YOLO bypass for a single session key."""
+def enable_session_yolo(session_key: str) -> int:
+    """Enable YOLO bypass for a single session key.
+
+    Returns the number of pending gateway approvals that were auto-resolved.
+    """
     if not session_key:
-        return
+        return 0
     with _lock:
         _session_yolo.add(session_key)
+        queue = _gateway_queues.get(session_key, [])
+        if queue:
+            entries = list(queue)
+            queue.clear()
+            _gateway_queues.pop(session_key, None)
+        else:
+            entries = []
+    # Resolve outside the lock to avoid deadlocks with waiting threads.
+    for entry in entries:
+        entry.result = 'once'
+        entry.event.set()
+    if entries:
+        logger.info(
+            'YOLO enabled: auto-resolved %d pending approval(s) for session %s',
+            len(entries), session_key,
+        )
+    return len(entries)
 
 
 def disable_session_yolo(session_key: str) -> None:
@@ -1239,6 +1259,17 @@ def check_dangerous_command(command: str, env_type: str,
     """
     if env_type in {"docker", "singularity", "modal", "daytona"}:
         return {"approved": True, "message": None}
+
+    # [owner] skill script auto-approval: if the command only runs scripts from
+    # skills viewed this session, bypass the approval prompt.
+    try:
+        from owner.approval.skill_script_approval import is_skill_script_allowed
+        _allow = is_skill_script_allowed(command)
+        if _allow:
+            logger.info("Skill script auto-approved (%s): %s", _allow, command[:200])
+            return {"approved": True, "message": None}
+    except Exception:
+        pass
 
     # Hardline floor: commands with no recovery path (rm -rf /, mkfs, dd
     # to raw device, shutdown/reboot, fork bomb, kill -1) are blocked

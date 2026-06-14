@@ -880,6 +880,12 @@ def skill_view(
     Returns:
         JSON string with skill content or error message
     """
+    # [owner] skill-script auto-approval: track viewed skill names for this session
+    try:
+        from owner.approval.skill_script_approval import track_session_skill_view
+        track_session_skill_view(name)
+    except Exception:
+        pass
     try:
         # Validate before the ':' qualified-name dispatch so a Windows drive
         # path (e.g. C:\skills\foo) can't be reinterpreted as a plugin

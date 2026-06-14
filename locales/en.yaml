@@ -38,6 +38,8 @@ approval:
   feishu_resolved_default: "Resolved"
   feishu_resolved_body: "by {user_name}\n\n```\n{command}\n```"
   feishu_permanent_disabled: "💡 Permanent approval is disabled. Choose Allow Once or Session instead."
+  # YOLO auto-resolve
+  yolo_auto_resolved: "🔄 YOLO mode enabled — {count} pending approval(s) auto-resolved."
 
 
 gateway:

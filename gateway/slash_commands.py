@@ -2504,8 +2504,11 @@ class GatewaySlashCommandsMixin:
             disable_session_yolo(session_key)
             return EphemeralReply(t("gateway.yolo.disabled"))
         else:
-            enable_session_yolo(session_key)
-            return EphemeralReply(t("gateway.yolo.enabled"))
+            resolved = enable_session_yolo(session_key)
+            msg = t("gateway.yolo.enabled")
+            if resolved:
+                msg = f"{msg}\n{t('approval.yolo_auto_resolved', count=resolved)}"
+            return EphemeralReply(msg)
 
     async def _handle_verbose_command(self, event: MessageEvent) -> str:
         """Handle /verbose command — cycle tool progress display mode.

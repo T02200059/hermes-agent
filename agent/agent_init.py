@@ -1677,7 +1677,10 @@ import owner.tools.schema_patches  # noqa: F401
     agent.session_estimated_cost_usd = 0.0
     agent.session_cost_status = "unknown"
     agent.session_cost_source = "none"
-    
+
+    # [owner] skill-script auto-approval: session-scoped skills viewed set
+    agent.session_skills_viewed = set()
+
     # ── Ollama num_ctx injection ──
     # Ollama defaults to 2048 context regardless of the model's capabilities.
     # When running against an Ollama server, detect the model's max context
