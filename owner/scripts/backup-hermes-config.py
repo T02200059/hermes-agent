@@ -32,24 +32,21 @@ DEFAULT_CONFIG = {
     }
 }
 
-# 从 patch.yaml 读取配置；任何失败都降级到 DEFAULT_CONFIG，保证 backup 链路不挂
-patch_path = os.path.join(_HERMES_HOME, "patch.yaml")
-patch = {}
+# 从 patch.yaml 读取配置（使用统一的 owner.patch_config 加载器，支持 mtime + 5min TTL 刷新）。
+# 任何失败都降级到 DEFAULT_CONFIG，保证 backup 链路不挂。
 cfg = {}
 hermes_cfg = {}
-if os.path.exists(patch_path):
-    try:
-        with open(patch_path) as f:
-            patch = yaml.safe_load(f) or {}
-        cfg = patch.get("owner", {}).get("backup", {})
-        hermes_cfg = cfg.get("hermes", {})
-    except yaml.YAMLError as e:
-        # patch.yaml 语法损坏时降级到 DEFAULT_CONFIG
-        # 仅 stderr（cron 失败能告警；no_agent 成功路径不输出）
-        sys.stderr.write(
-            f"⚠️  patch.yaml 解析失败 ({type(e).__name__}): {e}\n"
-            f"   降级使用 DEFAULT_CONFIG，请检查 {patch_path}\n"
-        )
+try:
+    from owner.patch_config import _load_patch_owner_config
+    owner_patch = _load_patch_owner_config() or {}
+    cfg = owner_patch.get("backup", {}) if isinstance(owner_patch, dict) else {}
+    hermes_cfg = cfg.get("hermes", {}) if isinstance(cfg, dict) else {}
+except Exception as e:
+    # 包括 patch 解析失败、导入失败等；降级到默认，保证脚本在 no_agent / cron 下稳健运行
+    sys.stderr.write(
+        f"⚠️  读取 patch.yaml owner.backup 失败 ({type(e).__name__}): {e}\n"
+        f"   降级使用 DEFAULT_CONFIG\n"
+    )
 
 # 合并配置（patch.yaml 值优先，缺失则用默认值）
 BACKUP_DIR = _resolve(cfg.get("dest_dir") or DEFAULT_CONFIG["dest_dir"])
