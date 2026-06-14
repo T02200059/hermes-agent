@@ -18,6 +18,13 @@
   - `tests/gateway/test_feishu.py`: 为 `__new__` 构造的测试 adapter 补 `config` 属性；将 `user_id` 优先期望更新为 `open_id` 优先（与 owner approval callback/cache 对齐）。
   - 结果：`tests/gateway/test_feishu.py` 205 项全部通过（此前 16 项失败）。
 
+- 批量评审并处理 5 个未迁移 commit（2026-06-14，commit `e5a2c968d` 记录 inventory 状态）
+  - `478b66a`: 迁移 `owner/scripts/todo-scan.sh`（owner 分支最终形态已有，macFUSE 超时保护）。
+  - `f796063`: 仅采纳 `.gitignore` 的 `.claude/settings.local.json` + `.local/`；`patch.yaml` 的 backup excludes 已由 `owner/scripts/backup-hermes-config.py` 的 DEFAULT_CONFIG 覆盖，无需重复添加。
+  - `38aa3ce`: 废弃（owner-v16 官方文件已无 yangtb 残留）。
+  - `5311fe2`: 跳过（owner/ 目录迁移已由其他 commit 覆盖）。
+  - `10d296e`: 跳过（owner-v16 使用 Qdrant，无 Viking prefetch 需求）。
+
 - unified_diff_patch 迁移后规范合规收尾（2026-06-14，按 review 建议逐个补齐）
   - `agent/display.py`：在 `extract_edit_diff` 两处 if 条件上补短 `# [owner]` 标记（说明 inline diff 支持来自 owner/tools/unified_diff_patch/）
   - `agent/tool_guardrails.py`：在三个 block/halt 消息增强点（exact_failure / no_progress / same_tool_failure）各加 `# [owner] guardrails UX` 短标记 + 说明来源
