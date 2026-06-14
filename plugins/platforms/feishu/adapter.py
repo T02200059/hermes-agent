@@ -1458,6 +1458,15 @@ class FeishuAdapter(BasePlatformAdapter):
         # legacy alias so existing tests that poke adapter._sender_name_cache[...] continue to work
         # (they directly mutate for pre-warm simulation). Real code uses the encapsulated _name_cache.
         self._sender_name_cache: Dict[str, tuple[str, float]] = {}
+        # [owner] bot-menu: user cache + disk persistence (see owner/feishu/user_cache.py)
+        from owner.feishu.user_cache import FeishuUserEntry, load_chat_id_cache
+        self._feishu_user_cache: Dict[str, "FeishuUserEntry"] = {}
+        self._chat_id_cache_path = get_hermes_home() / "feishu_chat_id_cache.json"
+        self._chat_id_cache_lock = threading.Lock()
+        load_chat_id_cache(self._chat_id_cache_path, self._feishu_user_cache)
+        # [owner] bot-menu: dedup + bot_menu_dedup_lock
+        self._bot_menu_dedup: Dict[tuple[str, str], float] = {}
+        self._bot_menu_dedup_lock = threading.Lock()
         self._webhook_rate_counts: Dict[str, tuple[int, float]] = {}  # rate_key → (count, window_start)
         self._webhook_anomaly_counts: Dict[str, tuple[int, str, float]] = {}  # ip → (count, last_status, first_seen)
         self._card_action_tokens: Dict[str, float] = {}  # token → first_seen_time
@@ -1649,6 +1658,8 @@ class FeishuAdapter(BasePlatformAdapter):
             .register_p2_im_chat_member_bot_added_v1(self._on_bot_added_to_chat)
             .register_p2_im_chat_member_bot_deleted_v1(self._on_bot_removed_from_chat)
             .register_p2_im_chat_access_event_bot_p2p_chat_entered_v1(self._on_p2p_chat_entered)
+            # [owner] bot-menu: register bot menu event handler (see owner/feishu/bot_menu.py)
+            .register_p2_application_bot_menu_v6(self._on_bot_menu_event)
             .register_p2_im_message_recalled_v1(self._on_message_recalled)
             .register_p2_customized_event(
                 "drive.notice.comment_add_v1",
@@ -2563,8 +2574,39 @@ class FeishuAdapter(BasePlatformAdapter):
         logger.info("[Feishu] Bot removed from chat: %s", chat_id)
         self._chat_info_cache.pop(chat_id, None)
 
+    # [owner] bot-menu: p2p chat enter cache warm (see owner/feishu/user_cache.py)
     def _on_p2p_chat_entered(self, data: Any) -> None:
+        event = getattr(data, "event", None)
+        chat_id = str(getattr(event, "chat_id", "") or "")
+        operator_id = getattr(event, "operator_id", None)
+        open_id = str(getattr(operator_id, "open_id", "") or "")
+        if open_id and chat_id:
+            from owner.feishu.user_cache import get_user_entry, save_chat_id_cache
+
+            entry = get_user_entry(self._feishu_user_cache, open_id)
+            entry.p2p_chat_id = chat_id
+            logger.debug("[Feishu] Cached p2p_chat_id for %s", open_id)
+            # Pre-warm sender name asynchronously so it's ready for menus / approvals.
+            if not entry.name:
+                loop = self._loop
+                if self._loop_accepts_callbacks(loop):
+                    self._submit_on_loop(
+                        loop,
+                        self._resolve_sender_name_from_api(open_id),
+                    )
+            with self._chat_id_cache_lock:
+                save_chat_id_cache(self._chat_id_cache_path, self._feishu_user_cache)
         logger.debug("[Feishu] User entered P2P chat with bot")
+
+    # [owner] bot-menu: synchronous entry point for bot menu events (see owner/feishu/bot_menu.py)
+    def _on_bot_menu_event(self, data: Any) -> None:
+        from owner.feishu.bot_menu import handle_bot_menu_event
+
+        loop = self._loop
+        if not self._loop_accepts_callbacks(loop):
+            logger.warning("[Feishu] Dropping bot menu event before adapter loop is ready")
+            return
+        self._submit_on_loop(loop, handle_bot_menu_event(self, data))
 
     def _on_message_recalled(self, data: Any) -> None:
         logger.debug("[Feishu] Message recalled by user")
