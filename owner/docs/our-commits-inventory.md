@@ -129,7 +129,7 @@
 - [x] ✅ 已迁移·部分（clarify 卡片部分；多 profile 路由已有独立 v6 方案）`47a8e5db6` `c6b87d9` | 2026-06-04 | `yangtb` | feat(clarify): 飞书 clarify 卡片 + 多 profile 路由 + 跨平台 choice display | +1339 | −67 |
 - [x] ✅ 已迁移 `7646add45` `675f180` | 2026-06-04 | `yangtb` | fix(unified_diff_patch): add strict mode, clarify path resolution and guardrail errors | +255 | −17 |
 - [ ] `77862a9` | 2026-06-04 | `yangtb` | feat(qdrant-insert): add skill source files (from feishu ff47ea5f3) | +476 | −0 |
-- [ ] `df5471a` | 2026-06-04 | `yangtb` | chore(owner): cleanup hooks and scripts | +450 | −273 |
+- [x] ⚡ 部分迁移 `f67f64fc7` `df5471a` | 2026-06-04 | `yangtb` | chore(owner): cleanup hooks and scripts | +450 | −273 |
 - [x] [废弃] `0b160cd` | 2026-06-04 | `yangtb` | chore(scripts): remove sre-archive.py (deployment removed 2026-05-28; orphan source cleanup) | +0 | −490 |
 - [x] ✅ 已迁移 `a1e242548` `d93318d` | 2026-06-04 | `yangtb` | fix(reasoning): downgrade xhigh→high for Kimi; add bot_menu contract note; extend BM25 hash to 64-bit | +12 | −1 |
 - [x] ⏭️ 跳过（脚本本身未迁移，重构也无价值）`3468b67` | 2026-06-04 | `yangtb` | refactor(cost-estimate): add CLI args, dynamic exchange rate, improve code quality | +114 | −63 |
