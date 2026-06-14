@@ -1,5 +1,13 @@
 # [owner] memory_propose tool: registration glue + runtime toolset patch.
 # Core implementation lives in owner/memory/.
+#
+# WHY this file is in tools/ (not owner/):
+#   Hermes auto-discovers tools from tools/*.py via tools/registry.py at
+#   import time.  Plugins can register tools through a different path, but
+#   this tool also needs to deregister the legacy ``memory`` tool and patch
+#   toolsets globally — operations the plugin API does not expose.
+#   When the plugin system supports tool deregistration + toolset mutation,
+#   this file can be retired and the registration moved into owner/memory/.
 from __future__ import annotations
 from typing import Any
 
