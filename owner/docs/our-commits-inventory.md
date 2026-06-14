@@ -170,7 +170,7 @@
 - [x] ✅ 已迁移 `7646add45` `091bb10` | 2026-05-30 | `yangtb` | fix: unified_diff_patch路径解析 + daily-report sessions格式 + 禁用旧patch工具 | +7 | −3 |
 - [x] ⚠️ 废弃（纯文档md，不迁移）`3a9103b` | 2026-05-30 | `yangtb` | P54: add unified_diff_patch_tool record to owner/README | +9 | −1 |
 - [x] ✅ 已迁移 `7646add45` `d399df6` | 2026-05-30 | `yangtb` | feat(tools): add unified_diff_patch tool with exact line-number replacement | +551 | −5 |
-- [ ] `2458489` | 2026-05-30 | `yangtb` | chore(owner): P12 orphan removal + Phase1 docs + minor config updates | +39 | −116 | ⚠️ 混有代码：hermes_state.py + patch.yaml + pricing.yaml + file_tools.py
+- [x] ⏭️ 全部跳过：hermes_state.py(P12 已覆盖)/owner/README.md(文件不存在)/patch.yaml(已是57)/pricing.yaml(定价废弃)/file_tools.py(legacy工具，被unified_diff_patch替代) `2458489` | 2026-05-30 | `yangtb` | chore(owner): P12 orphan removal + Phase1 docs + minor config updates | +39 | −116 |
 - [ ] `3141715` | 2026-05-30 | `yangtb` | fix(feishu): resolve sender name for approval card using open_id instead of short user_id | +5 | −2 |
 - [x] ✅ 已迁移 `1a4aa7bf6` `90c9f20` | 2026-05-30 | `yangtb` | feat(patch): feishu: raise auto_card_threshold to 41, add interim/tool_progress settings | +7 | −1 |
 - [x] ⚠️ 废弃（纯删除已不存在的脚本，无功能价值）`08253ae` | 2026-05-29 | `yangtb` | chore: remove obsolete yangtb/scripts/send_daily_report.py (was accidentally committed by daily-report cron, caused persistent merge conflicts) | +0 | −76 |
