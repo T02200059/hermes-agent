@@ -17,9 +17,33 @@ from owner.memory.gateway import has_memory_proposal, resolve_memory_approval
 
 logger = logging.getLogger(__name__)
 
+# Text tokens for the memory-proposal card UI.
+# TODO(i18n): move these into locales/{lang}.yaml under a memory_proposal.*
+# namespace once the feature stabilizes and the i18n catalog footprint is
+# justified.  For now they live here so the card-building logic stays
+# readable and future extraction is a one-file search-and-replace.
+_TEXT = {
+    "action.add": "添加",
+    "action.replace": "替换",
+    "action.remove": "删除",
+    "card.title": "💾 Memory 提案确认",
+    "card.operation": "操作",
+    "card.target": "目标",
+    "card.existing": "现有内容",
+    "card.new_content": "新内容",
+    "card.empty": "(无)",
+    "card.empty_content": "(无内容)",
+    "btn.approve": "✅ 批准",
+    "btn.deny": "🟥 拒绝",
+    "resolved.approved": "✅ 内存提案已批准",
+    "resolved.denied": "❌ 内存提案已拒绝",
+    "confirm.approved": "✅ 内存提案已批准",
+    "confirm.denied": "❌ 内存提案已拒绝",
+}
+
 
 def _action_label(action: str) -> str:
-    return {"add": "添加", "replace": "替换", "remove": "删除"}.get(action, action)
+    return _TEXT.get(f"action.{action}", action)
 
 
 def build_memory_proposal_card(
@@ -31,8 +55,8 @@ def build_memory_proposal_card(
     session_key: str,
 ) -> Dict[str, Any]:
     """Build the interactive memory-proposal card JSON."""
-    content_preview = new_content[:1000] if new_content else "(无内容)"
-    old_preview = old_text[:200] if old_text else "(无)"
+    content_preview = new_content[:1000] if new_content else _TEXT["card.empty_content"]
+    old_preview = old_text[:200] if old_text else _TEXT["card.empty"]
 
     def _btn(label: str, action_name: str, btn_type: str = "default") -> dict:
         return {
@@ -45,25 +69,25 @@ def build_memory_proposal_card(
     return {
         "config": {"wide_screen_mode": True},
         "header": {
-            "title": {"content": "💾 Memory 提案确认", "tag": "plain_text"},
+            "title": {"content": _TEXT["card.title"], "tag": "plain_text"},
             "template": "purple",
         },
         "elements": [
             {
                 "tag": "markdown",
                 "content": (
-                    f"**操作**: {_action_label(action)}\n"
-                    f"**目标**: {target}\n"
-                    f"**现有内容**: `...{old_preview}...`\n\n"
-                    f"**新内容**:\n"
+                    f"**{_TEXT['card.operation']}**: {_action_label(action)}\n"
+                    f"**{_TEXT['card.target']}**: {target}\n"
+                    f"**{_TEXT['card.existing']}**: `...{old_preview}...`\n\n"
+                    f"**{_TEXT['card.new_content']}**:\n"
                     f"```\n{content_preview}\n```"
                 ),
             },
             {
                 "tag": "action",
                 "actions": [
-                    _btn("✅ 批准", "memory_approve"),
-                    _btn("🟥 拒绝", "memory_deny", "danger"),
+                    _btn(_TEXT["btn.approve"], "memory_approve"),
+                    _btn(_TEXT["btn.deny"], "memory_deny", "danger"),
                 ],
             },
         ],
@@ -73,9 +97,9 @@ def build_memory_proposal_card(
 def build_resolved_memory_proposal_card(*, choice: str) -> Dict[str, Any]:
     """Build the raw card data for CallBackCard inline update after click."""
     if choice == "approve":
-        icon, label, template = "✅", "内存提案已批准", "green"
+        icon, label, template = "✅", _TEXT["resolved.approved"], "green"
     else:
-        icon, label, template = "❌", "内存提案已拒绝", "red"
+        icon, label, template = "❌", _TEXT["resolved.denied"], "red"
 
     return {
         "config": {"wide_screen_mode": True},
@@ -145,7 +169,7 @@ def handle_memory_card_action(
 
     if count > 0:
         # Send user a confirmation reply.
-        confirm_text = "✅ 内存提案已批准" if choice == "approve" else "❌ 内存提案已拒绝"
+        confirm_text = _TEXT["confirm.approved"] if choice == "approve" else _TEXT["confirm.denied"]
         try:
             context = getattr(event, "context", None)
             chat_id = str(getattr(context, "open_chat_id", "") or "")

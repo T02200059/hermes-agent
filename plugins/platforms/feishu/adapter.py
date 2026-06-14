@@ -1481,8 +1481,6 @@ class FeishuAdapter(BasePlatformAdapter):
         # Exec approval button state (approval_id → {session_key, message_id, chat_id})
         self._approval_state: Dict[int, Dict[str, str]] = {}
         self._approval_counter = itertools.count(1)
-        # Memory proposal button state (session_key → {message_id, chat_id})
-        self._memory_proposal_state: Dict[str, Dict[str, str]] = {}
         # Update prompt button state (prompt_id → {session_key, message_id, chat_id})
         self._update_prompt_state: Dict[int, Dict[str, str]] = {}
         self._update_prompt_counter = itertools.count(1)
@@ -2009,11 +2007,6 @@ class FeishuAdapter(BasePlatformAdapter):
                 new_content=new_content,
             )
             result = await send_memory_proposal_card(self, chat_id=chat_id, entry=entry, metadata=metadata)
-            if result and getattr(result, "success", False) and session_key:
-                self._memory_proposal_state[session_key] = {
-                    "message_id": getattr(result, "message_id", "") or "",
-                    "chat_id": chat_id,
-                }
             return result
         except Exception as exc:
             logger.warning("[Feishu] send_memory_approval failed: %s", exc)

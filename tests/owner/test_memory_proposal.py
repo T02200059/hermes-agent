@@ -1,4 +1,4 @@
-"""Tests for owner.memory proposal approval queue and tool."""
+"""Tests for owner.memory proposal approval queue, tool, and Feishu cards."""
 
 import json
 import threading
@@ -65,14 +65,8 @@ class TestMemoryGateway:
         assert result == "approve"
 
     def test_notify_callback(self):
-        calls = []
-
-        def _cb(entry):
-            calls.append(entry)
-
-        register_memory_notify("sess-6", _cb)
+        """Verify unregister_memory_notify cleans up pending proposals."""
         entry = submit_memory_proposal("add", "memory", "", "x", session_key="sess-6")
-        # _notify is internal; exercise via public unregister path to ensure no crash.
         unregister_memory_notify("sess-6")
         assert entry.result == "deny"
 
@@ -91,6 +85,28 @@ class TestMemoryGateway:
     def test_handle_commands_no_pending(self):
         assert handle_approve_command("no-sess") is None
         assert handle_deny_command("no-sess") is None
+
+    def test_notify_callback_invoked_by_tool(self):
+        """Verify notify callback fires when memory_propose_tool submits a proposal."""
+        calls = []
+        store = MagicMock()
+        store.add.return_value = {"success": True}
+
+        def _cb(entry):
+            calls.append(entry)
+            resolve_memory_approval(entry.session_key, "approve")
+
+        register_memory_notify("default", _cb)
+        try:
+            result = memory_propose_tool("add", "memory", "", "fact", store=store)
+        finally:
+            unregister_memory_notify("default")
+
+        assert len(calls) == 1
+        assert calls[0].action == "add"
+        assert calls[0].target == "memory"
+        data = json.loads(result)
+        assert data["approved"] is True
 
 
 class TestMemoryProposeTool:
@@ -112,7 +128,6 @@ class TestMemoryProposeTool:
         assert data["reason"] == "invalid_target"
 
     def test_no_store_after_approve(self):
-        # Register a callback that auto-approves so the tool can complete.
         def _auto_approve(entry):
             resolve_memory_approval(entry.session_key, "approve")
 
@@ -169,3 +184,67 @@ class TestMemoryProposeTool:
         data = json.loads(result)
         assert data["approved"] is True
         store.replace.assert_called_once_with("user", "old", "new")
+
+
+class TestMemoryProposalFeishuCard:
+    """Tests for the Feishu interactive card building functions."""
+
+    def test_resolve_button_approve(self):
+        from owner.feishu.memory_proposal import resolve_memory_proposal_button
+        assert resolve_memory_proposal_button({"hermes_action": "memory_approve"}) == "approve"
+
+    def test_resolve_button_deny(self):
+        from owner.feishu.memory_proposal import resolve_memory_proposal_button
+        assert resolve_memory_proposal_button({"hermes_action": "memory_deny"}) == "deny"
+
+    def test_resolve_button_unknown(self):
+        from owner.feishu.memory_proposal import resolve_memory_proposal_button
+        assert resolve_memory_proposal_button({"hermes_action": "other"}) is None
+        assert resolve_memory_proposal_button({}) is None
+        assert resolve_memory_proposal_button([]) is None  # type: ignore[arg-type]  # non-dict input
+
+    def test_build_card_has_required_structure(self):
+        from owner.feishu.memory_proposal import build_memory_proposal_card
+        card = build_memory_proposal_card(
+            action="add", target="memory", old_text="", new_content="test",
+            session_key="sess-card-1",
+        )
+        assert card["config"]["wide_screen_mode"] is True
+        assert "header" in card
+        assert card["header"]["template"] == "purple"
+        elements = card["elements"]
+        assert len(elements) == 2
+        actions = elements[1]["actions"]
+        assert len(actions) == 2
+        assert actions[0]["value"]["hermes_action"] == "memory_approve"
+        assert actions[1]["value"]["hermes_action"] == "memory_deny"
+        assert actions[0]["value"]["session_key"] == "sess-card-1"
+
+    def test_build_card_render_content(self):
+        from owner.feishu.memory_proposal import build_memory_proposal_card
+        card = build_memory_proposal_card(
+            action="replace", target="user", old_text="old entry",
+            new_content="new entry", session_key="sess-card-2",
+        )
+        markdown = card["elements"][0]["content"]
+        assert "old entry" in markdown
+        assert "new entry" in markdown
+
+    def test_build_resolved_card_approved(self):
+        from owner.feishu.memory_proposal import build_resolved_memory_proposal_card
+        card = build_resolved_memory_proposal_card(choice="approve")
+        assert card["header"]["template"] == "green"
+        assert "批准" in card["header"]["title"]["content"]
+
+    def test_build_resolved_card_denied(self):
+        from owner.feishu.memory_proposal import build_resolved_memory_proposal_card
+        card = build_resolved_memory_proposal_card(choice="deny")
+        assert card["header"]["template"] == "red"
+        assert "拒绝" in card["header"]["title"]["content"]
+
+    def test_action_label(self):
+        from owner.feishu.memory_proposal import _action_label
+        assert _action_label("add") == "添加"
+        assert _action_label("replace") == "替换"
+        assert _action_label("remove") == "删除"
+        assert _action_label("unknown") == "unknown"

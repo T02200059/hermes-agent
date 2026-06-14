@@ -16032,63 +16032,17 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             _approval_session_key = session_key or ""
             _approval_session_token = set_current_session_key(_approval_session_key)
 
-            # [owner] memory_propose: register per-session notify callback
-            from owner.memory.gateway import register_memory_notify, unregister_memory_notify
+            # [owner] memory_propose: setup gateway-side routing (owner/memory/gateway.py)
             import tools.memory_propose_tool  # noqa: F401 — ensures registration + toolset patch
-
-            def _memory_propose_notify_sync(entry) -> None:
-                """Send a memory proposal approval request from the agent thread."""
-                if not _status_adapter:
-                    return
-                try:
-                    _status_adapter.pause_typing_for_chat(_status_chat_id)
-                except Exception:
-                    pass
-
-                send_ok = False
-                try:
-                    _mp_fut = safe_schedule_threadsafe(
-                        _status_adapter.send_memory_approval(
-                            chat_id=_status_chat_id,
-                            action=entry.action,
-                            target=entry.target,
-                            old_text=entry.old_text,
-                            new_content=entry.new_content,
-                            metadata=_status_thread_metadata,
-                        ),
-                        _loop_for_step,
-                        logger=logger,
-                        log_message="send_memory_approval scheduling error",
-                    )
-                    if _mp_fut is not None:
-                        _mp_result = _mp_fut.result(timeout=15)
-                        send_ok = bool(getattr(_mp_result, "success", False))
-                except Exception as exc:
-                    logger.warning("send_memory_approval failed: %s", exc)
-                    send_ok = False
-
-                if not send_ok:
-                    fallback_text = (
-                        f"💾 **Memory 提案确认**\n\n"
-                        f"**操作**: {entry.action} → {entry.target}\n\n"
-                        f"回复 `/approve` 批准，或 `/deny` 拒绝。"
-                    )
-                    try:
-                        _mp_send_fut = safe_schedule_threadsafe(
-                            _status_adapter.send(chat_id=_status_chat_id, content=fallback_text),
-                            _loop_for_step,
-                            logger=logger,
-                            log_message="memory approval fallback text failed to schedule",
-                        )
-                        if _mp_send_fut is not None:
-                            _mp_send_fut.result(timeout=15)
-                    except Exception as exc:
-                        logger.warning("Memory approval fallback text also failed: %s", exc)
-
-            # [owner] memory_propose: inject session_key so Feishu buttons can correlate (WR-08)
-            if _status_thread_metadata is not None:
-                _status_thread_metadata["session_key"] = _approval_session_key
-            register_memory_notify(_approval_session_key, _memory_propose_notify_sync)
+            from owner.memory.gateway import setup_gateway_memory_routing
+            _mp_cleanup = setup_gateway_memory_routing(
+                session_key=_approval_session_key,
+                adapter=_status_adapter,
+                chat_id=_status_chat_id,
+                metadata=_status_thread_metadata,
+                loop=_loop_for_step,
+                logger=logger,
+            )
 
             register_gateway_notify(_approval_session_key, _approval_notify_sync)
             try:
@@ -16141,9 +16095,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 result = agent.run_conversation(_api_run_message, **_conversation_kwargs)
             finally:
                 unregister_gateway_notify(_approval_session_key)
-                # [owner] memory_propose: cancel pending proposals so blocked agent threads unwind
+                # [owner] memory_propose: cleanup pending proposals (see owner/memory/gateway.py)
                 try:
-                    unregister_memory_notify(_approval_session_key)
+                    _mp_cleanup()
                 except Exception:
                     pass
                 # Cancel any pending clarify entries so blocked agent

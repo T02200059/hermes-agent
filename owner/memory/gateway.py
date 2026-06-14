@@ -221,3 +221,110 @@ def handle_deny_command(session_key: str) -> Optional[str]:
 
     logger.info("User denied %d memory proposal(s) via /deny", count)
     return t("gateway.deny.denied_singular")
+
+
+# ---------------------------------------------------------------------------
+# Gateway-side routing (extracted from gateway/run.py per 二次开发规范 §2.1)
+# ---------------------------------------------------------------------------
+
+
+def setup_gateway_memory_routing(
+    *,
+    session_key: str,
+    adapter: Any,
+    chat_id: str,
+    metadata: Optional[Dict[str, Any]],
+    loop: Any,
+    logger: Any,
+) -> Callable[[], None]:
+    """Set up memory-proposal routing for one gateway session.
+
+    - Registers a per-session notify callback that sends approval cards
+      (or fallback text) to the user when the agent calls ``memory_propose``.
+    - Injects ``session_key`` into metadata so Feishu card buttons can correlate.
+    - Returns a cleanup callable that unregisters the notify and cancels
+      pending proposals.
+    """
+    # Ensure tool registration + toolset patch (idempotent side-effect import).
+    import tools.memory_propose_tool  # noqa: F401
+
+    try:
+        from agent.async_utils import safe_schedule_threadsafe
+    except Exception:
+        safe_schedule_threadsafe = None
+
+    def _notify_callback(entry: Any) -> None:
+        """Send a memory proposal approval request from the agent thread."""
+        if not adapter:
+            return
+        try:
+            adapter.pause_typing_for_chat(chat_id)
+        except Exception:
+            pass
+
+        send_ok = False
+        # Try the adapter's card-sending method first (Feishu overrides this).
+        try:
+            _mp_fut = safe_schedule_threadsafe(
+                adapter.send_memory_approval(
+                    chat_id=chat_id,
+                    action=entry.action,
+                    target=entry.target,
+                    old_text=entry.old_text,
+                    new_content=entry.new_content,
+                    metadata=metadata,
+                ),
+                loop,
+                logger=logger,
+                log_message="send_memory_approval scheduling error",
+            ) if safe_schedule_threadsafe else None
+            if _mp_fut is not None:
+                _mp_result = _mp_fut.result(timeout=15)
+                send_ok = bool(getattr(_mp_result, "success", False))
+        except Exception as exc:
+            logger.warning("send_memory_approval failed: %s", exc)
+            send_ok = False
+
+        if not send_ok:
+            # Fallback text message when card UI is unavailable or sending failed.
+            new_content = getattr(entry, "new_content", "")
+            if new_content:
+                fallback_text = (
+                    f"💾 **Memory 提案确认**\n\n"
+                    f"**操作**: {entry.action} → {entry.target}\n\n"
+                    f"**内容预览**:\n"
+                    f"```\n{str(new_content)[:500]}\n```\n\n"
+                    f"回复 `/approve` 批准，或 `/deny` 拒绝。"
+                )
+            else:
+                fallback_text = (
+                    f"💾 **Memory 提案确认**\n\n"
+                    f"**操作**: {entry.action} → {entry.target}\n\n"
+                    f"回复 `/approve` 批准，或 `/deny` 拒绝。"
+                )
+            try:
+                _fb_fut = safe_schedule_threadsafe(
+                    adapter.send(chat_id=chat_id, content=fallback_text),
+                    loop,
+                    logger=logger,
+                    log_message="memory approval fallback text failed to schedule",
+                ) if safe_schedule_threadsafe else None
+                if _fb_fut is not None:
+                    _fb_fut.result(timeout=15)
+            except Exception as exc:
+                logger.warning("Memory approval fallback text also failed: %s", exc)
+
+    # Inject session_key so Feishu card buttons can correlate.
+    if metadata is not None:
+        metadata["session_key"] = session_key
+
+    register_memory_notify(session_key, _notify_callback)
+
+    def _cleanup() -> None:
+        """Cancel pending proposals so blocked agent threads unwind."""
+        try:
+            unregister_memory_notify(session_key)
+        except Exception:
+            pass
+
+    return _cleanup

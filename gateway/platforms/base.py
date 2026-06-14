@@ -2906,35 +2906,12 @@ class BasePlatformAdapter(ABC):
     ) -> SendResult:
         """Send a memory proposal approval message to the user.
 
-        Default implementation renders a plain text fallback with /approve
-        instructions. Adapters with button UI support (Feishu) override this
-        to render interactive approve/deny buttons.
-
-        Button callbacks MUST call:
-          owner.memory.gateway.resolve_memory_approval(session_key, "approve")
-          owner.memory.gateway.resolve_memory_approval(session_key, "deny")
+        Adapters with button UI support (Feishu) override this to render
+        interactive approve/deny cards. The base stub returns failure so the
+        caller's fallback text path (owner/memory/gateway.py) takes over.
         """
-        # [owner] memory_propose: text fallback for platforms without card UI
-        if new_content:
-            content = (
-                f"💾 **Memory 提案确认**\n\n"
-                f"**操作**: {action} → {target}\n\n"
-                f"**内容预览**:\n"
-                f"```\n{new_content[:500]}\n```\n\n"
-                f"回复 `/approve` 批准，或 `/deny` 拒绝。"
-            )
-        else:
-            content = (
-                f"💾 **Memory 提案确认**\n\n"
-                f"**操作**: {action} → {target}\n\n"
-                f"回复 `/approve` 批准，或 `/deny` 拒绝。"
-            )
-
-        return await self.send(
-            chat_id=chat_id,
-            content=content,
-            metadata=metadata,
-        )
+        # [owner] memory_propose: thin stub — fallback text lives in owner/memory/gateway.py
+        return SendResult(success=False, error="this platform has no card UI for memory proposals")
 
     async def send_private_notice(
         self,

@@ -13,9 +13,19 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+_patched = False
+
 
 def _patch_toolsets() -> None:
-    """Mutate toolsets at runtime so memory_propose replaces memory."""
+    """Mutate toolsets at runtime so memory_propose replaces memory.
+
+    Idempotent: runs at most once per process, even if the module is
+    re-imported in different contexts (CLI, TUI, gateway).
+    """
+    global _patched
+    if _patched:
+        return
+    _patched = True
     try:
         import toolsets as _toolsets
         from tools.registry import registry
