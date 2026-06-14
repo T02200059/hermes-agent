@@ -140,12 +140,12 @@
 - [ ] `0b50165` | 2026-06-04 | `yangtb` | feat(patch): add sync_sre_king bot menu command | +4 | −1 |
 - [ ] `f747157` | 2026-06-04 | `yangtb` | feat(feishu): add sync_git_hermes bot menu entry with ack config | +3 | −0 |
 - [ ] `aad84a1` | 2026-06-04 | `yangtb` | fix(feishu): persist p2p_chat_id to disk cache | +39 | −1 |
-- [ ] `c0d5e2a` | 2026-06-04 | `yangtb` | feishu: aiohttp timeout 10→60s; pricing: 汇率更新; patch: inspect_gpu_cluster ack; 新增 hy3 成本估算脚本 | +176 | −2 |
+- [x] ✅ 已迁移·部分（bot_menu 映射 + ack 配置，已覆盖 inspect_gpu_cluster/命名统一等；汇率/fix 超时/hy3 脚本废弃）`18cbfa7e7` `c0d5e2a` | 2026-06-04 | `yangtb` | feishu: aiohttp timeout 10→60s; pricing: 汇率更新; patch: inspect_gpu_cluster ack; 新增 hy3 成本估算脚本 | +176 | −2 |
 - [x] ✅ 已迁移 `45ab4a0f0` `b933cd6` | 2026-06-03 | `yangtb` | feat: add session-archiver plugin | +727 | −0 |
 - [x] ✅ 已迁移 `7646add45` `248bdb4` | 2026-06-03 | `yangtb` | docs: enhance unified_diff_patch schema with hunk counting rule and absolute path trick | +18 | −1 | ⚠️ 混有代码：tools/unified_diff_patch_tool.py
 - [ ] `ab8fd79` | 2026-06-03 | `yangtb` | feat(feishu): bot menu dedup + configurable ack + reasoning xhigh | +384 | −1 |
 - [ ] `fd20634` | 2026-06-03 | `yangtb` | fix(feishu): allow non-slash commands in bot_menu mapping | +1 | −1 |
-- [ ] `a612263` | 2026-06-03 | `yangtb` | feat(feishu): add built-in bot_menu fallback + inspect_gpu_cluster menu item | +31 | −4 |
+- [x] ✅ 已迁移·部分（built-in bot_menu fallback feishu.py 已有；bot_menu 映射迁移到 patch.yaml）`18cbfa7e7` `a612263` | 2026-06-03 | `yangtb` | feat(feishu): add built-in bot_menu fallback + inspect_gpu_cluster menu item | +31 | −4 |
 - [ ] `feac9c1` | 2026-06-03 | `yangtb` | fix(kimi-coding): correct base_url and api_mode for Kimi Coding Plan | +5 | −2 |
 - [x] ⚠️ 废弃（纯文档md，不迁移）`cbf4a70` | 2026-06-03 | `yangtb` | feat(owner): add generic SOUL.md template | +80 | −0 |
 - [ ] `f31b40d` | 2026-06-03 | `yangtb` | feat(patch): add reasoning/model menu shortcuts, clean naming | +9 | −3 |
