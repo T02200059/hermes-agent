@@ -22,7 +22,7 @@ class TestLoadPermanentAllowlistPatchMerge:
 
         try:
             with patch("hermes_cli.config.load_config", _fake_load_config), patch(
-                "owner.patch_config._load_patch_owner_config", _fake_load_patch
+                "owner.patch_config.load_patch_config", _fake_load_patch
             ):
                 patterns = load_permanent_allowlist()
 
@@ -46,7 +46,7 @@ class TestLoadPermanentAllowlistPatchMerge:
 
         try:
             with patch("hermes_cli.config.load_config", _fake_load_config), patch(
-                "owner.patch_config._load_patch_owner_config", _fake_load_patch
+                "owner.patch_config.load_patch_config", _fake_load_patch
             ):
                 patterns = load_permanent_allowlist()
 
@@ -68,7 +68,7 @@ class TestLoadPermanentAllowlistPatchMerge:
 
         try:
             with patch("hermes_cli.config.load_config", _fake_load_config), patch(
-                "owner.patch_config._load_patch_owner_config", _broken_load_patch
+                "owner.patch_config.load_patch_config", _broken_load_patch
             ):
                 patterns = load_permanent_allowlist()
 

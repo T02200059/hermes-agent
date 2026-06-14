@@ -21,6 +21,15 @@ _PATCH_TTL_SECONDS = 300
 _cache: Dict[str, Any] = {"path": None, "mtime": None, "data": None, "last_load": 0}
 
 
+def load_patch_config(force: bool = False) -> Dict[str, Any]:
+    """Public wrapper for :func:`_load_patch_owner_config`.
+
+    Official-code callers (e.g. ``tools/approval.py``) should import this
+    instead of the private ``_load_patch_owner_config``.
+    """
+    return _load_patch_owner_config(force=force)
+
+
 def _load_patch_owner_config(force: bool = False) -> Dict[str, Any]:
     """Load ``~/.hermes/patch.yaml`` and return the ``owner`` section.
 

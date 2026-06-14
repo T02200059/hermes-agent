@@ -899,13 +899,13 @@ def load_permanent_allowlist() -> set:
 
         # [owner] approval: merge patch.yaml allowlist (owner.approvals.command_allowlist)
         try:
-            from owner.patch_config import _load_patch_owner_config
-            owner_cfg = _load_patch_owner_config()
+            from owner.patch_config import load_patch_config
+            owner_cfg = load_patch_config()
             patch_allowlist = owner_cfg.get("approvals", {}).get("command_allowlist", [])
             if patch_allowlist:
                 patterns.update(patch_allowlist)
         except Exception:
-            pass  # patch.yaml unavailable — use config.yaml entries only
+            logger.debug("patch.yaml approval allowlist unavailable, using config.yaml only")
 
         if patterns:
             load_permanent(patterns)

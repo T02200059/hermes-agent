@@ -55,7 +55,7 @@ timeout "$TIMEOUT_SEC" bash -c '
     done
     
     if [ -n "$output" ]; then
-        echo -e "$output" | sed "/^$/d"   # 去掉多余空行
+        printf '%b\n' "$output" | sed "/^$/d"   # 去掉多余空行
     else
         echo "ALL_DONE"
     fi
