@@ -153,7 +153,7 @@
 - [ ] `d1ab5c8` | 2026-06-03 | `yangtb` | feat(feishu): bot menu events + structured user cache | +203 | −25 |
 - [ ] `f1ba3bb` | 2026-06-03 | `yangtb` | fix: feishu diff card logging + memory proposal cleanup | +11 | −1 |
 - [x] ⚠️ 废弃（纯文档md，不迁移）`171d976` | 2026-06-03 | `yangtb` | docs: add feishu bot menu + user cache and rate limiter concurrency analysis | +485 | −0 |
-- [ ] `53ff4d2` | 2026-06-03 | `yangtb` | refactor: simplify DEFAULT_AGENT_IDENTITY to concise Chinese, remove aggressive directives | +4 | −14 |
+- [x] ⏭️ 跳过（默认值更改，运行时 SOUL.md 覆盖后无实际效果）`53ff4d2` | 2026-06-03 | `yangtb` | refactor: simplify DEFAULT_AGENT_IDENTITY to concise Chinese, remove aggressive directives | +4 | −14 |
 - [x] ⚠️ 废弃（纯文档md，不迁移）`47b44a5` | 2026-06-02 | `yangtb` | docs: expand Phase 3 section with container design decisions | +83 | −9 |
 - [x] ⏭️ 跳过（纯文档记录一次性的配置清理，owner-v16 配置基线已不同）`f3de5be` | 2026-06-02 | `yangtb` | docs: add hermes config customizations classification + shareable baseline | +936 | −0 |
 - [x] ⏸️ 延后·多 profile 相关，后期单独批次处理 `4242bea` | 2026-06-02 | `yangtb` | feat(feishu): add profile routing layer for multi-user dispatch (Phase 2) | +103 | −3 |
