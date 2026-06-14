@@ -4560,8 +4560,12 @@ class DiscordAdapter(BasePlatformAdapter):
                 color=discord.Color.orange(),
             )
 
+            # [owner] clarify: render normalized choice display label (see owner/clarify/gateway_helpers.py)
+            from owner.clarify.gateway_helpers import get_choice_display as _render_choice_display
             clean_choices = [
-                str(c).strip() for c in (choices or []) if c is not None and str(c).strip()
+                _render_choice_display(c).strip()
+                for c in (choices or [])
+                if c is not None and _render_choice_display(c).strip()
             ]
             # Discord allows up to 5 buttons per row, 5 rows per view = 25.
             # We reserve one slot for the "Other" button, so cap at 24 choices.
