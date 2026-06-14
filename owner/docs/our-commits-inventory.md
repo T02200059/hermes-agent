@@ -151,7 +151,7 @@
 - [ ] `f31b40d` | 2026-06-03 | `yangtb` | feat(patch): add reasoning/model menu shortcuts, clean naming | +9 | −3 |
 - [x] ⚠️ 废弃（纯文档md，不迁移）`38304b8` | 2026-06-03 | `yangtb` | docs(owner): update README with P57 feishu bot menu + user cache | +3 | −2 |
 - [ ] `d1ab5c8` | 2026-06-03 | `yangtb` | feat(feishu): bot menu events + structured user cache | +203 | −25 |
-- [ ] `f1ba3bb` | 2026-06-03 | `yangtb` | fix: feishu diff card logging + memory proposal cleanup | +11 | −1 |
+- [x] ⏭️ 跳过（Presentation 部分已在 memory 迁移时覆盖；日志改进属于低优先级调试增强）`f1ba3bb` | 2026-06-03 | `yangtb` | fix: feishu diff card logging + memory proposal cleanup | +11 | −1 |
 - [x] ⚠️ 废弃（纯文档md，不迁移）`171d976` | 2026-06-03 | `yangtb` | docs: add feishu bot menu + user cache and rate limiter concurrency analysis | +485 | −0 |
 - [x] ⏭️ 跳过（默认值更改，运行时 SOUL.md 覆盖后无实际效果）`53ff4d2` | 2026-06-03 | `yangtb` | refactor: simplify DEFAULT_AGENT_IDENTITY to concise Chinese, remove aggressive directives | +4 | −14 |
 - [x] ⚠️ 废弃（纯文档md，不迁移）`47b44a5` | 2026-06-02 | `yangtb` | docs: expand Phase 3 section with container design decisions | +83 | −9 |
