@@ -27,7 +27,7 @@
 
 ## 完整 commit 列表（按时间倒序）
 
-- [ ] `5b14bbf` | 2026-06-12 | `yangtb` | chore: add SQL audit script for reasoning_content coverage | +58 | −0 |
+- [x] [废弃] `5b14bbf` | 2026-06-12 | `yangtb` | chore: add SQL audit script for reasoning_content coverage | +58 | −0 |
 - [ ] `871a364` | 2026-06-12 | `yangtb` | test: regression tests for xfyun/damodel reasoning_content echo | +210 | −0 |
 - [ ] `854d2c3` | 2026-06-12 | `yangtb` | feat: add xfyun/damodel thinking-mode reasoning_content detector | +30 | −0 |
 - [x] ⚠️ 废弃（纯文档md，不迁移）`6ae8c57` | 2026-06-12 | `yangtb` | sync: align owner/SOUL.md with personalized SOUL.md (minus persona) | +33 | −7 |
