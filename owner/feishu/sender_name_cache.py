@@ -152,7 +152,7 @@ class FeishuSenderNameCache:
         if not self._client or not bot_ids:
             return None
         try:
-            from lark_oapi.core.const import AccessTokenType, HttpMethod
+            from lark_oapi.core import AccessTokenType, HttpMethod
             from lark_oapi.core.model import BaseRequest  # lazy
 
             req = (
