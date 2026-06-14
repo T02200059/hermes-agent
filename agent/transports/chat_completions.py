@@ -348,6 +348,10 @@ class ChatCompletionsTransport(ProviderTransport):
                     _e = (reasoning_config.get("effort") or "").strip().lower()
                     if _e in {"low", "medium", "high"}:
                         _kimi_effort = _e
+                    elif _e == "xhigh":
+                        # [owner] Kimi does not support xhigh; degrade gracefully to high
+                        # rather than falling back to medium.
+                        _kimi_effort = "high"
                 api_kwargs["reasoning_effort"] = _kimi_effort
 
         # Tencent TokenHub: top-level reasoning_effort (unless thinking disabled)
