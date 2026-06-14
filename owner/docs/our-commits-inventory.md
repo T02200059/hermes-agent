@@ -81,14 +81,14 @@
 - [x] ✅ 已迁移 `c974c92` | 2026-06-09 | `yangtb` | docs(owner): update patch inventory to 65, add P65 yolo tri-state entry | +4 | −3 |
 - [x] ⚠️ 废弃：定价/AGENTS.md，不迁移 `9b4dda1` | 2026-06-09 | `yangtb` | docs(AGENTS): update project structure and development guide | +187 | −81 |
 - [ ] `ca0836e` | 2026-06-09 | `yangtb` | chore(config): add yolo_on/yolo_off ack text + sync patch.yaml | +17 | −1 |
-- [ ] `e7d351c` | 2026-06-09 | `yangtb` | fix(feishu): bot_menu synthetic event message_id → None | +1 | −1 |
+- [x] ✅ 已迁移 `d2c991d9a` `e7d351c` | 2026-06-09 | `yangtb` | fix(feishu): bot_menu synthetic event message_id → None | +1 | −1 |
 - [ ] `1be0241` | 2026-06-09 | `yangtb` | feat(gateway): /yolo on\ | off\ | status syntax sugar |
 - [x] ⚠️ 废弃：定价/AGENTS.md，不迁移 `8b5f0f7` | 2026-06-09 | `yangtb` | chore(config): update pricing.yaml exchange rate | +1 | −1 |
 - [ ] `ef0d7bf` | 2026-06-09 | `yangtb` | fix(credential_pool): reject classic PATs in copilot env seeding | +11 | −0 |
 - [x] ⚠️ 废弃（纯文档md，不迁移）`88a8156` | 2026-06-08 | `yangtb` | docs(owner): add 6 patches to README (P58-P63 feishu + P62 tools) | +9 | −3 |
 - [x] ⚠️ 废弃（纯文档md，不迁移）`9f6fecd` | 2026-06-08 | `yangtb` | docs(owner): dual-agent cross-review architecture design draft | +354 | −0 |
-- [ ] `8eadc82` | 2026-06-08 | `yangtb` | fix(feishu): bot_menu_dedup 对齐新增 model key | +4 | −0 |
-- [ ] `b0a8f3c` | 2026-06-08 | `yangtb` | feat(feishu): bot_menu 增加 mimo / minimax 模型快捷键 | +2 | −0 |
+- [x] ✅ 已迁移 `d2c991d9a` `8eadc82` | 2026-06-08 | `yangtb` | fix(feishu): bot_menu_dedup 对齐新增 model key | +4 | −0 |
+- [x] ✅ 已迁移 `d2c991d9a` `b0a8f3c` | 2026-06-08 | `yangtb` | feat(feishu): bot_menu 增加 mimo / minimax 模型快捷键 | +2 | −0 |
 - [x] ⚠️ 废弃：定价/AGENTS.md，不迁移 `ab5cda7` | 2026-06-08 | `yangtb` | chore(owner): pricing.yaml daily exchange rate update | +1 | −1 |
 - [x] ⚠️ 废弃（纯文档md，不迁移）`86f575e` | 2026-06-08 | `yangtb` | docs(owner): archive rolled-back clarify-timeout-abort design | +108 | −0 |
 - [x] ✅ 已迁移 `47a8e5db6` `e49f512` | 2026-06-08 | `yangtb` | feat(feishu): expire_clarify on timeout — grey card + interrupt turn | +145 | −3 |
@@ -136,21 +136,21 @@
 - [x] ✅ 已迁移 `45ab4a0f0` `c41dffd` | 2026-06-04 | `yangtb` | fix(session-archiver): add log retention cleanup, fix tool_calls parse, fix Qdrant vectors | +24 | −27 |
 - [ ] `2d38c8d` | 2026-06-04 | `yangtb` | perf(feishu): debounce chat_id cache writes to avoid sync I/O on hot path | +37 | −3 |
 - [ ] `75db996` | 2026-06-04 | `yangtb` | feat(model): add MiniMax-M3 to provider catalog and opencode model lists | +4 | −0 |
-- [ ] `9a8adcb` | 2026-06-04 | `yangtb` | feat(config): update bot_menu emoji ack for feishu | +11 | −11 |
-- [ ] `0b50165` | 2026-06-04 | `yangtb` | feat(patch): add sync_sre_king bot menu command | +4 | −1 |
-- [ ] `f747157` | 2026-06-04 | `yangtb` | feat(feishu): add sync_git_hermes bot menu entry with ack config | +3 | −0 |
-- [ ] `aad84a1` | 2026-06-04 | `yangtb` | fix(feishu): persist p2p_chat_id to disk cache | +39 | −1 |
+- [x] ✅ 已迁移 `d2c991d9a` `9a8adcb` | 2026-06-04 | `yangtb` | feat(config): update bot_menu emoji ack for feishu | +11 | −11 |
+- [x] ✅ 已迁移 `d2c991d9a` `0b50165` | 2026-06-04 | `yangtb` | feat(patch): add sync_sre_king bot menu command | +4 | −1 |
+- [x] ✅ 已迁移 `d2c991d9a` `f747157` | 2026-06-04 | `yangtb` | feat(feishu): add sync_git_hermes bot menu entry with ack config | +3 | −0 |
+- [x] ✅ 已迁移 `d2c991d9a` `aad84a1` | 2026-06-04 | `yangtb` | fix(feishu): persist p2p_chat_id to disk cache | +39 | −1 |
 - [x] ✅ 已迁移·部分（bot_menu 映射 + ack 配置，已覆盖 inspect_gpu_cluster/命名统一等；汇率/fix 超时/hy3 脚本废弃）`18cbfa7e7` `c0d5e2a` | 2026-06-04 | `yangtb` | feishu: aiohttp timeout 10→60s; pricing: 汇率更新; patch: inspect_gpu_cluster ack; 新增 hy3 成本估算脚本 | +176 | −2 |
 - [x] ✅ 已迁移 `45ab4a0f0` `b933cd6` | 2026-06-03 | `yangtb` | feat: add session-archiver plugin | +727 | −0 |
 - [x] ✅ 已迁移 `7646add45` `248bdb4` | 2026-06-03 | `yangtb` | docs: enhance unified_diff_patch schema with hunk counting rule and absolute path trick | +18 | −1 | ⚠️ 混有代码：tools/unified_diff_patch_tool.py
-- [ ] `ab8fd79` | 2026-06-03 | `yangtb` | feat(feishu): bot menu dedup + configurable ack + reasoning xhigh | +384 | −1 |
-- [ ] `fd20634` | 2026-06-03 | `yangtb` | fix(feishu): allow non-slash commands in bot_menu mapping | +1 | −1 |
-- [x] ✅ 已迁移·部分（built-in bot_menu fallback feishu.py 已有；bot_menu 映射迁移到 patch.yaml）`18cbfa7e7` `a612263` | 2026-06-03 | `yangtb` | feat(feishu): add built-in bot_menu fallback + inspect_gpu_cluster menu item | +31 | −4 |
+- [x] ✅ 已迁移 `d2c991d9a` `ab8fd79` | 2026-06-03 | `yangtb` | feat(feishu): bot menu dedup + configurable ack + reasoning xhigh | +384 | −1 |
+- [x] ✅ 已迁移 `d2c991d9a` `fd20634` | 2026-06-03 | `yangtb` | fix(feishu): allow non-slash commands in bot_menu mapping | +1 | −1 |
+- [x] ✅ 已迁移·部分（built-in bot_menu fallback feishu.py 已有；bot_menu 映射迁移到 patch.yaml）`d2c991d9a` `a612263` | 2026-06-03 | `yangtb` | feat(feishu): add built-in bot_menu fallback + inspect_gpu_cluster menu item | +31 | −4 |
 - [ ] `feac9c1` | 2026-06-03 | `yangtb` | fix(kimi-coding): correct base_url and api_mode for Kimi Coding Plan | +5 | −2 |
 - [x] ⚠️ 废弃（纯文档md，不迁移）`cbf4a70` | 2026-06-03 | `yangtb` | feat(owner): add generic SOUL.md template | +80 | −0 |
-- [ ] `f31b40d` | 2026-06-03 | `yangtb` | feat(patch): add reasoning/model menu shortcuts, clean naming | +9 | −3 |
+- [x] ✅ 已迁移 `d2c991d9a` `f31b40d` | 2026-06-03 | `yangtb` | feat(patch): add reasoning/model menu shortcuts, clean naming | +9 | −3 |
 - [x] ⚠️ 废弃（纯文档md，不迁移）`38304b8` | 2026-06-03 | `yangtb` | docs(owner): update README with P57 feishu bot menu + user cache | +3 | −2 |
-- [ ] `d1ab5c8` | 2026-06-03 | `yangtb` | feat(feishu): bot menu events + structured user cache | +203 | −25 |
+- [x] ✅ 已迁移 `d2c991d9a` `d1ab5c8` | 2026-06-03 | `yangtb` | feat(feishu): bot menu events + structured user cache | +203 | −25 |
 - [x] ⏭️ 跳过（Presentation 部分已在 memory 迁移时覆盖；日志改进属于低优先级调试增强）`f1ba3bb` | 2026-06-03 | `yangtb` | fix: feishu diff card logging + memory proposal cleanup | +11 | −1 |
 - [x] ⚠️ 废弃（纯文档md，不迁移）`171d976` | 2026-06-03 | `yangtb` | docs: add feishu bot menu + user cache and rate limiter concurrency analysis | +485 | −0 |
 - [x] ⏭️ 跳过（默认值更改，运行时 SOUL.md 覆盖后无实际效果）`53ff4d2` | 2026-06-03 | `yangtb` | refactor: simplify DEFAULT_AGENT_IDENTITY to concise Chinese, remove aggressive directives | +4 | −14 |
