@@ -3,11 +3,14 @@
 Implements an :class:`ImageGenProvider` that calls the DashScope
 ``multimodal-generation/generation`` endpoint (Qwen-Image / Wan text-to-image).
 
-Configuration is read from ``~/.hermes/patch.yaml`` under
-``owner.image_gen.presets``.  Each preset may define ``endpoint``, ``model``,
-``api_key`` and optional ``size``/``alias`` entries.  The active preset is
-selected by the ``model`` argument passed to :meth:`generate` or by
-``image_gen.model`` in ``config.yaml``.
+Configuration (presets, api_key, etc.) is read from ``~/.hermes/patch.yaml``
+under ``owner.image_gen.presets`` via the unified owner.patch_config loader
+(mtime + 5-minute refresh).
+
+The active preset/model can be selected by:
+- passing model=... to the image_generate tool, or
+- ``owner.image_gen.model`` in patch.yaml (preferred for owner customizations), or
+- falling back to ``image_gen.model`` in config.yaml for compatibility.
 """
 
 from __future__ import annotations
@@ -111,10 +114,28 @@ def _resolve_preset(model_id: str) -> Optional[Dict[str, Any]]:
 
 
 def _resolve_configured_model() -> str:
-    """Read ``image_gen.model`` from config.yaml as a fallback."""
+    """Read the active image_gen model, preferring owner.image_gen.model from patch.yaml.
+
+    This is the migration point: owner-specific image_gen selection lives in
+    patch.yaml under owner.image_gen.model (or via presets aliases). We still
+    fall back to the main config.yaml image_gen.model for compatibility, but
+    owner customizations should use patch.yaml + the unified loader.
+    """
+    # 1. Prefer patch.yaml (unified owner config, with 5min/mtime refresh)
+    try:
+        from owner.patch_config import _load_patch_owner_config
+        owner_cfg = _load_patch_owner_config()
+        ig = owner_cfg.get("image_gen") if isinstance(owner_cfg, dict) else None
+        if isinstance(ig, dict):
+            value = ig.get("model")
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    except Exception as exc:
+        logger.debug("Could not read owner.image_gen.model from patch: %s", exc)
+
+    # 2. Fallback to main config.yaml (for non-owner or legacy setups)
     try:
         from hermes_cli.config import load_config
-
         cfg = load_config()
         section = cfg.get("image_gen") if isinstance(cfg, dict) else None
         if isinstance(section, dict):
@@ -122,7 +143,7 @@ def _resolve_configured_model() -> str:
             if isinstance(value, str) and value.strip():
                 return value.strip()
     except Exception as exc:
-        logger.debug("Could not read image_gen.model: %s", exc)
+        logger.debug("Could not read image_gen.model from config.yaml: %s", exc)
     return ""
 
 
