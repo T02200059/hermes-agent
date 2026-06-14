@@ -56,6 +56,29 @@ owner:
   #         tool_preview_length: 0
   #         streaming: false
 
+  # ── Feishu bot menu key→command mappings ──────────────────────────────────
+  # Maps bot menu event_key to slash command or text prompt.
+  # Falls back to _BUILTIN_BOT_MENU in feishu.py when config is unavailable.
+  feishu:
+    bot_menu:
+      new: "/new"
+      status: "/status"
+      stop: "/stop"
+      reasoning_off: "/reasoning off --global"
+      reasoning_medium: "/reasoning medium --global"
+      reasoning_high: "/reasoning xhigh --global"
+      model_max: "/model qwen3.7-max --provider damodel"
+      model_pro: "/model deepseek-v4-pro --provider damodel"
+      model_flash: "/model deepseek-v4-flash --provider damodel"
+      model_mimo: "/model mimo-v2.5-pro --provider xiaomi --global"
+      model_minimax: "/model MiniMax-M3 --provider minimax-cn --global"
+      list_models: "/providers"
+      yolo_on: "/yolo on"
+      yolo_off: "/yolo off"
+      inspect_gpu_cluster: "帮我根据 sre-king 启动 GPU 集群巡检流程，先问我 IP 范围，等我确认后再执行"
+      sync_git_hermes: "帮我同步 hermes-agent 代码：1) 检查 git status 确认无遗留；2) 按功能拆分成多个有意义的 commit；3) 确认全程在 owner 分支操作；4) push 到 github 和 gitlab。开始前先告诉我你的计划。"
+      sync_sre_king: "帮我同步本地 sre-king 目录代码，流程如下：1) 定位本地 sre-king 目录（~/.hermes/skills/westcloud/sre-king/）；2) 检查是否为 git 仓库，不是则停止并提示；3) 检查当前分支对远端是否有 push 权限，无权限则停止并提示；4) 检查本地未提交的改动，按功能合理拆分成一个或多个有意义的 commit；5) git fetch + git pull 同步远端当前分支；6) 如有冲突 → 停下来描述冲突文件，询问我如何解决；无冲突 → 直接 push。开始前先告诉我你的计划，每步执行后汇报结果。"
+
   # ── Model-level extra_body injection ───────────────────────────────────────
   # Per-provider, per-model extra_body merges. Use the *real* provider name
   # (owner_provider_name) as the key, e.g. xfyun / damodel / deepseek-company.
