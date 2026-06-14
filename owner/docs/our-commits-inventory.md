@@ -41,7 +41,7 @@
 - [x] ⚠️ 废弃（纯文档md，不迁移）`0484b40` | 2026-06-12 | `yangtb` | docs(owner): append qdrant sync status (deferred, viking container down) | +37 | −0 |
 - [x] ⚠️ 废弃（纯文档md，不迁移）`4b3939b` | 2026-06-12 | `yangtb` | docs(owner): patch inventory 73→75, add P74 (P0 hard-cap) + P75 (per-turn attribution) | +14 | −3 |
 - [x] ⚠️ 废弃（纯文档md，不迁移）`1f82244` | 2026-06-12 | `yangtb` | docs(agent): document async_call_llm P0 hang and hard-cap fix | +166 | −0 |
-- [ ] `c7fd830` | 2026-06-12 | `yangtb` | fix(agent): cap async_call_llm with asyncio.wait_for hard timeout | +15 | −1 |
+- [x] ✅ 已迁移 `8e433d5ab` `c7fd830` | 2026-06-12 | `yangtb` | fix(agent): cap async_call_llm with asyncio.wait_for hard timeout | +15 | −1 |
 - [ ] `1d52226` | 2026-06-12 | `yangtb` | test(feishu): add bot_menu routing tests — routed user forwarded, local user handled locally | +76 | −0 |
 - [ ] `1a4f194` | 2026-06-12 | `yangtb` | feat(feishu): forward bot_menu synthetic commands to routed profile containers | +21 | −0 |
 - [x] ⚠️ 废弃（纯文档md，不迁移）`dc44c0c` | 2026-06-12 | `yangtb` | docs(feishu-v6): update implementation status table — add A4/B2/B3, collapse duplicate section 7 | +4 | −6 |
