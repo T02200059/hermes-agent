@@ -35,7 +35,7 @@ import logging
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +50,8 @@ class _ClarifyEntry:
     clarify_id: str
     session_key: str
     question: str
-    choices: Optional[List[str]]
+    # [owner] clarify: choices are normalized {"display", "key"} dicts
+    choices: Optional[List[Dict[str, Optional[str]]]]
     event: threading.Event = field(default_factory=threading.Event)
     response: Optional[str] = None
     awaiting_text: bool = False  # set when user picked "Other" or clarify is open-ended
@@ -79,18 +80,24 @@ def register(
     clarify_id: str,
     session_key: str,
     question: str,
-    choices: Optional[List[str]],
+    choices: Optional[List[Any]],
 ) -> _ClarifyEntry:
     """Register a pending clarify request and return the entry.
 
     The caller (gateway clarify_callback) will then send the prompt to the
     user and block on ``wait_for_response(clarify_id, timeout)``.
+
+    ``choices`` items should be normalized ``{"display", "key"}`` dicts as
+    produced by ``owner.clarify.choice_normalizer``. Legacy string lists are
+    tolerated but adapters should read ``c["display"]`` for rendering.
     """
+    # [owner] clarify: keep choices as normalized dicts for adapters
+    normalized_choices = list(choices) if choices else None
     entry = _ClarifyEntry(
         clarify_id=clarify_id,
         session_key=session_key,
         question=question,
-        choices=list(choices) if choices else None,
+        choices=normalized_choices,
         # Open-ended (no choices) → next message IS the response, no buttons needed.
         awaiting_text=not bool(choices),
     )
@@ -198,6 +205,39 @@ def has_pending(session_key: str) -> bool:
     with _lock:
         ids = _session_index.get(session_key) or []
         return any(_entries.get(cid) is not None for cid in ids)
+
+
+# [owner] clarify: choice adapter helpers exported for platform adapters
+def get_choice_display(c: Any) -> str:
+    """Return the user-facing label for a choice item.
+
+    Accepts the normalized ``{"display", "key"}`` dict shape produced by
+    ``owner.clarify.choice_normalizer`` and returns ``c["display"]``.
+    Falls back to ``str(c)`` for legacy callers that still pass strings,
+    so the platform layer can be written once and not crash on either
+    shape.
+    """
+    if isinstance(c, dict):
+        display = c.get("display")
+        if isinstance(display, str) and display:
+            return display
+    return str(c)
+
+
+def get_choice_key(c: Any) -> str:
+    """Return the stable identifier for a choice item (or empty string).
+
+    For normalized dicts: returns ``c["key"]`` (which may be ``None`` →
+    empty string).
+    For legacy strings: returns the string itself (so the value sent back
+    to the model is the same as the user saw).
+    """
+    if isinstance(c, dict):
+        key = c.get("key")
+        if isinstance(key, str):
+            return key
+        return ""
+    return str(c)
 
 
 def clear_session(session_key: str) -> int:

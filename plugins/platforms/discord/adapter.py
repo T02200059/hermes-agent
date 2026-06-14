@@ -4827,37 +4827,12 @@ class DiscordAdapter(BasePlatformAdapter):
                 color=discord.Color.orange(),
             )
 
-            # Normalise choices: LLMs sometimes emit `[{"description": "..."}]`
-            # instead of bare strings, which would render as raw Python repr on
-            # the button label. Unwrap the common shapes, then stringify.
-            def _flatten_choice(c):
-                if c is None:
-                    return ""
-                if isinstance(c, str):
-                    return c.strip()
-                if isinstance(c, dict):
-                    # Prefer the canonical LLM tool-call user-facing keys
-                    # in the order the LLM is most likely to emit them.
-                    # 'name' and 'value' are deliberately NOT here: they're
-                    # Discord-component-shaped fields that could appear in
-                    # dicts that aren't meant to be choices (e.g., a
-                    # developer-error wiring that passes a Button-shaped
-                    # object). Picking them would leak raw enum values
-                    # or 4-char model identifiers onto user-facing buttons.
-                    # If a dict has none of the canonical keys, drop it
-                    # rather than picking some random field — a garbage
-                    # button label is worse than no button at all.
-                    for key in ("label", "description", "text", "title"):
-                        v = c.get(key)
-                        if isinstance(v, str) and v.strip():
-                            return v.strip()
-                    return ""
-                if isinstance(c, (list, tuple)):
-                    return " ".join(_flatten_choice(x) for x in c).strip()
-                return str(c).strip()
-
+            # [owner] clarify: render normalized choice display label (see owner/clarify/gateway_helpers.py)
+            from owner.clarify.gateway_helpers import get_choice_display as _render_choice_display
             clean_choices = [
-                s for s in (_flatten_choice(c) for c in (choices or [])) if s
+                label
+                for c in (choices or [])
+                if c is not None and (label := _render_choice_display(c).strip())
             ]
             # Discord allows up to 5 buttons per row, 5 rows per view = 25.
             # We reserve one slot for the "Other" button, so cap at 24 choices.

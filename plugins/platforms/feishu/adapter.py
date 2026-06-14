@@ -152,6 +152,9 @@ from owner.feishu.approval import (
     get_allow_permanent,
 )
 from owner.feishu.sender_name_cache import FeishuSenderNameCache
+# [owner] clarify: choice rendering helpers (see owner/clarify/gateway_helpers.py)
+from owner.clarify.gateway_helpers import get_choice_display as _render_choice_display
+from owner.clarify.gateway_helpers import get_choice_key as _render_choice_key
 
 logger = logging.getLogger(__name__)
 
@@ -1484,6 +1487,8 @@ class FeishuAdapter(BasePlatformAdapter):
         # Update prompt button state (prompt_id → {session_key, message_id, chat_id})
         self._update_prompt_state: Dict[int, Dict[str, str]] = {}
         self._update_prompt_counter = itertools.count(1)
+        # [owner] clarify state: clarify_id → {session_key, choices, question, message_id}
+        self._clarify_state: Dict[str, Dict[str, Any]] = {}
         # Feishu reaction deletion requires the opaque reaction_id returned
         # by create, so we cache it per message_id.
         self._pending_processing_reactions: "OrderedDict[str, str]" = OrderedDict()
@@ -2011,6 +2016,44 @@ class FeishuAdapter(BasePlatformAdapter):
         except Exception as exc:
             logger.warning("[Feishu] send_memory_approval failed: %s", exc)
             return SendResult(success=False, error=str(exc))
+
+    # [owner] clarify: send interactive clarify card (see owner/feishu/clarify_card.py)
+    async def send_clarify(
+        self,
+        chat_id: str,
+        question: str,
+        choices: Optional[list],
+        clarify_id: str,
+        session_key: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> SendResult:
+        """Send a clarify prompt as a Feishu interactive card."""
+        from owner.feishu.clarify_card import send_clarify as _owner_send_clarify
+        return await _owner_send_clarify(
+            adapter=self,
+            chat_id=chat_id,
+            question=question,
+            choices=choices,
+            clarify_id=clarify_id,
+            session_key=session_key,
+            metadata=metadata,
+        )
+
+    # [owner] clarify: expire interactive clarify card (see owner/feishu/clarify_card.py)
+    async def expire_clarify(
+        self,
+        clarify_id: str,
+        chat_id: str,
+        timeout_minutes: int = 10,
+    ) -> bool:
+        """Update the clarify card to a grey disabled state on timeout."""
+        from owner.feishu.clarify_card import expire_clarify as _owner_expire_clarify
+        return await _owner_expire_clarify(
+            adapter=self,
+            clarify_id=clarify_id,
+            chat_id=chat_id,
+            timeout_minutes=timeout_minutes,
+        )
 
     @staticmethod
     def _build_update_prompt_card(*, prompt: str, default: str, prompt_id: int) -> Dict[str, Any]:
@@ -2617,6 +2660,11 @@ class FeishuAdapter(BasePlatformAdapter):
                 loop=loop,
             )
 
+        # [owner] clarify: route clarify card button clicks (see owner/feishu/clarify_card.py)
+        clarify_id = action_value.get("clarify_id") if isinstance(action_value, dict) else None
+        if clarify_id:
+            return self._handle_clarify_card_action(event=event, action_value=action_value, loop=loop)
+
         # [owner] diff cards: route expand/collapse/full actions (see owner/diff_card/feishu.py)
         if isinstance(action_value, dict) and any(
             action_value.get(k) for k in ("expand_diff", "collapse_diff", "show_full_diff")
@@ -2792,6 +2840,14 @@ class FeishuAdapter(BasePlatformAdapter):
             card.data = self._build_resolved_update_prompt_card(answer=answer, user_name=user_name)
             response.card = card
         return response
+
+    # [owner] clarify: handle clarify card button click (see owner/feishu/clarify_card.py)
+    def _handle_clarify_card_action(
+        self, *, event: Any, action_value: Dict[str, Any], loop: Any
+    ) -> Any:
+        """Handle clarify button click: resolve or switch to text-capture."""
+        from owner.feishu.clarify_card import handle_clarify_card_action
+        return handle_clarify_card_action(adapter=self, event=event, action_value=action_value, loop=loop)
 
     async def _resolve_approval(
         self,
