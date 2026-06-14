@@ -132,7 +132,7 @@
 - [ ] `df5471a` | 2026-06-04 | `yangtb` | chore(owner): cleanup hooks and scripts | +450 | −273 |
 - [ ] `0b160cd` | 2026-06-04 | `yangtb` | chore(scripts): remove sre-archive.py (deployment removed 2026-05-28; orphan source cleanup) | +0 | −490 |
 - [ ] `d93318d` | 2026-06-04 | `yangtb` | fix(reasoning): downgrade xhigh→high for Kimi; add bot_menu contract note; extend BM25 hash to 64-bit | +12 | −1 |
-- [ ] `3468b67` | 2026-06-04 | `yangtb` | refactor(cost-estimate): add CLI args, dynamic exchange rate, improve code quality | +114 | −63 |
+- [x] ⏭️ 跳过（脚本本身未迁移，重构也无价值）`3468b67` | 2026-06-04 | `yangtb` | refactor(cost-estimate): add CLI args, dynamic exchange rate, improve code quality | +114 | −63 |
 - [x] ✅ 已迁移 `45ab4a0f0` `c41dffd` | 2026-06-04 | `yangtb` | fix(session-archiver): add log retention cleanup, fix tool_calls parse, fix Qdrant vectors | +24 | −27 |
 - [x] ✅ 已迁移 `51e7fccd2` `2d38c8d` | 2026-06-04 | `yangtb` | perf(feishu): debounce chat_id cache writes to avoid sync I/O on hot path | +37 | −3 |
 - [x] ⏭️ 跳过（上游已覆盖）`75db996` | 2026-06-04 | `yangtb` | feat(model): add MiniMax-M3 to provider catalog and opencode model lists | +4 | −0 |
