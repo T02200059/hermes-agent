@@ -21,6 +21,17 @@ from owner.clarify.gateway_helpers import get_choice_display, get_choice_key
 
 logger = logging.getLogger(__name__)
 
+# Text tokens for the clarify interactive card UI (future i18n: move to locales/).
+_TEXT = {
+    "card.options_header": "可选：",
+    "card.prompt_choose": "请选择：",
+    "card.selected_prefix": "已选择：",
+    "card.expired_title": "⏱ 已超时",
+    "card.expired_body": "已超时（{timeout_minutes} 分钟无响应），请重新发消息。",
+    "card.expired_body_short": "已超时（{timeout_minutes} 分钟），请重新发消息。",
+    "btn.other_full": "✏️ 其他（输入答案）",
+    "btn.other_short": "✏️ 其他",
+}
 
 # Feishu interactive card limits.
 _MAX_CLARIFY_CHOICES = 4
@@ -42,7 +53,7 @@ def build_clarify_card(
         f"{i + 1}. {get_choice_display(c)}"
         for i, c in enumerate(choices)
     )
-    options_md = f"**可选：**\n{option_lines}\n\n请选择："
+    options_md = f"**{_TEXT['card.options_header']}**\n{option_lines}\n\n{_TEXT['card.prompt_choose']}"
 
     elements: List[Dict[str, Any]] = [
         {"tag": "markdown", "content": options_md},
@@ -63,7 +74,7 @@ def build_clarify_card(
         ],
         {
             "tag": "button",
-            "text": {"tag": "plain_text", "content": "✏️ 其他（输入答案）"},
+            "text": {"tag": "plain_text", "content": _TEXT["btn.other_full"]},
             "type": "default",
             "value": {"clarify_id": clarify_id, "choice": "__other__"},
         },
@@ -91,7 +102,7 @@ def build_frozen_clarify_card(
     the header turns green. The original question and option list are
     repeated in a markdown block so context is not lost.
     """
-    all_labels = [get_choice_display(c) for c in choices] + ["✏️ 其他"]
+    all_labels = [get_choice_display(c) for c in choices] + [_TEXT["btn.other_short"]]
 
     if question:
         option_lines = "\n".join(
@@ -100,7 +111,7 @@ def build_frozen_clarify_card(
         )
         context_md = f"**{question}**\n\n{option_lines}"
     else:
-        context_md = f"已选择：**{selected_label}**"
+        context_md = f"{_TEXT['card.selected_prefix']}**{selected_label}**"
 
     return {
         "schema": "2.0",
@@ -142,10 +153,10 @@ def build_expired_clarify_card(
     if question:
         body_md = (
             f"**{question}**\n\n{option_lines}\n\n"
-            f"⏱ 已超时（{timeout_minutes} 分钟无响应），请重新发消息。"
+            f"⏱ {_TEXT['card.expired_body'].format(timeout_minutes=timeout_minutes)}"
         )
     else:
-        body_md = f"⏱ 已超时（{timeout_minutes} 分钟），请重新发消息。"
+        body_md = f"⏱ {_TEXT['card.expired_body_short'].format(timeout_minutes=timeout_minutes)}"
 
     disabled_buttons: List[Dict[str, Any]] = [
         {
@@ -159,7 +170,7 @@ def build_expired_clarify_card(
     if choices:
         disabled_buttons.append({
             "tag": "button",
-            "text": {"tag": "plain_text", "content": "✏️ 其他（输入答案）"},
+            "text": {"tag": "plain_text", "content": _TEXT["btn.other_full"]},
             "type": "default",
             "disabled": True,
         })
@@ -168,7 +179,7 @@ def build_expired_clarify_card(
         "schema": "2.0",
         "config": {"wide_screen_mode": True},
         "header": {
-            "title": {"content": "⏱ 已超时", "tag": "plain_text"},
+            "title": {"content": _TEXT["card.expired_title"], "tag": "plain_text"},
             "template": "grey",
         },
         "body": {
@@ -347,9 +358,9 @@ def handle_clarify_card_action(
             logger.error("[Feishu] resolve_gateway_clarify failed: %s", exc)
 
     # Map __other__ / choice-key back to user-facing display label.
-    all_labels = [get_choice_display(c) for c in stored_choices] + ["✏️ 其他"]
+    all_labels = [get_choice_display(c) for c in stored_choices] + [_TEXT["btn.other_short"]]
     if choice == "__other__":
-        selected_label = "✏️ 其他"
+        selected_label = _TEXT["btn.other_short"]
     else:
         selected_label = choice  # fallback if no match
         for c in stored_choices:
