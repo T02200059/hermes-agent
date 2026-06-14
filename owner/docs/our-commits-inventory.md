@@ -440,8 +440,8 @@
 
 ### Memory 提案审批（P55）
 
-- [ ] `637891346` | 2026-05-31 | `yangtb` | feat: memory proposal approval system + unified_diff_patch display support | +857 | −15 |
-- [ ] `947f1412e` | 2026-05-31 | `yangtb` | fix(memory_propose): WR-08/09/10 — fix Feishu card button not responding and store injection | +105 | −56 |
+- [x] ✅ 已迁移（owner/memory/ + owner/feishu/memory_proposal.py + 运行时 toolset patch；unified_diff_patch display 部分已在前一 commit 单独迁移）`637891346` | 2026-05-31 | `yangtb` | feat: memory proposal approval system + unified_diff_patch display support | +857 | −15 |
+- [x] ✅ 已迁移（WR-08/09/10 fix 已纳入 09a91bb94 的 owner/memory/ 与 owner/feishu/memory_proposal.py 实现）`947f1412e` | 2026-05-31 | `yangtb` | fix(memory_propose): WR-08/09/10 — fix Feishu card button not responding and store injection | +105 | −56 |
 
 ## 复现方式
 
