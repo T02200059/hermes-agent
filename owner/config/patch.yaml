@@ -11,13 +11,17 @@ owner:
     allow_permanent: false
 
   # ── Image Generation Presets ───────────────────────────────────────────────
-  # Presets for the DashScope image-gen plugin (plugins/image_gen/dashscope/).
-  # Select the active preset via config.yaml:
-  #   image_gen:
-  #     provider: dashscope
-  #     model: qwen          # or "wan"
-  # Or override per-call by passing model="wan" to the image_generate tool.
-  # api_key supports ${ENV_VAR} references; they are expanded at runtime.
+  # Presets for the DashScope image-gen plugin (owner/image_gen/dashscope_provider.py).
+  # All owner.image_gen.* lives in patch.yaml and is loaded via the unified
+  # owner.patch_config (with mtime + 5min periodic refresh).
+  #
+  # Select the active preset/model via:
+  #   owner:
+  #     image_gen:
+  #       model: qwen          # or "wan"  (preferred for owner custom)
+  # Or fall back to main config.yaml image_gen.model for compatibility.
+  # Override per-call by passing model="wan" to the image_generate tool.
+  # api_key supports ${ENV_VAR} references; expanded at runtime.
   image_gen:
     presets:
       dashscope-qwen:
