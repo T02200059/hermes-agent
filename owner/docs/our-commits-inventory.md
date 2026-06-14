@@ -215,7 +215,7 @@
 - [x] ✅ 已迁移（实现于 owner/display_overrides.py；gateway/display_config.py 与 gateway/run.py 仅保留 [owner] 胶水）`8968786` | 2026-05-22 | `yangtb` | display: per-chat override support with patch.yaml integration | +67 | −13 |
 - [x] ✅ 已覆盖（owner/ 目录结构与命名迁移已由多个 commit 分散完成；auditor-guard/sre-archive/viking/token_stats/pricing 等按决策废弃）`fb19877` | 2026-05-22 | `yangtb` | feat: migrate from yangtb to owner profile | +12109 | −61 |
 - [x] ✅ 已迁移 `489b7f886` | 2026-05-22 | `yangtb` | feat(cron): replace todo-scan.py with robust todo-scan.sh (macFUSE timeout protection) | +58 | −0 |
-- [ ] `489aafd` | 2026-05-22 | `yangtb` | P31: 飞书审批卡片"永久允许"按钮可配置隐藏 | +61 | −28 |
+- [x] ✅ 已迁移 `e64a1aeac` `489aafd` | 2026-05-22 | `yangtb` | P31: 飞书审批卡片"永久允许"按钮可配置隐藏 | +61 | −28 |
 - [x] ⚠️ 废弃（唯一消费者为 viking-hint 空 handler，且 owner-v16 不需要 message:receive hook 点）`64f53b1` | 2026-05-22 | `yangtb` | feat: add message:receive hook scaffolding for Viking context hint | +68 | −1 |
 - [x] ⚠️ 废弃（inline_code_copy 不再需要；feishu_card→feishu.card 命名空间重构与 owner-v16 目标命名空间 owner.feishu_card.* 不一致）`287a391` | 2026-05-22 | `yangtb` | feat(feishu): inline_code_copy configurable via patch.yaml, default off | +24 | −4 |
 - [⏸️ 已决策·暂不迁移（rate limiter 不存在于 owner-v16，需整体评估）] `40e43ab` | 2026-05-22 | `yangtb` | feat(rate-limiter): add stepped cooldown + sliding window fixes | +574 | −15 |
