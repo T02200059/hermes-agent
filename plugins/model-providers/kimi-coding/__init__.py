@@ -4,7 +4,9 @@ Kimi has dual endpoints:
   - sk-kimi-* keys → api.kimi.com/coding (Anthropic Messages API)
   - legacy keys → api.moonshot.ai/v1 (OpenAI chat completions)
 
-This module covers the chat_completions path (/v1 endpoint).
+This module covers both paths:
+  - kimi-coding  → api.kimi.com/coding  (anthropic_messages)
+  - kimi-coding-cn → api.moonshot.cn/v1 (chat_completions, legacy)
 """
 
 from typing import Any
@@ -58,7 +60,8 @@ kimi = KimiProfile(
     name="kimi-coding",
     aliases=("kimi", "moonshot", "kimi-for-coding"),
     env_vars=("KIMI_API_KEY", "KIMI_CODING_API_KEY"),
-    base_url="https://api.moonshot.ai/v1",
+    base_url="https://api.kimi.com/coding",
+    api_mode="anthropic_messages",
     fixed_temperature=OMIT_TEMPERATURE,
     default_max_tokens=32000,
     default_headers={"User-Agent": "hermes-agent/1.0"},
