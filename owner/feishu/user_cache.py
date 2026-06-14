@@ -7,9 +7,10 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -79,3 +80,33 @@ def save_chat_id_cache(path: Any, cache: Dict[str, FeishuUserEntry]) -> None:
         atomic_json_write(path, snapshot)
     except Exception as exc:
         logger.warning("[Feishu] Failed to save chat_id cache: %s", exc)
+
+
+class ChatIdCacheDebouncer:
+    """Debounced persistence for open_id → p2p_chat_id cache.
+
+    Extracted from gateway/platforms/feishu.py per 二次开发规范.
+    """
+
+    def __init__(self, save_fn: Callable[[], None]) -> None:
+        self._lock = threading.Lock()
+        self._dirty = False
+        self._timer: Optional[threading.Timer] = None
+        self._save_fn = save_fn
+
+    def mark_dirty(self) -> None:
+        with self._lock:
+            self._dirty = True
+            if self._timer is not None:
+                self._timer.cancel()
+            self._timer = threading.Timer(5.0, self._flush)
+            self._timer.daemon = True
+            self._timer.start()
+
+    def _flush(self) -> None:
+        with self._lock:
+            self._timer = None
+            if not self._dirty:
+                return
+            self._dirty = False
+        self._save_fn()
