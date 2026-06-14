@@ -146,7 +146,7 @@
 - [x] ✅ 已迁移 `d2c991d9a` `ab8fd79` | 2026-06-03 | `yangtb` | feat(feishu): bot menu dedup + configurable ack + reasoning xhigh | +384 | −1 |
 - [x] ✅ 已迁移 `d2c991d9a` `fd20634` | 2026-06-03 | `yangtb` | fix(feishu): allow non-slash commands in bot_menu mapping | +1 | −1 |
 - [x] ✅ 已迁移·部分（built-in bot_menu fallback feishu.py 已有；bot_menu 映射迁移到 patch.yaml）`d2c991d9a` `a612263` | 2026-06-03 | `yangtb` | feat(feishu): add built-in bot_menu fallback + inspect_gpu_cluster menu item | +31 | −4 |
-- [ ] `feac9c1` | 2026-06-03 | `yangtb` | fix(kimi-coding): correct base_url and api_mode for Kimi Coding Plan | +5 | −2 |
+- [x] ✅ 已迁移 `75a88f19c` `feac9c1` | 2026-06-03 | `yangtb` | fix(kimi-coding): correct base_url and api_mode for Kimi Coding Plan | +5 | −2 |
 - [x] ⚠️ 废弃（纯文档md，不迁移）`cbf4a70` | 2026-06-03 | `yangtb` | feat(owner): add generic SOUL.md template | +80 | −0 |
 - [x] ✅ 已迁移 `d2c991d9a` `f31b40d` | 2026-06-03 | `yangtb` | feat(patch): add reasoning/model menu shortcuts, clean naming | +9 | −3 |
 - [x] ⚠️ 废弃（纯文档md，不迁移）`38304b8` | 2026-06-03 | `yangtb` | docs(owner): update README with P57 feishu bot menu + user cache | +3 | −2 |
