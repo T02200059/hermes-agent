@@ -612,6 +612,10 @@ class TestAdapterBehavior(unittest.TestCase):
                 calls.append("p2p_chat_entered")
                 return self
 
+            def register_p2_application_bot_menu_v6(self, _handler):
+                calls.append("bot_menu")
+                return self
+
             def register_p2_im_message_recalled_v1(self, _handler):
                 calls.append("message_recalled")
                 return self
@@ -646,6 +650,7 @@ class TestAdapterBehavior(unittest.TestCase):
                 "bot_added",
                 "bot_deleted",
                 "p2p_chat_entered",
+                "bot_menu",
                 "message_recalled",
                 "customized:drive.notice.comment_add_v1",
                 "customized:vc.bot.meeting_invited_v1",
