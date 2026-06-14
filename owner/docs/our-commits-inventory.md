@@ -158,7 +158,7 @@
 - [x] ⏭️ 跳过（纯文档记录一次性的配置清理，owner-v16 配置基线已不同）`f3de5be` | 2026-06-02 | `yangtb` | docs: add hermes config customizations classification + shareable baseline | +936 | −0 |
 - [x] ⏸️ 延后·多 profile 相关，后期单独批次处理 `4242bea` | 2026-06-02 | `yangtb` | feat(feishu): add profile routing layer for multi-user dispatch (Phase 2) | +103 | −3 |
 - [x] ⚠️ 废弃（纯文档md，不迁移）`432fb0b` | 2026-06-02 | `yangtb` | docs: update feishu-multi-profile-routing spec with Phase 2 implementation details | +102 | −14 |
-- [ ] `05faa2c` | 2026-06-02 | `yangtb` | feat(api_server): support X-Hermes-Reply-Via: feishu for profile container RPC | +109 | −0 |
+- [x] ⏸️ 延后·多 profile 相关，后期单独批次处理 `05faa2c` | 2026-06-02 | `yangtb` | feat(api_server): support X-Hermes-Reply-Via: feishu for profile container RPC | +109 | −0 |
 - [x] ⚠️ 废弃（纯文档md，不迁移）`b088690` | 2026-06-02 | `yangtb` | docs: add feishu multi-profile routing design spec | +207 | −0 |
 - [ ] `deacdc3` | 2026-06-02 | `yangtb` | chore: remove yangtb/scripts/ directory | +0 | −274 |
 - [ ] `947f141` | 2026-05-31 | `yangtb` | fix(memory_propose): WR-08/09/10 — fix Feishu card button not responding and store injection | +105 | −56 |
