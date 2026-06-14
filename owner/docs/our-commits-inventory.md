@@ -193,15 +193,15 @@
 - [x] ✅ 已迁移 `25f1996` | 2026-05-27 | `yangtb` | docs(owner): 同步 patch 清单 P35-P38 + P9 CallBackCard 升级 | +12 | −8 |
 - [x] ⚠️ 废弃：上游已修复，.env 加载时机已无问题 `2b801e5` | 2026-05-27 | `yangtb` | fix(gateway): eagerly load .env before any import that triggers load_config() | +15 | −0 |
 - [ ] `c9cc868` | 2026-05-27 | `yangtb` | fix(feishu): return CallBackCard in approval card action to update card inline | +13 | −3 |
-- [ ] `b7a199b` | 2026-05-26 | `yangtb` | feat: Viking health report API rewrite + fix TUI Cmd+C on macOS | +276 | −3 |
+- [x] ⚠️ 废弃整体；TUI Cmd+C fix 仍可单独提取（owner-v16 当前仍为 no-op return，未修复）`b7a199b` | 2026-05-26 | `yangtb` | feat: Viking health report API rewrite + fix TUI Cmd+C on macOS | +276 | −3 |
 - [x] ✅ 已迁移 `8d359ee` | 2026-05-26 | `yangtb` | docs(yangtb): register P35 — extract_local_files double-backtick code span fix | +4 | −3 |
 - [x] ✅ 已迁移 `ff19a78` | 2026-05-26 | `yangtb` | fix(gateway): add double-backtick code span detection in extract_local_files | +155 | −9 |
 - [x] ✅ 已迁移 `ca3c24f` | 2026-05-26 | `yangtb` | fix(gateway): add double-backtick code span detection in extract_local_files | +146 | −5 |
-- [ ] `d31f26b` | 2026-05-26 | `yangtb` | feat(i18n): translate all approval descriptions to Chinese via i18n | +333 | −16 |
-- [ ] `9ef510c` | 2026-05-26 | `yangtb` | chore(owner): pricing rate update + backup-configs mkdir fallback | +8 | −5 |
+- [x] 📌 待统一处理i18n（approval 文案中文化，零功能改动）`d31f26b` | 2026-05-26 | `yangtb` | feat(i18n): translate all approval descriptions to Chinese via i18n | +333 | −16 |
+- [x] ⚠️ 废弃（pricing.yaml 不迁移；owner-v16 无 backup-configs.sh，已由 backup-hermes-config.py 替代）`9ef510c` | 2026-05-26 | `yangtb` | chore(owner): pricing rate update + backup-configs mkdir fallback | +8 | −5 |
 - [x] ⚠️ 废弃（纯文档md，不迁移）`8051cd9` | 2026-05-26 | `yangtb` | docs(owner): P33 approvals patch.yaml 白名单 — patch 清单更新 | +2 | −1 |
 - [ ] `5ac061b` | 2026-05-26 | `yangtb` | feat(approval): patch.yaml 白名单支持 — load_permanent_allowlist() 合并 owner.approvals.command_allowlist | +20 | −2 |
-- [ ] `49f6a6d` | 2026-05-25 | `yangtb` | fix: viking-auto-commit 直接用 expanduser(~) 推导家目录 | +1 | −3 |
+- [x] ⚠️ 废弃（owner-v16 无 viking-auto-commit.py 脚本，Viking 已停用）`49f6a6d` | 2026-05-25 | `yangtb` | fix: viking-auto-commit 直接用 expanduser(~) 推导家目录 | +1 | −3 |
 - [x] ✅ 部分采纳 `.gitignore` 部分；`patch.yaml` backup excludes 已由 `owner/scripts/backup-hermes-config.py` 的 DEFAULT_CONFIG 覆盖 `f796063` | 2026-05-25 | `yangtb` | chore(owner): batch update scripts, hooks, config + gitignore .claude/.local | +186 | −73 |
 - [x] ⚠️ 废弃（owner-v16 官方文件中已无 yangtb 残留，清理已完成）`38aa3ce` | 2026-05-23 | `yangtb` | chore: purge yangtb references — comments, paths, viking user → owner/default | +38 | −38 | ⚠️ 混有代码：credential_pool.py + usage_pricing.py + scheduler.py + run.py 等9文件
 - [x] ⏭️ 跳过（owner-v16 使用 Qdrant，无 Viking prefetch 需求，该开关不适用）`10d296e` | 2026-05-23 | `yangtb` | feat(memory): owner.memory.prefetch_enabled — disable passive Viking recall | +24 | −5 |
