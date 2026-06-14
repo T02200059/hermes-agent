@@ -12,6 +12,12 @@
   - 5 个非飞书 adapter 已改用 `**kwargs` 减少显式污染（本次 1+3 项完成）
   - 测试已清理对 legacy `_sender_name_cache` 的直接依赖
 
+- 修复 Feishu 名称缓存提取后的回归测试失败（2026-06-14，commit `489b7f886`）
+  - `owner/feishu/sender_name_cache.py`: 修正 `lark_oapi` import 路径（`AccessTokenType`/`HttpMethod` 在 `lark_oapi.core`，不在 `.const`）。
+  - `gateway/platforms/feishu.py`: 在懒加载 `FeishuSenderNameCache` 之前先检查 legacy/test 预热的 `_sender_name_cache`；绑定新 cache 时保留已存在的条目。
+  - `tests/gateway/test_feishu.py`: 为 `__new__` 构造的测试 adapter 补 `config` 属性；将 `user_id` 优先期望更新为 `open_id` 优先（与 owner approval callback/cache 对齐）。
+  - 结果：`tests/gateway/test_feishu.py` 205 项全部通过（此前 16 项失败）。
+
 - unified_diff_patch 迁移后规范合规收尾（2026-06-14，按 review 建议逐个补齐）
   - `agent/display.py`：在 `extract_edit_diff` 两处 if 条件上补短 `# [owner]` 标记（说明 inline diff 支持来自 owner/tools/unified_diff_patch/）
   - `agent/tool_guardrails.py`：在三个 block/halt 消息增强点（exact_failure / no_progress / same_tool_failure）各加 `# [owner] guardrails UX` 短标记 + 说明来源
