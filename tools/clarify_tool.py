@@ -14,8 +14,32 @@ a thin dispatcher that delegates to a platform-provided callback.
 import json
 from typing import Any, List, Optional, Callable
 
-# [owner] clarify: use owner choice normalizer (owner/clarify/choice_normalizer.py)
-from owner.clarify.choice_normalizer import normalize_choices
+
+# Maximum number of predefined choices the agent can offer.
+# A 5th "Other (type your answer)" option is always appended by the UI.
+MAX_CHOICES = 4
+
+
+def _normalize_choices(choices: Any) -> Optional[List[Any]]:
+    """Normalize choices via owner/ if available, with legacy fallback.
+
+    When owner/clarify/ is installed, choices are normalized to
+    ``{"display", "key"}`` dicts for rich platform rendering.
+    When owner/ is removed, falls back to plain str() normalization
+    so the clarify tool keeps working (degraded to text-only mode).
+    """
+    try:
+        from owner.clarify.choice_normalizer import normalize_choices
+        return normalize_choices(choices)
+    except ImportError:
+        pass
+    # Legacy fallback: strip to strings, trim to MAX_CHOICES.
+    if choices is None:
+        return None
+    strs = [str(c).strip() for c in choices if str(c).strip()]
+    if len(strs) > MAX_CHOICES:
+        strs = strs[:MAX_CHOICES]
+    return strs or None
 
 
 def clarify_tool(
@@ -43,9 +67,10 @@ def clarify_tool(
     question = question.strip()
 
     # [owner] clarify: normalize model-provided choices to {display, key}
+    # Lazy import with fallback so the tool still works when owner/ is removed.
     if choices is not None and not isinstance(choices, list):
         return tool_error("choices must be a list.")
-    normalized = normalize_choices(choices)
+    normalized = _normalize_choices(choices)
     choices = normalized
 
     if callback is None:
