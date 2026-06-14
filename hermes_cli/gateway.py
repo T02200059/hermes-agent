@@ -3785,35 +3785,36 @@ def _wait_for_gateway_exit(
     return True
 
 
+# [owner] launchd-restart: use launchctl kickstart -k for atomic lifecycle (owner/ docs/migration-notes)
 def launchd_restart():
     label = get_launchd_label()
     target = f"{_launchd_domain()}/{label}"
-    drain_timeout = _get_restart_drain_timeout()
     from gateway.status import get_running_pid
 
     try:
         pid = get_running_pid()
+        # When called from within the gateway itself (agent-triggered restart),
+        # request a graceful drain via SIGUSR1 — launchd auto-restarts on exit 75
+        # because KeepAlive.SuccessfulExit=false only suppresses restart on exit 0.
         if pid is not None and _request_gateway_self_restart(pid):
             print("✓ Service restart requested")
             return
-        if pid is not None:
-            try:
-                terminate_pid(pid, force=False)
-            except (ProcessLookupError, PermissionError, OSError):
-                pid = None
-            if pid is not None:
-                exited = _wait_for_gateway_exit(timeout=drain_timeout, force_after=None)
-                if not exited:
-                    print(
-                        f"⚠ Gateway drain timed out after {drain_timeout:.0f}s — forcing launchd restart"
-                    )
-        subprocess.run(["launchctl", "kickstart", "-k", target], check=True, timeout=90)
+
+        # External restart (CLI, cron, etc.): let launchd handle the full
+        # lifecycle atomically.  kickstart -k sends SIGTERM, waits for
+        # the exit_timeout (default 20s), force-SIGKILLs if needed, then
+        # starts a fresh instance — no manual drain/wait that can block
+        # indefinitely when the old process is stuck in a long API call.
+        subprocess.run(
+            ["launchctl", "kickstart", "-k", target],
+            check=True,
+            timeout=120,
+        )
         print("✓ Service restarted")
     except subprocess.CalledProcessError as e:
         if not _launchd_error_indicates_unloaded(e):
             # Not a "job unloaded" code. If the domain is fundamentally
-            # unmanageable (error 5), degrade to detached; the old process was
-            # already drained/terminated above. Otherwise re-raise.
+            # unmanageable (error 5), degrade to detached.
             if _launchctl_domain_unsupported(e.returncode):
                 _launchd_fallback_to_detached(f"launchctl kickstart exit {e.returncode}")
                 return
@@ -3827,7 +3828,11 @@ def launchd_restart():
                 check=True,
                 timeout=30,
             )
-            subprocess.run(["launchctl", "kickstart", target], check=True, timeout=30)
+            subprocess.run(
+                ["launchctl", "kickstart", target],
+                check=True,
+                timeout=60,
+            )
         except subprocess.CalledProcessError as e2:
             if not _launchctl_domain_unsupported(e2.returncode):
                 raise
