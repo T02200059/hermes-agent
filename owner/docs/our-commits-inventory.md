@@ -184,9 +184,9 @@
 - [ ] `c5b6992` | 2026-05-28 | `yangtb` | chore: remove viking-hint hook (empty stub, never implemented) | +0 | −49 |
 - [x] ⚠️ 废弃（手动补录 — 功能已被 upstream #15844 + custom_providers Step 0b 覆盖）`4a60dd1c` | 2026-05-28 | `yangtb` | fix(model_metadata): support dict format provider models in get_model_context_length (P41) | +21 | −12 |
 - [x] 📌 待统一处理i18n（纯i18n，仅locales文件）`0c23b27` | 2026-05-27 | `yangtb` | i18n(zh): add all 85 missing tirith rule translations, remove 2 stale entries | +193 | −9 |
-- [ ] `bf295cd` | 2026-05-27 | `yangtb` | refactor(gateway): 外部 restart 走 launchctl kickstart -k 原子化生命周期 | +24 | −13 |
+- [x] ✅ 已迁移 `44d7189c5` `bf295cd` | 2026-05-27 | `yangtb` | refactor(gateway): 外部 restart 走 launchctl kickstart -k 原子化生命周期 | +24 | −13 |
 - [x] ⚠️ 废弃（纯文档md，不迁移）`67373f7` | 2026-05-27 | `yangtb` | docs(owner): 新增 P39 飞书 Diff 卡片 + P40 step_callback 去 hooks 依赖 | +4 | −2 |
-- [ ] `06c911a` | 2026-05-27 | `yangtb` | feat(feishu): patch/write_file 完成后发送 diff 卡片（红绿背景 + 查看完整 diff 按钮） | +207 | −1 |
+- [x] ⚠️ 废弃（已被 owner/diff_card/ 替代）`06c911a` | 2026-05-27 | `yangtb` | feat(feishu): patch/write_file 完成后发送 diff 卡片（红绿背景 + 查看完整 diff 按钮） | +207 | −1 |
 - [⏸️ 已决策·暂不迁移（rate limiter 不存在于 owner-v16，需整体评估）] `016bb35` | 2026-05-27 | `yangtb` | chore(config): 移除 nous rate limit 配置，damodel max_requests 提频 30→60 | +1 | −4 |
 - [ ] `1c887ef` | 2026-05-27 | `yangtb` | feat(feishu): approvals 卡片回调异步更新用户名，显示命令内容 | +67 | −17 |
 - [⏸️ 已决策·暂不迁移（rate limiter 不存在于 owner-v16，需整体评估）] `601e79e` | 2026-05-27 | `yangtb` | chore(owner): add xfyun rate limit config to patch.yaml | +3 | −0 |
