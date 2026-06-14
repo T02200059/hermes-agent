@@ -2545,7 +2545,12 @@ class GatewaySlashCommandsMixin:
 
         # Read current effective mode for this platform via the resolver
         from gateway.display_config import resolve_display_setting
-        current = resolve_display_setting(user_config, platform_key, "tool_progress", "all")
+        # [owner] per-chat display override: pass chat_id so owner/display_overrides
+        # per_chat rules from patch.yaml can take effect for this slash command too.
+        current = resolve_display_setting(
+            user_config, platform_key, "tool_progress", "all",
+            chat_id=event.source.chat_id,
+        )
         if current not in cycle:
             current = "all"
         idx = (cycle.index(current) + 1) % len(cycle)
