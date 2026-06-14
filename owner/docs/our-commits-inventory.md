@@ -134,8 +134,8 @@
 - [ ] `d93318d` | 2026-06-04 | `yangtb` | fix(reasoning): downgrade xhigh→high for Kimi; add bot_menu contract note; extend BM25 hash to 64-bit | +12 | −1 |
 - [ ] `3468b67` | 2026-06-04 | `yangtb` | refactor(cost-estimate): add CLI args, dynamic exchange rate, improve code quality | +114 | −63 |
 - [x] ✅ 已迁移 `45ab4a0f0` `c41dffd` | 2026-06-04 | `yangtb` | fix(session-archiver): add log retention cleanup, fix tool_calls parse, fix Qdrant vectors | +24 | −27 |
-- [ ] `2d38c8d` | 2026-06-04 | `yangtb` | perf(feishu): debounce chat_id cache writes to avoid sync I/O on hot path | +37 | −3 |
-- [ ] `75db996` | 2026-06-04 | `yangtb` | feat(model): add MiniMax-M3 to provider catalog and opencode model lists | +4 | −0 |
+- [x] ✅ 已迁移 `51e7fccd2` `2d38c8d` | 2026-06-04 | `yangtb` | perf(feishu): debounce chat_id cache writes to avoid sync I/O on hot path | +37 | −3 |
+- [x] ⏭️ 跳过（上游已覆盖）`75db996` | 2026-06-04 | `yangtb` | feat(model): add MiniMax-M3 to provider catalog and opencode model lists | +4 | −0 |
 - [x] ✅ 已迁移 `d2c991d9a` `9a8adcb` | 2026-06-04 | `yangtb` | feat(config): update bot_menu emoji ack for feishu | +11 | −11 |
 - [x] ✅ 已迁移 `d2c991d9a` `0b50165` | 2026-06-04 | `yangtb` | feat(patch): add sync_sre_king bot menu command | +4 | −1 |
 - [x] ✅ 已迁移 `d2c991d9a` `f747157` | 2026-06-04 | `yangtb` | feat(feishu): add sync_git_hermes bot menu entry with ack config | +3 | −0 |
