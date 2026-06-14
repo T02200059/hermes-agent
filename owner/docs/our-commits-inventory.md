@@ -181,7 +181,7 @@
 ... [OUTPUT TRUNCATED - 2046 chars omitted out of 52046 total] ...
 
 [x] ⏭️ 跳过 `a77231c` | 2026-05-28 | `yangtb` | Merge upstream/main into owner (v0.14.0+) | +0 | −0 |
-- [ ] `c5b6992` | 2026-05-28 | `yangtb` | chore: remove viking-hint hook (empty stub, never implemented) | +0 | −49 |
+- [x] ⚠️ 废弃（纯删除 owner/ 下的空存根，从未实现）`c5b6992` | 2026-05-28 | `yangtb` | chore: remove viking-hint hook (empty stub, never implemented) | +0 | −49 |
 - [x] ⚠️ 废弃（手动补录 — 功能已被 upstream #15844 + custom_providers Step 0b 覆盖）`4a60dd1c` | 2026-05-28 | `yangtb` | fix(model_metadata): support dict format provider models in get_model_context_length (P41) | +21 | −12 |
 - [x] 📌 待统一处理i18n（纯i18n，仅locales文件）`0c23b27` | 2026-05-27 | `yangtb` | i18n(zh): add all 85 missing tirith rule translations, remove 2 stale entries | +193 | −9 |
 - [x] ✅ 已迁移 `44d7189c5` `bf295cd` | 2026-05-27 | `yangtb` | refactor(gateway): 外部 restart 走 launchctl kickstart -k 原子化生命周期 | +24 | −13 |
