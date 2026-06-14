@@ -637,6 +637,8 @@ def run_conversation(
                                 "arguments": tc["function"].get("arguments"),
                                 # [owner] diff cards: tool_call_id for snapshot correlation (see owner/diff_card/)
                                 "tool_call_id": tc.get("id"),
+                                # [owner] memory_propose: mirror id for callers expecting the raw tool_call id
+                                "id": tc.get("id"),
                             }
                             for tc in _m["tool_calls"]
                             if isinstance(tc, dict)

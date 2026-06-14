@@ -2895,6 +2895,47 @@ class BasePlatformAdapter(ABC):
             metadata=metadata,
         )
 
+    async def send_memory_approval(
+        self,
+        chat_id: str,
+        action: str,
+        target: str,
+        old_text: str,
+        new_content: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> SendResult:
+        """Send a memory proposal approval message to the user.
+
+        Default implementation renders a plain text fallback with /approve
+        instructions. Adapters with button UI support (Feishu) override this
+        to render interactive approve/deny buttons.
+
+        Button callbacks MUST call:
+          owner.memory.gateway.resolve_memory_approval(session_key, "approve")
+          owner.memory.gateway.resolve_memory_approval(session_key, "deny")
+        """
+        # [owner] memory_propose: text fallback for platforms without card UI
+        if new_content:
+            content = (
+                f"💾 **Memory 提案确认**\n\n"
+                f"**操作**: {action} → {target}\n\n"
+                f"**内容预览**:\n"
+                f"```\n{new_content[:500]}\n```\n\n"
+                f"回复 `/approve` 批准，或 `/deny` 拒绝。"
+            )
+        else:
+            content = (
+                f"💾 **Memory 提案确认**\n\n"
+                f"**操作**: {action} → {target}\n\n"
+                f"回复 `/approve` 批准，或 `/deny` 拒绝。"
+            )
+
+        return await self.send(
+            chat_id=chat_id,
+            content=content,
+            metadata=metadata,
+        )
+
     async def send_private_notice(
         self,
         chat_id: str,

@@ -885,7 +885,7 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
             # callbacks, checkpointing, activity mutation, and real execution.
             pass
         # Reset nudge counters when the relevant tool is actually used
-        elif function_name == "memory":
+        elif function_name in ("memory", "memory_propose"):
             agent._turns_since_memory = 0
         elif function_name == "skill_manage":
             agent._iters_since_skill = 0
@@ -1070,6 +1070,28 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
             tool_duration = time.time() - tool_start_time
             if agent._should_emit_quiet_tool_messages():
                 agent._vprint(f"  {_get_cute_tool_message_impl('memory', function_args, tool_duration, result=function_result)}")
+        elif function_name == "memory_propose":
+            # [owner] memory_propose: inject MemoryStore so approved proposals can write
+            def _execute_memory_propose(next_args: dict) -> Any:
+                from owner.memory import memory_propose_tool as _memory_propose_tool
+                return _memory_propose_tool(
+                    action=next_args.get("action", ""),
+                    target=next_args.get("target", ""),
+                    old_text=next_args.get("old_text", ""),
+                    new_content=next_args.get("new_content", ""),
+                    store=agent._memory_store,
+                )
+            function_result, function_args = _run_agent_tool_execution_middleware(
+                agent,
+                function_name=function_name,
+                function_args=function_args,
+                effective_task_id=effective_task_id,
+                tool_call_id=getattr(tool_call, "id", "") or "",
+                execute=_execute_memory_propose,
+            )
+            tool_duration = time.time() - tool_start_time
+            if agent._should_emit_quiet_tool_messages():
+                agent._vprint(f"  {_get_cute_tool_message_impl('memory_propose', function_args, tool_duration, result=function_result)}")
         elif function_name == "clarify":
             def _execute(next_args: dict) -> Any:
                 from tools.clarify_tool import clarify_tool as _clarify_tool

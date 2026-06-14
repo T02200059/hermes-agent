@@ -3775,6 +3775,15 @@ class GatewaySlashCommandsMixin:
         source = event.source
         session_key = self._session_key_for_source(source)
 
+        # [owner] memory_propose: resolve pending memory proposals before dangerous-command approvals
+        from owner.memory.gateway import handle_approve_command as _handle_memory_approve
+        _memory_msg = _handle_memory_approve(session_key)
+        if _memory_msg is not None:
+            _adapter = self.adapters.get(source.platform)
+            if _adapter:
+                _adapter.resume_typing_for_chat(source.chat_id)
+            return _memory_msg
+
         from tools.approval import (
             resolve_gateway_approval, has_blocking_approval,
         )
@@ -3820,6 +3829,15 @@ class GatewaySlashCommandsMixin:
         """
         source = event.source
         session_key = self._session_key_for_source(source)
+
+        # [owner] memory_propose: resolve pending memory proposals before dangerous-command approvals
+        from owner.memory.gateway import handle_deny_command as _handle_memory_deny
+        _memory_msg = _handle_memory_deny(session_key)
+        if _memory_msg is not None:
+            _adapter = self.adapters.get(source.platform)
+            if _adapter:
+                _adapter.resume_typing_for_chat(source.chat_id)
+            return _memory_msg
 
         from tools.approval import (
             resolve_gateway_approval, has_blocking_approval,

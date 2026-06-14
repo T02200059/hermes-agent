@@ -1481,6 +1481,8 @@ class FeishuAdapter(BasePlatformAdapter):
         # Exec approval button state (approval_id → {session_key, message_id, chat_id})
         self._approval_state: Dict[int, Dict[str, str]] = {}
         self._approval_counter = itertools.count(1)
+        # Memory proposal button state (session_key → {message_id, chat_id})
+        self._memory_proposal_state: Dict[str, Dict[str, str]] = {}
         # Update prompt button state (prompt_id → {session_key, message_id, chat_id})
         self._update_prompt_state: Dict[int, Dict[str, str]] = {}
         self._update_prompt_counter = itertools.count(1)
@@ -1964,6 +1966,57 @@ class FeishuAdapter(BasePlatformAdapter):
             return result
         except Exception as exc:
             logger.warning("[Feishu] send_exec_approval failed: %s", exc)
+            return SendResult(success=False, error=str(exc))
+
+    async def send_memory_approval(
+        self,
+        chat_id: str,
+        action: str,
+        target: str,
+        old_text: str,
+        new_content: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> SendResult:
+        """Send a Feishu interactive card for memory proposal approval.
+
+        Thin glue only — card construction and callback handling live in
+        owner/feishu/memory_proposal.py.
+        """
+        if not self._client:
+            return SendResult(success=False, error="Not connected")
+
+        try:
+            # [owner] memory_propose: build + send interactive card (see owner/feishu/memory_proposal.py)
+            from owner.feishu.memory_proposal import send_memory_proposal_card
+            from dataclasses import dataclass
+
+            @dataclass
+            class _Entry:
+                session_key: str
+                action: str
+                target: str
+                old_text: str
+                new_content: str
+
+            session_key = ""
+            if metadata and isinstance(metadata, dict):
+                session_key = str(metadata.get("session_key", ""))
+            entry = _Entry(
+                session_key=session_key,
+                action=action,
+                target=target,
+                old_text=old_text,
+                new_content=new_content,
+            )
+            result = await send_memory_proposal_card(self, chat_id=chat_id, entry=entry, metadata=metadata)
+            if result and getattr(result, "success", False) and session_key:
+                self._memory_proposal_state[session_key] = {
+                    "message_id": getattr(result, "message_id", "") or "",
+                    "chat_id": chat_id,
+                }
+            return result
+        except Exception as exc:
+            logger.warning("[Feishu] send_memory_approval failed: %s", exc)
             return SendResult(success=False, error=str(exc))
 
     @staticmethod
@@ -2559,6 +2612,9 @@ class FeishuAdapter(BasePlatformAdapter):
             if isinstance(action_value, dict) else None
         )
 
+        if hermes_action and hermes_action.startswith("memory_"):
+            # [owner] memory_propose: resolve memory proposal buttons (see owner/feishu/memory_proposal.py)
+            return self._handle_memory_card_action(event=event, action_value=action_value, loop=loop)
         if hermes_action:
             return self._handle_approval_card_action(event=event, action_value=action_value, loop=loop)
         if update_prompt_action:
@@ -2676,6 +2732,16 @@ class FeishuAdapter(BasePlatformAdapter):
             )
             response.card = card
         return response
+
+    def _handle_memory_card_action(self, *, event: Any, action_value: Dict[str, Any], loop: Any) -> Any:
+        """Resolve a memory-proposal button click.
+
+        Thin glue only — card building, queue resolution, and CallBackCard data
+        live in owner/feishu/memory_proposal.py.
+        """
+        # [owner] memory_propose: delegate button click to owner helper
+        from owner.feishu.memory_proposal import handle_memory_card_action
+        return handle_memory_card_action(adapter=self, event=event, action_value=action_value, loop=loop)
 
     def _handle_update_prompt_card_action(self, *, event: Any, action_value: Dict[str, Any], loop: Any) -> Any:
         """Schedule update prompt resolution and build the synchronous callback response."""
