@@ -193,7 +193,7 @@
 - [x] ✅ 已迁移 `25f1996` | 2026-05-27 | `yangtb` | docs(owner): 同步 patch 清单 P35-P38 + P9 CallBackCard 升级 | +12 | −8 |
 - [x] ⚠️ 废弃：上游已修复，.env 加载时机已无问题 `2b801e5` | 2026-05-27 | `yangtb` | fix(gateway): eagerly load .env before any import that triggers load_config() | +15 | −0 |
 - [ ] `c9cc868` | 2026-05-27 | `yangtb` | fix(feishu): return CallBackCard in approval card action to update card inline | +13 | −3 |
-- [x] ⚠️ 废弃整体；TUI Cmd+C fix 仍可单独提取（owner-v16 当前仍为 no-op return，未修复）`b7a199b` | 2026-05-26 | `yangtb` | feat: Viking health report API rewrite + fix TUI Cmd+C on macOS | +276 | −3 |
+- [x] ✅ 完成-取部分 `9589b4940` `b7a199b` | 2026-05-26 | `yangtb` | feat: Viking health report API rewrite + fix TUI Cmd+C on macOS | +276 | −3 | （TUI Cmd+C fix 已提取；Viking health report 废弃）
 - [x] ✅ 已迁移 `8d359ee` | 2026-05-26 | `yangtb` | docs(yangtb): register P35 — extract_local_files double-backtick code span fix | +4 | −3 |
 - [x] ✅ 已迁移 `ff19a78` | 2026-05-26 | `yangtb` | fix(gateway): add double-backtick code span detection in extract_local_files | +155 | −9 |
 - [x] ✅ 已迁移 `ca3c24f` | 2026-05-26 | `yangtb` | fix(gateway): add double-backtick code span detection in extract_local_files | +146 | −5 |
