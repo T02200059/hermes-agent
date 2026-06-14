@@ -30,7 +30,7 @@
   - `49f6a6d`: 废弃（owner-v16 无 viking-auto-commit.py）。
   - `9ef510c`: 废弃（pricing.yaml 不迁移；backup-configs.sh 已由 backup-hermes-config.py 替代）。
   - `d31f26b`: 标记为 i18n 统一处理（approval 文案中文化）。
-  - `b7a199b`: 整体废弃；TUI Cmd+C fix 在 owner-v16 仍未应用，可单独提取 6 行。
+  - `b7a199b`: 完成-取部分（`9589b4940`）——TUI Cmd+C fix 已提取为独立 commit；Viking health report 废弃。
 
 - unified_diff_patch 迁移后规范合规收尾（2026-06-14，按 review 建议逐个补齐）
   - `agent/display.py`：在 `extract_edit_diff` 两处 if 条件上补短 `# [owner]` 标记（说明 inline diff 支持来自 owner/tools/unified_diff_patch/）
