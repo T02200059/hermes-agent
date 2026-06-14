@@ -17,18 +17,19 @@ from owner.diff_card.common import (
 )
 
 
-def test_diff_card_tools_does_not_include_unified_diff_patch():
-    """unified_diff_patch is intentionally deferred until that tool is merged."""
+def test_diff_card_tools_includes_unified_diff_patch():
+    """unified_diff_patch now triggers diff cards alongside patch/write_file/skill_manage."""
     assert "patch" in DIFF_CARD_TOOLS
     assert "write_file" in DIFF_CARD_TOOLS
     assert "skill_manage" in DIFF_CARD_TOOLS
-    assert "unified_diff_patch" not in DIFF_CARD_TOOLS
+    assert "unified_diff_patch" in DIFF_CARD_TOOLS
 
 
 def test_diff_card_max_lines():
     assert diff_card_max_lines("patch") == 60
     assert diff_card_max_lines("write_file") == 10
     assert diff_card_max_lines("skill_manage") == 10
+    assert diff_card_max_lines("unified_diff_patch") == 60
     assert diff_card_max_lines("unknown") == 10
 
 
@@ -36,6 +37,7 @@ def test_diff_card_emoji():
     assert diff_card_emoji("patch") == "🔧"
     assert diff_card_emoji("write_file") == "✍️"
     assert diff_card_emoji("skill_manage") == "📚"
+    assert diff_card_emoji("unified_diff_patch") == "🧩"
     assert diff_card_emoji("other") == "📝"
 
 

@@ -12,21 +12,21 @@ from typing import Any, Dict, Optional, Tuple
 from agent.display import LocalEditSnapshot
 
 # Tools whose successful results should trigger a diff card.
-# NOTE: unified_diff_patch is intentionally absent in owner-v16 because the
-# standalone tool does not exist yet. Add it here when that tool is merged.
-DIFF_CARD_TOOLS: frozenset[str] = frozenset({"patch", "write_file", "skill_manage"})
+DIFF_CARD_TOOLS: frozenset[str] = frozenset({"patch", "write_file", "skill_manage", "unified_diff_patch"})
 
 # Max visible diff lines per tool type.
 _DIFF_CARD_MAX_LINES: Dict[str, int] = {
     "patch": 60,
     "write_file": 10,
     "skill_manage": 10,
+    "unified_diff_patch": 60,
 }
 
 _TOOL_EMOJI: Dict[str, str] = {
     "patch": "🔧",
     "write_file": "✍️",
     "skill_manage": "📚",
+    "unified_diff_patch": "🧩",
 }
 
 # Default TTL for cached diff card state (used for Feishu callback actions).
