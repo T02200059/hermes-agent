@@ -71,8 +71,8 @@
 - [ ] `1fe0bf4` | 2026-06-10 | `yangtb` | feat(recall-card): compact标题增加 content 首行 # 提取 fallback | +8 | −5 |
 - [ ] `28d65f8` | 2026-06-10 | `yangtb` | fix(feishu-card): diff/recall card cache 添加 3 小时 TTL | +35 | −10 |
 - [ ] `b0e4483` | 2026-06-10 | `yangtb` | feat(qdrant-recall): 飞书卡片展示 + compact标题显示name/abstract | +361 | −3 |
-- [ ] `eb514ee` | 2026-06-10 | `yangtb` | feat: skill script auto-approval (skill_script_allowlist) | +637 | −0 |
-- [ ] `8c0b8dd` | 2026-06-10 | `yangtb` | feat(approval): auto-resolve pending approvals when YOLO enabled | +56 | −15 |
+- [x] ✅ 已迁移 `a39478319` `eb514ee` | 2026-06-10 | `yangtb` | feat: skill script auto-approval (skill_script_allowlist) | +637 | −0 |
+- [x] ✅ 已迁移 `a39478319` `8c0b8dd` | 2026-06-10 | `yangtb` | feat(approval): auto-resolve pending approvals when YOLO enabled | +56 | −15 |
 - [ ] `6f86bcd` | 2026-06-10 | `yangtb` | feat(gateway): strip hook-injected extra_context from history and archiving | +28 | −5 |
 - [ ] `fbfa354` | 2026-06-10 | `yangtb` | feat(feishu): use 🟥 for memory proposal deny button | +4 | −4 |
 - [ ] `84c7489` | 2026-06-10 | `yangtb` | chore(owner): restore local adjustments for qdrant hook (named vector search), session-archiver (DeepSeek/DashScope), pricing.yaml | +62 | −100 |
@@ -80,7 +80,7 @@
 - [x] ✅ 已迁移 `825145f` | 2026-06-09 | `yangtb` | docs(owner): patch inventory 65→69, add P66-P69 (intent-guard, credential_pool, qdrant-recall, session-archiver) | +18 | −2 |
 - [x] ✅ 已迁移 `c974c92` | 2026-06-09 | `yangtb` | docs(owner): update patch inventory to 65, add P65 yolo tri-state entry | +4 | −3 |
 - [x] ⚠️ 废弃：定价/AGENTS.md，不迁移 `9b4dda1` | 2026-06-09 | `yangtb` | docs(AGENTS): update project structure and development guide | +187 | −81 |
-- [ ] `ca0836e` | 2026-06-09 | `yangtb` | chore(config): add yolo_on/yolo_off ack text + sync patch.yaml | +17 | −1 |
+- [x] ✅ 已迁移 `(部分)` `ca0836e` | 2026-06-09 | `yangtb` | chore(config): add yolo_on/yolo_off ack text + sync patch.yaml | +17 | −1 |
 - [x] ✅ 已迁移 `d2c991d9a` `e7d351c` | 2026-06-09 | `yangtb` | fix(feishu): bot_menu synthetic event message_id → None | +1 | −1 |
 - [ ] `1be0241` | 2026-06-09 | `yangtb` | feat(gateway): /yolo on\ | off\ | status syntax sugar |
 - [x] ⚠️ 废弃：定价/AGENTS.md，不迁移 `8b5f0f7` | 2026-06-09 | `yangtb` | chore(config): update pricing.yaml exchange rate | +1 | −1 |
