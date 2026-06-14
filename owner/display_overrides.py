@@ -4,6 +4,10 @@ This module provides the private implementation behind the thin
 ``# [owner]`` calls in ``gateway/display_config.py``.  Keeping the merge
 and per-chat resolution logic here keeps the official resolver as close
 to upstream as possible.
+
+Also re-exports invalidate_per_chat_display_cache (wrapper around
+owner.patch_config.invalidate_patch_owner_config_cache) for users who need
+immediate effect after editing patch.yaml.
 """
 
 from __future__ import annotations
@@ -72,3 +76,17 @@ def resolve_per_chat_override(
         return None
 
     return chat_overrides.get(setting)
+
+
+# [owner] expose cache invalidation for patch.yaml owner.display changes.
+# Call this (or owner.patch_config.invalidate_patch_owner_config_cache directly)
+# after programmatically editing ~/.hermes/patch.yaml if you need the next
+# resolve_display_setting to pick up fresh per_chat / owner.display values
+# without waiting for mtime change.
+from owner.patch_config import invalidate_patch_owner_config_cache as invalidate_per_chat_display_cache
+
+__all__ = [
+    "merge_owner_display_config",
+    "resolve_per_chat_override",
+    "invalidate_per_chat_display_cache",
+]
