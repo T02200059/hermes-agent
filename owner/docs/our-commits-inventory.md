@@ -91,7 +91,7 @@
 - [ ] `b0a8f3c` | 2026-06-08 | `yangtb` | feat(feishu): bot_menu 增加 mimo / minimax 模型快捷键 | +2 | −0 |
 - [x] ⚠️ 废弃：定价/AGENTS.md，不迁移 `ab5cda7` | 2026-06-08 | `yangtb` | chore(owner): pricing.yaml daily exchange rate update | +1 | −1 |
 - [x] ⚠️ 废弃（纯文档md，不迁移）`86f575e` | 2026-06-08 | `yangtb` | docs(owner): archive rolled-back clarify-timeout-abort design | +108 | −0 |
-- [ ] `e49f512` | 2026-06-08 | `yangtb` | feat(feishu): expire_clarify on timeout — grey card + interrupt turn | +145 | −3 |
+- [x] ✅ 已迁移 `47a8e5db6` `e49f512` | 2026-06-08 | `yangtb` | feat(feishu): expire_clarify on timeout — grey card + interrupt turn | +145 | −3 |
 - [x] ✅ 已迁移 `7646add45` `5022ef4` | 2026-06-08 | `yangtb` | feat(tools): auto_fix_start option to unified_diff_patch | +124 | −21 |
 - [ ] `b845c7a` | 2026-06-08 | `yangtb` | fix(code_execution): 🐍 → 🛠️ execute_code tool emoji | +1 | −1 |
 - [ ] `16ae8a0` | 2026-06-08 | `yangtb` | chore(skills): remove custom skills from source tree | +0 | −1054 |
@@ -106,7 +106,7 @@
 - [ ] `91460d8` | 2026-06-07 | `yangtb` | feat(feishu): model picker — alphabetical providers + back button | +22 | −0 |
 - [ ] `adc1f0e` | 2026-06-07 | `yangtb` | fix(qdrant-memory-recall): filter low_quality hits to reduce hallucination risk | +8 | −2 |
 - [ ] `0a2ea99` | 2026-06-06 | `yangtb` | docs(qdrant-memory-recall): clarify per-turn extra_context scope (CR-01) | +21 | −2 | ⚠️ 混有代码：hooks/qdrant-memory-recall/HOOK.yaml + handler.py
-- [ ] `4626a1a` | 2026-06-06 | `yangtb` | fix(feishu-clarify): prepend full-text markdown options block before button row | +175 | −21 | ⚠️ 混有代码：feishu.py + test_feishu_clarify_frozen_card.py
+- [x] ✅ 已迁移（代码部分；测试文件后续单独迁移）`47a8e5db6` `4626a1a` | 2026-06-06 | `yangtb` | fix(feishu-clarify): prepend full-text markdown options block before button row | +175 | −21 |
 - [ ] `111f767` | 2026-06-06 | `yangtb` | fix(tool_guardrails): name the counter and threshold in warn messages | +78 | −5 |
 - [x] ✅ 已迁移 `7646add45` `6f64470` | 2026-06-06 | `yangtb` | docs(unified_diff_patch): clarify schema descriptions (5 fixes) | +79 | −61 | ⚠️ 混有代码：tools/unified_diff_patch_tool.py
 - [x] ✅ 已迁移 `7646add45` `a3b95e7` | 2026-06-06 | `yangtb` | fix(unified_diff_patch): 4 quality fixes (strict priority, line numbers, CRLF, dry_run) | +352 | −8 |
@@ -126,7 +126,7 @@
 - [x] ⚠️ 废弃（纯文档md，不迁移）`4a9a79c` | 2026-06-05 | `yangtb` | docs(intent-guard): add architecture doc and adversarial review report | +779 | −0 |
 - [ ] `2172689` | 2026-06-05 | `yangtb` | feat(intent-guard): integrate interrupt protocol into Hermes core | +193 | −44 |
 - [ ] `97ab075` | 2026-06-05 | `yangtb` | feat(intent-guard): add pre_tool_call hook with hard rules + LLM audit | +1006 | −5 |
-- [ ] `c6b87d9` | 2026-06-04 | `yangtb` | feat(clarify): 飞书 clarify 卡片 + 多 profile 路由 + 跨平台 choice display | +1339 | −67 |
+- [x] ✅ 已迁移·部分（clarify 卡片部分；多 profile 路由已有独立 v6 方案）`47a8e5db6` `c6b87d9` | 2026-06-04 | `yangtb` | feat(clarify): 飞书 clarify 卡片 + 多 profile 路由 + 跨平台 choice display | +1339 | −67 |
 - [x] ✅ 已迁移 `7646add45` `675f180` | 2026-06-04 | `yangtb` | fix(unified_diff_patch): add strict mode, clarify path resolution and guardrail errors | +255 | −17 |
 - [ ] `77862a9` | 2026-06-04 | `yangtb` | feat(qdrant-insert): add skill source files (from feishu ff47ea5f3) | +476 | −0 |
 - [ ] `df5471a` | 2026-06-04 | `yangtb` | chore(owner): cleanup hooks and scripts | +450 | −273 |
@@ -162,7 +162,7 @@
 - [x] ⚠️ 废弃（纯文档md，不迁移）`b088690` | 2026-06-02 | `yangtb` | docs: add feishu multi-profile routing design spec | +207 | −0 |
 - [ ] `deacdc3` | 2026-06-02 | `yangtb` | chore: remove yangtb/scripts/ directory | +0 | −274 |
 - [ ] `947f141` | 2026-05-31 | `yangtb` | fix(memory_propose): WR-08/09/10 — fix Feishu card button not responding and store injection | +105 | −56 |
-- [ ] `0ef6b91` | 2026-05-31 | `yangtb` | fix(feishu): clarify card freeze buttons + store choices in _clarify_state | +120 | −1 |
+- [x] ✅ 已迁移 `47a8e5db6` `0ef6b91` | 2026-05-31 | `yangtb` | fix(feishu): clarify card freeze buttons + store choices in _clarify_state | +120 | −1 |
 - [ ] `4130359` | 2026-05-31 | `yangtb` | fix(tool_executor): remove duplicate pre-tool-call block logic from merge | +1 | −15 |
 - [x] ⚠️ 废弃（纯文档md，不迁移）`cb208c5` | 2026-05-31 | `yangtb` | docs(owner): fix 3 README discrepancies found during merge audit | +3 | −3 |
 - [x] ⏭️ 跳过 `a7ede52` | 2026-05-31 | `yangtb` | Merge main (synced with upstream) into owner | +0 | −0 |
