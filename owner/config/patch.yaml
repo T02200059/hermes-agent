@@ -9,6 +9,11 @@ owner:
     # Whether to show the "Always" (permanent) approval button on Feishu cards.
     # When false, only "Once" / "Session" / "Deny" are shown.
     allow_permanent: false
+    # Permanent approval allowlist (merged with config.yaml command_allowlist).
+    # Format: "tirith:<rule_id>" or the exact DANGEROUS_PATTERNS description.
+    command_allowlist: []
+    # command_allowlist:
+    #   - "tirith:raw_ip_url"          # suppress internal IP curl/wget approvals
 
   # ── Image Generation Presets ───────────────────────────────────────────────
   # Presets for the DashScope image-gen plugin (owner/image_gen/dashscope_provider.py).
