@@ -132,3 +132,7 @@ scripts/out/
 # stores the published notes. They are not a build artifact and must never be
 # committed to the repo root. See the hermes-release skill.
 RELEASE_v*.md
+
+# Local editor/agent settings that are machine- or user-specific.
+.claude/settings.local.json
+.local/
