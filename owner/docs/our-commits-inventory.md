@@ -29,11 +29,11 @@
 
 - [x] [废弃] `5b14bbf` | 2026-06-12 | `yangtb` | chore: add SQL audit script for reasoning_content coverage | +58 | −0 |
 - [x] [废弃] `871a364` | 2026-06-12 | `yangtb` | test: regression tests for xfyun/damodel reasoning_content echo | +210 | −0 |
-- [ ] `854d2c3` | 2026-06-12 | `yangtb` | feat: add xfyun/damodel thinking-mode reasoning_content detector | +30 | −0 |
+- [x] ✅ 已迁移 `(chain bcc1c48)` `854d2c3` | 2026-06-12 | `yangtb` | feat: add xfyun/damodel thinking-mode reasoning_content detector | +30 | −0 |
 - [x] ⚠️ 废弃（纯文档md，不迁移）`6ae8c57` | 2026-06-12 | `yangtb` | sync: align owner/SOUL.md with personalized SOUL.md (minus persona) | +33 | −7 |
-- [ ] `19773fe` | 2026-06-12 | `yangtb` | fix(agent): add _needs_glm_tool_reasoning for damodel/bigmodel endpoints | +19 | −0 |
-- [ ] `97a88a1` | 2026-06-12 | `yangtb` | fix(owner): use official thinking params for damodel glm-5.1/glm-5 | +13 | −1 |
-- [ ] `3e448f9` | 2026-06-12 | `yangtb` | feat(owner): enable thinking for xfyun/damodel models (xopglm51, xopglm5, xopkimik26) | +12 | −0 |
+- [x] ✅ 已迁移 `(chain bcc1c48)` `19773fe` | 2026-06-12 | `yangtb` | fix(agent): add _needs_glm_tool_reasoning for damodel/bigmodel endpoints | +19 | −0 |
+- [x] ✅ 已迁移 `(chain bcc1c48)` `97a88a1` | 2026-06-12 | `yangtb` | fix(owner): use official thinking params for damodel glm-5.1/glm-5 | +13 | −1 |
+- [x] ✅ 已迁移 `(chain bcc1c48)` `3e448f9` | 2026-06-12 | `yangtb` | feat(owner): enable thinking for xfyun/damodel models (xopglm51, xopglm5, xopkimik26) | +12 | −0 |
 - [x] ⚠️ 废弃（纯文档md，不迁移）`2bb3f24` | 2026-06-12 | `yangtb` | docs(owner): delete §十 qdrant cleanup log + rewrite §四 from OpenViking to Qdrant + reorder sections | +61 | −243 |
 - [x] ⚠️ 废弃（纯文档md，不迁移）`5ee4631` | 2026-06-12 | `yangtb` | fix(owner): correct 10.1 'viking.md (跳板机)' mislabel → yaxin 项目访问配置 | +2 | −2 |
 - [x] ⚠️ 废弃（纯文档md，不迁移）`de00f9c` | 2026-06-12 | `yangtb` | docs(owner): log qdrant cleanup (10.1 删 2 条 OpenViking 历史记忆) | +54 | −0 |
