@@ -12,7 +12,10 @@ a thin dispatcher that delegates to a platform-provided callback.
 """
 
 import json
-from typing import List, Optional, Callable
+from typing import Any, List, Optional, Callable
+
+# [owner] clarify: use owner choice normalizer (owner/clarify/choice_normalizer.py)
+from owner.clarify.choice_normalizer import normalize_choices
 
 
 # Maximum number of predefined choices the agent can offer.
@@ -22,7 +25,7 @@ MAX_CHOICES = 4
 
 def clarify_tool(
     question: str,
-    choices: Optional[List[str]] = None,
+    choices: Optional[List[Any]] = None,
     callback: Optional[Callable] = None,
 ) -> str:
     """
@@ -44,15 +47,11 @@ def clarify_tool(
 
     question = question.strip()
 
-    # Validate and trim choices
-    if choices is not None:
-        if not isinstance(choices, list):
-            return tool_error("choices must be a list of strings.")
-        choices = [str(c).strip() for c in choices if str(c).strip()]
-        if len(choices) > MAX_CHOICES:
-            choices = choices[:MAX_CHOICES]
-        if not choices:
-            choices = None  # empty list → open-ended
+    # [owner] clarify: normalize model-provided choices to {display, key}
+    if choices is not None and not isinstance(choices, list):
+        return tool_error("choices must be a list.")
+    normalized = normalize_choices(choices)
+    choices = normalized
 
     if callback is None:
         return json.dumps(
