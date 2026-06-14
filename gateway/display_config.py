@@ -18,10 +18,6 @@ Backward compatibility: ``display.tool_progress_overrides`` is still read as a
 fallback for ``tool_progress`` when no ``display.platforms`` entry exists.  A
 config migration (version bump) automatically moves the old format into the new
 ``display.platforms`` structure.
-
-Patch.yaml integration: per-chat overrides defined in
-``patch.yaml``'s ``owner.display`` section are merged into the display
-config at call time, participating in the standard resolution order.
 """
 
 from __future__ import annotations
@@ -181,6 +177,7 @@ def resolve_display_setting(
         Optional chat/group ID for per-chat overrides
         (``display.per_chat.<platform>.<chat_id>.<key>``). When provided,
         this is the highest-priority resolution tier.
+        Typically supplied for gateway messaging chats; CLI paths usually pass None.
 
     Returns
     -------
@@ -256,6 +253,10 @@ def resolve_display_setting(
 # Lets code pass `source=event.source` (or similar) instead of manually doing
 # chat_id=source.chat_id at every resolve site. Extraction logic lives in one
 # place; reduces repetition and future merge surface in gateway/run.py.
+#
+# Note on scope: per_chat overrides are primarily intended for gateway
+# messaging chats (where chat_id is the platform's native conversation id).
+# CLI sessions typically do not pass a meaningful chat_id (defaults to None).
 def resolve_display_setting_for_source(
     user_config: dict,
     platform_key: str,
