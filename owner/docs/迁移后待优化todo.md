@@ -24,6 +24,13 @@
     - legacy 实现留在官方文件（只禁注册）是权衡 sync 冲突 vs. 可移除性的结果；删除需谨慎。
     - per-file commit 纪律和迁移 checklist（规范 7.2）在收尾阶段同样适用。
 
+  - 低优先级问题 1-4 已逐个处理（2026-06-14）：
+    - #1（docstring 瘦身）：从模块 docstring 中移除大段 "Patch.yaml integration" 描述（保留 resolution order），owner 特定说明改用函数内短 [owner] 注释承载，减少官方文件文字 diff。
+    - #2（invalidate 联动）：在 `owner/display_overrides.py` 末尾添加 `invalidate_per_chat_display_cache` re-export（包装 patch_config），并在模块 docstring 说明。支持用户在编辑 patch.yaml 后立即使 per_chat 生效。
+    - #3（收敛 run.py 重复）：将 gateway/run.py 中所有使用 `chat_id=...chat_id` 的 resolve_display_setting 调用（含之前遗漏的 busy_ack_detail 通知循环）迁移到 `resolve_display_setting_for_source(..., source=...)`。更新了对应 local import。重复模式大幅减少。
+    - #4（CLI/gateway 边界）：在 helper docstring、main 函数 chat_id 参数文档、以及 patch.yaml 示例注释中明确 "primarily for gateway messaging chats; CLI sessions usually do not participate / pass None"。
+  - 验证：import、相关测试通过，grep 确认无遗漏 chat_id 直接写法，[owner] 标记一致。
+
 - per-chat display overrides 迁移后规范合规收尾（2026-06-14，按 review 建议逐个修复）
   - `gateway/slash_commands.py`：补齐 `_handle_verbose_command`（tool_progress cycle）中唯一的遗漏 `resolve_display_setting` 调用点，传入 `chat_id=event.source.chat_id` 并加标准 `# [owner] per-chat display override` 短注释 + 说明。
   - `gateway/display_config.py`：
