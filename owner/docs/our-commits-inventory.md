@@ -173,9 +173,9 @@
 - [ ] `2458489` | 2026-05-30 | `yangtb` | chore(owner): P12 orphan removal + Phase1 docs + minor config updates | +39 | −116 | ⚠️ 混有代码：hermes_state.py + patch.yaml + pricing.yaml + file_tools.py
 - [ ] `3141715` | 2026-05-30 | `yangtb` | fix(feishu): resolve sender name for approval card using open_id instead of short user_id | +5 | −2 |
 - [x] ✅ 已迁移 `1a4aa7bf6` `90c9f20` | 2026-05-30 | `yangtb` | feat(patch): feishu: raise auto_card_threshold to 41, add interim/tool_progress settings | +7 | −1 |
-- [ ] `08253ae` | 2026-05-29 | `yangtb` | chore: remove obsolete yangtb/scripts/send_daily_report.py (was accidentally committed by daily-report cron, caused persistent merge conflicts) | +0 | −76 |
+- [x] ⚠️ 废弃（纯删除已不存在的脚本，无功能价值）`08253ae` | 2026-05-29 | `yangtb` | chore: remove obsolete yangtb/scripts/send_daily_report.py (was accidentally committed by daily-report cron, caused persistent merge conflicts) | +0 | −76 |
 - [x] ✅ 已迁移 `2c383a2` | 2026-05-29 | `yangtb` | merge: resolve conflict with gitlab/yangtb — keep HEAD P35+P36, adopt yangtb's send_daily_report (5-26 version) | +0 | −0 |
-- [ ] `480bf03` | 2026-05-29 | `yangtb` | fix(qqbot): add 'dm' chat_type to approval authorization | +2 | −3291 |
+- [x] ⚠️ 废弃（owner-v16 已覆盖：qqbot 已包含 'dm' chat_type；auditor-guard 已被 P66 Intent Guard 替代）`480bf03` | 2026-05-29 | `yangtb` | fix(qqbot): add 'dm' chat_type to approval authorization | +2 | −3291 |
 - [ 
 
 ... [OUTPUT TRUNCATED - 2046 chars omitted out of 52046 total] ...
