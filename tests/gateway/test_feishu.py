@@ -1610,7 +1610,7 @@ class TestAdapterBehavior(unittest.TestCase):
         adapter._dispatch_inbound_event.assert_awaited_once()
         event = adapter._dispatch_inbound_event.await_args.args[0]
         self.assertEqual(event.message_type, MessageType.TEXT)
-        self.assertEqual(event.source.user_id, "u_user")  # tenant-scoped user_id preferred over app-scoped open_id
+        self.assertEqual(event.source.user_id, "ou_user")  # app-scoped open_id preferred for approval callback/cache alignment
         self.assertEqual(event.source.user_name, "张三")
         self.assertEqual(event.source.user_id_alt, "on_union")
         self.assertEqual(event.source.chat_name, "Feishu DM")
@@ -4415,9 +4415,11 @@ class TestFeishuExtractMessageContent(unittest.TestCase):
 
 class TestFeishuProcessInboundMessage(unittest.TestCase):
     def _build_adapter(self):
+        from gateway.config import PlatformConfig
         from plugins.platforms.feishu.adapter import FeishuAdapter
 
         adapter = FeishuAdapter.__new__(FeishuAdapter)
+        adapter.config = PlatformConfig()
         adapter._bot_open_id = "ou_bot"
         adapter._bot_user_id = ""
         adapter._bot_name = "Hermes"
@@ -4705,9 +4707,11 @@ class TestFeishuMentionEndToEnd(unittest.TestCase):
     """High-level scenarios from the design spec — verify the full pipeline."""
 
     def _build_adapter(self):
+        from gateway.config import PlatformConfig
         from plugins.platforms.feishu.adapter import FeishuAdapter
 
         adapter = FeishuAdapter.__new__(FeishuAdapter)
+        adapter.config = PlatformConfig()
         adapter._bot_open_id = "ou_bot"
         adapter._bot_user_id = ""
         adapter._bot_name = "Hermes"

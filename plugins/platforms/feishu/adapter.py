@@ -4084,10 +4084,20 @@ class FeishuAdapter(BasePlatformAdapter):
         Failures are silent so the pipeline never blocks on name resolution.
         Thin delegate.
         """
-        # [owner] approval: open_id -> 中文名 resolution + cache populate (see owner/feishu/sender_name_cache.py)
+        if not sender_id:
+            return None
+        # [owner] approval: honor legacy/test pre-warmed cache before binding to FeishuSenderNameCache
+        # (owner/feishu/sender_name_cache.py)
+        cached_name = self._get_cached_sender_name(sender_id)
+        if cached_name is not None:
+            return cached_name or None  # "" means known nameless
+        # [owner] approval: lazy bind FeishuSenderNameCache and keep _sender_name_cache alias in sync
         if self._name_cache is None:
             if self._client:
                 self._name_cache = FeishuSenderNameCache(self._client)
+                # Preserve entries tests/callbacks already stashed in _sender_name_cache.
+                if isinstance(getattr(self, "_sender_name_cache", None), dict):
+                    self._name_cache._cache.update(self._sender_name_cache)
                 self._sender_name_cache = self._name_cache._cache  # compat for tests
             else:
                 return None
