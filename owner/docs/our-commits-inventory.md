@@ -131,7 +131,7 @@
 - [ ] `77862a9` | 2026-06-04 | `yangtb` | feat(qdrant-insert): add skill source files (from feishu ff47ea5f3) | +476 | −0 |
 - [ ] `df5471a` | 2026-06-04 | `yangtb` | chore(owner): cleanup hooks and scripts | +450 | −273 |
 - [ ] `0b160cd` | 2026-06-04 | `yangtb` | chore(scripts): remove sre-archive.py (deployment removed 2026-05-28; orphan source cleanup) | +0 | −490 |
-- [x] ⚡ 部分迁移 `a1e242548` `d93318d` | 2026-06-04 | `yangtb` | fix(reasoning): downgrade xhigh→high for Kimi; add bot_menu contract note; extend BM25 hash to 64-bit | +12 | −1 |
+- [x] ✅ 已迁移 `a1e242548` `d93318d` | 2026-06-04 | `yangtb` | fix(reasoning): downgrade xhigh→high for Kimi; add bot_menu contract note; extend BM25 hash to 64-bit | +12 | −1 |
 - [x] ⏭️ 跳过（脚本本身未迁移，重构也无价值）`3468b67` | 2026-06-04 | `yangtb` | refactor(cost-estimate): add CLI args, dynamic exchange rate, improve code quality | +114 | −63 |
 - [x] ✅ 已迁移 `45ab4a0f0` `c41dffd` | 2026-06-04 | `yangtb` | fix(session-archiver): add log retention cleanup, fix tool_calls parse, fix Qdrant vectors | +24 | −27 |
 - [x] ✅ 已迁移 `51e7fccd2` `2d38c8d` | 2026-06-04 | `yangtb` | perf(feishu): debounce chat_id cache writes to avoid sync I/O on hot path | +37 | −3 |
