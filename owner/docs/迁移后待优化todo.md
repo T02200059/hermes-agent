@@ -24,6 +24,19 @@
     - legacy 实现留在官方文件（只禁注册）是权衡 sync 冲突 vs. 可移除性的结果；删除需谨慎。
     - per-file commit 纪律和迁移 checklist（规范 7.2）在收尾阶段同样适用。
 
+- per-chat display overrides 迁移后规范合规收尾（2026-06-14，按 review 建议逐个修复）
+  - `gateway/slash_commands.py`：补齐 `_handle_verbose_command`（tool_progress cycle）中唯一的遗漏 `resolve_display_setting` 调用点，传入 `chat_id=event.source.chat_id` 并加标准 `# [owner] per-chat display override` 短注释 + 说明。
+  - `gateway/display_config.py`：
+    - 移除顶层 `from owner.display_overrides` 直接 import，改为函数内 **lazy + try/except 保护** 的安全加载；except 路径提供 no-op fallback（merge 返回原 cfg，per_chat 返回 None）。这样即使 `rm -rf owner/display_overrides.py`（或整个 owner/），`import gateway.display_config` 仍成功，功能优雅降级。
+    - 新增 `resolve_display_setting_for_source(..., source=..., chat_id=...)` 辅助函数（带详细 [owner] 注释），集中处理 source → chat_id 提取，未来 gateway/run.py 新调用或重构时可使用它，减少重复 `chat_id=xxx.chat_id` 噪音和 merge 面积。
+  - 生产路径全量验证（grep）：只有 `gateway/run.py`（已带 chat_id）和 `gateway/slash_commands.py`（本次补齐）两处；所有 tests/ 调用均不传 chat_id（合理，默认 None）。
+  - 经验教训（记录供后续迁移参考）：
+    - 即使“看起来只改了 8 处”的 migration，也必须 grep 整个 gateway/（包括 slash_commands.py）找所有 resolve_display_setting 调用。
+    - 可移除性不只是“逻辑放 owner/”，顶层 import 会导致模块加载即崩溃；必须用 lazy import + 保护性 fallback。
+    - 在 gateway/run.py 这种超大核心文件里重复添加 kwarg 是高成本的；提供 source 包装器 + 集中注释是降低长期 sync 冲突的好实践。
+    - 官方 display_config.py 的 docstring 改动要克制（新 tier 说明尽量放代码注释）。
+    - 每轮 owner 迁移后都要更新本 TODO，并做“调用点全覆盖 + removability 验证” checklist。
+
 ## 待办项（按推荐优先级）
 
 ### 1. 审批卡片状态管理封装（中优先级，推荐下一个小阶段处理）
