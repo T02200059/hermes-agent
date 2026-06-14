@@ -28,11 +28,9 @@ from __future__ import annotations
 
 from typing import Any
 
-# [owner] per-chat display overrides from patch.yaml
-from owner.display_overrides import (
-    merge_owner_display_config,
-    resolve_per_chat_override,
-)
+# Note: the owner.display_overrides import is intentionally lazy + protected
+# inside resolve_display_setting (see below). This ensures the official module
+# remains importable even if the entire owner/ tree is removed.
 
 # ---------------------------------------------------------------------------
 # Overrideable display settings and their global defaults
@@ -190,6 +188,22 @@ def resolve_display_setting(
     """
     display_cfg = user_config.get("display") or {}
 
+    # [owner] per-chat display overrides: safe lazy import so the module remains
+    # importable (and fully functional as no-op) even if owner/display_overrides.py
+    # is deleted. This improves removability per 二次开发规范.
+    try:
+        from owner.display_overrides import (
+            merge_owner_display_config,
+            resolve_per_chat_override,
+        )
+    except Exception:
+        # [owner] graceful degradation – no per_chat or owner.display merge
+        # (this path is taken only if owner/display_overrides.py cannot be imported)
+        def merge_owner_display_config(cfg):  # type: ignore
+            return cfg
+        def resolve_per_chat_override(*_a, **_k):  # type: ignore
+            return None
+
     # [owner] merge patch.yaml owner.display into config at call time
     display_cfg = merge_owner_display_config(display_cfg)
 
@@ -236,6 +250,26 @@ def resolve_display_setting(
         return val
 
     return fallback
+
+
+# [owner] per-chat display overrides: convenience wrapper for gateway call sites.
+# Lets code pass `source=event.source` (or similar) instead of manually doing
+# chat_id=source.chat_id at every resolve site. Extraction logic lives in one
+# place; reduces repetition and future merge surface in gateway/run.py.
+def resolve_display_setting_for_source(
+    user_config: dict,
+    platform_key: str,
+    setting: str,
+    fallback: Any = None,
+    *,
+    source: Any = None,
+    chat_id: str | None = None,
+) -> Any:
+    if chat_id is None and source is not None:
+        chat_id = getattr(source, "chat_id", None)
+    return resolve_display_setting(
+        user_config, platform_key, setting, fallback, chat_id=chat_id
+    )
 
 
 # ---------------------------------------------------------------------------
