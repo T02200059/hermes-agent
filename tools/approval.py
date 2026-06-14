@@ -1260,17 +1260,6 @@ def check_dangerous_command(command: str, env_type: str,
     if env_type in {"docker", "singularity", "modal", "daytona"}:
         return {"approved": True, "message": None}
 
-    # [owner] skill script auto-approval: if the command only runs scripts from
-    # skills viewed this session, bypass the approval prompt.
-    try:
-        from owner.approval.skill_script_approval import is_skill_script_allowed
-        _allow = is_skill_script_allowed(command)
-        if _allow:
-            logger.info("Skill script auto-approved (%s): %s", _allow, command[:200])
-            return {"approved": True, "message": None}
-    except Exception:
-        pass
-
     # Hardline floor: commands with no recovery path (rm -rf /, mkfs, dd
     # to raw device, shutdown/reboot, fork bomb, kill -1) are blocked
     # unconditionally, BEFORE the yolo bypass.  Opting into yolo is
@@ -1280,6 +1269,19 @@ def check_dangerous_command(command: str, env_type: str,
     if is_hardline:
         logger.warning("Hardline block: %s (command: %s)", hardline_desc, command[:200])
         return _hardline_block_result(hardline_desc)
+
+    # [owner] skill script auto-approval: if the command only runs scripts from
+    # skills viewed this session, bypass the approval prompt.
+    # Must be AFTER hardline floor — even skill scripts must not bypass
+    # unconditional blocks like rm -rf / or shutdown.
+    try:
+        from owner.approval.skill_script_approval import is_skill_script_allowed
+        _allow = is_skill_script_allowed(command)
+        if _allow:
+            logger.info("Skill script auto-approved (%s): %s", _allow, command[:200])
+            return {"approved": True, "message": None}
+    except Exception:
+        pass
 
     # --yolo: bypass all approval prompts. Gateway /yolo is session-scoped;
     # CLI --yolo remains process-scoped via the env var for local use.

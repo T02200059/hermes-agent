@@ -5021,8 +5021,8 @@ class AIAgent:
             self._needs_deepseek_tool_reasoning()
             or self._needs_kimi_tool_reasoning()
             or self._needs_mimo_tool_reasoning()
-            or self._needs_glm_tool_reasoning()
-            or self._needs_xfyun_damodel_tool_reasoning()
+            # [owner] xfyun/damodel/GLM detectors (owner/agent/reasoning_detectors.py)
+            or _run_owner_reasoning_detection(self.provider, self.model, self.base_url)
         )
         self._thinking_pad_cache = (key, result)
         return result
@@ -5078,49 +5078,10 @@ class AIAgent:
             or base_url_host_matches(self.base_url, "xiaomimimo.com")
         )
 
-    # [owner] xfyun/damodel thinking-mode reasoning_content detector
-    def _needs_xfyun_damodel_tool_reasoning(self) -> bool:
-        """Return True for xfyun/damodel Coding-Plan thinking-mode models.
-
-        xfyun and damodel front three thinking-mode model families that all
-        require ``reasoning_content`` to be echoed back on every assistant
-        tool-call turn:
-
-        - ``astron-code-latest`` (xfyun-native Spark code model)
-        - GLM family — ``glm-*`` and the ``xopglm*`` aliases (e.g. xopglm51,
-          xopglm5) routing to GLM-5.1 / GLM-5
-        - Kimi family — ``xopkimik26`` (and any future ``xopkimi*`` /
-          ``kimi-*`` aliases) routing to Kimi-K2.6
-        """
-        if self.provider not in {"xfyun", "damodel"}:
-            return False
-        model = (self.model or "").lower()
-        if not model:
-            return False
-        return (
-            model == "astron-code-latest"
-            or "glm" in model
-            or "kimi" in model
-        )
-
-    # [owner] GLM thinking endpoint reasoning_content detector
-    def _needs_glm_tool_reasoning(self) -> bool:
-        """Return True when the active provider is a GLM thinking endpoint.
-
-        GLMs on the Coding Plan endpoint (genai.damodel.com, open.bigmodel.cn,
-        api.z.ai) have thinking enabled by default and require reasoning_content
-        to be echoed back on every assistant turn — including tool-call turns
-        where the model returned empty reasoning.  Without the echo the API
-        rejects the replay with HTTP 400.
-
-        Detection is host-driven so that aggregators re-exporting GLM models
-        under their own base_url are not affected.
-        """
-        return (
-            base_url_host_matches(self.base_url, "genai.damodel.com")
-            or base_url_host_matches(self.base_url, "open.bigmodel.cn")
-            or base_url_host_matches(self.base_url, "api.z.ai")
-        )
+    # [owner] xfyun/damodel/GLM detectors — lazy-import helper (owner/agent/reasoning_detectors.py)
+    def _run_owner_reasoning_detection(provider, model, base_url) -> bool:
+        from owner.agent.reasoning_detectors import needs_owner_reasoning_detection
+        return needs_owner_reasoning_detection(provider, model, base_url)
 
     def _copy_reasoning_content_for_api(self, source_msg: dict, api_msg: dict) -> None:
         """Forwarder — see ``agent.agent_runtime_helpers.copy_reasoning_content_for_api``."""

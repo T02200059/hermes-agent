@@ -1459,12 +1459,13 @@ class FeishuAdapter(BasePlatformAdapter):
         # (they directly mutate for pre-warm simulation). Real code uses the encapsulated _name_cache.
         self._sender_name_cache: Dict[str, tuple[str, float]] = {}
         # [owner] bot-menu: user cache + disk persistence (see owner/feishu/user_cache.py)
-        from owner.feishu.user_cache import FeishuUserEntry, load_chat_id_cache
+        from owner.feishu.user_cache import FeishuUserEntry, ChatIdCacheDebouncer, load_chat_id_cache, save_chat_id_cache
         self._feishu_user_cache: Dict[str, "FeishuUserEntry"] = {}
         self._chat_id_cache_path = get_hermes_home() / "feishu_chat_id_cache.json"
         self._chat_id_cache_lock = threading.Lock()
-        self._chat_id_cache_dirty = False
-        self._chat_id_cache_timer: Optional[threading.Timer] = None
+        self._chat_id_cache_debouncer = ChatIdCacheDebouncer(
+            save_fn=lambda: save_chat_id_cache(self._chat_id_cache_path, self._feishu_user_cache)
+        )
         load_chat_id_cache(self._chat_id_cache_path, self._feishu_user_cache)
         # [owner] bot-menu: dedup + bot_menu_dedup_lock
         self._bot_menu_dedup: Dict[tuple[str, str], float] = {}
@@ -2588,7 +2589,7 @@ class FeishuAdapter(BasePlatformAdapter):
             entry = get_user_entry(self._feishu_user_cache, open_id)
             if entry.p2p_chat_id != chat_id:
                 entry.p2p_chat_id = chat_id
-                self._mark_chat_id_cache_dirty()
+                self._chat_id_cache_debouncer.mark_dirty()
                 logger.debug("[Feishu] Cached p2p_chat_id for %s", open_id)
             # Pre-warm sender name asynchronously so it's ready for menus / approvals.
             if not entry.name:
@@ -2599,27 +2600,6 @@ class FeishuAdapter(BasePlatformAdapter):
                         self._resolve_sender_name_from_api(open_id),
                     )
         logger.debug("[Feishu] User entered P2P chat with bot")
-
-    # [owner] bot-menu: debounced chat_id cache write (see owner/feishu/user_cache.py)
-    def _mark_chat_id_cache_dirty(self) -> None:
-        """Mark the chat-id cache dirty and schedule a debounced save (5s)."""
-        with self._chat_id_cache_lock:
-            self._chat_id_cache_dirty = True
-            if self._chat_id_cache_timer is not None:
-                self._chat_id_cache_timer.cancel()
-            self._chat_id_cache_timer = threading.Timer(5.0, self._do_save_chat_id_cache)
-            self._chat_id_cache_timer.daemon = True
-            self._chat_id_cache_timer.start()
-
-    def _do_save_chat_id_cache(self) -> None:
-        """Actually persist the cache (called by the delayed timer)."""
-        with self._chat_id_cache_lock:
-            self._chat_id_cache_timer = None
-            if not self._chat_id_cache_dirty:
-                return
-            self._chat_id_cache_dirty = False
-        from owner.feishu.user_cache import save_chat_id_cache
-        save_chat_id_cache(self._chat_id_cache_path, self._feishu_user_cache)
 
     # [owner] bot-menu: synchronous entry point for bot menu events (see owner/feishu/bot_menu.py)
     def _on_bot_menu_event(self, data: Any) -> None:
