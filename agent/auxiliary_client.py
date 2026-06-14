@@ -40,6 +40,7 @@ Payment / credit exhaustion fallback:
   their OpenRouter balance but has Codex OAuth or another provider available.
 """
 
+import asyncio
 import contextlib
 import json
 import logging
@@ -5888,13 +5889,21 @@ async def async_call_llm(
     if _is_anthropic_compat_endpoint(resolved_provider, _client_base):
         kwargs["messages"] = _convert_openai_images_to_anthropic(kwargs["messages"])
 
+    # [owner] P0 hard-cap: wrap LLM call with asyncio.wait_for to prevent
+    # OpenAI SDK from hanging 30+ minutes on unresponsive providers.
+    _hard_cap = effective_timeout * 3
+
     try:
         # Retry ONCE on the same provider for a transient transport blip
         # before the except-chain escalates to fallback — see call_llm()
         # for the rationale. (PR #16587)
         try:
             return _validate_llm_response(
-                await client.chat.completions.create(**kwargs), task)
+                await asyncio.wait_for(
+                    client.chat.completions.create(**kwargs),
+                    timeout=_hard_cap,
+                ),
+                task)
         except Exception as transient_err:
             if not _is_transient_transport_error(transient_err):
                 raise
@@ -5904,7 +5913,11 @@ async def async_call_llm(
                 task or "call", transient_err,
             )
             return _validate_llm_response(
-                await client.chat.completions.create(**kwargs), task)
+                await asyncio.wait_for(
+                    client.chat.completions.create(**kwargs),
+                    timeout=_hard_cap,
+                ),
+                task)
     except Exception as first_err:
         if "temperature" in kwargs and _is_unsupported_temperature_error(first_err):
             retry_kwargs = dict(kwargs)
