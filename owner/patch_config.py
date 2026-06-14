@@ -8,19 +8,26 @@ import helpers here instead of re-implementing YAML loading.
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
-_cache: Dict[str, Any] = {"path": None, "mtime": None, "data": None}
+# 5-minute TTL for patch.yaml reloads (in addition to mtime-based invalidation on file change).
+# This ensures periodic refresh even if the file mtime does not change (e.g. network mounts,
+# external edits, or safety against stale cache in long-running gateway processes).
+_PATCH_TTL_SECONDS = 300
+
+_cache: Dict[str, Any] = {"path": None, "mtime": None, "data": None, "last_load": 0}
 
 
 def _load_patch_owner_config(force: bool = False) -> Dict[str, Any]:
     """Load ``~/.hermes/patch.yaml`` and return the ``owner`` section.
 
     Fail-open: returns an empty dict if the file is missing or unreadable.
-    Caches by file mtime so repeated calls are cheap while still reacting to
-    file edits.
+    Caches by file mtime (for immediate reaction to edits) + a 5-minute TTL
+    (so long-running processes periodically re-read even without mtime change).
+    Use invalidate_patch_owner_config_cache() for immediate forced refresh.
     """
     try:
         from hermes_constants import get_hermes_home
@@ -35,11 +42,13 @@ def _load_patch_owner_config(force: bool = False) -> Dict[str, Any]:
             return {}
 
         mtime = path.stat().st_mtime
+        now = time.time()
         if (
             not force
             and _cache["path"] == path_str
             and _cache["mtime"] == mtime
             and _cache["data"] is not None
+            and now - _cache.get("last_load", 0) < _PATCH_TTL_SECONDS
         ):
             return _cache["data"]
 
@@ -55,6 +64,7 @@ def _load_patch_owner_config(force: bool = False) -> Dict[str, Any]:
         _cache["path"] = path_str
         _cache["mtime"] = mtime
         _cache["data"] = owner_cfg
+        _cache["last_load"] = time.time()
         return owner_cfg
     except Exception as exc:
         logger.debug("Failed to load patch.yaml owner config: %s", exc)
@@ -65,6 +75,7 @@ def invalidate_patch_owner_config_cache() -> None:
     """Force the next loader call to re-read patch.yaml from disk."""
     _cache["mtime"] = None
     _cache["data"] = None
+    _cache["last_load"] = 0
 
 
 def get_model_extra_body(
