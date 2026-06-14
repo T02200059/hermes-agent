@@ -492,10 +492,11 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
         return
       }
 
-      // On macOS, Cmd+C with no selection is a no-op (Ctrl+C below handles interrupt).
+      // On macOS, Cmd+C with no selection: fallback to terminal native copy.
+      // Return false to pass the key event to the terminal for native handling.
       // On non-macOS, isAction uses Ctrl, so fall through to interrupt/clear/exit.
       if (isMac) {
-        return
+        return false
       }
     }
 
