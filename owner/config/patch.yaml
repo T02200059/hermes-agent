@@ -62,6 +62,35 @@ owner:
   #         tool_preview_length: 0
   #         streaming: false
 
+  # ── Gateway Lifecycle Hooks config ────────────────────────────────
+  # qdrant-memory-recall: per-turn Qdrant semantic recall hook
+  hooks:
+    qdrant_memory_recall:
+      enabled: true
+      top_k: 3
+      score_threshold: 0.5
+      per_collection_k: 3
+      body_max_chars: 300
+      min_query_length: 5
+      embed_model: text-embedding-v4
+      embed_timeout_sec: 3
+      embed_max_retries: 2
+      collections:
+        - cases
+        - entities
+        - events
+        - patterns
+        - preferences
+      per_collection_timeout_sec: 2
+      total_timeout_sec: 10
+      include_score: true
+      include_source_collection: true
+      extra_context_header: >
+        # Retrieved Memory (qdrant 语义召回, top-K 按 cosine 相似度排序)
+
+        以下是从知识库中语义检索到的相关条目，score 为相似度（0-1，越高越相关）：
+      log_on_empty_recall: false
+
   # ── Feishu bot menu key→command mappings ──────────────────────────────────
   # Maps bot menu event_key to slash command or text prompt.
   # Falls back to _BUILTIN_BOT_MENU in feishu.py when config is unavailable.
