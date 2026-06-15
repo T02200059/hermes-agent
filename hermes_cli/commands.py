@@ -127,6 +127,9 @@ COMMAND_REGISTRY: list[CommandDef] = [
                cli_only=True),
     CommandDef("model", "Switch model (persists by default)", "Configuration",
                args_hint="[model] [--provider name] [--global|--session] [--refresh]"),
+    # [owner] model picker: /providers command (see owner/feishu/model_picker.py)
+    CommandDef("providers", "List all configured providers and their models", "Configuration",
+               aliases=("list-providers", "list-models")),
     CommandDef("codex-runtime", "Toggle codex app-server runtime for OpenAI/Codex models",
                "Configuration", aliases=("codex_runtime",),
                args_hint="[auto|codex_app_server]"),
@@ -144,8 +147,8 @@ COMMAND_REGISTRY: list[CommandDef] = [
     CommandDef("footer", "Toggle gateway runtime-metadata footer on final replies",
                "Configuration", args_hint="[on|off|status]",
                subcommands=("on", "off", "status")),
-    CommandDef("yolo", "Toggle YOLO mode (skip all dangerous command approvals)",
-               "Configuration"),
+     CommandDef("yolo", "Toggle YOLO mode (skip all dangerous command approvals)",
+                "Configuration", args_hint="[on|off|status]"),  # [owner] on/off/status arg
     CommandDef("reasoning", "Manage reasoning effort and display", "Configuration",
                args_hint="[level|show|hide|full|clamp]",
                subcommands=("none", "minimal", "low", "medium", "high", "xhigh", "show", "hide", "on", "off", "full", "clamp")),

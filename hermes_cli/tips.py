@@ -478,8 +478,21 @@ TIPS = [
 def get_random_tip(exclude_recent: int = 0) -> str:
     """Return a random tip string.
 
+    Supports locale-aware tips via ``owner/tips_zh.py``.  When
+    ``HERMES_LANGUAGE`` starts with ``zh`` the function tries to
+    import ``TIPS`` from ``owner.tips_zh`` and falls back to the
+    built-in English corpus on any failure.
+
     Args:
         exclude_recent: not used currently; reserved for future
             deduplication across sessions.
     """
+    import os as _os
+    try:
+        _lang = (_os.environ.get("HERMES_LANGUAGE") or "").lower()
+        if _lang.startswith("zh"):
+            from owner.tips_zh import TIPS as _TIPS_ZH  # [owner] i18n: Chinese tips
+            return random.choice(_TIPS_ZH)
+    except Exception:
+        pass
     return random.choice(TIPS)

@@ -8002,7 +8002,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
         elif canonical == "footer":
             self._handle_footer_command(cmd_original)
         elif canonical == "yolo":
-            self._toggle_yolo()
+            self._handle_yolo_command(cmd_original)  # [owner] on/off/status arg parsing
         elif canonical == "reasoning":
             self._handle_reasoning_command(cmd_original)
         elif canonical == "fast":
@@ -8619,8 +8619,52 @@ import owner.tools.schema_patches  # noqa: F401
                 " — all commands auto-approved. Use with caution."
             )
 
+    # [owner] /yolo on|off|status — arg parsing (see owner/cli/yolo.py)
+    def _handle_yolo_command(self, cmd_original: str) -> None:
+        """Handle /yolo with optional on/off/status arg."""
+        try:
+            from owner.cli.yolo import apply_yolo_action, parse_yolo_arg
+        except ImportError:
+            self._toggle_yolo()
+            return
+
+        from hermes_cli.colors import Colors as _Colors
+
+        arg = ""
+        try:
+            parts = (cmd_original or "").strip().split(None, 1)
+            if len(parts) > 1:
+                arg = parts[1].strip().lower()
+        except Exception:
+            arg = ""
+
+        session_key = self.session_id or "default"
+        action = parse_yolo_arg(arg)
+        was_enabled, is_enabled = apply_yolo_action(session_key, action)
+
+        if action == "status":
+            if is_enabled:
+                _cprint(f"  YOLO mode: {_Colors.BOLD}{_Colors.GREEN}ON{_Colors.RESET}")
+            else:
+                _cprint(f"  YOLO mode: {_Colors.DIM}OFF{_Colors.RESET}")
+        elif action == "on":
+            if was_enabled:
+                _cprint(f"  YOLO mode already {_Colors.BOLD}ON{_Colors.RESET}")
+            else:
+                _cprint(f"  ⚡ YOLO mode {_Colors.BOLD}{_Colors.GREEN}ON{_Colors.RESET} — all commands auto-approved. Use with caution.")
+        elif action == "off":
+            if was_enabled:
+                _cprint(f"  ⚠ YOLO mode {_Colors.BOLD}{_Colors.RED}OFF{_Colors.RESET} — dangerous commands will require approval.")
+            else:
+                _cprint(f"  YOLO mode already {_Colors.DIM}OFF{_Colors.RESET}")
+        else:
+            if is_enabled:
+                _cprint(f"  ⚡ YOLO mode {_Colors.BOLD}{_Colors.GREEN}ON{_Colors.RESET} — all commands auto-approved. Use with caution.")
+            else:
+                _cprint(f"  ⚠ YOLO mode {_Colors.BOLD}{_Colors.RED}OFF{_Colors.RESET} — dangerous commands will require approval.")
 
 
+    
 
     def _on_reasoning(self, reasoning_text: str):
         """Callback for intermediate reasoning display during tool-call loops."""
