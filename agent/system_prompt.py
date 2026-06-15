@@ -460,10 +460,11 @@ def build_system_prompt_parts(agent: Any, system_message: Optional[str] = None) 
         timestamp_line += f"\nProvider: {agent.provider}"
     volatile_parts.append(timestamp_line)
 
-    # [owner] current-user: expose name (from gateway source) so model can address user directly
-    # (in volatile tier; pairs with per-message wrap for groups; see owner/feishu/ + approval pre-warm path)
+    # [owner] current-user: non-Feishu gateway sessions only (Feishu uses per-message
+    # append in owner/gateway/inbound_context.py — see owner/feishu/inbound_context.py)
     _user_name = getattr(agent, "_user_name", None)
-    if _user_name:
+    _platform_key = (agent.platform or "").lower().strip()
+    if _user_name and _platform_key != "feishu":
         volatile_parts.append(f"Current user: {_user_name}")
 
     return {

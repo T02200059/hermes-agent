@@ -106,21 +106,11 @@
 
 ---
 
-### 2. current-user 注入架构收敛（低优先级，建议等更稳定阶段或有实际痛点时再碰）
+### 2. current-user 注入架构收敛
 
-**问题描述**（来自 9fbba42b6 相关审查）：
-- 在 `agent/system_prompt.py` 的 volatile 部分注入 `Current user: xxx`（读取 `agent._user_name`）。
-- 同时在 `gateway/run.py` 的 `_wrap_current_message_with_observed_context` 里为 group chat 额外加 `[Current user: ...]` 前缀。
-- 双路径设计有一定道理（系统提示 per-session 缓存），但增加了文本重复和维护点，也轻微增加了核心 prompt 构造路径的 owner 痕迹。
+**状态**：✅ 飞书路径已完成（2026-06-15）— Feishu 改为 per-message append（`owner/feishu/inbound_context.py` + `owner/gateway/inbound_context.py`），含 `user_name` / `open_id` / `chat_id` / `chat_type`；`system_prompt.py` 对 Feishu 跳过 `Current user:`；其他渠道保持原 system-prompt + Telegram observed wrap 行为。
 
-**建议做法**（如果要做）：
-- 评估是否可以把“当前用户”信息完全收敛到 per-message wrap 路径（对 prompt cache 更友好）。
-- 或抽象一个通用的 `observed_user_context` / `participant_hint` 机制，供所有平台使用，而非 Feishu 特化。
-- 最小化对 `system_prompt.py` 的改动（该文件属于 narrow waist）。
-
-**收益**：代码更整洁、减少一点点重复、潜在的 group chat UX 改进。
-**风险**：高（直接影响系统提示构建和 prefix cache 稳定性，必须极度小心 + 大量测试）。
-**当前状态**：注释已统一。功能可用，不作为 P0。
+**遗留（可选）**：非 Feishu 平台若也要去掉 system prompt 注入，需逐平台评估后再扩。
 
 ---
 

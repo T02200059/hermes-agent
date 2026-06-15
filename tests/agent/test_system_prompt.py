@@ -110,18 +110,22 @@ class TestCodingContextBlock:
 
 
 class TestCurrentUserInjection:
-    """3198a71: the user's name appears in the volatile system-prompt tier."""
+    """3198a71: non-Feishu sessions keep Current user in volatile; Feishu uses per-message append."""
 
     def test_injected_when_user_name_set(self):
-        volatile = _volatile_prompt(_make_agent(_user_name="杨天宝"))
+        volatile = _volatile_prompt(_make_agent(_user_name="杨天宝", platform="telegram"))
         assert "Current user: 杨天宝" in volatile
 
+    def test_absent_for_feishu_platform(self):
+        volatile = _volatile_prompt(_make_agent(_user_name="杨天宝", platform="feishu"))
+        assert "Current user:" not in volatile
+
     def test_absent_when_user_name_empty(self):
-        volatile = _volatile_prompt(_make_agent(_user_name=""))
+        volatile = _volatile_prompt(_make_agent(_user_name="", platform="telegram"))
         assert "Current user:" not in volatile
 
     def test_absent_when_user_name_missing(self):
-        agent = _make_agent()
+        agent = _make_agent(platform="telegram")
         del agent._user_name
         volatile = _volatile_prompt(agent)
         assert "Current user:" not in volatile
