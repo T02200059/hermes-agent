@@ -315,8 +315,12 @@ def setup_gateway_memory_routing(
                 logger.warning("Memory approval fallback text also failed: %s", exc)
 
     # Inject session_key so Feishu card buttons can correlate.
+    # WR-08: DM without thread passes metadata=None — create a new dict so card
+    # buttons can still correlate via session_key embedded in button value.
     if metadata is not None:
         metadata["session_key"] = session_key
+    else:
+        metadata = {"session_key": session_key}
 
     register_memory_notify(session_key, _notify_callback)
 
