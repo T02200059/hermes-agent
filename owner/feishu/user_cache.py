@@ -187,7 +187,8 @@ def save_user_cache(path: Any, cache: Dict[str, FeishuUserEntry]) -> None:
         logger.warning("[Feishu] Failed to save user cache: %s", exc)
 
 
-# Back-compat aliases (Phase A callers)
+# Deprecated back-compat aliases — use load_user_cache / save_user_cache instead.
+# Remove after 2026-07-15 once all Phase A callers are migrated.
 load_chat_id_cache = load_user_cache
 save_chat_id_cache = save_user_cache
 

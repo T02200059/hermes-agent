@@ -7,9 +7,12 @@ Legacy adapter attrs remain as fallback for tests and non-Feishu stubs.
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
 
-from owner.feishu.sender_name_cache import FeishuSenderNameCache
+if TYPE_CHECKING:
+    from owner.feishu.sender_name_cache import FeishuSenderNameCache
+    from owner.feishu.user_store import FeishuUserStore
+
 from owner.feishu.user_store import FeishuUserStore, get_user_store
 
 
@@ -76,12 +79,17 @@ def pre_warm_sender_name(
 # --- legacy fallback (no _user_store on adapter) ---
 
 
-def _legacy_cache_dict(adapter: Any):
+def _legacy_cache_dict(adapter: Any) -> Optional[dict]:
+    """Return ``adapter._sender_name_cache`` if it is a dict, else None."""
     legacy = getattr(adapter, "_sender_name_cache", None)
     return legacy if isinstance(legacy, dict) else None
 
 
 def _legacy_read_cached_name(adapter: Any, sender_id: Optional[str]) -> Optional[str]:
+    """Return valid legacy cache hit for *sender_id*, or None on miss/expiry.
+
+    Side effect: expired entries are popped from the cache dict.
+    """
     import time
 
     legacy = _legacy_cache_dict(adapter)
@@ -95,13 +103,22 @@ def _legacy_read_cached_name(adapter: Any, sender_id: Optional[str]) -> Optional
 
 
 def _legacy_ensure_name_cache(adapter: Any) -> Optional[FeishuSenderNameCache]:
+    """Lazy-bind ``FeishuSenderNameCache`` on the adapter with legacy entry sync.
+
+    Deprecated: prefer ``FeishuUserStore`` (Phase B/C).  This path exists
+    only for legacy test adapters that do not carry ``_user_store``.
+    Remove after the last ``SimpleNamespace`` test adapter is migrated
+    (target: 2026-07-15).
+    """
+    from owner.feishu.sender_name_cache import FeishuSenderNameCache as _Cache
+
     existing = getattr(adapter, "_name_cache", None)
     if existing is not None:
         return existing
     client = getattr(adapter, "_client", None)
     if not client:
         return None
-    cache = FeishuSenderNameCache(client)
+    cache = _Cache(client)
     legacy = _legacy_cache_dict(adapter)
     if legacy:
         cache._cache.update(legacy)
