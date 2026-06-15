@@ -117,6 +117,7 @@
 ## 其他低优先级想法（可选记录）
 
 - ✅ `FeishuSenderNameCache` 复用收敛（2026-06-15）— `owner/feishu/sender_name_helpers.py` 统一 lazy bind / legacy compat / pre-warm；`approval.py`、`update_prompt.py`、`model_picker.py`、`bot_menu.py` 与 `feishu.py` 薄委托共用。
+- ✅ **FeishuUserStore Phase A**（2026-06-15）— `owner/feishu/user_store.py` 统一 open_id 作用域状态（名称 TTL + p2p chat_id 磁盘缓存）；`FeishuAdapter` 持有 `_user_store`，`_client` / `_name_cache` / `_sender_name_cache` / `_feishu_user_cache` 为薄转发（`__new__` 测试路径保留 legacy fallback）。**Phase B/C 待办**：B) resolve 时同步 `display_name` 到 user record、弃用 `FeishuUserEntry.name`；C) 磁盘格式升级、移除 `_sender_name_cache` shim、内聚 `FeishuSenderNameCache`。
 - ✅ `BasePlatformAdapter.send_exec_approval(**kwargs)` 默认 stub（2026-06-15）— 返回 `interactive_approval_not_supported`，`run.py` 统一 contract；有按钮 UX 的平台继续 override。
 - 定期扫描所有 `[owner]` 注释，确认是否还能继续薄化或完全移除（通过 hook / 更上层的编排）。
 
