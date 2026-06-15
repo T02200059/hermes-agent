@@ -2116,12 +2116,15 @@ def _manage_thinking_signatures(
     """
     _THINKING_TYPES = frozenset(("thinking", "redacted_thinking"))
     _is_third_party = _is_third_party_anthropic_endpoint(base_url)
-    # Kimi / DeepSeek share a contract: strip signed Anthropic blocks
-    # (neither upstream can validate Anthropic signatures), preserve unsigned
+    # Kimi / DeepSeek / MiniMax share a contract: strip signed Anthropic blocks
+    # (none can validate Anthropic signatures), preserve unsigned
     # ones synthesised from reasoning_content.  See #13848, #16748.
+    # MiniMax's /anthropic endpoint explicitly requires thinking blocks to be
+    # preserved across turns.  See platform.minimaxi.com docs.
     _preserve_unsigned_thinking = (
         _is_kimi_family_endpoint(base_url, model)
         or _is_deepseek_anthropic_endpoint(base_url)
+        or _is_minimax_anthropic_endpoint(base_url)
     )
 
     last_assistant_idx = None
@@ -2499,9 +2502,16 @@ def build_anthropic_kwargs(
                 # supported level (Opus/Sonnet 4.6). Opus 4.7+ keeps xhigh.
                 if adaptive_effort == "xhigh" and not _supports_xhigh_effort(model):
                     adaptive_effort = "max"
-                kwargs["output_config"] = {
-                    "effort": adaptive_effort,
-                }
+                # [owner] MiniMax supports adaptive thinking but ignores output_config.effort
+                # (per their docs). Send adaptive without the output_config block.
+                if not _is_minimax_anthropic_endpoint(base_url):
+                    kwargs["output_config"] = {
+                        "effort": adaptive_effort,
+                    }
+            elif _is_minimax_anthropic_endpoint(base_url):
+                # MiniMax supports adaptive thinking but ignores output_config.effort
+                # (per their docs). Send adaptive without the output_config block.
+                kwargs["thinking"] = {"type": "adaptive"}
             else:
                 kwargs["thinking"] = {"type": "enabled", "budget_tokens": budget}
                 # Anthropic requires temperature=1 when thinking is enabled on older models
