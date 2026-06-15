@@ -14,6 +14,7 @@ from owner.feishu.sender_name_helpers import (
     pre_warm_sender_name,
     resolve_sender_name,
 )
+from owner.feishu.user_store import FeishuUserStore
 
 
 class TestEnsureNameCache:
@@ -98,6 +99,14 @@ class TestResolveSenderName:
             result = await resolve_sender_name(adapter, "ou_new")
         assert result == "Eve"
         mock_resolve.assert_awaited_once_with("ou_new", is_bot=False)
+
+
+class TestSenderNameHelpersViaUserStore:
+    def test_get_cached_name_routes_through_user_store(self):
+        legacy = {"ou_store": ("Eve", time.time() + 600)}
+        store = FeishuUserStore(chat_id_cache_path="/tmp/unused.json", legacy_name_dict=legacy)
+        adapter = SimpleNamespace(_user_store=store, _client=MagicMock())
+        assert get_cached_sender_name(adapter, "ou_store") == "Eve"
 
 
 class TestPreWarmSenderName:

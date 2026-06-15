@@ -128,7 +128,7 @@ def resolve_bot_menu_ack(event_key: str) -> Optional[str]:
 
 async def handle_bot_menu_event(adapter: Any, data: Any) -> None:
     """Route a bot menu click as a synthetic COMMAND or fallback TEXT event."""
-    from owner.feishu.user_cache import get_cached_chat_id, get_user_entry
+    from owner.feishu.user_store import get_user_store
     from gateway.platforms.base import MessageEvent, MessageType
 
     event = getattr(data, "event", None)
@@ -150,7 +150,8 @@ async def handle_bot_menu_event(adapter: Any, data: Any) -> None:
         )
         return
 
-    chat_id = get_cached_chat_id(adapter._feishu_user_cache, open_id)
+    store = get_user_store(adapter)
+    chat_id = store.get_p2p_chat_id(open_id) if store else None
     if not chat_id:
         logger.warning(
             "[Feishu] Bot menu event: no cached chat_id for %s; "
