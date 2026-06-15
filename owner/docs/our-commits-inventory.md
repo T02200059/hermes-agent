@@ -67,15 +67,15 @@
 - [x] ✅ 已迁移 `ab3bd8d24` `a311083` | 2026-06-11 | `yangtb` | feat(providers): MiniMax Anthropic endpoint thinking-block support | +32 | −4 |
 - [⏸️ 已决策·暂不迁移（rate limiter 不存在于 owner-v16，需整体评估）] `b263fd5` | 2026-06-11 | `yangtb` | config: reduce openrouter rate limit to 20 req/min | +1 | −1 |
 - [x] ✅ 已迁移 `9272784d0` `25561ad` | 2026-06-11 | `yangtb` | feat(providers): credential validation + model list overrides in /providers | +97 | −9 |
-- [ ] `fc9c899` | 2026-06-10 | `yangtb` | feat(qdrant-recall): patch.yaml 配置化 + bot_menu 命令跳过 | +72 | −1 |
+- [x] ✅ 已迁移 `(batch` `fc9c899` | 2026-06-10 | `yangtb` | feat(qdrant-recall): patch.yaml 配置化 + bot_menu 命令跳过 | +72 | −1 |
 - [ ] `1fe0bf4` | 2026-06-10 | `yangtb` | feat(recall-card): compact标题增加 content 首行 # 提取 fallback | +8 | −5 |
 - [ ] `28d65f8` | 2026-06-10 | `yangtb` | fix(feishu-card): diff/recall card cache 添加 3 小时 TTL | +35 | −10 |
-- [ ] `b0e4483` | 2026-06-10 | `yangtb` | feat(qdrant-recall): 飞书卡片展示 + compact标题显示name/abstract | +361 | −3 |
+- [x] ✅ 已迁移 `(batch` `b0e4483` | 2026-06-10 | `yangtb` | feat(qdrant-recall): 飞书卡片展示 + compact标题显示name/abstract | +361 | −3 |
 - [x] ✅ 已迁移 `a39478319` `eb514ee` | 2026-06-10 | `yangtb` | feat: skill script auto-approval (skill_script_allowlist) | +637 | −0 |
 - [x] ✅ 已迁移 `a39478319` `8c0b8dd` | 2026-06-10 | `yangtb` | feat(approval): auto-resolve pending approvals when YOLO enabled | +56 | −15 |
 - [ ] `6f86bcd` | 2026-06-10 | `yangtb` | feat(gateway): strip hook-injected extra_context from history and archiving | +28 | −5 |
 - [ ] `fbfa354` | 2026-06-10 | `yangtb` | feat(feishu): use 🟥 for memory proposal deny button | +4 | −4 |
-- [ ] `84c7489` | 2026-06-10 | `yangtb` | chore(owner): restore local adjustments for qdrant hook (named vector search), session-archiver (DeepSeek/DashScope), pricing.yaml | +62 | −100 |
+- [x] ⚡ 部分迁移（qdrant hook 部分，session-archiver/pricing 未涉及）`84c7489` | 2026-06-10 | `yangtb` | chore(owner): restore local adjustments for qdrant hook (named vector search), session-archiver (DeepSeek/DashScope), pricing.yaml | +62 | −100 |
 - [x] ⚠️ 废弃（纯文档md，不迁移）`c24c8ee` | 2026-06-09 | `yangtb` | docs(owner): patch inventory 69→73, add P70-P71 (clarify multi-profile, display_hook_message_receive) | +14 | −5 |
 - [x] ✅ 已迁移 `825145f` | 2026-06-09 | `yangtb` | docs(owner): patch inventory 65→69, add P66-P69 (intent-guard, credential_pool, qdrant-recall, session-archiver) | +18 | −2 |
 - [x] ✅ 已迁移 `c974c92` | 2026-06-09 | `yangtb` | docs(owner): update patch inventory to 65, add P65 yolo tri-state entry | +4 | −3 |
@@ -96,23 +96,23 @@
 - [ ] `b845c7a` | 2026-06-08 | `yangtb` | fix(code_execution): 🐍 → 🛠️ execute_code tool emoji | +1 | −1 |
 - [ ] `16ae8a0` | 2026-06-08 | `yangtb` | chore(skills): remove custom skills from source tree | +0 | −1054 |
 - [ ] `d490793` | 2026-06-08 | `yangtb` | scripts(backup-hermes-config): graceful fallback on patch.yaml parse error | +18 | −10 |
-- [ ] `c09616f` | 2026-06-08 | `yangtb` | hooks(qdrant-memory-recall): filter disabled=true points | +5 | −1 |
+- [x] ✅ 已迁移 `(batch` `c09616f` | 2026-06-08 | `yangtb` | hooks(qdrant-memory-recall): filter disabled=true points | +5 | −1 |
 - [x] ⚠️ 废弃（纯文档md，不迁移）`5af60e9` | 2026-06-08 | `yangtb` | skills: add claude-code reference docs | +578 | −0 |
 - [ ] `8333e30` | 2026-06-08 | `yangtb` | scripts: add skills_sync_preview utility | +218 | −0 |
 - [x] ✅ 已迁移 `7646add45` `6976b60` | 2026-06-08 | `yangtb` | tools: add auto_fix_header option to unified_diff_patch | +48 | −12 |
-- [ ] `2f97677` | 2026-06-08 | `yangtb` | hooks: skip synthetic gateway messages in qdrant recall | +20 | −0 |
+- [x] ✅ 已迁移 `(batch` `2f97677` | 2026-06-08 | `yangtb` | hooks: skip synthetic gateway messages in qdrant recall | +20 | −0 |
 - [ ] `b47978f` | 2026-06-08 | `yangtb` | config: update default exchange rate to 6.7928 | +1 | −1 |
 - [x] ✅ 已迁移 `2f1be0a` | 2026-06-07 | `yangtb` | minimax-cn: 收敛 catalog 到 M3/M2.7/M2.7-highspeed + aux 默认走 highspeed | +12 | −13 |
 - [ ] `91460d8` | 2026-06-07 | `yangtb` | feat(feishu): model picker — alphabetical providers + back button | +22 | −0 |
-- [ ] `adc1f0e` | 2026-06-07 | `yangtb` | fix(qdrant-memory-recall): filter low_quality hits to reduce hallucination risk | +8 | −2 |
-- [ ] `0a2ea99` | 2026-06-06 | `yangtb` | docs(qdrant-memory-recall): clarify per-turn extra_context scope (CR-01) | +21 | −2 | ⚠️ 混有代码：hooks/qdrant-memory-recall/HOOK.yaml + handler.py
+- [x] ✅ 已迁移 `(batch` `adc1f0e` | 2026-06-07 | `yangtb` | fix(qdrant-memory-recall): filter low_quality hits to reduce hallucination risk | +8 | −2 |
+- [x] ✅ 已迁移 `(batch` `0a2ea99` | 2026-06-06 | `yangtb` | docs(qdrant-memory-recall): clarify per-turn extra_context scope (CR-01) | +21 | −2 | ⚠️ 混有代码：hooks/qdrant-memory-recall/HOOK.yaml + handler.py
 - [x] ✅ 已迁移（代码部分；测试文件后续单独迁移）`47a8e5db6` `4626a1a` | 2026-06-06 | `yangtb` | fix(feishu-clarify): prepend full-text markdown options block before button row | +175 | −21 |
 - [ ] `111f767` | 2026-06-06 | `yangtb` | fix(tool_guardrails): name the counter and threshold in warn messages | +78 | −5 |
 - [x] ✅ 已迁移 `7646add45` `6f64470` | 2026-06-06 | `yangtb` | docs(unified_diff_patch): clarify schema descriptions (5 fixes) | +79 | −61 | ⚠️ 混有代码：tools/unified_diff_patch_tool.py
 - [x] ✅ 已迁移 `7646add45` `a3b95e7` | 2026-06-06 | `yangtb` | fix(unified_diff_patch): 4 quality fixes (strict priority, line numbers, CRLF, dry_run) | +352 | −8 |
 - [x] ✅ 已迁移 `45ab4a0f0` `c536033` | 2026-06-06 | `yangtb` | feat(session-archiver): add ts field to event payload for Qdrant time-ordering | +1 | −0 |
 - [x] ⚠️ 废弃：定价/AGENTS.md，不迁移 `750ceb9` | 2026-06-06 | `yangtb` | chore(owner): pricing.yaml daily exchange rate update | +1 | −1 |
-- [ ] `2a6f213` | 2026-06-06 | `yangtb` | feat(owner): qdrant-memory-recall hook 部署 | +346 | −0 |
+- [x] ✅ 已迁移 `(batch` `2a6f213` | 2026-06-06 | `yangtb` | feat(owner): qdrant-memory-recall hook 部署 | +346 | −0 |
 - [ ] `69af045` | 2026-06-06 | `yangtb` | feat(owner): display_hook_message_receive config | +142 | −1 |
 - [ ] `e5e0e4e` | 2026-06-05 | `yangtb` | chore(owner): list_models quick-action + pre_tool_call hooks stub | +4 | −0 |
 - [ ] `137fd1c` | 2026-06-05 | `yangtb` | feat(commands): /providers command (feishu card + text fallback) | +58 | −0 |
