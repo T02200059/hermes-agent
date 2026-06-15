@@ -68,7 +68,7 @@
 - [⏸️ 已决策·暂不迁移（rate limiter 不存在于 owner-v16，需整体评估）] `b263fd5` | 2026-06-11 | `yangtb` | config: reduce openrouter rate limit to 20 req/min | +1 | −1 |
 - [x] ✅ 已迁移 `9272784d0` `25561ad` | 2026-06-11 | `yangtb` | feat(providers): credential validation + model list overrides in /providers | +97 | −9 |
 - [x] ✅ 已迁移 `(batch` `fc9c899` | 2026-06-10 | `yangtb` | feat(qdrant-recall): patch.yaml 配置化 + bot_menu 命令跳过 | +72 | −1 |
-- [ ] `1fe0bf4` | 2026-06-10 | `yangtb` | feat(recall-card): compact标题增加 content 首行 # 提取 fallback | +8 | −5 |
+- [x] ✅ 已迁移 `(batch` `1fe0bf4` | 2026-06-10 | `yangtb` | feat(recall-card): compact标题增加 content 首行 # 提取 fallback | +8 | −5 |
 - [ ] `28d65f8` | 2026-06-10 | `yangtb` | fix(feishu-card): diff/recall card cache 添加 3 小时 TTL | +35 | −10 |
 - [x] ✅ 已迁移 `(batch` `b0e4483` | 2026-06-10 | `yangtb` | feat(qdrant-recall): 飞书卡片展示 + compact标题显示name/abstract | +361 | −3 |
 - [x] ✅ 已迁移 `a39478319` `eb514ee` | 2026-06-10 | `yangtb` | feat: skill script auto-approval (skill_script_allowlist) | +637 | −0 |
