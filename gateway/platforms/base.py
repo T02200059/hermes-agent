@@ -2895,6 +2895,30 @@ class BasePlatformAdapter(ABC):
             metadata=metadata,
         )
 
+    async def send_exec_approval(
+        self,
+        chat_id: str,
+        command: str,
+        session_key: str,
+        description: str = "dangerous command",
+        metadata: Optional[Dict[str, Any]] = None,
+        **kwargs,
+    ) -> SendResult:
+        """Send an interactive dangerous-command approval prompt.
+
+        Adapters with button UI (Feishu, Telegram, Slack, Matrix, …) override
+        this to render Approve/Deny controls.  The base stub returns failure so
+        ``gateway/run.py`` falls back to the plain-text ``/approve`` path.
+
+        ``**kwargs`` absorbs platform-specific extras (e.g. Feishu
+        ``sender_open_id`` / ``sender_is_bot`` for name-cache pre-warm — see
+        owner/feishu/sender_name_helpers.py) so ``run.py`` can call one
+        contract on every adapter.
+        """
+        kwargs.pop("sender_open_id", None)
+        kwargs.pop("sender_is_bot", None)
+        return SendResult(success=False, error="interactive_approval_not_supported")
+
     async def send_memory_approval(
         self,
         chat_id: str,

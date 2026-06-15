@@ -126,8 +126,8 @@
 
 ## 其他低优先级想法（可选记录）
 
-- 推动 `FeishuSenderNameCache` 在更多地方复用（auto_card、diff cards、bot menu、profile router 等需要显示真实中文名的场景），减少潜在重复解析逻辑。
-- 考虑在 `gateway/platforms/base.py` 或一个公共 mixin 里提供默认的 `send_exec_approval(**kwargs)` 空实现（带文档），进一步降低各平台 adapter 的样板代码。
+- ✅ `FeishuSenderNameCache` 复用收敛（2026-06-15）— `owner/feishu/sender_name_helpers.py` 统一 lazy bind / legacy compat / pre-warm；`approval.py`、`update_prompt.py`、`model_picker.py`、`bot_menu.py` 与 `feishu.py` 薄委托共用。
+- ✅ `BasePlatformAdapter.send_exec_approval(**kwargs)` 默认 stub（2026-06-15）— 返回 `interactive_approval_not_supported`，`run.py` 统一 contract；有按钮 UX 的平台继续 override。
 - 定期扫描所有 `[owner]` 注释，确认是否还能继续薄化或完全移除（通过 hook / 更上层的编排）。
 
 ## 工作原则

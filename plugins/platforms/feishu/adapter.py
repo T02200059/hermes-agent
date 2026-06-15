@@ -1948,21 +1948,13 @@ class FeishuAdapter(BasePlatformAdapter):
             return SendResult(success=False, error="Not connected")
 
         try:
-            # [owner] approval: ensure name cache + pre-warm open_id -> 中文名 for zero-delay in callback
-            # (see owner/feishu/sender_name_cache.py)
-            if self._name_cache is None:
-                cache_cls = _owner_import(
-                    "owner.feishu.sender_name_cache", "FeishuSenderNameCache"
-                )
-                self._name_cache = cache_cls(self._client)
-                self._sender_name_cache = self._name_cache._cache  # compat for tests
-            if sender_open_id and self._name_cache:
-                self._name_cache.pre_warm(sender_open_id, is_bot=sender_is_bot)
-                # test compat: some tests patch adapter._resolve_sender_name_from_api and assert it was called
-                # (the real pre-warm is the encapsulated cache one above)
-                asyncio.create_task(
-                    self._resolve_sender_name_from_api(sender_open_id, is_bot=sender_is_bot)
-                )
+            # [owner] approval: pre-warm open_id -> 中文名 for zero-delay callback (see owner/feishu/sender_name_helpers.py)
+            _owner_import("owner.feishu.sender_name_helpers", "pre_warm_sender_name")(
+                self,
+                sender_open_id,
+                is_bot=sender_is_bot,
+                fire_delegate=True,
+            )
 
             approval_id = self._approval_ctx.next_id()
 
@@ -4016,19 +4008,10 @@ class FeishuAdapter(BasePlatformAdapter):
     # All real logic + pre_warm + TTL + bot batch + contact v3 in owner/feishu/sender_name_cache.py
 
     def _get_cached_sender_name(self, sender_id: Optional[str]) -> Optional[str]:
-        # [owner] approval: open_id -> 中文名 cache lookup (see owner/feishu/sender_name_cache.py)
-        # compat shim: some tests directly do adapter._sender_name_cache[id] = (name, exp)
-        # or rebind the attr; honor that first so pre-warm / callback tests keep passing
-        legacy = getattr(self, "_sender_name_cache", None)
-        if isinstance(legacy, dict) and sender_id and sender_id in legacy:
-            name, expire_at = legacy[sender_id]
-            if time.time() < expire_at:
-                return name
-            legacy.pop(sender_id, None)
-            return None
-        if self._name_cache is None:
-            return None
-        return self._name_cache.get(sender_id)
+        # [owner] approval: open_id -> 中文名 cache lookup (see owner/feishu/sender_name_helpers.py)
+        return _owner_import(
+            "owner.feishu.sender_name_helpers", "get_cached_sender_name"
+        )(self, sender_id)
 
     async def _resolve_sender_name_from_api(
         self,
@@ -4040,27 +4023,10 @@ class FeishuAdapter(BasePlatformAdapter):
         Failures are silent so the pipeline never blocks on name resolution.
         Thin delegate.
         """
-        if not sender_id:
-            return None
-        # [owner] approval: honor legacy/test pre-warmed cache before binding to FeishuSenderNameCache
-        # (owner/feishu/sender_name_cache.py)
-        cached_name = self._get_cached_sender_name(sender_id)
-        if cached_name is not None:
-            return cached_name or None  # "" means known nameless
-        # [owner] approval: lazy bind FeishuSenderNameCache and keep _sender_name_cache alias in sync
-        if self._name_cache is None:
-            if self._client:
-                cache_cls = _owner_import(
-                    "owner.feishu.sender_name_cache", "FeishuSenderNameCache"
-                )
-                self._name_cache = cache_cls(self._client)
-                # Preserve entries tests/callbacks already stashed in _sender_name_cache.
-                if isinstance(getattr(self, "_sender_name_cache", None), dict):
-                    self._name_cache._cache.update(self._sender_name_cache)
-                self._sender_name_cache = self._name_cache._cache  # compat for tests
-            else:
-                return None
-        return await self._name_cache.resolve(sender_id, is_bot=is_bot)
+        # [owner] approval: cache + API resolve (see owner/feishu/sender_name_helpers.py)
+        return await _owner_import(
+            "owner.feishu.sender_name_helpers", "resolve_sender_name"
+        )(self, sender_id, is_bot=is_bot)
 
     # _fetch_bot_names is now private inside FeishuSenderNameCache (no longer needed on adapter)
 
