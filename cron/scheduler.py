@@ -1273,7 +1273,7 @@ def _run_job_script(script_path: str, args: Optional[dict] = None) -> tuple[bool
     else:
         argv = [sys.executable, str(path)]
 
-    # [owner-patch] cron job args support: map stored job args to CLI flags
+    # [owner] cron job args support: map stored job args to CLI flags
     if args:
         for key, value in args.items():
             key_str = str(key).strip()

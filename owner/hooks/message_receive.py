@@ -110,9 +110,8 @@ async def apply_message_receive_hooks(
                     and hasattr(adapter, "send_card")
                 ):
                     # Feishu card path
-                    if feishu_card_cache and hasattr(adapter, "_recall_cache"):
-                        _cache_put_safe(
-                            adapter._recall_cache,
+                    if feishu_card_cache and hasattr(adapter, "warm_recall_cache"):
+                        adapter.warm_recall_cache(
                             feishu_card_cache.get("recall_id", ""),
                             feishu_card_cache,
                         )
@@ -135,14 +134,3 @@ async def apply_message_receive_hooks(
 
     # Append to LLM message (always — delivery gating only affects user-visible echo)
     return message_text + "\n\n" + extra_context_raw
-
-
-def _cache_put_safe(cache: Dict[str, Any], key: str, value: Dict[str, Any]) -> None:
-    """Put into cache with TTL eviction (delegates to card_cache when available)."""
-    try:
-        from owner.feishu.card_cache import cache_put
-        cache_put(cache, key, value)
-    except ImportError:
-        import time
-        cache[key] = value
-        cache[key]["_ts"] = time.time()

@@ -396,7 +396,7 @@ def finalize_turn(
         result["pending_steer"] = _leftover_steer
     agent._response_was_previewed = False
 
-    # [owner-patch] Propagate silent-API-disconnect flag so the gateway
+    # [owner] Propagate silent-API-disconnect flag so the gateway
     # can surface a more specific message than the generic "(empty)" reply.
     if getattr(agent, "_stream_was_empty", False):
         result["stream_was_empty"] = True

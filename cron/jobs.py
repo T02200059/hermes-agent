@@ -841,7 +841,7 @@ def create_job(
     else:
         context_from = None
 
-    # [owner-patch] cron job args support: normalize optional script CLI flags
+    # [owner] cron job args support: normalize optional script CLI flags
     normalized_args = None
     if args is not None:
         if isinstance(args, dict):

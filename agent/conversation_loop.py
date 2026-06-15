@@ -60,11 +60,20 @@ from agent.trajectory import has_incomplete_scratchpad
 from agent.usage_pricing import estimate_usage_cost, normalize_usage
 from hermes_constants import PARTIAL_STREAM_STUB_ID
 from hermes_logging import set_session_context
-from owner.attribution import get_current_attribution
 from tools.skill_provenance import set_current_write_origin
 from utils import base_url_host_matches, env_var_enabled
 
 logger = logging.getLogger(__name__)
+
+
+def _get_current_attribution(agent) -> Optional[str]:
+    """[owner] per-turn attribution — lazy import (owner/attribution.py)."""
+    try:
+        from owner.attribution import get_current_attribution
+
+        return get_current_attribution(agent)
+    except ImportError:
+        return None
 
 # Stable prefix of the local interrupt status string emitted when a turn is
 # cancelled while waiting on the provider. Surfaces (ACP, TUI) match on this
@@ -1919,7 +1928,7 @@ def run_conversation(
                                 cost_source=cost_result.source,
                                 billing_provider=agent.provider,
                                 # [owner] attribution for billing record (owner/attribution.py)
-                                owner_provider_name=get_current_attribution(agent),
+                                owner_provider_name=_get_current_attribution(agent),
                                 billing_base_url=agent.base_url,
                                 billing_mode="subscription_included"
                                 if cost_result.status == "included" else None,

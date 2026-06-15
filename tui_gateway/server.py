@@ -1574,7 +1574,7 @@ def resolve_skin() -> dict:
             "banner_hero": skin.banner_hero,
             "tool_prefix": skin.tool_prefix,
             "help_header": (skin.branding or {}).get("help_header", ""),
-            "spinner": skin.spinner,  # [owner-patch] pipe spinner faces/verbs to TUI
+            "spinner": skin.spinner,  # [owner] pipe spinner faces/verbs to TUI
         }
     except Exception:
         return {}
@@ -2229,7 +2229,7 @@ def _persist_model_switch(result) -> None:
     model_cfg["provider"] = result.target_provider
     if result.base_url:
         model_cfg["base_url"] = result.base_url
-    # [owner-patch] P29: Don't pop base_url when switch_model returns empty.
+    # [owner] P29: Don't pop base_url when switch_model returns empty.
     # An empty result.base_url means it couldn't be resolved, but the existing
     # value (typically ${VAR}) is still valid.  Popping it causes downstream
     # resolution to fall back to hardcoded defaults (#17101).

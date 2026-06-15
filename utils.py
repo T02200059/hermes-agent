@@ -392,6 +392,7 @@ def base_url_hostname(base_url: str) -> str:
     return (parsed.hostname or "").lower().rstrip(".")
 
 
+# [owner] P30: auto-append /v1 for bare-domain OpenAI-compatible base URLs
 def normalize_bare_domain_base_url(base_url: str) -> str:
     """Auto-append ``/v1`` for bare-domain base URLs that have no path component.
 

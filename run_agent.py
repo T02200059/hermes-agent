@@ -1670,7 +1670,7 @@ class AIAgent:
                     tool_calls=tool_calls_data,
                     tool_call_id=msg.get("tool_call_id"),
                     finish_reason=msg.get("finish_reason"),
-                    # [owner-patch] attribution reconstruction — use owner helper
+                    # [owner] attribution reconstruction — use owner helper
                     # so the "how" is not duplicated across reconstruction sites.
                     # We still read the stored value from the message (for historical accuracy)
                     # rather than calling get_current_attribution here.

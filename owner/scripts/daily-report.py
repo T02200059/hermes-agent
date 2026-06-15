@@ -12,8 +12,13 @@ import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
 
-# Hermes cron 以 root 运行，Path.home() 是 /var/root
-_HERMES_HOME = Path(os.environ.get("HERMES_HOME", str(Path.home() / ".hermes")))
+def _hermes_home() -> Path:
+    from hermes_constants import get_hermes_home
+
+    return get_hermes_home()
+
+
+_HERMES_HOME = _hermes_home()
 DB_PATH = _HERMES_HOME / "state.db"
 
 def format_number(num):

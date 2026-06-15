@@ -143,20 +143,20 @@ from gateway.platforms.base import (
 from gateway.status import acquire_scoped_lock, release_scoped_lock
 from hermes_constants import get_hermes_home
 from utils import atomic_json_write, env_float, env_int
-# [owner] import try_auto_card (see owner/feishu/auto_card.py)
-from owner.feishu.auto_card import try_auto_card
-# [owner] approval: open_id -> 中文名 cache + card builders (see owner/feishu/sender_name_cache.py + owner/feishu/approval.py)
-from owner.feishu.approval import (
-    build_approval_card,
-    build_resolved_approval_card,
-    get_allow_permanent,
-)
-from owner.feishu.sender_name_cache import FeishuSenderNameCache
-# [owner] clarify: choice rendering helpers (see owner/clarify/gateway_helpers.py)
-from owner.clarify.gateway_helpers import get_choice_display as _render_choice_display
-from owner.clarify.gateway_helpers import get_choice_key as _render_choice_key
 
 logger = logging.getLogger(__name__)
+
+# [owner] lazy owner imports — feishu.py stays importable without owner/
+_owner_lazy: Dict[str, Any] = {}
+
+
+def _owner_import(module: str, name: str) -> Any:
+    key = f"{module}.{name}"
+    if key not in _owner_lazy:
+        import importlib
+
+        _owner_lazy[key] = getattr(importlib.import_module(module), name)
+    return _owner_lazy[key]
 
 # ---------------------------------------------------------------------------
 # Regex patterns
@@ -1454,7 +1454,7 @@ class FeishuAdapter(BasePlatformAdapter):
         self._dedup_lock = threading.Lock()
         # [owner] approval: name cache instance (open_id -> 中文名 only; see owner/feishu/sender_name_cache.py)
         # created lazily on first use (or bind after connect) so we don't depend on client at __init__ time
-        self._name_cache: "FeishuSenderNameCache" = None  # type: ignore[assignment]
+        self._name_cache: Any = None
         # legacy alias so existing tests that poke adapter._sender_name_cache[...] continue to work
         # (they directly mutate for pre-warm simulation). Real code uses the encapsulated _name_cache.
         self._sender_name_cache: Dict[str, tuple[str, float]] = {}
@@ -1503,6 +1503,8 @@ class FeishuAdapter(BasePlatformAdapter):
         self._clarify_state: Dict[str, Dict[str, Any]] = {}
         # [owner] model picker state: picker_id → {providers, source}
         self._model_picker_state: Dict[str, Dict[str, Any]] = {}
+        # [owner] qdrant-recall: card callback cache (see owner/feishu/card_cache.py)
+        self._recall_cache: Dict[str, Any] = {}
         # Feishu reaction deletion requires the opaque reaction_id returned
         # by create, so we cache it per message_id.
         self._pending_processing_reactions: "OrderedDict[str, str]" = OrderedDict()
@@ -1823,6 +1825,17 @@ class FeishuAdapter(BasePlatformAdapter):
 
         return await send_card_via_rest(self, chat_id, card, metadata)
 
+    def warm_recall_cache(self, key: str, value: Dict[str, Any]) -> None:
+        """[owner] qdrant-recall: warm card callback cache (owner/feishu/card_cache.py)."""
+        if not key:
+            return
+        try:
+            from owner.feishu.card_cache import cache_put
+
+            cache_put(self._recall_cache, key, value)
+        except ImportError:
+            self._recall_cache[key] = value
+
     async def send(
         self,
         chat_id: str,
@@ -1838,7 +1851,9 @@ class FeishuAdapter(BasePlatformAdapter):
 
         # Auto-card: wrap long text in an interactive card when streaming is
         # [owner] try auto-card before plain-text (see owner/feishu/auto_card.py)
-        auto_card_result = await try_auto_card(self, formatted, metadata)
+        auto_card_result = await _owner_import(
+            "owner.feishu.auto_card", "try_auto_card"
+        )(self, formatted, metadata)
         if auto_card_result is not None:
             return auto_card_result
 
@@ -1944,7 +1959,10 @@ class FeishuAdapter(BasePlatformAdapter):
             # [owner] approval: ensure name cache + pre-warm open_id -> 中文名 for zero-delay in callback
             # (see owner/feishu/sender_name_cache.py)
             if self._name_cache is None:
-                self._name_cache = FeishuSenderNameCache(self._client)
+                cache_cls = _owner_import(
+                    "owner.feishu.sender_name_cache", "FeishuSenderNameCache"
+                )
+                self._name_cache = cache_cls(self._client)
                 self._sender_name_cache = self._name_cache._cache  # compat for tests
             if sender_open_id and self._name_cache:
                 self._name_cache.pre_warm(sender_open_id, is_bot=sender_is_bot)
@@ -1958,7 +1976,7 @@ class FeishuAdapter(BasePlatformAdapter):
 
             # [owner] approval: build full interactive card (preview, buttons, title, reason, permanent note)
             # via owner helper (see owner/feishu/approval.py). Keeps official file diff minimal.
-            card = build_approval_card(
+            card = _owner_import("owner.feishu.approval", "build_approval_card")(
                 command=command,
                 description=description,
                 approval_id=approval_id,
@@ -2820,9 +2838,9 @@ class FeishuAdapter(BasePlatformAdapter):
         if CallBackCard is not None:
             card = CallBackCard()
             card.type = "raw"
-            card.data = build_resolved_approval_card(
-                choice=choice, user_name=user_name, command=command
-            )
+            card.data = _owner_import(
+                "owner.feishu.approval", "build_resolved_approval_card"
+            )(choice=choice, user_name=user_name, command=command)
             response.card = card
         return response
 
@@ -4230,7 +4248,10 @@ class FeishuAdapter(BasePlatformAdapter):
         # [owner] approval: lazy bind FeishuSenderNameCache and keep _sender_name_cache alias in sync
         if self._name_cache is None:
             if self._client:
-                self._name_cache = FeishuSenderNameCache(self._client)
+                cache_cls = _owner_import(
+                    "owner.feishu.sender_name_cache", "FeishuSenderNameCache"
+                )
+                self._name_cache = cache_cls(self._client)
                 # Preserve entries tests/callbacks already stashed in _sender_name_cache.
                 if isinstance(getattr(self, "_sender_name_cache", None), dict):
                     self._name_cache._cache.update(self._sender_name_cache)

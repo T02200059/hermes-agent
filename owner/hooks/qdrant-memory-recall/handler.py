@@ -53,7 +53,13 @@ from dotenv import dotenv_values
 
 # ============== 日志 ==============
 
-_LOG_DIR = Path.home() / ".local" / "share" / "hermes" / "logs"
+def _log_dir() -> Path:
+    from hermes_constants import get_hermes_home
+
+    return get_hermes_home() / "logs"
+
+
+_LOG_DIR = _log_dir()
 _LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 logger = logging.getLogger("qdrant-memory-recall")
@@ -96,7 +102,9 @@ def _load_config() -> dict[str, Any]:
     找不到路径 → 走 defaults（保证 fail-open 始终能跑）。
     """
     try:
-        patch_path = Path.home() / ".hermes" / "patch.yaml"
+        from hermes_constants import get_hermes_home
+
+        patch_path = get_hermes_home() / "patch.yaml"
         if not patch_path.exists():
             return dict(_DEFAULTS)
         with patch_path.open(encoding="utf-8") as f:
@@ -126,7 +134,9 @@ def _get_env() -> dict:
     if _env_cache is not None:
         return _env_cache
     try:
-        env = dotenv_values(Path.home() / ".hermes" / ".env")
+        from hermes_constants import get_hermes_home
+
+        env = dotenv_values(get_hermes_home() / ".env")
         _env_cache = {
             "DAMODEL_BASE_URL": (env.get("DAMODEL_BASE_URL") or "").rstrip("/"),
             "DAMODEL_API_KEY": env.get("DAMODEL_API_KEY") or "",
@@ -152,7 +162,9 @@ def _load_bot_menu_commands() -> set[str]:
     if _bot_menu_cache is not None and (now - _bot_menu_cache_time) < _BOT_MENU_CACHE_TTL:
         return _bot_menu_cache
     try:
-        patch_path = Path.home() / ".hermes" / "patch.yaml"
+        from hermes_constants import get_hermes_home
+
+        patch_path = get_hermes_home() / "patch.yaml"
         if not patch_path.exists():
             _bot_menu_cache = set()
             _bot_menu_cache_time = now

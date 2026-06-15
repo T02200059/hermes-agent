@@ -623,7 +623,7 @@ def cronjob(
                 if script_error:
                     return tool_error(script_error, success=False)
 
-            # [owner-patch] cron job args support: validate and normalize
+            # [owner] cron job args support: validate and normalize
             err, normalized_args = _normalize_cron_args(args)
             if err:
                 return tool_error(err, success=False)
@@ -824,7 +824,7 @@ def cronjob(
                         )
                 updates["no_agent"] = target_no_agent
             if args is not None:
-                # [owner-patch] cron job args support: validate and store updates
+                # [owner] cron job args support: validate and store updates
                 err, normalized_args = _normalize_cron_args(args)
                 if err:
                     return tool_error(err, success=False)

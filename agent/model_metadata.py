@@ -1646,7 +1646,7 @@ def get_model_context_length(
     if config_context_length is not None and isinstance(config_context_length, int) and config_context_length > 0:
         return config_context_length
 
-    # [owner-patch] P29: Expand env var templates so ${VAR} strings from
+    # [owner] P29: Expand env var templates so ${VAR} strings from
     # config.yaml don't leak into probe URLs or model-lookup keys.  See #17101.
     if base_url and "${" in base_url:
         try:
