@@ -35,10 +35,10 @@ _TEXT = {
     "card.empty_content": "(无内容)",
     "btn.approve": "✅ 批准",
     "btn.deny": "🟥 拒绝",
-    "resolved.approved": "✅ 内存提案已批准",
-    "resolved.denied": "❌ 内存提案已拒绝",
+    "resolved.approved": "内存提案已批准",
+    "resolved.denied": "内存提案已拒绝",
     "confirm.approved": "✅ 内存提案已批准",
-    "confirm.denied": "❌ 内存提案已拒绝",
+    "confirm.denied": "🟥 内存提案已拒绝",
 }
 
 
@@ -58,12 +58,25 @@ def build_memory_proposal_card(
     content_preview = new_content[:1000] if new_content else _TEXT["card.empty_content"]
     old_preview = old_text[:200] if old_text else _TEXT["card.empty"]
 
+    # WR-10: pre-build proposal markdown so button callback can preserve content
+    proposal_md = (
+        f"**{_TEXT['card.operation']}**: {_action_label(action)}\n"
+        f"**{_TEXT['card.target']}**: {target}\n"
+        f"**{_TEXT['card.existing']}**: `...{old_preview}...`\n\n"
+        f"**{_TEXT['card.new_content']}**:\n"
+        f"```\n{content_preview}\n```"
+    )
+
     def _btn(label: str, action_name: str, btn_type: str = "default") -> dict:
         return {
             "tag": "button",
             "text": {"tag": "plain_text", "content": label},
             "type": btn_type,
-            "value": {"hermes_action": action_name, "session_key": session_key},
+            "value": {
+                "hermes_action": action_name,
+                "session_key": session_key,
+                "proposal_md": proposal_md,
+            },
         }
 
     return {
@@ -75,13 +88,7 @@ def build_memory_proposal_card(
         "elements": [
             {
                 "tag": "markdown",
-                "content": (
-                    f"**{_TEXT['card.operation']}**: {_action_label(action)}\n"
-                    f"**{_TEXT['card.target']}**: {target}\n"
-                    f"**{_TEXT['card.existing']}**: `...{old_preview}...`\n\n"
-                    f"**{_TEXT['card.new_content']}**:\n"
-                    f"```\n{content_preview}\n```"
-                ),
+                "content": proposal_md,
             },
             {
                 "tag": "action",
@@ -94,20 +101,30 @@ def build_memory_proposal_card(
     }
 
 
-def build_resolved_memory_proposal_card(*, choice: str) -> Dict[str, Any]:
-    """Build the raw card data for CallBackCard inline update after click."""
+def build_resolved_memory_proposal_card(
+    *, choice: str, proposal_md: str = ""
+) -> Dict[str, Any]:
+    """Build the raw card data for CallBackCard inline update after click.
+
+    When ``proposal_md`` is provided (WR-10), the original proposal content is
+    preserved in the card so the user can still see what was proposed after
+    clicking approve/deny.
+    """
     if choice == "approve":
         icon, label, template = "✅", _TEXT["resolved.approved"], "green"
     else:
-        icon, label, template = "❌", _TEXT["resolved.denied"], "red"
+        icon, label, template = "🟥", _TEXT["resolved.denied"], "red"
 
+    elements: list[dict] = []
+    if proposal_md:
+        elements.append({"tag": "markdown", "content": proposal_md})
     return {
         "config": {"wide_screen_mode": True},
         "header": {
             "title": {"content": f"{icon} {label}", "tag": "plain_text"},
             "template": template,
         },
-        "elements": [],
+        "elements": elements,
     }
 
 
@@ -184,6 +201,8 @@ def handle_memory_card_action(
             logger.warning("[Feishu] failed to send memory proposal confirm: %s", exc)
 
     # Update the original card inline to show the resolved state.
+    # WR-10: read proposal_md from button value to preserve original content.
+    proposal_md = str(action_value.get("proposal_md", "")) if isinstance(action_value, dict) else ""
     try:
         from lark_oapi.event.callback.model.p2_card_action_trigger import (
             CallBackCard,
@@ -193,7 +212,7 @@ def handle_memory_card_action(
             response = P2CardActionTriggerResponse()
             card = CallBackCard()
             card.type = "raw"
-            card.data = build_resolved_memory_proposal_card(choice=choice)
+            card.data = build_resolved_memory_proposal_card(choice=choice, proposal_md=proposal_md)
             response.card = card
             return response
     except Exception as exc:
