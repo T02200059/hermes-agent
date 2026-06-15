@@ -3488,7 +3488,7 @@ class TestSenderNameResolution(unittest.TestCase):
         adapter = FeishuAdapter(PlatformConfig())
         adapter._client = SimpleNamespace()
         future_expire = time.time() + 600
-        adapter._sender_name_cache["ou_cached"] = ("Alice", future_expire)
+        adapter._user_store.seed_cached_name("ou_cached", "Alice", future_expire)
         result = asyncio.run(adapter._resolve_sender_name_from_api("ou_cached"))
         self.assertEqual(result, "Alice")
 
@@ -3519,7 +3519,7 @@ class TestSenderNameResolution(unittest.TestCase):
             result = asyncio.run(adapter._resolve_sender_name_from_api("ou_bob"))
 
         self.assertEqual(result, "Bob")
-        self.assertIn("ou_bob", adapter._sender_name_cache)
+        self.assertIn("ou_bob", adapter._user_store.name_ttl_cache)
 
     @patch.dict(os.environ, {}, clear=True)
     def test_expired_cache_triggers_new_api_call(self):
@@ -3528,7 +3528,7 @@ class TestSenderNameResolution(unittest.TestCase):
 
         adapter = FeishuAdapter(PlatformConfig())
         # Expired cache entry.
-        adapter._sender_name_cache["ou_expired"] = ("OldName", time.time() - 1)
+        adapter._user_store.seed_cached_name("ou_expired", "OldName", time.time() - 1)
 
         async def _direct(func, *args, **kwargs):
             return func(*args, **kwargs)
@@ -3605,7 +3605,7 @@ class TestBotNameResolution(unittest.TestCase):
         from plugins.platforms.feishu.adapter import FeishuAdapter
 
         adapter = FeishuAdapter(PlatformConfig())
-        adapter._sender_name_cache["ou_peer"] = ("Peer Bot", time.time() + 600)
+        adapter._user_store.seed_cached_name("ou_peer", "Peer Bot", time.time() + 600)
         adapter._client = SimpleNamespace(
             request=lambda _r: (_ for _ in ()).throw(RuntimeError("should not fetch"))
         )
@@ -3623,7 +3623,7 @@ class TestBotNameResolution(unittest.TestCase):
             result = asyncio.run(adapter._resolve_sender_name_from_api("ou_peer", is_bot=True))
 
         self.assertEqual(result, "Peer Bot")
-        self.assertEqual(adapter._sender_name_cache["ou_peer"][0], "Peer Bot")
+        self.assertEqual(adapter._user_store.name_ttl_cache["ou_peer"][0], "Peer Bot")
         self.assertEqual(len(calls), 1)
         self.assertIn("/open-apis/bot/v3/bots/basic_batch", calls[0].uri)
         # Feishu expects repeated ?bot_ids= params, not comma-joined.
@@ -3648,7 +3648,7 @@ class TestBotNameResolution(unittest.TestCase):
             result = asyncio.run(adapter._resolve_sender_name_from_api("ou_peer", is_bot=True))
 
         self.assertIsNone(result)
-        self.assertNotIn("ou_peer", adapter._sender_name_cache)
+        self.assertNotIn("ou_peer", adapter._user_store.name_ttl_cache)
 
     @patch.dict(os.environ, {}, clear=True)
     def test_bot_absent_from_response_is_not_cached(self):
@@ -3663,7 +3663,7 @@ class TestBotNameResolution(unittest.TestCase):
             result = asyncio.run(adapter._resolve_sender_name_from_api("ou_ghost", is_bot=True))
 
         self.assertIsNone(result)
-        self.assertNotIn("ou_ghost", adapter._sender_name_cache)
+        self.assertNotIn("ou_ghost", adapter._user_store.name_ttl_cache)
 
     @patch.dict(os.environ, {}, clear=True)
     def test_empty_name_in_response_is_negative_cached(self):
@@ -3679,7 +3679,7 @@ class TestBotNameResolution(unittest.TestCase):
 
         self.assertIsNone(first)
         self.assertIsNone(second)
-        self.assertEqual(adapter._sender_name_cache["ou_nameless"][0], "")
+        self.assertEqual(adapter._user_store.name_ttl_cache["ou_nameless"][0], "")
         self.assertEqual(len(calls), 1)
 
     @patch.dict(os.environ, {}, clear=True)
@@ -3700,7 +3700,7 @@ class TestBotNameResolution(unittest.TestCase):
             result = asyncio.run(adapter._resolve_sender_name_from_api("ou_peer", is_bot=True))
 
         self.assertIsNone(result)
-        self.assertNotIn("ou_peer", adapter._sender_name_cache)
+        self.assertNotIn("ou_peer", adapter._user_store.name_ttl_cache)
 
 
 @unittest.skipUnless(_HAS_LARK_OAPI, "lark-oapi not installed")

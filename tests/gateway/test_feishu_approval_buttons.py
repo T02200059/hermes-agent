@@ -543,9 +543,7 @@ class TestCardActionCallbackResponse:
             {"hermes_action": "approve_once", "approval_id": 1},
             open_id="ou_bob",
         )
-        # Cleaned: use new owner cache instead of legacy adapter._sender_name_cache
-        adapter._name_cache = FeishuSenderNameCache(None)
-        adapter._name_cache._cache["ou_bob"] = ("Bob", 9999999999)
+        adapter._user_store.seed_cached_name("ou_bob", "Bob", 9999999999)
 
         with patch("asyncio.run_coroutine_threadsafe", side_effect=_close_submitted_coro):
             response = adapter._on_card_action_trigger(data)
@@ -640,9 +638,7 @@ class TestCardActionCallbackResponse:
             {"hermes_action": "approve_once", "approval_id": 4},
             open_id="ou_expired",
         )
-        # Cleaned: use new owner cache instead of legacy adapter._sender_name_cache
-        adapter._name_cache = FeishuSenderNameCache(None)
-        adapter._name_cache._cache["ou_expired"] = ("Old Name", 1)
+        adapter._user_store.seed_cached_name("ou_expired", "Old Name", 1)
 
         with patch("asyncio.run_coroutine_threadsafe", side_effect=_close_submitted_coro):
             response = adapter._on_card_action_trigger(data)
@@ -710,9 +706,7 @@ class TestCardActionCallbackResponse:
             {"hermes_update_prompt_action": "y", "update_prompt_id": 1},
             open_id="ou_bob",
         )
-        # Cleaned: use new owner cache instead of legacy adapter._sender_name_cache
-        adapter._name_cache = FeishuSenderNameCache(None)
-        adapter._name_cache._cache["ou_bob"] = ("Bob", 9999999999)
+        adapter._user_store.seed_cached_name("ou_bob", "Bob", 9999999999)
 
         with patch("asyncio.run_coroutine_threadsafe", side_effect=_close_submitted_coro):
             response = adapter._on_card_action_trigger(data)

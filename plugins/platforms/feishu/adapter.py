@@ -1417,22 +1417,7 @@ class FeishuAdapter(BasePlatformAdapter):
 
     MAX_MESSAGE_LENGTH = 8000
 
-    # [owner] user store: deprecated forwards for tests (see owner/feishu/user_store.py)
-    @property
-    def _name_cache(self) -> Any:
-        store = getattr(self, "_user_store", None)
-        if store is not None:
-            return store.name_cache
-        return getattr(self, "_name_cache_impl", None)
-
-    @_name_cache.setter
-    def _name_cache(self, value: Any) -> None:
-        store = getattr(self, "_user_store", None)
-        if store is not None:
-            store.name_cache = value
-        else:
-            self._name_cache_impl = value
-
+    # [owner] user store: thin forwards (see owner/feishu/user_store.py)
     @property
     def _feishu_user_cache(self) -> Dict[str, Any]:
         store = getattr(self, "_user_store", None)
@@ -1443,25 +1428,6 @@ class FeishuAdapter(BasePlatformAdapter):
             cache = {}
             self._feishu_user_cache_impl = cache
         return cache
-
-    @property
-    def _sender_name_cache(self) -> Dict[str, tuple[str, float]]:
-        store = getattr(self, "_user_store", None)
-        if store is not None:
-            return store.legacy_name_dict
-        cache = getattr(self, "_sender_name_cache_impl", None)
-        if cache is None:
-            cache = {}
-            self._sender_name_cache_impl = cache
-        return cache
-
-    @_sender_name_cache.setter
-    def _sender_name_cache(self, value: Dict[str, tuple[str, float]]) -> None:
-        store = getattr(self, "_user_store", None)
-        if store is not None:
-            store.replace_legacy_name_dict(value)
-        else:
-            self._sender_name_cache_impl = value
 
     @property
     def _client(self) -> Optional[Any]:
@@ -1506,8 +1472,7 @@ class FeishuAdapter(BasePlatformAdapter):
         from owner.feishu.user_store import FeishuUserStore
 
         self._user_store = FeishuUserStore(
-            chat_id_cache_path=get_hermes_home() / "feishu_chat_id_cache.json",
-            legacy_name_dict={},
+            cache_path=get_hermes_home() / "feishu_chat_id_cache.json",
         )
         # [owner] bot-menu: dedup + bot_menu_dedup_lock
         self._bot_menu_dedup: Dict[tuple[str, str], float] = {}
@@ -4070,7 +4035,7 @@ class FeishuAdapter(BasePlatformAdapter):
         }
 
     # --- thin delegates for name cache (open_id -> 中文名 only) ---
-    # All real logic + pre_warm + TTL + bot batch + contact v3 in owner/feishu/sender_name_cache.py
+    # All real logic + pre_warm + TTL + bot batch + contact v3 in owner/feishu/user_store.py
 
     def _get_cached_sender_name(self, sender_id: Optional[str]) -> Optional[str]:
         # [owner] approval: open_id -> 中文名 cache lookup (see owner/feishu/sender_name_helpers.py)
