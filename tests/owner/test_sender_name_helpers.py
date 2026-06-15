@@ -103,8 +103,8 @@ class TestResolveSenderName:
 
 class TestSenderNameHelpersViaUserStore:
     def test_get_cached_name_routes_through_user_store(self):
-        legacy = {"ou_store": ("Eve", time.time() + 600)}
-        store = FeishuUserStore(chat_id_cache_path="/tmp/unused.json", legacy_name_dict=legacy)
+        store = FeishuUserStore(cache_path="/tmp/unused.json")
+        store.seed_cached_name("ou_store", "Eve", time.time() + 600)
         adapter = SimpleNamespace(_user_store=store, _client=MagicMock())
         assert get_cached_sender_name(adapter, "ou_store") == "Eve"
 

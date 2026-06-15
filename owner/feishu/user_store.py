@@ -1,32 +1,35 @@
-"""Unified Feishu per-user store (Phase A facade).
+"""Unified Feishu per-user store (Phase B/C).
 
 Single entry for open_id-scoped state:
-- display names (memory TTL via FeishuSenderNameCache)
-- p2p chat_id mappings (disk-backed via user_cache)
+- display names (in-memory TTL + synced ``FeishuUserEntry.display_name``)
+- p2p chat_id mappings (disk-backed v2 user records)
 
-gateway/platforms/feishu.py holds one ``FeishuUserStore`` instance; legacy
-``_name_cache`` / ``_feishu_user_cache`` / ``_sender_name_cache`` adapter
-attrs remain as thin deprecated forwards for tests and gradual migration.
+Name resolution logic is internalized here (formerly ``FeishuSenderNameCache``).
 """
 
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
-from owner.feishu.sender_name_cache import FeishuSenderNameCache
 from owner.feishu.user_cache import (
     ChatIdCacheDebouncer,
     FeishuUserEntry,
     cache_p2p_chat_id,
     get_cached_chat_id,
-    load_chat_id_cache,
-    save_chat_id_cache,
+    get_cached_display_name,
+    load_user_cache,
+    save_user_cache,
+    set_cached_display_name,
 )
 
 logger = logging.getLogger(__name__)
+
+_FEISHU_SENDER_NAME_TTL_SECONDS = 10 * 60  # 10 minutes
 
 
 class FeishuUserStore:
@@ -35,82 +38,81 @@ class FeishuUserStore:
     def __init__(
         self,
         *,
-        chat_id_cache_path: Any,
-        legacy_name_dict: Optional[Dict[str, Tuple[str, float]]] = None,
+        cache_path: Any,
     ) -> None:
         self._client: Any = None
-        self._name_cache: Optional[FeishuSenderNameCache] = None
-        self._legacy_name_dict: Dict[str, Tuple[str, float]] = (
-            legacy_name_dict if legacy_name_dict is not None else {}
-        )
         self._users: Dict[str, FeishuUserEntry] = {}
-        self._chat_id_cache_path = Path(chat_id_cache_path)
+        # lookup_id → (name, expire_at); "" name = known nameless
+        self._name_ttl: Dict[str, Tuple[str, float]] = {}
+        self._cache_path = Path(cache_path)
         self._debouncer = ChatIdCacheDebouncer(
-            save_fn=lambda: save_chat_id_cache(self._chat_id_cache_path, self._users)
+            save_fn=lambda: save_user_cache(self._cache_path, self._users)
         )
-        load_chat_id_cache(self._chat_id_cache_path, self._users)
+        load_user_cache(self._cache_path, self._users)
+        self._seed_name_ttl_from_users()
 
     @property
     def users(self) -> Dict[str, FeishuUserEntry]:
         return self._users
 
     @property
-    def legacy_name_dict(self) -> Dict[str, Tuple[str, float]]:
-        return self._legacy_name_dict
-
-    def replace_legacy_name_dict(
-        self, new_dict: Dict[str, Tuple[str, float]]
-    ) -> None:
-        """Test compat: rebind the legacy name dict (e.g. adapter._sender_name_cache = {})."""
-        self._legacy_name_dict = new_dict
-        if self._name_cache is not None:
-            self._name_cache._cache = new_dict
-
-    @property
-    def name_cache(self) -> Optional[FeishuSenderNameCache]:
-        return self._name_cache
-
-    @name_cache.setter
-    def name_cache(self, value: Optional[FeishuSenderNameCache]) -> None:
-        self._name_cache = value
-        if value is not None:
-            self._legacy_name_dict = value._cache
+    def name_ttl_cache(self) -> Dict[str, Tuple[str, float]]:
+        """TTL name map keyed by lookup id (test introspection)."""
+        return self._name_ttl
 
     def bind_client(self, client: Any) -> None:
         self._client = client
-        if self._name_cache is not None:
-            self._name_cache.bind_client(client)
 
-    def _read_legacy_name(self, sender_id: Optional[str]) -> Optional[str]:
-        if not sender_id or sender_id not in self._legacy_name_dict:
+    def _seed_name_ttl_from_users(self) -> None:
+        now = time.time()
+        for open_id, entry in self._users.items():
+            if (
+                entry.display_name
+                and entry.display_name_expire_at
+                and now < entry.display_name_expire_at
+            ):
+                self._name_ttl[open_id] = (
+                    entry.display_name,
+                    entry.display_name_expire_at,
+                )
+
+    def _read_ttl_name(self, sender_id: Optional[str]) -> Optional[str]:
+        if not sender_id:
             return None
-        name, expire_at = self._legacy_name_dict[sender_id]
+        cached = self._name_ttl.get(sender_id)
+        if cached is None:
+            if sender_id.startswith("ou_"):
+                return get_cached_display_name(self._users, sender_id)
+            return None
+        name, expire_at = cached
         if time.time() < expire_at:
             return name
-        self._legacy_name_dict.pop(sender_id, None)
+        self._name_ttl.pop(sender_id, None)
+        if sender_id.startswith("ou_"):
+            entry = self._users.get(sender_id)
+            if entry is not None:
+                entry.display_name = ""
+                entry.display_name_expire_at = 0.0
         return None
 
-    def ensure_name_cache(self) -> Optional[FeishuSenderNameCache]:
-        if self._name_cache is not None:
-            return self._name_cache
-        if not self._client:
-            return None
-        cache = FeishuSenderNameCache(self._client)
-        if self._legacy_name_dict:
-            cache._cache.update(self._legacy_name_dict)
-        self._name_cache = cache
-        self._legacy_name_dict = cache._cache
-        return cache
+    def _store_resolved_name(
+        self, lookup_id: str, name: str, expire_at: float
+    ) -> None:
+        self._name_ttl[lookup_id] = (name, expire_at)
+        if lookup_id.startswith("ou_"):
+            set_cached_display_name(self._users, lookup_id, name, expire_at)
+            self._debouncer.mark_dirty()
+
+    def seed_cached_name(
+        self, sender_id: str, name: str, expire_at: float
+    ) -> None:
+        """Test helper: inject a TTL name entry (legacy ``_sender_name_cache`` writes)."""
+        self._store_resolved_name(sender_id, name, expire_at)
 
     def get_cached_name(self, sender_id: Optional[str]) -> Optional[str]:
         if not sender_id:
             return None
-        legacy_hit = self._read_legacy_name(sender_id)
-        if legacy_hit is not None:
-            return legacy_hit
-        if self._name_cache is None:
-            return None
-        return self._name_cache.get(sender_id)
+        return self._read_ttl_name(sender_id)
 
     def operator_display_name(self, open_id: str) -> str:
         if not open_id:
@@ -123,15 +125,69 @@ class FeishuUserStore:
         *,
         is_bot: bool = False,
     ) -> Optional[str]:
-        if not sender_id:
+        if not sender_id or not self._client:
             return None
-        cached_name = self.get_cached_name(sender_id)
+        trimmed = sender_id.strip()
+        if not trimmed:
+            return None
+
+        cached_name = self.get_cached_name(trimmed)
         if cached_name is not None:
             return cached_name or None
-        cache = self.ensure_name_cache()
-        if cache is None:
-            return None
-        return await cache.resolve(sender_id, is_bot=is_bot)
+
+        now = time.time()
+        if is_bot:
+            names = await self._fetch_bot_names([trimmed])
+            if names is None:
+                return None
+            expire_at = now + _FEISHU_SENDER_NAME_TTL_SECONDS
+            for oid, name in names.items():
+                self._store_resolved_name(oid, name, expire_at)
+            hit = self._name_ttl.get(trimmed)
+            return (hit[0] or None) if hit else None
+
+        try:
+            from lark_oapi.api.contact.v3 import GetUserRequest  # lazy
+
+            if trimmed.startswith("ou_"):
+                id_type = "open_id"
+            elif trimmed.startswith("on_"):
+                id_type = "union_id"
+            else:
+                id_type = "user_id"
+
+            request = (
+                GetUserRequest.builder()
+                .user_id(trimmed)
+                .user_id_type(id_type)
+                .build()
+            )
+            response = await asyncio.to_thread(
+                self._client.contact.v3.user.get, request
+            )
+            if not response or not response.success():
+                return None
+
+            user = getattr(getattr(response, "data", None), "user", None)
+            name = (
+                getattr(user, "name", None)
+                or getattr(user, "display_name", None)
+                or getattr(user, "nickname", None)
+                or getattr(user, "en_name", None)
+            )
+            if name and isinstance(name, str):
+                name = name.strip()
+                if name:
+                    expire_at = now + _FEISHU_SENDER_NAME_TTL_SECONDS
+                    self._store_resolved_name(trimmed, name, expire_at)
+                    return name
+        except Exception:
+            logger.debug(
+                "[Feishu] Failed to resolve sender name for %s",
+                sender_id,
+                exc_info=True,
+            )
+        return None
 
     def pre_warm_name(
         self,
@@ -141,9 +197,46 @@ class FeishuUserStore:
     ) -> None:
         if not sender_id or self.get_cached_name(sender_id) is not None:
             return
-        cache = self.ensure_name_cache()
-        if cache is not None:
-            cache.pre_warm(sender_id, is_bot=is_bot)
+        if not self._client:
+            return
+        try:
+            asyncio.create_task(self.resolve_name(sender_id, is_bot=is_bot))
+        except RuntimeError:
+            pass
+
+    async def _fetch_bot_names(self, bot_ids: List[str]) -> Optional[Dict[str, str]]:
+        if not self._client or not bot_ids:
+            return None
+        try:
+            from lark_oapi.core import AccessTokenType, HttpMethod
+            from lark_oapi.core.model import BaseRequest  # lazy
+
+            req = (
+                BaseRequest.builder()
+                .http_method(HttpMethod.GET)
+                .uri("/open-apis/bot/v3/bots/basic_batch")
+                .queries([("bot_ids", oid) for oid in bot_ids])
+                .token_types({AccessTokenType.TENANT})
+                .build()
+            )
+            resp = await asyncio.to_thread(self._client.request, req)
+            content = getattr(getattr(resp, "raw", None), "content", None)
+            if not content:
+                return None
+            payload = json.loads(content)
+            if payload.get("code") != 0:
+                return None
+            bots = (payload.get("data") or {}).get("bots") or {}
+            return {
+                oid: str(info.get("name") or "").strip()
+                for oid, info in bots.items()
+                if oid
+            }
+        except Exception:
+            logger.debug(
+                "[Feishu] Failed to fetch bot names for %s", bot_ids, exc_info=True
+            )
+            return None
 
     def get_p2p_chat_id(self, open_id: str) -> Optional[str]:
         return get_cached_chat_id(self._users, open_id)

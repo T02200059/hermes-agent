@@ -1,56 +1,91 @@
 """Tests for owner.feishu.user_store."""
 
+import json
 import time
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from owner.feishu.sender_name_cache import FeishuSenderNameCache
 from owner.feishu.user_store import FeishuUserStore, get_user_store
 
 
 class TestFeishuUserStore:
     def test_cache_p2p_chat_id_and_lookup(self, tmp_path):
-        store = FeishuUserStore(chat_id_cache_path=tmp_path / "chats.json")
+        store = FeishuUserStore(cache_path=tmp_path / "users.json")
         assert store.cache_p2p_chat_id("ou_a", "oc_dm") is True
         assert store.get_p2p_chat_id("ou_a") == "oc_dm"
         assert store.cache_p2p_chat_id("ou_a", "oc_dm") is False
 
-    def test_legacy_name_dict_mutation_visible_via_get_cached_name(self):
-        legacy = {"ou_x": ("Alice", time.time() + 600)}
-        store = FeishuUserStore(chat_id_cache_path="/tmp/unused.json", legacy_name_dict=legacy)
+    def test_seed_cached_name_visible_via_get_cached_name(self):
+        store = FeishuUserStore(cache_path="/tmp/unused.json")
+        store.seed_cached_name("ou_x", "Alice", time.time() + 600)
         assert store.get_cached_name("ou_x") == "Alice"
 
-    def test_replace_legacy_name_dict(self):
-        store = FeishuUserStore(chat_id_cache_path="/tmp/unused.json", legacy_name_dict={})
-        store.replace_legacy_name_dict({"ou_y": ("Bob", time.time() + 600)})
-        assert store.get_cached_name("ou_y") == "Bob"
-
-    def test_name_cache_setter_syncs_legacy_dict(self):
-        cache = FeishuSenderNameCache(None)
-        cache._cache["ou_z"] = ("Carol", time.time() + 600)
-        store = FeishuUserStore(chat_id_cache_path="/tmp/unused.json")
-        store.name_cache = cache
-        assert store.get_cached_name("ou_z") == "Carol"
-        assert store.legacy_name_dict is cache._cache
+    def test_open_id_resolve_syncs_display_name_to_user_entry(self, tmp_path):
+        store = FeishuUserStore(cache_path=tmp_path / "users.json")
+        store.seed_cached_name("ou_sync", "Bob", time.time() + 600)
+        entry = store.users["ou_sync"]
+        assert entry.display_name == "Bob"
+        assert entry.display_name_expire_at > time.time()
 
     @pytest.mark.asyncio
-    async def test_resolve_name_uses_name_cache(self):
-        client = MagicMock()
-        store = FeishuUserStore(chat_id_cache_path="/tmp/unused.json")
-        store._client = client
-        cache = FeishuSenderNameCache(client)
-        store._name_cache = cache
-        with patch.object(cache, "resolve", new_callable=AsyncMock, return_value="Dan") as mock_resolve:
+    async def test_resolve_name_fetches_via_contact_api(self):
+        from types import SimpleNamespace
+
+        user_obj = SimpleNamespace(
+            name="Dan", display_name=None, nickname=None, en_name=None
+        )
+        mock_response = SimpleNamespace(
+            success=lambda: True,
+            data=SimpleNamespace(user=user_obj),
+        )
+
+        class _ContactAPI:
+            def get(self, _request):
+                return mock_response
+
+        client = SimpleNamespace(
+            contact=SimpleNamespace(v3=SimpleNamespace(user=_ContactAPI()))
+        )
+        store = FeishuUserStore(cache_path="/tmp/unused.json")
+        store.bind_client(client)
+
+        async def _direct(func, *args, **kwargs):
+            return func(*args, **kwargs)
+
+        with patch("owner.feishu.user_store.asyncio.to_thread", side_effect=_direct):
             result = await store.resolve_name("ou_new")
+
         assert result == "Dan"
-        mock_resolve.assert_awaited_once_with("ou_new", is_bot=False)
+        assert store.get_cached_name("ou_new") == "Dan"
+        assert store.users["ou_new"].display_name == "Dan"
+
+    def test_loads_v2_disk_format_into_name_ttl(self, tmp_path):
+        path = tmp_path / "users.json"
+        expire = time.time() + 600
+        path.write_text(
+            json.dumps(
+                {
+                    "_version": 2,
+                    "users": {
+                        "ou_disk": {
+                            "display_name": "Carol",
+                            "display_name_expire_at": expire,
+                            "p2p_chat_id": "oc_dm",
+                        }
+                    },
+                }
+            )
+        )
+        store = FeishuUserStore(cache_path=path)
+        assert store.get_cached_name("ou_disk") == "Carol"
+        assert store.get_p2p_chat_id("ou_disk") == "oc_dm"
 
 
 class TestGetUserStore:
     def test_returns_store_when_present(self):
-        store = FeishuUserStore(chat_id_cache_path="/tmp/unused.json")
+        store = FeishuUserStore(cache_path="/tmp/unused.json")
         adapter = SimpleNamespace(_user_store=store)
         assert get_user_store(adapter) is store
 

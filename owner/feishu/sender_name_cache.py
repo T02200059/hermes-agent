@@ -1,5 +1,9 @@
 """Feishu open_id (and user_id/union_id) -> 中文名 cache with TTL and pre-warm.
 
+**Deprecated for production:** ``FeishuUserStore`` (owner/feishu/user_store.py)
+internalizes name resolution. This module remains for legacy test adapters
+without ``_user_store`` (``sender_name_helpers`` fallback path).
+
 Core logic extracted from gateway/platforms/feishu.py per 二次开发规范:
 - P1 import 编排: 核心实现在 owner/，官方文件只剩薄薄委托 + import + 调用
 - Owner 目录: 所有自定义逻辑只放在 owner/ 下，便于独立演进、测试、回滚
