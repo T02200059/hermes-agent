@@ -125,7 +125,7 @@ class FeishuUserStore:
         *,
         is_bot: bool = False,
     ) -> Optional[str]:
-        if not sender_id or not self._client:
+        if not sender_id:
             return None
         trimmed = sender_id.strip()
         if not trimmed:
@@ -134,6 +134,9 @@ class FeishuUserStore:
         cached_name = self.get_cached_name(trimmed)
         if cached_name is not None:
             return cached_name or None
+
+        if not self._client:
+            return None
 
         now = time.time()
         if is_bot:

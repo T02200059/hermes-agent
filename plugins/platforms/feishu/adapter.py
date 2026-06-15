@@ -1423,11 +1423,7 @@ class FeishuAdapter(BasePlatformAdapter):
         store = getattr(self, "_user_store", None)
         if store is not None:
             return store.users
-        cache = getattr(self, "_feishu_user_cache_impl", None)
-        if cache is None:
-            cache = {}
-            self._feishu_user_cache_impl = cache
-        return cache
+        return self._feishu_user_cache_impl
 
     @property
     def _client(self) -> Optional[Any]:
@@ -1438,7 +1434,7 @@ class FeishuAdapter(BasePlatformAdapter):
         self._client_impl = value
         store = getattr(self, "_user_store", None)
         if store is not None:
-            store.bind_client(value)
+            store.bind_client(value)  # sync store so name resolution works after client is set
 
     # Max distinct chat IDs retained in _chat_locks before LRU eviction kicks in.
     CHAT_LOCK_MAX_SIZE: int = 1000
@@ -1474,6 +1470,8 @@ class FeishuAdapter(BasePlatformAdapter):
         self._user_store = FeishuUserStore(
             cache_path=get_hermes_home() / "feishu_chat_id_cache.json",
         )
+        self._feishu_user_cache_impl: Dict[str, Any] = {}
+        self._sender_name_cache: Dict[str, tuple] = {}
         # [owner] bot-menu: dedup + bot_menu_dedup_lock
         self._bot_menu_dedup: Dict[tuple[str, str], float] = {}
         self._bot_menu_dedup_lock = threading.Lock()
@@ -1964,8 +1962,7 @@ class FeishuAdapter(BasePlatformAdapter):
 
         try:
             # [owner] approval: pre-warm open_id -> 中文名 for zero-delay callback (see owner/feishu/sender_name_helpers.py)
-            _owner_import("owner.feishu.sender_name_helpers", "pre_warm_sender_name")(
-                self,
+            self._pre_warm_sender_name(
                 sender_open_id,
                 is_bot=sender_is_bot,
                 fire_delegate=True,
@@ -3251,9 +3248,7 @@ class FeishuAdapter(BasePlatformAdapter):
                     or str(getattr(sender_id, "union_id", "") or "").strip()
                 )
             if _warm_id:
-                _owner_import(
-                    "owner.feishu.sender_name_helpers", "pre_warm_sender_name"
-                )(self, _warm_id, is_bot=False)
+                self._pre_warm_sender_name(_warm_id, is_bot=False)
         chat_info = await self.get_chat_info(chat_id)
         sender_profile = await self._resolve_sender_profile(sender_id, is_bot=is_bot)
         source = self.build_source(
@@ -4057,6 +4052,18 @@ class FeishuAdapter(BasePlatformAdapter):
         return await _owner_import(
             "owner.feishu.sender_name_helpers", "resolve_sender_name"
         )(self, sender_id, is_bot=is_bot)
+
+    def _pre_warm_sender_name(
+        self,
+        sender_id: str,
+        *,
+        is_bot: bool = False,
+        fire_delegate: bool = False,
+    ) -> None:
+        """Thin delegate to owner/feishu/sender_name_helpers.pre_warm_sender_name."""
+        _owner_import(
+            "owner.feishu.sender_name_helpers", "pre_warm_sender_name"
+        )(self, sender_id, is_bot=is_bot, fire_delegate=fire_delegate)
 
     # _fetch_bot_names is now private inside FeishuSenderNameCache (no longer needed on adapter)
 

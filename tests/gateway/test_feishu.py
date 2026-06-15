@@ -1655,7 +1655,7 @@ class TestAdapterBehavior(unittest.TestCase):
             )
         )
 
-        mock_pre_warm.assert_called_once_with(adapter, "ou_user", is_bot=False)
+        mock_pre_warm.assert_called_once_with(adapter, "ou_user", is_bot=False, fire_delegate=False)
 
     @patch.dict(os.environ, {}, clear=True)
     def test_process_inbound_group_message_does_not_cache_p2p_chat_id(self):
@@ -3519,7 +3519,7 @@ class TestSenderNameResolution(unittest.TestCase):
             result = asyncio.run(adapter._resolve_sender_name_from_api("ou_bob"))
 
         self.assertEqual(result, "Bob")
-        self.assertIn("ou_bob", adapter._user_store.name_ttl_cache)
+        self.assertIsNotNone(adapter._get_cached_sender_name("ou_bob"))
 
     @patch.dict(os.environ, {}, clear=True)
     def test_expired_cache_triggers_new_api_call(self):
@@ -3623,7 +3623,7 @@ class TestBotNameResolution(unittest.TestCase):
             result = asyncio.run(adapter._resolve_sender_name_from_api("ou_peer", is_bot=True))
 
         self.assertEqual(result, "Peer Bot")
-        self.assertEqual(adapter._user_store.name_ttl_cache["ou_peer"][0], "Peer Bot")
+        self.assertEqual(adapter._get_cached_sender_name("ou_peer"), "Peer Bot")
         self.assertEqual(len(calls), 1)
         self.assertIn("/open-apis/bot/v3/bots/basic_batch", calls[0].uri)
         # Feishu expects repeated ?bot_ids= params, not comma-joined.
@@ -3648,7 +3648,7 @@ class TestBotNameResolution(unittest.TestCase):
             result = asyncio.run(adapter._resolve_sender_name_from_api("ou_peer", is_bot=True))
 
         self.assertIsNone(result)
-        self.assertNotIn("ou_peer", adapter._user_store.name_ttl_cache)
+        self.assertIsNone(adapter._get_cached_sender_name("ou_peer"))
 
     @patch.dict(os.environ, {}, clear=True)
     def test_bot_absent_from_response_is_not_cached(self):
@@ -3663,7 +3663,7 @@ class TestBotNameResolution(unittest.TestCase):
             result = asyncio.run(adapter._resolve_sender_name_from_api("ou_ghost", is_bot=True))
 
         self.assertIsNone(result)
-        self.assertNotIn("ou_ghost", adapter._user_store.name_ttl_cache)
+        self.assertIsNone(adapter._get_cached_sender_name("ou_ghost"))
 
     @patch.dict(os.environ, {}, clear=True)
     def test_empty_name_in_response_is_negative_cached(self):
@@ -3679,7 +3679,7 @@ class TestBotNameResolution(unittest.TestCase):
 
         self.assertIsNone(first)
         self.assertIsNone(second)
-        self.assertEqual(adapter._user_store.name_ttl_cache["ou_nameless"][0], "")
+        self.assertEqual(adapter._get_cached_sender_name("ou_nameless"), "")
         self.assertEqual(len(calls), 1)
 
     @patch.dict(os.environ, {}, clear=True)
@@ -3700,7 +3700,7 @@ class TestBotNameResolution(unittest.TestCase):
             result = asyncio.run(adapter._resolve_sender_name_from_api("ou_peer", is_bot=True))
 
         self.assertIsNone(result)
-        self.assertNotIn("ou_peer", adapter._user_store.name_ttl_cache)
+        self.assertIsNone(adapter._get_cached_sender_name("ou_peer"))
 
 
 @unittest.skipUnless(_HAS_LARK_OAPI, "lark-oapi not installed")

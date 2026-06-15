@@ -1,5 +1,6 @@
 """Tests for Feishu interactive card approval buttons."""
 
+import asyncio
 import importlib.util
 import json
 import sys
@@ -157,6 +158,9 @@ class TestFeishuExecApproval:
 
     @pytest.mark.asyncio
     async def test_pre_warms_sender_name_cache(self):
+        from gateway.platforms import feishu as feishu_mod
+
+        feishu_mod._owner_lazy.clear()
         adapter = _make_adapter()
         # Cleaned: no longer directly poke legacy private adapter._sender_name_cache.
         # The thin implementation still schedules the (patched) delegate for this test's compatibility.
@@ -178,7 +182,8 @@ class TestFeishuExecApproval:
                 sender_open_id="ou_user1",
                 sender_is_bot=False,
             )
-
+            # Yield event loop so fire-and-forget task from pre_warm_sender_name executes
+            await asyncio.sleep(0)
         mock_resolve.assert_called_once_with("ou_user1", is_bot=False)
 
     @pytest.mark.asyncio
