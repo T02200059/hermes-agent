@@ -127,7 +127,6 @@ owner:
   # underlying command (e.g. /new resets the session, which is slow) finishes.
   # 3-second per-(open_id, event_key) dedup is handled in owner/feishu/bot_menu.py.
   # Set ack: null to suppress ack for a specific key; falls back to default_ack.
-  feishu:
     bot_menu_dedup:
       enabled: true
       default_ack: "⏳ 已收到…"
