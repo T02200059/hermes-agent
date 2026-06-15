@@ -92,7 +92,7 @@
 **风险**：中（需确保 approval_id 关联、chat 校验、权限检查等行为 100% 不变）。
 **依赖**：当前已有的 `owner/feishu/approval.py` 和 name cache。
 
-**状态**：待迁移一个阶段后处理。
+**状态**：✅ 已完成（P2 2026-06-15）— `FeishuApprovalContext` + `handle_approval_card_action` / `resolve_approval` in `owner/feishu/approval.py`；`feishu.py` 仅保留 ctx + property + 委托。
 
 ---
 
