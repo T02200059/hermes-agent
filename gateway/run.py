@@ -609,6 +609,15 @@ def _float_env(name: str, default: float) -> float:
         return float(default)
 
 
+# [owner] message:receive hook: strip sentinel-wrapped context before persistence
+# Thin import from owner/ — logic lives in owner/hooks/display_config.py
+try:
+    from owner.hooks.display_config import strip_hook_context as _strip_hook_context
+except ImportError:
+    def _strip_hook_context(text: str) -> str:
+        return text
+
+
 def _is_fresh_gateway_interruption(
     value: Any,
     *,
@@ -4261,9 +4270,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             thread_meta = self._thread_metadata_for_source(event.source, reply_anchor)
             if self._queue_during_drain_enabled():
                 self._queue_or_replace_pending_event(session_key, event)
-                message = f"⏳ Gateway {self._status_action_gerund()} — queued for the next turn after it comes back."
+                message = t("gateway.busy_drain_queued", action=self._status_action_gerund())  # [owner] i18n
             else:
-                message = f"⏳ Gateway is {self._status_action_gerund()} and is not accepting another turn right now."
+                message = t("gateway.busy_drain_not_accepting", action=self._status_action_gerund())  # [owner] i18n
 
             await adapter._send_with_retry(
                 chat_id=event.source.chat_id,
@@ -4447,15 +4456,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 f"when it finishes (use /stop to cancel everything)."
             )
         elif is_queue_mode:
-            message = (
-                f"⏳ Queued for the next turn{status_detail}. "
-                f"I'll respond once the current task finishes."
-            )
+            message = t("gateway.busy_queue_ack", status_detail=status_detail)  # [owner] i18n
         else:
-            message = (
-                f"⚡ Interrupting current task{status_detail}. "
-                f"I'll respond to your message shortly."
-            )
+            message = t("gateway.busy_interrupt_ack", status_detail=status_detail)  # [owner] i18n
 
         # First-touch onboarding: the very first time a user sends a message
         # while the agent is busy, append a one-time hint explaining the
@@ -4555,13 +4558,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         restart_source = self._restart_command_source if self._restart_requested else None
 
         action = "restarting" if self._restart_requested else "shutting down"
-        hint = (
-            "Your current task will be interrupted. "
-            "Send any message after restart and I'll try to resume where you left off."
-            if self._restart_requested
-            else "Your current task will be interrupted."
-        )
-        msg = f"⚠️ Gateway {action} — {hint}"
+        if self._restart_requested:
+            msg = t("gateway.shutdown_notify_restart")  # [owner] i18n
+        else:
+            msg = t("gateway.shutdown_notify_stop")  # [owner] i18n
 
         notified: set[tuple[str, str, Optional[str]]] = set()
         for session_key in active:
@@ -7740,11 +7740,11 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                         accepted = running_agent.steer(steer_text)
                     except Exception as exc:
                         logger.warning("Steer failed for session %s: %s", _quick_key, exc)
-                        return f"⚠️ Steer failed: {exc}"
+                        return t("gateway.steer_failed", error=exc)  # [owner] i18n
                     if accepted:
                         preview = steer_text[:60] + ("..." if len(steer_text) > 60 else "")
-                        return f"⏩ Steer queued — arrives after the next tool call: '{preview}'"
-                    return "Steer rejected (empty payload)."
+                        return t("gateway.steer_queued", preview=preview)  # [owner] i18n
+                    return t("gateway.steer_empty")  # [owner] i18n
                 # Running agent is missing or lacks steer() — fall back to queue.
                 adapter = self.adapters.get(source.platform)
                 if adapter:
@@ -7909,7 +7909,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     # Force-clean the sentinel so the session is unlocked.
                     self._release_running_agent_state(_quick_key)
                     logger.info("HARD STOP (pending) for session %s — sentinel cleared", _quick_key)
-                    return EphemeralReply("⚡ Force-stopped. The agent was still starting — session unlocked.")
+                    return EphemeralReply(t("gateway.force_stop_pending"))  # [owner] i18n
                 # Queue the message so it will be picked up after the
                 # agent starts.
                 adapter = self.adapters.get(source.platform)
@@ -7925,9 +7925,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 if self._queue_during_drain_enabled():
                     self._queue_or_replace_pending_event(_quick_key, event)
                 return (
-                    f"⏳ Gateway {self._status_action_gerund()} — queued for the next turn after it comes back."
+                        t("gateway.busy_drain_queued", action=self._status_action_gerund())  # [owner] i18n
                     if self._queue_during_drain_enabled()
-                    else f"⏳ Gateway is {self._status_action_gerund()} and is not accepting another turn right now."
+                        else t("gateway.busy_drain_not_accepting", action=self._status_action_gerund())  # [owner] i18n
                 )
             if self._busy_input_mode == "queue":
                 logger.debug("PRIORITY queue follow-up for session %s", _quick_key)
@@ -8143,6 +8143,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         if canonical == "reasoning":
             return await self._handle_reasoning_command(event)
 
+        # [owner] model picker: /providers command (see owner/feishu/model_picker.py)
+        if canonical == "providers":
+            return await self._handle_providers_command(event)
+
         if canonical == "memory":
             return await self._handle_memory_command(event)
 
@@ -8312,7 +8316,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             return await self._handle_voice_command(event)
 
         if self._draining:
-            return f"⏳ Gateway is {self._status_action_gerund()} and is not accepting new work right now."
+            return t("gateway.busy_drain_no_work", action=self._status_action_gerund())  # [owner] i18n
 
         # User-defined quick commands (bypass agent loop, no LLM call)
         if command:
@@ -9599,6 +9603,19 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         except Exception as _ts_err:
             logger.debug("Message timestamp injection failed (non-fatal): %s", _ts_err)
 
+        # [owner] message:receive hook: extra_context injection (see owner/hooks/message_receive.py)
+        try:
+            from owner.hooks.message_receive import apply_message_receive_hooks as _apply_msg_hooks
+            message_text = await _apply_msg_hooks(
+                hooks=self.hooks,
+                adapters=self.adapters,
+                source=source,
+                session_id=session_entry.session_id,
+                message_text=message_text,
+            )
+        except ImportError:
+            pass
+
         # Bind this gateway run generation to the adapter's active-session
         # event so deferred post-delivery callbacks can be released by the
         # same run that registered them.
@@ -9968,7 +9985,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 # it's a gateway-generated hint, not model output. (#7100)
                 _user_entry = {
                     "role": "user",
-                    "content": (
+                    "content": _strip_hook_context(
                         persist_user_message
                         if persist_user_message is not None
                         else message_text
@@ -9994,7 +10011,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 if not new_messages:
                     _user_entry = {
                         "role": "user",
-                        "content": (
+                        "content": _strip_hook_context(
                             persist_user_message
                             if persist_user_message is not None
                             else message_text
@@ -10030,6 +10047,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                             continue
                         # Add timestamp to each message for debugging
                         entry = {**msg, "timestamp": ts}
+                        # Strip hook-injected extra_context from user messages before persistence
+                        if entry.get("role") == "user" and isinstance(entry.get("content"), str):
+                            entry["content"] = _strip_hook_context(entry["content"])
                         if (
                             not _user_msg_id_attached
                             and msg.get("role") == "user"
@@ -10510,6 +10530,16 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         except Exception as e:
             logger.debug("suggestions command failed: %s", e)
             return f"Suggestions command failed: {e}"
+
+    # ── [owner] model picker: /providers command (see owner/commands/providers.py)
+
+    async def _handle_providers_command(self, event: MessageEvent) -> Optional[str]:
+        """Handle /providers command — delegating to owner/commands/providers.py."""
+        try:
+            from owner.commands.providers import handle_providers_command
+            return await handle_providers_command(adapters=self.adapters, event=event)
+        except ImportError:
+            return "providers 命令不可用"
 
     async def _handle_blueprint_command(self, event: MessageEvent):
         """Handle /blueprint in the gateway.
@@ -12008,7 +12038,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
 
         async def _on_confirm(choice: str):
             if choice == "cancel":
-                return f"🟡 /{command} cancelled. Conversation unchanged."
+                return t("gateway.destructive_slash_confirm.cancelled", command=command)  # [owner] i18n
             if choice == "always":
                 try:
                     from cli import save_config_value
@@ -12023,11 +12053,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     )
             result = await execute()
             if choice == "always":
-                note = (
-                    "\n\nℹ️ Future /clear, /new, /reset, and /undo will run "
-                    "without confirmation. Re-enable via "
-                    "`approvals.destructive_slash_confirm: true` in config.yaml."
-                )
+                note = t("gateway.destructive_slash_confirm.always_note")  # [owner] i18n
                 if isinstance(result, str):
                     return result + note
                 # EphemeralReply or other — leave untouched; the opt-out note
@@ -12037,14 +12063,11 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             return result
 
         _p = self._typed_command_prefix_for(event.source.platform)
-        prompt_message = (
-            f"⚠️ **Confirm /{command}**\n\n"
-            f"{detail}\n\n"
-            "Choose:\n"
-            "• **Approve Once** — proceed this time only\n"
-            "• **Always Approve** — proceed and silence this prompt permanently\n"
-            "• **Cancel** — keep current conversation\n\n"
-            f"_Text fallback: reply `{_p}approve`, `{_p}always`, or `{_p}cancel`._"
+        prompt_message = t(  # [owner] i18n
+            "gateway.destructive_slash_confirm.prompt",
+            command=command,
+            detail=detail,
+            _p=_p,
         )
         return await self._request_slash_confirm(
             event=event,
@@ -12650,7 +12673,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             )
             result = await adapter.send(
                 str(chat_id),
-                "♻ Gateway restarted successfully. Your session continues.",
+                t("gateway.restart_success"),  # [owner] i18n
                 metadata=_non_conversational_metadata(metadata, platform=platform),
             )
             # adapter.send() catches provider errors (e.g. "Chat not found")
@@ -12691,7 +12714,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         """
         delivered: set[tuple[str, str, Optional[str]]] = set()
         skipped = skip_targets or set()
-        message = "♻️ Gateway online — Hermes is back and ready."
+        message = t("gateway.online")  # [owner] i18n
 
         for platform, adapter in self.adapters.items():
             home = self.config.get_home_channel(platform)
