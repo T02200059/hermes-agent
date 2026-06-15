@@ -243,7 +243,7 @@ class QQAdapter(BasePlatformAdapter):
         self._token_expires_at: float = 0.0
         self._token_lock = asyncio.Lock()
 
-        # [owner-patch] Immediate-stop flag: set True by disconnect() so
+        # [owner] Immediate-stop flag: set True by disconnect() so
         # _reconnect() can abort its sleep and return immediately.
         self._stop_retry: bool = False
 
@@ -314,7 +314,7 @@ class QQAdapter(BasePlatformAdapter):
                 follow_redirects=True,
                 event_hooks={"response": [_ssrf_redirect_guard]},
                 limits=platform_httpx_limits(),
-                proxy=None,  # [owner-patch] QQ direct — bypass ALL_PROXY (ClashX)
+                proxy=None,  # [owner] QQ direct — bypass ALL_PROXY (ClashX)
             )
 
             # 1. Get access token
@@ -344,7 +344,7 @@ class QQAdapter(BasePlatformAdapter):
     async def disconnect(self) -> None:
         """Close all connections and stop listeners."""
         self._running = False
-        # [owner-patch] Signal _reconnect() to abort any in-progress sleep.
+        # [owner] Signal _reconnect() to abort any in-progress sleep.
         # Must be set before task.cancel() so that _reconnect() can notice
         # the flag even if CancelledError propagation is delayed.
         self._stop_retry = True
@@ -485,8 +485,8 @@ class QQAdapter(BasePlatformAdapter):
                 "User-Agent": build_user_agent(),
             },
             timeout=CONNECT_TIMEOUT_SECONDS,
-            heartbeat=30,  # [owner-patch] WebSocket protocol-level ping/pong — detects TCP half-open after sleep/wake
-            receive_timeout=120,  # [owner-patch] Fallback: close if no frame received in 2 min
+            heartbeat=30,  # [owner] WebSocket protocol-level ping/pong — detects TCP half-open after sleep/wake
+            receive_timeout=120,  # [owner] Fallback: close if no frame received in 2 min
             proxy=ws_proxy,
         )
         logger.info("[%s] WebSocket connected to %s", self._log_tag, gateway_url)
@@ -669,7 +669,7 @@ class QQAdapter(BasePlatformAdapter):
                 else:
                     backoff_idx += 1
 
-    # [owner-patch] Rebuild httpx.AsyncClient + clear token cache.
+    # [owner] Rebuild httpx.AsyncClient + clear token cache.
     # After WSL sleep/wake the stale connection pool causes _ensure_token()
     # to fail even though the network is back.  Rebuild is safe and
     # idempotent on all platforms.
@@ -684,7 +684,7 @@ class QQAdapter(BasePlatformAdapter):
                 follow_redirects=True,
                 event_hooks={"response": [_ssrf_redirect_guard]},
                 limits=platform_httpx_limits(),
-                proxy=None,  # [owner-patch] QQ direct — bypass ALL_PROXY (ClashX)
+                proxy=None,  # [owner] QQ direct — bypass ALL_PROXY (ClashX)
             )
         except Exception:
             pass  # fall through — _reconnect will report via exc
@@ -694,7 +694,7 @@ class QQAdapter(BasePlatformAdapter):
 
     async def _reconnect(self, backoff_idx: int) -> bool:
         """Attempt to reconnect the WebSocket. Returns True on success."""
-        # [owner-patch] Immediate abort if disconnect() was called.
+        # [owner] Immediate abort if disconnect() was called.
         if self._stop_retry:
             logger.info("[%s] _stop_retry set — skipping reconnect", self._log_tag)
             return False
@@ -706,7 +706,7 @@ class QQAdapter(BasePlatformAdapter):
             delay,
             backoff_idx + 1,
         )
-        # [owner-patch] Check _stop_retry during sleep so disconnect() can
+        # [owner] Check _stop_retry during sleep so disconnect() can
         # abort the backoff before it completes.
         slept = 0.0
         while slept < delay:
@@ -718,7 +718,7 @@ class QQAdapter(BasePlatformAdapter):
             slept += chunk
 
         self._heartbeat_interval = 30.0  # reset until Hello
-        # [owner-patch] Rebuild httpx client before reconnect.
+        # [owner] Rebuild httpx client before reconnect.
         # After WSL network reset (sleep/wake), the stale httpx connection
         # pool can cause _ensure_token() / _get_gateway_url() to fail.
         await self._rebuild_http_client()
@@ -736,7 +736,7 @@ class QQAdapter(BasePlatformAdapter):
 
     async def _read_events(self) -> None:
         """Read WebSocket frames until connection closes."""
-        # [owner-patch] Simplified check: closed-but-non-None ws previously
+        # [owner] Simplified check: closed-but-non-None ws previously
         # returned normally → 100% CPU spin in _listen_loop.
         if not self._ws or self._ws.closed:
             raise RuntimeError("WebSocket not connected")
@@ -761,7 +761,7 @@ class QQAdapter(BasePlatformAdapter):
         The interval is set from the Hello (op 10) event's heartbeat_interval.
         QQ's default is ~41s; we send at 80% of the interval to stay safe.
 
-        [owner-patch] Consecutive heartbeat failures indicate a dead connection
+        [owner] Consecutive heartbeat failures indicate a dead connection
         (e.g. after system sleep/wake).  When HEARTBEAT_MAX_FAILURES is reached,
         the WebSocket is closed so _listen_loop detects the break and reconnects.
         """
@@ -895,7 +895,7 @@ class QQAdapter(BasePlatformAdapter):
             interval_ms = d_data.get("heartbeat_interval", 30000)
             # Send heartbeats at 80% of the server interval to stay safe
             self._heartbeat_interval = interval_ms / 1000.0 * 0.8
-            logger.info(  # [owner-patch] debug→info for visibility
+            logger.info(  # [owner] debug→info for visibility
                 "[%s] Hello received, heartbeat_interval=%dms (sending every %.1fs)",
                 self._log_tag,
                 interval_ms,

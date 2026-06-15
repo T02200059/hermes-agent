@@ -33,7 +33,13 @@ import requests
 # Logger — DailySizeRotatingFileHandler (same pattern as other hooks)
 # ---------------------------------------------------------------------------
 
-_LOG_DIR = Path.home() / ".local" / "share" / "hermes" / "logs"
+def _log_dir() -> Path:
+    from hermes_constants import get_hermes_home
+
+    return get_hermes_home() / "logs"
+
+
+_LOG_DIR = _log_dir()
 
 try:
     _LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -142,7 +148,13 @@ except Exception:
 # ~/.hermes/.env (via hermes_cli.env_loader).  No custom parsing here.
 # ---------------------------------------------------------------------------
 
-_HERMES_HOME = Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes"))
+def _hermes_home() -> Path:
+    from hermes_constants import get_hermes_home
+
+    return get_hermes_home()
+
+
+_HERMES_HOME = _hermes_home()
 _STATE_DB = _HERMES_HOME / "state.db"
 
 _EMBED_MODEL = "text-embedding-v4"

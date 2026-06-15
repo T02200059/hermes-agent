@@ -59,7 +59,7 @@ class TestMiniMaxModelValidation:
     # Test 2: A near-match model on minimax-cn triggers a suggestion (not auto-correct)
     # -------------------------------------------------------------------------
     def test_near_match_minimax_cn_suggests_similar(self):
-        # [owner-patch] P73: M2.7-highspeed is now a direct catalog hit for
+        # [owner] P73: M2.7-highspeed is now a direct catalog hit for
         # minimax-cn (added alongside M3, replacing retired M2.5/M2.1/M2).
         result = validate_requested_model("MiniMax-M2.7-highspeed", "minimax-cn")
         assert result["accepted"] is True

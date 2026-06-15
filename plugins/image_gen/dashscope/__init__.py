@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-# [owner-patch] dashscope image-gen: core provider lives in owner/
+# [owner] dashscope image-gen: core provider lives in owner/
 from owner.image_gen.dashscope_provider import DashScopeImageGenProvider
 
 
