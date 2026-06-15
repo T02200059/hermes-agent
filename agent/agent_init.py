@@ -358,7 +358,7 @@ def init_agent(
 # [owner] apply private schema patches (e.g. image_generate model, send_message card)
 # early during agent init paths. This is post-registration mutation so the
 # source SCHEMA literals in tools/ stay identical to upstream.
-import owner.tools.schema_patches  # noqa: F401
+    import owner.tools.schema_patches  # noqa: F401
 
     # Eagerly warm the transport cache so import errors surface at init,
     # not mid-conversation.  Also validates the api_mode is registered.

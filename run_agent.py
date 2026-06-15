@@ -5024,7 +5024,7 @@ class AIAgent:
             or self._needs_kimi_tool_reasoning()
             or self._needs_mimo_tool_reasoning()
             # [owner] xfyun/damodel/GLM detectors (owner/agent/reasoning_detectors.py)
-            or _run_owner_reasoning_detection(self.provider, self.model, self.base_url)
+            or self._run_owner_reasoning_detection(self.provider, self.model, self.base_url)
         )
         self._thinking_pad_cache = (key, result)
         return result
@@ -5081,7 +5081,7 @@ class AIAgent:
         )
 
     # [owner] xfyun/damodel/GLM detectors — lazy-import helper (owner/agent/reasoning_detectors.py)
-    def _run_owner_reasoning_detection(provider, model, base_url) -> bool:
+    def _run_owner_reasoning_detection(self, provider, model, base_url) -> bool:
         from owner.agent.reasoning_detectors import needs_owner_reasoning_detection
         return needs_owner_reasoning_detection(provider, model, base_url)
 
