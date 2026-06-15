@@ -50,11 +50,11 @@
 - [ ] `aab7293` | 2026-06-12 | `yangtb` | feat(feishu): B3 card-action profile routing — inject hermes_profile into cards and forward to containers | +113 | −10 |
 - [ ] `3c4f26b` | 2026-06-12 | `yangtb` | feat(config): add get_hermes_profile_name() for container self-identification | +8 | −0 |
 - [x] ⚠️ 废弃（纯文档md，不迁移）`6d78558` | 2026-06-12 | `yangtb` | docs(session-storage): document model/provider per-turn columns in messages schema | +6 | −0 |
-- [ ] `ccaa607` | 2026-06-12 | `yangtb` | test(db): add tests for model/provider message attribution and backfill | +57 | −0 |
-- [ ] `5165578` | 2026-06-12 | `yangtb` | test(feishu): fix connect tests (mock _start_health_server), fix reaction test (pre-populate sent registry) | +10 | −1 |
-- [ ] `60e75f3` | 2026-06-12 | `yangtb` | feat(agent): pass model/provider to append_message for per-turn attribution | +2 | −0 |
-- [ ] `c571ea8` | 2026-06-12 | `yangtb` | feat(agent): capture model/provider in build_assistant_message for per-turn attribution | +6 | −0 |
-- [ ] `ef65e92` | 2026-06-12 | `yangtb` | feat(db): add model/provider columns to messages for per-turn attribution | +42 | −6 |
+- [x] [废弃] `ccaa607` | 2026-06-12 | `yangtb` | test(db): add tests for model/provider message attribution and backfill | +57 | −0 |
+- [x] [废弃] `5165578` | 2026-06-12 | `yangtb` | test(feishu): fix connect tests (mock _start_health_server), fix reaction test (pre-populate sent registry) | +10 | −1 |
+- [x] ✅ 已迁移 `54ca17325` `60e75f3` | 2026-06-12 | `yangtb` | feat(agent): pass model/provider to append_message for per-turn attribution | +2 | −0 |
+- [x] ✅ 已迁移 `54ca17325` `c571ea8` | 2026-06-12 | `yangtb` | feat(agent): capture model/provider in build_assistant_message for per-turn attribution | +6 | −0 |
+- [x] ✅ 已迁移 `54ca17325` `ef65e92` | 2026-06-12 | `yangtb` | feat(db): add model/provider columns to messages for per-turn attribution | +42 | −6 |
 - [ ] `b35729e` | 2026-06-12 | `yangtb` | feat(config): reduce patch.yaml cache TTL 5min→1min, add invalidate_patch_owner_config_cache() | +8 | −2 |
 - [ ] `4d258c0` | 2026-06-12 | `yangtb` | feat(api_server): warn once when API_SERVER_KEY is not set | +9 | −0 |
 - [ ] `3e72fef` | 2026-06-12 | `yangtb` | feat(feishu): v6 external-container multi-profile routing | +172 | −103 |
