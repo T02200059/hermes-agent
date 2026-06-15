@@ -19,7 +19,8 @@ import sys
 from datetime import datetime, date
 from pathlib import Path
 
-HOME = os.path.join(os.path.dirname(os.environ.get("HERMES_HOME", os.path.expanduser("~/.hermes"))), "")
+# macOS user cache paths — use real user home, not HERMES_HOME/profile state
+HOME = os.environ.get("HOME") or str(Path.home())
 
 
 # ── 辅助函数 ──────────────────────────────────────────────────
@@ -90,7 +91,7 @@ def collect_caches() -> list:
                 sz = run(["du", "-sk", fp]).split("\t")[0]
                 try:
                     sz_kb = int(sz)
-                except:
+                except (ValueError, TypeError):
                     sz_kb = 0
                 child_sizes.append((sz_kb, entry, fp))
         child_sizes.sort(reverse=True)
@@ -124,7 +125,7 @@ def collect_caches() -> list:
                 elif "KB" in unit:
                     reclaimable_kb = int(val)
                     reclaimable_str = f"{val} KB"
-            except:
+            except (ValueError, TypeError):
                 pass
     caches.append({
         "name": "Homebrew 缓存",
@@ -265,7 +266,7 @@ def collect_caches() -> list:
                 fp = os.path.join(bak_dir, f)
                 try:
                     bak_total += os.path.getsize(fp)
-                except:
+                except OSError:
                     pass
     caches.append({
         "name": "Hermes 备份归档",
@@ -494,7 +495,7 @@ def get_disk_info() -> dict:
             # 我们只需要 Available (人类可读) 和 Capacity
             # 用 diskutil 更准确
             pass
-    except:
+    except (OSError, subprocess.SubprocessError, ValueError):
         pass
 
     # 用 diskutil 获取精确的容器信息
@@ -513,16 +514,16 @@ def get_disk_info() -> dict:
                 val = m.split()[0]
                 try:
                     total_gb = float(val)
-                except:
+                except ValueError:
                     pass
             elif "Container Free Space" in line or "Volume Free Space" in line:
                 m = line.split(":")[-1].strip()
                 val = m.split()[0]
                 try:
                     free_gb = float(val)
-                except:
+                except ValueError:
                     pass
-    except:
+    except (OSError, subprocess.SubprocessError, ValueError):
         pass
 
     # fallback: df -h
@@ -554,7 +555,7 @@ def get_disk_info() -> dict:
                                 total_gb = num * 1024
                             else:
                                 free_gb = num * 1024
-        except:
+        except (OSError, subprocess.SubprocessError, ValueError, IndexError):
             pass
 
     used_gb = round(total_gb - free_gb, 1) if total_gb > 0 else 0.0

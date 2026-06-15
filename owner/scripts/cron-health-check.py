@@ -20,7 +20,15 @@ from pathlib import Path
 
 # Configuration
 DURATION_THRESHOLD_SECONDS = 480  # 8 minutes
-HERMES_HOME = Path.home() / ".hermes"
+
+
+def _hermes_home() -> Path:
+    from hermes_constants import get_hermes_home
+
+    return get_hermes_home()
+
+
+HERMES_HOME = _hermes_home()
 JOBS_FILE = HERMES_HOME / "cron" / "jobs.json"
 AGENT_LOG = HERMES_HOME / "logs" / "agent.log"
 
@@ -121,7 +129,7 @@ def analyze_jobs_24h() -> dict:
                 run_time = datetime.fromisoformat(last_run_at.replace("+08:00", "").replace("+00:00", ""))
                 if run_time < cutoff:
                     continue
-            except:
+            except (ValueError, TypeError):
                 pass
         else:
             continue

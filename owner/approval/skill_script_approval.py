@@ -133,8 +133,10 @@ def load_skill_scripts() -> Dict[str, Set[str]]:
 
 def _scan_skill_dir(skill_name: str, extensions: List[str],
                     result: Dict[str, Set[str]]) -> None:
-    """Scan ``~/.hermes/skills/**/<skill_name>/**`` for matching scripts."""
-    skills_root = Path.home() / ".hermes" / "skills"
+    """Scan ``<HERMES_HOME>/skills/**/<skill_name>/**`` for matching scripts."""
+    from hermes_constants import get_hermes_home
+
+    skills_root = get_hermes_home() / "skills"
     if not skills_root.is_dir():
         return
     for cat_dir in skills_root.iterdir():
@@ -194,19 +196,18 @@ def is_skill_script_allowed(command: str) -> Optional[str]:
         return None
 
     scripts = load_skill_scripts()
+    matched_viewed: Set[str] = set()
     for fn in filenames:
         skills = scripts.get(fn)
         if not skills:
             return None
-        if not skills.intersection(_session_skills_viewed):
+        viewed = skills.intersection(_session_skills_viewed)
+        if not viewed:
             return None
+        matched_viewed |= viewed
 
-    # All extracted filenames belong to a viewed skill → auto-approve
-    for fn in filenames:
-        skills = scripts.get(fn)
-        if skills:
-            return next(iter(skills))
-    return None
+    # All extracted filenames belong to at least one viewed skill → auto-approve
+    return next(iter(sorted(matched_viewed))) if matched_viewed else None
 
 
 def invalidate_skill_scripts_cache() -> None:

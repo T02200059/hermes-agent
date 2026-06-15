@@ -2,9 +2,15 @@
 """备份 ~/.hermes 配置，从 patch.yaml 读取配置（有默认值兜底）。no_agent 用"""
 import os, subprocess, sys, glob, yaml
 
-# Hermes cron 以 root 运行，~ 展开为 /var/root，从 HERMES_HOME 推导用户家目录
-_HERMES_HOME = os.environ.get("HERMES_HOME", os.path.expanduser("~/.hermes"))
-_USER_HOME = os.path.dirname(_HERMES_HOME)
+def _hermes_home() -> str:
+    from hermes_constants import get_hermes_home
+
+    return str(get_hermes_home())
+
+
+# Hermes cron 以 root 运行时须设置 HERMES_HOME；~ 路径解析用真实用户家目录
+_HERMES_HOME = _hermes_home()
+_USER_HOME = os.environ.get("HOME") or os.path.dirname(_HERMES_HOME)
 
 def _resolve(path):
     """将路径中的 ~ 替换为用户家目录（处理 patch.yaml 中带 ~ 的配置值）"""
