@@ -19,6 +19,8 @@ import re
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Set, Any
 
+from agent.i18n import t  # [owner] i18n
+
 logger = logging.getLogger(__name__)
 
 try:
@@ -3481,7 +3483,7 @@ class TelegramAdapter(BasePlatformAdapter):
             text = (
                 f"⚠️ <b>Command Approval Required</b>\n\n"
                 f"<pre>{_html.escape(cmd_preview)}</pre>\n\n"
-                f"Reason: {_html.escape(description)}"
+                f"{_html.escape(t('approval.reason_label', description=description))}"  # [owner] i18n
             )
 
             # Resolve thread context for thread replies

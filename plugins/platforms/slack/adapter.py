@@ -18,6 +18,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Dict, Optional, Any, Tuple, List
 
+from agent.i18n import t  # [owner] i18n
+
 try:
     from slack_bolt.async_app import AsyncApp
     from slack_bolt.adapter.socket_mode.async_handler import AsyncSocketModeHandler
@@ -2891,7 +2893,7 @@ class SlackAdapter(BasePlatformAdapter):
             # instead of a flat truncation that overflows once the header +
             # reason are added.
             header = ":warning: *Command Approval Required*\n"
-            reason = f"Reason: {description[:500]}"
+            reason = t("approval.reason_label", description=description[:500])  # [owner] i18n
             budget = 3000 - len(header) - len(reason) - len("``````\n") - len("...")
             cmd_preview = command[:budget] + "..." if len(command) > budget else command
 
