@@ -38,14 +38,26 @@ def get_current_attribution(agent: Any) -> Optional[str]:
 
 
 def inject_attribution_into_message(agent: Any, msg: Dict[str, Any]) -> None:
-    """Inject the current attribution into a message dict (for DB / history).
+    """Inject per-turn attribution into a message dict (for DB / history).
 
-    This is the single place that decides the key name and value rules.
+    Stamps three fields for every assistant message:
+    - ``model`` — the active model name (e.g. "deepseek-v4-flash")
+    - ``provider`` — the active provider name (e.g. "deepseek")
+    - ``owner_provider_name`` — custom provider alias (if configured)
+
+    This is the single place that decides the key names and value rules.
     Official message-building code should call this instead of doing
     the getattr + assignment themselves.
     """
+    # Standard model/provider: always available on the agent
+    model = getattr(agent, "model", None)
+    provider = getattr(agent, "provider", None)
+    if model:
+        msg["model"] = model
+    if provider:
+        msg["provider"] = provider
+
+    # Custom provider name (optional, for billing / audit)
     name = get_current_attribution(agent)
     if name:
         msg["owner_provider_name"] = name
-    # If no attribution, we deliberately do not set the key at all
-    # (keeps historical messages cleaner when the feature is not active).
