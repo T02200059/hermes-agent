@@ -47,6 +47,27 @@ def get_cached_chat_id(
     return entry.p2p_chat_id or None
 
 
+def cache_p2p_chat_id(
+    cache: Dict[str, FeishuUserEntry],
+    open_id: str,
+    chat_id: str,
+    *,
+    debouncer: Optional[ChatIdCacheDebouncer] = None,
+) -> bool:
+    """Persist open_id → p2p chat_id when it changes. Returns True if updated."""
+    open_id = (open_id or "").strip()
+    chat_id = (chat_id or "").strip()
+    if not open_id or not chat_id:
+        return False
+    entry = get_user_entry(cache, open_id)
+    if entry.p2p_chat_id == chat_id:
+        return False
+    entry.p2p_chat_id = chat_id
+    if debouncer is not None:
+        debouncer.mark_dirty()
+    return True
+
+
 def load_chat_id_cache(path: Any, cache: Dict[str, FeishuUserEntry]) -> None:
     """Load persisted open_id → p2p_chat_id mappings from disk into ``cache``."""
     path = Path(path)

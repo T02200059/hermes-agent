@@ -1619,6 +1619,75 @@ class TestAdapterBehavior(unittest.TestCase):
         self.assertEqual(event.source.user_name, "张三")
         self.assertEqual(event.source.user_id_alt, "on_union")
         self.assertEqual(event.source.chat_name, "Feishu DM")
+        from owner.feishu.user_cache import get_cached_chat_id
+
+        self.assertEqual(get_cached_chat_id(adapter._feishu_user_cache, "ou_user"), "oc_chat")
+
+    @patch.dict(os.environ, {}, clear=True)
+    @patch("owner.feishu.sender_name_helpers.pre_warm_sender_name")
+    def test_process_inbound_message_pre_warms_sender_name(self, mock_pre_warm):
+        from gateway.config import PlatformConfig
+        from gateway.platforms import feishu as feishu_mod
+        from gateway.platforms.feishu import FeishuAdapter
+
+        feishu_mod._owner_lazy.clear()
+        adapter = FeishuAdapter(PlatformConfig())
+        adapter._dispatch_inbound_event = AsyncMock()
+        adapter._resolve_sender_name_from_api = AsyncMock(return_value="张三")
+        adapter.get_chat_info = AsyncMock(return_value={"chat_id": "oc_chat", "name": "DM", "type": "dm"})
+        message = SimpleNamespace(
+            chat_id="oc_chat",
+            thread_id=None,
+            message_type="text",
+            content='{"text":"hi"}',
+            message_id="om_pre_warm",
+        )
+        sender_id = SimpleNamespace(open_id="ou_user", user_id="u_user", union_id=None)
+        data = SimpleNamespace(event=SimpleNamespace(message=message, sender=SimpleNamespace(sender_id=sender_id)))
+
+        asyncio.run(
+            adapter._process_inbound_message(
+                data=data,
+                message=message,
+                sender_id=sender_id,
+                chat_type="p2p",
+                message_id="om_pre_warm",
+            )
+        )
+
+        mock_pre_warm.assert_called_once_with(adapter, "ou_user", is_bot=False)
+
+    @patch.dict(os.environ, {}, clear=True)
+    def test_process_inbound_group_message_does_not_cache_p2p_chat_id(self):
+        from gateway.config import PlatformConfig
+        from gateway.platforms.feishu import FeishuAdapter
+        from owner.feishu.user_cache import get_cached_chat_id
+
+        adapter = FeishuAdapter(PlatformConfig())
+        adapter._dispatch_inbound_event = AsyncMock()
+        adapter._resolve_sender_name_from_api = AsyncMock(return_value="Bob")
+        adapter.get_chat_info = AsyncMock(return_value={"chat_id": "oc_group", "name": "Team", "type": "group"})
+        message = SimpleNamespace(
+            chat_id="oc_group",
+            thread_id=None,
+            message_type="text",
+            content='{"text":"hi"}',
+            message_id="om_group",
+        )
+        sender_id = SimpleNamespace(open_id="ou_bob", user_id=None, union_id=None)
+        data = SimpleNamespace(event=SimpleNamespace(message=message, sender=SimpleNamespace(sender_id=sender_id)))
+
+        asyncio.run(
+            adapter._process_inbound_message(
+                data=data,
+                message=message,
+                sender_id=sender_id,
+                chat_type="group",
+                message_id="om_group",
+            )
+        )
+
+        self.assertIsNone(get_cached_chat_id(adapter._feishu_user_cache, "ou_bob"))
 
     @patch.dict(os.environ, {}, clear=True)
     def test_text_batch_merges_rapid_messages_into_single_event(self):
