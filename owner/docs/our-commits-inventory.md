@@ -42,13 +42,13 @@
 - [x] ⚠️ 废弃（纯文档md，不迁移）`4b3939b` | 2026-06-12 | `yangtb` | docs(owner): patch inventory 73→75, add P74 (P0 hard-cap) + P75 (per-turn attribution) | +14 | −3 |
 - [x] ⚠️ 废弃（纯文档md，不迁移）`1f82244` | 2026-06-12 | `yangtb` | docs(agent): document async_call_llm P0 hang and hard-cap fix | +166 | −0 |
 - [x] ✅ 已迁移 `8e433d5ab` `c7fd830` | 2026-06-12 | `yangtb` | fix(agent): cap async_call_llm with asyncio.wait_for hard timeout | +15 | −1 |
-- [ ] `1d52226` | 2026-06-12 | `yangtb` | test(feishu): add bot_menu routing tests — routed user forwarded, local user handled locally | +76 | −0 |
-- [ ] `1a4f194` | 2026-06-12 | `yangtb` | feat(feishu): forward bot_menu synthetic commands to routed profile containers | +21 | −0 |
+- [x] ✅ 已迁移（同 hash 已在 owner-v16）`1d52226` | 2026-06-12 | `yangtb` | test(feishu): add bot_menu routing tests — routed user forwarded, local user handled locally | +76 | −0 |
+- [x] ✅ 已迁移（同 hash 已在 owner-v16）`1a4f194` | 2026-06-12 | `yangtb` | feat(feishu): forward bot_menu synthetic commands to routed profile containers | +21 | −0 |
 - [x] ⚠️ 废弃（纯文档md，不迁移）`dc44c0c` | 2026-06-12 | `yangtb` | docs(feishu-v6): update implementation status table — add A4/B2/B3, collapse duplicate section 7 | +4 | −6 |
-- [ ] `05d8f28` | 2026-06-12 | `yangtb` | test(feishu): add B3 card-action profile routing tests (inject, resolve-by-name, forward, guard) | +257 | −1 |
-- [ ] `e818002` | 2026-06-12 | `yangtb` | feat(api_server): add POST /v1/feishu/card-actions endpoint for B3 profile routing | +54 | −0 |
-- [ ] `aab7293` | 2026-06-12 | `yangtb` | feat(feishu): B3 card-action profile routing — inject hermes_profile into cards and forward to containers | +113 | −10 |
-- [ ] `3c4f26b` | 2026-06-12 | `yangtb` | feat(config): add get_hermes_profile_name() for container self-identification | +8 | −0 |
+- [x] ✅ 已迁移（同 hash 已在 owner-v16）`05d8f28` | 2026-06-12 | `yangtb` | test(feishu): add B3 card-action profile routing tests (inject, resolve-by-name, forward, guard) | +257 | −1 |
+- [x] ✅ 已迁移（同 hash 已在 owner-v16）`e818002` | 2026-06-12 | `yangtb` | feat(api_server): add POST /v1/feishu/card-actions endpoint for B3 profile routing | +54 | −0 |
+- [x] ✅ 已迁移（同 hash 已在 owner-v16）`aab7293` | 2026-06-12 | `yangtb` | feat(feishu): B3 card-action profile routing — inject hermes_profile into cards and forward to containers | +113 | −10 |
+- [x] ✅ 已迁移（同 hash 已在 owner-v16）`3c4f26b` | 2026-06-12 | `yangtb` | feat(config): add get_hermes_profile_name() for container self-identification | +8 | −0 |
 - [x] ⚠️ 废弃（纯文档md，不迁移）`6d78558` | 2026-06-12 | `yangtb` | docs(session-storage): document model/provider per-turn columns in messages schema | +6 | −0 |
 - [x] [废弃] `ccaa607` | 2026-06-12 | `yangtb` | test(db): add tests for model/provider message attribution and backfill | +57 | −0 |
 - [x] [废弃] `5165578` | 2026-06-12 | `yangtb` | test(feishu): fix connect tests (mock _start_health_server), fix reaction test (pre-populate sent registry) | +10 | −1 |
@@ -57,12 +57,12 @@
 - [x] ✅ 已迁移 `54ca17325` `ef65e92` | 2026-06-12 | `yangtb` | feat(db): add model/provider columns to messages for per-turn attribution | +42 | −6 |
 - [x] ✅ 已迁移 `dd59d8a1c` `b35729e` | 2026-06-12 | `yangtb` | feat(config): reduce patch.yaml cache TTL 5min→1min, add invalidate_patch_owner_config_cache() | +8 | −2 |
 - [x] [废弃] `4d258c0` | 2026-06-12 | `yangtb` | feat(api_server): warn once when API_SERVER_KEY is not set | +9 | −0 |
-- [ ] `3e72fef` | 2026-06-12 | `yangtb` | feat(feishu): v6 external-container multi-profile routing | +172 | −103 |
-- [ ] `2b2e02c` | 2026-06-12 | `yangtb` | test(feishu): add profile routing tests (_resolve_profile_route, _forward_to_profile_container, registry) | +496 | −0 |
+- [x] ✅ 已迁移（同 hash 已在 owner-v16）`3e72fef` | 2026-06-12 | `yangtb` | feat(feishu): v6 external-container multi-profile routing | +172 | −103 |
+- [x] ✅ 已迁移（同 hash 已在 owner-v16）`2b2e02c` | 2026-06-12 | `yangtb` | test(feishu): add profile routing tests (_resolve_profile_route, _forward_to_profile_container, registry) | +496 | −0 |
 - [x] ⚠️ 废弃（纯文档md，不迁移）`d14cc49` | 2026-06-12 | `yangtb` | docs(feishu): add v6 single-bot multi-profile design doc (external container architecture) | +506 | −0 |
 - [x] ⚠️ 废弃（纯文档md，不迁移）`4b962fa` | 2026-06-12 | `yangtb` | docs(feishu): rename v1-v5 multi-profile docs to -已弃用 (v6 cleanup) | +0 | −0 |
-- [ ] `e922b2a` | 2026-06-12 | `yangtb` | chore(test): remove test_feishu_profile_router.py (v6 cleanup) | +0 | −196 |
-- [ ] `dfae252` | 2026-06-12 | `yangtb` | chore(feishu): remove feishu_profile_router.py (v6 cleanup) | +0 | −403 |
+- [x] ✅ 已迁移（同 hash 已在 owner-v16）`e922b2a` | 2026-06-12 | `yangtb` | chore(test): remove test_feishu_profile_router.py (v6 cleanup) | +0 | −196 |
+- [x] ✅ 已迁移（同 hash 已在 owner-v16）`dfae252` | 2026-06-12 | `yangtb` | chore(feishu): remove feishu_profile_router.py (v6 cleanup) | +0 | −403 |
 - [x] [废弃] `71b0869` | 2026-06-11 | `yangtb` | test(providers): update DeepSeek thinking test for MiniMax carve-out | +9 | −4 |
 - [x] ✅ 已迁移 `ab3bd8d24` `a311083` | 2026-06-11 | `yangtb` | feat(providers): MiniMax Anthropic endpoint thinking-block support | +32 | −4 |
 - [⏸️ 已决策·暂不迁移（rate limiter 不存在于 owner-v16，需整体评估）] `b263fd5` | 2026-06-11 | `yangtb` | config: reduce openrouter rate limit to 20 req/min | +1 | −1 |
@@ -73,8 +73,8 @@
 - [x] ✅ 已迁移 `(batch` `b0e4483` | 2026-06-10 | `yangtb` | feat(qdrant-recall): 飞书卡片展示 + compact标题显示name/abstract | +361 | −3 |
 - [x] ✅ 已迁移 `a39478319` `eb514ee` | 2026-06-10 | `yangtb` | feat: skill script auto-approval (skill_script_allowlist) | +637 | −0 |
 - [x] ✅ 已迁移 `a39478319` `8c0b8dd` | 2026-06-10 | `yangtb` | feat(approval): auto-resolve pending approvals when YOLO enabled | +56 | −15 |
-- [ ] `6f86bcd` | 2026-06-10 | `yangtb` | feat(gateway): strip hook-injected extra_context from history and archiving | +28 | −5 |
-- [ ] `fbfa354` | 2026-06-10 | `yangtb` | feat(feishu): use 🟥 for memory proposal deny button | +4 | −4 |
+- [x] ✅ 已迁移 `6f86bcd` `69af045` | 2026-06-10 | `yangtb` | feat(gateway): strip hook-injected extra_context from history and archiving | +28 | −5 |
+- [x] ✅ 已迁移 `fbfa354` | 2026-06-10 | `yangtb` | feat(feishu): use 🟥 for memory proposal deny button | +4 | −4 |
 - [x] ⚡ 部分迁移（qdrant hook 部分，session-archiver/pricing 未涉及）`84c7489` | 2026-06-10 | `yangtb` | chore(owner): restore local adjustments for qdrant hook (named vector search), session-archiver (DeepSeek/DashScope), pricing.yaml | +62 | −100 |
 - [x] ⚠️ 废弃（纯文档md，不迁移）`c24c8ee` | 2026-06-09 | `yangtb` | docs(owner): patch inventory 69→73, add P70-P71 (clarify multi-profile, display_hook_message_receive) | +14 | −5 |
 - [x] ✅ 已迁移 `825145f` | 2026-06-09 | `yangtb` | docs(owner): patch inventory 65→69, add P66-P69 (intent-guard, credential_pool, qdrant-recall, session-archiver) | +18 | −2 |
@@ -82,9 +82,9 @@
 - [x] ⚠️ 废弃：定价/AGENTS.md，不迁移 `9b4dda1` | 2026-06-09 | `yangtb` | docs(AGENTS): update project structure and development guide | +187 | −81 |
 - [x] ✅ 已迁移 `(部分)` `ca0836e` | 2026-06-09 | `yangtb` | chore(config): add yolo_on/yolo_off ack text + sync patch.yaml | +17 | −1 |
 - [x] ✅ 已迁移 `d2c991d9a` `e7d351c` | 2026-06-09 | `yangtb` | fix(feishu): bot_menu synthetic event message_id → None | +1 | −1 |
-- [ ] `1be0241` | 2026-06-09 | `yangtb` | feat(gateway): /yolo on\ | off\ | status syntax sugar |
+- [x] ✅ 已迁移 `1be0241` | 2026-06-09 | `yangtb` | feat(gateway): /yolo on|off|status syntax sugar |
 - [x] ⚠️ 废弃：定价/AGENTS.md，不迁移 `8b5f0f7` | 2026-06-09 | `yangtb` | chore(config): update pricing.yaml exchange rate | +1 | −1 |
-- [ ] `ef0d7bf` | 2026-06-09 | `yangtb` | fix(credential_pool): reject classic PATs in copilot env seeding | +11 | −0 |
+- [x] ✅ 已迁移 `(已存在)` `ef0d7bf` | 2026-06-09 | `yangtb` | fix(credential_pool): reject classic PATs in copilot env seeding | +11 | −0 |
 - [x] ⚠️ 废弃（纯文档md，不迁移）`88a8156` | 2026-06-08 | `yangtb` | docs(owner): add 6 patches to README (P58-P63 feishu + P62 tools) | +9 | −3 |
 - [x] ⚠️ 废弃（纯文档md，不迁移）`9f6fecd` | 2026-06-08 | `yangtb` | docs(owner): dual-agent cross-review architecture design draft | +354 | −0 |
 - [x] ✅ 已迁移 `d2c991d9a` `8eadc82` | 2026-06-08 | `yangtb` | fix(feishu): bot_menu_dedup 对齐新增 model key | +4 | −0 |
@@ -93,39 +93,39 @@
 - [x] ⚠️ 废弃（纯文档md，不迁移）`86f575e` | 2026-06-08 | `yangtb` | docs(owner): archive rolled-back clarify-timeout-abort design | +108 | −0 |
 - [x] ✅ 已迁移 `47a8e5db6` `e49f512` | 2026-06-08 | `yangtb` | feat(feishu): expire_clarify on timeout — grey card + interrupt turn | +145 | −3 |
 - [x] ✅ 已迁移 `7646add45` `5022ef4` | 2026-06-08 | `yangtb` | feat(tools): auto_fix_start option to unified_diff_patch | +124 | −21 |
-- [ ] `b845c7a` | 2026-06-08 | `yangtb` | fix(code_execution): 🐍 → 🛠️ execute_code tool emoji | +1 | −1 |
-- [ ] `16ae8a0` | 2026-06-08 | `yangtb` | chore(skills): remove custom skills from source tree | +0 | −1054 |
-- [ ] `d490793` | 2026-06-08 | `yangtb` | scripts(backup-hermes-config): graceful fallback on patch.yaml parse error | +18 | −10 |
+- [x] ✅ 已迁移 `b845c7a` | 2026-06-08 | `yangtb` | fix(code_execution): 🐍 → 🛠️ execute_code tool emoji | +1 | −1 |
+- [x] ✅ 已迁移（空目录已清理）`16ae8a0` | 2026-06-08 | `yangtb` | chore(skills): remove custom skills from source tree | +0 | −0 |
+- [x] ✅ 已迁移 `(已存在)` `d490793` | 2026-06-08 | `yangtb` | scripts(backup-hermes-config): graceful fallback on patch.yaml parse error | +18 | −10 |
 - [x] ✅ 已迁移 `(batch` `c09616f` | 2026-06-08 | `yangtb` | hooks(qdrant-memory-recall): filter disabled=true points | +5 | −1 |
 - [x] ⚠️ 废弃（纯文档md，不迁移）`5af60e9` | 2026-06-08 | `yangtb` | skills: add claude-code reference docs | +578 | −0 |
-- [ ] `8333e30` | 2026-06-08 | `yangtb` | scripts: add skills_sync_preview utility | +218 | −0 |
+- [x] ⚠️ 废弃（纯 owner 脚本，不需要）`8333e30` | 2026-06-08 | `yangtb` | scripts: add skills_sync_preview utility | +218 | −0 |
 - [x] ✅ 已迁移 `7646add45` `6976b60` | 2026-06-08 | `yangtb` | tools: add auto_fix_header option to unified_diff_patch | +48 | −12 |
 - [x] ✅ 已迁移 `(batch` `2f97677` | 2026-06-08 | `yangtb` | hooks: skip synthetic gateway messages in qdrant recall | +20 | −0 |
-- [ ] `b47978f` | 2026-06-08 | `yangtb` | config: update default exchange rate to 6.7928 | +1 | −1 |
+- [x] ⚠️ 废弃（纯配置数值，不迁移）`b47978f` | 2026-06-08 | `yangtb` | config: update default exchange rate to 6.7928 | +1 | −1 |
 - [x] ✅ 已迁移 `2f1be0a` | 2026-06-07 | `yangtb` | minimax-cn: 收敛 catalog 到 M3/M2.7/M2.7-highspeed + aux 默认走 highspeed | +12 | −13 |
-- [ ] `91460d8` | 2026-06-07 | `yangtb` | feat(feishu): model picker — alphabetical providers + back button | +22 | −0 |
+- [x] ✅ 已迁移 `91460d8` | 2026-06-07 | `yangtb` | feat(feishu): model picker — alphabetical providers + back button | +22 | −0 |
 - [x] ✅ 已迁移 `(batch` `adc1f0e` | 2026-06-07 | `yangtb` | fix(qdrant-memory-recall): filter low_quality hits to reduce hallucination risk | +8 | −2 |
 - [x] ✅ 已迁移 `(batch` `0a2ea99` | 2026-06-06 | `yangtb` | docs(qdrant-memory-recall): clarify per-turn extra_context scope (CR-01) | +21 | −2 | ⚠️ 混有代码：hooks/qdrant-memory-recall/HOOK.yaml + handler.py
 - [x] ✅ 已迁移（代码部分；测试文件后续单独迁移）`47a8e5db6` `4626a1a` | 2026-06-06 | `yangtb` | fix(feishu-clarify): prepend full-text markdown options block before button row | +175 | −21 |
-- [ ] `111f767` | 2026-06-06 | `yangtb` | fix(tool_guardrails): name the counter and threshold in warn messages | +78 | −5 |
+- [x] ✅ 已迁移 `111f767` | 2026-06-06 | `yangtb` | fix(tool_guardrails): name the counter and threshold in warn messages | +78 | −5 |
 - [x] ✅ 已迁移 `7646add45` `6f64470` | 2026-06-06 | `yangtb` | docs(unified_diff_patch): clarify schema descriptions (5 fixes) | +79 | −61 | ⚠️ 混有代码：tools/unified_diff_patch_tool.py
 - [x] ✅ 已迁移 `7646add45` `a3b95e7` | 2026-06-06 | `yangtb` | fix(unified_diff_patch): 4 quality fixes (strict priority, line numbers, CRLF, dry_run) | +352 | −8 |
 - [x] ✅ 已迁移 `45ab4a0f0` `c536033` | 2026-06-06 | `yangtb` | feat(session-archiver): add ts field to event payload for Qdrant time-ordering | +1 | −0 |
 - [x] ⚠️ 废弃：定价/AGENTS.md，不迁移 `750ceb9` | 2026-06-06 | `yangtb` | chore(owner): pricing.yaml daily exchange rate update | +1 | −1 |
 - [x] ✅ 已迁移 `(batch` `2a6f213` | 2026-06-06 | `yangtb` | feat(owner): qdrant-memory-recall hook 部署 | +346 | −0 |
-- [ ] `69af045` | 2026-06-06 | `yangtb` | feat(owner): display_hook_message_receive config | +142 | −1 |
-- [ ] `e5e0e4e` | 2026-06-05 | `yangtb` | chore(owner): list_models quick-action + pre_tool_call hooks stub | +4 | −0 |
-- [ ] `137fd1c` | 2026-06-05 | `yangtb` | feat(commands): /providers command (feishu card + text fallback) | +58 | −0 |
-- [ ] `502decf` | 2026-06-05 | `yangtb` | feat(feishu): interactive model picker card (schema 2.0) | +176 | −0 |
-- [ ] `2be890a` | 2026-06-05 | `yangtb` | fix(intent-guard): fix 8 correctness issues found in code review | +98 | −70 |
-- [ ] `a23b5fd` | 2026-06-05 | `yangtb` | feat(intent-guard): add circuit breaker + retry + 30s timeout + notify reserve | +294 | −18 |
-- [ ] `deb958e` | 2026-06-05 | `yangtb` | chore(config): update CNY exchange rate | +1 | −1 |
+- [x] ✅ 已迁移 `6f86bcd` `69af045` | 2026-06-06 | `yangtb` | feat(owner): display_hook_message_receive config | +142 | −1 |
+- [x] ⚠️ 废弃（intent-guard）`e5e0e4e` | 2026-06-05 | `yangtb` | chore(owner): list_models quick-action + pre_tool_call hooks stub | +4 | −0 |
+- [x] ✅ 已迁移 `502decf` `137fd1c` `91460d8` | 2026-06-05 | `yangtb` | feat(commands): /providers command (feishu card + text fallback) | +58 | −0 |
+- [x] ✅ 已迁移 `502decf` `137fd1c` `91460d8` | 2026-06-05 | `yangtb` | feat(feishu): interactive model picker card (schema 2.0) | +176 | −0 |
+- [x] ⚠️ 废弃（intent-guard）`2be890a` | 2026-06-05 | `yangtb` | fix(intent-guard): fix 8 correctness issues found in code review | +98 | −70 |
+- [x] ⚠️ 废弃（intent-guard）`a23b5fd` | 2026-06-05 | `yangtb` | feat(intent-guard): add circuit breaker + retry + 30s timeout + notify reserve | +294 | −18 |
+- [x] ⚠️ 废弃（纯配置数值，不迁移）`deb958e` | 2026-06-05 | `yangtb` | chore(config): update CNY exchange rate | +1 | −1 |
 - [x] ⚠️ 废弃（纯文档md，不迁移）`460c4c6` | 2026-06-05 | `yangtb` | docs(owner): document file tool hang behavior and stop recovery | +370 | −0 |
 - [x] ⚠️ 废弃（纯文档md，不迁移）`29e6ba6` | 2026-06-05 | `yangtb` | docs(owner): add feishu single-bot multi-profile design iterations | +1040 | −0 |
 - [x] ⚠️ 废弃（纯文档md，不迁移）`dd936e1` | 2026-06-05 | `yangtb` | docs(owner): add README notes for gateway daemon exit timeout | +26 | −0 |
 - [x] ⚠️ 废弃（纯文档md，不迁移）`4a9a79c` | 2026-06-05 | `yangtb` | docs(intent-guard): add architecture doc and adversarial review report | +779 | −0 |
-- [ ] `2172689` | 2026-06-05 | `yangtb` | feat(intent-guard): integrate interrupt protocol into Hermes core | +193 | −44 |
-- [ ] `97ab075` | 2026-06-05 | `yangtb` | feat(intent-guard): add pre_tool_call hook with hard rules + LLM audit | +1006 | −5 |
+- [x] ⚠️ 废弃（intent-guard）`2172689` | 2026-06-05 | `yangtb` | feat(intent-guard): integrate interrupt protocol into Hermes core | +193 | −44 |
+- [x] ⚠️ 废弃（intent-guard）`97ab075` | 2026-06-05 | `yangtb` | feat(intent-guard): add pre_tool_call hook with hard rules + LLM audit | +1006 | −5 |
 - [x] ✅ 已迁移·部分（clarify 卡片部分；多 profile 路由已有独立 v6 方案）`47a8e5db6` `c6b87d9` | 2026-06-04 | `yangtb` | feat(clarify): 飞书 clarify 卡片 + 多 profile 路由 + 跨平台 choice display | +1339 | −67 |
 - [x] ✅ 已迁移 `7646add45` `675f180` | 2026-06-04 | `yangtb` | fix(unified_diff_patch): add strict mode, clarify path resolution and guardrail errors | +255 | −17 |
 - [x] [废弃] `77862a9` | 2026-06-04 | `yangtb` | feat(qdrant-insert): add skill source files (from feishu ff47ea5f3) | +476 | −0 |
@@ -161,17 +161,17 @@
 - [x] ⏸️ 延后·多 profile 相关，后期单独批次处理 `05faa2c` | 2026-06-02 | `yangtb` | feat(api_server): support X-Hermes-Reply-Via: feishu for profile container RPC | +109 | −0 |
 - [x] ⚠️ 废弃（纯文档md，不迁移）`b088690` | 2026-06-02 | `yangtb` | docs: add feishu multi-profile routing design spec | +207 | −0 |
 - [x] ⚠️ 废弃（纯删除已不存在的脚本，Viking 已停用）`deacdc3` | 2026-06-02 | `yangtb` | chore: remove yangtb/scripts/ directory | +0 | −274 |
-- [ ] `947f141` | 2026-05-31 | `yangtb` | fix(memory_propose): WR-08/09/10 — fix Feishu card button not responding and store injection | +105 | −56 |
+- [x] ✅ 已迁移 `947f141` | 2026-05-31 | `yangtb` | fix(memory_propose): WR-08/09/10 — fix Feishu card button not responding and store injection | +105 | −56 |
 - [x] ✅ 已迁移 `47a8e5db6` `0ef6b91` | 2026-05-31 | `yangtb` | fix(feishu): clarify card freeze buttons + store choices in _clarify_state | +120 | −1 |
 - [x] ⏭️ 跳过（owner-v16 已无重复代码）`4130359` | 2026-05-31 | `yangtb` | fix(tool_executor): remove duplicate pre-tool-call block logic from merge | +1 | −15 |
 - [x] ⚠️ 废弃（纯文档md，不迁移）`cb208c5` | 2026-05-31 | `yangtb` | docs(owner): fix 3 README discrepancies found during merge audit | +3 | −3 |
 - [x] ⏭️ 跳过 `a7ede52` | 2026-05-31 | `yangtb` | Merge main (synced with upstream) into owner | +0 | −0 |
-- [ ] `6378913` | 2026-05-31 | `yangtb` | feat: memory proposal approval system + unified_diff_patch display support | +857 | −15 |
+- [x] ✅ 已迁移 `6378913` | 2026-05-31 | `yangtb` | feat: memory proposal approval system + unified_diff_patch display support | +857 | −15 |
 - [x] ✅ 已迁移 `7646add45` `091bb10` | 2026-05-30 | `yangtb` | fix: unified_diff_patch路径解析 + daily-report sessions格式 + 禁用旧patch工具 | +7 | −3 |
 - [x] ⚠️ 废弃（纯文档md，不迁移）`3a9103b` | 2026-05-30 | `yangtb` | P54: add unified_diff_patch_tool record to owner/README | +9 | −1 |
 - [x] ✅ 已迁移 `7646add45` `d399df6` | 2026-05-30 | `yangtb` | feat(tools): add unified_diff_patch tool with exact line-number replacement | +551 | −5 |
 - [x] ⏭️ 全部跳过：hermes_state.py(P12 已覆盖)/owner/README.md(文件不存在)/patch.yaml(已是57)/pricing.yaml(定价废弃)/file_tools.py(legacy工具，被unified_diff_patch替代) `2458489` | 2026-05-30 | `yangtb` | chore(owner): P12 orphan removal + Phase1 docs + minor config updates | +39 | −116 |
-- [ ] `3141715` | 2026-05-30 | `yangtb` | fix(feishu): resolve sender name for approval card using open_id instead of short user_id | +5 | −2 |
+- [x] ✅ 已迁移 `(已存在)` `3141715` | 2026-05-30 | `yangtb` | fix(feishu): resolve sender name for approval card using open_id instead of short user_id | +5 | −2 |
 - [x] ✅ 已迁移 `1a4aa7bf6` `90c9f20` | 2026-05-30 | `yangtb` | feat(patch): feishu: raise auto_card_threshold to 41, add interim/tool_progress settings | +7 | −1 |
 - [x] ⚠️ 废弃（纯删除已不存在的脚本，无功能价值）`08253ae` | 2026-05-29 | `yangtb` | chore: remove obsolete yangtb/scripts/send_daily_report.py (was accidentally committed by daily-report cron, caused persistent merge conflicts) | +0 | −76 |
 - [x] ✅ 已迁移 `2c383a2` | 2026-05-29 | `yangtb` | merge: resolve conflict with gitlab/yangtb — keep HEAD P35+P36, adopt yangtb's send_daily_report (5-26 version) | +0 | −0 |
@@ -183,24 +183,24 @@
 [x] ⏭️ 跳过 `a77231c` | 2026-05-28 | `yangtb` | Merge upstream/main into owner (v0.14.0+) | +0 | −0 |
 - [x] ⚠️ 废弃（纯删除 owner/ 下的空存根，从未实现）`c5b6992` | 2026-05-28 | `yangtb` | chore: remove viking-hint hook (empty stub, never implemented) | +0 | −49 |
 - [x] ⚠️ 废弃（手动补录 — 功能已被 upstream #15844 + custom_providers Step 0b 覆盖）`4a60dd1c` | 2026-05-28 | `yangtb` | fix(model_metadata): support dict format provider models in get_model_context_length (P41) | +21 | −12 |
-- [x] 📌 待统一处理i18n（纯i18n，仅locales文件）`0c23b27` | 2026-05-27 | `yangtb` | i18n(zh): add all 85 missing tirith rule translations, remove 2 stale entries | +193 | −9 |
+- [x] ✅ 已迁移（i18n batch）`0c23b27` | 2026-05-27 | `yangtb` | i18n(zh): add all 85 missing tirith rule translations, remove 2 stale entries | +193 | −9 |
 - [x] ✅ 已迁移 `44d7189c5` `bf295cd` | 2026-05-27 | `yangtb` | refactor(gateway): 外部 restart 走 launchctl kickstart -k 原子化生命周期 | +24 | −13 |
 - [x] ⚠️ 废弃（纯文档md，不迁移）`67373f7` | 2026-05-27 | `yangtb` | docs(owner): 新增 P39 飞书 Diff 卡片 + P40 step_callback 去 hooks 依赖 | +4 | −2 |
 - [x] ⚠️ 废弃（已被 owner/diff_card/ 替代）`06c911a` | 2026-05-27 | `yangtb` | feat(feishu): patch/write_file 完成后发送 diff 卡片（红绿背景 + 查看完整 diff 按钮） | +207 | −1 |
 - [⏸️ 已决策·暂不迁移（rate limiter 不存在于 owner-v16，需整体评估）] `016bb35` | 2026-05-27 | `yangtb` | chore(config): 移除 nous rate limit 配置，damodel max_requests 提频 30→60 | +1 | −4 |
-- [ ] `1c887ef` | 2026-05-27 | `yangtb` | feat(feishu): approvals 卡片回调异步更新用户名，显示命令内容 | +67 | −17 |
+- [x] ✅ 已迁移 `(已存在)` `1c887ef` | 2026-05-27 | `yangtb` | feat(feishu): approvals 卡片回调异步更新用户名，显示命令内容 | +67 | −17 |
 - [⏸️ 已决策·暂不迁移（rate limiter 不存在于 owner-v16，需整体评估）] `601e79e` | 2026-05-27 | `yangtb` | chore(owner): add xfyun rate limit config to patch.yaml | +3 | −0 |
 - [x] ✅ 已迁移 `25f1996` | 2026-05-27 | `yangtb` | docs(owner): 同步 patch 清单 P35-P38 + P9 CallBackCard 升级 | +12 | −8 |
 - [x] ⚠️ 废弃：上游已修复，.env 加载时机已无问题 `2b801e5` | 2026-05-27 | `yangtb` | fix(gateway): eagerly load .env before any import that triggers load_config() | +15 | −0 |
-- [ ] `c9cc868` | 2026-05-27 | `yangtb` | fix(feishu): return CallBackCard in approval card action to update card inline | +13 | −3 |
+- [x] ✅ 已迁移 `(已存在)` `c9cc868` | 2026-05-27 | `yangtb` | fix(feishu): return CallBackCard in approval card action to update card inline | +13 | −3 |
 - [x] ✅ 完成-取部分 `9589b4940` `b7a199b` | 2026-05-26 | `yangtb` | feat: Viking health report API rewrite + fix TUI Cmd+C on macOS | +276 | −3 | （TUI Cmd+C fix 已提取；Viking health report 废弃）
 - [x] ✅ 已迁移 `8d359ee` | 2026-05-26 | `yangtb` | docs(yangtb): register P35 — extract_local_files double-backtick code span fix | +4 | −3 |
 - [x] ✅ 已迁移 `ff19a78` | 2026-05-26 | `yangtb` | fix(gateway): add double-backtick code span detection in extract_local_files | +155 | −9 |
 - [x] ✅ 已迁移 `ca3c24f` | 2026-05-26 | `yangtb` | fix(gateway): add double-backtick code span detection in extract_local_files | +146 | −5 |
-- [x] 📌 待统一处理i18n（approval 文案中文化，零功能改动）`d31f26b` | 2026-05-26 | `yangtb` | feat(i18n): translate all approval descriptions to Chinese via i18n | +333 | −16 |
+- [x] ✅ 已迁移（i18n batch）`d31f26b` | 2026-05-26 | `yangtb` | feat(i18n): translate all approval descriptions to Chinese via i18n | +333 | −16 |
 - [x] ⚠️ 废弃（pricing.yaml 不迁移；owner-v16 无 backup-configs.sh，已由 backup-hermes-config.py 替代）`9ef510c` | 2026-05-26 | `yangtb` | chore(owner): pricing rate update + backup-configs mkdir fallback | +8 | −5 |
 - [x] ⚠️ 废弃（纯文档md，不迁移）`8051cd9` | 2026-05-26 | `yangtb` | docs(owner): P33 approvals patch.yaml 白名单 — patch 清单更新 | +2 | −1 |
-- [ ] `5ac061b` | 2026-05-26 | `yangtb` | feat(approval): patch.yaml 白名单支持 — load_permanent_allowlist() 合并 owner.approvals.command_allowlist | +20 | −2 |
+- [x] ✅ 已迁移 `(已存在)` `5ac061b` | 2026-05-26 | `yangtb` | feat(approval): patch.yaml 白名单支持 — load_permanent_allowlist() 合并 owner.approvals.command_allowlist | +20 | −2 |
 - [x] ⚠️ 废弃（owner-v16 无 viking-auto-commit.py 脚本，Viking 已停用）`49f6a6d` | 2026-05-25 | `yangtb` | fix: viking-auto-commit 直接用 expanduser(~) 推导家目录 | +1 | −3 |
 - [x] ✅ 部分采纳 `.gitignore` 部分；`patch.yaml` backup excludes 已由 `owner/scripts/backup-hermes-config.py` 的 DEFAULT_CONFIG 覆盖 `f796063` | 2026-05-25 | `yangtb` | chore(owner): batch update scripts, hooks, config + gitignore .claude/.local | +186 | −73 |
 - [x] ⚠️ 废弃（owner-v16 官方文件中已无 yangtb 残留，清理已完成）`38aa3ce` | 2026-05-23 | `yangtb` | chore: purge yangtb references — comments, paths, viking user → owner/default | +38 | −38 | ⚠️ 混有代码：credential_pool.py + usage_pricing.py + scheduler.py + run.py 等9文件
@@ -231,7 +231,7 @@
 - [x] ⚠️ 废弃（yangtb/hooks/audit-agent 不存在于 owner-v16）`ed95a26` | 2026-05-20 | `yangtb` | chore: remove audit-agent hook (agent:end file-change detection) | +1 | −973 |
 - [x] ⚠️ 废弃（修 b6e9852 hook chain 传参 bug — b6e9852 已废弃，hook chain 在 owner-v16 已重构）`2218a70` | 2026-05-20 | `yangtb` | fix: agent.chat_id -> agent._chat_id (AIAgent stores as _chat_id) | +6 | −6 |
 - [x] ⚠️ 废弃（yangtb/hooks/auditor-guard 不存在于 owner-v16 — owner-v16 hook chain 已重构，P66 Intent Guard 替代）`b6e9852` | 2026-05-20 | `yangtb` | fix: pass platform/chat_id/user_message through pre_tool_call hook chain | +118 | −3 |
-- [x] 📌 待统一处理i18n（纯i18n，run.py字符串替换+locales）`188be9d` | 2026-05-20 | `yangtb` | refactor: extract destructive_slash_confirm hardcoded strings into i18n locale files | +100 | −14 |
+- [x] ✅ 已迁移（i18n batch）`188be9d` | 2026-05-20 | `yangtb` | refactor: extract destructive_slash_confirm hardcoded strings into i18n locale files | +100 | −14 |
 - [x] ⚠️ 废弃（yangtb/hooks/auditor-guard 不存在于 owner-v16 — P66 Intent Guard 替代）`7d7cc28` | 2026-05-20 | `tianbao.yang` | feat(auditor-guard): suppress Branch D notification when built-in Approvals already approved the pattern | +42 | −10 |
 - [x] ⏭️ 跳过（仅改 yangtb/hooks/auditor-guard/rules.py；auditor-guard 不存在于 owner-v16，已被 P66 Intent Guard 替代）`94ccc55` | 2026-05-20 | `tianbao.yang` | fix(auditor-guard): align APPROVAL_FALLBACK_PATTERNS with Hermes DANGEROUS_PATTERNS + suppress Tirith variation_selector noise | +66 | −51 |
 - [x] 📌 待统一处理i18n（纯i18n：approval.py BLOCKED 文案 + feishu.py 审批卡片文案走 t()，en/zh.yaml 各 +25 key，零功能改动）`bb19362` | 2026-05-20 | `tianbao.yang` | feat(i18n): approvals 文案中文化 — 硬编码英文全部接入 t() 翻译 | +111 | −59 |
@@ -250,7 +250,7 @@
 - [x] ⚠️ 废弃：reasoning_effort 链被 revert `1d00af0` | 2026-05-19 | `tianbao.yang` | feat(transports): add URL-based reasoning_effort support for LKeap/DeepSeek/DaModel | +51 | −0 |
 - [x] ⚠️ 废弃：yangtb/README.md 纯文档 `9407c34` | 2026-05-19 | `tianbao.yang` | docs(yangtb): align patch list with v0.14.0 merge (P12/P22/P27/P28 marked covered) | +17 | −3 |
 - [x] ⚠️ 废弃：yangtb/README.md 纯文档 `862b2cb` | 2026-05-19 | `tianbao.yang` | docs: bump patch count to 25 groups / 32 items, add P26 i18n gateway messages | +3 | −2 |
-- [x] 📌 待统一处理i18n（纯i18n，零功能改动，16个locale文件）`5110f6b` | 2026-05-19 | `tianbao.yang` | i18n: translate gateway lifecycle/busy-ack/steer/inactivity messages to Chinese | +480 | −36 |
+- [x] ✅ 已迁移（i18n batch）`5110f6b` | 2026-05-19 | `tianbao.yang` | i18n: translate gateway lifecycle/busy-ack/steer/inactivity messages to Chinese | +480 | −36 |
 - [x] `4d33091` | 2026-05-19 | `tianbao.yang` | fix(feishu): add early-typing reaction when chat_lock is held | +25 | −0 | ✅已迁移（改进：存 task 引用防 GC） |
 - [x] ⚠️ 废弃（auditor-guard 不存在于 owner-v16）`e2fc1d0` | 2026-05-19 | `tianbao.yang` | auditor-guard: 修复 import 崩溃 + 新增 explain-only 模式 + JSON2 飞书卡片通知 | +349 | −70 |
 - [x] ✅ 已迁移 `1a4aa7bf6` `d140932` | 2026-05-18 | `tianbao.yang` | feat(feishu): remove tool-activity filter from auto-card logic | +1 | −41 |
@@ -403,8 +403,8 @@
 > 全部为 yangtb 在 2026-05-28 / 2026-05-29 的 commit，疑似 generator 当日运行异常。
 > 行号前缀省略（与原 inventory 的 `369|- [ ]` 格式不同）；下次重生成时统一编号。
 
-- [⏸️ 已决策·待后续 i18n 统一处理] `07a584a` | 2026-05-28 | `yangtb` | style(i18n): 网关重启/关闭提示 emoji 从 ⚠️ 换成 ⏸️ | +2 | −2 |
-- [⏸️ 已决策·待后续 i18n 统一处理] `082e0be` | 2026-05-28 | `yangtb` | feat(i18n): translate all tips to Chinese | +455 | −458 |
+- [x] ✅ 已迁移（i18n batch）`07a584a` | 2026-05-28 | `yangtb` | style(i18n): 网关重启/关闭提示 emoji 从 ⚠️ 换成 ⏸️ | +2 | −2 |
+- [x] ✅ 已迁移（i18n batch）`082e0be` | 2026-05-28 | `yangtb` | feat(i18n): translate all tips to Chinese | +455 | −458 |
 - [x] ⚠️ 废弃（.env 加载时机 v16 已解决；Bearer 正则改动会导致 token 泄漏回归）`0a3fa8c` | 2026-05-28 | `yangtb` | fix: gateway/run.py 对抗性 review 修复 | +15 | −5 |
 - [x] ⚠️ 废弃（owner-v16 已无 sre-archive/tool-call-logger 相关文件）`191183e` | 2026-05-28 | `yangtb` | chore: remove unused hooks (sre-archive, tool-call-logger) | +0 | −790 |
 - [x] ⚠️ 废弃（auditor-guard/rate_limiter/_align_table 在 v16 已不存在；backup 脚本修复已存在于 owner-v16）`1b41e23` | 2026-05-28 | `yangtb` | fix: owner 分支定制化模块对抗性 review 修复 | +88 | −10 |
@@ -414,7 +414,7 @@
 - [x] ⚠️ 废弃（纯文档 owner/README.md，不迁移）`a422f7d` | 2026-05-28 | `yangtb` | docs(owner): 更新 P39 飞书 Diff 卡片描述 — 三工具触发+四色渲染+踩坑记录 | +2 | −2 |
 - [x] ✅ 已迁移 `1da7ada8e` `bb542ba` | 2026-05-28 | `yangtb` | feat: diff 卡片三阶段渐进展开 (compact → expanded → full) | +189 | −39 |
 - [x] ✅ 已迁移 `1da7ada8e` `bec5b1e` | 2026-05-28 | `yangtb` | feat: feishu diff cards for write_file + skill_manage + purple header styling | +76 | −9 |
-- [⏸️ 已决策·待后续 i18n 统一处理] `d452156` | 2026-05-28 | `yangtb` | i18n: gateway lifecycle emoji → skyline series (🌇🌆🌃🏙) | +8 | −8 |
+- [x] ✅ 已迁移（i18n batch）`d452156` | 2026-05-28 | `yangtb` | i18n: gateway lifecycle emoji → skyline series (🌇🌆🌃🏙) | +8 | −8 |
 - [x] ⏭️ 跳过（已被 owner-v16 P14 迁移 commit 59ebc9954 完整覆盖）`dd0b53e` | 2026-05-28 | `yangtb` | fix(tui): pass missing spinner prop to FaceTicker in StatusRule | +1 | −1 |
 - [⏸️ 已决策·见下表“审批卡片相关遗漏 commit”] `de36b03` | 2026-05-28 | `yangtb` | refactor(feishu): resolve sender name synchronously before approval card response | +13 | −34 |
 - [⏸️ 已决策·暂不迁移（rate limiter 不存在于 owner-v16，需整体评估）] `ed7d88e` | 2026-05-28 | `yangtb` | chore: add xiaomi rate limit config to patch.yaml | +3 | −0 |
@@ -430,7 +430,7 @@
 
 - [x] ⚠️ 废弃（临时绕过，已被 `c9cc868a9` 覆盖）`b14a2ee1a` | 2026-04-30 | `tianbao.yang` | fix(feishu): return empty P2CardActionTriggerResponse to avoid CallBackToast NameError in WS client | +3 | −9 |
 - [x] ⚠️ 废弃（临时 revert，已被最终方案覆盖）`598197f91` | 2026-06-12 | `杨天宝` | fix(feishu): comment out CallBackCard response to avoid NameError on CallBackToast | +16 | −9 |
-- [⏸️ 已决策·待后续 i18n 统一处理] `bb19362eb` | 2026-05-20 | `tianbao.yang` | feat(i18n): approvals 文案中文化 — 硬编码英文全部接入 t() 翻译 | +111 | −59 |
+- [x] ✅ 已迁移（i18n batch，见主清单 line 237）`bb19362eb` | 2026-05-20 | `tianbao.yang` | feat(i18n): approvals 文案中文化 — 硬编码英文全部接入 t() 翻译 | +111 | −59 |
 - [x] ✅ 已迁移 `e64a1aeac` `489aafd05` | 2026-05-22 | `yangtb` | P31: 飞书审批卡片"永久允许"按钮可配置隐藏 | +61 | −28 |
 - [x] ✅ 已迁移 `e64a1aeac` `c9cc868a9` | 2026-05-27 | `yangtb` | fix(feishu): return CallBackCard in approval card action to update card inline | +13 | −3 |
 - [x] ✅ 已迁移 `e64a1aeac` `1c887efaa` | 2026-05-27 | `yangtb` | feat(feishu): approvals 卡片回调异步更新用户名，显示命令内容 | +67 | −17 |
