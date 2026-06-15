@@ -1,38 +1,23 @@
 """Feishu approval cards (exec approval with interactive buttons + CallBackCard resolved updates).
 
 Core logic extracted from gateway/platforms/feishu.py per 二次开发规范:
-- P1 import 编排 + 运行时薄胶水：官方只保留极少量状态（_approval_state 用于 button correlation）+ import + 委托
+- FeishuApprovalContext encapsulates approval_id state (DiffCardContext pattern)
 - 所有卡片构建、i18n label、allow_permanent 配置读取、resolved body 逻辑放在 owner/
 - 与 sender_name_cache 配合实现 P45 预热：send 前异步确保回调零延迟拿到真实中文名
-- 仅实现 open_id -> 中文名 缓存相关（chat_id/p2p 映射等按补充说明放后面）
-
-Usage in feishu.py:
-    from owner.feishu.approval import (
-        get_allow_permanent,
-        build_approval_card,
-        build_resolved_approval_card,
-    )
-    ...
-    allow_permanent = get_allow_permanent()
-    card = build_approval_card(command=command, description=description, approval_id=approval_id)
-    ...
-    # in resolved handler (after auth + _resolve_approval submit)
-    command = state.get("command", "") if isinstance(state, dict) else ""
-    data = build_resolved_approval_card(choice=choice, user_name=user_name, command=command)
-    if CallBackCard is not None:
-        card = CallBackCard()
-        card.type = "raw"
-        card.data = data
-        response.card = card
-    return response
+- gateway/platforms/feishu.py 只保留 ctx 实例 + 极薄 send/handler 委托
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict
+import itertools
+import logging
+from types import SimpleNamespace
+from typing import Any, Dict, Optional
 
 from agent.i18n import t
 from owner.patch_config import _load_patch_owner_config
+
+logger = logging.getLogger(__name__)
 
 
 _APPROVAL_CHOICE_MAP: Dict[str, str] = {
@@ -120,6 +105,191 @@ def build_approval_card(
             },
         ],
     }
+
+
+class FeishuApprovalContext:
+    """Encapsulates exec-approval button correlation state for Feishu cards.
+
+    Mirrors DiffCardContext: official gateway code only holds one ctx instance
+    and delegates send / callback / resolve to owner helpers.
+    """
+
+    def __init__(self) -> None:
+        self._state: Dict[int, Dict[str, str]] = {}
+        self._counter = itertools.count(1)
+
+    @property
+    def state(self) -> Dict[int, Dict[str, str]]:
+        """Expose state dict for test compat (adapter._approval_state)."""
+        return self._state
+
+    def next_id(self) -> int:
+        return next(self._counter)
+
+    def register(
+        self,
+        approval_id: int,
+        *,
+        session_key: str,
+        message_id: str,
+        chat_id: str,
+        command: str,
+    ) -> None:
+        self._state[approval_id] = {
+            "session_key": session_key,
+            "message_id": message_id,
+            "chat_id": chat_id,
+            "command": command,
+        }
+
+    def get(self, approval_id: Any) -> Optional[Dict[str, str]]:
+        return self._state.get(approval_id)
+
+    def pop(self, approval_id: Any) -> Optional[Dict[str, str]]:
+        return self._state.pop(approval_id, None)
+
+    @staticmethod
+    def choice_from_action(hermes_action: Any) -> str:
+        return _APPROVAL_CHOICE_MAP.get(hermes_action, "deny")
+
+
+async def resolve_approval(
+    ctx: FeishuApprovalContext,
+    adapter: Any,
+    approval_id: Any,
+    choice: str,
+    user_name: str,
+    *,
+    open_id: str = "",
+    chat_id: str = "",
+) -> None:
+    """Pop approval state and unblock the waiting agent thread."""
+    state = ctx.get(approval_id)
+    if not state:
+        logger.debug("[Feishu] Approval %s already resolved or unknown", approval_id)
+        return
+    if not adapter._is_interactive_operator_authorized(open_id):
+        logger.warning(
+            "[Feishu] Unauthorized approval click by %s for approval %s",
+            open_id or "<unknown>",
+            approval_id,
+        )
+        return
+    expected_chat_id = str(state.get("chat_id", "") or "")
+    if expected_chat_id and chat_id and expected_chat_id != chat_id:
+        logger.warning(
+            "[Feishu] Approval %s chat mismatch (expected=%s, got=%s)",
+            approval_id,
+            expected_chat_id,
+            chat_id,
+        )
+        return
+    state = ctx.pop(approval_id)
+    if not state:
+        logger.debug(
+            "[Feishu] Approval %s already resolved while validating callback",
+            approval_id,
+        )
+        return
+    try:
+        from tools.approval import resolve_gateway_approval
+
+        count = resolve_gateway_approval(state["session_key"], choice)
+        logger.info(
+            "Feishu button resolved %d approval(s) for session %s (choice=%s, user=%s)",
+            count,
+            state["session_key"],
+            choice,
+            user_name,
+        )
+    except Exception as exc:
+        logger.error("Failed to resolve gateway approval from Feishu button: %s", exc)
+
+
+def handle_approval_card_action(
+    *,
+    adapter: Any,
+    ctx: FeishuApprovalContext,
+    event: Any,
+    action_value: Dict[str, Any],
+    loop: Any,
+) -> Any:
+    """Schedule approval resolution and build the synchronous callback response."""
+    try:
+        from lark_oapi.event.callback.model.p2_card_action_trigger import (
+            CallBackCard,
+            P2CardActionTriggerResponse,
+        )
+    except ImportError:
+        CallBackCard = None  # type: ignore[misc, assignment]
+        P2CardActionTriggerResponse = None  # type: ignore[misc, assignment]
+
+    approval_id = action_value.get("approval_id")
+    if approval_id is None:
+        logger.debug("[Feishu] Card action missing approval_id, ignoring")
+        return P2CardActionTriggerResponse() if P2CardActionTriggerResponse else None
+    state = ctx.get(approval_id)
+    if not state:
+        logger.debug("[Feishu] Approval %s already resolved or unknown", approval_id)
+        return P2CardActionTriggerResponse() if P2CardActionTriggerResponse else None
+    choice = ctx.choice_from_action(action_value.get("hermes_action"))
+
+    operator = getattr(event, "operator", None)
+    open_id = str(getattr(operator, "open_id", "") or "")
+    sender_id = SimpleNamespace(
+        open_id=open_id,
+        user_id=str(getattr(operator, "user_id", "") or ""),
+    )
+    if not adapter._allow_group_message(sender_id, state.get("chat_id", ""), is_bot=False):
+        logger.warning("[Feishu] Unauthorized approval click by %s", open_id or "<unknown>")
+        return P2CardActionTriggerResponse() if P2CardActionTriggerResponse else None
+
+    callback_chat_id = str(getattr(getattr(event, "context", None), "open_chat_id", "") or "")
+    expected_chat_id = str(state.get("chat_id", "") or "")
+    if callback_chat_id and expected_chat_id and callback_chat_id != expected_chat_id:
+        logger.warning(
+            "[Feishu] Approval callback chat mismatch for %s (expected=%s, got=%s)",
+            approval_id,
+            expected_chat_id,
+            callback_chat_id,
+        )
+        return P2CardActionTriggerResponse() if P2CardActionTriggerResponse else None
+
+    logger.info(
+        "[Feishu] approval callback: operator open_id=%r cached=%r",
+        open_id,
+        adapter._get_cached_sender_name(open_id),
+    )
+    user_name = adapter._get_cached_sender_name(open_id) or open_id
+
+    chat_context = getattr(event, "context", None)
+    chat_id = str(getattr(chat_context, "open_chat_id", "") or "")
+    if not adapter._submit_on_loop(
+        loop,
+        resolve_approval(
+            ctx,
+            adapter,
+            approval_id=approval_id,
+            choice=choice,
+            user_name=user_name,
+            open_id=open_id,
+            chat_id=chat_id,
+        ),
+    ):
+        return P2CardActionTriggerResponse() if P2CardActionTriggerResponse else None
+
+    command = state.get("command", "") if isinstance(state, dict) else ""
+    if P2CardActionTriggerResponse is None:
+        return None
+    response = P2CardActionTriggerResponse()
+    if CallBackCard is not None:
+        card = CallBackCard()
+        card.type = "raw"
+        card.data = build_resolved_approval_card(
+            choice=choice, user_name=user_name, command=command
+        )
+        response.card = card
+    return response
 
 
 def build_resolved_approval_card(

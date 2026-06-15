@@ -3785,60 +3785,22 @@ def _wait_for_gateway_exit(
     return True
 
 
-# [owner] launchd-restart: use launchctl kickstart -k for atomic lifecycle (owner/ docs/migration-notes)
+# [owner] launchd-restart: kickstart -k strategy in owner/gateway/launchd_restart.py
 def launchd_restart():
-    label = get_launchd_label()
-    target = f"{_launchd_domain()}/{label}"
     from gateway.status import get_running_pid
+    from owner.gateway.launchd_restart import run_launchd_restart
 
-    try:
-        pid = get_running_pid()
-        # When called from within the gateway itself (agent-triggered restart),
-        # request a graceful drain via SIGUSR1 — launchd auto-restarts on exit 75
-        # because KeepAlive.SuccessfulExit=false only suppresses restart on exit 0.
-        if pid is not None and _request_gateway_self_restart(pid):
-            print("✓ Service restart requested")
-            return
-
-        # External restart (CLI, cron, etc.): let launchd handle the full
-        # lifecycle atomically.  kickstart -k sends SIGTERM, waits for
-        # the exit_timeout (default 20s), force-SIGKILLs if needed, then
-        # starts a fresh instance — no manual drain/wait that can block
-        # indefinitely when the old process is stuck in a long API call.
-        subprocess.run(
-            ["launchctl", "kickstart", "-k", target],
-            check=True,
-            timeout=120,
-        )
-        print("✓ Service restarted")
-    except subprocess.CalledProcessError as e:
-        if not _launchd_error_indicates_unloaded(e):
-            # Not a "job unloaded" code. If the domain is fundamentally
-            # unmanageable (error 5), degrade to detached.
-            if _launchctl_domain_unsupported(e.returncode):
-                _launchd_fallback_to_detached(f"launchctl kickstart exit {e.returncode}")
-                return
-            raise
-        # Job not loaded — bootstrap and start fresh
-        print("↻ launchd job was unloaded; reloading")
-        plist_path = get_launchd_plist_path()
-        try:
-            subprocess.run(
-                ["launchctl", "bootstrap", _launchd_domain(), str(plist_path)],
-                check=True,
-                timeout=30,
-            )
-            subprocess.run(
-                ["launchctl", "kickstart", target],
-                check=True,
-                timeout=60,
-            )
-        except subprocess.CalledProcessError as e2:
-            if not _launchctl_domain_unsupported(e2.returncode):
-                raise
-            _launchd_fallback_to_detached(f"launchctl exit {e2.returncode}")
-            return
-        print("✓ Service restarted")
+    run_launchd_restart(
+        get_launchd_label=get_launchd_label,
+        launchd_domain=_launchd_domain,
+        get_running_pid=get_running_pid,
+        request_self_restart=_request_gateway_self_restart,
+        launchd_error_indicates_unloaded=_launchd_error_indicates_unloaded,
+        launchctl_domain_unsupported=_launchctl_domain_unsupported,
+        get_plist_path=get_launchd_plist_path,
+        fallback_to_detached=_launchd_fallback_to_detached,
+        subprocess_run=subprocess.run,
+    )
 
 
 def launchd_status(deep: bool = False):
