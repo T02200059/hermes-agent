@@ -25,6 +25,16 @@
 > 注：早期 commit 用拼音 `tianbao.yang`，后期切到 `yangtb`，邮箱均为占位 `123`。
 > 两个 author 视为同一开发者（**杨天宝**）。
 
+## 官方目录中的 owner 强依赖胶水文件
+
+> Hermes 从 `tools/*.py` 自动发现工具注册；以下文件**实现位于 `owner/`**，但注册入口必须在 `tools/`。
+> 每次 sync upstream 后需人工核对：未被官方同名工具覆盖、import 链仍有效。
+
+| 文件 | owner 实现 | 说明 |
+|------|------------|------|
+| `tools/unified_diff_patch_tool.py` | `owner/tools/unified_diff_patch/` | 注册 + deregister 旧 `patch` |
+| `tools/memory_propose_tool.py` | `owner/memory/` | 注册 `memory_propose` + `owner/memory/setup.py` 运行时 patch |
+
 ## 完整 commit 列表（按时间倒序）
 
 - [x] [废弃] `5b14bbf` | 2026-06-12 | `yangtb` | chore: add SQL audit script for reasoning_content coverage | +58 | −0 |

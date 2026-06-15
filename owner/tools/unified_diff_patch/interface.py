@@ -74,14 +74,10 @@ def _build_dry_run_result(
     auto_fix_start: bool,
 ) -> Dict[str, Any]:
     """Preview a patch by reading local files directly; no locks, no writes."""
-    from tools.file_operations import FileOperations, ReadResult
+    from tools.file_operations import ReadResult
 
-    # Minimal in-memory FileOperations that reads from the local filesystem.
-    # This avoids creating terminal environments just for a preview, while still
-    # resolving paths through the task's cwd.
-    class _LocalFileOperations(FileOperations):
-        def read_file(self, path: str, offset: int = 1, limit: int = 500) -> ReadResult:
-            raise NotImplementedError
+    class _DryRunFileReader:
+        """Duck-typed reader for dry-run — engine only calls read_file_raw."""
 
         def read_file_raw(self, path: str) -> ReadResult:
             resolved = _resolve_local_target_path(path, task_id)
@@ -93,27 +89,7 @@ def _build_dry_run_result(
             except OSError as exc:
                 return ReadResult(error=f"Cannot read file: {exc}")
 
-        def write_file(self, path: str, content: str):
-            raise NotImplementedError
-
-        def patch_replace(self, path: str, old_string: str, new_string: str, replace_all: bool = False):
-            raise NotImplementedError
-
-        def patch_v4a(self, patch_content: str):
-            raise NotImplementedError
-
-        def delete_file(self, path: str):
-            raise NotImplementedError
-
-        def move_file(self, src: str, dst: str):
-            raise NotImplementedError
-
-        def search(self, pattern: str, path: str = ".", target: str = "content",
-                   file_glob: Optional[str] = None, limit: int = 50, offset: int = 0,
-                   output_mode: str = "content", context: int = 0):
-            raise NotImplementedError
-
-    file_ops = _LocalFileOperations()
+    file_ops = _DryRunFileReader()
     result = apply_unified_diff(
         file_patches,
         file_ops,
