@@ -7,14 +7,15 @@ import { $delegationState } from '../app/delegationStore.js'
 import type { IndicatorStyle, Notice } from '../app/interfaces.js'
 import { useTurnSelector } from '../app/turnStore.js'
 import { DEV_CREDITS_MODE } from '../config/env.js'
-import { DEFAULT_SPINNER } from '../theme.js'  // [owner-patch] spinner faces
+import { DEFAULT_SPINNER } from '../owner/spinner.js'
 import { VERBS } from '../content/verbs.js'
 import { fmtDuration } from '../domain/messages.js'
 import { stickyPromptFromViewport } from '../domain/viewport.js'
 import { buildSubagentTree, treeTotals, widthByDepth } from '../lib/subagentTree.js'
 import { fmtK } from '../lib/text.js'
 import { useScrollbarSnapshot, useViewportSnapshot } from '../lib/viewportStore.js'
-import type { Theme, ThemeSpinner } from '../theme.js'  // [owner-patch] +ThemeSpinner
+import type { ThemeSpinner } from '../owner/spinner.js'
+import type { Theme } from '../theme.js'
 import type { Msg, Usage } from '../types.js'
 
 const FACE_TICK_MS = 2500
@@ -544,7 +545,7 @@ export function StatusRule({
         <Box flexDirection="row" flexShrink={0}>
           <Text color={t.color.border}>{'─ '}</Text>
           {busy ? (
-            <FaceTicker color={statusColor} startedAt={turnStartedAt} style={indicatorStyle} spinner={t.spinner} />  // [owner-patch]
+            <FaceTicker color={statusColor} startedAt={turnStartedAt} style={indicatorStyle} spinner={t.spinner} />
           ) : showNotice ? null : (
             <Text color={statusColor} wrap="truncate-end">
               {status}

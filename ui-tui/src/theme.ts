@@ -43,19 +43,20 @@ export interface ThemeBrand {
   goodbye: string
   tool: string
   helpHeader: string
-  tagline: string  // [owner-patch] skin-configurable banner subtitle
+  tagline: string
 }
 
-/** [owner-patch] spinner faces/verbs from skin YAML */
-export interface ThemeSpinner {
-  waitingFaces: string[]
-  thinkingVerbs: string[]
-}
+export type { ThemeSpinner } from './owner/spinner.js'
+export { DEFAULT_SPINNER } from './owner/spinner.js'
+
+import { DEFAULT_SPINNER, mergeSpinnerFromSkin } from './owner/spinner.js'
+import { DEFAULT_TAGLINE, mergeTaglineFromBranding } from './owner/branding.js'
+import { mergeStatusBarFromSkin } from './owner/statusBar.js'
 
 export interface Theme {
   color: ThemeColors
   brand: ThemeBrand
-  spinner: ThemeSpinner  // [owner-patch]
+  spinner: import('./owner/spinner.js').ThemeSpinner
   bannerLogo: string
   bannerHero: string
 }
@@ -253,13 +254,7 @@ const BRAND: ThemeBrand = {
   goodbye: 'Goodbye! ⚕',
   tool: '┊',
   helpHeader: '(^_^)? Commands',
-  tagline: '⚕ Nous Research · Messenger of the Digital Gods',  // [owner-patch]
-}
-
-// [owner-patch] DEFAULT_SPINNER — shared by DARK/LIGHT, overridable by skin
-export const DEFAULT_SPINNER: ThemeSpinner = {
-  waitingFaces: '(｡•́︿•̀｡) (◔_◔) (¬‿¬) ( •_•)>⌐■-■ (⌐■_■) (´･_･`) ◉_◉ (°ロ°) ( ˘⌣˘)♡ ヽ(>∀<☆)☆ ٩(๑❛ᴗ❛๑)۶ (⊙_⊙) (¬_¬) ( ͡° ͜ʖ ͡°) ಠ_ಠ'.split(' '),
-  thinkingVerbs: 'pondering contemplating musing cogitating ruminating deliberating mulling reflecting processing reasoning analyzing computing synthesizing formulating brainstorming'.split(' '),
+  tagline: DEFAULT_TAGLINE,
 }
 
 const cleanPromptSymbol = (s: string | undefined, fallback: string) => {
@@ -317,7 +312,7 @@ export const DARK_THEME: Theme = {
 
   brand: BRAND,
 
-  spinner: DEFAULT_SPINNER,  // [owner-patch]
+  spinner: DEFAULT_SPINNER,
   bannerLogo: '',
   bannerHero: ''
 }
@@ -364,7 +359,7 @@ export const LIGHT_THEME: Theme = {
 
   brand: BRAND,
 
-  spinner: DEFAULT_SPINNER,  // [owner-patch]
+  spinner: DEFAULT_SPINNER,
   bannerLogo: '',
   bannerHero: ''
 }
@@ -540,7 +535,7 @@ export function fromSkin(
   bannerHero = '',
   toolPrefix = '',
   helpHeader = '',
-  spinner: Record<string, string[]> = {}  // [owner-patch]
+  spinner: Record<string, string[]> = {}
 ): Theme {
   const d = DEFAULT_THEME
   const c = (k: string) => colors[k]
@@ -579,8 +574,10 @@ export function fromSkin(
       sessionLabel: c('session_label') ?? muted,
       sessionBorder: c('session_border') ?? muted,
 
-      statusBg: c('status_bar_bg') ?? d.color.statusBg,  // [owner-patch] skin override
-      statusFg: c('status_bar_text') ?? d.color.statusFg,  // [owner-patch] skin override
+      ...mergeStatusBarFromSkin(colors, {
+        statusBg: d.color.statusBg,
+        statusFg: d.color.statusFg
+      }),
       statusGood: c('ui_ok') ?? d.color.statusGood,
       statusWarn: c('ui_warn') ?? d.color.statusWarn,
       statusBad: d.color.statusBad,
@@ -603,14 +600,10 @@ export function fromSkin(
       goodbye: branding.goodbye ?? d.brand.goodbye,
       tool: toolPrefix || d.brand.tool,
       helpHeader: branding.help_header ?? (helpHeader || d.brand.helpHeader),
-      tagline: branding.tagline ?? d.brand.tagline  // [owner-patch]
+      tagline: mergeTaglineFromBranding(branding, d.brand.tagline)
     },
 
-    // [owner-patch] parse spinner from skin
-    spinner: {
-      waitingFaces: spinner.waiting_faces ?? d.spinner.waitingFaces,
-      thinkingVerbs: spinner.thinking_verbs ?? d.spinner.thinkingVerbs,
-    },
+    spinner: mergeSpinnerFromSkin(spinner, d.spinner),
 
     bannerLogo,
     bannerHero

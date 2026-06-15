@@ -189,6 +189,10 @@ class TestMemoryProposeTool:
 class TestMemoryProposalFeishuCard:
     """Tests for the Feishu interactive card building functions."""
 
+    @pytest.fixture(autouse=True)
+    def _zh_locale(self, monkeypatch):
+        monkeypatch.setenv("HERMES_LANGUAGE", "zh")
+
     def test_resolve_button_approve(self):
         from owner.feishu.memory_proposal import resolve_memory_proposal_button
         assert resolve_memory_proposal_button({"hermes_action": "memory_approve"}) == "approve"

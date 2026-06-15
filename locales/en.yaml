@@ -147,6 +147,8 @@ approval:
     lookalike_tld:
       title: "Lookalike TLD detected"
   # Update prompt card
+  feishu_update_card_title: "⚕ Update Needs Your Input"
+  feishu_update_default_hint: "Default: `{default}`"
   feishu_update_yes: "Yes"
   feishu_update_no: "No"
   feishu_update_title: "Update prompt answered: {label}"
@@ -531,3 +533,21 @@ gateway:
     session_db_unavailable_prefix: "Session database not available"
     session_not_found:           "Session not found in database."
     warn_passthrough:            "⚠️ {error}"
+
+memory_proposal:
+  action_add: "Add"
+  action_replace: "Replace"
+  action_remove: "Remove"
+  card_title: "💾 Memory Proposal"
+  card_operation: "Operation"
+  card_target: "Target"
+  card_existing: "Existing content"
+  card_new_content: "New content"
+  card_empty: "(none)"
+  card_empty_content: "(no content)"
+  btn_approve: "✅ Approve"
+  btn_deny: "🟥 Deny"
+  resolved_approved: "Memory proposal approved"
+  resolved_denied: "Memory proposal denied"
+  confirm_approved: "✅ Memory proposal approved"
+  confirm_denied: "🟥 Memory proposal denied"

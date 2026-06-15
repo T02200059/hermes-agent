@@ -17,33 +17,19 @@ from owner.memory.gateway import has_memory_proposal, resolve_memory_approval
 
 logger = logging.getLogger(__name__)
 
-# Text tokens for the memory-proposal card UI.
-# TODO(i18n): move these into locales/{lang}.yaml under a memory_proposal.*
-# namespace once the feature stabilizes and the i18n catalog footprint is
-# justified.  For now they live here so the card-building logic stays
-# readable and future extraction is a one-file search-and-replace.
-_TEXT = {
-    "action.add": "添加",
-    "action.replace": "替换",
-    "action.remove": "删除",
-    "card.title": "💾 Memory 提案确认",
-    "card.operation": "操作",
-    "card.target": "目标",
-    "card.existing": "现有内容",
-    "card.new_content": "新内容",
-    "card.empty": "(无)",
-    "card.empty_content": "(无内容)",
-    "btn.approve": "✅ 批准",
-    "btn.deny": "🟥 拒绝",
-    "resolved.approved": "内存提案已批准",
-    "resolved.denied": "内存提案已拒绝",
-    "confirm.approved": "✅ 内存提案已批准",
-    "confirm.denied": "🟥 内存提案已拒绝",
+_ACTION_KEYS = {
+    "add": "memory_proposal.action_add",
+    "replace": "memory_proposal.action_replace",
+    "remove": "memory_proposal.action_remove",
 }
 
 
 def _action_label(action: str) -> str:
-    return _TEXT.get(f"action.{action}", action)
+    key = _ACTION_KEYS.get(action)
+    if not key:
+        return action
+    label = t(key)
+    return action if label == key else label
 
 
 def build_memory_proposal_card(
@@ -55,15 +41,15 @@ def build_memory_proposal_card(
     session_key: str,
 ) -> Dict[str, Any]:
     """Build the interactive memory-proposal card JSON."""
-    content_preview = new_content[:1000] if new_content else _TEXT["card.empty_content"]
-    old_preview = old_text[:200] if old_text else _TEXT["card.empty"]
+    content_preview = new_content[:1000] if new_content else t("memory_proposal.card_empty_content")
+    old_preview = old_text[:200] if old_text else t("memory_proposal.card_empty")
 
     # WR-10: pre-build proposal markdown so button callback can preserve content
     proposal_md = (
-        f"**{_TEXT['card.operation']}**: {_action_label(action)}\n"
-        f"**{_TEXT['card.target']}**: {target}\n"
-        f"**{_TEXT['card.existing']}**: `...{old_preview}...`\n\n"
-        f"**{_TEXT['card.new_content']}**:\n"
+        f"**{t('memory_proposal.card_operation')}**: {_action_label(action)}\n"
+        f"**{t('memory_proposal.card_target')}**: {target}\n"
+        f"**{t('memory_proposal.card_existing')}**: `...{old_preview}...`\n\n"
+        f"**{t('memory_proposal.card_new_content')}**:\n"
         f"```\n{content_preview}\n```"
     )
 
@@ -82,7 +68,7 @@ def build_memory_proposal_card(
     return {
         "config": {"wide_screen_mode": True},
         "header": {
-            "title": {"content": _TEXT["card.title"], "tag": "plain_text"},
+            "title": {"content": t("memory_proposal.card_title"), "tag": "plain_text"},
             "template": "purple",
         },
         "elements": [
@@ -93,8 +79,8 @@ def build_memory_proposal_card(
             {
                 "tag": "action",
                 "actions": [
-                    _btn(_TEXT["btn.approve"], "memory_approve"),
-                    _btn(_TEXT["btn.deny"], "memory_deny", "danger"),
+                    _btn(t("memory_proposal.btn_approve"), "memory_approve"),
+                    _btn(t("memory_proposal.btn_deny"), "memory_deny", "danger"),
                 ],
             },
         ],
@@ -111,9 +97,9 @@ def build_resolved_memory_proposal_card(
     clicking approve/deny.
     """
     if choice == "approve":
-        icon, label, template = "✅", _TEXT["resolved.approved"], "green"
+        icon, label, template = "✅", t("memory_proposal.resolved_approved"), "green"
     else:
-        icon, label, template = "🟥", _TEXT["resolved.denied"], "red"
+        icon, label, template = "🟥", t("memory_proposal.resolved_denied"), "red"
 
     elements: list[dict] = []
     if proposal_md:
@@ -186,7 +172,11 @@ def handle_memory_card_action(
 
     if count > 0:
         # Send user a confirmation reply.
-        confirm_text = _TEXT["confirm.approved"] if choice == "approve" else _TEXT["confirm.denied"]
+        confirm_text = (
+            t("memory_proposal.confirm_approved")
+            if choice == "approve"
+            else t("memory_proposal.confirm_denied")
+        )
         try:
             context = getattr(event, "context", None)
             chat_id = str(getattr(context, "open_chat_id", "") or "")

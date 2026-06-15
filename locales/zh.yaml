@@ -331,6 +331,8 @@ approval:
       title: "Google 安全浏览匹配"
 
   # 更新提示卡片
+  feishu_update_card_title: "⚕ 更新需要你的确认"
+  feishu_update_default_hint: "默认：`{default}`"
   feishu_update_yes: "是"
   feishu_update_no: "否"
   feishu_update_title: "更新提示已回答：{label}"
@@ -711,3 +713,21 @@ gateway:
     session_db_unavailable_prefix: "会话数据库不可用"
     session_not_found:           "数据库中未找到该会话。"
     warn_passthrough:            "⚠️ {error}"
+
+memory_proposal:
+  action_add: "添加"
+  action_replace: "替换"
+  action_remove: "删除"
+  card_title: "💾 Memory 提案确认"
+  card_operation: "操作"
+  card_target: "目标"
+  card_existing: "现有内容"
+  card_new_content: "新内容"
+  card_empty: "(无)"
+  card_empty_content: "(无内容)"
+  btn_approve: "✅ 批准"
+  btn_deny: "🟥 拒绝"
+  resolved_approved: "内存提案已批准"
+  resolved_denied: "内存提案已拒绝"
+  confirm_approved: "✅ 内存提案已批准"
+  confirm_denied: "🟥 内存提案已拒绝"

@@ -94,6 +94,16 @@
 
 **状态**：✅ 已完成（P2 2026-06-15）— `FeishuApprovalContext` + `handle_approval_card_action` / `resolve_approval` in `owner/feishu/approval.py`；`feishu.py` 仅保留 ctx + property + 委托。
 
+### 1b. Update-prompt 状态管理封装（P3 2026-06-15）
+
+**状态**：✅ 已完成 — `FeishuUpdatePromptContext` + i18n 卡片构建/回调在 `owner/feishu/update_prompt.py`；`feishu.py` 薄委托 + `_update_prompt_state` property。
+
+### P3 其他收尾（2026-06-15）
+
+- ✅ `ui-tui/src/owner/` — spinner / branding / statusBar 模块化
+- ✅ `owner/gateway/messages.py` — run.py owner i18n 收敛
+- ✅ `memory_proposal` — `_TEXT` 迁至 `locales/{en,zh}.yaml` + `t()`
+
 ---
 
 ### 2. current-user 注入架构收敛（低优先级，建议等更稳定阶段或有实际痛点时再碰）
