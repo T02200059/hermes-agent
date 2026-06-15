@@ -15,6 +15,7 @@ from types import SimpleNamespace
 from typing import Any, Dict, Optional
 
 from agent.i18n import t
+from owner.feishu.sender_name_helpers import get_cached_sender_name, operator_display_name
 from owner.patch_config import _load_patch_owner_config
 
 logger = logging.getLogger(__name__)
@@ -258,9 +259,9 @@ def handle_approval_card_action(
     logger.info(
         "[Feishu] approval callback: operator open_id=%r cached=%r",
         open_id,
-        adapter._get_cached_sender_name(open_id),
+        get_cached_sender_name(adapter, open_id),
     )
-    user_name = adapter._get_cached_sender_name(open_id) or open_id
+    user_name = operator_display_name(adapter, open_id)
 
     chat_context = getattr(event, "context", None)
     chat_id = str(getattr(chat_context, "open_chat_id", "") or "")

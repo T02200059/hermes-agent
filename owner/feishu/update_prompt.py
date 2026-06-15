@@ -13,6 +13,7 @@ from typing import Any, Dict, Optional
 
 from agent.i18n import t
 from hermes_constants import get_hermes_home
+from owner.feishu.sender_name_helpers import operator_display_name
 
 logger = logging.getLogger(__name__)
 
@@ -226,7 +227,7 @@ def handle_update_prompt_card_action(
         )
         return P2CardActionTriggerResponse() if P2CardActionTriggerResponse else None
 
-    user_name = adapter._get_cached_sender_name(open_id) or open_id
+    user_name = operator_display_name(adapter, open_id)
     if not adapter._submit_on_loop(
         loop,
         resolve_update_prompt(

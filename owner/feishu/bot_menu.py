@@ -240,6 +240,10 @@ async def handle_bot_menu_event(adapter: Any, data: Any) -> None:
                 )
                 return
 
+    # [owner] bot-menu: pre-warm name cache before profile resolve (see owner/feishu/sender_name_helpers.py)
+    from owner.feishu.sender_name_helpers import pre_warm_sender_name
+
+    pre_warm_sender_name(adapter, open_id)
     sender_id = SimpleNamespace(open_id=open_id, user_id=None, union_id=None)
     sender_profile = await adapter._resolve_sender_profile(sender_id)
     chat_info = await adapter.get_chat_info(chat_id)
