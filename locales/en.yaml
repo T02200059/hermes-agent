@@ -24,7 +24,20 @@ approval:
   denied:          "      ✗ Denied"
   cancelled:       "      ✗ Cancelled"
   blocklist_message: "This command is on the unconditional blocklist and cannot be approved."
-  # Feishu interactive approval card UI text.
+
+  # Block/hardline/deny messages — returned to the agent when a command is blocked.
+  hardline_blocked: "BLOCKED (hardline): {description}. This command is on the unconditional blocklist and cannot be executed via the agent — not even with --yolo, /yolo, approvals.mode=off, or cron approve mode. If you genuinely need to run it, run it yourself in a terminal outside the agent."
+  sudo_stdin_blocked: "BLOCKED: {description}. Do not pipe passwords to 'sudo -S' — this is a brute-force attack vector. Set SUDO_PASSWORD in your .env file if the agent needs passwordless sudo, or run the sudo command manually in your own terminal."
+  cron_blocked: "BLOCKED: Command flagged as dangerous ({description}) but cron jobs run without a user present to approve it. Find an alternative approach that avoids this command. To allow dangerous commands in cron jobs, set approvals.cron_mode: approve in config.yaml."
+  gateway_asking: "⚠️ This command is potentially dangerous ({description}). Asking the user for approval.\n\n**Command:**\n```\n{command}\n```"
+  gateway_asking_combined: "⚠️ {description}. Asking the user for approval.\n\n**Command:**\n```\n{command}\n```"
+  user_denied: "BLOCKED: User denied this potentially dangerous command (matched '{description}' pattern). Do NOT retry this command — the user has explicitly rejected it."
+  smart_denied: "BLOCKED by smart approval: {description}. The command was assessed as genuinely dangerous. Do NOT retry."
+  gateway_notify_failed: "BLOCKED: Failed to send approval request to user. Do NOT retry."
+  gateway_timeout_denied: "BLOCKED: Command {reason}. Do NOT retry this command."
+  cli_denied: "BLOCKED: User denied. Do NOT retry."
+
+  # Feishu approval card — interactive card UI text.
   feishu_card_title: "⚠️ Command Approval Required"
   feishu_reason_label: "**Reason:** {description}"
   feishu_btn_once: "✅ Allow Once"
@@ -38,9 +51,106 @@ approval:
   feishu_resolved_default: "Resolved"
   feishu_resolved_body: "by {user_name}\n\n```\n{command}\n```"
   feishu_permanent_disabled: "💡 Permanent approval is disabled. Choose Allow Once or Session instead."
-  # YOLO auto-resolve
+  qqbot_permanent_disabled: "💡 Permanent approval is disabled. Choose Allow Once or Session instead."
   yolo_auto_resolved: "🔄 YOLO mode enabled — {count} pending approval(s) auto-resolved."
 
+  # Generic reason label — used by fallback, Telegram, Discord, Slack.
+  reason_label: "Reason: {description}"
+  # Security scan prefix (tirith findings)
+  scan_prefix: "Security scan"
+
+  # Dangerous pattern descriptions — translated from DANGEROUS_PATTERNS keys.
+  dangerous_desc:
+    delete_in_root_path: "delete in root path"
+    recursive_delete: "recursive delete"
+    recursive_delete_long_flag: "recursive delete (long flag)"
+    world_other_writable_permissions: "world/other-writable permissions"
+    recursive_world_other_writable_long_flag: "recursive world/other-writable (long flag)"
+    recursive_chown_to_root: "recursive chown to root"
+    recursive_chown_to_root_long_flag: "recursive chown to root (long flag)"
+    format_filesystem: "format filesystem"
+    disk_copy: "disk copy"
+    write_to_block_device: "write to block device"
+    sql_drop: "SQL DROP"
+    sql_delete_without_where: "SQL DELETE without WHERE"
+    sql_truncate: "SQL TRUNCATE"
+    overwrite_system_config: "overwrite system config"
+    stop_restart_system_service: "stop/restart system service"
+    system_shutdown_reboot: "system shutdown/reboot"
+    init_0_6_shutdown_reboot: "init 0/6 (shutdown/reboot)"
+    systemctl_poweroff_reboot: "systemctl poweroff/reboot"
+    telinit_0_6_shutdown_reboot: "telinit 0/6 (shutdown/reboot)"
+    kill_all_processes: "kill all processes"
+    force_kill_processes: "force kill processes"
+    force_kill_processes_killall_kill: "force kill processes (killall -KILL)"
+    force_kill_processes_killall_s_kill: "force kill processes (killall -s KILL)"
+    kill_processes_by_regex_killall_r: "kill processes by regex (killall -r)"
+    fork_bomb: "fork bomb"
+    shell_command_via_c_lc_flag: "shell command via -c/-lc flag"
+    script_execution_via_e_c_flag: "script execution via -e/-c flag"
+    pipe_remote_content_to_shell: "pipe remote content to shell"
+    execute_remote_script_via_process_substitution: "execute remote script via process substitution"
+    overwrite_system_file_via_tee: "overwrite system file via tee"
+    overwrite_system_file_via_redirection: "overwrite system file via redirection"
+    overwrite_project_env_config_via_tee: "overwrite project env/config via tee"
+    overwrite_project_env_config_via_redirection: "overwrite project env/config via redirection"
+    xargs_with_rm: "xargs with rm"
+    find_exec_execdir_rm: "find -exec/-execdir rm"
+    find_delete: "find -delete"
+    stop_restart_hermes_gateway_kills_running_agents: "stop/restart hermes gateway (kills running agents)"
+    hermes_update_restarts_gateway_kills_running_agents: "hermes update (restarts gateway, kills running agents)"
+    start_gateway_outside_systemd: "start gateway outside systemd (use 'systemctl --user restart hermes-gateway')"
+    nohup_gateway_run: "start gateway outside systemd (use 'systemctl --user restart hermes-gateway')"
+    kill_hermes_gateway_process_self_termination: "kill hermes/gateway process (self-termination)"
+    kill_process_via_pgrep_expansion_self_termination: "kill process via pgrep expansion (self-termination)"
+    kill_process_via_backtick_pgrep_expansion_self_termination: "kill process via backtick pgrep expansion (self-termination)"
+    copy_move_file_into_system_config_path: "copy/move file into system config path"
+    overwrite_project_env_config_file: "overwrite project env/config file"
+    in_place_edit_of_system_config: "in-place edit of system config"
+    in_place_edit_of_system_config_long_flag: "in-place edit of system config (long flag)"
+    script_execution_via_heredoc: "script execution via heredoc"
+    git_reset_hard_destroys_uncommitted_changes: "git reset --hard (destroys uncommitted changes)"
+    git_force_push_rewrites_remote_history: "git force push (rewrites remote history)"
+    git_force_push_short_flag_rewrites_remote_history: "git force push short flag (rewrites remote history)"
+    git_clean_with_force_deletes_untracked_files: "git clean with force (deletes untracked files)"
+    git_branch_force_delete: "git branch force delete"
+    chmod_x_followed_by_immediate_execution: "chmod +x followed by immediate execution"
+    sudo_with_privilege_flag_stdin_askpass_shell_list: "sudo with privilege flag (stdin/askpass/shell/list)"
+    sudo_with_combined_flag_privilege_escalation: "sudo with combined-flag privilege escalation"
+
+  # Hardline pattern descriptions — translated from HARDLINE_PATTERNS keys.
+  hardline_desc:
+    recursive_delete_of_root_filesystem: "recursive delete of root filesystem"
+    recursive_delete_of_system_directory: "recursive delete of system directory"
+    recursive_delete_of_home_directory: "recursive delete of home directory"
+    format_filesystem_mkfs: "format filesystem (mkfs)"
+    dd_to_raw_block_device: "dd to raw block device"
+    redirect_to_raw_block_device: "redirect to raw block device"
+    fork_bomb: "fork bomb"
+    kill_all_processes: "kill all processes"
+
+  # Tirith rule translations — keyed by rule_id from tirith JSON output.
+  # title only; description contains dynamic content (IP addresses, URLs) and stays in original language.
+  tirith:
+    raw_ip_url:
+      title: "URL uses raw IP address"
+    plain_http_to_sink:
+      title: "Plain HTTP URL in execution context"
+    private_network_access:
+      title: "Private network access"
+    curl_pipe_shell:
+      title: "Pipe to interpreter: curl | shell"
+    non_ascii_hostname:
+      title: "Non-ASCII characters in hostname"
+    punycode_domain:
+      title: "Punycode domain detected"
+    lookalike_tld:
+      title: "Lookalike TLD detected"
+  # Update prompt card
+  feishu_update_yes: "Yes"
+  feishu_update_no: "No"
+  feishu_update_title: "Update prompt answered: {label}"
+  feishu_update_body: "Answered by **{user_name}**"
 
 gateway:
   # Messenger replies to slash commands and implicit state changes.
@@ -50,6 +160,33 @@ gateway:
   no_active_goal:   "No active goal."
   config_read_failed: "⚠️ Could not read config.yaml: {error}"
   config_save_failed: "⚠️ Could not save config: {error}"
+
+  # Gateway lifecycle messages — shown during restart/shutdown/draining.
+  shutdown_notify_restart: "🌆 Gateway restarting — Your current task will be interrupted. Send any message after restart and I'll try to resume where you left off."
+  shutdown_notify_stop:    "⚠️ Gateway shutting down — Your current task will be interrupted."
+  restart_success:         "🌃 Gateway restarted successfully. Your session continues."
+  online:                  "🏙 Gateway online — Hermes is back and ready."
+
+  # Busy-ack messages — shown when the user sends a message while the agent is running/draining.
+  busy_drain_queued:       "⏳ Gateway {action} — queued for the next turn after it comes back."
+  busy_drain_not_accepting: "⏳ Gateway is {action} and is not accepting another turn right now."
+  busy_drain_no_work:      "⏳ Gateway is {action} and is not accepting new work right now."
+  busy_steer_ack:          "⏩ Steered into current run{status_detail}. Your message arrives after the next tool call."
+  busy_queue_ack:          "⏳ Queued for the next turn{status_detail}. I'll respond once the current task finishes."
+  busy_interrupt_ack:      "⚡ Interrupting current task{status_detail}. I'll respond to your message shortly."
+  busy_subagent_queued:    "⏳ Subagent working{status_detail} — your message is queued for when it finishes (use /stop to cancel everything)."
+
+  # Steer command replies.
+  steer_failed:            "⚠️ Steer failed: {error}"
+  steer_queued:            "⏩ Steer queued — arrives after the next tool call: '{preview}'"
+  steer_empty:             "Steer rejected (empty payload)."
+
+  # Force-stop reply.
+  force_stop_pending:      "⚡ Force-stopped. The agent was still starting — session unlocked."
+
+  # Long-running / inactivity notifications.
+  still_working:           "⏳ Still working... ({elapsed} min elapsed{status_detail})"
+  no_activity_warning:     "⚠️ No activity for {elapsed} min. If the agent does not respond soon, it will be timed out in {remaining} min. You can continue waiting or use /reset."
 
   # /model command output -- shown after a model switch or when listing models.
   # Provider names, model IDs, capability strings, and cost figures are NOT
@@ -132,6 +269,11 @@ gateway:
     auto_delete:           "⏱ Pastes will auto-delete in 6 hours."
     full_logs_hint:        "For full log uploads, use `hermes debug share` from the CLI."
     share_hint:            "Share these links with the Hermes team for support."
+
+  destructive_slash_confirm:
+    prompt: "⚠️ **Confirm /{command}**\n\n{detail}\n\nChoose:\n• **Approve Once** — proceed this time only\n• **Always Approve** — proceed and silence this prompt permanently\n• **Cancel** — keep current conversation\n\n_Text fallback: reply `{_p}approve`, `{_p}always`, or `{_p}cancel`._"
+    cancelled: "🟡 /{command} cancelled. Conversation unchanged."
+    always_note: "\n\nℹ️ Future /clear, /new, /reset, and /undo will run without confirmation. Re-enable via `approvals.destructive_slash_confirm: true` in config.yaml."
 
   deny:
     stale:                 "❌ Command denied (approval was stale)."
@@ -247,15 +389,10 @@ gateway:
 
   restart:
     in_progress:           "⏳ Gateway restart already in progress..."
-    restarting:            "♻ Restarting gateway. If you aren't notified within 60 seconds, restart from the console with `hermes gateway restart`."
+    restarting:            "🌇 Restarting gateway. If you aren't notified within 60 seconds, restart from the console with `hermes gateway restart`."
 
   resume:
     db_unavailable:        "Session database not available."
-    parse_error:           "⚠️ Could not parse `/resume` arguments: {error}.\nUse quotes around titles with spaces, for example: `/resume \"Project A Plan\"`."
-    matrix_no_named_sessions: "No named sessions found for this Matrix room.\nUse `/title My Session` to name the current room session, `/resume --all` to list all Matrix sessions, or `/resume --cross-room <session name>` to explicitly cross room boundaries."
-    matrix_blocked_no_origin: "⚠️ Matrix /resume blocked: this named session has no recorded room origin, so Hermes will not resume it inside the current room by default. Use `/resume --cross-room {name}` if you intentionally want to cross room boundaries."
-    matrix_blocked_other_room: "⚠️ Matrix /resume blocked: that session belongs to a different Matrix room ({room}). Use `/resume --cross-room {name}` if you intentionally want to resume it here."
-    matrix_cross_room_success: "⚠️ Cross-room resume: resumed **{title}** inside Matrix room **{room}**.\nFuture messages in this room will use that transcript until `/reset` or another `/resume`.{msg_part}"
     no_named_sessions:     "No named sessions found.\nUse `/title My Session` to name your current session, then `/resume My Session` to return to it later."
     list_header:           "📋 **Named Sessions**\n"
     list_item:             "• **{title}**{preview_part}"
@@ -288,12 +425,6 @@ gateway:
 
   status:
     header:                "📊 **Hermes Gateway Status**"
-    matrix_scope_header:   "**Matrix scope:**"
-    matrix_scope_room:     "  room: {room}"
-    matrix_scope_room_id:  "  room_id: {room_id}"
-    matrix_scope_thread:   "  thread_id: {thread_id}"
-    matrix_scope_mode:     "  session_scope: {scope}"
-    matrix_scope_key:      "  session_key: {session_key}"
     session_id:            "**Session ID:** `{session_id}`"
     title:                 "**Title:** {title}"
     created:               "**Created:** {timestamp}"
@@ -313,8 +444,6 @@ gateway:
     stopped_pending:       "⚡ Stopped. The agent hadn't started yet — you can continue this session."
     stopped:               "⚡ Stopped. You can continue this session."
     no_active:             "No active task to stop."
-
-  silent_api_disconnect:   "⚠️ API unresponsive — connection may have been silently dropped. Please try again later, or send any message to continue."
 
   title:
     db_unavailable:        "Session database not available."
@@ -339,8 +468,7 @@ gateway:
 
   undo:
     nothing:               "Nothing to undo."
-    removed:               "↩️ Undid {turns} turn(s) ({count} message(s)).\nBacked up to: \"{preview}\"\nCopy/edit the text above and send it to re-prompt from here."
-    invalid_count:         "Invalid count \"{arg}\" — use /undo or /undo N."
+    removed:               "↩️ Undid {count} message(s).\nRemoved: \"{preview}\""
 
   update:
     platform_not_messaging:  "✗ /update is only available from messaging platforms. Run `hermes update` from the terminal."
@@ -356,6 +484,7 @@ gateway:
     label_input_tokens:       "Input tokens: {count}"
     label_cache_read:         "Cache read tokens: {count}"
     label_cache_write:        "Cache write tokens: {count}"
+    label_cache_hit_rate:     "Cache hit rate: {rate}%"
     label_output_tokens:      "Output tokens: {count}"
     label_total:              "Total: {count}"
     label_api_calls:          "API calls: {count}"
@@ -368,9 +497,6 @@ gateway:
     label_estimated_context:  "Estimated context: ~{count} tokens"
     detailed_after_first:     "_(Detailed usage available after the first agent response)_"
     no_data:                  "No usage data available for this session."
-
-  credits:
-    not_logged_in:            "Not logged into Nous Portal. Log in to see your credit balance and top up."
 
   verbose:
     not_enabled:           "The `/verbose` command is not enabled for messaging platforms.\n\nEnable it in `config.yaml`:\n```yaml\ndisplay:\n  tool_progress_command: true\n```"
@@ -395,8 +521,6 @@ gateway:
     label_off:             "Off (text only)"
     label_voice_only:      "On (voice reply to voice messages)"
     label_all:             "TTS (voice reply to all messages)"
-    help:                  "{toggle}\n\n**How /voice works**\n• `/voice on` — voice reply when you send a voice message\n• `/voice tts` — voice reply to *every* message\n• `/voice off` — back to text-only replies\n• `/voice status` — show the current mode\n• `/voice` (no argument) — quick toggle between on and off{channels}"
-    help_channels:         "\n\n**Live voice channels (Discord)**\n• Join a voice channel first, then `/voice channel` — I'll join, listen, and speak my replies\n• `/voice leave` — disconnect from the voice channel"
 
   yolo:
     disabled:                   "⚠️ YOLO mode **OFF** for this session — dangerous commands will require approval."

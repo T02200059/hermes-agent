@@ -18,21 +18,6 @@ approval:
   denied:          "      ✗ Diúltaithe"
   cancelled:       "      ✗ Cealaithe"
   blocklist_message: "Tá an t-ordú seo ar an liosta cosc gan choinníoll agus ní féidir é a cheadú."
-  # Feishu interactive approval card UI text.
-  feishu_card_title: "⚠️ Command Approval Required"
-  feishu_reason_label: "**Reason:** {description}"
-  feishu_btn_once: "✅ Allow Once"
-  feishu_btn_session: "✅ Session"
-  feishu_btn_always: "✅ Always"
-  feishu_btn_deny: "❌ Deny"
-  feishu_resolved_once: "Approved once"
-  feishu_resolved_session: "Approved for session"
-  feishu_resolved_always: "Approved permanently"
-  feishu_resolved_deny: "Denied"
-  feishu_resolved_default: "Resolved"
-  feishu_resolved_body: "by {user_name}\n\n```\n{command}\n```"
-  feishu_permanent_disabled: "💡 Permanent approval is disabled. Choose Allow Once or Session instead."
-
 
 gateway:
   approval_expired: "⚠️ Tá an cead imithe in éag (níl an gníomhaire ag fanacht níos mó). Iarr ar an ngníomhaire iarracht eile a dhéanamh."
@@ -41,6 +26,33 @@ gateway:
   no_active_goal:   "Níl aon sprioc ghníomhach ann."
   config_read_failed: "⚠️ Níorbh fhéidir config.yaml a léamh: {error}"
   config_save_failed: "⚠️ Níorbh fhéidir an chumraíocht a shábháil: {error}"
+
+  # Gateway lifecycle messages — shown during restart/shutdown/draining.
+  shutdown_notify_restart: "⚠️ Gateway restarting — Your current task will be interrupted. Send any message after restart and I'll try to resume where you left off."
+  shutdown_notify_stop:    "⚠️ Gateway shutting down — Your current task will be interrupted."
+  restart_success:         "♻ Gateway restarted successfully. Your session continues."
+  online:                  "♻️ Gateway online — Hermes is back and ready."
+
+  # Busy-ack messages — shown when the user sends a message while the agent is running/draining.
+  busy_drain_queued:       "⏳ Gateway {action} — queued for the next turn after it comes back."
+  busy_drain_not_accepting: "⏳ Gateway is {action} and is not accepting another turn right now."
+  busy_drain_no_work:      "⏳ Gateway is {action} and is not accepting new work right now."
+  busy_steer_ack:          "⏩ Steered into current run{status_detail}. Your message arrives after the next tool call."
+  busy_queue_ack:          "⏳ Queued for the next turn{status_detail}. I'll respond once the current task finishes."
+  busy_interrupt_ack:      "⚡ Interrupting current task{status_detail}. I'll respond to your message shortly."
+
+  # Steer command replies.
+  steer_failed:            "⚠️ Steer failed: {error}"
+  steer_queued:            "⏩ Steer queued — arrives after the next tool call: '{preview}'"
+  steer_empty:             "Steer rejected (empty payload)."
+
+  # Force-stop reply.
+  force_stop_pending:      "⚡ Force-stopped. The agent was still starting — session unlocked."
+
+  # Long-running / inactivity notifications.
+  still_working:           "⏳ Still working... ({elapsed} min elapsed{status_detail})"
+  no_activity_warning:     "⚠️ No activity for {elapsed} min. If the agent does not respond soon, it will be timed out in {remaining} min. You can continue waiting or use /reset."
+
 
   model:
     error_prefix:           "Earráid: {error}"
@@ -119,6 +131,12 @@ gateway:
     auto_delete:           "⏱ Scriosfar na pastes go huathoibríoch i 6 huaire."
     full_logs_hint:        "Le haghaidh uaslódálacha logála iomlána, úsáid `hermes debug share` ón CLI."
     share_hint:            "Roinn na naisc seo le foireann Hermes le haghaidh tacaíochta."
+
+  destructive_slash_confirm:
+    prompt: "⚠️ **Confirm /{command}**\n\n{detail}\n\nChoose:\n• **Approve Once** — proceed this time only\n• **Always Approve** — proceed and silence this prompt permanently\n• **Cancel** — keep current conversation\n\n_Text fallback: reply `/approve`, `/always`, or `/cancel`._"
+    cancelled: "🟡 /{command} cancelled. Conversation unchanged."
+    always_note: "\n\nℹ️ Future /clear, /new, /reset, and /undo will run without confirmation. Re-enable via `approvals.destructive_slash_confirm: true` in config.yaml."
+
 
   deny:
     stale:                 "❌ Ordú diúltaithe (bhí an cead imithe i léig)."
@@ -238,14 +256,6 @@ gateway:
 
   resume:
     db_unavailable:        "Níl bunachar sonraí na seisiún ar fáil."
-    parse_error:           "⚠️ Could not parse `/resume` arguments: {error}.
-Use quotes around titles with spaces, for example: `/resume \"Project A Plan\"`."
-    matrix_no_named_sessions: "No named sessions found for this Matrix room.
-Use `/title My Session` to name the current room session, `/resume --all` to list all Matrix sessions, or `/resume --cross-room <session name>` to explicitly cross room boundaries."
-    matrix_blocked_no_origin: "⚠️ Matrix /resume blocked: this named session has no recorded room origin, so Hermes will not resume it inside the current room by default. Use `/resume --cross-room {name}` if you intentionally want to cross room boundaries."
-    matrix_blocked_other_room: "⚠️ Matrix /resume blocked: that session belongs to a different Matrix room ({room}). Use `/resume --cross-room {name}` if you intentionally want to resume it here."
-    matrix_cross_room_success: "⚠️ Cross-room resume: resumed **{title}** inside Matrix room **{room}**.
-Future messages in this room will use that transcript until `/reset` or another `/resume`.{msg_part}"
     no_named_sessions:     "Níor aimsíodh aon seisiún ainmnithe.\nÚsáid `/title M'Ainm Seisiúin` chun do sheisiún reatha a ainmniú, ansin `/resume M'Ainm Seisiúin` chun filleadh air níos déanaí."
     list_header:           "📋 **Seisiúin Ainmnithe**\n"
     list_item:             "• **{title}**{preview_part}"
@@ -278,12 +288,6 @@ Future messages in this room will use that transcript until `/reset` or another 
 
   status:
     header:                "📊 **Stádas Hermes Gateway**"
-    matrix_scope_header:   "**Matrix scope:**"
-    matrix_scope_room:     "  room: {room}"
-    matrix_scope_room_id:  "  room_id: {room_id}"
-    matrix_scope_thread:   "  thread_id: {thread_id}"
-    matrix_scope_mode:     "  session_scope: {scope}"
-    matrix_scope_key:      "  session_key: {session_key}"
     session_id:            "**ID Seisiúin:** `{session_id}`"
     title:                 "**Teideal:** {title}"
     created:               "**Cruthaithe:** {timestamp}"
@@ -327,8 +331,7 @@ Future messages in this room will use that transcript until `/reset` or another 
 
   undo:
     nothing:               "Níl aon rud le cealú."
-    removed:               "↩️ Cealaíodh {turns} seal ({count} teachtaireacht).\nCúltacaíodh chuig: \"{preview}\"\nCóipeáil/cuir an téacs thuas in eagar agus seol é chun athleideadh ón áit seo."
-    invalid_count:         "Líon neamhbhailí \"{arg}\" — úsáid /undo nó /undo N."
+    removed:               "↩️ Cealaíodh {count} teachtaireacht.\nBaineadh: \"{preview}\""
 
   update:
     platform_not_messaging:  "✗ Tá /update ar fáil amháin ó ardáin teachtaireachtaí. Rith `hermes update` ón teirminéal."
@@ -343,6 +346,8 @@ Future messages in this room will use that transcript until `/reset` or another 
     label_model:              "Samhail: `{model}`"
     label_input_tokens:       "Comharthaí ionchuir: {count}"
     label_cache_read:         "Comharthaí léite ón taisce: {count}"
+
+    label_cache_hit_rate:     "Cache hit rate: {rate}%"
     label_cache_write:        "Comharthaí scríofa sa taisce: {count}"
     label_output_tokens:      "Comharthaí aschuir: {count}"
     label_total:              "Iomlán: {count}"
@@ -356,9 +361,6 @@ Future messages in this room will use that transcript until `/reset` or another 
     label_estimated_context:  "Comhthéacs measta: ~{count} comhartha"
     detailed_after_first:     "_(Úsáid mhionsonraithe ar fáil tar éis chéad fhreagra an ghníomhaire)_"
     no_data:                  "Níl aon sonraí úsáide ar fáil don seisiún seo."
-
-  credits:
-    not_logged_in:            "Níl tú logáilte isteach i Nous Portal. Logáil isteach chun d'iarmhéid creidmheasa a fheiceáil agus breis a chur leis."
 
   verbose:
     not_enabled:           "Níl an t-ordú `/verbose` cumasaithe d'ardáin teachtaireachtaí.\n\nCumasaigh in `config.yaml`:\n```yaml\ndisplay:\n  tool_progress_command: true\n```"
@@ -383,8 +385,6 @@ Future messages in this room will use that transcript until `/reset` or another 
     label_off:             "As (téacs amháin)"
     label_voice_only:      "Ar (freagra gutha do theachtaireachtaí gutha)"
     label_all:             "TTS (freagra gutha do gach teachtaireacht)"
-    help:                  "{toggle}\n\n**Conas a oibríonn /voice**\n• `/voice on` — freagra gutha nuair a sheolann tú teachtaireacht gutha\n• `/voice tts` — freagra gutha do *gach* teachtaireacht\n• `/voice off` — ar ais go freagraí téacs amháin\n• `/voice status` — taispeáin an mód reatha\n• `/voice` (gan argóint) — scoránaigh go tapa idir air agus as{channels}"
-    help_channels:         "\n\n**Cainéil gutha bheo (Discord)**\n• Téigh isteach i gcainéal gutha ar dtús, ansin `/voice channel` — téim isteach, éistim agus labhraím mo fhreagraí\n• `/voice leave` — dícheangail ón gcainéal gutha"
 
   yolo:
     disabled:                   "⚠️ Mód YOLO **AS** don seisiún seo — beidh cead de dhíth d'orduithe contúirteacha."

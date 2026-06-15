@@ -14,21 +14,6 @@ approval:
   denied:          "      ✗ Geweier"
   cancelled:       "      ✗ Gekanselleer"
   blocklist_message: "Hierdie opdrag is op die onvoorwaardelike blokkeerlys en kan nie goedgekeur word nie."
-  # Feishu interactive approval card UI text.
-  feishu_card_title: "⚠️ Command Approval Required"
-  feishu_reason_label: "**Reason:** {description}"
-  feishu_btn_once: "✅ Allow Once"
-  feishu_btn_session: "✅ Session"
-  feishu_btn_always: "✅ Always"
-  feishu_btn_deny: "❌ Deny"
-  feishu_resolved_once: "Approved once"
-  feishu_resolved_session: "Approved for session"
-  feishu_resolved_always: "Approved permanently"
-  feishu_resolved_deny: "Denied"
-  feishu_resolved_default: "Resolved"
-  feishu_resolved_body: "by {user_name}\n\n```\n{command}\n```"
-  feishu_permanent_disabled: "💡 Permanent approval is disabled. Choose Allow Once or Session instead."
-
 
 gateway:
   approval_expired: "⚠️ Goedkeuring het verval (die agent wag nie meer nie). Vra die agent om weer te probeer."
@@ -37,6 +22,33 @@ gateway:
   no_active_goal:   "Geen aktiewe doelwit nie."
   config_read_failed: "⚠️ Kon nie config.yaml lees nie: {error}"
   config_save_failed: "⚠️ Kon nie konfigurasie stoor nie: {error}"
+
+  # Gateway lifecycle messages — shown during restart/shutdown/draining.
+  shutdown_notify_restart: "⚠️ Gateway restarting — Your current task will be interrupted. Send any message after restart and I'll try to resume where you left off."
+  shutdown_notify_stop:    "⚠️ Gateway shutting down — Your current task will be interrupted."
+  restart_success:         "♻ Gateway restarted successfully. Your session continues."
+  online:                  "♻️ Gateway online — Hermes is back and ready."
+
+  # Busy-ack messages — shown when the user sends a message while the agent is running/draining.
+  busy_drain_queued:       "⏳ Gateway {action} — queued for the next turn after it comes back."
+  busy_drain_not_accepting: "⏳ Gateway is {action} and is not accepting another turn right now."
+  busy_drain_no_work:      "⏳ Gateway is {action} and is not accepting new work right now."
+  busy_steer_ack:          "⏩ Steered into current run{status_detail}. Your message arrives after the next tool call."
+  busy_queue_ack:          "⏳ Queued for the next turn{status_detail}. I'll respond once the current task finishes."
+  busy_interrupt_ack:      "⚡ Interrupting current task{status_detail}. I'll respond to your message shortly."
+
+  # Steer command replies.
+  steer_failed:            "⚠️ Steer failed: {error}"
+  steer_queued:            "⏩ Steer queued — arrives after the next tool call: '{preview}'"
+  steer_empty:             "Steer rejected (empty payload)."
+
+  # Force-stop reply.
+  force_stop_pending:      "⚡ Force-stopped. The agent was still starting — session unlocked."
+
+  # Long-running / inactivity notifications.
+  still_working:           "⏳ Still working... ({elapsed} min elapsed{status_detail})"
+  no_activity_warning:     "⚠️ No activity for {elapsed} min. If the agent does not respond soon, it will be timed out in {remaining} min. You can continue waiting or use /reset."
+
 
   model:
     error_prefix:           "Fout: {error}"
@@ -115,6 +127,12 @@ gateway:
     auto_delete:           "⏱ Plakke sal outomaties oor 6 uur uitgevee word."
     full_logs_hint:        "Vir volledige loglae, gebruik `hermes debug share` vanaf die CLI."
     share_hint:            "Deel hierdie skakels met die Hermes-span vir ondersteuning."
+
+  destructive_slash_confirm:
+    prompt: "⚠️ **Confirm /{command}**\n\n{detail}\n\nChoose:\n• **Approve Once** — proceed this time only\n• **Always Approve** — proceed and silence this prompt permanently\n• **Cancel** — keep current conversation\n\n_Text fallback: reply `/approve`, `/always`, or `/cancel`._"
+    cancelled: "🟡 /{command} cancelled. Conversation unchanged."
+    always_note: "\n\nℹ️ Future /clear, /new, /reset, and /undo will run without confirmation. Re-enable via `approvals.destructive_slash_confirm: true` in config.yaml."
+
 
   deny:
     stale:                 "❌ Opdrag geweier (goedkeuring was verouderd)."
@@ -234,14 +252,6 @@ gateway:
 
   resume:
     db_unavailable:        "Sessie-databasis is nie beskikbaar nie."
-    parse_error:           "⚠️ Could not parse `/resume` arguments: {error}.
-Use quotes around titles with spaces, for example: `/resume \"Project A Plan\"`."
-    matrix_no_named_sessions: "No named sessions found for this Matrix room.
-Use `/title My Session` to name the current room session, `/resume --all` to list all Matrix sessions, or `/resume --cross-room <session name>` to explicitly cross room boundaries."
-    matrix_blocked_no_origin: "⚠️ Matrix /resume blocked: this named session has no recorded room origin, so Hermes will not resume it inside the current room by default. Use `/resume --cross-room {name}` if you intentionally want to cross room boundaries."
-    matrix_blocked_other_room: "⚠️ Matrix /resume blocked: that session belongs to a different Matrix room ({room}). Use `/resume --cross-room {name}` if you intentionally want to resume it here."
-    matrix_cross_room_success: "⚠️ Cross-room resume: resumed **{title}** inside Matrix room **{room}**.
-Future messages in this room will use that transcript until `/reset` or another `/resume`.{msg_part}"
     no_named_sessions:     "Geen benoemde sessies gevind nie.\nGebruik `/title My Sessie` om jou huidige sessie 'n naam te gee, en dan `/resume My Sessie` om later daarheen terug te keer."
     list_header:           "📋 **Benoemde Sessies**\n"
     list_item:             "• **{title}**{preview_part}"
@@ -274,12 +284,6 @@ Future messages in this room will use that transcript until `/reset` or another 
 
   status:
     header:                "📊 **Hermes Gateway Status**"
-    matrix_scope_header:   "**Matrix scope:**"
-    matrix_scope_room:     "  room: {room}"
-    matrix_scope_room_id:  "  room_id: {room_id}"
-    matrix_scope_thread:   "  thread_id: {thread_id}"
-    matrix_scope_mode:     "  session_scope: {scope}"
-    matrix_scope_key:      "  session_key: {session_key}"
     session_id:            "**Sessie-ID:** `{session_id}`"
     title:                 "**Titel:** {title}"
     created:               "**Geskep:** {timestamp}"
@@ -323,8 +327,7 @@ Future messages in this room will use that transcript until `/reset` or another 
 
   undo:
     nothing:               "Niks om ongedaan te maak nie."
-    removed:               "↩️ {turns} beurt(e) ongedaan gemaak ({count} boodskap(pe)).\nGerugsteun na: \"{preview}\"\nKopieer/wysig die teks hierbo en stuur dit om van hier af weer te vra."
-    invalid_count:         "Ongeldige getal \"{arg}\" — gebruik /undo of /undo N."
+    removed:               "↩️ {count} boodskap(pe) ongedaan gemaak.\nVerwyder: \"{preview}\""
 
   update:
     platform_not_messaging:  "✗ /update is slegs beskikbaar vanaf boodskapplatforms. Voer `hermes update` vanaf die terminale uit."
@@ -339,6 +342,8 @@ Future messages in this room will use that transcript until `/reset` or another 
     label_model:              "Model: `{model}`"
     label_input_tokens:       "Invoertokens: {count}"
     label_cache_read:         "Kasie-leestokens: {count}"
+
+    label_cache_hit_rate:     "Cache hit rate: {rate}%"
     label_cache_write:        "Kasie-skryftokens: {count}"
     label_output_tokens:      "Uitvoertokens: {count}"
     label_total:              "Totaal: {count}"
@@ -352,9 +357,6 @@ Future messages in this room will use that transcript until `/reset` or another 
     label_estimated_context:  "Geskatte konteks: ~{count} tokens"
     detailed_after_first:     "_(Gedetailleerde gebruik beskikbaar na die eerste agent-antwoord)_"
     no_data:                  "Geen gebruiksdata beskikbaar vir hierdie sessie nie."
-
-  credits:
-    not_logged_in:            "Nie by Nous Portal aangemeld nie. Meld aan om jou kredietsaldo te sien en op te laai."
 
   verbose:
     not_enabled:           "Die `/verbose`-opdrag is nie vir boodskapplatforms geaktiveer nie.\n\nAktiveer dit in `config.yaml`:\n```yaml\ndisplay:\n  tool_progress_command: true\n```"
@@ -379,8 +381,6 @@ Future messages in this room will use that transcript until `/reset` or another 
     label_off:             "Af (slegs teks)"
     label_voice_only:      "Aan (stemantwoord op stemboodskappe)"
     label_all:             "TTS (stemantwoord op alle boodskappe)"
-    help:                  "{toggle}\n\n**Hoe /voice werk**\n• `/voice on` — stemantwoord wanneer jy 'n stemboodskap stuur\n• `/voice tts` — stemantwoord op *elke* boodskap\n• `/voice off` — terug na slegs-teks antwoorde\n• `/voice status` — wys die huidige modus\n• `/voice` (geen argument) — wissel vinnig tussen aan en af{channels}"
-    help_channels:         "\n\n**Lewendige stemkanale (Discord)**\n• Sluit eers by 'n stemkanaal aan, dan `/voice channel` — ek sluit aan, luister en praat my antwoorde\n• `/voice leave` — ontkoppel van die stemkanaal"
 
   yolo:
     disabled:                   "⚠️ YOLO-modus **AF** vir hierdie sessie — gevaarlike opdragte sal goedkeuring vereis."

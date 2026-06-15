@@ -14,21 +14,6 @@ approval:
   denied:          "      ✗ Refusé"
   cancelled:       "      ✗ Annulé"
   blocklist_message: "Cette commande est sur la liste de blocage inconditionnel et ne peut pas être approuvée."
-  # Feishu interactive approval card UI text.
-  feishu_card_title: "⚠️ Command Approval Required"
-  feishu_reason_label: "**Reason:** {description}"
-  feishu_btn_once: "✅ Allow Once"
-  feishu_btn_session: "✅ Session"
-  feishu_btn_always: "✅ Always"
-  feishu_btn_deny: "❌ Deny"
-  feishu_resolved_once: "Approved once"
-  feishu_resolved_session: "Approved for session"
-  feishu_resolved_always: "Approved permanently"
-  feishu_resolved_deny: "Denied"
-  feishu_resolved_default: "Resolved"
-  feishu_resolved_body: "by {user_name}\n\n```\n{command}\n```"
-  feishu_permanent_disabled: "💡 Permanent approval is disabled. Choose Allow Once or Session instead."
-
 
 gateway:
   approval_expired: "⚠️ Approbation expirée (l'agent n'attend plus). Demandez à l'agent de réessayer."
@@ -37,6 +22,33 @@ gateway:
   no_active_goal:   "Aucun objectif actif."
   config_read_failed: "⚠️ Impossible de lire config.yaml : {error}"
   config_save_failed: "⚠️ Impossible de sauvegarder la configuration : {error}"
+
+  # Gateway lifecycle messages — shown during restart/shutdown/draining.
+  shutdown_notify_restart: "⚠️ Gateway restarting — Your current task will be interrupted. Send any message after restart and I'll try to resume where you left off."
+  shutdown_notify_stop:    "⚠️ Gateway shutting down — Your current task will be interrupted."
+  restart_success:         "♻ Gateway restarted successfully. Your session continues."
+  online:                  "♻️ Gateway online — Hermes is back and ready."
+
+  # Busy-ack messages — shown when the user sends a message while the agent is running/draining.
+  busy_drain_queued:       "⏳ Gateway {action} — queued for the next turn after it comes back."
+  busy_drain_not_accepting: "⏳ Gateway is {action} and is not accepting another turn right now."
+  busy_drain_no_work:      "⏳ Gateway is {action} and is not accepting new work right now."
+  busy_steer_ack:          "⏩ Steered into current run{status_detail}. Your message arrives after the next tool call."
+  busy_queue_ack:          "⏳ Queued for the next turn{status_detail}. I'll respond once the current task finishes."
+  busy_interrupt_ack:      "⚡ Interrupting current task{status_detail}. I'll respond to your message shortly."
+
+  # Steer command replies.
+  steer_failed:            "⚠️ Steer failed: {error}"
+  steer_queued:            "⏩ Steer queued — arrives after the next tool call: '{preview}'"
+  steer_empty:             "Steer rejected (empty payload)."
+
+  # Force-stop reply.
+  force_stop_pending:      "⚡ Force-stopped. The agent was still starting — session unlocked."
+
+  # Long-running / inactivity notifications.
+  still_working:           "⏳ Still working... ({elapsed} min elapsed{status_detail})"
+  no_activity_warning:     "⚠️ No activity for {elapsed} min. If the agent does not respond soon, it will be timed out in {remaining} min. You can continue waiting or use /reset."
+
 
   model:
     error_prefix:           "Erreur : {error}"
@@ -115,6 +127,12 @@ gateway:
     auto_delete:           "⏱ Les pastes s'effaceront automatiquement dans 6 heures."
     full_logs_hint:        "Pour envoyer les journaux complets, utilisez `hermes debug share` depuis la CLI."
     share_hint:            "Partagez ces liens avec l'équipe Hermes pour obtenir de l'aide."
+
+  destructive_slash_confirm:
+    prompt: "⚠️ **Confirm /{command}**\n\n{detail}\n\nChoose:\n• **Approve Once** — proceed this time only\n• **Always Approve** — proceed and silence this prompt permanently\n• **Cancel** — keep current conversation\n\n_Text fallback: reply `/approve`, `/always`, or `/cancel`._"
+    cancelled: "🟡 /{command} cancelled. Conversation unchanged."
+    always_note: "\n\nℹ️ Future /clear, /new, /reset, and /undo will run without confirmation. Re-enable via `approvals.destructive_slash_confirm: true` in config.yaml."
+
 
   deny:
     stale:                 "❌ Commande refusée (l'approbation était périmée)."
@@ -234,14 +252,6 @@ gateway:
 
   resume:
     db_unavailable:        "Base de données des sessions indisponible."
-    parse_error:           "⚠️ Could not parse `/resume` arguments: {error}.
-Use quotes around titles with spaces, for example: `/resume \"Project A Plan\"`."
-    matrix_no_named_sessions: "No named sessions found for this Matrix room.
-Use `/title My Session` to name the current room session, `/resume --all` to list all Matrix sessions, or `/resume --cross-room <session name>` to explicitly cross room boundaries."
-    matrix_blocked_no_origin: "⚠️ Matrix /resume blocked: this named session has no recorded room origin, so Hermes will not resume it inside the current room by default. Use `/resume --cross-room {name}` if you intentionally want to cross room boundaries."
-    matrix_blocked_other_room: "⚠️ Matrix /resume blocked: that session belongs to a different Matrix room ({room}). Use `/resume --cross-room {name}` if you intentionally want to resume it here."
-    matrix_cross_room_success: "⚠️ Cross-room resume: resumed **{title}** inside Matrix room **{room}**.
-Future messages in this room will use that transcript until `/reset` or another `/resume`.{msg_part}"
     no_named_sessions:     "Aucune session nommée trouvée.\nUtilisez `/title Ma session` pour nommer la session actuelle, puis `/resume Ma session` pour y revenir plus tard."
     list_header:           "📋 **Sessions nommées**\n"
     list_item:             "• **{title}**{preview_part}"
@@ -274,12 +284,6 @@ Future messages in this room will use that transcript until `/reset` or another 
 
   status:
     header:                "📊 **État de Hermes Gateway**"
-    matrix_scope_header:   "**Matrix scope:**"
-    matrix_scope_room:     "  room: {room}"
-    matrix_scope_room_id:  "  room_id: {room_id}"
-    matrix_scope_thread:   "  thread_id: {thread_id}"
-    matrix_scope_mode:     "  session_scope: {scope}"
-    matrix_scope_key:      "  session_key: {session_key}"
     session_id:            "**ID de session :** `{session_id}`"
     title:                 "**Titre :** {title}"
     created:               "**Créé :** {timestamp}"
@@ -323,8 +327,7 @@ Future messages in this room will use that transcript until `/reset` or another 
 
   undo:
     nothing:               "Rien à annuler."
-    removed:               "↩️ {turns} tour(s) annulé(s) ({count} message(s)).\nSauvegardé dans : « {preview} »\nCopiez/modifiez le texte ci-dessus et envoyez-le pour relancer à partir d'ici."
-    invalid_count:         "Nombre invalide « {arg} » — utilisez /undo ou /undo N."
+    removed:               "↩️ {count} message(s) annulé(s).\nSupprimé : « {preview} »"
 
   update:
     platform_not_messaging:  "✗ /update n'est disponible que depuis les plateformes de messagerie. Exécutez `hermes update` depuis le terminal."
@@ -339,6 +342,8 @@ Future messages in this room will use that transcript until `/reset` or another 
     label_model:              "Modèle : `{model}`"
     label_input_tokens:       "Jetons d'entrée : {count}"
     label_cache_read:         "Jetons de lecture du cache : {count}"
+
+    label_cache_hit_rate:     "Cache hit rate: {rate}%"
     label_cache_write:        "Jetons d'écriture du cache : {count}"
     label_output_tokens:      "Jetons de sortie : {count}"
     label_total:              "Total : {count}"
@@ -352,9 +357,6 @@ Future messages in this room will use that transcript until `/reset` or another 
     label_estimated_context:  "Contexte estimé : ~{count} jetons"
     detailed_after_first:     "_(Utilisation détaillée disponible après la première réponse de l'agent)_"
     no_data:                  "Aucune donnée d'utilisation disponible pour cette session."
-
-  credits:
-    not_logged_in:            "Non connecté à Nous Portal. Connecte-toi pour voir ton solde de crédits et recharger."
 
   verbose:
     not_enabled:           "La commande `/verbose` n'est pas activée pour les plateformes de messagerie.\n\nActivez-la dans `config.yaml` :\n```yaml\ndisplay:\n  tool_progress_command: true\n```"
@@ -379,8 +381,6 @@ Future messages in this room will use that transcript until `/reset` or another 
     label_off:             "Désactivé (texte seulement)"
     label_voice_only:      "Activé (réponse vocale aux messages vocaux)"
     label_all:             "TTS (réponse vocale à tous les messages)"
-    help:                  "{toggle}\n\n**Comment fonctionne /voice**\n• `/voice on` — réponse vocale quand vous envoyez un message vocal\n• `/voice tts` — réponse vocale à *chaque* message\n• `/voice off` — retour aux réponses texte uniquement\n• `/voice status` — afficher le mode actuel\n• `/voice` (sans argument) — bascule rapide entre activé et désactivé{channels}"
-    help_channels:         "\n\n**Salons vocaux en direct (Discord)**\n• Rejoignez d'abord un salon vocal, puis `/voice channel` — je rejoins, j'écoute et je parle mes réponses\n• `/voice leave` — se déconnecter du salon vocal"
 
   yolo:
     disabled:                   "⚠️ Mode YOLO **DÉSACTIVÉ** pour cette session — les commandes dangereuses nécessiteront une approbation."

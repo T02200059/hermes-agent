@@ -14,21 +14,6 @@ approval:
   denied:          "      ✗ Отклонено"
   cancelled:       "      ✗ Отменено"
   blocklist_message: "Эта команда находится в безусловном списке блокировки и не может быть одобрена."
-  # Feishu interactive approval card UI text.
-  feishu_card_title: "⚠️ Command Approval Required"
-  feishu_reason_label: "**Reason:** {description}"
-  feishu_btn_once: "✅ Allow Once"
-  feishu_btn_session: "✅ Session"
-  feishu_btn_always: "✅ Always"
-  feishu_btn_deny: "❌ Deny"
-  feishu_resolved_once: "Approved once"
-  feishu_resolved_session: "Approved for session"
-  feishu_resolved_always: "Approved permanently"
-  feishu_resolved_deny: "Denied"
-  feishu_resolved_default: "Resolved"
-  feishu_resolved_body: "by {user_name}\n\n```\n{command}\n```"
-  feishu_permanent_disabled: "💡 Permanent approval is disabled. Choose Allow Once or Session instead."
-
 
 gateway:
   approval_expired: "⚠️ Срок одобрения истёк (агент больше не ожидает). Попросите агента повторить попытку."
@@ -37,6 +22,33 @@ gateway:
   no_active_goal:   "Нет активной цели."
   config_read_failed: "⚠️ Не удалось прочитать config.yaml: {error}"
   config_save_failed: "⚠️ Не удалось сохранить конфигурацию: {error}"
+
+  # Gateway lifecycle messages — shown during restart/shutdown/draining.
+  shutdown_notify_restart: "⚠️ Gateway restarting — Your current task will be interrupted. Send any message after restart and I'll try to resume where you left off."
+  shutdown_notify_stop:    "⚠️ Gateway shutting down — Your current task will be interrupted."
+  restart_success:         "♻ Gateway restarted successfully. Your session continues."
+  online:                  "♻️ Gateway online — Hermes is back and ready."
+
+  # Busy-ack messages — shown when the user sends a message while the agent is running/draining.
+  busy_drain_queued:       "⏳ Gateway {action} — queued for the next turn after it comes back."
+  busy_drain_not_accepting: "⏳ Gateway is {action} and is not accepting another turn right now."
+  busy_drain_no_work:      "⏳ Gateway is {action} and is not accepting new work right now."
+  busy_steer_ack:          "⏩ Steered into current run{status_detail}. Your message arrives after the next tool call."
+  busy_queue_ack:          "⏳ Queued for the next turn{status_detail}. I'll respond once the current task finishes."
+  busy_interrupt_ack:      "⚡ Interrupting current task{status_detail}. I'll respond to your message shortly."
+
+  # Steer command replies.
+  steer_failed:            "⚠️ Steer failed: {error}"
+  steer_queued:            "⏩ Steer queued — arrives after the next tool call: '{preview}'"
+  steer_empty:             "Steer rejected (empty payload)."
+
+  # Force-stop reply.
+  force_stop_pending:      "⚡ Force-stopped. The agent was still starting — session unlocked."
+
+  # Long-running / inactivity notifications.
+  still_working:           "⏳ Still working... ({elapsed} min elapsed{status_detail})"
+  no_activity_warning:     "⚠️ No activity for {elapsed} min. If the agent does not respond soon, it will be timed out in {remaining} min. You can continue waiting or use /reset."
+
 
   model:
     error_prefix:           "Ошибка: {error}"
@@ -115,6 +127,12 @@ gateway:
     auto_delete:           "⏱ Вставки автоматически удалятся через 6 часов."
     full_logs_hint:        "Для загрузки полных журналов используйте `hermes debug share` из CLI."
     share_hint:            "Поделитесь этими ссылками с командой Hermes для получения поддержки."
+
+  destructive_slash_confirm:
+    prompt: "⚠️ **Confirm /{command}**\n\n{detail}\n\nChoose:\n• **Approve Once** — proceed this time only\n• **Always Approve** — proceed and silence this prompt permanently\n• **Cancel** — keep current conversation\n\n_Text fallback: reply `/approve`, `/always`, or `/cancel`._"
+    cancelled: "🟡 /{command} cancelled. Conversation unchanged."
+    always_note: "\n\nℹ️ Future /clear, /new, /reset, and /undo will run without confirmation. Re-enable via `approvals.destructive_slash_confirm: true` in config.yaml."
+
 
   deny:
     stale:                 "❌ Команда отклонена (одобрение устарело)."
@@ -234,14 +252,6 @@ gateway:
 
   resume:
     db_unavailable:        "База данных сеансов недоступна."
-    parse_error:           "⚠️ Could not parse `/resume` arguments: {error}.
-Use quotes around titles with spaces, for example: `/resume \"Project A Plan\"`."
-    matrix_no_named_sessions: "No named sessions found for this Matrix room.
-Use `/title My Session` to name the current room session, `/resume --all` to list all Matrix sessions, or `/resume --cross-room <session name>` to explicitly cross room boundaries."
-    matrix_blocked_no_origin: "⚠️ Matrix /resume blocked: this named session has no recorded room origin, so Hermes will not resume it inside the current room by default. Use `/resume --cross-room {name}` if you intentionally want to cross room boundaries."
-    matrix_blocked_other_room: "⚠️ Matrix /resume blocked: that session belongs to a different Matrix room ({room}). Use `/resume --cross-room {name}` if you intentionally want to resume it here."
-    matrix_cross_room_success: "⚠️ Cross-room resume: resumed **{title}** inside Matrix room **{room}**.
-Future messages in this room will use that transcript until `/reset` or another `/resume`.{msg_part}"
     no_named_sessions:     "Именованных сеансов не найдено.\nИспользуйте `/title Мой сеанс`, чтобы назвать текущий сеанс, затем `/resume Мой сеанс`, чтобы вернуться к нему позже."
     list_header:           "📋 **Именованные сеансы**\n"
     list_item:             "• **{title}**{preview_part}"
@@ -274,12 +284,6 @@ Future messages in this room will use that transcript until `/reset` or another 
 
   status:
     header:                "📊 **Состояние Hermes Gateway**"
-    matrix_scope_header:   "**Matrix scope:**"
-    matrix_scope_room:     "  room: {room}"
-    matrix_scope_room_id:  "  room_id: {room_id}"
-    matrix_scope_thread:   "  thread_id: {thread_id}"
-    matrix_scope_mode:     "  session_scope: {scope}"
-    matrix_scope_key:      "  session_key: {session_key}"
     session_id:            "**ID сеанса:** `{session_id}`"
     title:                 "**Название:** {title}"
     created:               "**Создано:** {timestamp}"
@@ -323,8 +327,7 @@ Future messages in this room will use that transcript until `/reset` or another 
 
   undo:
     nothing:               "Нечего отменять."
-    removed:               "↩️ Отменено ходов: {turns} (сообщений: {count}).\nРезервная копия: «{preview}»\nСкопируйте/отредактируйте текст выше и отправьте его, чтобы запросить заново отсюда."
-    invalid_count:         "Недопустимое число «{arg}» — используйте /undo или /undo N."
+    removed:               "↩️ Отменено сообщений: {count}.\nУдалено: «{preview}»"
 
   update:
     platform_not_messaging:  "✗ /update доступен только на платформах обмена сообщениями. Выполните `hermes update` в терминале."
@@ -339,6 +342,8 @@ Future messages in this room will use that transcript until `/reset` or another 
     label_model:              "Модель: `{model}`"
     label_input_tokens:       "Входные токены: {count}"
     label_cache_read:         "Токены чтения кеша: {count}"
+
+    label_cache_hit_rate:     "Cache hit rate: {rate}%"
     label_cache_write:        "Токены записи кеша: {count}"
     label_output_tokens:      "Выходные токены: {count}"
     label_total:              "Всего: {count}"
@@ -352,9 +357,6 @@ Future messages in this room will use that transcript until `/reset` or another 
     label_estimated_context:  "Ориентировочный контекст: ~{count} токенов"
     detailed_after_first:     "_(Подробное использование доступно после первого ответа агента)_"
     no_data:                  "Данные об использовании для этого сеанса отсутствуют."
-
-  credits:
-    not_logged_in:            "Вы не вошли в Nous Portal. Войдите, чтобы увидеть баланс кредитов и пополнить его."
 
   verbose:
     not_enabled:           "Команда `/verbose` не включена для платформ обмена сообщениями.\n\nВключите в `config.yaml`:\n```yaml\ndisplay:\n  tool_progress_command: true\n```"
@@ -379,8 +381,6 @@ Future messages in this room will use that transcript until `/reset` or another 
     label_off:             "Выкл. (только текст)"
     label_voice_only:      "Вкл. (голосовой ответ на голосовые сообщения)"
     label_all:             "TTS (голосовой ответ на все сообщения)"
-    help:                  "{toggle}\n\n**Как работает /voice**\n• `/voice on` — голосовой ответ, когда вы отправляете голосовое сообщение\n• `/voice tts` — голосовой ответ на *каждое* сообщение\n• `/voice off` — вернуться к ответам только текстом\n• `/voice status` — показать текущий режим\n• `/voice` (без аргумента) — быстрое переключение между вкл и выкл{channels}"
-    help_channels:         "\n\n**Живые голосовые каналы (Discord)**\n• Сначала зайдите в голосовой канал, затем `/voice channel` — я подключусь, буду слушать и отвечать голосом\n• `/voice leave` — отключиться от голосового канала"
 
   yolo:
     disabled:                   "⚠️ Режим YOLO для этого сеанса **ОТКЛЮЧЁН** — опасные команды потребуют одобрения."

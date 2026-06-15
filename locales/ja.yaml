@@ -14,21 +14,6 @@ approval:
   denied:          "      ✗ 拒否しました"
   cancelled:       "      ✗ キャンセルしました"
   blocklist_message: "このコマンドは無条件ブロックリストに含まれており、承認できません。"
-  # Feishu interactive approval card UI text.
-  feishu_card_title: "⚠️ Command Approval Required"
-  feishu_reason_label: "**Reason:** {description}"
-  feishu_btn_once: "✅ Allow Once"
-  feishu_btn_session: "✅ Session"
-  feishu_btn_always: "✅ Always"
-  feishu_btn_deny: "❌ Deny"
-  feishu_resolved_once: "Approved once"
-  feishu_resolved_session: "Approved for session"
-  feishu_resolved_always: "Approved permanently"
-  feishu_resolved_deny: "Denied"
-  feishu_resolved_default: "Resolved"
-  feishu_resolved_body: "by {user_name}\n\n```\n{command}\n```"
-  feishu_permanent_disabled: "💡 Permanent approval is disabled. Choose Allow Once or Session instead."
-
 
 gateway:
   approval_expired: "⚠️ 承認の有効期限が切れました（エージェントはもう待機していません）。エージェントに再試行を依頼してください。"
@@ -37,6 +22,33 @@ gateway:
   no_active_goal:   "アクティブな目標はありません。"
   config_read_failed: "⚠️ config.yaml を読み込めませんでした: {error}"
   config_save_failed: "⚠️ 設定を保存できませんでした: {error}"
+
+  # Gateway lifecycle messages — shown during restart/shutdown/draining.
+  shutdown_notify_restart: "⚠️ Gateway restarting — Your current task will be interrupted. Send any message after restart and I'll try to resume where you left off."
+  shutdown_notify_stop:    "⚠️ Gateway shutting down — Your current task will be interrupted."
+  restart_success:         "♻ Gateway restarted successfully. Your session continues."
+  online:                  "♻️ Gateway online — Hermes is back and ready."
+
+  # Busy-ack messages — shown when the user sends a message while the agent is running/draining.
+  busy_drain_queued:       "⏳ Gateway {action} — queued for the next turn after it comes back."
+  busy_drain_not_accepting: "⏳ Gateway is {action} and is not accepting another turn right now."
+  busy_drain_no_work:      "⏳ Gateway is {action} and is not accepting new work right now."
+  busy_steer_ack:          "⏩ Steered into current run{status_detail}. Your message arrives after the next tool call."
+  busy_queue_ack:          "⏳ Queued for the next turn{status_detail}. I'll respond once the current task finishes."
+  busy_interrupt_ack:      "⚡ Interrupting current task{status_detail}. I'll respond to your message shortly."
+
+  # Steer command replies.
+  steer_failed:            "⚠️ Steer failed: {error}"
+  steer_queued:            "⏩ Steer queued — arrives after the next tool call: '{preview}'"
+  steer_empty:             "Steer rejected (empty payload)."
+
+  # Force-stop reply.
+  force_stop_pending:      "⚡ Force-stopped. The agent was still starting — session unlocked."
+
+  # Long-running / inactivity notifications.
+  still_working:           "⏳ Still working... ({elapsed} min elapsed{status_detail})"
+  no_activity_warning:     "⚠️ No activity for {elapsed} min. If the agent does not respond soon, it will be timed out in {remaining} min. You can continue waiting or use /reset."
+
 
   model:
     error_prefix:           "エラー: {error}"
@@ -115,6 +127,12 @@ gateway:
     auto_delete:           "⏱ ペーストは 6 時間後に自動削除されます。"
     full_logs_hint:        "完全なログのアップロードには、CLI から `hermes debug share` を使用してください。"
     share_hint:            "サポートを受けるには、このリンクを Hermes チームに共有してください。"
+
+  destructive_slash_confirm:
+    prompt: "⚠️ **Confirm /{command}**\n\n{detail}\n\nChoose:\n• **Approve Once** — proceed this time only\n• **Always Approve** — proceed and silence this prompt permanently\n• **Cancel** — keep current conversation\n\n_Text fallback: reply `/approve`, `/always`, or `/cancel`._"
+    cancelled: "🟡 /{command} cancelled. Conversation unchanged."
+    always_note: "\n\nℹ️ Future /clear, /new, /reset, and /undo will run without confirmation. Re-enable via `approvals.destructive_slash_confirm: true` in config.yaml."
+
 
   deny:
     stale:                 "❌ コマンドを拒否しました (承認は期限切れでした)。"
@@ -234,14 +252,6 @@ gateway:
 
   resume:
     db_unavailable:        "セッションデータベースは利用できません。"
-    parse_error:           "⚠️ Could not parse `/resume` arguments: {error}.
-Use quotes around titles with spaces, for example: `/resume \"Project A Plan\"`."
-    matrix_no_named_sessions: "No named sessions found for this Matrix room.
-Use `/title My Session` to name the current room session, `/resume --all` to list all Matrix sessions, or `/resume --cross-room <session name>` to explicitly cross room boundaries."
-    matrix_blocked_no_origin: "⚠️ Matrix /resume blocked: this named session has no recorded room origin, so Hermes will not resume it inside the current room by default. Use `/resume --cross-room {name}` if you intentionally want to cross room boundaries."
-    matrix_blocked_other_room: "⚠️ Matrix /resume blocked: that session belongs to a different Matrix room ({room}). Use `/resume --cross-room {name}` if you intentionally want to resume it here."
-    matrix_cross_room_success: "⚠️ Cross-room resume: resumed **{title}** inside Matrix room **{room}**.
-Future messages in this room will use that transcript until `/reset` or another `/resume`.{msg_part}"
     no_named_sessions:     "名前付きセッションが見つかりません。\n`/title セッション名` で現在のセッションに名前を付けると、後で `/resume セッション名` で戻れます。"
     list_header:           "📋 **名前付きセッション**\n"
     list_item:             "• **{title}**{preview_part}"
@@ -274,12 +284,6 @@ Future messages in this room will use that transcript until `/reset` or another 
 
   status:
     header:                "📊 **Hermes ゲートウェイ状態**"
-    matrix_scope_header:   "**Matrix scope:**"
-    matrix_scope_room:     "  room: {room}"
-    matrix_scope_room_id:  "  room_id: {room_id}"
-    matrix_scope_thread:   "  thread_id: {thread_id}"
-    matrix_scope_mode:     "  session_scope: {scope}"
-    matrix_scope_key:      "  session_key: {session_key}"
     session_id:            "**セッション ID:** `{session_id}`"
     title:                 "**タイトル:** {title}"
     created:               "**作成日時:** {timestamp}"
@@ -323,8 +327,7 @@ Future messages in this room will use that transcript until `/reset` or another 
 
   undo:
     nothing:               "元に戻せる操作がありません。"
-    removed:               "↩️ {turns} ターンを取り消しました（{count} 件のメッセージ）。\nバックアップ先: 「{preview}」\n上のテキストをコピー／編集して送信すると、ここから再入力できます。"
-    invalid_count:         "無効な数値「{arg}」— /undo または /undo N を使用してください。"
+    removed:               "↩️ {count} 件のメッセージを取り消しました。\n削除: 「{preview}」"
 
   update:
     platform_not_messaging:  "✗ /update はメッセージングプラットフォームでのみ利用可能です。ターミナルで `hermes update` を実行してください。"
@@ -339,6 +342,8 @@ Future messages in this room will use that transcript until `/reset` or another 
     label_model:              "モデル: `{model}`"
     label_input_tokens:       "入力トークン: {count}"
     label_cache_read:         "キャッシュ読み取りトークン: {count}"
+
+    label_cache_hit_rate:     "Cache hit rate: {rate}%"
     label_cache_write:        "キャッシュ書き込みトークン: {count}"
     label_output_tokens:      "出力トークン: {count}"
     label_total:              "合計: {count}"
@@ -352,9 +357,6 @@ Future messages in this room will use that transcript until `/reset` or another 
     label_estimated_context:  "推定コンテキスト: ~{count} トークン"
     detailed_after_first:     "_(詳細な使用状況は最初のエージェント応答後に利用可能)_"
     no_data:                  "このセッションの使用データはありません。"
-
-  credits:
-    not_logged_in:            "Nous Portal にログインしていません。ログインすると残高の確認とチャージができます。"
 
   verbose:
     not_enabled:           "`/verbose` コマンドはメッセージングプラットフォームで有効になっていません。\n\n`config.yaml` で有効にしてください:\n```yaml\ndisplay:\n  tool_progress_command: true\n```"
@@ -379,8 +381,6 @@ Future messages in this room will use that transcript until `/reset` or another 
     label_off:             "オフ (テキストのみ)"
     label_voice_only:      "オン (音声メッセージにのみ音声で返信)"
     label_all:             "TTS (すべてのメッセージに音声で返信)"
-    help:                  "{toggle}\n\n**/voice の使い方**\n• `/voice on` — 音声メッセージを送ると音声で返信\n• `/voice tts` — *すべての*メッセージに音声で返信\n• `/voice off` — テキストのみの返信に戻す\n• `/voice status` — 現在のモードを表示\n• `/voice`（引数なし）— オンとオフをすばやく切り替え{channels}"
-    help_channels:         "\n\n**ライブ音声チャンネル (Discord)**\n• 先に音声チャンネルに参加してから `/voice channel` — 参加して聞き取り、音声で返信します\n• `/voice leave` — 音声チャンネルから切断"
 
   yolo:
     disabled:                   "⚠️ このセッションの YOLO モードは **OFF** — 危険なコマンドには承認が必要です。"
