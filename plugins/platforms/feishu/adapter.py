@@ -2532,12 +2532,14 @@ class FeishuAdapter(BasePlatformAdapter):
         operator_id = getattr(event, "operator_id", None)
         open_id = str(getattr(operator_id, "open_id", "") or "")
         if open_id and chat_id:
-            from owner.feishu.user_cache import get_user_entry
+            from owner.feishu.user_cache import cache_p2p_chat_id
 
-            entry = get_user_entry(self._feishu_user_cache, open_id)
-            if entry.p2p_chat_id != chat_id:
-                entry.p2p_chat_id = chat_id
-                self._chat_id_cache_debouncer.mark_dirty()
+            if cache_p2p_chat_id(
+                self._feishu_user_cache,
+                open_id,
+                chat_id,
+                debouncer=self._chat_id_cache_debouncer,
+            ):
                 logger.debug("[Feishu] Cached p2p_chat_id for %s", open_id)
             # Pre-warm sender name asynchronously so it's ready for menus / approvals.
             if not entry.name:
@@ -3224,6 +3226,34 @@ class FeishuAdapter(BasePlatformAdapter):
         )
 
         chat_id = getattr(message, "chat_id", "") or ""
+        # [owner] bot-menu: p2p inbound also warms open_id → p2p_chat_id (see owner/feishu/user_cache.py)
+        if chat_type == "p2p" and chat_id:
+            open_id = str(getattr(sender_id, "open_id", "") or "").strip()
+            if open_id:
+                from owner.feishu.user_cache import cache_p2p_chat_id
+
+                if cache_p2p_chat_id(
+                    self._feishu_user_cache,
+                    open_id,
+                    chat_id,
+                    debouncer=self._chat_id_cache_debouncer,
+                ):
+                    logger.debug(
+                        "[Feishu] Cached p2p_chat_id for %s from inbound message",
+                        open_id,
+                    )
+        # [owner] approval: pre-warm name cache before resolve (see owner/feishu/sender_name_helpers.py)
+        if not is_bot:
+            _warm_id = str(getattr(sender_id, "open_id", "") or "").strip()
+            if not _warm_id:
+                _warm_id = (
+                    str(getattr(sender_id, "user_id", "") or "").strip()
+                    or str(getattr(sender_id, "union_id", "") or "").strip()
+                )
+            if _warm_id:
+                _owner_import(
+                    "owner.feishu.sender_name_helpers", "pre_warm_sender_name"
+                )(self, _warm_id, is_bot=False)
         chat_info = await self.get_chat_info(chat_id)
         sender_profile = await self._resolve_sender_profile(sender_id, is_bot=is_bot)
         source = self.build_source(

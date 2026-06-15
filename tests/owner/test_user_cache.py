@@ -6,6 +6,7 @@ from pathlib import Path
 
 from owner.feishu.user_cache import (
     FeishuUserEntry,
+    cache_p2p_chat_id,
     get_cached_chat_id,
     get_user_entry,
     load_chat_id_cache,
@@ -46,6 +47,29 @@ class TestGetUserEntry:
         assert e2 is e1
         assert e2.name == "Bob"
         assert e2.last_seen_at >= ts
+
+
+class TestCacheP2pChatId:
+    def test_writes_new_mapping(self):
+        cache = {}
+        assert cache_p2p_chat_id(cache, "ou_a", "oc_dm1") is True
+        assert get_cached_chat_id(cache, "ou_a") == "oc_dm1"
+
+    def test_noop_when_unchanged(self):
+        cache = {}
+        cache_p2p_chat_id(cache, "ou_a", "oc_dm1")
+        assert cache_p2p_chat_id(cache, "ou_a", "oc_dm1") is False
+
+    def test_updates_changed_chat_id(self):
+        cache = {}
+        cache_p2p_chat_id(cache, "ou_a", "oc_old")
+        assert cache_p2p_chat_id(cache, "ou_a", "oc_new") is True
+        assert get_cached_chat_id(cache, "ou_a") == "oc_new"
+
+    def test_skips_empty_ids(self):
+        cache = {}
+        assert cache_p2p_chat_id(cache, "", "oc_x") is False
+        assert cache_p2p_chat_id(cache, "ou_a", "") is False
 
 
 class TestGetCachedChatId:
