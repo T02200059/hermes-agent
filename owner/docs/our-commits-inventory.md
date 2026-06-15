@@ -63,7 +63,7 @@
 - [x] ⚠️ 废弃（纯文档md，不迁移）`4b962fa` | 2026-06-12 | `yangtb` | docs(feishu): rename v1-v5 multi-profile docs to -已弃用 (v6 cleanup) | +0 | −0 |
 - [ ] `e922b2a` | 2026-06-12 | `yangtb` | chore(test): remove test_feishu_profile_router.py (v6 cleanup) | +0 | −196 |
 - [ ] `dfae252` | 2026-06-12 | `yangtb` | chore(feishu): remove feishu_profile_router.py (v6 cleanup) | +0 | −403 |
-- [ ] `71b0869` | 2026-06-11 | `yangtb` | test(providers): update DeepSeek thinking test for MiniMax carve-out | +9 | −4 |
+- [x] [废弃] `71b0869` | 2026-06-11 | `yangtb` | test(providers): update DeepSeek thinking test for MiniMax carve-out | +9 | −4 |
 - [ ] `a311083` | 2026-06-11 | `yangtb` | feat(providers): MiniMax Anthropic endpoint thinking-block support | +32 | −4 |
 - [⏸️ 已决策·暂不迁移（rate limiter 不存在于 owner-v16，需整体评估）] `b263fd5` | 2026-06-11 | `yangtb` | config: reduce openrouter rate limit to 20 req/min | +1 | −1 |
 - [ ] `25561ad` | 2026-06-11 | `yangtb` | feat(providers): credential validation + model list overrides in /providers | +97 | −9 |
