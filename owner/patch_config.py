@@ -13,10 +13,10 @@ from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
-# 5-minute TTL for patch.yaml reloads (in addition to mtime-based invalidation on file change).
+# 1-minute TTL for patch.yaml reloads (in addition to mtime-based invalidation on file change).
 # This ensures periodic refresh even if the file mtime does not change (e.g. network mounts,
 # external edits, or safety against stale cache in long-running gateway processes).
-_PATCH_TTL_SECONDS = 300
+_PATCH_TTL_SECONDS = 60
 
 _cache: Dict[str, Any] = {"path": None, "mtime": None, "data": None, "last_load": 0}
 
