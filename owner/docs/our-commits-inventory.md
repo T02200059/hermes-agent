@@ -56,7 +56,7 @@
 - [x] ✅ 已迁移 `54ca17325` `c571ea8` | 2026-06-12 | `yangtb` | feat(agent): capture model/provider in build_assistant_message for per-turn attribution | +6 | −0 |
 - [x] ✅ 已迁移 `54ca17325` `ef65e92` | 2026-06-12 | `yangtb` | feat(db): add model/provider columns to messages for per-turn attribution | +42 | −6 |
 - [x] ✅ 已迁移 `dd59d8a1c` `b35729e` | 2026-06-12 | `yangtb` | feat(config): reduce patch.yaml cache TTL 5min→1min, add invalidate_patch_owner_config_cache() | +8 | −2 |
-- [ ] `4d258c0` | 2026-06-12 | `yangtb` | feat(api_server): warn once when API_SERVER_KEY is not set | +9 | −0 |
+- [x] [废弃] `4d258c0` | 2026-06-12 | `yangtb` | feat(api_server): warn once when API_SERVER_KEY is not set | +9 | −0 |
 - [ ] `3e72fef` | 2026-06-12 | `yangtb` | feat(feishu): v6 external-container multi-profile routing | +172 | −103 |
 - [ ] `2b2e02c` | 2026-06-12 | `yangtb` | test(feishu): add profile routing tests (_resolve_profile_route, _forward_to_profile_container, registry) | +496 | −0 |
 - [x] ⚠️ 废弃（纯文档md，不迁移）`d14cc49` | 2026-06-12 | `yangtb` | docs(feishu): add v6 single-bot multi-profile design doc (external container architecture) | +506 | −0 |
