@@ -514,29 +514,51 @@ def test_hydrate_bot_identity_populates_self_ids_from_bot_v3_info(monkeypatch):
 
 def test_resolve_sender_profile_uses_open_id_for_bot_name_lookup():
     import asyncio
+    import json
+    from unittest.mock import patch
 
+    from gateway.config import PlatformConfig
     from plugins.platforms.feishu.adapter import FeishuAdapter
 
-    adapter = object.__new__(FeishuAdapter)
-    adapter._client = object()
-    adapter._sender_name_cache = {}
-    seen_ids = []
+    adapter = FeishuAdapter(PlatformConfig())
+    calls = []
 
-    async def _fake_fetch_bot_names(bot_ids):
-        seen_ids.extend(bot_ids)
-        return {"ou_peer": "Peer Bot"}
+    def _fake_request(request):
+        calls.append(request)
+        payload = json.dumps(
+            {
+                "code": 0,
+                "msg": "",
+                "data": {
+                    "bots": {
+                        "ou_peer": {
+                            "bot_id": "ou_peer",
+                            "name": "Peer Bot",
+                            "i18n_names": {"en_us": "Peer Bot"},
+                        }
+                    },
+                    "failed_bots": {},
+                },
+            }
+        ).encode()
+        return SimpleNamespace(raw=SimpleNamespace(content=payload))
 
-    adapter._fetch_bot_names = _fake_fetch_bot_names
+    adapter._client = SimpleNamespace(request=_fake_request)
 
-    profile = asyncio.run(
-        adapter._resolve_sender_profile(
-            SimpleNamespace(open_id="ou_peer", user_id="u_peer", union_id="on_peer"),
-            is_bot=True,
+    async def _direct(func, *args, **kwargs):
+        return func(*args, **kwargs)
+
+    with patch("gateway.platforms.feishu.asyncio.to_thread", side_effect=_direct):
+        profile = asyncio.run(
+            adapter._resolve_sender_profile(
+                SimpleNamespace(open_id="ou_peer", user_id="u_peer", union_id="on_peer"),
+                is_bot=True,
+            )
         )
-    )
 
-    assert seen_ids == ["ou_peer"]
-    assert profile["user_id"] == "u_peer"
+    assert len(calls) == 1
+    assert calls[0].queries == [("bot_ids", "ou_peer")]
+    assert profile["user_id"] == "ou_peer"
     assert profile["user_name"] == "Peer Bot"
 
 

@@ -1416,6 +1416,64 @@ class FeishuAdapter(BasePlatformAdapter):
     splits_long_messages = True  # send() chunks via truncate_message(MAX_MESSAGE_LENGTH)
 
     MAX_MESSAGE_LENGTH = 8000
+
+    # [owner] user store: deprecated forwards for tests (see owner/feishu/user_store.py)
+    @property
+    def _name_cache(self) -> Any:
+        store = getattr(self, "_user_store", None)
+        if store is not None:
+            return store.name_cache
+        return getattr(self, "_name_cache_impl", None)
+
+    @_name_cache.setter
+    def _name_cache(self, value: Any) -> None:
+        store = getattr(self, "_user_store", None)
+        if store is not None:
+            store.name_cache = value
+        else:
+            self._name_cache_impl = value
+
+    @property
+    def _feishu_user_cache(self) -> Dict[str, Any]:
+        store = getattr(self, "_user_store", None)
+        if store is not None:
+            return store.users
+        cache = getattr(self, "_feishu_user_cache_impl", None)
+        if cache is None:
+            cache = {}
+            self._feishu_user_cache_impl = cache
+        return cache
+
+    @property
+    def _sender_name_cache(self) -> Dict[str, tuple[str, float]]:
+        store = getattr(self, "_user_store", None)
+        if store is not None:
+            return store.legacy_name_dict
+        cache = getattr(self, "_sender_name_cache_impl", None)
+        if cache is None:
+            cache = {}
+            self._sender_name_cache_impl = cache
+        return cache
+
+    @_sender_name_cache.setter
+    def _sender_name_cache(self, value: Dict[str, tuple[str, float]]) -> None:
+        store = getattr(self, "_user_store", None)
+        if store is not None:
+            store.replace_legacy_name_dict(value)
+        else:
+            self._sender_name_cache_impl = value
+
+    @property
+    def _client(self) -> Optional[Any]:
+        return getattr(self, "_client_impl", None)
+
+    @_client.setter
+    def _client(self, value: Optional[Any]) -> None:
+        self._client_impl = value
+        store = getattr(self, "_user_store", None)
+        if store is not None:
+            store.bind_client(value)
+
     # Max distinct chat IDs retained in _chat_locks before LRU eviction kicks in.
     CHAT_LOCK_MAX_SIZE: int = 1000
     # Threshold for detecting Feishu client-side message splits.
@@ -1432,7 +1490,7 @@ class FeishuAdapter(BasePlatformAdapter):
 
         self._settings = self._load_settings(config.extra or {})
         self._apply_settings(self._settings)
-        self._client: Optional[Any] = None
+        self._client_impl: Optional[Any] = None
         self._ws_client: Optional[Any] = None
         self._ws_future: Optional[asyncio.Future] = None
         self._ws_thread_loop: Optional[asyncio.AbstractEventLoop] = None
@@ -1444,21 +1502,13 @@ class FeishuAdapter(BasePlatformAdapter):
         self._seen_message_order: List[str] = []
         self._dedup_state_path = get_hermes_home() / "feishu_seen_message_ids.json"
         self._dedup_lock = threading.Lock()
-        # [owner] approval: name cache instance (open_id -> 中文名 only; see owner/feishu/sender_name_cache.py)
-        # created lazily on first use (or bind after connect) so we don't depend on client at __init__ time
-        self._name_cache: Any = None
-        # legacy alias so existing tests that poke adapter._sender_name_cache[...] continue to work
-        # (they directly mutate for pre-warm simulation). Real code uses the encapsulated _name_cache.
-        self._sender_name_cache: Dict[str, tuple[str, float]] = {}
-        # [owner] bot-menu: user cache + disk persistence (see owner/feishu/user_cache.py)
-        from owner.feishu.user_cache import FeishuUserEntry, ChatIdCacheDebouncer, load_chat_id_cache, save_chat_id_cache
-        self._feishu_user_cache: Dict[str, "FeishuUserEntry"] = {}
-        self._chat_id_cache_path = get_hermes_home() / "feishu_chat_id_cache.json"
-        self._chat_id_cache_lock = threading.Lock()
-        self._chat_id_cache_debouncer = ChatIdCacheDebouncer(
-            save_fn=lambda: save_chat_id_cache(self._chat_id_cache_path, self._feishu_user_cache)
+        # [owner] user store: unified open_id state (name TTL + p2p chat_id disk cache)
+        from owner.feishu.user_store import FeishuUserStore
+
+        self._user_store = FeishuUserStore(
+            chat_id_cache_path=get_hermes_home() / "feishu_chat_id_cache.json",
+            legacy_name_dict={},
         )
-        load_chat_id_cache(self._chat_id_cache_path, self._feishu_user_cache)
         # [owner] bot-menu: dedup + bot_menu_dedup_lock
         self._bot_menu_dedup: Dict[tuple[str, str], float] = {}
         self._bot_menu_dedup_lock = threading.Lock()
@@ -2525,24 +2575,17 @@ class FeishuAdapter(BasePlatformAdapter):
         logger.info("[Feishu] Bot removed from chat: %s", chat_id)
         self._chat_info_cache.pop(chat_id, None)
 
-    # [owner] bot-menu: p2p chat enter cache warm (see owner/feishu/user_cache.py)
+    # [owner] user store: p2p chat enter cache warm (see owner/feishu/user_store.py)
     def _on_p2p_chat_entered(self, data: Any) -> None:
         event = getattr(data, "event", None)
         chat_id = str(getattr(event, "chat_id", "") or "")
         operator_id = getattr(event, "operator_id", None)
         open_id = str(getattr(operator_id, "open_id", "") or "")
         if open_id and chat_id:
-            from owner.feishu.user_cache import cache_p2p_chat_id
-
-            if cache_p2p_chat_id(
-                self._feishu_user_cache,
-                open_id,
-                chat_id,
-                debouncer=self._chat_id_cache_debouncer,
-            ):
+            if self._user_store.cache_p2p_chat_id(open_id, chat_id):
                 logger.debug("[Feishu] Cached p2p_chat_id for %s", open_id)
             # Pre-warm sender name asynchronously so it's ready for menus / approvals.
-            if not entry.name:
+            if not self._user_store.get_cached_name(open_id):
                 loop = self._loop
                 if self._loop_accepts_callbacks(loop):
                     self._submit_on_loop(
@@ -3226,22 +3269,14 @@ class FeishuAdapter(BasePlatformAdapter):
         )
 
         chat_id = getattr(message, "chat_id", "") or ""
-        # [owner] bot-menu: p2p inbound also warms open_id → p2p_chat_id (see owner/feishu/user_cache.py)
+        # [owner] user store: p2p inbound warms open_id → p2p_chat_id (see owner/feishu/user_store.py)
         if chat_type == "p2p" and chat_id:
             open_id = str(getattr(sender_id, "open_id", "") or "").strip()
-            if open_id:
-                from owner.feishu.user_cache import cache_p2p_chat_id
-
-                if cache_p2p_chat_id(
-                    self._feishu_user_cache,
+            if open_id and self._user_store.cache_p2p_chat_id(open_id, chat_id):
+                logger.debug(
+                    "[Feishu] Cached p2p_chat_id for %s from inbound message",
                     open_id,
-                    chat_id,
-                    debouncer=self._chat_id_cache_debouncer,
-                ):
-                    logger.debug(
-                        "[Feishu] Cached p2p_chat_id for %s from inbound message",
-                        open_id,
-                    )
+                )
         # [owner] approval: pre-warm name cache before resolve (see owner/feishu/sender_name_helpers.py)
         if not is_bot:
             _warm_id = str(getattr(sender_id, "open_id", "") or "").strip()
@@ -4607,6 +4642,7 @@ class FeishuAdapter(BasePlatformAdapter):
             raise RuntimeError("websockets not installed; websocket mode unavailable")
         domain = FEISHU_DOMAIN if self._domain_name != "lark" else LARK_DOMAIN
         self._client = self._build_lark_client(domain)
+        self._user_store.bind_client(self._client)
         self._event_handler = self._build_event_handler()
         if self._event_handler is None:
             raise RuntimeError("failed to build Feishu event handler")
@@ -4633,6 +4669,7 @@ class FeishuAdapter(BasePlatformAdapter):
             raise RuntimeError("aiohttp not installed; webhook mode unavailable")
         domain = FEISHU_DOMAIN if self._domain_name != "lark" else LARK_DOMAIN
         self._client = self._build_lark_client(domain)
+        self._user_store.bind_client(self._client)
         self._event_handler = self._build_event_handler()
         if self._event_handler is None:
             raise RuntimeError("failed to build Feishu event handler")
