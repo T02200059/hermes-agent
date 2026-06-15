@@ -12,6 +12,8 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
+from owner.feishu.sender_name_helpers import operator_display_name
+
 logger = logging.getLogger(__name__)
 
 
@@ -165,9 +167,7 @@ def handle_picker_action(
         state = getattr(adapter, "_model_picker_state", {}).pop(picker_id, {})
         operator = getattr(event, "operator", None)
         open_id = str(getattr(operator, "open_id", "") or "")
-        user_name = (
-            _get_cached_sender_name(adapter, open_id) or open_id
-        )
+        user_name = operator_display_name(adapter, open_id)
         command = f"/model {model} --provider {provider} --global"
 
         # Route the synthetic command through the adapter.
@@ -179,16 +179,6 @@ def handle_picker_action(
         )
 
     return _empty_response(P2CardActionTriggerResponse)
-
-
-def _get_cached_sender_name(adapter: Any, open_id: str) -> str:
-    """Read cached sender display name from the adapter, if available."""
-    try:
-        if hasattr(adapter, "_get_cached_sender_name"):
-            return adapter._get_cached_sender_name(open_id) or ""
-    except Exception:
-        pass
-    return ""
 
 
 def _route_picker_command(
