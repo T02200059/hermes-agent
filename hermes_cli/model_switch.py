@@ -1464,17 +1464,42 @@ def list_authenticated_providers(
                 continue
 
         # Check if any env var is set
-        has_creds = any(os.environ.get(ev) for ev in env_vars)
+        # [owner] use has_valid_github_token to filter classic PATs
+        try:
+            from owner.providers.credential_helpers import has_valid_github_token
+            has_creds = has_valid_github_token(env_vars)
+        except Exception:
+            has_creds = any(os.environ.get(ev) for ev in env_vars)
         if not has_creds:
             try:
                 from hermes_cli.auth import _load_auth_store
                 store = _load_auth_store()
-                if store and store.get("credential_pool", {}).get(hermes_id):
+                # [owner] check OAuth token expiration
+                providers_store = store.get("providers", {})
+                _entry = providers_store.get(hermes_id)
+                if _entry and isinstance(_entry, dict):
+                    try:
+                        from owner.providers.credential_helpers import is_token_expired
+                        if not is_token_expired(_entry.get("expires_at")):
+                            has_creds = True
+                    except Exception:
+                        has_creds = True
+                elif store and store.get("credential_pool", {}).get(hermes_id):
                     has_creds = True
             except Exception:
                 pass
+        # [owner] model list override: config.yaml provider.models > built-in list
         if not has_creds:
             continue
+        if user_providers and isinstance(user_providers, dict):
+            _ucfg = user_providers.get(hermes_id, {})
+            if isinstance(_ucfg, dict):
+                _ucfg_models = _ucfg.get("models", {})
+                if _ucfg_models:
+                    if isinstance(_ucfg_models, dict):
+                        model_ids = list(_ucfg_models.keys())
+                    elif isinstance(_ucfg_models, list):
+                        model_ids = list(_ucfg_models)
 
         # Unified pathway: route through cached_provider_model_ids() so the
         # /model picker sees the SAME list `hermes model` would build, with
@@ -1528,15 +1553,27 @@ def list_authenticated_providers(
         if overlay.auth_type == "aws_sdk":
             has_creds = _has_aws_sdk_creds_for_listing(hermes_slug)
         elif overlay.extra_env_vars:
-            has_creds = any(os.environ.get(ev) for ev in overlay.extra_env_vars)
+            # [owner] use has_valid_github_token to filter classic PATs
+            try:
+                from owner.providers.credential_helpers import has_valid_github_token
+                has_creds = has_valid_github_token(overlay.extra_env_vars)
+            except Exception:
+                has_creds = any(os.environ.get(ev) for ev in overlay.extra_env_vars)
         # Also check api_key_env_vars from PROVIDER_REGISTRY for api_key auth_type
         if not has_creds and overlay.auth_type == "api_key":
             for _key in (pid, hermes_slug):
                 pcfg = _auth_registry.get(_key)
                 if pcfg and pcfg.api_key_env_vars:
-                    if any(os.environ.get(ev) for ev in pcfg.api_key_env_vars):
-                        has_creds = True
-                        break
+                    # [owner] use has_valid_github_token to filter classic PATs
+                    try:
+                        from owner.providers.credential_helpers import has_valid_github_token
+                        if has_valid_github_token(pcfg.api_key_env_vars):
+                            has_creds = True
+                            break
+                    except Exception:
+                        if any(os.environ.get(ev) for ev in pcfg.api_key_env_vars):
+                            has_creds = True
+                            break
         # Check auth store and credential pool for non-env-var credentials.
         # This applies to OAuth providers AND api_key providers that also
         # support OAuth (e.g. anthropic supports both API key and Claude Code
@@ -1546,8 +1583,19 @@ def list_authenticated_providers(
                 from hermes_cli.auth import _load_auth_store
                 store = _load_auth_store()
                 providers_store = store.get("providers", {})
-                if store and (pid in providers_store or hermes_slug in providers_store):
-                    has_creds = True
+                # [owner] check OAuth token expiration
+                for _store_key in (pid, hermes_slug):
+                    _entry = providers_store.get(_store_key)
+                    if not _entry or not isinstance(_entry, dict):
+                        continue
+                    try:
+                        from owner.providers.credential_helpers import is_token_expired
+                        if not is_token_expired(_entry.get("expires_at")):
+                            has_creds = True
+                            break
+                    except Exception:
+                        has_creds = True
+                        break
             except Exception as exc:
                 logger.debug("Auth store check failed for %s: %s", pid, exc)
         # Fallback: check the credential pool with full auto-seeding.
@@ -1558,8 +1606,16 @@ def list_authenticated_providers(
             try:
                 from agent.credential_pool import load_pool
                 pool = load_pool(hermes_slug)
-                if pool.has_credentials():
-                    has_creds = True
+                # [owner] check if all credentials are expired
+                try:
+                    from owner.providers.credential_helpers import is_token_expired
+                    _pool_entries = pool.entries()
+                    has_creds = any(
+                        not is_token_expired(getattr(pe, "expires_at", None))
+                        for pe in _pool_entries
+                    )
+                except Exception:
+                    has_creds = pool.has_credentials()
             except Exception as exc:
                 logger.debug("Credential pool check failed for %s: %s", hermes_slug, exc)
         # Fallback: check external credential files directly.
@@ -1584,6 +1640,19 @@ def list_authenticated_providers(
                 logger.debug("Anthropic external creds check failed: %s", exc)
         if not has_creds:
             continue
+
+        # [owner] model list override: config.yaml provider.models > built-in list
+        if user_providers and isinstance(user_providers, dict):
+            for _pk in (hermes_slug, pid):
+                _ucfg = user_providers.get(_pk, {})
+                if isinstance(_ucfg, dict):
+                    _ucfg_models = _ucfg.get("models", {})
+                    if _ucfg_models:
+                        if isinstance(_ucfg_models, dict):
+                            model_ids = list(_ucfg_models.keys())
+                        elif isinstance(_ucfg_models, list):
+                            model_ids = list(_ucfg_models)
+                        break
 
         if hermes_slug in {"openai-codex", "copilot", "copilot-acp"}:
             # Use live OAuth-backed discovery so the gateway /model picker
@@ -1681,23 +1750,43 @@ def list_authenticated_providers(
         _cp_config = _auth_registry.get(_cp.slug)
         _cp_has_creds = False
         if _cp_config and _cp_config.api_key_env_vars:
-            _cp_has_creds = any(os.environ.get(ev) for ev in _cp_config.api_key_env_vars)
+            # [owner] use has_valid_github_token to filter classic PATs
+            try:
+                from owner.providers.credential_helpers import has_valid_github_token
+                _cp_has_creds = has_valid_github_token(_cp_config.api_key_env_vars)
+            except Exception:
+                _cp_has_creds = any(os.environ.get(ev) for ev in _cp_config.api_key_env_vars)
         # Also check auth store and credential pool
         if not _cp_has_creds:
             try:
                 from hermes_cli.auth import _load_auth_store
                 _cp_store = _load_auth_store()
                 _cp_providers_store = _cp_store.get("providers", {})
-                if _cp_store and _cp.slug in _cp_providers_store:
-                    _cp_has_creds = True
+                # [owner] check OAuth token expiration
+                _cp_entry = _cp_providers_store.get(_cp.slug)
+                if _cp_entry and isinstance(_cp_entry, dict):
+                    try:
+                        from owner.providers.credential_helpers import is_token_expired
+                        if not is_token_expired(_cp_entry.get("expires_at")):
+                            _cp_has_creds = True
+                    except Exception:
+                        _cp_has_creds = True
             except Exception:
                 pass
         if not _cp_has_creds:
             try:
                 from agent.credential_pool import load_pool
                 _cp_pool = load_pool(_cp.slug)
-                if _cp_pool.has_credentials():
-                    _cp_has_creds = True
+                # [owner] check if all credentials are expired
+                try:
+                    from owner.providers.credential_helpers import is_token_expired
+                    _cp_pool_entries = _cp_pool.entries()
+                    _cp_has_creds = any(
+                        not is_token_expired(getattr(pe, "expires_at", None))
+                        for pe in _cp_pool_entries
+                    )
+                except Exception:
+                    _cp_has_creds = _cp_pool.has_credentials()
             except Exception:
                 pass
 
@@ -1911,6 +2000,13 @@ def list_authenticated_providers(
             ).strip().rstrip("/")
             if not raw_name or not api_url:
                 continue
+            # [owner] skip if this entry matches a built-in provider already emitted
+            try:
+                from hermes_cli.providers import normalize_provider as _np
+                if _np(raw_name).lower() in seen_slugs:
+                    continue
+            except Exception:
+                pass
             inline_api_key = (entry.get("api_key") or "").strip()
             key_env = (entry.get("key_env") or "").strip()
             api_key = inline_api_key or (
