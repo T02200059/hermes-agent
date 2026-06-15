@@ -1843,6 +1843,6 @@ registry.register(
         task_id=kw.get("task_id"),
         enabled_tools=kw.get("enabled_tools")),
     check_fn=check_sandbox_requirements,
-    emoji="🐍",
+    emoji="🛠️",  # [owner] 🐍 → 🛠️: reflects orchestration role, not just Python
     max_result_size_chars=100_000,
 )
