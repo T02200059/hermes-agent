@@ -33,6 +33,13 @@ def _patch_toolsets() -> None:
         logger.warning("[owner] memory_propose: failed to import toolsets/registry for patch: %s", exc)
         return
 
+    # tools/*.py discovery is alphabetical: memory_propose_tool.py loads before
+    # memory_tool.py, so force-register legacy memory here before deregister.
+    try:
+        import tools.memory_tool  # noqa: F401
+    except ImportError as exc:
+        logger.debug("[owner] memory_propose: memory_tool unavailable: %s", exc)
+
     # Deregister legacy memory tool if present.
     try:
         if registry.get_entry("memory") is not None:

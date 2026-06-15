@@ -1369,8 +1369,11 @@ def create_openai_client(agent, client_kwargs: dict, *, reason: str, shared: boo
     client_kwargs = dict(client_kwargs)
     _validate_proxy_env_urls()
     _validate_base_url(client_kwargs.get("base_url"))
-    # [owner] P30: auto-append /v1 for bare-domain base_urls (see utils)
-    from utils import normalize_bare_domain_base_url
+    # [owner] P30: auto-append /v1 for bare-domain base_urls (owner/utils.py)
+    try:
+        from owner.utils import normalize_bare_domain_base_url
+    except ImportError:
+        normalize_bare_domain_base_url = lambda u: u  # type: ignore[assignment,misc]
     _raw_bu = client_kwargs.get("base_url") or ""
     _norm_bu = normalize_bare_domain_base_url(_raw_bu)
     if _norm_bu != _raw_bu:

@@ -1,5 +1,5 @@
-# [owner] unified_diff_patch tool: registration glue only.
-# Core implementation lives in owner/tools/unified_diff_patch/.
+# [owner] TOOL FILE — registration glue only; core in owner/tools/unified_diff_patch/.
+# See owner/docs/our-commits-inventory.md §「官方目录中的 owner 强依赖胶水文件」.
 from owner.tools.unified_diff_patch import (
     UNIFIED_DIFF_PATCH_SCHEMA,
     _check_file_reqs,

@@ -1937,9 +1937,12 @@ def _resolve_custom_runtime() -> Tuple[Optional[str], Optional[str], Optional[st
         return None, None, None
 
     custom_base = custom_base.strip().rstrip("/")
-    # [owner] P30: auto-append /v1 for bare-domain base URLs (non-anthropic)
+    # [owner] P30: auto-append /v1 for bare-domain base URLs (owner/utils.py)
     if custom_mode != "anthropic_messages":
-        from utils import normalize_bare_domain_base_url
+        try:
+            from owner.utils import normalize_bare_domain_base_url
+        except ImportError:
+            normalize_bare_domain_base_url = lambda u: u  # type: ignore[assignment,misc]
         custom_base = normalize_bare_domain_base_url(custom_base)
     if base_url_host_matches(custom_base, "openrouter.ai"):
         # requested='custom' falls back to OpenRouter when no custom endpoint is

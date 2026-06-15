@@ -8,11 +8,9 @@
 #   toolsets globally — operations the plugin API does not expose.
 #   When the plugin system supports tool deregistration + toolset mutation,
 #   this file can be retired and the registration moved into owner/memory/.
+#   See owner/docs/our-commits-inventory.md §「官方目录中的 owner 强依赖胶水文件」.
 from __future__ import annotations
 from typing import Any
-
-# Force legacy memory tool registration so we can deregister it reliably.
-import tools.memory_tool  # noqa: F401
 
 # Runtime patch: replace memory toolset with memory_propose and remove legacy
 # memory from core tool lists. Must happen before tool discovery finishes.
