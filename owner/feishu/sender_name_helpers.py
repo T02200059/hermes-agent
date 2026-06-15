@@ -17,10 +17,10 @@ def _legacy_adapter_path(adapter: Any) -> bool:
     return get_user_store(adapter) is None
 
 
-def ensure_name_cache(adapter: Any) -> Optional[FeishuSenderNameCache]:
+def ensure_name_cache(adapter: Any) -> Optional[Any]:
     store = get_user_store(adapter)
     if store is not None:
-        return store.ensure_name_cache()
+        return store if getattr(store, "_client", None) else None
     return _legacy_ensure_name_cache(adapter)
 
 
