@@ -443,6 +443,7 @@ async def try_auto_card(
     formatted_text: str,
     metadata: Optional[Dict[str, Any]] = None,
     chat_id: str = "",
+    force: bool = False,  # [owner] agent:end forces card dispatch regardless of streaming
 ) -> Optional[SendResult]:
     """Attempt to send long text as an interactive card.
 
@@ -452,6 +453,11 @@ async def try_auto_card(
     legacy degradation where synthetic/DM paths could have stale or missing
     adapter internal state.
 
+    force: when True (called from agent:end), skips the streaming-disabled
+    check so the card always fires for the full final response. The
+    FeishuAdapter.send() caller passes force=False to preserve existing
+    behaviour (cards only when streaming is off).
+
     Returns SendResult on success, None if auto-card should be skipped
     (short text, streaming on, threshold disabled, or feasibility risk).
     On card send failure after retries, logs a warning and returns None so
@@ -460,9 +466,9 @@ async def try_auto_card(
     threshold = get_auto_card_threshold()
     if threshold <= 0:
         return None
-    if not is_feishu_streaming_disabled():
+    if not force and not is_feishu_streaming_disabled():
         return None
-    if len(formatted_text) <= threshold:
+    if not force and len(formatted_text) <= threshold:
         return None
 
     if _is_tool_activity_message(formatted_text):
