@@ -184,52 +184,44 @@ def handle_picker_action(
 def _route_picker_command(
     adapter: Any, command: str, open_id: str, state: dict
 ) -> None:
-    """Route a model picker confirm as a synthetic command.
+    """Route a model picker confirm as a synthetic /model command.
 
-    Creates a synthetic ``MessageEvent`` and submits it to the adapter's
-    runner for processing, so the model switch follows the same path as a
-    manually typed ``/model ...`` command.
+    Submits the command through the adapter's event loop as a
+    ``MessageType.COMMAND`` event so it follows the same processing
+    path as a manually typed ``/model ...`` command (including
+    --global persistence).
     """
     import uuid as _uuid
+    from datetime import datetime
 
-    try:
-        from types import SimpleNamespace as _NS
-    except ImportError:
+    source = state.get("source") if isinstance(state, dict) else None
+    if source is None:
+        return
+    chat_id = getattr(source, "chat_id", "") or ""
+    if not chat_id:
         return
 
-    chat_context = _NS()
-    try:
-        # Extract chat_id from adapter state if available.
-        chat_id = ""
-        source = state.get("source") if isinstance(state, dict) else None
-        if source:
-            chat_id = getattr(source, "chat_id", "") or ""
-    except Exception:
+    loop = getattr(adapter, "_loop", None)
+    if loop is None:
         return
 
-    if not chat_id or not hasattr(adapter, "_running_runner"):
-        return
+    async def _dispatch():
+        try:
+            from gateway.platforms.base import MessageEvent, MessageType
 
-    sender_id = _NS(open_id=open_id, user_id=None, union_id=None)
-    synthetic_event = _NS(
-        text=command,
-        source=source,
-        chat_id=chat_id,
-        message_id="model_picker_" + str(_uuid.uuid4())[:8],
-        is_synthetic=True,
-        sender_id=sender_id,
-    )
+            synthetic_event = MessageEvent(
+                text=command,
+                message_type=MessageType.COMMAND,
+                source=source,
+                raw_message=None,
+                message_id="model_picker_" + str(_uuid.uuid4())[:8],
+                timestamp=datetime.now(),
+            )
+            await adapter._handle_message_with_guards(synthetic_event)
+        except Exception as exc:
+            logger.warning("[Feishu] model picker route failed: %s", exc)
 
-    runner = getattr(adapter, "_running_runner", None)
-    if runner is None:
-        return
-    if not hasattr(runner, "_process_message_background"):
-        return
-    import asyncio
-    try:
-        asyncio.ensure_future(runner._process_message_background(synthetic_event))
-    except Exception as exc:
-        logger.warning("[Feishu] model picker route failed: %s", exc)
+    adapter._submit_on_loop(loop, _dispatch())
 
 
 def _empty_response(resp_cls: Any) -> Any:
