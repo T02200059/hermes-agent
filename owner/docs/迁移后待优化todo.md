@@ -2,7 +2,7 @@
 
 > 本文档记录在完成核心提取（如 diff cards、审批卡片 + open_id→中文名缓存）之后，计划在**后续迁移阶段**再处理的非 P0 优化项。
 > 目标是持续降低官方文件（尤其是 gateway/platforms/）的 owner 痕迹，便于未来 upstream sync。
-> 最后更新：2026-06-14（unified_diff_patch 迁移规范合规收尾）
+> 最后更新：2026-06-16（auto-card DM receive_id_type 修复 + 显式 chat_id + 测试完善收尾）
 
 ## 当前已完成（参考）
 
@@ -17,6 +17,17 @@
   - `gateway/platforms/feishu.py`: 在懒加载 `FeishuSenderNameCache` 之前先检查 legacy/test 预热的 `_sender_name_cache`；绑定新 cache 时保留已存在的条目。
   - `tests/gateway/test_feishu.py`: 为 `__new__` 构造的测试 adapter 补 `config` 属性；将 `user_id` 优先期望更新为 `open_id` 优先（与 owner approval callback/cache 对齐）。
   - 结果：`tests/gateway/test_feishu.py` 205 项全部通过（此前 16 项失败）。
+
+- Feishu auto-card DM (p2p) receive_id_type 完整修复收尾（2026-06-16）
+  - 问题根因：原 heuristic（chat_id startswith ou_）对 DM 无效（chat_id 是 oc_xxx，SessionSource 归一化 p2p→dm），导致 230001 错误。
+  - owner/feishu/card_sender.py：新增 `_resolve_receive_target(chat_id, metadata)`，按 chat_type (同时接受 "p2p"/"dm") 决定 receive_id_type=open_id；支持 open_id 优先 + sender_open_id 回退；DM 缺 open_id 时 fail-open 到 chat_id + **结构化 warning**（chat_id + sorted metadata_keys，便于线上定位 synthetic 路径，B1）。
+  - owner/feishu/auto_card.py：try_auto_card 显式接收 `chat_id: str = ""` 参数，优先使用调用方传入值（来自 FeishuAdapter.send 上下文），仅空时回退 adapter._chat_id；彻底消除 "chat_id 推导退化"（follow-up #1）。
+  - gateway/platforms/feishu.py：send() 调用时传入 `chat_id=chat_id` + 短 `[owner]` 注释（薄胶水）。
+  - gateway/run.py：_thread_metadata_for_target 支持 thread_id=None + chat_type 单独存在；_for_source 对 Feishu 注入 open_id/sender_open_id（来自 source.user_id）；docstring 更新（N1）。
+  - tests/test_card_sender.py：扩展到 5 个测试函数，完整覆盖 normalization（p2p/dm）、大小写、group 不变、none/空/缺 chat_type metadata、sender_open_id fallback/priority、空 open_id 值、caplog 验证 warning 带上下文（B2 + follow-up #3）。
+  - 所有变更 per-file commit（fix(owner)/fix(官方模块)/test(owner)/docs(owner)），严格遵循二次开发规范 + [owner] 标记 + 可移除性。
+  - 效果：DM 路径现在正确用 open_id 发卡；group/thread 零影响；向后兼容；resolver 稳健处理 auto-card/synthetic 各种 metadata 形态。
+  - 低优先 deferred（#2）：gateway/run.py 少数 shutdown/home/restart synthetic 路径 metadata 仍可能缺 open_id（这些路径发短文本，不触发 auto-card 阈值 57 字符，未来有长消息需求再补）。
 
 - 批量评审并处理 5 个未迁移 commit（2026-06-14，commit `e5a2c968d` 记录 inventory 状态）
   - `478b66a`: 迁移 `owner/scripts/todo-scan.sh`（owner 分支最终形态已有，macFUSE 超时保护）。
