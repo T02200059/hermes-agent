@@ -137,6 +137,7 @@ async def _forward_to_profile_container(
     receive_id: str,
     receive_id_type: str,
     message_id: str,
+    open_id: str = "",
 ) -> bool:
     """POST a normalized Feishu message to a profile container's ``/v1/runs``.
 
@@ -171,6 +172,7 @@ async def _forward_to_profile_container(
         "X-Hermes-Reply-Receive-Id": receive_id,
         "X-Hermes-Reply-Receive-Id-Type": receive_id_type,
         "X-Hermes-Reply-Message-Id": message_id,
+        "X-Hermes-User-Id": open_id,
     }
     body = {"input": text}
     try:
@@ -333,6 +335,7 @@ async def try_route_inbound_message(
         receive_id=receive_id,
         receive_id_type=receive_id_type,
         message_id=message_id,
+        open_id=open_id,
     )
     if forwarded:
         logger.info(
@@ -417,6 +420,7 @@ async def try_route_bot_menu_command(
         receive_id=open_id,
         receive_id_type="open_id",
         message_id=None,
+        open_id=open_id,
     )
     if forwarded:
         logger.info(

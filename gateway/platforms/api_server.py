@@ -77,6 +77,12 @@ def _owner_import(module: str, name: str) -> Any:
     return _owner_lazy[key]
 
 
+# [owner] message:receive hook glue (see owner/hooks/api_server_hooks.py)
+async def _owner_apply_message_receive_hooks(adapter: Any, message_text: str, **kwargs: Any) -> str:
+    fn = _owner_import("owner.hooks.api_server_hooks", "apply_api_server_message_receive_hooks")
+    return message_text if fn is None else await fn(adapter, message_text, **kwargs)
+
+
 def _hermes_version() -> str:
     """Return the hermes-agent version string, or "dev" if it can't be resolved.
 
@@ -777,14 +783,6 @@ class APIServerAdapter(BasePlatformAdapter):
     def __init__(self, config: PlatformConfig):
         super().__init__(config, Platform.API_SERVER)
         extra = config.extra or {}
-        
-        # [owner] message:receive hook support for API Server
-        # Enables qdrant-memory-recall and other hooks to work with API Server
-        try:
-            from gateway.hooks import HookRegistry
-            self._hooks = HookRegistry()
-        except Exception:
-            self._hooks = None
         self._host: str = extra.get("host", os.getenv("API_SERVER_HOST", DEFAULT_HOST))
         raw_port = extra.get("port")
         if raw_port is None:
@@ -1950,39 +1948,8 @@ class APIServerAdapter(BasePlatformAdapter):
         model_name = body.get("model", self._model_name)
         created = int(time.time())
         
-        # [owner] message:receive hook: trigger before agent runs
-        # Enables qdrant-memory-recall and other hooks for chat/completions
-        effective_user_message = user_message
-        if self._hooks is not None and user_message:
-            try:
-                from owner.hooks.message_receive import apply_message_receive_hooks
-                from gateway.platforms.base import Platform
-                # [owner] send_only mode: pass feishu adapter to hooks if available
-                # This allows hooks (like qdrant recall) to send feishu cards
-                _adapters = {Platform.API_SERVER: self}
-                try:
-                    from gateway.run import _gateway_runner_ref
-                    _runner = _gateway_runner_ref()
-                    if _runner and Platform.FEISHU in _runner.adapters:
-                        _adapters[Platform.FEISHU] = _runner.adapters[Platform.FEISHU]
-                except Exception:
-                    pass
-                
-                class _ChatCompletionsSource:
-                    platform = Platform.API_SERVER
-                    user_id = ""
-                    chat_id = session_id or ""
-                    chat_type = ""
-                _source = _ChatCompletionsSource()
-                effective_user_message = await apply_message_receive_hooks(
-                    hooks=self._hooks,
-                    adapters=_adapters,
-                    source=_source,
-                    session_id=session_id or completion_id,
-                    message_text=user_message,
-                )
-            except Exception as hook_err:
-                logger.debug("[Api_Server] chat/completions message:receive hook failed: %s", hook_err)
+        # [owner] message:receive hook for API Server (see owner/hooks/api_server_hooks.py)
+        effective_user_message = await _owner_apply_message_receive_hooks(self, user_message, session_id=session_id or completion_id, reply_receive_id="", reply_receive_id_type="", user_id="")
 
         if stream:
             import queue as _q
@@ -4019,42 +3986,9 @@ class APIServerAdapter(BasePlatformAdapter):
             try:
                 self._set_run_status(run_id, "running")
                 
-                # [owner] message:receive hook: trigger before agent runs
-                # Enables qdrant-memory-recall and other hooks for API Server
-                effective_user_message = user_message
-                if self._hooks is not None:
-                    try:
-                        from owner.hooks.message_receive import apply_message_receive_hooks
-                        # Build a minimal source-like object for the hook
-                        # [owner] send_only mode: get chat_id from request headers
-                        hook_chat_id = reply_receive_id or ""
-                        hook_user_id = request.headers.get("X-Hermes-User-Id", "").strip() or ""
-                        class _APISource:
-                            platform = Platform.API_SERVER
-                            user_id = hook_user_id
-                            chat_id = hook_chat_id
-                            chat_type = "p2p" if hook_chat_id.startswith("ou_") else "group"
-                        _api_source = _APISource()
-                        # [owner] send_only mode: pass both api_server and feishu adapters
-                        _hook_adapters = {Platform.API_SERVER: self}
-                        logger.info("[Api_Server] hook debug: has _gateway_ref=%s, chat_id=%s", 
-                                   hasattr(self, '_gateway_ref'), hook_chat_id)
-                        if hasattr(self, '_gateway_ref') and self._gateway_ref:
-                            feishu_adapter = self._gateway_ref.adapters.get(Platform.FEISHU)
-                            if feishu_adapter:
-                                _hook_adapters[Platform.FEISHU] = feishu_adapter
-                        effective_user_message = await apply_message_receive_hooks(
-                            hooks=self._hooks,
-                            adapters=_hook_adapters,
-                            source=_api_source,
-                            session_id=session_id or run_id,
-                            message_text=user_message,
-                        )
-                    except ImportError:
-                        pass
-                    except Exception as hook_err:
-                        logger.debug("[Api_Server] message:receive hook failed: %s", hook_err)
-                
+                # [owner] message:receive hook for API Server (see owner/hooks/api_server_hooks.py)
+                effective_user_message = await _owner_apply_message_receive_hooks(self, user_message, session_id=session_id or run_id, reply_receive_id=reply_receive_id, reply_receive_id_type=reply_receive_id_type, user_id=request.headers.get("X-Hermes-User-Id", "").strip())
+
                 agent = self._create_agent(
                     ephemeral_system_prompt=ephemeral_system_prompt,
                     session_id=session_id,
@@ -4496,15 +4430,6 @@ class APIServerAdapter(BasePlatformAdapter):
         if not AIOHTTP_AVAILABLE:
             logger.warning("[%s] aiohttp not installed", self.name)
             return False
-
-        # [owner] Load hooks for message:receive support
-        if self._hooks is not None:
-            try:
-                self._hooks.discover_and_load()
-                logger.info("[%s] Loaded %d hook(s) for message:receive support", 
-                           self.name, len(self._hooks.loaded_hooks))
-            except Exception as e:
-                logger.warning("[%s] Hook loading failed: %s", self.name, e)
 
         try:
             mws = [mw for mw in (cors_middleware, body_limit_middleware, security_headers_middleware) if mw is not None]

@@ -106,29 +106,40 @@ async def apply_message_receive_hooks(
             # [owner] send_only mode: if platform is api_server but feishu adapter is available,
             # use feishu adapter for sending cards
             if platform_value == "api_server" and feishu_card:
-                logger.info("[message_receive] send_only mode: attempting to use feishu adapter for card")
+                logger.debug("[message_receive] send_only mode: attempting to use feishu adapter for card")
                 from gateway.platforms.base import Platform
                 feishu_adapter = adapters.get(Platform.FEISHU)
                 if feishu_adapter and hasattr(feishu_adapter, "send_card"):
                     adapter = feishu_adapter
                     platform_value = "feishu"  # Override for card sending
-            
+
             if adapter and chat_id:
-                logger.info("[message_receive] sending to chat_id=%s, platform=%s, has_feishu_card=%s", 
-                           chat_id, platform_value, bool(feishu_card))
-                if (
-                    feishu_card
-                    and (platform_value == "feishu" or hasattr(adapter, "send_card"))
-                    and hasattr(adapter, "send_card")
-                ):
+                logger.debug(
+                    "[message_receive] sending to chat_id=%s, platform=%s, has_feishu_card=%s",
+                    chat_id, platform_value, bool(feishu_card),
+                )
+                if feishu_card and hasattr(adapter, "send_card"):
                     # Feishu card path
                     if feishu_card_cache and hasattr(adapter, "warm_recall_cache"):
                         adapter.warm_recall_cache(
                             feishu_card_cache.get("recall_id", ""),
                             feishu_card_cache,
                         )
-                    logger.info("[message_receive] calling send_card for chat_id=%s", chat_id)
-                    await adapter.send_card(chat_id, feishu_card)
+                    # DM routing needs explicit chat_type + open_id metadata
+                    chat_type = getattr(source, "chat_type", None)
+                    card_metadata = {
+                        "chat_type": chat_type,
+                        "open_id": (
+                            getattr(source, "open_id", None)
+                            or (
+                                getattr(source, "user_id", None)
+                                if str(chat_type or "").lower() in {"dm", "p2p"}
+                                else None
+                            )
+                        ),
+                    }
+                    logger.debug("[message_receive] calling send_card for chat_id=%s", chat_id)
+                    await adapter.send_card(chat_id, feishu_card, metadata=card_metadata)
                 else:
                     await adapter.send(chat_id, extra_context_raw)
         except Exception as send_err:

@@ -5682,10 +5682,8 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 success = await self._connect_adapter_with_timeout(adapter, platform)
                 if success:
                     self.adapters[platform] = adapter
-                    # [owner] send_only mode: give api_server adapter a reference to gateway
-                    # so it can access feishu adapter for sending cards
-                    if platform == Platform.API_SERVER:
-                        adapter._gateway_ref = self
+                    # [owner] gateway back-reference for owner helpers (e.g. API Server -> Feishu)
+                    adapter._gateway_ref = self
                     self._sync_voice_mode_state_to_adapter(adapter)
                     connected_count += 1
                     self._update_platform_runtime_status(

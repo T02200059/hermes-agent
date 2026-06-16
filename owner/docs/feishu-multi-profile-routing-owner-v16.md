@@ -161,13 +161,34 @@ IM API 回复/引用原消息。
 | 文件 | 改动类型 | 说明 |
 |------|----------|------|
 | `gateway/platforms/feishu.py` | fix | 2 处 `# [owner]` 薄委托，删除原 adapter 内 helper 方法 |
-| `gateway/platforms/api_server.py` | fix | 1 处 `# [owner]` 薄委托 + lazy import helper，删除原 helper 方法 |
-| `owner/feishu/profile_routing.py` | feat | 新增高层 `try_route_*` 封装，迁移 `feishu_reply` 实现 |
+| `gateway/platforms/api_server.py` | fix | 3 处 `# [owner]` 薄委托，hook 逻辑委托给 `owner/hooks/api_server_hooks.py` |
+| `owner/hooks/api_server_hooks.py` | refactor | API Server message:receive hook 集中编排，复用 GatewayRunner.hooks |
+| `owner/hooks/message_receive.py` | fix | DM 场景卡片发送传入 metadata（chat_type / open_id） |
+| `owner/feishu/card_sender.py` | fix | 降低高频发送日志级别，合并重复错误日志 |
+| `owner/feishu/profile_routing.py` | feat | 新增高层 `try_route_*` 封装，迁移 `feishu_reply` 实现；转发时携带 `X-Hermes-User-Id` |
 | `owner/feishu/bot_menu.py` | refactor | 使用 `try_route_bot_menu_command` 替代 adapter 方法探针 |
 | `owner/patch_config.py` | feat | 新增 `load_patch_feishu_profile_config()` 通用 YAML 加载器 |
 | `owner/config/patch_feishu_profile.yaml` | feat | 配置模板 |
 | `tests/owner/test_feishu_profile_routing.py` | test | 路由解析与加载器测试 |
 | `owner/docs/feishu-multi-profile-routing-owner-v16.md` | docs | 本文档 |
+
+## 配置优先级说明
+
+### `FEISHU_CONNECTION_MODE`
+
+`gateway/config.py` 中采用 ``config.yaml > env > default`` 的优先级：
+
+```python
+feishu_cfg.extra.setdefault("connection_mode", os.getenv("FEISHU_CONNECTION_MODE", "websocket"))
+```
+
+- 如果 `~/.hermes/config.yaml` 的 `platforms.feishu.extra.connection_mode` 显式
+  设置了值，则**不会**被 `FEISHU_CONNECTION_MODE` 覆盖。
+- 如果 `config.yaml` 未设置，则读取 `FEISHU_CONNECTION_MODE`。
+- 如果两者都未设置，默认使用 `websocket`。
+
+这与上游“env 始终覆盖”的默认行为不同。子 profile 容器通常应把
+`connection_mode` 显式写成 `send_only`，避免误连飞书 WebSocket 抢占主 gateway。
 
 ## Commit 建议
 

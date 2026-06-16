@@ -1469,8 +1469,13 @@ class FeishuAdapter(BasePlatformAdapter):
     def __init__(self, config: PlatformConfig):
         super().__init__(config, Platform.FEISHU)
 
-        logger.info("[Feishu] __init__ config.extra=%s", config.extra)
-        self._settings = self._load_settings(config.extra or {})
+        extra = config.extra or {}
+        logger.debug(
+            "[Feishu] __init__ connection_mode=%s domain=%s",
+            extra.get("connection_mode"),
+            extra.get("domain"),
+        )
+        self._settings = self._load_settings(extra)
         self._apply_settings(self._settings)
         self._client_impl: Optional[Any] = None
         self._ws_client: Optional[Any] = None
@@ -1706,7 +1711,7 @@ class FeishuAdapter(BasePlatformAdapter):
 
     async def connect(self) -> bool:
         """Connect to Feishu/Lark."""
-        logger.info("[Feishu] connect() called, _connection_mode=%s", self._connection_mode)
+        logger.debug("[Feishu] connect() called, _connection_mode=%s", self._connection_mode)
         if not FEISHU_AVAILABLE:
             logger.error("[Feishu] lark-oapi not installed")
             return False
@@ -1715,7 +1720,7 @@ class FeishuAdapter(BasePlatformAdapter):
             return False
         if self._connection_mode not in {"websocket", "webhook", "send_only"}:
             logger.error(
-                "[Feishu] Unsupported FEISHU_CONNECTION_MODE=%s. Supported modes: websocket, webhook.",
+                "[Feishu] Unsupported FEISHU_CONNECTION_MODE=%s. Supported modes: websocket, webhook, send_only.",
                 self._connection_mode,
             )
             return False
