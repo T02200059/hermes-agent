@@ -6,7 +6,7 @@ Core logic extracted from gateway/platforms/feishu.py per二次开发规范:
 
 Usage in feishu.py send():
     from owner.feishu.auto_card import try_auto_card
-    result = await try_auto_card(adapter, formatted, metadata)
+    result = await try_auto_card(adapter, formatted, metadata, chat_id=chat_id)
     if result is not None:
         return result
 """
@@ -442,8 +442,15 @@ async def try_auto_card(
     adapter: FeishuAdapter,
     formatted_text: str,
     metadata: Optional[Dict[str, Any]] = None,
+    chat_id: str = "",
 ) -> Optional[SendResult]:
     """Attempt to send long text as an interactive card.
+
+    chat_id: explicit chat_id from the send context (preferred). If empty,
+    falls back to adapter._chat_id for backward compat with direct callers.
+    Passing the explicit chat_id from FeishuAdapter.send() eliminates the
+    legacy degradation where synthetic/DM paths could have stale or missing
+    adapter internal state.
 
     Returns SendResult on success, None if auto-card should be skipped
     (short text, streaming on, threshold disabled, or feasibility risk).
@@ -485,7 +492,11 @@ async def try_auto_card(
             plan.estimated_json_bytes,
         )
 
-    chat_id = getattr(adapter, "_chat_id", "") or ""
+    # [owner] Prefer explicit chat_id passed from send context (gateway has
+    # the authoritative value for this turn). Only fall back to adapter
+    # internal _chat_id for very old direct uses. This fixes the "chat_id
+    # 推导退化" for synthetic DM / auto-card paths.
+    chat_id = chat_id or getattr(adapter, "_chat_id", "") or ""
     last_error = ""
 
     for idx, body in enumerate(body_chunks):
