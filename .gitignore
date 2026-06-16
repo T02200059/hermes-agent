@@ -140,3 +140,6 @@ RELEASE_v*.md
 # Desktop demo-run scratch output (hermes writes demo/*.txt during recorded
 # walkthroughs). Throwaway artifacts, never part of the app.
 apps/desktop/demo/
+
+# Runtime SQLite state database created by tests or local agent runs.
+state.db
