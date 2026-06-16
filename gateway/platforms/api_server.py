@@ -61,6 +61,21 @@ from gateway.platforms.base import (
 
 logger = logging.getLogger(__name__)
 
+# [owner] lazy owner imports — api_server.py stays importable without owner/
+_owner_lazy: Dict[str, Any] = {}
+
+
+def _owner_import(module: str, name: str) -> Any:
+    key = f"{module}.{name}"
+    if key not in _owner_lazy:
+        import importlib
+
+        try:
+            _owner_lazy[key] = getattr(importlib.import_module(module), name)
+        except (ImportError, AttributeError):
+            _owner_lazy[key] = None  # graceful degradation when owner/ removed
+    return _owner_lazy[key]
+
 
 def _hermes_version() -> str:
     """Return the hermes-agent version string, or "dev" if it can't be resolved.
@@ -3920,6 +3935,14 @@ class APIServerAdapter(BasePlatformAdapter):
         approval_session_key = gateway_session_key or session_id or run_id
         ephemeral_system_prompt = instructions
         loop = asyncio.get_running_loop()
+
+        # [owner] multi-profile routing: X-Hermes-Reply-Via headers tell the
+        # container to send the final response directly back to Feishu instead
+        # of (only) returning it in the run result.
+        reply_via = request.headers.get("X-Hermes-Reply-Via", "").lower().strip()
+        reply_receive_id = request.headers.get("X-Hermes-Reply-Receive-Id", "").strip()
+        reply_receive_id_type = request.headers.get("X-Hermes-Reply-Receive-Id-Type", "open_id").strip()
+        reply_message_id = request.headers.get("X-Hermes-Reply-Message-Id", "").strip() or None
         q: "asyncio.Queue[Optional[Dict]]" = asyncio.Queue()
         created_at = time.time()
         self._run_streams[run_id] = q
@@ -4069,6 +4092,19 @@ class APIServerAdapter(BasePlatformAdapter):
                         usage=usage,
                         last_event="run.completed",
                     )
+                    if reply_via == "feishu" and reply_receive_id and final_response:
+                        _feishu_reply = _owner_import(
+                            "owner.feishu.profile_routing", "feishu_reply"
+                        )
+                        if _feishu_reply is not None:
+                            asyncio.ensure_future(
+                                _feishu_reply(
+                                    receive_id=reply_receive_id,
+                                    receive_id_type=reply_receive_id_type,
+                                    text=final_response,
+                                    reply_message_id=reply_message_id,
+                                )
+                            )
             except asyncio.CancelledError:
                 self._set_run_status(
                     run_id,
@@ -4574,3 +4610,4 @@ class APIServerAdapter(BasePlatformAdapter):
             "host": self._host,
             "port": self._port,
         }
+

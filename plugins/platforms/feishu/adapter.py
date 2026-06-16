@@ -65,7 +65,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Dict, List, Literal, Optional, Sequence
+from typing import Any, Dict, List, Literal, Optional, Sequence, Tuple
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -2669,6 +2669,13 @@ class FeishuAdapter(BasePlatformAdapter):
             if isinstance(action_value, dict) else None
         )
 
+        # [owner] multi-profile routing: card actions may belong to a routed profile container
+        _try_card_route = _owner_import("owner.feishu.profile_routing", "try_route_card_action")
+        if _try_card_route is not None:
+            _route_response = _try_card_route(event, action_value)
+            if _route_response is not None:
+                return _route_response
+
         # [owner] model picker: dispatch picker card callbacks (see owner/feishu/model_picker.py)
         model_picker = action_value.get("hermes_model_picker") if isinstance(action_value, dict) else None
         if model_picker:
@@ -3271,6 +3278,22 @@ class FeishuAdapter(BasePlatformAdapter):
                     "[Feishu] Cached p2p_chat_id for %s from inbound message",
                     open_id,
                 )
+        # [owner] multi-profile routing: forward to external container if configured
+        _try_msg_route = _owner_import(
+            "owner.feishu.profile_routing", "try_route_inbound_message"
+        )
+        if _try_msg_route is not None:
+            _routed = await _try_msg_route(
+                self,
+                chat_id=chat_id,
+                open_id=str(getattr(sender_id, "open_id", "") or "").strip(),
+                chat_type=chat_type,
+                text=text,
+                message_id=message_id,
+            )
+            if _routed:
+                return
+
         # [owner] approval: pre-warm name cache before resolve (see owner/feishu/sender_name_helpers.py)
         if not is_bot:
             _warm_id = str(getattr(sender_id, "open_id", "") or "").strip()

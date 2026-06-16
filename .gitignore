@@ -141,3 +141,6 @@ apps/desktop/demo/
 # Local editor/agent settings that are machine- or user-specific.
 .claude/settings.local.json
 .local/
+
+# Runtime SQLite state database created by tests or local agent runs.
+state.db

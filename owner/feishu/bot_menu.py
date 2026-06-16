@@ -212,34 +212,23 @@ async def handle_bot_menu_event(adapter: Any, data: Any) -> None:
             "[Feishu] Unknown bot menu event_key=%r for %s", event_key, open_id
         )
 
-    # Multi-profile routing is owner-branch specific and not present in owner-v16.
-    # Probe the adapter dynamically so this file stays removable/degradable.
-    route = getattr(adapter, "_resolve_profile_route", None)
-    if callable(route):
-        resolved = route(chat_id, open_id)
-        if resolved is not None:
-            _profile, _endpoint, _api_key = resolved
-            forward = getattr(adapter, "_forward_to_profile_container", None)
-            if forward is not None:
-                asyncio.ensure_future(
-                    forward(
-                        endpoint=_endpoint,
-                        api_key=_api_key,
-                        session_key=f"feishu:dm:{open_id}",
-                        text=synthetic_text,
-                        receive_id=open_id,
-                        receive_id_type="open_id",
-                        message_id=None,
-                    )
-                )
-                logger.info(
-                    "[Feishu] Routed bot menu event_key=%r command=%r to profile '%s' (%s)",
-                    event_key,
-                    synthetic_text,
-                    _profile,
-                    _endpoint,
-                )
-                return
+    # Multi-profile routing: bot_menu events arrive only at the main gateway
+    # (single WebSocket), so forward the resolved synthetic command to the
+    # routed container. Logic lives in owner/feishu/profile_routing.py.
+    try:
+        from owner.feishu.profile_routing import try_route_bot_menu_command
+    except ImportError:
+        try_route_bot_menu_command = None  # type: ignore[assignment]
+
+    if try_route_bot_menu_command is not None:
+        _routed = await try_route_bot_menu_command(
+            adapter,
+            chat_id=chat_id,
+            open_id=open_id,
+            synthetic_text=synthetic_text,
+        )
+        if _routed:
+            return
 
     # [owner] bot-menu: pre-warm name cache before profile resolve (see owner/feishu/sender_name_helpers.py)
     from owner.feishu.sender_name_helpers import pre_warm_sender_name
