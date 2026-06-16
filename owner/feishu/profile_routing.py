@@ -482,6 +482,8 @@ async def feishu_reply(
     receive_id_type: str,
     text: str,
     reply_message_id: Optional[str] = None,
+    model: Optional[str] = None,
+    profile_name: Optional[str] = None,
 ) -> None:
     """Send a text message to Feishu.
 
@@ -503,11 +505,24 @@ async def feishu_reply(
     if not token:
         return
 
+    # Build footer line with model and profile info
+    footer_parts = []
+    if profile_name:
+        footer_parts.append(f"📋 {profile_name}")
+    if model:
+        # Drop vendor/ prefix for readability
+        model_short = model.rsplit("/", 1)[-1] if "/" in model else model
+        footer_parts.append(f"🤖 {model_short}")
+    footer_line = " · ".join(footer_parts) if footer_parts else ""
+    
+    # Append footer to text if present
+    final_text = f"{text}\n\n_{footer_line}_" if footer_line else text
+
     headers = {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json; charset=utf-8",
     }
-    content_json = json.dumps({"text": text})
+    content_json = json.dumps({"text": final_text})
 
     try:
         async with _aiohttp.ClientSession() as session:
