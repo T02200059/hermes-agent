@@ -127,3 +127,102 @@ def test_reset_session_clears_viewed_set():
     assert "foo" in ssa.get_session_skills_viewed()
     ssa.reset_session_skills_viewed()
     assert ssa.get_session_skills_viewed() == set()
+
+
+# ---------------------------------------------------------------------------
+# Integration: guard functions in tools/approval.py now respect the bypass
+# (both the unified check_all_command_guards used by terminal, and the
+# legacy check_dangerous_command). This verifies the owner-v16 migration
+# wiring is complete.
+# ---------------------------------------------------------------------------
+
+def test_skill_script_bypass_in_check_all_command_guards(tmp_path, monkeypatch):
+    """Skill scripts from a viewed skill must short-circuit check_all_command_guards
+    (the live path) before tirith/dangerous collection or user prompts.
+    """
+    from unittest.mock import patch
+
+    skills_root = tmp_path / "skills" / "devops" / "deploy-skill"
+    skills_root.mkdir(parents=True)
+    (skills_root / "deploy.sh").write_text("#!/bin/bash\necho ok\n", encoding="utf-8")
+
+    patch_yaml = tmp_path / "patch.yaml"
+    patch_yaml.write_text(
+        json.dumps(
+            {
+                "owner": {
+                    "approvals": {
+                        "skill_script_allowlist": [
+                            {"skill": "deploy-skill", "paths": [], "extensions": [".sh"]}
+                        ]
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    ssa.track_session_skill_view("deploy-skill")
+
+    from tools.approval import check_all_command_guards, check_dangerous_command
+
+    # A command that would normally be treated as dangerous (to prove early bypass)
+    cmd = "bash deploy.sh"
+
+    # Patch the expensive/approval-triggering steps so we can assert they were not reached
+    with patch("tools.approval.detect_dangerous_command") as mock_detect, \
+         patch("tools.approval._get_approval_mode", return_value="normal"):
+        result_all = check_all_command_guards(cmd, "local")
+        assert result_all["approved"] is True
+        assert result_all.get("message") is None
+        # The bypass must have short-circuited before any dangerous detection
+        mock_detect.assert_not_called()
+
+    # Also exercise the legacy path (still has the bypass for compat)
+    with patch("tools.approval.detect_dangerous_command") as mock_detect2:
+        result_legacy = check_dangerous_command(cmd, "local")
+        assert result_legacy["approved"] is True
+        mock_detect2.assert_not_called()
+
+
+def test_skill_script_bypass_skips_tirith_and_prompts(tmp_path, monkeypatch):
+    """Even when tirith would block/warn, a viewed skill script is auto-approved."""
+    from unittest.mock import patch
+
+    skills_root = tmp_path / "skills" / "sre" / "sre-king"
+    skills_root.mkdir(parents=True)
+    (skills_root / "inspect.sh").write_text("#!/bin/bash\ncurl http://10.0.0.1\n", encoding="utf-8")
+
+    patch_yaml = tmp_path / "patch.yaml"
+    patch_yaml.write_text(
+        json.dumps(
+            {
+                "owner": {
+                    "approvals": {
+                        "skill_script_allowlist": [
+                            {"skill": "sre-king", "paths": [], "extensions": [".sh"]}
+                        ]
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    ssa.track_session_skill_view("sre-king")
+
+    from tools.approval import check_all_command_guards
+
+    cmd = "bash inspect.sh"
+
+    # Force tirith to "block" — the skill bypass must still win (early return before warnings)
+    fake_tirith_block = {"action": "block", "findings": [{"severity": "high", "title": "raw IP", "rule_id": "raw_ip_url"}], "summary": "raw IP"}
+    with patch("tools.approval._get_approval_mode", return_value="normal"), \
+         patch("tools.tirith_security.check_command_security", return_value=fake_tirith_block, create=True):
+        result = check_all_command_guards(cmd, "local")
+        assert result["approved"] is True
+        # No pending status, no description from tirith
+        assert result.get("status") is None
+        assert "tirith" not in str(result)
