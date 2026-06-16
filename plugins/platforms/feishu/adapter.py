@@ -1856,9 +1856,11 @@ class FeishuAdapter(BasePlatformAdapter):
 
         # Auto-card: wrap long text in an interactive card when streaming is
         # [owner] try auto-card before plain-text (see owner/feishu/auto_card.py)
+        # Pass explicit chat_id to avoid legacy adapter._chat_id degradation
+        # in synthetic/DM paths (owner/feishu/auto_card.py:488 follow-up).
         auto_card_result = await _owner_import(
             "owner.feishu.auto_card", "try_auto_card"
-        )(self, formatted, metadata)
+        )(self, formatted, metadata, chat_id=chat_id)
         if auto_card_result is not None:
             return auto_card_result
 
