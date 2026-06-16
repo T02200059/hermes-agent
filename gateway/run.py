@@ -12193,13 +12193,28 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         reply_to_message_id: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
         """Build the metadata dict platforms need for thread-aware replies."""
-        return self._thread_metadata_for_target(
+        meta = self._thread_metadata_for_target(
             getattr(source, "platform", None),
             getattr(source, "chat_id", None),
             getattr(source, "thread_id", None),
             chat_type=getattr(source, "chat_type", None),
             reply_to_message_id=reply_to_message_id or getattr(source, "message_id", None),
         )
+        if meta is None:
+            meta = {}
+        else:
+            meta = dict(meta)
+        # [owner] tiny Feishu DM metadata injection for auto-card:
+        # source.user_id is the open_id for Feishu; resolver in card_sender
+        # will pick it up to set receive_id_type=open_id (accepting both p2p/dm).
+        if getattr(source, "platform", None) == Platform.FEISHU:
+            uid = getattr(source, "user_id", None)
+            if uid:
+                meta["open_id"] = str(uid)
+                meta.setdefault("sender_open_id", str(uid))
+        if not meta:
+            return None
+        return meta
 
     def _thread_metadata_for_target(
         self,
@@ -12211,11 +12226,22 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         reply_to_message_id: Optional[str] = None,
         adapter: Optional[Any] = None,
     ) -> Optional[Dict[str, Any]]:
-        """Build thread metadata for synthetic sends that only have routing state."""
-        if thread_id is None:
-            return None
-        metadata: Dict[str, Any] = {"thread_id": thread_id}
-        if self._is_telegram_dm_topic_target(
+        # [owner] auto-card: _thread_metadata_for_target now returns chat_type alone when
+        # thread_id=None (Feishu DM synthetic sends). This gives _for_source a base dict
+        # to inject open_id/sender_open_id. See owner/feishu/card_sender.py:_resolve_receive_target.
+        """Build thread metadata for synthetic sends that only have routing state.
+
+        Returns None when both thread_id and chat_type are absent. When chat_type
+        is supplied without a thread_id (Feishu DM synthetic sends), returns
+        {"chat_type": ...} so downstream resolvers (e.g. card_sender) can pick
+        the right receive_id_type (open_id vs chat_id).
+        """
+        metadata: Dict[str, Any] = {}
+        if thread_id is not None:
+            metadata["thread_id"] = thread_id
+        if chat_type is not None:
+            metadata["chat_type"] = chat_type
+        if thread_id is not None and self._is_telegram_dm_topic_target(
             platform,
             chat_id,
             thread_id,
@@ -12231,6 +12257,8 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 metadata["direct_messages_topic_id"] = tid
             if reply_to_message_id is not None:
                 metadata["telegram_reply_to_message_id"] = str(reply_to_message_id)
+        if not metadata:
+            return None
         return metadata
 
     @staticmethod
