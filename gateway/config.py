@@ -1646,8 +1646,14 @@ def _apply_env_overrides(config: GatewayConfig) -> None:
     if feishu_app_id and feishu_app_secret:
         if Platform.FEISHU not in config.platforms:
             config.platforms[Platform.FEISHU] = PlatformConfig()
-        config.platforms[Platform.FEISHU].enabled = True
-        config.platforms[Platform.FEISHU].extra.update({
+        
+        # Respect explicit disable in config.yaml (via _enabled_explicit flag)
+        feishu_cfg = config.platforms[Platform.FEISHU]
+        enabled_was_explicit = bool(feishu_cfg.extra.pop("_enabled_explicit", False))
+        if not feishu_cfg.enabled and not enabled_was_explicit:
+            feishu_cfg.enabled = True
+        
+        feishu_cfg.extra.update({
             "app_id": feishu_app_id,
             "app_secret": feishu_app_secret,
             "domain": os.getenv("FEISHU_DOMAIN", "feishu"),
