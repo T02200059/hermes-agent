@@ -512,16 +512,54 @@ def execute_tool_calls_concurrent(agent, assistant_message, messages: list, effe
         start = time.time()
         try:
             try:
-                result = agent._invoke_tool(
-                    function_name,
-                    function_args,
-                    effective_task_id,
-                    tool_call.id,
-                    messages=messages,
-                    pre_tool_block_checked=True,
-                    skip_tool_request_middleware=True,
-                    tool_request_middleware_trace=list(middleware_trace),
-                )
+                if function_name in ("read_file", "search_files"):
+                    # 在 _run_tool 入口显式集成单次执行超时保护（按需求）。
+                    # 预算继承上游 terminal env。
+                    budget = 180.0
+                    try:
+                        from agent.agent_runtime_helpers import _resolve_file_tool_timeout, _file_tool_timeout_guard
+                        budget = _resolve_file_tool_timeout(effective_task_id)
+                    except Exception:
+                        pass
+                    guard = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+                    # 设置 flag，让内层 invoke_tool 检测到嵌套并跳过自己的 wrapper（只保留一层保护）。
+                    prev_active = getattr(_file_tool_timeout_guard, "active", False)
+                    _file_tool_timeout_guard.active = True
+                    try:
+                        fut = guard.submit(
+                            lambda: agent._invoke_tool(
+                                function_name,
+                                function_args,
+                                effective_task_id,
+                                tool_call.id,
+                                messages=messages,
+                                pre_tool_block_checked=True,
+                                skip_tool_request_middleware=True,
+                                tool_request_middleware_trace=list(middleware_trace),
+                            )
+                        )
+                        result = fut.result(timeout=budget)
+                    except concurrent.futures.TimeoutError:
+                        result = json.dumps({
+                            "error": f"{function_name} 执行超时（上限 {int(budget)}s，继承自 terminal 环境）。",
+                            "status": "timeout",
+                            "tool": function_name,
+                            "inherited_timeout": budget,
+                        }, ensure_ascii=False)
+                    finally:
+                        _file_tool_timeout_guard.active = prev_active
+                        guard.shutdown(wait=False, cancel_futures=True)
+                else:
+                    result = agent._invoke_tool(
+                        function_name,
+                        function_args,
+                        effective_task_id,
+                        tool_call.id,
+                        messages=messages,
+                        pre_tool_block_checked=True,
+                        skip_tool_request_middleware=True,
+                        tool_request_middleware_trace=list(middleware_trace),
+                    )
             except KeyboardInterrupt:
                 try:
                     agent.interrupt("keyboard interrupt")
