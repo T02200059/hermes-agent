@@ -5,8 +5,12 @@ all extracted scripts belong to a skill that was viewed (loaded) in the
 current session.  Configuration is in ``owner.approvals.skill_script_allowlist``
 in ``~/.hermes/patch.yaml``.
 
-可移除性：删除此文件后，skill script 自动批准功能不可用，
-但 check_dangerous_command 不受影响（不会崩溃）。
+Integration points (thin glue only):
+- tools/approval.py: check_all_command_guards() and check_dangerous_command()
+  (both do lazy try/except import + early return on match, after hardline/sudo).
+
+可移除性：删除此文件后，skill script 自动批准功能不可用；
+tools/approval.py 的两个守卫函数不受影响（import 失败时优雅跳过，不会崩溃）。
 """
 
 from __future__ import annotations
