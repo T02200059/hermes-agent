@@ -1469,6 +1469,7 @@ class FeishuAdapter(BasePlatformAdapter):
     def __init__(self, config: PlatformConfig):
         super().__init__(config, Platform.FEISHU)
 
+        logger.info("[Feishu] __init__ config.extra=%s", config.extra)
         self._settings = self._load_settings(config.extra or {})
         self._apply_settings(self._settings)
         self._client_impl: Optional[Any] = None
@@ -1705,13 +1706,14 @@ class FeishuAdapter(BasePlatformAdapter):
 
     async def connect(self) -> bool:
         """Connect to Feishu/Lark."""
+        logger.info("[Feishu] connect() called, _connection_mode=%s", self._connection_mode)
         if not FEISHU_AVAILABLE:
             logger.error("[Feishu] lark-oapi not installed")
             return False
         if not self._app_id or not self._app_secret:
             logger.error("[Feishu] FEISHU_APP_ID or FEISHU_APP_SECRET not set")
             return False
-        if self._connection_mode not in {"websocket", "webhook"}:
+        if self._connection_mode not in {"websocket", "webhook", "send_only"}:
             logger.error(
                 "[Feishu] Unsupported FEISHU_CONNECTION_MODE=%s. Supported modes: websocket, webhook.",
                 self._connection_mode,
@@ -1724,6 +1726,18 @@ class FeishuAdapter(BasePlatformAdapter):
             return False
 
         try:
+            # [owner] send_only mode: only create lark client for sending, no websocket
+            if self._connection_mode == "send_only":
+                self._loop = asyncio.get_running_loop()
+                domain = FEISHU_DOMAIN if self._domain_name != "lark" else LARK_DOMAIN
+                self._client = self._build_lark_client(domain)
+                self._user_store.bind_client(self._client)
+                await self._hydrate_bot_identity()
+                self._mark_connected()
+                logger.info("[Feishu] Connected in send_only mode (no websocket, send-only)")
+                return True
+
+            # Normal mode: websocket or webhook
             self._app_lock_identity = self._app_id
             acquired, existing = acquire_scoped_lock(
                 _FEISHU_APP_LOCK_SCOPE,

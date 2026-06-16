@@ -71,6 +71,7 @@ async def send_card_via_rest(
     The card dict must follow Feishu's interactive card schema.
     """
     try:
+        logger.info("[Feishu] send_card_via_rest called: chat_id=%s", chat_id)
         import requests as _requests
     except ImportError:
         return SendResult(success=False, error="requests library not available")
@@ -87,6 +88,7 @@ async def send_card_via_rest(
         token_data = token_resp.json()
         access_token = token_data.get("tenant_access_token", "")
         if not access_token:
+            logger.warning("[Feishu] send_card failed to get token: %s", token_data)
             return SendResult(
                 success=False,
                 error=f"Failed to get Feishu token: {token_data.get('msg', 'unknown')}",
@@ -114,6 +116,7 @@ async def send_card_via_rest(
         send_data = send_resp.json()
         code = send_data.get("code", -1)
         if code != 0:
+            logger.warning("[Feishu] send_card API error: code=%d, msg=%s", code, send_data.get("msg"))
             logger.warning(
                 "[Feishu] send_card failed (code %d): %s",
                 code, send_data.get("msg", "unknown"),
@@ -126,6 +129,7 @@ async def send_card_via_rest(
         msg_data = send_data.get("data", {})
         if isinstance(msg_data, dict):
             message_id = str(msg_data.get("message_id", ""))
+        logger.info("[Feishu] send_card success: message_id=%s", message_id)
         return SendResult(success=True, message_id=message_id)
     except Exception as exc:
         logger.warning("[Feishu] send_card exception: %s", exc)

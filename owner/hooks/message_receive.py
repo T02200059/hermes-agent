@@ -103,10 +103,22 @@ async def apply_message_receive_hooks(
     if delivery_allowed:
         try:
             adapter = adapters.get(platform_enum)
+            # [owner] send_only mode: if platform is api_server but feishu adapter is available,
+            # use feishu adapter for sending cards
+            if platform_value == "api_server" and feishu_card:
+                logger.info("[message_receive] send_only mode: attempting to use feishu adapter for card")
+                from gateway.platforms.base import Platform
+                feishu_adapter = adapters.get(Platform.FEISHU)
+                if feishu_adapter and hasattr(feishu_adapter, "send_card"):
+                    adapter = feishu_adapter
+                    platform_value = "feishu"  # Override for card sending
+            
             if adapter and chat_id:
+                logger.info("[message_receive] sending to chat_id=%s, platform=%s, has_feishu_card=%s", 
+                           chat_id, platform_value, bool(feishu_card))
                 if (
                     feishu_card
-                    and platform_value == "feishu"
+                    and (platform_value == "feishu" or hasattr(adapter, "send_card"))
                     and hasattr(adapter, "send_card")
                 ):
                     # Feishu card path
@@ -115,6 +127,7 @@ async def apply_message_receive_hooks(
                             feishu_card_cache.get("recall_id", ""),
                             feishu_card_cache,
                         )
+                    logger.info("[message_receive] calling send_card for chat_id=%s", chat_id)
                     await adapter.send_card(chat_id, feishu_card)
                 else:
                     await adapter.send(chat_id, extra_context_raw)

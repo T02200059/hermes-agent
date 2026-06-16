@@ -1653,11 +1653,12 @@ def _apply_env_overrides(config: GatewayConfig) -> None:
         if not feishu_cfg.enabled and not enabled_was_explicit:
             feishu_cfg.enabled = True
         
+        # [owner] send_only mode: only update if not already set in config.yaml
+        feishu_cfg.extra.setdefault("connection_mode", os.getenv("FEISHU_CONNECTION_MODE", "websocket"))
         feishu_cfg.extra.update({
             "app_id": feishu_app_id,
             "app_secret": feishu_app_secret,
             "domain": os.getenv("FEISHU_DOMAIN", "feishu"),
-            "connection_mode": os.getenv("FEISHU_CONNECTION_MODE", "websocket"),
         })
         feishu_encrypt_key = os.getenv("FEISHU_ENCRYPT_KEY", "")
         if feishu_encrypt_key:
