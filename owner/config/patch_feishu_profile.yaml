@@ -1,0 +1,44 @@
+# Feishu multi-profile routing configuration.
+#
+# This file is loaded separately from patch.yaml and is dedicated to routing
+# Feishu users/chats to independent Hermes profile containers. Keeping it
+# independent makes it easier to rotate endpoints and add/remove profiles
+# without touching the main owner configuration.
+#
+# Runtime path: ~/.hermes/patch_feishu_profile.yaml
+
+feishu:
+  user_routing:
+    # Shared secret used by the main gateway to authenticate with profile
+    # container api_server endpoints. Each container should accept this key.
+    internal_api_key: ""
+
+    # Optional: open_ids that are always handled by the main gateway,
+    # bypassing all profile routing.
+    whitelist: []
+    # whitelist:
+    #   - ou_aaaaaaaaaaaaaaaa
+
+    # Group/chat → profile mapping. Evaluated before user_profile_routes.
+    chat_profile_routes: {}
+    # chat_profile_routes:
+    #   oc_xxxxxxxxxxxxxxxx: team-a
+    #   oc_yyyyyyyyyyyyyyyy: team-b
+
+    # Direct-message (open_id) → profile mapping.
+    user_profile_routes: {}
+    # user_profile_routes:
+    #   ou_cccccccccccccccc: alice
+    #   ou_dddddddddddddddd: bob
+
+    # Fallback profile when no explicit route matches. If empty/unset,
+    # messages without a route are handled by the main gateway.
+    default_profile: ""
+    # default_profile: guest
+
+    # Profile name → container api_server endpoint.
+    profile_endpoints: {}
+    # profile_endpoints:
+    #   alice: http://localhost:9101
+    #   bob: http://localhost:9102
+    #   guest: http://localhost:9100

@@ -102,6 +102,10 @@ owner:
   # ── Feishu bot menu key→command mappings ──────────────────────────────────
   # Maps bot menu event_key to slash command or text prompt.
   # Falls back to _BUILTIN_BOT_MENU in feishu.py when config is unavailable.
+  #
+  # NOTE: Feishu multi-profile routing (user_routing / profile_endpoints) lives
+  # in a separate file: ~/.hermes/patch_feishu_profile.yaml. See
+  # owner/config/patch_feishu_profile.yaml for the template.
   feishu:
     bot_menu:
       new: "/new"
