@@ -11,6 +11,7 @@ import io
 import json
 import logging
 import re
+import time
 import uuid
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -2720,6 +2721,87 @@ class TestConcurrentToolExecution:
         assert post_call[1]["tool_call_id"] == "todo-1"
         assert post_call[1]["result"] == '{"ok":true}'
         assert post_call[1]["status"] == "ok"
+
+    # ------------------------------------------------------------------
+    # Timeout guard tests for read_file / search_files only (per spec)
+    # ------------------------------------------------------------------
+
+    def test_invoke_tool_read_file_times_out_on_slow_dispatch(self, agent, monkeypatch):
+        """read_file should hit the single-execution timeout guard and return structured error JSON."""
+        monkeypatch.setattr(
+            "agent.agent_runtime_helpers._resolve_file_tool_timeout",
+            lambda tid: 0.05,  # very short budget
+        )
+
+        def slow_dispatch(*a, **k):
+            time.sleep(0.2)
+            return "should-not-reach"
+
+        with patch("run_agent.handle_function_call", side_effect=slow_dispatch):
+            result = agent._invoke_tool("read_file", {"path": "/tmp/big.log"}, "task-timeout-1")
+
+        data = json.loads(result)
+        assert data["status"] == "timeout"
+        assert data["tool"] == "read_file"
+        assert "执行超时" in data["error"]
+        assert data["inherited_timeout"] == 0.05
+        assert data["task_id"] == "task-timeout-1"
+
+    def test_invoke_tool_search_files_times_out_on_slow_dispatch(self, agent, monkeypatch):
+        """search_files should also be protected by the guard (only these two)."""
+        monkeypatch.setattr(
+            "agent.agent_runtime_helpers._resolve_file_tool_timeout",
+            lambda tid: 0.05,
+        )
+
+        def slow(*a, **k):
+            time.sleep(0.2)
+            return "{}"
+
+        with patch("run_agent.handle_function_call", side_effect=slow):
+            result = agent._invoke_tool("search_files", {"pattern": "foo"}, "task-s-1")
+
+        data = json.loads(result)
+        assert data["status"] == "timeout"
+        assert data["tool"] == "search_files"
+
+    def test_invoke_tool_file_tools_fast_path_unaffected(self, agent, monkeypatch):
+        """Normal fast read_file/search_files should return the real result (no timeout)."""
+        monkeypatch.setattr(
+            "agent.agent_runtime_helpers._resolve_file_tool_timeout",
+            lambda tid: 5.0,
+        )
+        with patch("run_agent.handle_function_call", return_value='{"ok":true, "content":"small"}') as mock_hfc:
+            res = agent._invoke_tool("read_file", {"path": "small.txt"}, "t-fast")
+            assert res == '{"ok":true, "content":"small"}'
+            mock_hfc.assert_called_once()
+
+    def test_resolve_file_tool_timeout_inherits_from_active_env(self, monkeypatch):
+        """_resolve_file_tool_timeout should prefer the per-task terminal env timeout (upstream inheritance)."""
+        from agent import agent_runtime_helpers as rh
+
+        class FakeEnv:
+            timeout = 42
+
+        monkeypatch.setattr("tools.terminal_tool.get_active_env", lambda tid: FakeEnv())
+        assert rh._resolve_file_tool_timeout("some-task") == 42.0
+
+        # fallback when no env
+        monkeypatch.setattr("tools.terminal_tool.get_active_env", lambda tid: None)
+        # config fallback is exercised in real run; here just ensure it doesn't crash
+        val = rh._resolve_file_tool_timeout("no-env-task")
+        assert isinstance(val, float) and val > 0
+
+    def test_invoke_tool_other_tools_skip_file_timeout_guard(self, agent, monkeypatch):
+        """Non file tools must never take the read_file/search_files timeout path."""
+        monkeypatch.setattr(
+            "agent.agent_runtime_helpers._resolve_file_tool_timeout",
+            lambda tid: 0.0,  # would explode if wrongly entered
+        )
+        with patch("run_agent.handle_function_call", return_value="web-ok") as mock_hfc:
+            res = agent._invoke_tool("web_search", {"q": "x"}, "t-other")
+            assert res == "web-ok"
+            mock_hfc.assert_called_once()
 
     def test_sequential_agent_level_tool_execution_middleware_wraps_inline_dispatch(self, agent, monkeypatch):
         """Sequential built-in tool paths should expose the adaptive execution boundary."""
