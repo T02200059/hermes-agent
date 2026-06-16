@@ -22,6 +22,40 @@ from gateway.platforms.base import SendResult
 logger = logging.getLogger(__name__)
 
 
+def _resolve_receive_target(chat_id: str, metadata: Optional[Dict[str, Any]] = None) -> tuple[str, str]:
+    """Resolve (receive_id, receive_id_type) for Feishu im/v1/messages.
+
+    DM (p2p) paths require open_id + receive_id_type=open_id; group/thread
+    always use chat_id. We drive off explicit chat_type (not prefix heuristics)
+    because:
+      - Feishu raw events use chat_type="p2p"
+      - Hermes SessionSource._map_chat_type normalizes p2p -> "dm"
+      - chat_id for DMs is oc_xxx (not ou_), so startswith("ou_") is wrong.
+      - thread_id/om_xxx cases must not be misclassified by prefix.
+
+    When DM but metadata lacks open_id (e.g. some synthetic paths), we fail-open
+    to chat_id (with warning) to avoid regressing group-like sends.
+    """
+    raw_chat_type = (metadata or {}).get("chat_type", "") or ""
+    is_dm = raw_chat_type.strip().lower() in ("p2p", "dm")
+
+    if is_dm:
+        open_id = (metadata or {}).get("open_id") or (metadata or {}).get("sender_open_id")
+        if open_id:
+            return open_id, "open_id"
+        # fail-open：DM 缺 open_id 时降级回 chat_id + 打 warning
+        # 必须带上下文（chat_id + metadata keys），否则线上 230001 复发时无法定位是哪条 synthetic 路径漏注入了 open_id
+        logger.warning(
+            "DM metadata missing open_id; falling back to chat_id (will likely 230001). "
+            "chat_id=%r metadata_keys=%s",
+            chat_id, sorted((metadata or {}).keys()),
+        )
+        return chat_id, "chat_id"
+
+    # group / thread / 其它：保持 chat_id 路径完全不变
+    return chat_id, "chat_id"
+
+
 async def send_card_via_rest(
     adapter: "FeishuAdapter",
     chat_id: str,
@@ -60,11 +94,10 @@ async def send_card_via_rest(
     except Exception as exc:
         return SendResult(success=False, error=f"Feishu token request failed: {exc}")
 
-    # Determine receive_id_type from chat_id pattern.
-    if chat_id.startswith("ou_"):
-        receive_id_type = "open_id"
-    else:
-        receive_id_type = "chat_id"
+    # Determine receive target (id + type) from metadata chat_type.
+    # Replaces the previous startswith("ou_") heuristic which was incorrect
+    # for DMs (chat_id is oc_xxx; upstream normalizes p2p->dm).
+    receive_id, receive_id_type = _resolve_receive_target(chat_id, metadata)
 
     # Send card via REST API (bypasses lark_oapi SDK entirely).
     try:
@@ -75,7 +108,7 @@ async def send_card_via_rest(
                 "Authorization": f"Bearer {access_token}",
                 "Content-Type": "application/json",
             },
-            json={"receive_id": chat_id, "msg_type": "interactive", "content": payload},
+            json={"receive_id": receive_id, "msg_type": "interactive", "content": payload},
             timeout=15,
         )
         send_data = send_resp.json()
