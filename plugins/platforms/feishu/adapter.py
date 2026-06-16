@@ -155,7 +155,10 @@ def _owner_import(module: str, name: str) -> Any:
     if key not in _owner_lazy:
         import importlib
 
-        _owner_lazy[key] = getattr(importlib.import_module(module), name)
+        try:
+            _owner_lazy[key] = getattr(importlib.import_module(module), name)
+        except (ImportError, AttributeError):
+            _owner_lazy[key] = None  # graceful degradation when owner/ removed
     return _owner_lazy[key]
 
 # ---------------------------------------------------------------------------
