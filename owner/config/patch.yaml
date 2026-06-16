@@ -150,8 +150,22 @@ owner:
           ack: "🤖 切换模型…"
         model_max:
           ack: "🤖 切换模型…"
+        model_mimo:
+          ack: "🤖 切换 mimo-v2.5-pro…"
+        model_minimax:
+          ack: "🤖 切换 MiniMax-M3…"
         inspect_gpu_cluster:
           ack: "🔍 启动 GPU 集群巡检流程中…"
+        list_models:
+          ack: "📋 读取模型列表…"
+        yolo_on:
+          ack: "🔓 开启 YOLO 模式…"
+        yolo_off:
+          ack: "🔒 关闭 YOLO 模式…"
+        sync_git_hermes:
+          ack: "🔄 同步 hermes-agent 仓库…"
+        sync_sre_king:
+          ack: "📦 同步 sre-king 仓库…"
 
   # ── Model-level extra_body injection ───────────────────────────────────────
   # Per-provider, per-model extra_body merges. Use the *real* provider name
