@@ -20,12 +20,45 @@ logger = logging.getLogger(__name__)
 
 
 def _load_routing_config() -> Dict[str, Any]:
-    """Fail-open loader for the ``feishu.user_routing`` section."""
+    """Fail-open loader for the ``feishu.user_routing`` section.
+    
+    Supports multi-bot structure: ``feishu.bots.{app_id}.user_routing``
+    Falls back to legacy flat structure: ``feishu.user_routing``
+    """
     try:
         from owner.patch_config import load_patch_feishu_profile_config
 
         cfg = load_patch_feishu_profile_config()
-        routing = cfg.get("feishu", {}).get("user_routing", {})
+        feishu_cfg = cfg.get("feishu", {})
+        
+        # Try multi-bot structure first
+        bots_cfg = feishu_cfg.get("bots", {})
+        if bots_cfg:
+            # Get current gateway's app_id
+            app_id = os.getenv("FEISHU_APP_ID", "").strip()
+            if not app_id:
+                logger.debug(
+                    "[Feishu] FEISHU_APP_ID not set; cannot load bot-specific routing"
+                )
+                return {}
+            
+            bot_cfg = bots_cfg.get(app_id, {})
+            if not bot_cfg:
+                logger.debug(
+                    "[Feishu] No routing config for app_id=%s in feishu.bots",
+                    app_id,
+                )
+                return {}
+            
+            routing = bot_cfg.get("user_routing", {})
+            logger.debug(
+                "[Feishu] Loaded routing for app_id=%s from feishu.bots",
+                app_id,
+            )
+        else:
+            # Fallback to legacy flat structure
+            routing = feishu_cfg.get("user_routing", {})
+        
         return routing if isinstance(routing, dict) else {}
     except Exception:
         return {}
