@@ -22,10 +22,12 @@ Methods covered:
 
 from __future__ import annotations
 
+import concurrent.futures
 import copy
 import json
 import logging
 import re
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -40,6 +42,11 @@ from agent.error_classifier import FailoverReason
 from utils import base_url_host_matches, base_url_hostname, env_var_enabled, atomic_json_write
 
 logger = logging.getLogger(__name__)
+
+# Thread-local flag to de-duplicate timeout guards when _run_tool (outer) and
+# invoke_tool (inner) both want to protect the same read_file/search_files call.
+# Prevents nested concurrent.futures wrappers with identical budgets.
+_file_tool_timeout_guard = threading.local()
 
 
 def _ra():
@@ -1715,6 +1722,34 @@ def switch_model(agent, new_model, new_provider, api_key='', base_url='', api_mo
 
 
 
+def _resolve_file_tool_timeout(task_id: str) -> float:
+    """为 read_file / search_files 解析单次执行超时预算，优先继承当前 task 的 terminal 环境超时。
+
+    这是“继承上游超时”的关键：file tools 的重 I/O（sed/rg/cat 等）本身就走 terminal env.execute，
+    该 env 已经实现了 deadline + killpg + “[Command timed out after Xs]” + rc=124 + activity 心跳。
+    这里在 invoke_tool 层再包一层 Python 侧 wall-clock guard，确保 wrapper（dedup、结果组装等）也有硬上限。
+
+    回退到 config["terminal"]["timeout"]（默认 180）。
+    只对指定的两个工具生效。
+    """
+    try:
+        from tools.terminal_tool import get_active_env
+        env = get_active_env(task_id or "default")
+        if env is not None:
+            t = getattr(env, "timeout", None)
+            if isinstance(t, (int, float)) and t > 0:
+                return float(t)
+    except Exception:
+        pass
+    try:
+        from hermes_cli.config import load_config
+        cfg = load_config() or {}
+        t = cfg.get("terminal", {}).get("timeout", 180)
+        return float(t) if t and t > 0 else 180.0
+    except Exception:
+        return 180.0
+
+
 def invoke_tool(agent, function_name: str, function_args: dict, effective_task_id: str,
                  tool_call_id: Optional[str] = None, messages: list = None,
                  pre_tool_block_checked: bool = False,
@@ -1913,10 +1948,71 @@ def invoke_tool(agent, function_name: str, function_args: dict, effective_task_i
 
     from hermes_cli.middleware import run_tool_execution_middleware
 
+    _inner = lambda next_args: _execute(next_args if isinstance(next_args, dict) else function_args)
+
+    if function_name in ("read_file", "search_files"):
+        # 仅对这两个工具在 invoke_tool 入口显式加单次执行超时保护（按需求）。
+        # 预算优先继承当前 task 的 terminal env.timeout（已存在的基础设施：env.execute + _wait_for_process 负责 kill + partial + rc=124）。
+        if getattr(_file_tool_timeout_guard, "active", False):
+            # 嵌套保护（例如外层 _run_tool 已设置 guard），跳过内层 wrapper，避免 double future。
+            # 保护仍由外层生效，预算一致，错误形状相同。
+            return run_tool_execution_middleware(
+                function_name,
+                function_args,
+                _inner,
+                original_args=function_args,
+                task_id=effective_task_id or "",
+                session_id=getattr(agent, "session_id", "") or "",
+                tool_call_id=tool_call_id or "",
+                turn_id=getattr(agent, "_current_turn_id", "") or "",
+                api_request_id=getattr(agent, "_current_api_request_id", "") or "",
+            )
+
+        budget = _resolve_file_tool_timeout(effective_task_id)
+        _file_tool_timeout_guard.active = True
+        guard = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        try:
+            fut = guard.submit(
+                lambda: run_tool_execution_middleware(
+                    function_name,
+                    function_args,
+                    _inner,
+                    original_args=function_args,
+                    task_id=effective_task_id or "",
+                    session_id=getattr(agent, "session_id", "") or "",
+                    tool_call_id=tool_call_id or "",
+                    turn_id=getattr(agent, "_current_turn_id", "") or "",
+                    api_request_id=getattr(agent, "_current_api_request_id", "") or "",
+                )
+            )
+            try:
+                return fut.result(timeout=budget)
+            except concurrent.futures.TimeoutError:
+                err = json.dumps({
+                    "error": f"{function_name} 执行超时（上限 {int(budget)}s，继承自 terminal 环境超时）。请使用 offset/limit 缩小范围，或检查文件系统/NFS/大目录。",
+                    "status": "timeout",
+                    "tool": function_name,
+                    "inherited_timeout": budget,
+                    "task_id": effective_task_id or "",
+                }, ensure_ascii=False)
+                # 尽量仍触发 post_tool_call_hook（保持遥测与插件一致）
+                try:
+                    _finish_agent_tool(err)
+                except Exception:
+                    pass
+                logger.warning(
+                    "%s timeout after %.0fs (task=%s, budget inherited from terminal env)",
+                    function_name, budget, effective_task_id,
+                )
+                return err
+        finally:
+            _file_tool_timeout_guard.active = False
+            guard.shutdown(wait=False, cancel_futures=True)
+
     return run_tool_execution_middleware(
         function_name,
         function_args,
-        lambda next_args: _execute(next_args if isinstance(next_args, dict) else function_args),
+        _inner,
         original_args=function_args,
         task_id=effective_task_id or "",
         session_id=getattr(agent, "session_id", "") or "",
