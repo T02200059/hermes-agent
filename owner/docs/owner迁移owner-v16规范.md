@@ -171,7 +171,7 @@ kimi 完成代码后，主 agent 必须检查以下几点：
 **格式**（统一为短描述 + 指向 owner/）：
 ```python
 # [owner] auto-card: try auto-card before plain-text fallback
-auto_card_result = await try_auto_card(self, formatted, metadata)
+auto_card_result = await try_auto_card(self, formatted, metadata, chat_id=chat_id)
 if auto_card_result is not None:
     return auto_card_result
 ```
@@ -197,7 +197,7 @@ class FeishuAdapter(BasePlatformAdapter):
     async def send(self, chat_id, content, ...):
         formatted = self.format_message(content)
         # [owner] try auto-card before plain-text fallback
-        auto_card_result = await try_auto_card(self, formatted, metadata)
+        auto_card_result = await try_auto_card(self, formatted, metadata, chat_id=chat_id)
         if auto_card_result is not None:
             return auto_card_result
         chunks = self.truncate_message(...)
