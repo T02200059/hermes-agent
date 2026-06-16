@@ -64,6 +64,15 @@
 
 - per-chat display overrides 迁移后规范合规收尾（2026-06-14，按 review 建议逐个修复）
   - `gateway/slash_commands.py`：补齐 `_handle_verbose_command`（tool_progress cycle）中唯一的遗漏 `resolve_display_setting` 调用点，传入 `chat_id=event.source.chat_id` 并加标准 `# [owner] per-chat display override` 短注释 + 说明。
+
+- skill script auto-approval 迁移收尾（2026-06-16）
+  - 问题：原 feat（`a39478319`）将核心逻辑提取到 `owner/approval/skill_script_approval.py` 并接了 `skill_view` track + /new reset，但只在 legacy `check_dangerous_command` 里加了 bypass 调用；生产 `terminal` 路径使用的 `check_all_command_guards`（tirith 统一守卫）未接线，导致 patch.yaml 里的 `owner.approvals.skill_script_allowlist` 在真实场景不生效。
+  - 修复：按《二次开发规范》在 `tools/approval.py` 里只做极薄胶水（lazy try/except import + 早期返回 + 短统一 `# [owner]` 标记，指向 owner/）；位置放在 hardline + sudo guard 之后（yolo/tirith/dangerous 收集之前），确保可信任 skill 脚本完全免审（hardline 仍优先）。
+  - 同时保留 legacy 函数里的相同逻辑（向后兼容测试等路径）。
+  - 测试：在 `tests/owner/test_skill_script_approval.py` 新增两个集成测试，验证 check_all_command_guards 早返回、detect 未被调用、tirith block 也被绕过。
+  - 提交纪律：三个独立 per-file commit（fix(官方模块)、fix(owner)、test(owner)）。
+  - 效果：配置 sre-king 等 skill 后，agent 通过 skill_view 加载后执行其脚本（.sh/.py），现在真正自动批准；删除 owner/ 目录不影响审批主流程。
+  - 参考：~/projects/ai/hermes-agent（owner 分支原实现思路） + 二次开发规范 + 迁移后待优化 checklist。
   - `gateway/display_config.py`：
     - 移除顶层 `from owner.display_overrides` 直接 import，改为函数内 **lazy + try/except 保护** 的安全加载；except 路径提供 no-op fallback（merge 返回原 cfg，per_chat 返回 None）。这样即使 `rm -rf owner/display_overrides.py`（或整个 owner/），`import gateway.display_config` 仍成功，功能优雅降级。
     - 新增 `resolve_display_setting_for_source(..., source=..., chat_id=...)` 辅助函数（带详细 [owner] 注释），集中处理 source → chat_id 提取，未来 gateway/run.py 新调用或重构时可使用它，减少重复 `chat_id=xxx.chat_id` 噪音和 merge 面积。
