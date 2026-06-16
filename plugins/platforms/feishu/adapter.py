@@ -2672,6 +2672,12 @@ class FeishuAdapter(BasePlatformAdapter):
         if clarify_id:
             return self._handle_clarify_card_action(event=event, action_value=action_value, loop=loop)
 
+        # [owner] qdrant-recall: route expand/collapse actions (see owner/feishu/recall_card_handler.py)
+        if isinstance(action_value, dict) and any(
+            action_value.get(k) for k in ("expand_recall", "collapse_recall")
+        ):
+            return self._handle_recall_card_action(event=event, action_value=action_value)
+
         # [owner] diff cards: route expand/collapse/full actions (see owner/diff_card/feishu.py)
         if isinstance(action_value, dict) and any(
             action_value.get(k) for k in ("expand_diff", "collapse_diff", "show_full_diff")
@@ -2795,6 +2801,11 @@ class FeishuAdapter(BasePlatformAdapter):
         """Handle clarify button click: resolve or switch to text-capture."""
         from owner.feishu.clarify_card import handle_clarify_card_action
         return handle_clarify_card_action(adapter=self, event=event, action_value=action_value, loop=loop)
+
+    # [owner] qdrant-recall: handle expand/collapse button clicks (see owner/feishu/recall_card_handler.py)
+    def _handle_recall_card_action(self, *, event: Any, action_value: Dict[str, Any]) -> Any:
+        from owner.feishu.recall_card_handler import handle_recall_card_action
+        return handle_recall_card_action(self, action_value, lark)
 
     async def _resolve_approval(
         self,
