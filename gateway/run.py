@@ -9847,7 +9847,11 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 **hook_ctx,
                 "response": (response or "")[:500],
             })
-            
+
+            # [owner] Feishu auto-card at agent:end → owner/feishu/agent_end.py
+            from owner.feishu.agent_end import try_auto_card_on_end as _on_end
+            response, _footer_line = await _on_end(self, source, event, agent_result, response, _footer_line)
+
             # Check for pending process watchers (check_interval on background processes)
             try:
                 from tools.process_registry import process_registry
