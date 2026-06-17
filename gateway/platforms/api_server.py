@@ -4110,16 +4110,49 @@ class APIServerAdapter(BasePlatformAdapter):
                             "owner.feishu.profile_routing", "feishu_reply"
                         )
                         if _feishu_reply is not None:
-                            # Get profile name from HERMES_HOME env var
-                            _profile_name = os.path.basename(os.environ.get("HERMES_HOME", "")) or None
+                            # Build the runtime footer (model · context% · cwd)
+                            # exactly like the main gateway flow does in
+                            # gateway/run.py, so routed replies render an
+                            # identical footer. Prefer the model actually used
+                            # this turn (result["model"] == agent.model);
+                            # self._model_name is unreliable (it falls back to
+                            # the profile name when extra["model_name"] is unset).
+                            _real_model = (
+                                result.get("model") if isinstance(result, dict) else None
+                            ) or self._model_name or None
+                            _footer = ""
+                            try:
+                                from gateway.run import _load_gateway_config
+                                from gateway.runtime_footer import build_footer_line
+                                _ctx_len = getattr(
+                                    getattr(agent, "context_compressor", None),
+                                    "context_length", 0,
+                                ) or 0
+                                _ctx_tokens = (
+                                    result.get("last_prompt_tokens")
+                                    if isinstance(result, dict) else 0
+                                ) or 0
+                                if not _ctx_tokens and isinstance(usage, dict):
+                                    _ctx_tokens = usage.get("input_tokens", 0) or 0
+                                _footer = build_footer_line(
+                                    user_config=_load_gateway_config(),
+                                    platform_key="feishu",
+                                    model=_real_model,
+                                    context_tokens=_ctx_tokens,
+                                    context_length=_ctx_len or None,
+                                    cwd=os.environ.get("TERMINAL_CWD")
+                                    or os.environ.get("HERMES_HOME", ""),
+                                )
+                            except Exception as _ferr:
+                                logger.debug("[api_server] footer build failed: %s", _ferr)
+                                _footer = ""
                             asyncio.ensure_future(
                                 _feishu_reply(
                                     receive_id=reply_receive_id,
                                     receive_id_type=reply_receive_id_type,
                                     text=final_response,
                                     reply_message_id=reply_message_id,
-                                    model=self._model_name or None,
-                                    profile_name=_profile_name,
+                                    footer=_footer or None,
                                 )
                             )
             except asyncio.CancelledError:
@@ -4386,6 +4419,62 @@ class APIServerAdapter(BasePlatformAdapter):
 
         return web.json_response({"run_id": run_id, "status": "stopping"})
 
+    async def _handle_feishu_inbound(self, request: "web.Request") -> "web.Response":
+        """POST /v1/feishu/inbound — [owner] multi-profile routing transport.
+
+        The main gateway holds the only Feishu WebSocket and forwards routed
+        messages here. This handler is a pure transport doorway: it does NOT
+        run the agent loop (unlike /v1/runs). Instead it hands the message to
+        this container's ``send_only`` Feishu adapter via ``inject_inbound``,
+        so the conversation runs through the full native Feishu pipeline
+        (channel_prompt → hooks → agent:end auto-card → runtime footer) and the
+        reply is sent by the same adapter. Fire-and-forget: the main gateway
+        only needs an accepted ack.
+        """
+        auth_err = self._check_auth(request)
+        if auth_err:
+            return auth_err
+        body, err = await self._read_json_body(request)
+        if err:
+            return err
+
+        text = body.get("text") or body.get("input") or ""
+        open_id = str(body.get("open_id") or "").strip()
+        chat_id = str(body.get("chat_id") or "").strip()
+        chat_type = str(body.get("chat_type") or "p2p").strip()
+        message_id = body.get("message_id") or None
+
+        if not text or not str(text).strip():
+            return web.json_response(_openai_error("text is required", code="invalid_request"), status=400)
+        if not open_id and not chat_id:
+            return web.json_response(
+                _openai_error("open_id or chat_id is required", code="invalid_request"),
+                status=400,
+            )
+
+        _get_adapter = _owner_import(
+            "owner.feishu.profile_routing", "_get_inprocess_feishu_adapter"
+        )
+        adapter = _get_adapter() if _get_adapter is not None else None
+        if adapter is None or not hasattr(adapter, "inject_inbound"):
+            logger.warning("[api_server] /v1/feishu/inbound: no Feishu adapter in this container")
+            return web.json_response(
+                _openai_error("Feishu adapter unavailable", code="feishu_unavailable"),
+                status=503,
+            )
+
+        # Run the full pipeline on the gateway loop without blocking the ack.
+        asyncio.ensure_future(
+            adapter.inject_inbound(
+                text=str(text),
+                open_id=open_id,
+                chat_id=chat_id,
+                chat_type=chat_type,
+                message_id=str(message_id) if message_id else None,
+            )
+        )
+        return web.json_response({"accepted": True}, status=202)
+
     async def _sweep_orphaned_runs(self) -> None:
         """Periodically clean up run streams that were never consumed."""
         while True:
@@ -4476,6 +4565,9 @@ class APIServerAdapter(BasePlatformAdapter):
             self._app.router.add_get("/v1/runs/{run_id}/events", self._handle_run_events)
             self._app.router.add_post("/v1/runs/{run_id}/approval", self._handle_run_approval)
             self._app.router.add_post("/v1/runs/{run_id}/stop", self._handle_stop_run)
+            # [owner] multi-profile routing: transport entry for main-gateway-
+            # forwarded Feishu messages (does not run the agent loop here).
+            self._app.router.add_post("/v1/feishu/inbound", self._handle_feishu_inbound)
             # Store the adapter after native routes are registered. Local Hermes-Relay
             # bootstrap shims use this key as a feature-detection hook; registering
             # native routes first lets those shims no-op instead of shadowing the

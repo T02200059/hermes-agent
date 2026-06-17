@@ -3353,6 +3353,92 @@ class FeishuAdapter(BasePlatformAdapter):
         )
         await self._dispatch_inbound_event(normalized)
 
+    # [owner] multi-profile routing: process a message forwarded from the main
+    # gateway as if it had arrived on this container's own WebSocket.
+    async def inject_inbound(
+        self,
+        *,
+        text: str,
+        open_id: str,
+        chat_id: str = "",
+        chat_type: str = "p2p",
+        message_id: Optional[str] = None,
+    ) -> None:
+        """Run a forwarded message through the normal inbound pipeline.
+
+        The main gateway holds the only Feishu WebSocket and forwards routed
+        messages to this ``send_only`` container over HTTP (see
+        ``owner/feishu/profile_routing.py`` and the ``/v1/feishu/inbound``
+        endpoint in ``gateway/platforms/api_server.py``). This container has no
+        WebSocket of its own, so it reconstructs the inbound ``MessageEvent``
+        and dispatches it through the *same* path a native message would take
+        (``_dispatch_inbound_event`` → ``_handle_message`` → agent:end
+        auto-card + runtime footer). A routed conversation then behaves exactly
+        like a native one — only the transport differs.
+
+        ``chat_id`` is the p2p chat id (``oc_…``) for a DM or the group id for
+        a group; ``open_id`` is always the sender. Both are forwarded so the
+        reply path can use whichever id Feishu needs: the auto-card path reads
+        the open_id from metadata (injected by run.py for Feishu DMs), while
+        the plain-text path sends to ``source.chat_id``.
+        """
+        if not text or not text.strip():
+            return
+
+        is_dm = (chat_type or "").strip().lower() in ("p2p", "dm")
+        src_chat_type = "dm" if is_dm else "group"
+        # Prefer the p2p chat id for DMs (matches the native flow); fall back to
+        # the open_id so send() still has a deliverable target when no p2p id
+        # was forwarded (e.g. bot-menu synthetic commands).
+        src_chat_id = chat_id or (open_id if is_dm else "")
+        if not src_chat_id:
+            logger.warning(
+                "[Feishu] inject_inbound: no chat_id/open_id available; dropping"
+            )
+            return
+
+        chat_name = "Feishu DM" if is_dm else src_chat_id
+        if not is_dm:
+            try:
+                info = await self.get_chat_info(src_chat_id)
+                chat_name = info.get("name") or src_chat_id
+            except Exception:
+                pass
+
+        source = self.build_source(
+            chat_id=src_chat_id,
+            chat_name=chat_name,
+            chat_type=src_chat_type,
+            user_id=open_id or None,
+        )
+
+        # Per-channel ephemeral prompt is resolved HERE in the container — the
+        # main gateway only forwards the message. For DMs prefer an open_id-keyed
+        # prompt (per-user) and fall back to the p2p chat id.
+        from gateway.platforms.base import resolve_channel_prompt
+
+        if is_dm:
+            _channel_prompt = resolve_channel_prompt(
+                self.config.extra, open_id, parent_id=src_chat_id
+            )
+        else:
+            _channel_prompt = resolve_channel_prompt(self.config.extra, src_chat_id)
+
+        event = MessageEvent(
+            text=text,
+            message_type=MessageType.TEXT,
+            source=source,
+            message_id=message_id,
+            channel_prompt=_channel_prompt,
+            timestamp=datetime.now(),
+        )
+        logger.info(
+            "[Feishu] inject_inbound: dispatching routed message (chat_type=%s, "
+            "chat_id=%s, open_id=%s, has_msg_id=%s)",
+            src_chat_type, src_chat_id, open_id, bool(message_id),
+        )
+        await self._dispatch_inbound_event(event)
+
     async def _dispatch_inbound_event(self, event: MessageEvent) -> None:
         """Apply Feishu-specific burst protection before entering the base adapter."""
         if event.message_type == MessageType.TEXT and not event.is_command():
