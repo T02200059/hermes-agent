@@ -4,9 +4,13 @@
 
 feishu:
   bots:
-    cli_a7bfbfdbbcf8d00c:
+    # Must match the gateway's FEISHU_APP_ID (~/.hermes/.env). _load_routing_config
+    # looks up bots[os.getenv("FEISHU_APP_ID")]; a mismatch silently disables routing.
+    cli_a96f6714a2781cb3:
       user_routing:
-        whitelist:
+        # whitelist: open_ids here bypass routing → main gateway.
+        # Emptied for routing test; restore the entry to re-enable bypass.
+        whitelist: []
           - ou_2924a1f56adac3a07a0fef2cea2543c5
 
         chat_profile_routes: {}
@@ -18,4 +22,6 @@ feishu:
         profile_endpoints:
           hermesxiyun:
             url: http://localhost:26026
-            api_key: ""
+            # Must match the container's API_SERVER_KEY (profile .env), else the
+            # container's _check_auth rejects forwarded requests with 401.
+            api_key: "sk-HpFO0tO2GKpEmkTO4020Cf3454224306B3C11393D22007D9"
