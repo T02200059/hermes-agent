@@ -403,6 +403,7 @@ gateway:
     list_footer:           "\nUsage: `/resume <session name>`"
     list_footer_numbered:  "\nUsage: `/resume <session name>` or `/resume <number>` (e.g. `/resume 1` for the most recent)"
     list_failed:           "Could not list sessions: {error}"
+    card_title:            "Resume recent session"
     out_of_range:          "Resume index {index} is out of range.\nUse `/resume` with no arguments to see available sessions."
     not_found:             "No session found matching '**{name}**'.\nUse `/resume` with no arguments to see available sessions."
     already_on:            "📌 Already on session **{name}**."

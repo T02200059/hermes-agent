@@ -2183,6 +2183,28 @@ class FeishuAdapter(BasePlatformAdapter):
             logger.warning("[Feishu] send_update_prompt failed: %s", exc)
             return SendResult(success=False, error=str(exc))
 
+    # [owner] resume: send interactive /resume list card with number buttons (see owner/feishu/resume_card.py)
+    async def send_resume_card(
+        self,
+        chat_id: str,
+        header_text: str,
+        sessions: List[Dict[str, Any]],
+        session_key: str,
+        source_dict: Optional[Dict[str, Any]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> SendResult:
+        """Send /resume session list as an interactive card with number buttons."""
+        from owner.feishu.resume_card import send_resume_card as _owner_send
+        return await _owner_send(
+            adapter=self,
+            chat_id=chat_id,
+            header_text=header_text,
+            sessions=sessions,
+            session_key=session_key,
+            source_dict=source_dict,
+            metadata=metadata,
+        )
+
     async def send_voice(
         self,
         chat_id: str,
@@ -2723,6 +2745,15 @@ class FeishuAdapter(BasePlatformAdapter):
         if hermes_action and hermes_action.startswith("memory_"):
             # [owner] memory_propose: resolve memory proposal buttons (see owner/feishu/memory_proposal.py)
             return self._handle_memory_card_action(event=event, action_value=action_value, loop=loop)
+        if hermes_action == "resume_select":
+            # [owner] resume: handle resume selection button click (see owner/feishu/resume_card.py)
+            from owner.feishu.resume_card import handle_resume_card_action
+            return handle_resume_card_action(
+                adapter=self,
+                event=event,
+                action_value=action_value,
+                loop=loop,
+            )
         if hermes_action:
             return self._handle_approval_card_action(event=event, action_value=action_value, loop=loop)
         if update_prompt_action:
