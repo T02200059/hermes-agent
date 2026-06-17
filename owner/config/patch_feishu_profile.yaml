@@ -10,18 +10,26 @@ feishu:
       user_routing:
         # whitelist: open_ids here bypass routing → main gateway.
         # Emptied for routing test; restore the entry to re-enable bypass.
-        whitelist: []
+        whitelist:
           - ou_2924a1f56adac3a07a0fef2cea2543c5
-
         chat_profile_routes: {}
-
         user_profile_routes: {}
-
         default_profile: hermesxiyun
-
         profile_endpoints:
           hermesxiyun:
             url: http://localhost:26026
             # Must match the container's API_SERVER_KEY (profile .env), else the
             # container's _check_auth rejects forwarded requests with 401.
             api_key: "sk-HpFO0tO2GKpEmkTO4020Cf3454224306B3C11393D22007D9"
+    cli_aa87e2dbd3fa5cd8:
+      user_routing:
+        whitelist:
+          - ou_23270fbce80e70282797919e4b254fa5  # 王庭威
+          - ou_d6d974f1e0afa121fc2f02faad7240dd  # 杨天宝
+        chat_profile_routes: {}
+        user_profile_routes: {}
+        default_profile: hermesxiyun
+        profile_endpoints:
+          hermesxiyun:
+            url: http://localhost:26026
+            api_key: "hermesxiyun-node010-1781671360"
