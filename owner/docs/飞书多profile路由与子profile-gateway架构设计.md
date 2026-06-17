@@ -1,12 +1,12 @@
 # 飞书多 Profile 路由与子 Profile Gateway 架构设计
 
-> 文档版本：v2.0 | 更新日期：2026-06-17
+> 文档版本：v2.1 | 更新日期：2026-06-17
 > 涉及 commits：
 > - `541c4ba` feat(owner): add Feishu multi-profile routing with external containers
 > - `2e692b4` fix(feishu): respect explicit platform disable in config.yaml
 > - `8ced60a` feat(feishu): add send_only connection mode for multi-profile routing
 > - `f7a3554` feat(feishu): multi-bot routing support
-> - *(owner-v16，待提交)* 子容器改走原生飞书 pipeline：`POST /v1/feishu/inbound` + `FeishuAdapter.inject_inbound`
+> - `b72b924` refactor(owner): remove v1.x dead code from feishu multi-profile routing (-262 lines)
 
 ---
 
@@ -219,7 +219,7 @@ if self._connection_mode == "send_only":
 
 ### 3.2 `gateway/config.py` — 尊重显式 enabled: false
 
-**问题**：子 profile 的 config.yaml 设置 `platforms.feishu.enabled: false`，但 .env 中有 FEISHU_APP_ID/SECRET（用于 `feishu_reply`），原逻辑会无条件启用飞书 adapter → 抢占 WebSocket。
+**问题**：子 profile 的 config.yaml 设置 `platforms.feishu.enabled: false`，但 .env 中有 FEISHU_APP_ID/SECRET（用于 send_only adapter 回复），原逻辑会无条件启用飞书 adapter → 抢占 WebSocket。
 
 **改动**（commit `2e692b4`）：
 
@@ -308,13 +308,7 @@ async def inject_inbound(self, *, text, open_id, chat_id="", chat_type="p2p", me
 - 回复完全由原生 `agent:end`（`owner/feishu/agent_end.py` → `try_auto_card_on_end`）+ `gateway/runtime_footer.py` 产出，**无需任何特殊回复代码**。footer 即标准 `model · context% · cwd`，模型名是 agent 实际所用模型。
 - `channel_prompt` **由子容器解析**（主 gateway 只转发）；DM 按 open_id 命中可实现「每用户专属 prompt」。
 
-### 3.5 ⚠️ *(v1.x 遗留)* `X-Hermes-Reply-Via` + `message_receive` 卡片发送
-
-> 以下为已被 3.4 取代的旧路径。代码暂时保留（路由不再走 `/v1/runs`），可在确认稳定后清理。
-
-旧设计中，主 gateway `POST /v1/runs` 并带 `X-Hermes-Reply-Via: feishu` 等 header，子容器在 `run.completed` 后调用 `feishu_reply()` 直接 REST 回复；卡片则由 `owner/hooks/message_receive.py` 在 `platform=api_server` 时改用 feishu adapter 的 `send_card` 发送。
-
-新设计下消息走 `/v1/feishu/inbound` → `inject_inbound`，回复经原生 `agent:end`，因此 `X-Hermes-Reply-Via` 分支与 `message_receive` 的卡片改投逻辑对被路由的消息不再生效。
+> *v1.x 的 `X-Hermes-Reply-Via` + `feishu_reply()` 路径已在 commit `b72b924` 中清理（-262 行）。路由消息现统一走 `/v1/feishu/inbound` → `inject_inbound` → 原生 pipeline。*
 
 ### 3.6 `owner/feishu/profile_routing.py` — 核心路由模块
 
@@ -330,7 +324,6 @@ async def inject_inbound(self, *, text, open_id, chat_id="", chat_type="p2p", me
 | `try_route_bot_menu_command(...)` | 路由 bot 菜单 → `/v1/feishu/inbound`（chat_id 可空，回退 open_id） | bot_menu.py |
 | `_forward_to_profile_container(...)` | 实际 HTTP 转发到 `/v1/feishu/inbound` | 上述三者 |
 | `_get_inprocess_feishu_adapter()` | 子容器内取本进程 send_only feishu adapter（经 `_gateway_runner_ref`） | api_server.py |
-| `feishu_reply(...)` | ⚠️ *(v1.x 遗留)* 旧 REST 直接回复，被 `inject_inbound` 取代 | api_server.py |
 
 **路由优先级**：
 1. `whitelist` open_ids → 留在主 gateway（管理员/特殊用户）
@@ -342,19 +335,7 @@ async def inject_inbound(self, *, text, open_id, chat_id="", chat_type="p2p", me
 
 **会话隔离**：路由本身不再计算 session_key——消息注入子容器后，由原生 pipeline 通过 `build_session_key(source, …)` 计算（DM 按 chat_id/open_id、群按 chat_id），与原生飞书会话完全一致。每个 profile 容器有独立的 HERMES_HOME / session store / memory / SOUL，进程级隔离。
 
-### 3.7 ⚠️ *(v1.x 遗留)* `owner/feishu/profile_routing.py` — feishu_reply 回复机制
-
-> 已被 3.4.1 的原生 `agent:end` 回复取代。代码暂时保留作回滚。
-
-旧机制让子容器通过 REST API 直接回复用户，并手工拼接 footer `📋 profile · 🤖 model`。**这个 footer 是错的**：
-
-- 正确的 footer 是标准 `runtime_footer`：`model · context% · cwd`（如 `deepseek-v4-flash · 21% · ~/.hermes`），由 `gateway/runtime_footer.py::build_footer_line` 按 `display.runtime_footer.fields` 生成。
-- 旧实现里的「模型名」取自 api_server 的 advertise 名（`_resolve_model_name`，读 `extra["model_name"]`/`API_SERVER_MODEL_NAME`），常退化为 profile 名，与 agent 实际所用模型不符。
-- v2.0 下回复走原生 pipeline，footer 由 `build_footer_line` 用 agent 真实模型 + 上下文占用自动产出，无需手工拼接。
-
-**为什么会退化为纯文本**：`feishu_reply` 直接 REST 发 `msg_type: text`，绕过了 `FeishuAdapter.send()` → `try_auto_card()`，所以没有 auto-card。v2.0 经 `inject_inbound` 走原生 `send()` 后，auto-card 自动生效。
-
-### 3.8 `owner/feishu/card_sender.py` — REST 卡片发送
+### 3.7 `owner/feishu/card_sender.py` — REST 卡片发送
 
 独立于 lark_oapi SDK 的飞书卡片发送器：
 
@@ -498,7 +479,7 @@ GATEWAY_ALLOW_ALL_USERS=true           # 信任主 gateway 鉴权
 所有 owner 改动遵循"薄委托"模式——官方代码中只有 `# [owner]` 标记的 1-3 行。删除整个 `owner/` 目录后：
 
 - `feishu.py` 正常启动，只是不执行路由
-- `api_server.py` 正常启动，只是不处理 `X-Hermes-Reply-Via`
+- `api_server.py` 正常启动，只是不处理 `/v1/feishu/inbound`
 - 不会产生 import 错误或运行时崩溃
 
 ### 5.3 app_id 互斥保护
@@ -521,15 +502,15 @@ if not acquired:
 | 文件 | 改动类型 | 说明 |
 |------|----------|------|
 | `gateway/platforms/feishu.py` | feat | `send_only` 连接模式 + **v2.0 `inject_inbound()`**（重建原生 MessageEvent 注入 pipeline） |
-| `gateway/platforms/api_server.py` | feat | **v2.0 `POST /v1/feishu/inbound` 传输端点**（`_handle_feishu_inbound`，纯通道）；*(v1.x 遗留)* `X-Hermes-Reply-Via` 分支保留 |
+| `gateway/platforms/api_server.py` | feat | **v2.0 `POST /v1/feishu/inbound` 传输端点**（`_handle_feishu_inbound`，纯通道） |
 | `gateway/config.py` | fix | 尊重 `enabled: false`；`connection_mode` 优先级 |
 | `gateway/run.py` | feat | 模块级 `_gateway_runner_ref`（子容器经此取本进程 feishu adapter） |
-| `owner/feishu/profile_routing.py` | feat | 核心路由模块；**v2.0 `_forward_to_profile_container` 改投 `/v1/feishu/inbound`**（body 带 open_id+chat_id+chat_type）+ `_get_inprocess_feishu_adapter()`；*(v1.x 遗留)* `feishu_reply` 保留 |
+| `owner/feishu/profile_routing.py` | feat | 核心路由模块；**v2.0 `_forward_to_profile_container` 改投 `/v1/feishu/inbound`**（body 带 open_id+chat_id+chat_type）+ `_get_inprocess_feishu_adapter()` |
 | `owner/feishu/card_sender.py` | feat | REST API 卡片发送（独立于 SDK），原生回复的 auto-card 也复用它 |
 | `owner/feishu/auto_card.py` | feat | `try_auto_card`（原生 `agent:end` 回复经此产出卡片） |
 | `gateway/runtime_footer.py` | — | 标准 footer `model · context% · cwd`（原生回复自动附加） |
 | `owner/feishu/bot_menu.py` | refactor | 委托 `try_route_bot_menu_command` |
-| `owner/hooks/message_receive.py` | feat | *(v1.x 遗留)* send_only 卡片改投；v2.0 路由消息不再经此 |
+| `owner/hooks/message_receive.py` | feat | message:receive hook 编排；api_server 场景下卡片改投到 feishu adapter |
 | `owner/patch_config.py` | feat | `load_patch_feishu_profile_config()` 加载器（mtime + 1min TTL 缓存） |
 | `owner/config/patch_feishu_profile.yaml` | feat | 配置模板（multi-bot 结构） |
 | `tests/owner/test_feishu_profile_routing.py` | test | 路由解析与加载器测试 |
