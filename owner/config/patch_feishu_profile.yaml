@@ -6,12 +6,12 @@ feishu:
   bots:
     # Must match the gateway's FEISHU_APP_ID (~/.hermes/.env). _load_routing_config
     # looks up bots[os.getenv("FEISHU_APP_ID")]; a mismatch silently disables routing.
-    cli_a96f6714a2781cb3:
+    cli_a96f6714a2781cb3: # YangtbClawProMax
       user_routing:
         # whitelist: open_ids here bypass routing → main gateway.
         # Emptied for routing test; restore the entry to re-enable bypass.
         whitelist:
-          - ou_2924a1f56adac3a07a0fef2cea2543c5
+          - ou_2924a1f56adac3a07a0fef2cea2543c5 # 杨天宝
         chat_profile_routes: {}
         user_profile_routes: {}
         default_profile: hermesxiyun
@@ -21,11 +21,13 @@ feishu:
             # Must match the container's API_SERVER_KEY (profile .env), else the
             # container's _check_auth rejects forwarded requests with 401.
             api_key: "sk-HpFO0tO2GKpEmkTO4020Cf3454224306B3C11393D22007D9"
-    cli_aa87e2dbd3fa5cd8:
+    cli_aa87e2dbd3fa5cd8: # 毕方
       user_routing:
         whitelist:
           - ou_23270fbce80e70282797919e4b254fa5  # 王庭威
-          - ou_d6d974f1e0afa121fc2f02faad7240dd  # 杨天宝
+          # - ou_d6d974f1e0afa121fc2f02faad7240dd  # 杨天宝
+          # - ou_707e901d26a769ea922b54e99276d2f2 # 孙起飞
+          # - ou_5790edbcc55db5e523d8a29d32964d1d # 李瑞阳
         chat_profile_routes: {}
         user_profile_routes: {}
         default_profile: hermesxiyun
