@@ -558,6 +558,135 @@ hermes -p hermesxiyun gateway stop
 - 每个子 profile 的 gateway 独立运行，互不干扰
 - 主 gateway（default profile）负责接收飞书 WebSocket 消息并路由到子 profile
 
+
+
+### 7.1.1 Profile Alias 与 Systemd 服务安装（推荐流程）
+
+> `hermes -p <name>` 每次要敲很长，`hermes profile alias` 会创建一个同名 wrapper script，之后直接用 `<profile_name> gateway restart` 即可。
+
+#### Step 1: 创建 Alias
+
+```bash
+hermes profile alias hermesxiyun
+hermes profile alias hermeswangtingwei
+# ... 为每个子 profile 创建
+```
+
+创建后生成 `~/.local/bin/<profile_name>` 可执行脚本。确保 `~/.local/bin` 在 PATH 中：
+
+```bash
+# bashrc / zshrc 中添加
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+#### Step 2: 端口规划
+
+每个子 profile 的 `api_server.port` 必须唯一，避免端口冲突：
+
+| Profile | Port | 备注 |
+|---------|------|------|
+| hermesxiyun | 26026 | 基准端口 |
+| hermeswangtingwei | 26027 | |
+| hermesyangtb | 26028 | |
+| liruiyang | 26029 | |
+| sunqifei | 26030 | |
+
+在每个子 profile 的 `config.yaml` 中设置：
+
+```yaml
+platforms:
+  api_server:
+    enabled: true
+    extra:
+      port: 26027   # 每个 profile 不同
+```
+
+#### Step 3: 环境变量同步
+
+子 profile 的 `.env` 需要与主 `.env` 保持一致的模型 provider 凭据。当前需要同步的变量组：
+
+```bash
+# 在每个子 profile 的 .env 中追加（从主 ~/.hermes/.env 复制）
+# DeepSeek 直连
+DEEPSEEK_BASE_URL=https://api.deepseek.com/v1
+DEEPSEEK_API_KEY=sk-xxx
+
+# DashScope (阿里云)
+DASHSCOPE_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+DASHSCOPE_API_KEY=sk-xxx
+
+# DAMODEL (NewAPI 代理)
+DAMODEL_BASE_URL=https://genai.damodel.com/v1
+DAMODEL_API_KEY=sk-xxx
+```
+
+**批量同步脚本**（在主 gateway 机器上执行）：
+
+```bash
+PROFILES="hermeswangtingwei hermesxiyun hermesyangtb liruiyang sunqifei"
+for p in $PROFILES; do
+  cat >> ~/.hermes/profiles/$p/.env << EOF
+
+# DeepSeek 直连
+DEEPSEEK_BASE_URL=https://api.deepseek.com/v1
+DEEPSEEK_API_KEY=\$(grep DEEPSEEK_API_KEY ~/.hermes/.env | cut -d= -f2)
+
+# DashScope
+DASHSCOPE_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+DASHSCOPE_API_KEY=\$(grep DASHSCOPE_API_KEY ~/.hermes/.env | cut -d= -f2)
+
+# DAMODEL
+DAMODEL_BASE_URL=https://genai.damodel.com/v1
+DAMODEL_API_KEY=\$(grep DAMODEL_API_KEY ~/.hermes/.env | cut -d= -f2)
+EOF
+  echo "$p ✓"
+done
+```
+
+同步 `.env` 后，还需同步 `config.yaml` 中 provider 的环境变量引用。例如 `providers.deepseek` 的 `api_key` 和 `base_url` 应指向 `DEEPSEEK_*` 而非 `DAMODEL_*`：
+
+```yaml
+providers:
+  deepseek:
+    api_key: ${DEEPSEEK_API_KEY}      # 而非 ${DAMODEL_API_KEY}
+    base_url: ${DEEPSEEK_BASE_URL}    # 而非 ${DAMODEL_BASE_URL}
+```
+
+#### Step 4: 安装为 Systemd 服务
+
+```bash
+# 为每个子 profile 安装 gateway 服务（自动创建 systemd user service）
+yes | hermesxiyun gateway install
+yes | hermeswangtingwei gateway install
+# ...
+```
+
+`gateway install` 会：
+1. 创建 `~/.config/systemd/user/hermes-gateway-<profile>.service`
+2. 启用 systemd linger（服务在用户登出后继续运行）
+3. 立即启动服务
+
+#### Step 5: 日常运维
+
+```bash
+# 重启（推荐方式，走 systemd 优雅重启）
+hermesxiyun gateway restart
+
+# 查看所有 profile gateway 状态
+hermes gateway list
+
+# 查看日志
+journalctl --user -u hermes-gateway-hermesxiyun -f
+
+# 停止
+hermesxiyun gateway stop
+
+# 卸载服务
+hermesxiyun gateway uninstall
+```
+
+**注意**：`hermesxiyun gateway restart` 是 systemd 级别的优雅重启（SIGTERM → 等待 drain → 启动新进程），不会影响主 gateway 和其他子 profile。
+
 ### 7.2 配置验证（含两个高频踩坑点）
 
 启动子 profile 前，确保**主 gateway** 的 `~/.hermes/patch_feishu_profile.yaml`：
