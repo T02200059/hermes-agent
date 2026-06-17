@@ -446,22 +446,30 @@ def _load_routing_config():
 
 ### 4.4 子 Profile 容器配置
 
+> **⚠️ 重要：新建 profile 的 `.env` 和 `config.yaml` 必须与 `hermesxiyun` 保持一致。**
+> 使用 `cp ~/.hermes/profiles/hermesxiyun/.env ~/.hermes/profiles/<new_profile>/.env` 和
+> `cp ~/.hermes/profiles/hermesxiyun/config.yaml ~/.hermes/profiles/<new_profile>/config.yaml` 快速同步。
+> 同步后只需修改 `api_server.extra.port`（端口顺延）和 `API_SERVER_KEY`（可统一或独立）。
+
 每个子 profile 容器的 `~/.hermes/profiles/<name>/config.yaml`（实测采用的写法）：
 
 ```yaml
 platforms:
+  api_server:
+    enabled: true
+    extra:
+      port: 26026                    # 每个用户用不同端口（见端口规划表）
+      model: MiniMax-M3
+      provider: minimax-cn
   feishu:
     enabled: true                  # 必须启用：要有一个活着的 adapter 才能回复
     extra:
       connection_mode: send_only   # 只发不连 WebSocket（不抢主 gateway 的连接）
-  api_server:
-    enabled: true
-    port: 26026                    # 每个用户用不同端口
 
 # .env 文件（同一个飞书应用凭据 + api_server key）
-FEISHU_APP_ID=cli_xxxxxxxxxxxxxxxx     # 与主 gateway 同一应用
+FEISHU_APP_ID=cli_aa87e2dbd3fa5cd8     # 与主 gateway 同一应用（毕方）
 FEISHU_APP_SECRET=...
-API_SERVER_KEY=sk-xxxx                 # 与 patch_feishu_profile 的 api_key 一致
+API_SERVER_KEY=hermesxiyun-node010-1781671360  # 统一 key，与 patch_feishu_profile 的 api_key 一致
 GATEWAY_ALLOW_ALL_USERS=true           # 信任主 gateway 鉴权
 ```
 
@@ -601,55 +609,44 @@ platforms:
       port: 26027   # 每个 profile 不同
 ```
 
-#### Step 3: 环境变量同步
+#### Step 3: 环境变量与配置同步（推荐方式）
 
-子 profile 的 `.env` 需要与主 `.env` 保持一致的模型 provider 凭据。当前需要同步的变量组：
-
-```bash
-# 在每个子 profile 的 .env 中追加（从主 ~/.hermes/.env 复制）
-# DeepSeek 直连
-DEEPSEEK_BASE_URL=https://api.deepseek.com/v1
-DEEPSEEK_API_KEY=sk-xxx
-
-# DashScope (阿里云)
-DASHSCOPE_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
-DASHSCOPE_API_KEY=sk-xxx
-
-# DAMODEL (NewAPI 代理)
-DAMODEL_BASE_URL=https://genai.damodel.com/v1
-DAMODEL_API_KEY=sk-xxx
-```
-
-**批量同步脚本**（在主 gateway 机器上执行）：
+**最佳实践：直接从 hermesxiyun 复制整个 `.env` 和 `config.yaml`**
 
 ```bash
-PROFILES="hermeswangtingwei hermesxiyun hermesyangtb liruiyang sunqifei"
-for p in $PROFILES; do
-  cat >> ~/.hermes/profiles/$p/.env << EOF
+# 新建 profile 后，直接从 hermesxiyun 同步
+NEW_PROFILE="new_profile_name"
 
-# DeepSeek 直连
-DEEPSEEK_BASE_URL=https://api.deepseek.com/v1
-DEEPSEEK_API_KEY=\$(grep DEEPSEEK_API_KEY ~/.hermes/.env | cut -d= -f2)
+# 同步 .env
+cp ~/.hermes/profiles/hermesxiyun/.env ~/.hermes/profiles/$NEW_PROFILE/.env
 
-# DashScope
-DASHSCOPE_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
-DASHSCOPE_API_KEY=\$(grep DASHSCOPE_API_KEY ~/.hermes/.env | cut -d= -f2)
+# 同步 config.yaml
+cp ~/.hermes/profiles/hermesxiyun/config.yaml ~/.hermes/profiles/$NEW_PROFILE/config.yaml
 
-# DAMODEL
-DAMODEL_BASE_URL=https://genai.damodel.com/v1
-DAMODEL_API_KEY=\$(grep DAMODEL_API_KEY ~/.hermes/.env | cut -d= -f2)
-EOF
-  echo "$p ✓"
-done
+# 修改端口（顺延）
+sed -i "s/port: 26026/port: 26031/" ~/.hermes/profiles/$NEW_PROFILE/config.yaml
 ```
 
-同步 `.env` 后，还需同步 `config.yaml` 中 provider 的环境变量引用。例如 `providers.deepseek` 的 `api_key` 和 `base_url` 应指向 `DEEPSEEK_*` 而非 `DAMODEL_*`：
+**为什么推荐直接复制**：
+- hermesxiyun 的配置是**经过验证的标准配置**，包含所有必要的 provider 凭据、飞书配置、send_only 模式等
+- 手动逐项同步容易遗漏，导致 401 或功能缺失
+- 复制后只需改端口，其他配置保持一致
+
+**需要修改的项**：
+1. `api_server.extra.port` — 端口顺延（见端口规划表）
+2. `API_SERVER_KEY` — 可统一用 `hermesxiyun-node010-1781671360`，或每个 profile 独立
+
+**config.yaml 中 deepseek provider 的正确写法**：
 
 ```yaml
 providers:
   deepseek:
-    api_key: ${DEEPSEEK_API_KEY}      # 而非 ${DAMODEL_API_KEY}
-    base_url: ${DEEPSEEK_BASE_URL}    # 而非 ${DAMODEL_BASE_URL}
+    key_env: DEEPSEEK_API_KEY        # 使用 key_env 而非 api_key: ${...}
+    api_mode: chat_completions
+    base_url: https://api.deepseek.com/v1   # 直接写 URL，不用环境变量
+    models:
+    - name: deepseek-v4-flash
+      context_length: 1048576
 ```
 
 #### Step 4: 安装为 Systemd 服务
