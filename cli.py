@@ -160,6 +160,10 @@ def realign_markdown_tables(*args, **kwargs):
 # NOTE: `from agent.account_usage import ...` is deliberately NOT at module
 # top — it transitively pulls the OpenAI SDK chain (~230 ms cold) and is only
 # needed when the user runs `/limits`. Lazy-imported inside the handler below.
+# [owner] apply private schema patches (e.g. image_generate model, send_message card)
+# early during CLI init. This is post-registration mutation so the source
+# SCHEMA literals in tools/ stay identical to upstream.
+import owner.tools.schema_patches  # noqa: F401
 from hermes_cli.banner import _format_context_length, format_banner_version_label
 
 _COMMAND_SPINNER_FRAMES = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
@@ -8202,8 +8206,6 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
                     target = qcmd.get("target", "").strip()
                     if target:
                         from gateway.platforms.base import expand_chained_quick_alias
-# [owner] ensure private tool schema patches (model/card) are applied early
-import owner.tools.schema_patches  # noqa: F401
                         user_args = cmd_original[len(base_cmd):].strip()
                         chain = expand_chained_quick_alias(target, user_args)
                         for cmd_text in chain:
