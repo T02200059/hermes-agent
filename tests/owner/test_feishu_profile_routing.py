@@ -21,7 +21,6 @@ def hermes_home_with_profile_config():
                 """
                 feishu:
                   user_routing:
-                    internal_api_key: secret123
                     whitelist:
                       - ou_whitelist
                     chat_profile_routes:
@@ -30,9 +29,15 @@ def hermes_home_with_profile_config():
                       ou_alice: alice
                     default_profile: guest
                     profile_endpoints:
-                      alice: http://localhost:9101
-                      guest: http://localhost:9100
-                      team-a: http://localhost:9102
+                      alice:
+                        url: http://localhost:9101
+                        api_key: secret123
+                      guest:
+                        url: http://localhost:9100
+                        api_key: secret123
+                      team-a:
+                        url: http://localhost:9102
+                        api_key: secret123
                 """
             ),
             encoding="utf-8",
