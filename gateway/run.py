@@ -4413,7 +4413,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         # Build a status-rich acknowledgment. Mobile chat defaults keep this
         # terse; detailed iteration/tool state is still available in logs and
         # can be opted in per platform via display.platforms.<platform>.busy_ack_detail.
-        from gateway.display_config import resolve_display_setting
+        from gateway.display_config import resolve_display_setting_for_source
         status_parts = []
         busy_ack_detail_enabled = bool(
             resolve_display_setting_for_source(
