@@ -1,5 +1,15 @@
 # Feishu 多 Profile 路由（owner-v16 外部容器架构）
 
+> ⚠️ **本文为初始设计（v1.x），回复路径已被取代。** 当前最终设计见
+> [`飞书多profile路由与子profile-gateway架构设计.md`](飞书多profile路由与子profile-gateway架构设计.md)（v2.0）。
+>
+> 关键变化：主 gateway 不再 `POST /v1/runs` + `X-Hermes-Reply-Via` + `feishu_reply()`，
+> 而是 `POST /v1/feishu/inbound` → 子容器 `FeishuAdapter.inject_inbound()` 把消息注入
+> **原生飞书 pipeline**（auto-card + `runtime_footer` 由 `agent:end` 自动产出）。
+> 本文中关于 `X-Hermes-Reply-Via` / `feishu_reply` / 纯文本回复的描述均为遗留，
+> 仅作历史参考。路由解析（`resolve_profile_route`、`patch_feishu_profile.yaml` 结构）
+> 仍然有效。
+
 ## 功能描述
 
 当飞书机器人收到消息时，根据 `~/.hermes/patch_feishu_profile.yaml` 中的
