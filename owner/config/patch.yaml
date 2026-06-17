@@ -123,7 +123,7 @@ owner:
       yolo_on: "/yolo on"
       yolo_off: "/yolo off"
       inspect_gpu_cluster: "帮我根据 sre-king 启动 GPU 集群巡检流程，先问我 IP 范围，等我确认后再执行"
-      sync_git_hermes: "帮我同步 hermes-agent 代码：1) 检查 git status 确认无遗留；2) 按功能拆分成多个有意义的 commit；3) 确认全程在 owner 分支操作；4) push 到 github 和 gitlab。开始前先告诉我你的计划。"
+      sync_git_hermes: "帮我同步 hermes-agent 代码：1) 检查 git status 确认无遗留；2) 按功能拆分成多个有意义的 commit；3) 确认全程在 owner-v16 分支操作；4) push 到 github 和 gitlab。开始前先告诉我你的计划。"
       sync_sre_king: "帮我同步本地 sre-king 目录代码，流程如下：1) 定位本地 sre-king 目录（~/.hermes/skills/westcloud/sre-king/）；2) 检查是否为 git 仓库，不是则停止并提示；3) 检查当前分支对远端是否有 push 权限，无权限则停止并提示；4) 检查本地未提交的改动，按功能合理拆分成一个或多个有意义的 commit；5) git fetch + git pull 同步远端当前分支；6) 如有冲突 → 停下来描述冲突文件，询问我如何解决；无冲突 → 直接 push。开始前先告诉我你的计划，每步执行后汇报结果。"
 
   # ── Feishu bot menu dedup + ack (per-key feedback for slow bot menu commands) ─
