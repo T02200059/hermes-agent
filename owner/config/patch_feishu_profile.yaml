@@ -4,12 +4,8 @@
 
 feishu:
   bots:
-    # Must match the gateway's FEISHU_APP_ID (~/.hermes/.env). _load_routing_config
-    # looks up bots[os.getenv("FEISHU_APP_ID")]; a mismatch silently disables routing.
     cli_YOUR_APP_ID_HERE: # YangtbClawProMax
       user_routing:
-        # whitelist: open_ids here bypass routing → main gateway.
-        # Emptied for routing test; restore the entry to re-enable bypass.
         whitelist:
           - ou_YOUR_OPEN_ID_HERE # 杨天宝
         chat_profile_routes: {}
@@ -25,13 +21,22 @@ feishu:
       user_routing:
         whitelist:
           - ou_23270fbce80e70282797919e4b254fa5  # 王庭威
-          # - ou_d6d974f1e0afa121fc2f02faad7240dd  # 杨天宝
-          # - ou_707e901d26a769ea922b54e99276d2f2 # 孙起飞
-          # - ou_5790edbcc55db5e523d8a29d32964d1d # 李瑞阳
         chat_profile_routes: {}
         user_profile_routes: {}
         default_profile: hermesxiyun
         profile_endpoints:
           hermesxiyun:
             url: http://localhost:26026
+            api_key: "YOUR_API_KEY_HERE"
+          hermeswangtingwei:
+            url: http://localhost:26027
+            api_key: "YOUR_API_KEY_HERE"
+          hermesyangtb:
+            url: http://localhost:26028
+            api_key: "YOUR_API_KEY_HERE"
+          liruiyang:
+            url: http://localhost:26029
+            api_key: "YOUR_API_KEY_HERE"
+          sunqifei:
+            url: http://localhost:26030
             api_key: "YOUR_API_KEY_HERE"
