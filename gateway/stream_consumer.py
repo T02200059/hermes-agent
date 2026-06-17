@@ -568,6 +568,23 @@ class GatewayStreamConsumer:
                             # fallback final-send path can deliver the remaining
                             # continuation without dropping content.
                             break
+                        # Fix: If there's still remaining content after splitting,
+                        # send the first chunk of remaining as a new message and save
+                        # its message ID for subsequent edits.
+                        # This implements what you requested:
+                        # "把第一个掉出edit消息块的消息，设置为新的追加编辑的目标"
+                        if self._accumulated and _len_fn(self._accumulated) > 0:
+                            reply_to = self._initial_reply_to_id
+                            _cp_budget = _custom_unit_to_cp(
+                                self._accumulated, _safe_limit, _len_fn
+                            )
+                            split_at_new = self._accumulated.rfind("\n", 0, _cp_budget)
+                            if split_at_new < _safe_limit // 2:
+                                split_at_new = _cp_budget
+                            chunk_new = self._accumulated[:split_at_new]
+                            new_id = await self._send_new_chunk(chunk_new, reply_to)
+                            if new_id is not None and new_id != reply_to:
+                                self._accumulated = self._accumulated[split_at_new:].lstrip("\n")
                         self._accumulated = self._accumulated[split_at:].lstrip("\n")
                         self._message_id = None
                         self._last_sent_text = ""
