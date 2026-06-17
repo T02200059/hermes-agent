@@ -1886,27 +1886,9 @@ class FeishuAdapter(BasePlatformAdapter):
         metadata: Optional[Dict[str, Any]] = None,
     ) -> Optional[SendResult]:
         """Send compression feedback as a dedicated Feishu card if content matches."""
-        if not content:
-            return None
-        # Match both Chinese (current default) and English fallback strings so
-        # a future locale change does not silently break the card path.
-        if not (
-            content.startswith("🗜️ 上下文已压缩")
-            or content.startswith("🗜️ Context compressed")
-        ):
-            return None
-        try:
-            _build_card = _owner_import(
-                "owner.feishu.compression_summary_card", "build_compression_summary_card"
-            )
-            return await self.send_card(
-                chat_id=chat_id,
-                card=_build_card(content),
-                metadata=metadata,
-            )
-        except Exception as exc:
-            logger.debug("[Feishu] compression summary card failed: %s", exc)
-            return None
+        from owner.feishu.compression_summary_card import try_send_compression_summary
+
+        return await try_send_compression_summary(self, chat_id, content, metadata)
 
     async def send(
         self,

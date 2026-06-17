@@ -10,10 +10,13 @@ structured summary sections.
 
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any, Dict, List, Optional, Sequence
 
 from agent.context_compressor import ContextCompressor
+
+logger = logging.getLogger(__name__)
 
 
 _SECTION_RE = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)
@@ -263,7 +266,75 @@ def summarize_compression_fallback(
     }
 
 
+# External state for the last display summary per compressor instance.
+# Keeping this outside ContextCompressor avoids modifying the upstream class
+# definition; the compressor only needs to notify us when a summary is ready.
+_last_display_summary: Dict[int, str] = {}
+
+
+def set_last_summary(compressor_id: int, summary: str) -> None:
+    """Store the raw handoff summary for a compressor instance."""
+    _last_display_summary[compressor_id] = summary
+
+
+def get_last_summary(compressor_id: int) -> Optional[str]:
+    """Return the raw handoff summary stored for a compressor instance."""
+    return _last_display_summary.get(compressor_id)
+
+
+def clear_last_summary(compressor_id: int) -> None:
+    """Drop stored summary for a compressor instance (defense-in-depth)."""
+    _last_display_summary.pop(compressor_id, None)
+
+
+def emit_compression_summary(
+    agent,
+    before_count: int,
+    after_count: int,
+    before_tokens: Optional[int] = None,
+    after_tokens: Optional[int] = None,
+) -> None:
+    """Emit a concise user-facing summary after context compression.
+
+    This is a platform-agnostic lifecycle status; rich platforms (e.g. Feishu)
+    can detect the emitted text and render an interactive card.
+    """
+    compressor = getattr(agent, "context_compressor", None)
+    compressor_id = id(compressor) if compressor else 0
+    summary_for_display = get_last_summary(compressor_id) or ""
+
+    if summary_for_display:
+        feedback = summarize_compression_feedback(
+            summary_text=summary_for_display,
+            before_count=before_count,
+            after_count=after_count,
+            compression_count=getattr(compressor, "compression_count", 1) if compressor else 1,
+            before_tokens=before_tokens,
+            after_tokens=after_tokens,
+        )
+    else:
+        feedback = summarize_compression_fallback(
+            before_count=before_count,
+            after_count=after_count,
+            compression_count=getattr(compressor, "compression_count", 1) if compressor else 1,
+            before_tokens=before_tokens,
+            after_tokens=after_tokens,
+        )
+
+    emit = getattr(agent, "_emit_status", None)
+    if emit is None:
+        return
+    try:
+        emit(feedback["text"])
+    except Exception:
+        logger.debug("Failed to emit compression feedback summary", exc_info=True)
+
+
 __all__ = [
     "summarize_compression_feedback",
     "summarize_compression_fallback",
+    "set_last_summary",
+    "get_last_summary",
+    "clear_last_summary",
+    "emit_compression_summary",
 ]

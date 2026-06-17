@@ -7,7 +7,10 @@ plain (no fold/expand buttons) because the fallback text is already concise.
 
 from __future__ import annotations
 
-from typing import Any, Dict
+import logging
+from typing import Any, Dict, Optional
+
+logger = logging.getLogger(__name__)
 
 
 def build_compression_summary_card(summary_text: str) -> Dict[str, Any]:
@@ -36,3 +39,34 @@ def build_compression_summary_card(summary_text: str) -> Dict[str, Any]:
     if elements:
         card["body"] = {"elements": elements}
     return card
+
+
+async def try_send_compression_summary(
+    adapter,
+    chat_id: str,
+    content: str,
+    metadata: Optional[Dict[str, Any]] = None,
+):
+    """Send compression feedback as a dedicated Feishu card if content matches.
+
+    Returns a ``SendResult`` when the card path is taken, or ``None`` when the
+    content is not a compression summary (caller should fall through).
+    """
+    if not content:
+        return None
+    # Match both Chinese (current default) and English fallback strings so
+    # a future locale change does not silently break the card path.
+    if not (
+        content.startswith("🗜️ 上下文已压缩")
+        or content.startswith("🗜️ Context compressed")
+    ):
+        return None
+    try:
+        return await adapter.send_card(
+            chat_id=chat_id,
+            card=build_compression_summary_card(content),
+            metadata=metadata,
+        )
+    except Exception as exc:
+        logger.debug("[Feishu] compression summary card failed: %s", exc)
+        return None

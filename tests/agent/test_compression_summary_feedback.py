@@ -1,10 +1,10 @@
-"""Tests for agent.compression_summary_feedback."""
+"""Tests for owner.compression_summary_feedback."""
 
 from __future__ import annotations
 
 import pytest
 
-from agent.compression_summary_feedback import (
+from owner.compression_summary_feedback import (
     summarize_compression_fallback,
     summarize_compression_feedback,
 )
