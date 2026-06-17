@@ -3736,13 +3736,6 @@ class APIServerAdapter(BasePlatformAdapter):
         ephemeral_system_prompt = instructions
         loop = asyncio.get_running_loop()
 
-        # [owner] multi-profile routing: X-Hermes-Reply-Via headers tell the
-        # container to send the final response directly back to Feishu instead
-        # of (only) returning it in the run result.
-        reply_via = request.headers.get("X-Hermes-Reply-Via", "").lower().strip()
-        reply_receive_id = request.headers.get("X-Hermes-Reply-Receive-Id", "").strip()
-        reply_receive_id_type = request.headers.get("X-Hermes-Reply-Receive-Id-Type", "open_id").strip()
-        reply_message_id = request.headers.get("X-Hermes-Reply-Message-Id", "").strip() or None
         q: "asyncio.Queue[Optional[Dict]]" = asyncio.Queue()
         created_at = time.time()
         self._run_streams[run_id] = q
@@ -3778,7 +3771,7 @@ class APIServerAdapter(BasePlatformAdapter):
                 self._set_run_status(run_id, "running")
                 
                 # [owner] message:receive hook for API Server (see owner/hooks/api_server_hooks.py)
-                effective_user_message = await _owner_apply_message_receive_hooks(self, user_message, session_id=session_id or run_id, reply_receive_id=reply_receive_id, reply_receive_id_type=reply_receive_id_type, user_id=request.headers.get("X-Hermes-User-Id", "").strip())
+                effective_user_message = await _owner_apply_message_receive_hooks(self, user_message, session_id=session_id or run_id, reply_receive_id="", reply_receive_id_type="", user_id=request.headers.get("X-Hermes-User-Id", "").strip())
 
                 agent = self._create_agent(
                     ephemeral_system_prompt=ephemeral_system_prompt,
@@ -3889,56 +3882,6 @@ class APIServerAdapter(BasePlatformAdapter):
                         usage=usage,
                         last_event="run.completed",
                     )
-                    if reply_via == "feishu" and reply_receive_id and final_response:
-                        _feishu_reply = _owner_import(
-                            "owner.feishu.profile_routing", "feishu_reply"
-                        )
-                        if _feishu_reply is not None:
-                            # Build the runtime footer (model · context% · cwd)
-                            # exactly like the main gateway flow does in
-                            # gateway/run.py, so routed replies render an
-                            # identical footer. Prefer the model actually used
-                            # this turn (result["model"] == agent.model);
-                            # self._model_name is unreliable (it falls back to
-                            # the profile name when extra["model_name"] is unset).
-                            _real_model = (
-                                result.get("model") if isinstance(result, dict) else None
-                            ) or self._model_name or None
-                            _footer = ""
-                            try:
-                                from gateway.run import _load_gateway_config
-                                from gateway.runtime_footer import build_footer_line
-                                _ctx_len = getattr(
-                                    getattr(agent, "context_compressor", None),
-                                    "context_length", 0,
-                                ) or 0
-                                _ctx_tokens = (
-                                    result.get("last_prompt_tokens")
-                                    if isinstance(result, dict) else 0
-                                ) or 0
-                                if not _ctx_tokens and isinstance(usage, dict):
-                                    _ctx_tokens = usage.get("input_tokens", 0) or 0
-                                _footer = build_footer_line(
-                                    user_config=_load_gateway_config(),
-                                    platform_key="feishu",
-                                    model=_real_model,
-                                    context_tokens=_ctx_tokens,
-                                    context_length=_ctx_len or None,
-                                    cwd=os.environ.get("TERMINAL_CWD")
-                                    or os.environ.get("HERMES_HOME", ""),
-                                )
-                            except Exception as _ferr:
-                                logger.debug("[api_server] footer build failed: %s", _ferr)
-                                _footer = ""
-                            asyncio.ensure_future(
-                                _feishu_reply(
-                                    receive_id=reply_receive_id,
-                                    receive_id_type=reply_receive_id_type,
-                                    text=final_response,
-                                    reply_message_id=reply_message_id,
-                                    footer=_footer or None,
-                                )
-                            )
             except asyncio.CancelledError:
                 self._set_run_status(
                     run_id,
