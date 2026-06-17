@@ -326,8 +326,6 @@ feishu:
     # 以 app_id 为 key，每个 bot 独立路由
     cli_a7bfbfdbbcf8d00c:          # 团队共用的 bot
       user_routing:
-        internal_api_key: ""        # 主 gateway → 子容器的认证 key
-
         # 白名单：这些用户由主 gateway 直接处理（管理员）
         whitelist: []
         # whitelist:
@@ -350,13 +348,19 @@ feishu:
         default_profile: ""
         # default_profile: default    # 所有未配置的用户 → default 容器
 
-        # profile_name → 容器 HTTP 地址
+        # profile_name → 容器配置（url + api_key）
+        # 每个 profile 自带 api_server 认证 key
         profile_endpoints: {}
         # profile_endpoints:
-        #   alice: http://localhost:9101
-        #   bob: http://localhost:9102
-        #   charlie: http://localhost:9103
-        #   default: http://localhost:9100
+        #   alice:
+        #     url: http://localhost:9101
+        #     api_key: "alice-api-key"
+        #   bob:
+        #     url: http://localhost:9102
+        #     api_key: "bob-api-key"
+        #   default:
+        #     url: http://localhost:9100
+        #     api_key: ""
 ```
 
 ### 4.3 配置加载逻辑
@@ -455,3 +459,124 @@ if not acquired:
 | `owner/config/patch_feishu_profile.yaml` | feat | 配置模板（multi-bot 结构） |
 | `tests/owner/test_feishu_profile_routing.py` | test | 路由解析与加载器测试 |
 | `owner/docs/feishu-multi-profile-routing-owner-v16.md` | docs | 初始设计文档 |
+
+---
+
+## 七、运维命令
+
+### 7.1 手动启动子 Profile Gateway
+
+每个子 profile 容器需要独立启动 gateway 进程。使用 `hermes -p <profile_name> gateway install` 命令：
+
+```bash
+# 启动 hermesxiyun profile 的 gateway（安装为 launchd 服务）
+hermes -p hermesxiyun gateway install
+
+# 或者手动启动（前台运行，调试用）
+hermes -p hermesxiyun gateway run
+
+# 查看状态
+hermes -p hermesxiyun gateway status
+
+# 重启
+hermes -p hermesxiyun gateway restart
+
+# 停止
+hermes -p hermesxiyun gateway stop
+```
+
+**说明**：
+- `-p hermesxiyun` 指定 profile 名称，Hermes 会加载 `~/.hermes/profiles/hermesxiyun/` 作为 HERMES_HOME
+- `gateway install` 会创建 macOS launchd 服务（或 Linux systemd 服务），实现开机自启
+- 每个子 profile 的 gateway 独立运行，互不干扰
+- 主 gateway（default profile）负责接收飞书 WebSocket 消息并路由到子 profile
+
+### 7.2 配置验证
+
+启动子 profile 前，确保 `~/.hermes/patch_feishu_profile.yaml` 中已配置：
+
+```yaml
+feishu:
+  bots:
+    cli_a7bfbfdbbcf8d00c:
+      user_routing:
+        default_profile: hermesxiyun
+        profile_endpoints:
+          hermesxiyun:
+            url: http://localhost:26026
+            api_key: ""
+```
+
+子 profile 的 `~/.hermes/profiles/hermesxiyun/config.yaml` 应包含：
+
+```yaml
+platforms:
+  feishu:
+    enabled: false          # 不连 WebSocket
+  api_server:
+    enabled: true
+    port: 26026
+    key: "your-api-key"     # 可选，用于主 gateway 认证
+```
+
+如果设置了 `api_server.key`，需要在主 gateway 的 `patch_feishu_profile.yaml` 中对应的 `profile_endpoints.<profile_name>.api_key` 配置相同的值。
+
+### 7.3 创建新 Profile（Fork/Copy）
+
+使用 `hermes profile create` 命令创建新的 profile 容器：
+
+```bash
+# 创建空 profile（无配置，需要手动配置）
+hermes profile create alice
+
+# 从当前 active profile 复制配置（config.yaml, .env, SOUL.md, skills）
+hermes profile create alice --clone
+
+# 完整复制当前 active profile（包括所有状态，排除 per-profile history）
+hermes profile create alice --clone-all
+
+# 从指定 profile 复制（隐含 --clone）
+hermes profile create alice --clone-from bob
+
+# 从指定 profile 完整复制
+hermes profile create alice --clone-from bob --clone-all
+
+# 创建空 profile，不安装 bundled skills
+hermes profile create alice --no-skills
+
+# 添加描述（用于 kanban 任务路由）
+hermes profile create alice --description "Alice 的独立助手实例"
+```
+
+**创建后的步骤**：
+
+1. 编辑 `~/.hermes/profiles/alice/config.yaml`，配置 `api_server.port` 和 `feishu.enabled: false`
+2. 在主 gateway 的 `~/.hermes/patch_feishu_profile.yaml` 中添加路由：
+   ```yaml
+   user_profile_routes:
+     ou_alice_open_id: alice
+   profile_endpoints:
+     alice:
+       url: http://localhost:9101
+       api_key: "alice-api-key"
+   ```
+3. 启动子 profile gateway：`hermes -p alice gateway install`
+
+**其他 profile 管理命令**：
+
+```bash
+# 列出所有 profile
+hermes profile list
+
+# 删除 profile
+hermes profile delete alice
+
+# 切换 active profile
+hermes profile use alice
+
+# 查看 profile 详情
+hermes profile show alice
+
+# 添加/修改 profile 描述
+hermes profile describe alice "Alice 的独立助手实例"
+```
