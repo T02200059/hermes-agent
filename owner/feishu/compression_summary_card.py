@@ -17,12 +17,27 @@ def build_compression_summary_card(summary_text: str) -> Dict[str, Any]:
     """Build a Schema 2.0 interactive card for a compression summary.
 
     The first line of ``summary_text`` is used as the card header title;
-    the remaining lines are rendered as markdown body. If there is no body,
+    the remaining lines are rendered as markdown body.  If there is no body,
     the card only shows the header.
+
+    Formatting rules:
+    * Blank lines in the source are preserved as ``\\n\\n`` paragraph breaks
+      so Feishu markdown renders each section on its own line.
+    * `` · `` separators (used by ``summarize_compression_feedback`` to join
+      state/next parts into a single text line) are converted to ``\\n`` so
+      each item renders as a separate line in the card.
     """
-    lines = summary_text.splitlines()
+    lines: list[str] = summary_text.splitlines()
     title = lines[0].strip() if lines else "🗜️ 上下文压缩完成"
-    body = "\n".join(line.strip() for line in lines[1:] if line.strip()).strip()
+
+    processed: list[str] = []
+    for raw in lines[1:]:
+        line = raw.strip()
+        if line:
+            processed.append(line.replace(" · ", "\n"))
+        else:
+            processed.append("")  # preserve section break
+    body = "\n".join(processed).strip()
 
     elements: list[Dict[str, Any]] = []
     if body:
