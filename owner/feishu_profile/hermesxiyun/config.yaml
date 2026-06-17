@@ -1,0 +1,758 @@
+FEISHU_HOME_CHANNEL: oc_1918df05db4fc0d7044d13e599721dc8
+QQBOT_HOME_CHANNEL: 3B808391A45D8EBA1AD33C30D967152A
+_config_version: 22
+agent:
+  api_max_retries: 3
+  clarify_timeout: 600
+  disabled_toolsets: []
+  environment_hint: ''
+  environment_probe: true
+  gateway_auto_continue_freshness: 3600
+  gateway_notify_interval: 600
+  gateway_timeout: 1200
+  gateway_timeout_warning: 900
+  image_input_mode: auto
+  max_turns: 90
+  reasoning_effort: xhigh
+  restart_drain_timeout: 180
+  service_tier: ''
+  task_completion_guidance: true
+  tool_use_enforcement: auto
+approvals:
+  cron_mode: deny
+  destructive_slash_confirm: false
+  mcp_reload_confirm: true
+  mode: smart
+  timeout: 3600
+auxiliary:
+  approval:
+    api_key: ''
+    base_url: ''
+    extra_body: {}
+    model: deepseek-v4-pro
+    provider: deepseek
+    timeout: 30
+  compression:
+    api_key: ''
+    base_url: ''
+    extra_body: {}
+    model: deepseek-v4-flash
+    provider: deepseek
+    timeout: 120
+  curator:
+    api_key: ''
+    base_url: ''
+    extra_body: {}
+    model: deepseek-v4-flash
+    provider: deepseek
+    timeout: 600
+  flush_memories:
+    api_key: ''
+    base_url: ''
+    extra_body: {}
+    model: deepseek-v4-flash
+    provider: deepseek
+    timeout: 30
+  kanban_decomposer:
+    api_key: ''
+    base_url: ''
+    extra_body: {}
+    model: deepseek-v4-flash
+    provider: deepseek
+    timeout: 180
+  mcp:
+    api_key: ''
+    base_url: ''
+    extra_body: {}
+    model: deepseek-v4-flash
+    provider: deepseek
+    timeout: 30
+  profile_describer:
+    api_key: ''
+    base_url: ''
+    extra_body: {}
+    model: deepseek-v4-flash
+    provider: deepseek
+    timeout: 60
+  session_search:
+    api_key: ''
+    base_url: ''
+    extra_body: {}
+    model: deepseek-v4-flash
+    provider: deepseek
+    timeout: 60
+  skills_hub:
+    api_key: ''
+    base_url: ''
+    extra_body: {}
+    model: deepseek-v4-flash
+    provider: deepseek
+    timeout: 30
+  title_generation:
+    api_key: ''
+    base_url: ''
+    extra_body: {}
+    model: deepseek-v4-flash
+    provider: deepseek
+    timeout: 120
+  triage_specifier:
+    api_key: ''
+    base_url: ''
+    extra_body: {}
+    model: deepseek-v4-flash
+    provider: deepseek
+    timeout: 120
+  vision:
+    api_key: ''
+    base_url: ''
+    download_timeout: 30
+    extra_body: {}
+    model: qwen3-vl-flash
+    provider: damodel
+    timeout: 120
+  web_extract:
+    api_key: ''
+    base_url: ''
+    extra_body: {}
+    model: deepseek-v4-flash
+    provider: deepseek
+    timeout: 360
+bedrock:
+  discovery:
+    enabled: true
+    provider_filter: []
+    refresh_interval: 3600
+  guardrail:
+    guardrail_identifier: ''
+    guardrail_version: ''
+    stream_processing_mode: async
+    trace: disabled
+  region: ''
+browser:
+  allow_private_urls: false
+  auto_local_for_private_urls: true
+  camofox:
+    adopt_existing_tab: false
+    loopback_host_alias: host.docker.internal
+    managed_persistence: false
+    rewrite_loopback_urls: false
+    session_key: ''
+    user_id: ''
+  cdp_url: ''
+  command_timeout: 30
+  dialog_policy: must_respond
+  dialog_timeout_s: 300
+  engine: auto
+  inactivity_timeout: 120
+  record_sessions: false
+checkpoints:
+  auto_prune: false
+  delete_orphans: true
+  enabled: true
+  max_file_size_mb: 10
+  max_snapshots: 20
+  max_total_size_mb: 500
+  min_interval_hours: 24
+  retention_days: 7
+code_execution:
+  mode: project
+command_allowlist:
+- overwrite system file via redirection
+- script execution via heredoc
+- overwrite system config
+- force kill processes
+- find -delete
+- recursive delete
+- delete in root path
+- stop/restart system service
+- pipe remote content to shell
+- sudo with combined-flag privilege escalation
+- script execution via -e/-c flag
+compression:
+  abort_on_summary_failure: false
+  enabled: true
+  hygiene_hard_message_limit: 400
+  protect_first_n: 3
+  protect_last_n: 20
+  target_ratio: 0.35
+  threshold: 0.75
+context:
+  engine: compressor
+credential_pool_strategies:
+  default:
+    max_concurrent: 10
+cron:
+  max_parallel_jobs: 5
+  wrap_response: true
+curator:
+  archive_after_days: 90
+  backup:
+    enabled: true
+    keep: 5
+  enabled: true
+  interval_hours: 168
+  min_idle_hours: 2
+  stale_after_days: 30
+dashboard:
+  oauth:
+    client_id: ''
+    portal_url: ''
+  public_url: ''
+  show_token_analytics: false
+  theme: cyberpunk
+delegation:
+  api_key: ''
+  api_mode: ''
+  base_url: ''
+  child_timeout_seconds: 600
+  inherit_mcp_toolsets: true
+  max_concurrent_children: 3
+  max_iterations: 50
+  max_spawn_depth: 2
+  model: ''
+  orchestrator_enabled: true
+  provider: ''
+  reasoning_effort: ''
+  subagent_auto_approve: false
+discord:
+  allow_any_attachment: false
+  allowed_channels: ''
+  auto_thread: true
+  channel_prompts: {}
+  dm_role_auth_guild: ''
+  free_response_channels: ''
+  history_backfill: true
+  history_backfill_limit: 50
+  max_attachment_bytes: 33554432
+  reactions: true
+  require_mention: true
+  server_actions: ''
+  thread_require_mention: false
+display:
+  background_process_notifications: false
+  bell_on_complete: false
+  busy_input_mode: interrupt
+  compact: false
+  copy_shortcut: auto
+  ephemeral_system_ttl: 0
+  file_mutation_verifier: false
+  final_response_markdown: strip
+  inline_diffs: true
+  interim_assistant_messages: true
+  language: zh
+  long_running_notifications: true
+  persistent_output: true
+  persistent_output_max_lines: 200
+  personality: kawaii
+  platforms:
+    feishu:
+      show_reasoning: true
+      streaming: false
+      tool_preview_length: 50
+      tool_progress: all
+    qqbot:
+      show_reasoning: true
+      streaming: false
+  resume_display: full
+  resume_exchanges: 10
+  resume_max_assistant_chars: 200
+  resume_max_assistant_lines: 3
+  resume_max_user_chars: 300
+  resume_skip_tool_only: true
+  runtime_footer:
+    enabled: true
+    fields:
+    - model
+    - context_pct
+    - cwd
+  show_cost: true
+  show_reasoning: true
+  skin: ruolin-light
+  streaming: true
+  timestamps: false
+  tool_preview_length: 0
+  tool_progress_command: false
+  tui_agents_nudge: true
+  tui_auto_resume_recent: false
+  tui_status_indicator: kaomoji
+  turn_completion_explainer: true
+  user_message_preview:
+    first_lines: 2
+    last_lines: 2
+fallback_providers: []
+file_read_max_chars: 100000
+gateway:
+  media_delivery_allow_dirs: []
+  strict: false
+  trust_recent_files: true
+  trust_recent_files_seconds: 600
+goals:
+  max_turns: 20
+honcho: {}
+hooks:
+  pre_tool_call:
+  - command: ~/.hermes/agent-hooks/gateway-guard.sh
+    matcher: terminal|execute_code
+    timeout: 5
+hooks_auto_accept: true
+human_delay:
+  max_ms: 2500
+  min_ms: 800
+  mode: 'off'
+image_gen:
+  provider: image-hub
+kanban:
+  auto_decompose: true
+  auto_decompose_per_tick: 3
+  default_assignee: ''
+  dispatch_in_gateway: true
+  dispatch_interval_seconds: 60
+  dispatch_stale_timeout_seconds: 14400
+  failure_limit: 2
+  max_in_progress_per_profile: null
+  orchestrator_profile: ''
+  worker_log_backup_count: 1
+  worker_log_rotate_bytes: 2097152
+logging:
+  backup_count: 3
+  level: INFO
+  max_size_mb: 5
+  memory_monitor:
+    enabled: true
+    interval_seconds: 300
+lsp:
+  enabled: true
+  install_strategy: auto
+  servers: {}
+  wait_mode: document
+  wait_timeout: 5.0
+matrix:
+  allowed_rooms: ''
+  free_response_rooms: ''
+  require_mention: true
+mattermost:
+  allowed_channels: ''
+  channel_prompts: {}
+  free_response_channels: ''
+  require_mention: true
+mcp_servers:
+  fetch:
+    args:
+    - mcp-server-fetch
+    command: uvx
+    enabled: true
+  macos-mcp:
+    args:
+    - macos-mcp
+    command: uvx
+    enabled: true
+  playwright:
+    args:
+    - '@playwright/mcp'
+    - --cdp-endpoint=http://localhost:9222
+    command: npx
+    enabled: true
+  serena:
+    args:
+    - start-mcp-server
+    - --context=ide
+    - --project-from-cwd
+    command: /Users/yangtb/bin/serena
+memory:
+  memory_char_limit: 2200
+  memory_enabled: true
+  provider: ''
+  user_char_limit: 1375
+  user_profile_enabled: true
+model:
+  base_url: https://genai.damodel.com/v1
+  default: qwen3.7-plus
+  provider: damodel
+model_aliases:
+  grok:
+    model: grok-4.3
+    provider: xai-oauth
+  mimo:
+    model: mimo-v2.5-pro
+    provider: xiaomi
+  minimax:
+    model: MiniMax-M3
+    provider: minimax-cn
+  qwen:
+    model: qwen3.7-max
+    provider: damodel
+  xfyun:
+    model: astron-code-latest
+    provider: xfyun
+model_catalog:
+  enabled: true
+  providers: {}
+  ttl_hours: 24
+  url: https://hermes-agent.nousresearch.com/docs/api/model-catalog.json
+network:
+  force_ipv4: false
+onboarding:
+  seen:
+    busy_input_prompt: true
+    profile_build_offered: true
+openrouter:
+  min_coding_score: 0.65
+  response_cache: true
+  response_cache_ttl: 300
+paste_collapse_char_threshold: 2000
+paste_collapse_threshold: 5
+paste_collapse_threshold_fallback: 5
+personalities: {}
+platforms:
+  api_server:
+    enabled: true
+    extra:
+      model: MiniMax-M3
+      provider: minimax-cn
+    port: 26026
+  feishu:
+    enabled: true
+    extra:
+      # [owner] 自定义扩展：连接模式
+      # send_only: 只创建 lark client（用于 REST API 发送），不连接 websocket
+      # 用于子 profile 通过飞书发送消息，避免与主 gateway 的 websocket 冲突
+      connection_mode: send_only
+plugins:
+  disabled: []
+  enabled:
+  - image-hub
+  - session-archiver
+prefill_messages_file: ''
+privacy:
+  redact_pii: false
+prompt_caching:
+  cache_ttl: 5m
+providers:
+  bailing:
+    api_mode: chat_completions
+    base_url: https://api.ant-ling.com/v1
+    key_env: BAILING_API_KEY
+    models:
+    - Ling-2.6-1T
+    - Ling-2.6-flash
+    - Ring-2.5-1T
+  damodel:
+    api_mode: chat_completions
+    base_url: https://genai.damodel.com/v1
+    key_env: DAMODEL_API_KEY
+    models:
+      MiniMax/MiniMax-M2.7: {}
+      astron-code-latest:
+        context_length: 204800
+      deepseek-v4-flash:
+        context_length: 1000000
+      deepseek-v4-flash-max: {}
+      deepseek-v4-flash-none: {}
+      deepseek-v4-pro:
+        context_length: 1000000
+      deepseek-v4-pro-max: {}
+      deepseek-v4-pro-none: {}
+      glm-4.5: {}
+      glm-4.5-air: {}
+      glm-4.6: {}
+      glm-4.7: {}
+      glm-5: {}
+      glm-5-turbo: {}
+      glm-5.1: {}
+      mimo-v2.5:
+        context_length: 1000000
+      mimo-v2.5-pro:
+        context_length: 1000000
+      mimo-v2.5-tts: {}
+      mimo-v2.5-tts-voiceclone: {}
+      mimo-v2.5-tts-voicedesign: {}
+      qvq-max: {}
+      qvq-max-latest: {}
+      qvq-plus: {}
+      qvq-plus-latest: {}
+      qwen-image-2.0: {}
+      qwen-image-2.0-pro: {}
+      qwen-image-edit-max: {}
+      qwen-image-edit-plus: {}
+      qwen-image-max: {}
+      qwen-max: {}
+      qwen-vl-max: {}
+      qwen-vl-max-2025-08-13: {}
+      qwen-vl-max-latest: {}
+      qwen-vl-ocr: {}
+      qwen-vl-ocr-2025-04-13: {}
+      qwen-vl-ocr-2025-08-28: {}
+      qwen-vl-ocr-2025-11-20: {}
+      qwen-vl-ocr-latest: {}
+      qwen-vl-plus: {}
+      qwen-vl-plus-2025-07-10: {}
+      qwen-vl-plus-2025-08-15: {}
+      qwen-vl-plus-latest: {}
+      qwen3-max: {}
+      qwen3-vl-235b-a22b-instruct: {}
+      qwen3-vl-235b-a22b-thinking: {}
+      qwen3-vl-30b-a3b-instruct: {}
+      qwen3-vl-30b-a3b-thinking: {}
+      qwen3-vl-flash: {}
+      qwen3-vl-flash-2025-10-15: {}
+      qwen3-vl-flash-2026-01-22: {}
+      qwen3-vl-plus: {}
+      qwen3-vl-plus-2025-09-23: {}
+      qwen3-vl-plus-2025-12-19: {}
+      qwen3.6-27b: {}
+      qwen3.6-35b-a3b: {}
+      qwen3.6-flash: {}
+      qwen3.6-flash-2026-04-16: {}
+      qwen3.6-max-preview: {}
+      qwen3.6-plus:
+        context_length: 1048576
+      qwen3.6-plus-2026-04-02: {}
+      qwen3.7-max:
+        context_length: 1000000
+      qwen3.7-plus:
+        context_length: 1000000
+      wan2.7-image: {}
+      wan2.7-image-pro: {}
+      xopglm5:
+        context_length: 204800
+      xopglm51:
+        context_length: 204800
+      xopkimik26:
+        context_length: 262000
+  deepseek:
+    api_mode: chat_completions
+    base_url: https://api.deepseek.com/v1
+    key_env: DEEPSEEK_API_KEY
+    models:
+    - deepseek-v4-flash
+    - deepseek-v4-pro
+  minimax-cn:
+    api_mode: anthropic_messages
+    base_url: https://api.minimaxi.com/anthropic
+    key_env: MINIMAX_CN_API_KEY
+    models:
+      MiniMax-M3:
+        context_length: 1000000
+  openrouter:
+    api_mode: chat_completions
+    base_url: https://openrouter.ai/api/v1
+    key_env: OPENROUTER_API_KEY
+    models:
+      moonshotai/kimi-k2.6:
+        context_length: 262144
+      tencent/hy3-preview:
+        context_length: 262000
+  xai:
+    api_mode: chat_completions
+    base_url: https://api.x.ai/v1
+    key_env: XAI_API_KEY
+    models:
+    - grok-4-1-fast-reasoning
+    - grok-4-1-fast-non-reasoning
+  xai-oauth:
+    api_mode: chat_completions
+    base_url: https://api.x.ai/v1
+    models:
+    - grok-4.3
+  xfyun:
+    api_mode: chat_completions
+    base_url: https://maas-coding-api.cn-huabei-1.xf-yun.com/v2
+    key_env: XFYUN_API_KEY
+    models:
+      astron-code-latest:
+        context_length: 204800
+      xopglm5:
+        context_length: 204800
+      xopglm51:
+        context_length: 204800
+      xopkimik26:
+        context_length: 262000
+  xiaomi:
+    api_mode: chat_completions
+    base_url: https://token-plan-cn.xiaomimimo.com/v1
+    key_env: XIAOMI_API_KEY
+    models:
+      mimo-v2.5:
+        context_length: 1000000
+      mimo-v2.5-pro:
+        context_length: 1000000
+      mimo-v2.5-tts: {}
+      mimo-v2.5-tts-voiceclone: {}
+      mimo-v2.5-tts-voicedesign: {}
+  zai:
+    api_mode: chat_completions
+    base_url: https://open.bigmodel.cn/api/coding/paas/v4
+    key_env: ZAI_API_KEY
+    models:
+    - glm-asr-2512
+    - glm-5.1
+    - glm-5
+quick_commands:
+  appr:
+    target: /approve
+    type: alias
+  gwrestart:
+    command: hermes gateway restart
+    type: exec
+  modelgrok:
+    target: /model grok-4.3 --provider xai-oauth --global
+    type: alias
+  modelmimo:
+    target: /model mimo-v2.5-pro --provider xiaomi --global
+    type: alias
+  modelmini:
+    target: /model MiniMax-M3 --provider minimax-cn --global
+    type: alias
+  s:
+    target: /status
+    type: alias
+  think:
+    target: /reasoning
+    type: alias
+  u:
+    target: /usage
+    type: alias
+secrets:
+  bitwarden:
+    access_token_env: BWS_ACCESS_TOKEN
+    auto_install: true
+    cache_ttl_seconds: 300
+    enabled: false
+    override_existing: true
+    project_id: ''
+    server_url: ''
+security:
+  acked_advisories: []
+  allow_lazy_installs: true
+  allow_private_urls: false
+  redact_secrets: false
+  tirith_enabled: true
+  tirith_fail_open: true
+  tirith_path: tirith
+  tirith_timeout: 5
+  website_blocklist:
+    domains: []
+    enabled: false
+    shared_files: []
+sessions:
+  auto_prune: false
+  min_interval_hours: 24
+  retention_days: 0
+  vacuum_after_prune: true
+  write_json_snapshots: false
+skills:
+  external_dirs: []
+  guard_agent_created: false
+  inline_shell: false
+  inline_shell_timeout: 10
+  template_vars: true
+slack:
+  allowed_channels: ''
+  channel_prompts: {}
+  free_response_channels: ''
+  require_mention: true
+stt:
+  enabled: true
+  local:
+    language: ''
+    model: base
+  mistral:
+    model: voxtral-mini-latest
+  openai:
+    model: whisper-1
+  provider: local
+telegram:
+  allowed_chats: ''
+  channel_prompts: {}
+  reactions: false
+terminal:
+  auto_source_bashrc: true
+  backend: local
+  container_cpu: 1
+  container_disk: 51200
+  container_memory: 5120
+  container_persistent: true
+  cwd: ~/.hermes
+  daytona_image: nikolaik/python-nodejs:python3.11-nodejs20
+  docker_env: {}
+  docker_extra_args: []
+  docker_forward_env: []
+  docker_image: nikolaik/python-nodejs:python3.11-nodejs20
+  docker_mount_cwd_to_workspace: false
+  docker_run_as_host_user: false
+  docker_volumes: []
+  env_passthrough: []
+  modal_image: nikolaik/python-nodejs:python3.11-nodejs20
+  modal_mode: auto
+  persistent_shell: true
+  shell_init_files: []
+  singularity_image: docker://nikolaik/python-nodejs:python3.11-nodejs20
+  timeout: 180
+timezone: ''
+tool_loop_guardrails:
+  hard_stop_after:
+    exact_failure: 3
+    idempotent_no_progress: 3
+    same_tool_failure: 5
+  hard_stop_enabled: true
+  warn_after:
+    exact_failure: 2
+    idempotent_no_progress: 2
+    same_tool_failure: 3
+  warnings_enabled: true
+tool_output:
+  max_bytes: 50000
+  max_line_length: 2000
+  max_lines: 2000
+tools:
+  tool_search:
+    enabled: auto
+    max_search_limit: 20
+    search_default_limit: 5
+    threshold_pct: 10
+toolsets:
+- hermes-cli
+tts:
+  edge:
+    voice: en-US-AriaNeural
+  elevenlabs:
+    model_id: eleven_multilingual_v2
+    voice_id: pNInz6obpgDQGcFmaJgB
+  mistral:
+    model: voxtral-mini-tts-2603
+    voice_id: c69964a6-ab8b-4f8a-9465-ec0925096ec8
+  neutts:
+    device: cpu
+    model: neuphonic/neutts-air-q4-gguf
+    ref_audio: ''
+    ref_text: ''
+  openai:
+    model: gpt-4o-mini-tts
+    voice: alloy
+  piper:
+    voice: en_US-lessac-medium
+  provider: xai
+  xai:
+    bit_rate: 128000
+    language: en
+    sample_rate: 24000
+    voice_id: eve
+updates:
+  backup_keep: 5
+  pre_update_backup: false
+voice:
+  auto_tts: false
+  beep_enabled: true
+  max_recording_seconds: 120
+  record_key: ctrl+b
+  silence_duration: 3.0
+  silence_threshold: 200
+web:
+  backend: ''
+  extract_backend: tavily
+  search_backend: searxng
+whatsapp: {}
+x_search:
+  model: grok-4.20-reasoning
+  retries: 2
+  timeout_seconds: 180
