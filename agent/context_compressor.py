@@ -2340,9 +2340,10 @@ This compaction should PRIORITISE preserving all information related to the focu
         # user-facing feedback can parse its structured sections.
         try:
             from owner.compression_summary_feedback import set_last_summary
-            set_last_summary(id(self), summary)
+            set_last_summary(self, summary)
         except Exception:
-            pass
+            # [owner] debug only; failure here must never break compression
+            logger.debug("Failed to store compression summary externally", exc_info=True)
 
         _merge_summary_into_tail = False
         last_head_role = messages[compress_start - 1].get("role", "user") if compress_start > 0 else "user"

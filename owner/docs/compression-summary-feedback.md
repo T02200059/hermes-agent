@@ -12,7 +12,10 @@
 ContextCompressor.compress()
   │
   ▼
-[owner] set_last_summary(id(compressor), raw_summary)
+[owner] set_last_summary(self, raw_summary)
+  │
+  ▼
+owner/compression_summary_feedback.py  (WeakKeyDictionary 自动随 compressor GC 清理)
   │
   ▼
 conversation_compression.compress_context()
@@ -37,18 +40,20 @@ agent._emit_status(text)  ──▶  gateway/platforms/feishu.py::send()
 
 | 文件 | 职责 | 是否官方源码 |
 |------|------|--------------|
-| `owner/compression_summary_feedback.py` | 解析结构化 summary、生成中文摘要、存储/读取每个 compressor 实例的 summary、提供 `emit_compression_summary()` | owner |
+| `owner/compression_summary_feedback.py` | 解析结构化 summary、生成中文摘要、通过 `WeakKeyDictionary` 存储/读取每个 compressor 实例的 summary、提供 `emit_compression_summary()` | owner |
 | `owner/feishu/compression_summary_card.py` | 构建非折叠 Schema 2.0 卡片；提供 `try_send_compression_summary()` 完成前缀检测与发送 | owner |
-| `agent/context_compressor.py` | 仅新增 `[owner]` 标记的一行胶水：summary 生成后调用 `set_last_summary(id(self), summary)` | 官方（最小改动） |
+| `agent/context_compressor.py` | 仅新增 `[owner]` 标记的一行胶水：summary 生成后调用 `set_last_summary(self, summary)` | 官方（最小改动） |
 | `agent/conversation_compression.py` | 仅新增 `[owner]` 标记的 3 行胶水：压缩完成后调用 `emit_compression_summary(...)` | 官方（最小改动） |
 | `gateway/platforms/feishu.py` | 仅保留 `[owner]` 标记的薄委托 `send_compression_summary()` | 官方（最小改动） |
 
 ## 设计决策
 
-1. **状态外置**：`ContextCompressor` 不保存 `_last_summary_for_display`。owner 模块通过 `id(compressor)` 作为 key 维护外部字典，避免修改上游类定义。
-2. **平台无关 fallback**：`emit_compression_summary()` 只调用 `agent._emit_status()` 发送文本。飞书 adapter 在 `send()` 中检测文本前缀并转换为卡片。
-3. **不折叠卡片**：摘要文本本身已很简短，使用普通卡片（header + markdown body）即可，避免 fold/expand 的交互复杂度。
-4. **前缀匹配**：同时支持中文 `🗜️ 上下文已压缩` 和英文 `🗜️ Context compressed`，防止未来 locale 切换导致卡片路径静默失效。
+1. **状态外置 + 弱引用**：`ContextCompressor` 不保存 `_last_summary_for_display`。owner 模块通过 `WeakKeyDictionary` 以 compressor 对象本身为 key 维护外部字典；compressor 被回收后条目自动消失，避免长进程中的内存泄漏，同时避免在官方 lifecycle 中插钩子。
+2. **去耦私有方法**：`owner/compression_summary_feedback.py` 自行维护一份 `_strip_summary_prefix()` 实现，只依赖上游的常量（prefix / end marker），不直接调用 `ContextCompressor._strip_summary_prefix()` 私有方法。
+3. **平台无关 fallback**：`emit_compression_summary()` 只调用 `agent._emit_status()` 发送文本。飞书 adapter 在 `send()` 中检测文本前缀并转换为卡片。
+4. **不折叠卡片**：摘要文本本身已很简短，使用普通卡片（header + markdown body）即可，避免 fold/expand 的交互复杂度。
+5. **前缀匹配**：同时支持中文 `🗜️ 上下文已压缩` 和英文 `🗜️ Context compressed`，防止未来 locale 切换导致卡片路径静默失效。
+6. **hygiene 压缩通知**：gateway 的 session hygiene 在正式 agent 启动前执行，使用临时 `AIAgent` 且没有设置 `status_callback`，因此目前仍通过 `adapter.send()` 发送一条简洁的运营通知。这与正常压缩的结构化卡片路径不同，是架构限制（hygiene 发生在主 agent 外部），暂时接受。未来若要将 hygiene 也纳入统一卡片路径，需要给临时 agent 装配 `status_callback` 或把 hygiene 接到 `conversation_compression.compress_history()`。
 
 ## sync fork 注意事项
 

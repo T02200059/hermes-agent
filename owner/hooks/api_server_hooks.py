@@ -47,24 +47,18 @@ def _api_server_hooks(adapter: Any) -> Optional[Any]:
 
 def _build_source(
     *,
-    reply_receive_id: str,
-    reply_receive_id_type: str,
     user_id: str,
 ) -> SimpleNamespace:
     """Build a lightweight source object for message:receive hooks."""
     from gateway.platforms.base import Platform
 
-    chat_id = reply_receive_id or ""
-    if chat_id:
-        if reply_receive_id_type == "open_id" or chat_id.startswith("ou_"):
-            chat_type = "p2p"
-            open_id = user_id or chat_id
-        else:
-            chat_type = "group"
-            open_id = ""
-    else:
-        chat_type = ""
-        open_id = ""
+    # API Server is a headless transport — no native chat_id/open_id.
+    # The source carries only platform + user_id; hook delivery to chat
+    # is gated on chat_id (always empty here), so the hook only injects
+    # extra_context into the LLM prompt, never echoes to a chat window.
+    chat_id = ""
+    chat_type = ""
+    open_id = ""
 
     return SimpleNamespace(
         platform=Platform.API_SERVER,
@@ -96,14 +90,12 @@ async def apply_api_server_message_receive_hooks(
     message_text: str,
     *,
     session_id: str,
-    reply_receive_id: str = "",
-    reply_receive_id_type: str = "",
     user_id: str = "",
 ) -> str:
     """Trigger message:receive hooks for an API Server request.
 
-    Returns the (possibly augmented) message text.  On any failure the original
-    text is returned so the request can continue unimpeded.
+    The hook only injects ``extra_context`` into the LLM prompt (no visible
+    delivery to chat — API Server has no native chat channel).
     """
     hooks = _api_server_hooks(adapter)
     if hooks is None or not message_text:
@@ -113,9 +105,7 @@ async def apply_api_server_message_receive_hooks(
         from owner.hooks.message_receive import apply_message_receive_hooks
 
         source = _build_source(
-            reply_receive_id=reply_receive_id or "",
-            reply_receive_id_type=reply_receive_id_type or "",
-            user_id=user_id or "",
+            user_id=user_id,
         )
         return await apply_message_receive_hooks(
             hooks=hooks,

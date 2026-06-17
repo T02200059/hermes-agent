@@ -8759,6 +8759,28 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                                             f"{_new_tokens:,}",
                                         )
 
+                                    # Notify the user that hygiene compression
+                                    # happened.  Without this, the footer's
+                                    # context-percentage silently drops from
+                                    # e.g. 20% to 5% with no visible signal.
+                                    # Use the same adapter.send() pattern as
+                                    # the abort / aux-model-failure notices
+                                    # below (#hygiene-notify).
+                                    try:
+                                        _adapter = self.adapters.get(source.platform)
+                                        if _adapter and source.chat_id:
+                                            _turns_before = max(1, _msg_count // 3)
+                                            _turns_after = max(1, _new_count // 3)
+                                            _notice = (
+                                                f"🗜️ 对话上下文自动压缩（消息数 {_msg_count} 达到配置上限 {_HARD_MSG_LIMIT}）\n"
+                                                f"压缩前：~{_turns_before} 轮 / {_approx_tokens // 1000}K tokens\n"
+                                                f"压缩后：~{_turns_after} 轮 / {_new_tokens // 1000}K tokens\n"
+                                                f"压缩阈值：消息数 ≥ {_HARD_MSG_LIMIT} 或 tokens ≥ {int(_hyg_threshold_pct * 100)}% of {_hyg_context_length // 1000}K"
+                                            )
+                                            await _adapter.send(source.chat_id, _notice, metadata=_hyg_meta)
+                                    except Exception as _nerr:
+                                        logger.debug("Failed to deliver hygiene compression notice: %s", _nerr)
+
                                     # If summary generation failed, the
                                     # compressor aborts entirely and returns
                                     # messages unchanged — nothing is dropped.

@@ -1866,7 +1866,7 @@ class APIServerAdapter(BasePlatformAdapter):
         created = int(time.time())
         
         # [owner] message:receive hook for API Server (see owner/hooks/api_server_hooks.py)
-        effective_user_message = await _owner_apply_message_receive_hooks(self, user_message, session_id=session_id or completion_id, reply_receive_id="", reply_receive_id_type="", user_id="")
+        effective_user_message = await _owner_apply_message_receive_hooks(self, user_message, session_id=session_id or completion_id)
 
         if stream:
             import queue as _q
@@ -3771,7 +3771,7 @@ class APIServerAdapter(BasePlatformAdapter):
                 self._set_run_status(run_id, "running")
                 
                 # [owner] message:receive hook for API Server (see owner/hooks/api_server_hooks.py)
-                effective_user_message = await _owner_apply_message_receive_hooks(self, user_message, session_id=session_id or run_id, reply_receive_id="", reply_receive_id_type="", user_id=request.headers.get("X-Hermes-User-Id", "").strip())
+                effective_user_message = await _owner_apply_message_receive_hooks(self, user_message, session_id=session_id or run_id, user_id=request.headers.get("X-Hermes-User-Id", "").strip())
 
                 agent = self._create_agent(
                     ephemeral_system_prompt=ephemeral_system_prompt,

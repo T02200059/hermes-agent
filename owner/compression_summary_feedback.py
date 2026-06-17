@@ -13,8 +13,14 @@ from __future__ import annotations
 import logging
 import re
 from typing import Any, Dict, List, Optional, Sequence
+from weakref import WeakKeyDictionary
 
-from agent.context_compressor import ContextCompressor
+from agent.context_compressor import (
+    SUMMARY_PREFIX,
+    LEGACY_SUMMARY_PREFIX,
+    _HISTORICAL_SUMMARY_PREFIXES,
+    _SUMMARY_END_MARKER,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -113,9 +119,26 @@ def _first_lines(text: Optional[str], max_lines: int = 2, max_chars: int = 240) 
     return joined
 
 
+def _strip_summary_prefix(summary: str) -> str:
+    """Return summary body without the current, legacy, or any historical
+    handoff prefix, plus the trailing end marker.
+
+    This is a local copy of the logic in ``ContextCompressor`` so the owner
+    module does not depend on upstream private method names.
+    """
+    text = (summary or "").strip()
+    for prefix in (SUMMARY_PREFIX, LEGACY_SUMMARY_PREFIX, *_HISTORICAL_SUMMARY_PREFIXES):
+        if text.startswith(prefix):
+            text = text[len(prefix):].lstrip()
+            break
+    if text.endswith(_SUMMARY_END_MARKER):
+        text = text[: -len(_SUMMARY_END_MARKER)].rstrip()
+    return text
+
+
 def _parse_summary_sections(summary_text: str) -> Dict[str, str]:
     """Split a structured handoff summary into section title → content."""
-    text = ContextCompressor._strip_summary_prefix(summary_text)
+    text = _strip_summary_prefix(summary_text)
     sections: Dict[str, str] = {}
     matches = list(_SECTION_RE.finditer(text))
     for i, match in enumerate(matches):
@@ -267,24 +290,27 @@ def summarize_compression_fallback(
 
 
 # External state for the last display summary per compressor instance.
-# Keeping this outside ContextCompressor avoids modifying the upstream class
-# definition; the compressor only needs to notify us when a summary is ready.
-_last_display_summary: Dict[int, str] = {}
+# We key by the compressor object itself in a WeakKeyDictionary so entries are
+# dropped automatically when the compressor is garbage collected. This avoids
+# a slow memory leak in long-running gateway processes where each session may
+# create a fresh AIAgent/ContextCompressor pair, and it keeps the upstream
+# ContextCompressor lifecycle untouched.
+_last_display_summary: WeakKeyDictionary[Any, str] = WeakKeyDictionary()
 
 
-def set_last_summary(compressor_id: int, summary: str) -> None:
+def set_last_summary(compressor: Any, summary: str) -> None:
     """Store the raw handoff summary for a compressor instance."""
-    _last_display_summary[compressor_id] = summary
+    _last_display_summary[compressor] = summary
 
 
-def get_last_summary(compressor_id: int) -> Optional[str]:
+def get_last_summary(compressor: Any) -> Optional[str]:
     """Return the raw handoff summary stored for a compressor instance."""
-    return _last_display_summary.get(compressor_id)
+    return _last_display_summary.get(compressor)
 
 
-def clear_last_summary(compressor_id: int) -> None:
+def clear_last_summary(compressor: Any) -> None:
     """Drop stored summary for a compressor instance (defense-in-depth)."""
-    _last_display_summary.pop(compressor_id, None)
+    _last_display_summary.pop(compressor, None)
 
 
 def emit_compression_summary(
@@ -300,8 +326,7 @@ def emit_compression_summary(
     can detect the emitted text and render an interactive card.
     """
     compressor = getattr(agent, "context_compressor", None)
-    compressor_id = id(compressor) if compressor else 0
-    summary_for_display = get_last_summary(compressor_id) or ""
+    summary_for_display = get_last_summary(compressor) or "" if compressor else ""
 
     if summary_for_display:
         feedback = summarize_compression_feedback(
