@@ -65,30 +65,36 @@ owner/patch_config.py
 ```yaml
 # ~/.hermes/patch_feishu_profile.yaml
 feishu:
-  user_routing:
-    # 容器之间通信用的共享 API key（/v1/runs 的 Authorization）
-    internal_api_key: "change-me"
+  bots:
+    # 必须与主 gateway 的 FEISHU_APP_ID (~/.hermes/.env) 一致。
+    cli_xxxxxxxxxxxxxxxx:
+      user_routing:
+        # 白名单用户始终留在主 gateway 处理
+        whitelist:
+          - ou_admin
 
-    # 白名单用户始终留在主 gateway 处理
-    whitelist:
-      - ou_admin
+        # 按 chat_id 路由
+        chat_profile_routes:
+          oc_team_a: "work"
 
-    # 按 chat_id 路由
-    chat_profile_routes:
-      oc_team_a: "work"
+        # 按 open_id 路由
+        user_profile_routes:
+          ou_alice: "personal"
 
-    # 按 open_id 路由
-    user_profile_routes:
-      ou_alice: "personal"
+        # 兜底
+        default_profile: "default"
 
-    # 兜底
-    default_profile: "default"
-
-    # profile 名称 → 容器地址
-    profile_endpoints:
-      default: "http://127.0.0.1:8642"
-      work: "http://127.0.0.1:9100"
-      personal: "http://127.0.0.1:9101"
+        # profile 名称 → 容器地址 / API key
+        profile_endpoints:
+          default:
+            url: "http://127.0.0.1:8642"
+            api_key: "change-me"
+          work:
+            url: "http://127.0.0.1:9100"
+            api_key: "change-me"
+          personal:
+            url: "http://127.0.0.1:9101"
+            api_key: "change-me"
 ```
 
 profile 容器本身也是 hermes-agent API server，需要暴露 `/v1/runs`。
