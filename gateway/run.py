@@ -14068,6 +14068,12 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             if _progress_thread_id == source.thread_id
             else {"thread_id": _progress_thread_id}
         ) if _progress_thread_id else None
+        # Mark progress bubbles so downstream consumers (e.g. Feishu auto-card)
+        # know these messages are editable progress and should not be transformed.
+        if _progress_metadata is not None:
+            _progress_metadata["__hermes_progress_bubble"] = True
+        else:
+            _progress_metadata = {"__hermes_progress_bubble": True}
         _progress_reply_to = (
             event_message_id
             if source.platform in (Platform.FEISHU, Platform.MATTERMOST) and source.thread_id and event_message_id
@@ -14262,6 +14268,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                         progress_lines = []
                         last_progress_msg[0] = None
                         repeat_count[0] = 0
+                        last_was_terminal_block[0] = False
                         continue
                     else:
                         msg = raw

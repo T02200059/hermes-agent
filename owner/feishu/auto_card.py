@@ -17,9 +17,8 @@ import asyncio
 import json
 import logging
 import re
-import time
 from dataclasses import dataclass
-from typing import Any, Dict, FrozenSet, List, Optional, Tuple, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
 
 from owner.patch_config import _load_patch_owner_config
 
@@ -331,106 +330,6 @@ def _split_text_for_card(text: str, max_chars: int) -> List[str]:
 
 
 # ---------------------------------------------------------------------------
-# Tool-progress detection (skip auto-card for tool_progress messages)
-# ---------------------------------------------------------------------------
-#
-# Tool-progress bubbles are emitted by ``BasePlatformAdapter.format_tool_event``
-# (see gateway/platforms/base.py) and follow the shape::
-#
-#     ``{emoji} {tool_name}[":" | "(" | "." | " " | "\"" | "'"]...``
-#
-# Detection is intentionally decoupled: we independently verify that the
-# leading token is a tool-display emoji AND the following token is a
-# registered tool name. The two predicates share no state — emoji matching
-# does not require the same tool_name to be registered, and vice versa.
-# This lets skin overrides, custom emojis, and shared fallback emojis all
-# pass through without any hardcoded emoji list.
-
-# Permissive on the emoji (``\S{1,8}`` covers ZWJ sequences like 👨‍💻 and
-# variation selectors like ⚙️) but strict on the terminator — must be a char
-# that ``format_tool_event`` actually emits after the tool name. Without the
-# terminator, plain prose like "📚 hello world" would not match.
-_TOOL_HEADER_RE = re.compile(
-    r"^(\S{1,8})\s+(\S+?)([:(\.\s\"']|$)",
-    re.UNICODE,
-)
-
-# Cached (registered_tool_names, tool_emojis_used) tuple, refreshed every
-# 60s. ``tool_emojis_used`` is the output of ``get_tool_emoji`` for every
-# registered tool — this naturally includes registry-declared emojis, active
-# skin overrides, AND shared fallbacks (because get_tool_emoji returns the
-# fallback string when no emoji is configured).
-_TOOL_INDEX_CACHE: Optional[Tuple[float, FrozenSet[str], FrozenSet[str]]] = None
-_TOOL_INDEX_TTL_SECONDS = 60.0
-
-
-def _refresh_tool_index() -> Tuple[FrozenSet[str], FrozenSet[str]]:
-    """Return ``(registered_tool_names, tool_emojis_used)`` from the registry.
-
-    Fail-open: on any import/registry error, returns two empty frozensets.
-    Empty sets cause ``_is_tool_activity_message`` to return False, which
-    means auto-card takes over (i.e. we err toward extra cards rather than
-    dropping them silently).
-    """
-    global _TOOL_INDEX_CACHE
-    now = time.monotonic()
-    if _TOOL_INDEX_CACHE is not None:
-        ts, names, emojis = _TOOL_INDEX_CACHE
-        if now - ts < _TOOL_INDEX_TTL_SECONDS:
-            return names, frozenset(emojis)
-
-    names: FrozenSet[str] = frozenset()
-    emojis: set[str] = set()
-    try:
-        from agent.display import get_tool_emoji
-        from tools.registry import registry
-        for entry in registry._snapshot_entries():
-            names = names | {entry.name}
-            e = get_tool_emoji(entry.name)
-            if e:
-                emojis.add(e)
-    except Exception:
-        pass
-
-    _TOOL_INDEX_CACHE = (now, frozenset(names), frozenset(emojis))
-    return _TOOL_INDEX_CACHE[1], _TOOL_INDEX_CACHE[2]
-
-
-def _is_tool_emoji(emoji: str) -> bool:
-    """True iff ``emoji`` is the display emoji of at least one registered tool."""
-    if not emoji:
-        return False
-    _, tool_emojis = _refresh_tool_index()
-    return emoji in tool_emojis
-
-
-def _is_tool_name(name: str) -> bool:
-    """True iff ``name`` is a registered tool name."""
-    if not name:
-        return False
-    registered, _ = _refresh_tool_index()
-    return name in registered
-
-
-def _is_tool_activity_message(formatted_text: str) -> bool:
-    """Detect ``format_tool_event`` output by AND-ing two independent checks:
-    the leading token must be a tool emoji, AND the following token must
-    be a registered tool name. Returns False (fail-open) on any error.
-    """
-    if not formatted_text:
-        return False
-    m = _TOOL_HEADER_RE.match(formatted_text)
-    if not m:
-        return False
-    emoji, tool_name = m.group(1), m.group(2)
-    # Sanity: tool_name segment should not itself contain emoji codepoints
-    # (defensive against malformed input that could otherwise sneak past).
-    if any(ord(c) > 0x2700 for c in tool_name):
-        return False
-    return _is_tool_emoji(emoji) and _is_tool_name(tool_name)
-
-
-# ---------------------------------------------------------------------------
 # Main entry point: try_auto_card
 # ---------------------------------------------------------------------------
 
@@ -463,15 +362,16 @@ async def try_auto_card(
     On card send failure after retries, logs a warning and returns None so
     the caller falls through to the plain-text path.
     """
+    # Tool-progress bubbles are editable; never convert them to cards.
+    if metadata and metadata.get("__hermes_progress_bubble"):
+        return None
+
     threshold = get_auto_card_threshold()
     if threshold <= 0:
         return None
     if not force and not is_feishu_streaming_disabled():
         return None
     if not force and len(formatted_text) <= threshold:
-        return None
-
-    if _is_tool_activity_message(formatted_text):
         return None
 
     plan = _evaluate_card_feasibility(formatted_text)
