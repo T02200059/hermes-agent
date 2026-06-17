@@ -190,24 +190,28 @@ def resolve_profile_route_by_name(profile_name: str) -> Optional[Tuple[str, str,
 
 
 async def _forward_to_profile_container(
-    adapter: Any,
     *,
     endpoint: str,
     api_key: str,
-    session_key: str,
     text: str,
-    receive_id: str,
-    receive_id_type: str,
-    message_id: str,
-    open_id: str = "",
+    open_id: str,
+    chat_id: str,
+    chat_type: str,
+    message_id: Optional[str],
 ) -> bool:
-    """POST a normalized Feishu message to a profile container's ``/v1/runs``.
+    """POST a Feishu message to a profile container's ``/v1/feishu/inbound``.
 
-    Fire-and-forget: failures are logged and the user is notified via the
-    main gateway. Returns True if the HTTP request was accepted (2xx/202),
-    False otherwise.
+    Fire-and-forget transport: the main gateway holds the only WebSocket and
+    forwards routed messages here. The container reconstructs the inbound
+    event and runs it through its full native Feishu pipeline (see
+    ``FeishuAdapter.inject_inbound``), then replies via its own ``send_only``
+    adapter — so a routed conversation behaves exactly like a native one.
 
-    The container replies directly to Feishu using ``X-Hermes-Reply-Via`` headers.
+    ``chat_id`` is the p2p chat id (``oc_…``) for a DM or the group id for a
+    group; ``open_id`` is always the sender. Both are forwarded so the
+    container can pick whichever id Feishu needs at send time.
+
+    Returns True if the HTTP request was accepted (200/202), False otherwise.
     """
     if not text or not text.strip():
         logger.debug(
@@ -225,18 +229,19 @@ async def _forward_to_profile_container(
         )
         return False
 
-    url = endpoint.rstrip("/") + "/v1/runs"
+    url = endpoint.rstrip("/") + "/v1/feishu/inbound"
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
-        "X-Hermes-Session-Key": session_key,
-        "X-Hermes-Reply-Via": "feishu",
-        "X-Hermes-Reply-Receive-Id": receive_id,
-        "X-Hermes-Reply-Receive-Id-Type": receive_id_type,
-        "X-Hermes-Reply-Message-Id": message_id,
-        "X-Hermes-User-Id": open_id,
     }
-    body = {"input": text}
+    body: Dict[str, Any] = {
+        "text": text,
+        "open_id": open_id,
+        "chat_id": chat_id,
+        "chat_type": chat_type,
+    }
+    if message_id:
+        body["message_id"] = message_id
     try:
         import aiohttp
 
@@ -384,20 +389,17 @@ async def try_route_inbound_message(
 
     profile, endpoint, api_key = route
     is_dm = chat_type == "p2p"
-    session_key = f"feishu:dm:{open_id}" if is_dm else f"feishu:group:{chat_id}"
-    receive_id = open_id if is_dm else chat_id
-    receive_id_type = "open_id" if is_dm else "chat_id"
+    # Reply/notify fallback target: DM → sender open_id, group → group chat_id.
+    notify_target = open_id if is_dm else chat_id
 
     forwarded = await _forward_to_profile_container(
-        adapter,
         endpoint=endpoint,
         api_key=api_key,
-        session_key=session_key,
         text=text,
-        receive_id=receive_id,
-        receive_id_type=receive_id_type,
-        message_id=message_id,
         open_id=open_id,
+        chat_id=chat_id,
+        chat_type=chat_type,
+        message_id=message_id,
     )
     if forwarded:
         logger.info(
@@ -408,7 +410,7 @@ async def try_route_inbound_message(
         )
         return True
 
-    await _notify_forward_failure(adapter, receive_id)
+    await _notify_forward_failure(adapter, notify_target)
     return False
 
 
@@ -473,16 +475,16 @@ async def try_route_bot_menu_command(
         return False
 
     profile, endpoint, api_key = route
+    # Bot-menu commands are always DM-context synthetic messages; the chat_id
+    # (p2p oc_) may be unknown here, so the container falls back to open_id.
     forwarded = await _forward_to_profile_container(
-        adapter,
         endpoint=endpoint,
         api_key=api_key,
-        session_key=f"feishu:dm:{open_id}",
         text=synthetic_text,
-        receive_id=open_id,
-        receive_id_type="open_id",
-        message_id=None,
         open_id=open_id,
+        chat_id=chat_id or "",
+        chat_type="p2p",
+        message_id=None,
     )
     if forwarded:
         logger.info(
@@ -542,22 +544,142 @@ async def _get_feishu_tenant_token(
     return token
 
 
+def _get_inprocess_feishu_adapter() -> Any:
+    """Return the live FeishuAdapter running in this api_server process, or None.
+
+    The sub-profile container runs both ``api_server`` and ``feishu`` (in
+    ``send_only`` mode) in one GatewayRunner. We reach the runner via the
+    module-level weakref in ``gateway.run`` and pull the registered Feishu
+    adapter so replies can flow through ``send()`` → ``try_auto_card()``
+    (auto-card + card formatting) instead of a bare REST text send.
+
+    Fail-open: any import/attribute error returns None and the caller falls
+    back to the direct REST path.
+    """
+    try:
+        import gateway.run as _gr
+
+        ref = getattr(_gr, "_gateway_runner_ref", None)
+        runner = ref() if callable(ref) else None
+        if runner is None:
+            return None
+        from gateway.config import Platform
+
+        adapter = runner.adapters.get(Platform.FEISHU)
+        # send_only / websocket / webhook all set ``_client`` on connect; without
+        # it ``send()`` short-circuits to "Not connected".
+        if adapter is not None and getattr(adapter, "_client", None) is not None:
+            return adapter
+    except Exception:
+        return None
+    return None
+
+
+async def _reply_via_adapter(
+    adapter: Any,
+    *,
+    receive_id: str,
+    receive_id_type: str,
+    final_text: str,
+    reply_message_id: Optional[str],
+) -> bool:
+    """Deliver ``final_text`` through the in-process FeishuAdapter.
+
+    Mirrors the normal gateway agent:end behaviour: try an auto-card first
+    (``force=True`` so the final response always renders as a card when
+    feasible, matching owner/feishu/agent_end.py), then fall back to a plain
+    ``send()`` for short / non-cardable bodies. Returns True when the message
+    was delivered, False to signal the caller should use the REST fallback.
+    """
+    chat_id = receive_id
+    if receive_id_type == "open_id":
+        # send_card_via_rest resolves the target from metadata (chat_type +
+        # open_id), not the chat_id prefix; send() resolves from the chat_id
+        # prefix. Supply both so either path targets the DM correctly.
+        metadata: Dict[str, Any] = {"chat_type": "p2p", "open_id": receive_id}
+    else:
+        metadata = {"chat_type": "group"}
+
+    try:
+        from owner.feishu.auto_card import try_auto_card
+
+        card_result = await try_auto_card(
+            adapter, final_text, metadata, chat_id=chat_id, force=True
+        )
+        if card_result is not None:
+            return True
+    except Exception as exc:
+        logger.warning("[api_server] auto-card reply failed: %s", exc)
+
+    # Short or non-cardable body → plain send() (still inherits markdown
+    # formatting + reply threading). reply_message_id is None for bot-menu
+    # synthetic commands, in which case send() posts a fresh message.
+    try:
+        send_result = await adapter.send(
+            chat_id=chat_id,
+            content=final_text,
+            reply_to=reply_message_id,
+            metadata=metadata,
+        )
+        if getattr(send_result, "success", False):
+            return True
+        logger.warning(
+            "[api_server] adapter.send failed (%s); falling back to REST",
+            getattr(send_result, "error", "unknown"),
+        )
+    except Exception as exc:
+        logger.warning(
+            "[api_server] adapter.send exception (%s); falling back to REST", exc
+        )
+    return False
+
+
 async def feishu_reply(
     *,
     receive_id: str,
     receive_id_type: str,
     text: str,
     reply_message_id: Optional[str] = None,
-    model: Optional[str] = None,
-    profile_name: Optional[str] = None,
+    footer: Optional[str] = None,
 ) -> None:
-    """Send a text message to Feishu.
+    """Send the final agent response back to Feishu.
 
     Called after run completes when ``X-Hermes-Reply-Via: feishu`` is set on
     the ``/v1/runs`` request.
+
+    Delivery path priority:
+        1. In-process FeishuAdapter (``send_only`` mode) → ``try_auto_card`` +
+           ``send()`` so the reply gets the same auto-card formatting as the
+           main gateway's agent:end path.
+        2. Direct REST text send (fallback when no adapter is reachable, e.g.
+           a feishu-less container).
+
+    ``footer`` is the pre-rendered runtime-footer line (``model · context% ·
+    cwd``) built by the caller via ``gateway.runtime_footer.build_footer_line``.
+    It is appended to the body in both paths so it survives card wrapping
+    (auto-card has no dedicated footer element).
     """
     import aiohttp as _aiohttp
 
+    # Append the runtime footer to the body if present. Matches the main
+    # gateway's run.py append (plain, no italics) so routed replies look
+    # identical to non-routed ones.
+    final_text = f"{text}\n\n{footer}" if footer else text
+
+    # Preferred path: route through the live in-process Feishu adapter so the
+    # reply gets auto-card formatting instead of a bare REST text send.
+    adapter = _get_inprocess_feishu_adapter()
+    if adapter is not None:
+        if await _reply_via_adapter(
+            adapter,
+            receive_id=receive_id,
+            receive_id_type=receive_id_type,
+            final_text=final_text,
+            reply_message_id=reply_message_id,
+        ):
+            return
+
+    # Fallback path: direct REST text send (own tenant token).
     app_id = os.environ.get("FEISHU_APP_ID", "")
     app_secret = os.environ.get("FEISHU_APP_SECRET", "")
     if not app_id or not app_secret:
@@ -570,19 +692,6 @@ async def feishu_reply(
     token = await _get_feishu_tenant_token(app_id, app_secret)
     if not token:
         return
-
-    # Build footer line with model and profile info
-    footer_parts = []
-    if profile_name:
-        footer_parts.append(f"📋 {profile_name}")
-    if model:
-        # Drop vendor/ prefix for readability
-        model_short = model.rsplit("/", 1)[-1] if "/" in model else model
-        footer_parts.append(f"🤖 {model_short}")
-    footer_line = " · ".join(footer_parts) if footer_parts else ""
-    
-    # Append footer to text if present
-    final_text = f"{text}\n\n_{footer_line}_" if footer_line else text
 
     headers = {
         "Authorization": f"Bearer {token}",
