@@ -1879,6 +1879,36 @@ class FeishuAdapter(BasePlatformAdapter):
         except ImportError:
             self._recall_cache[key] = value
 
+    # [owner] compression summary card: thin dispatch (see owner/feishu/compression_summary_card.py)
+    async def send_compression_summary(
+        self,
+        chat_id: str,
+        content: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Optional[SendResult]:
+        """Send compression feedback as a dedicated Feishu card if content matches."""
+        if not content:
+            return None
+        # Match both Chinese (current default) and English fallback strings so
+        # a future locale change does not silently break the card path.
+        if not (
+            content.startswith("🗜️ 上下文已压缩")
+            or content.startswith("🗜️ Context compressed")
+        ):
+            return None
+        try:
+            _build_card = _owner_import(
+                "owner.feishu.compression_summary_card", "build_compression_summary_card"
+            )
+            return await self.send_card(
+                chat_id=chat_id,
+                card=_build_card(content),
+                metadata=metadata,
+            )
+        except Exception as exc:
+            logger.debug("[Feishu] compression summary card failed: %s", exc)
+            return None
+
     async def send(
         self,
         chat_id: str,
@@ -1891,6 +1921,15 @@ class FeishuAdapter(BasePlatformAdapter):
             return SendResult(success=False, error="Not connected")
 
         formatted = self.format_message(content)
+
+        # Compression summary: render as a dedicated card with a header instead
+        # of falling through to the generic auto-card/plain-text path.
+        # [owner] see owner/feishu/compression_summary_card.py
+        _compression_summary_result = await self.send_compression_summary(
+            chat_id=chat_id, content=formatted, metadata=metadata
+        )
+        if _compression_summary_result is not None:
+            return _compression_summary_result
 
         # Auto-card: wrap long text in an interactive card when streaming is
         # [owner] try auto-card before plain-text (see owner/feishu/auto_card.py)
