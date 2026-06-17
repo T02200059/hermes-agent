@@ -15,11 +15,33 @@ owner:
     # [owner] Skill script auto-approval allowlist
     # 匹配逻辑：命令中所有脚本文件名都来自本 session 已加载的 skill 时自动批准。
     skill_script_allowlist:
-      - skill: sre-king
+      - skill: xy-info
         paths: []
         extensions: [".sh", ".py"]
-    # command_allowlist:
-    #   - "tirith:raw_ip_url"          # suppress internal IP curl/wget approvals
+      - skill: xy-ansible
+        paths: []
+        extensions: [".sh", ".py"]
+      - skill: xy-damodel
+        paths: []
+        extensions: [".sh", ".py"]
+      - skill: xy-gitlab
+        paths: []
+        extensions: [".sh", ".py"]
+      - skill: xy-alert
+        paths: []
+        extensions: [".sh", ".py"]
+      - skill: xy-gpu
+        paths: []
+        extensions: [".sh", ".py"]
+      - skill: xy-storage
+        paths: []
+        extensions: [".sh", ".py"]
+      - skill: xy-diagnose
+        paths: []
+        extensions: [".sh", ".py"]
+      - skill: network-tool
+        paths: []
+        extensions: [".sh", ".py"]
 
   # ── Image Generation Presets ───────────────────────────────────────────────
   # Presets for the DashScope image-gen plugin (owner/image_gen/dashscope_provider.py).
