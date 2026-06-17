@@ -121,15 +121,29 @@ def resolve_profile_route(
         )
         return None
 
-    endpoint = endpoints.get(profile)
-    if not endpoint:
+    endpoint_cfg = endpoints.get(profile)
+    if not endpoint_cfg:
         logger.warning(
             "[Feishu] profile '%s' has no endpoint in profile_endpoints", profile
         )
         return None
 
-    api_key = routing_cfg.get("internal_api_key", "")
-    return (profile, str(endpoint), str(api_key))
+    # endpoint_cfg can be a dict with 'url' and 'api_key', or a plain string (legacy)
+    if isinstance(endpoint_cfg, dict):
+        url = endpoint_cfg.get("url", "")
+        api_key = endpoint_cfg.get("api_key", "")
+    else:
+        # Legacy: plain string URL
+        url = str(endpoint_cfg)
+        api_key = ""
+
+    if not url:
+        logger.warning(
+            "[Feishu] profile '%s' endpoint has no 'url' field", profile
+        )
+        return None
+
+    return (profile, str(url), str(api_key))
 
 
 def resolve_profile_route_by_name(profile_name: str) -> Optional[Tuple[str, str, str]]:
@@ -148,16 +162,31 @@ def resolve_profile_route_by_name(profile_name: str) -> Optional[Tuple[str, str,
     if not isinstance(endpoints, dict):
         return None
 
-    endpoint = endpoints.get(profile_name)
-    if not endpoint:
+    endpoint_cfg = endpoints.get(profile_name)
+    if not endpoint_cfg:
         logger.warning(
             "[Feishu] hermes_profile '%s' not found in profile_endpoints",
             profile_name,
         )
         return None
 
-    api_key = routing_cfg.get("internal_api_key", "")
-    return (profile_name, str(endpoint), str(api_key))
+    # endpoint_cfg can be a dict with 'url' and 'api_key', or a plain string (legacy)
+    if isinstance(endpoint_cfg, dict):
+        url = endpoint_cfg.get("url", "")
+        api_key = endpoint_cfg.get("api_key", "")
+    else:
+        # Legacy: plain string URL
+        url = str(endpoint_cfg)
+        api_key = ""
+
+    if not url:
+        logger.warning(
+            "[Feishu] hermes_profile '%s' endpoint has no 'url' field",
+            profile_name,
+        )
+        return None
+
+    return (profile_name, str(url), str(api_key))
 
 
 async def _forward_to_profile_container(
