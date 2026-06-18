@@ -4202,6 +4202,43 @@ class APIServerAdapter(BasePlatformAdapter):
         )
         return web.json_response({"accepted": True}, status=202)
 
+    async def _handle_feishu_card_action(self, request: "web.Request") -> "web.Response":
+        """POST /v1/feishu/card-actions — [owner] multi-profile card-action transport.
+
+        Thin glue: auth + body parse + adapter lookup, then delegate the replay /
+        re-tag / card extraction to ``owner.feishu.profile_routing``. Returns
+        ``{"card": <json|null>}`` for the main gateway to relay inline.
+        """
+        auth_err = self._check_auth(request)
+        if auth_err:
+            return auth_err
+        body, err = await self._read_json_body(request)
+        if err:
+            return err
+
+        _get_adapter = _owner_import(
+            "owner.feishu.profile_routing", "_get_inprocess_feishu_adapter"
+        )
+        adapter = _get_adapter() if _get_adapter is not None else None
+        if adapter is None or not hasattr(adapter, "_dispatch_card_action"):
+            logger.warning(
+                "[api_server] /v1/feishu/card-actions: no Feishu adapter in this container"
+            )
+            return web.json_response(
+                _openai_error("Feishu adapter unavailable", code="feishu_unavailable"),
+                status=503,
+            )
+
+        _handle = _owner_import("owner.feishu.profile_routing", "handle_card_action_request")
+        try:
+            card = _handle(adapter, body) if _handle is not None else None
+        except Exception:
+            logger.warning(
+                "[api_server] /v1/feishu/card-actions dispatch failed", exc_info=True
+            )
+            return web.json_response({"card": None}, status=200)
+        return web.json_response({"card": card}, status=200)
+
     async def _sweep_orphaned_runs(self) -> None:
         """Periodically clean up run streams that were never consumed."""
         while True:
@@ -4290,6 +4327,9 @@ class APIServerAdapter(BasePlatformAdapter):
             # [owner] multi-profile routing: transport entry for main-gateway-
             # forwarded Feishu messages (does not run the agent loop here).
             self._app.router.add_post("/v1/feishu/inbound", self._handle_feishu_inbound)
+            # [owner] multi-profile routing: card-action transport (see
+            # owner/feishu/profile_routing.py::handle_card_action_request).
+            self._app.router.add_post("/v1/feishu/card-actions", self._handle_feishu_card_action)
             # Store the adapter after native routes are registered. Local Hermes-Relay
             # bootstrap shims use this key as a feature-detection hook; registering
             # native routes first lets those shims no-op instead of shadowing the
