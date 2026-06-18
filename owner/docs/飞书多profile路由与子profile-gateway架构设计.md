@@ -161,19 +161,44 @@ Alice 发消息给 bot
 
 > 主 gateway 转发的是 `text + open_id + p2p chat_id + chat_type`，子容器据此重建 source：DM 的 `source.chat_id` 用 p2p chat_id（`oc_…`）、`user_id` 用 open_id；这样卡片路径（`metadata.open_id`）与纯文本路径（`source.chat_id`）都能正确投递。
 
-#### 卡片按钮
+#### 卡片按钮（owner-v16 完成实现，2026-06-18）
+
+> 早期设计仅"规划"了按钮带 `hermes_profile`，但实际从未注入（G1）；`try_route_card_action`
+> 只有"有路由就 ack 丢弃"的分支（G2），且转发目标 `/v1/feishu/card-actions` 端点根本不存在（G3）。
+> 结果：被路由用户点任何卡片按钮都石沉大海。本次补齐了完整链路。
 
 ```text
-Alice 的容器发了一张卡片，按钮带 hermes_profile="alice"
+[子容器发卡] send_card_via_rest → _maybe_tag_card_profile()
+    仅 send_only 容器：递归给每个 button.value 注入 hermes_profile=<本profile名>
        │
        ▼
-用户点击按钮 → 飞书推送到 WebSocket → 主 gateway
+用户点击按钮 → 飞书推送到 WebSocket → 主 gateway（持唯一 WS，与子容器共享 app_id）
        │
        ▼
-try_route_card_action()
-  ├─ 有 hermes_profile="alice" → 同步 POST 到 Alice 的容器
-  └─ 无 hermes_profile → resolve_profile_route → 有路由: ack 丢弃
+_on_card_action_trigger → _dispatch_card_action(allow_profile_routing=True)
+       │
+       ▼
+try_route_card_action()   ——纯按 tag 路由，不再用 chat/user 反查——
+  ├─ 有 hermes_profile → resolve_profile_route_by_name
+  │     ├─ 命中端点 → 同步 POST /v1/feishu/card-actions 到该容器（urllib，timeout 2.5s < 飞书 3s 窗口）
+  │     │     子容器 handle_card_action_request()：
+  │     │       重建 event → _dispatch_card_action(allow_profile_routing=False)
+  │     │       → 对应 handler resolve（解阻塞 agent）+ 构建已解决卡片
+  │     │       → 用 _maybe_tag_card_profile 给"更新后卡片"的按钮重新打 tag
+  │     │         （recall/diff 这类 toggle 卡片更新态仍有按钮，否则下次点击会丢 tag）
+  │     │       → 返回 {"card": <json|null>}
+  │     │     主 gateway 把返回的 card 包成 P2CardActionTriggerResponse.card 同步回中继（Option B）
+  │     │     → 飞书 inline 更新卡片，所有端同步
+  │     └─ 端点未知/容器不可达/超时 → 显式"子网关不可用"错误卡片 + warning（绝不静默丢弃）
+  └─ 无 hermes_profile → None → 本地处理（这是主 gateway 自己发给非路由用户的卡片）
 ```
+
+**关键不变量**：主子共享同一 `FEISHU_APP_ID`（点击才会回到主 WS）；卡片关联状态
+（approval/clarify/picker/memory 队列）注册在发卡的子容器进程内，所以点击必须在子容器内重放。
+
+**官方源码侵入**：`feishu.py` 仅把原 `_on_card_action_trigger` 的分发体抽成可复用的
+`_dispatch_card_action`（SDK 路径与 HTTP 路径共用，避免漂移）；`api_server.py` 的
+`/v1/feishu/card-actions` 只是 auth + 读 body + 委托到 `owner/feishu/profile_routing.py::handle_card_action_request` 的薄胶水。所有真实逻辑在 owner/ 下。
 
 #### Bot 菜单
 
