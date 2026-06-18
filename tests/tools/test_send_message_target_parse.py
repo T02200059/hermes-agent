@@ -88,5 +88,7 @@ def test_send_message_routes_whatsapp_group_jid_without_home_fallback() -> None:
         thread_id=None,
         media_files=[],
         force_document=False,
+        card=None,
+        extra_metadata=None,
     )
 
