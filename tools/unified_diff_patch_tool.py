@@ -20,7 +20,7 @@ registry.register(
     schema=UNIFIED_DIFF_PATCH_SCHEMA,
     handler=_handle_unified_diff_patch,
     check_fn=_check_file_reqs,
-    emoji="🩹",
+    emoji="🧩",
     max_result_size_chars=100_000,
 )
 
