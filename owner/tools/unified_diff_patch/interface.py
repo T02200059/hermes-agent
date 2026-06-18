@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from contextlib import ExitStack
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from tools import check_file_requirements
@@ -57,39 +56,26 @@ def _resolve_and_guard_paths(
     return None
 
 
-def _resolve_local_target_path(target: str, task_id: str) -> Optional[Path]:
-    """Resolve a patch target path to a local absolute path for dry-run preview."""
-    from tools.file_tools import _resolve_path_for_task
-
-    try:
-        return _resolve_path_for_task(target, task_id)
-    except Exception:
-        return None
-
-
 def _build_dry_run_result(
     file_patches,
     *,
     task_id: str,
     auto_fix_start: bool,
 ) -> Dict[str, Any]:
-    """Preview a patch by reading local files directly; no locks, no writes."""
-    from tools.file_operations import ReadResult
+    """Preview a patch without writing, taking locks, or updating timestamps.
 
-    class _DryRunFileReader:
-        """Duck-typed reader for dry-run — engine only calls read_file_raw."""
+    Reads go through the SAME ``file_ops`` backend the real apply uses
+    (``_get_file_ops``), so the preview reflects the file the agent's
+    terminal actually sees. Reading through a host-local ``open()`` here
+    would diverge from apply on any non-local backend (docker/ssh/modal/
+    daytona) — the preview would show the host copy while apply touches the
+    container/remote copy. The engine's ``dry_run=True`` path only ever
+    calls ``read_file_raw`` (no writes/deletes/lint), so sharing the real
+    file_ops is read-only.
+    """
+    from tools.file_tools import _get_file_ops
 
-        def read_file_raw(self, path: str) -> ReadResult:
-            resolved = _resolve_local_target_path(path, task_id)
-            if resolved is None:
-                return ReadResult(error=f"Cannot resolve path: {path!r}")
-            try:
-                with open(resolved, "r", encoding="utf-8") as f:
-                    return ReadResult(content=f.read())
-            except OSError as exc:
-                return ReadResult(error=f"Cannot read file: {exc}")
-
-    file_ops = _DryRunFileReader()
+    file_ops = _get_file_ops(task_id)
     result = apply_unified_diff(
         file_patches,
         file_ops,

@@ -144,3 +144,4 @@ apps/desktop/demo/
 
 # Runtime SQLite state database created by tests or local agent runs.
 state.db
+owner/feishu_profile/hermesxiyun/.env

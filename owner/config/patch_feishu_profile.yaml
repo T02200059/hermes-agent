@@ -1,13 +1,26 @@
-# Feishu multi-profile routing configuration.
+# ═══════════════════════════════════════════════════════════════════════════════
+# Feishu multi-profile routing configuration
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# ⚠️  本文件是实际在用的配置（通过软链接），不是模板！
+#
+# 软链接关系：
+#   ~/.hermes/patch_feishu_profile.yaml
+#   → ~/.hermes/hermes-agent/owner/config/patch_feishu_profile.yaml (本文件)
+#
+# 内部项目，不需要考虑 git 安全 —— app_id、open_id、api_key 均为真实值。
+# 如需脱敏用于分享/开源，另建 template 文件。
 #
 # Runtime path: ~/.hermes/patch_feishu_profile.yaml
+# ═══════════════════════════════════════════════════════════════════════════════
 
 feishu:
   bots:
     cli_a96f6714a2781cb3: # YangtbClawProMax
       user_routing:
         whitelist:
-          - ou_2924a1f56adac3a07a0fef2cea2543c5 # 杨天宝
+        # - 1 # 占位符
+        - ou_2924a1f56adac3a07a0fef2cea2543c5  # 杨天宝
         chat_profile_routes: {}
         user_profile_routes: {}
         default_profile: hermesxiyun
@@ -17,26 +30,3 @@ feishu:
             # Must match the container's API_SERVER_KEY (profile .env), else the
             # container's _check_auth rejects forwarded requests with 401.
             api_key: "sk-HpFO0tO2GKpEmkTO4020Cf3454224306B3C11393D22007D9"
-    cli_aa87e2dbd3fa5cd8: # 毕方
-      user_routing:
-        whitelist:
-          - ou_23270fbce80e70282797919e4b254fa5  # 王庭威
-        chat_profile_routes: {}
-        user_profile_routes: {}
-        default_profile: hermesxiyun
-        profile_endpoints:
-          hermesxiyun:
-            url: http://localhost:26026
-            api_key: "hermesxiyun-node010-1781671360"
-          hermeswangtingwei:
-            url: http://localhost:26027
-            api_key: "hermesxiyun-node010-1781671360"
-          hermesyangtb:
-            url: http://localhost:26028
-            api_key: "hermesxiyun-node010-1781671360"
-          liruiyang:
-            url: http://localhost:26029
-            api_key: "hermesxiyun-node010-1781671360"
-          sunqifei:
-            url: http://localhost:26030
-            api_key: "hermesxiyun-node010-1781671360"

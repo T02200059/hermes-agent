@@ -1,12 +1,12 @@
 # 飞书多 Profile 路由与子 Profile Gateway 架构设计
 
-> 文档版本：v2.0 | 更新日期：2026-06-17
+> 文档版本：v2.1 | 更新日期：2026-06-17
 > 涉及 commits：
 > - `541c4ba` feat(owner): add Feishu multi-profile routing with external containers
 > - `2e692b4` fix(feishu): respect explicit platform disable in config.yaml
 > - `8ced60a` feat(feishu): add send_only connection mode for multi-profile routing
 > - `f7a3554` feat(feishu): multi-bot routing support
-> - *(owner-v16，待提交)* 子容器改走原生飞书 pipeline：`POST /v1/feishu/inbound` + `FeishuAdapter.inject_inbound`
+> - `b72b924` refactor(owner): remove v1.x dead code from feishu multi-profile routing (-262 lines)
 
 ---
 
@@ -161,19 +161,44 @@ Alice 发消息给 bot
 
 > 主 gateway 转发的是 `text + open_id + p2p chat_id + chat_type`，子容器据此重建 source：DM 的 `source.chat_id` 用 p2p chat_id（`oc_…`）、`user_id` 用 open_id；这样卡片路径（`metadata.open_id`）与纯文本路径（`source.chat_id`）都能正确投递。
 
-#### 卡片按钮
+#### 卡片按钮（owner-v16 完成实现，2026-06-18）
+
+> 早期设计仅"规划"了按钮带 `hermes_profile`，但实际从未注入（G1）；`try_route_card_action`
+> 只有"有路由就 ack 丢弃"的分支（G2），且转发目标 `/v1/feishu/card-actions` 端点根本不存在（G3）。
+> 结果：被路由用户点任何卡片按钮都石沉大海。本次补齐了完整链路。
 
 ```text
-Alice 的容器发了一张卡片，按钮带 hermes_profile="alice"
+[子容器发卡] send_card_via_rest → _maybe_tag_card_profile()
+    仅 send_only 容器：递归给每个 button.value 注入 hermes_profile=<本profile名>
        │
        ▼
-用户点击按钮 → 飞书推送到 WebSocket → 主 gateway
+用户点击按钮 → 飞书推送到 WebSocket → 主 gateway（持唯一 WS，与子容器共享 app_id）
        │
        ▼
-try_route_card_action()
-  ├─ 有 hermes_profile="alice" → 同步 POST 到 Alice 的容器
-  └─ 无 hermes_profile → resolve_profile_route → 有路由: ack 丢弃
+_on_card_action_trigger → _dispatch_card_action(allow_profile_routing=True)
+       │
+       ▼
+try_route_card_action()   ——纯按 tag 路由，不再用 chat/user 反查——
+  ├─ 有 hermes_profile → resolve_profile_route_by_name
+  │     ├─ 命中端点 → 同步 POST /v1/feishu/card-actions 到该容器（urllib，timeout 2.5s < 飞书 3s 窗口）
+  │     │     子容器 handle_card_action_request()：
+  │     │       重建 event → _dispatch_card_action(allow_profile_routing=False)
+  │     │       → 对应 handler resolve（解阻塞 agent）+ 构建已解决卡片
+  │     │       → 用 _maybe_tag_card_profile 给"更新后卡片"的按钮重新打 tag
+  │     │         （recall/diff 这类 toggle 卡片更新态仍有按钮，否则下次点击会丢 tag）
+  │     │       → 返回 {"card": <json|null>}
+  │     │     主 gateway 把返回的 card 包成 P2CardActionTriggerResponse.card 同步回中继（Option B）
+  │     │     → 飞书 inline 更新卡片，所有端同步
+  │     └─ 端点未知/容器不可达/超时 → 显式"子网关不可用"错误卡片 + warning（绝不静默丢弃）
+  └─ 无 hermes_profile → None → 本地处理（这是主 gateway 自己发给非路由用户的卡片）
 ```
+
+**关键不变量**：主子共享同一 `FEISHU_APP_ID`（点击才会回到主 WS）；卡片关联状态
+（approval/clarify/picker/memory 队列）注册在发卡的子容器进程内，所以点击必须在子容器内重放。
+
+**官方源码侵入**：`feishu.py` 仅把原 `_on_card_action_trigger` 的分发体抽成可复用的
+`_dispatch_card_action`（SDK 路径与 HTTP 路径共用，避免漂移）；`api_server.py` 的
+`/v1/feishu/card-actions` 只是 auth + 读 body + 委托到 `owner/feishu/profile_routing.py::handle_card_action_request` 的薄胶水。所有真实逻辑在 owner/ 下。
 
 #### Bot 菜单
 
@@ -219,7 +244,7 @@ if self._connection_mode == "send_only":
 
 ### 3.2 `gateway/config.py` — 尊重显式 enabled: false
 
-**问题**：子 profile 的 config.yaml 设置 `platforms.feishu.enabled: false`，但 .env 中有 FEISHU_APP_ID/SECRET（用于 `feishu_reply`），原逻辑会无条件启用飞书 adapter → 抢占 WebSocket。
+**问题**：子 profile 的 config.yaml 设置 `platforms.feishu.enabled: false`，但 .env 中有 FEISHU_APP_ID/SECRET（用于 send_only adapter 回复），原逻辑会无条件启用飞书 adapter → 抢占 WebSocket。
 
 **改动**（commit `2e692b4`）：
 
@@ -308,13 +333,7 @@ async def inject_inbound(self, *, text, open_id, chat_id="", chat_type="p2p", me
 - 回复完全由原生 `agent:end`（`owner/feishu/agent_end.py` → `try_auto_card_on_end`）+ `gateway/runtime_footer.py` 产出，**无需任何特殊回复代码**。footer 即标准 `model · context% · cwd`，模型名是 agent 实际所用模型。
 - `channel_prompt` **由子容器解析**（主 gateway 只转发）；DM 按 open_id 命中可实现「每用户专属 prompt」。
 
-### 3.5 ⚠️ *(v1.x 遗留)* `X-Hermes-Reply-Via` + `message_receive` 卡片发送
-
-> 以下为已被 3.4 取代的旧路径。代码暂时保留（路由不再走 `/v1/runs`），可在确认稳定后清理。
-
-旧设计中，主 gateway `POST /v1/runs` 并带 `X-Hermes-Reply-Via: feishu` 等 header，子容器在 `run.completed` 后调用 `feishu_reply()` 直接 REST 回复；卡片则由 `owner/hooks/message_receive.py` 在 `platform=api_server` 时改用 feishu adapter 的 `send_card` 发送。
-
-新设计下消息走 `/v1/feishu/inbound` → `inject_inbound`，回复经原生 `agent:end`，因此 `X-Hermes-Reply-Via` 分支与 `message_receive` 的卡片改投逻辑对被路由的消息不再生效。
+> *v1.x 的 `X-Hermes-Reply-Via` + `feishu_reply()` 路径已在 commit `b72b924` 中清理（-262 行）。路由消息现统一走 `/v1/feishu/inbound` → `inject_inbound` → 原生 pipeline。*
 
 ### 3.6 `owner/feishu/profile_routing.py` — 核心路由模块
 
@@ -330,7 +349,6 @@ async def inject_inbound(self, *, text, open_id, chat_id="", chat_type="p2p", me
 | `try_route_bot_menu_command(...)` | 路由 bot 菜单 → `/v1/feishu/inbound`（chat_id 可空，回退 open_id） | bot_menu.py |
 | `_forward_to_profile_container(...)` | 实际 HTTP 转发到 `/v1/feishu/inbound` | 上述三者 |
 | `_get_inprocess_feishu_adapter()` | 子容器内取本进程 send_only feishu adapter（经 `_gateway_runner_ref`） | api_server.py |
-| `feishu_reply(...)` | ⚠️ *(v1.x 遗留)* 旧 REST 直接回复，被 `inject_inbound` 取代 | api_server.py |
 
 **路由优先级**：
 1. `whitelist` open_ids → 留在主 gateway（管理员/特殊用户）
@@ -342,19 +360,7 @@ async def inject_inbound(self, *, text, open_id, chat_id="", chat_type="p2p", me
 
 **会话隔离**：路由本身不再计算 session_key——消息注入子容器后，由原生 pipeline 通过 `build_session_key(source, …)` 计算（DM 按 chat_id/open_id、群按 chat_id），与原生飞书会话完全一致。每个 profile 容器有独立的 HERMES_HOME / session store / memory / SOUL，进程级隔离。
 
-### 3.7 ⚠️ *(v1.x 遗留)* `owner/feishu/profile_routing.py` — feishu_reply 回复机制
-
-> 已被 3.4.1 的原生 `agent:end` 回复取代。代码暂时保留作回滚。
-
-旧机制让子容器通过 REST API 直接回复用户，并手工拼接 footer `📋 profile · 🤖 model`。**这个 footer 是错的**：
-
-- 正确的 footer 是标准 `runtime_footer`：`model · context% · cwd`（如 `deepseek-v4-flash · 21% · ~/.hermes`），由 `gateway/runtime_footer.py::build_footer_line` 按 `display.runtime_footer.fields` 生成。
-- 旧实现里的「模型名」取自 api_server 的 advertise 名（`_resolve_model_name`，读 `extra["model_name"]`/`API_SERVER_MODEL_NAME`），常退化为 profile 名，与 agent 实际所用模型不符。
-- v2.0 下回复走原生 pipeline，footer 由 `build_footer_line` 用 agent 真实模型 + 上下文占用自动产出，无需手工拼接。
-
-**为什么会退化为纯文本**：`feishu_reply` 直接 REST 发 `msg_type: text`，绕过了 `FeishuAdapter.send()` → `try_auto_card()`，所以没有 auto-card。v2.0 经 `inject_inbound` 走原生 `send()` 后，auto-card 自动生效。
-
-### 3.8 `owner/feishu/card_sender.py` — REST 卡片发送
+### 3.7 `owner/feishu/card_sender.py` — REST 卡片发送
 
 独立于 lark_oapi SDK 的飞书卡片发送器：
 
@@ -459,17 +465,15 @@ platforms:
     enabled: true
     extra:
       port: 26026                    # 每个用户用不同端口（见端口规划表）
-      model: MiniMax-M3
-      provider: minimax-cn
   feishu:
     enabled: true                  # 必须启用：要有一个活着的 adapter 才能回复
     extra:
       connection_mode: send_only   # 只发不连 WebSocket（不抢主 gateway 的连接）
 
 # .env 文件（同一个飞书应用凭据 + api_server key）
-FEISHU_APP_ID=cli_aa87e2dbd3fa5cd8     # 与主 gateway 同一应用（毕方）
+FEISHU_APP_ID=cli_YOUR_APP_ID_HERE     # 与主 gateway 同一应用
 FEISHU_APP_SECRET=...
-API_SERVER_KEY=hermesxiyun-node010-1781671360  # 统一 key，与 patch_feishu_profile 的 api_key 一致
+API_SERVER_KEY=YOUR_API_KEY_HERE  # 统一 key，与 patch_feishu_profile 的 api_key 一致
 GATEWAY_ALLOW_ALL_USERS=true           # 信任主 gateway 鉴权
 ```
 
@@ -498,7 +502,7 @@ GATEWAY_ALLOW_ALL_USERS=true           # 信任主 gateway 鉴权
 所有 owner 改动遵循"薄委托"模式——官方代码中只有 `# [owner]` 标记的 1-3 行。删除整个 `owner/` 目录后：
 
 - `feishu.py` 正常启动，只是不执行路由
-- `api_server.py` 正常启动，只是不处理 `X-Hermes-Reply-Via`
+- `api_server.py` 正常启动，只是不处理 `/v1/feishu/inbound`
 - 不会产生 import 错误或运行时崩溃
 
 ### 5.3 app_id 互斥保护
@@ -521,15 +525,15 @@ if not acquired:
 | 文件 | 改动类型 | 说明 |
 |------|----------|------|
 | `gateway/platforms/feishu.py` | feat | `send_only` 连接模式 + **v2.0 `inject_inbound()`**（重建原生 MessageEvent 注入 pipeline） |
-| `gateway/platforms/api_server.py` | feat | **v2.0 `POST /v1/feishu/inbound` 传输端点**（`_handle_feishu_inbound`，纯通道）；*(v1.x 遗留)* `X-Hermes-Reply-Via` 分支保留 |
+| `gateway/platforms/api_server.py` | feat | **v2.0 `POST /v1/feishu/inbound` 传输端点**（`_handle_feishu_inbound`，纯通道） |
 | `gateway/config.py` | fix | 尊重 `enabled: false`；`connection_mode` 优先级 |
 | `gateway/run.py` | feat | 模块级 `_gateway_runner_ref`（子容器经此取本进程 feishu adapter） |
-| `owner/feishu/profile_routing.py` | feat | 核心路由模块；**v2.0 `_forward_to_profile_container` 改投 `/v1/feishu/inbound`**（body 带 open_id+chat_id+chat_type）+ `_get_inprocess_feishu_adapter()`；*(v1.x 遗留)* `feishu_reply` 保留 |
+| `owner/feishu/profile_routing.py` | feat | 核心路由模块；**v2.0 `_forward_to_profile_container` 改投 `/v1/feishu/inbound`**（body 带 open_id+chat_id+chat_type）+ `_get_inprocess_feishu_adapter()` |
 | `owner/feishu/card_sender.py` | feat | REST API 卡片发送（独立于 SDK），原生回复的 auto-card 也复用它 |
 | `owner/feishu/auto_card.py` | feat | `try_auto_card`（原生 `agent:end` 回复经此产出卡片） |
 | `gateway/runtime_footer.py` | — | 标准 footer `model · context% · cwd`（原生回复自动附加） |
 | `owner/feishu/bot_menu.py` | refactor | 委托 `try_route_bot_menu_command` |
-| `owner/hooks/message_receive.py` | feat | *(v1.x 遗留)* send_only 卡片改投；v2.0 路由消息不再经此 |
+| `owner/hooks/message_receive.py` | feat | message:receive hook 编排；api_server 场景下卡片改投到 feishu adapter |
 | `owner/patch_config.py` | feat | `load_patch_feishu_profile_config()` 加载器（mtime + 1min TTL 缓存） |
 | `owner/config/patch_feishu_profile.yaml` | feat | 配置模板（multi-bot 结构） |
 | `tests/owner/test_feishu_profile_routing.py` | test | 路由解析与加载器测试 |
@@ -589,7 +593,7 @@ export PATH="$HOME/.local/bin:$PATH"
 
 #### Step 2: 端口规划
 
-每个子 profile 的 `api_server.port` 必须唯一，避免端口冲突：
+每个子 profile 的 `api_server.extra.port` 必须唯一，避免端口冲突：
 
 | Profile | Port | 备注 |
 |---------|------|------|
@@ -634,7 +638,7 @@ sed -i "s/port: 26026/port: 26031/" ~/.hermes/profiles/$NEW_PROFILE/config.yaml
 
 **需要修改的项**：
 1. `api_server.extra.port` — 端口顺延（见端口规划表）
-2. `API_SERVER_KEY` — 可统一用 `hermesxiyun-node010-1781671360`，或每个 profile 独立
+2. `API_SERVER_KEY` — 可统一用 `YOUR_API_KEY_HERE`，或每个 profile 独立
 
 **config.yaml 中 deepseek provider 的正确写法**：
 
@@ -705,13 +709,14 @@ feishu:
 
 ```yaml
 platforms:
+  api_server:
+    enabled: true
+    extra:
+      port: 26026                  # 每个 profile 用不同端口（见端口规划表）
   feishu:
     enabled: true                  # 必须启用，否则没有可用于回复的 send_only adapter
     extra:
       connection_mode: send_only   # 只发不连 WebSocket（不抢主 gateway 的连接）
-  api_server:
-    enabled: true
-    port: 26026
 ```
 
 对应的 `~/.hermes/profiles/hermesxiyun/.env`：
@@ -774,7 +779,7 @@ hermes profile create alice --description "Alice 的独立助手实例"
 
 **创建后的步骤**：
 
-1. 编辑 `~/.hermes/profiles/alice/config.yaml`：设 `api_server.port`、`feishu.enabled: true` + `feishu.extra.connection_mode: send_only`、`model`（见 4.4）；在 `.env` 设 `API_SERVER_KEY`、`FEISHU_APP_ID/SECRET`、`GATEWAY_ALLOW_ALL_USERS=true`
+1. 编辑 `~/.hermes/profiles/alice/config.yaml`：设 `api_server.extra.port`、`feishu.enabled: true` + `feishu.extra.connection_mode: send_only`；在 `.env` 设 `API_SERVER_KEY`、`FEISHU_APP_ID/SECRET`、`GATEWAY_ALLOW_ALL_USERS=true`
 2. 在主 gateway 的 `~/.hermes/patch_feishu_profile.yaml` 中添加路由（`bots.<key>` 必须 == 主 gateway 的 `FEISHU_APP_ID`）：
    ```yaml
    user_profile_routes:

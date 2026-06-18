@@ -778,36 +778,21 @@ def compress_context(
     except Exception:
         pass
 
-    # Emit a concise user-facing summary of what was compressed. This is a
-    # platform-agnostic fallback; rich platforms (e.g. Feishu) can later
-    # detect this lifecycle message and render an interactive card.
+    # [owner] emit a concise user-facing summary of what was compressed.
+    # Rich platforms (e.g. Feishu) can detect this lifecycle message and
+    # render an interactive card.  See owner/compression_summary_feedback.py.
     try:
-        from agent.compression_summary_feedback import (
-            summarize_compression_fallback,
-            summarize_compression_feedback,
-        )
+        from owner.compression_summary_feedback import emit_compression_summary
 
-        _summary_for_display = agent.context_compressor.get_last_summary_for_display() or ""
-        if _summary_for_display:
-            _feedback = summarize_compression_feedback(
-                summary_text=_summary_for_display,
-                before_count=_pre_msg_count,
-                after_count=len(compressed),
-                compression_count=agent.context_compressor.compression_count,
-                before_tokens=approx_tokens,
-                after_tokens=_compressed_est,
-            )
-        else:
-            _feedback = summarize_compression_fallback(
-                before_count=_pre_msg_count,
-                after_count=len(compressed),
-                compression_count=agent.context_compressor.compression_count,
-                before_tokens=approx_tokens,
-                after_tokens=_compressed_est,
-            )
-        agent._emit_status(_feedback["text"])
+        emit_compression_summary(
+            agent,
+            before_count=_pre_msg_count,
+            after_count=len(compressed),
+            before_tokens=approx_tokens,
+            after_tokens=_compressed_est,
+        )
     except Exception:
-        logger.debug("Failed to emit compression feedback summary", exc_info=True)
+        logger.debug("Failed to emit compression summary", exc_info=True)
 
     logger.info(
         "context compression done: session=%s messages=%d->%d rough_tokens=~%s awaiting_real_usage=true",

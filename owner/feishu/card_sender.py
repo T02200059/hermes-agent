@@ -56,6 +56,48 @@ def _resolve_receive_target(chat_id: str, metadata: Optional[Dict[str, Any]] = N
     return chat_id, "chat_id"
 
 
+def _inject_profile_tag(node: Any, profile_tag: str) -> None:
+    """Recursively set ``hermes_profile`` on every interactive button's value.
+
+    Feishu nests buttons inside ``action`` / ``column_set`` / ``column`` /
+    ``form`` / ``div`` containers, so the whole card structure is walked. Only
+    dict button values are tagged (button values in this codebase are always
+    dicts); an existing tag is left untouched so the call is idempotent.
+    """
+    if isinstance(node, dict):
+        if node.get("tag") == "button":
+            value = node.get("value")
+            if isinstance(value, dict):
+                value.setdefault("hermes_profile", profile_tag)
+        for child in node.values():
+            _inject_profile_tag(child, profile_tag)
+    elif isinstance(node, list):
+        for item in node:
+            _inject_profile_tag(item, profile_tag)
+
+
+def _maybe_tag_card_profile(adapter: "FeishuAdapter", card: Dict[str, Any]) -> None:
+    """Tag card buttons with this container's profile name when sub-profile.
+
+    Gated on ``send_only`` connection mode — only sub-profile containers run in
+    that mode. The tag is the active profile name, which equals the key under
+    ``profile_endpoints`` in ``patch_feishu_profile.yaml`` (e.g. ``hermesxiyun``).
+    ``default`` / ``custom`` are skipped: they are not routable profile keys, and
+    tagging them would make the main gateway emit a spurious "unknown profile"
+    error card. Fail-open: any error leaves the card untagged (legacy behaviour).
+    """
+    try:
+        if getattr(adapter, "_connection_mode", "") != "send_only":
+            return
+        from hermes_cli.profiles import get_active_profile_name
+
+        profile_tag = get_active_profile_name()
+        if profile_tag and profile_tag not in ("default", "custom"):
+            _inject_profile_tag(card, profile_tag)
+    except Exception:
+        logger.debug("[Feishu] hermes_profile tag injection skipped", exc_info=True)
+
+
 async def send_card_via_rest(
     adapter: "FeishuAdapter",
     chat_id: str,
@@ -75,6 +117,12 @@ async def send_card_via_rest(
         import requests as _requests
     except ImportError:
         return SendResult(success=False, error="requests library not available")
+
+    # [owner] multi-profile routing: tag every button with this sub-profile's
+    # name so the main gateway (which holds the only WebSocket) can route the
+    # click back here. Only sub-profile containers run in send_only mode; the
+    # main gateway leaves cards untagged and resolves clicks locally.
+    _maybe_tag_card_profile(adapter, card)
 
     base_url = "https://open.feishu.cn/open-apis"
 

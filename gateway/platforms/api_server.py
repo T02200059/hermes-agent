@@ -1949,7 +1949,7 @@ class APIServerAdapter(BasePlatformAdapter):
         created = int(time.time())
         
         # [owner] message:receive hook for API Server (see owner/hooks/api_server_hooks.py)
-        effective_user_message = await _owner_apply_message_receive_hooks(self, user_message, session_id=session_id or completion_id, reply_receive_id="", reply_receive_id_type="", user_id="")
+        effective_user_message = await _owner_apply_message_receive_hooks(self, user_message, session_id=session_id or completion_id)
 
         if stream:
             import queue as _q
@@ -3945,13 +3945,6 @@ class APIServerAdapter(BasePlatformAdapter):
         ephemeral_system_prompt = instructions
         loop = asyncio.get_running_loop()
 
-        # [owner] multi-profile routing: X-Hermes-Reply-Via headers tell the
-        # container to send the final response directly back to Feishu instead
-        # of (only) returning it in the run result.
-        reply_via = request.headers.get("X-Hermes-Reply-Via", "").lower().strip()
-        reply_receive_id = request.headers.get("X-Hermes-Reply-Receive-Id", "").strip()
-        reply_receive_id_type = request.headers.get("X-Hermes-Reply-Receive-Id-Type", "open_id").strip()
-        reply_message_id = request.headers.get("X-Hermes-Reply-Message-Id", "").strip() or None
         q: "asyncio.Queue[Optional[Dict]]" = asyncio.Queue()
         created_at = time.time()
         self._run_streams[run_id] = q
@@ -3987,7 +3980,7 @@ class APIServerAdapter(BasePlatformAdapter):
                 self._set_run_status(run_id, "running")
                 
                 # [owner] message:receive hook for API Server (see owner/hooks/api_server_hooks.py)
-                effective_user_message = await _owner_apply_message_receive_hooks(self, user_message, session_id=session_id or run_id, reply_receive_id=reply_receive_id, reply_receive_id_type=reply_receive_id_type, user_id=request.headers.get("X-Hermes-User-Id", "").strip())
+                effective_user_message = await _owner_apply_message_receive_hooks(self, user_message, session_id=session_id or run_id, user_id=request.headers.get("X-Hermes-User-Id", "").strip())
 
                 agent = self._create_agent(
                     ephemeral_system_prompt=ephemeral_system_prompt,
@@ -4105,56 +4098,6 @@ class APIServerAdapter(BasePlatformAdapter):
                         usage=usage,
                         last_event="run.completed",
                     )
-                    if reply_via == "feishu" and reply_receive_id and final_response:
-                        _feishu_reply = _owner_import(
-                            "owner.feishu.profile_routing", "feishu_reply"
-                        )
-                        if _feishu_reply is not None:
-                            # Build the runtime footer (model · context% · cwd)
-                            # exactly like the main gateway flow does in
-                            # gateway/run.py, so routed replies render an
-                            # identical footer. Prefer the model actually used
-                            # this turn (result["model"] == agent.model);
-                            # self._model_name is unreliable (it falls back to
-                            # the profile name when extra["model_name"] is unset).
-                            _real_model = (
-                                result.get("model") if isinstance(result, dict) else None
-                            ) or self._model_name or None
-                            _footer = ""
-                            try:
-                                from gateway.run import _load_gateway_config
-                                from gateway.runtime_footer import build_footer_line
-                                _ctx_len = getattr(
-                                    getattr(agent, "context_compressor", None),
-                                    "context_length", 0,
-                                ) or 0
-                                _ctx_tokens = (
-                                    result.get("last_prompt_tokens")
-                                    if isinstance(result, dict) else 0
-                                ) or 0
-                                if not _ctx_tokens and isinstance(usage, dict):
-                                    _ctx_tokens = usage.get("input_tokens", 0) or 0
-                                _footer = build_footer_line(
-                                    user_config=_load_gateway_config(),
-                                    platform_key="feishu",
-                                    model=_real_model,
-                                    context_tokens=_ctx_tokens,
-                                    context_length=_ctx_len or None,
-                                    cwd=os.environ.get("TERMINAL_CWD")
-                                    or os.environ.get("HERMES_HOME", ""),
-                                )
-                            except Exception as _ferr:
-                                logger.debug("[api_server] footer build failed: %s", _ferr)
-                                _footer = ""
-                            asyncio.ensure_future(
-                                _feishu_reply(
-                                    receive_id=reply_receive_id,
-                                    receive_id_type=reply_receive_id_type,
-                                    text=final_response,
-                                    reply_message_id=reply_message_id,
-                                    footer=_footer or None,
-                                )
-                            )
             except asyncio.CancelledError:
                 self._set_run_status(
                     run_id,
@@ -4475,6 +4418,43 @@ class APIServerAdapter(BasePlatformAdapter):
         )
         return web.json_response({"accepted": True}, status=202)
 
+    async def _handle_feishu_card_action(self, request: "web.Request") -> "web.Response":
+        """POST /v1/feishu/card-actions — [owner] multi-profile card-action transport.
+
+        Thin glue: auth + body parse + adapter lookup, then delegate the replay /
+        re-tag / card extraction to ``owner.feishu.profile_routing``. Returns
+        ``{"card": <json|null>}`` for the main gateway to relay inline.
+        """
+        auth_err = self._check_auth(request)
+        if auth_err:
+            return auth_err
+        body, err = await self._read_json_body(request)
+        if err:
+            return err
+
+        _get_adapter = _owner_import(
+            "owner.feishu.profile_routing", "_get_inprocess_feishu_adapter"
+        )
+        adapter = _get_adapter() if _get_adapter is not None else None
+        if adapter is None or not hasattr(adapter, "_dispatch_card_action"):
+            logger.warning(
+                "[api_server] /v1/feishu/card-actions: no Feishu adapter in this container"
+            )
+            return web.json_response(
+                _openai_error("Feishu adapter unavailable", code="feishu_unavailable"),
+                status=503,
+            )
+
+        _handle = _owner_import("owner.feishu.profile_routing", "handle_card_action_request")
+        try:
+            card = _handle(adapter, body) if _handle is not None else None
+        except Exception:
+            logger.warning(
+                "[api_server] /v1/feishu/card-actions dispatch failed", exc_info=True
+            )
+            return web.json_response({"card": None}, status=200)
+        return web.json_response({"card": card}, status=200)
+
     async def _sweep_orphaned_runs(self) -> None:
         """Periodically clean up run streams that were never consumed."""
         while True:
@@ -4568,6 +4548,9 @@ class APIServerAdapter(BasePlatformAdapter):
             # [owner] multi-profile routing: transport entry for main-gateway-
             # forwarded Feishu messages (does not run the agent loop here).
             self._app.router.add_post("/v1/feishu/inbound", self._handle_feishu_inbound)
+            # [owner] multi-profile routing: card-action transport (see
+            # owner/feishu/profile_routing.py::handle_card_action_request).
+            self._app.router.add_post("/v1/feishu/card-actions", self._handle_feishu_card_action)
             # Store the adapter after native routes are registered. Local Hermes-Relay
             # bootstrap shims use this key as a feature-detection hook; registering
             # native routes first lets those shims no-op instead of shadowing the

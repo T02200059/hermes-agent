@@ -262,3 +262,71 @@ def test_dry_run_real_apply_actually_writes(dry_run_sandbox):
     assert result["success"] is True
     assert len(result["files_modified"]) == 1
     assert "inserted" in target.read_text()
+
+
+# ===== multi-hunk ordering: apply bottom-to-top by RESOLVED position =====
+
+def test_multi_hunk_update_applies_all_hunks(dry_run_sandbox):
+    """Two hunks in one file must both apply, regardless of header order."""
+    target = dry_run_sandbox  # line1\nline2\nline3\nline4\n
+    patch = (
+        f"--- {target}\n"
+        f"+++ {target}\n"
+        "@@ -1,1 +1,2 @@\n"
+        " line1\n"
+        "+after1\n"
+        "@@ -4,1 +5,2 @@\n"
+        " line4\n"
+        "+after4\n"
+    )
+    result = json.loads(unified_diff_patch_tool(patch=patch, dry_run=False, strict=True))
+    assert result["success"] is True, result.get("error")
+    text = target.read_text()
+    assert "after1" in text and "after4" in text
+    # Order preserved: after1 sits right after line1, after4 after line4.
+    assert text.splitlines() == ["line1", "after1", "line2", "line3", "line4", "after4"]
+
+
+def test_overlapping_hunks_rejected(dry_run_sandbox):
+    """Two hunks resolving onto overlapping ranges must fail loudly, not corrupt."""
+    target = dry_run_sandbox
+    # Both hunks claim the line1/line2 region.
+    patch = (
+        f"--- {target}\n"
+        f"+++ {target}\n"
+        "@@ -1,2 +1,2 @@\n"
+        " line1\n"
+        "-line2\n"
+        "+changed2\n"
+        "@@ -1,2 +1,2 @@\n"
+        " line1\n"
+        "-line2\n"
+        "+other2\n"
+    )
+    result = json.loads(unified_diff_patch_tool(patch=patch, dry_run=False, strict=True))
+    assert result["success"] is False
+    assert "overlap" in result["error"]
+    # File must be untouched.
+    assert target.read_text() == "line1\nline2\nline3\nline4\n"
+
+
+# ===== new-file creation uses ALL hunks, not just hunks[0] =====
+
+def test_new_file_with_multiple_hunks_keeps_all(dry_run_sandbox):
+    """A new-file diff with two hunks must concatenate both, not drop the 2nd."""
+    target = dry_run_sandbox.parent / "created.py"
+    assert not target.exists()
+    patch = (
+        "--- /dev/null\n"
+        f"+++ {target}\n"
+        "@@ -0,0 +1,2 @@\n"
+        "+alpha\n"
+        "+beta\n"
+        "@@ -0,0 +3,2 @@\n"
+        "+gamma\n"
+        "+delta\n"
+    )
+    result = json.loads(unified_diff_patch_tool(patch=patch, dry_run=False, strict=True))
+    assert result["success"] is True, result.get("error")
+    assert target.exists()
+    assert target.read_text().splitlines() == ["alpha", "beta", "gamma", "delta"]

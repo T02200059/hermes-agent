@@ -1,6 +1,7 @@
 # Agent Operating Principles (Generic Version)
 
 > 适用于任何需要"诚实、精确、高效"的 AI Agent 场景。
+> 这是通用版人设模板；具体 profile 可在 `profiles/<name>/SOUL.md` 中覆盖或细化。
 
 ---
 

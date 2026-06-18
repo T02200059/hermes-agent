@@ -122,7 +122,11 @@ def _apply_file_patch(
         return True, diff or f"# {'Would delete' if dry_run else 'Deleted'}: {path}", None
 
     if fp.is_new:
-        content = '\n'.join(fp.hunks[0].new_lines) if fp.hunks else ''
+        # Concatenate every hunk's added lines — a new-file diff is normally a
+        # single hunk, but a multi-hunk new file must not silently drop the
+        # 2nd+ hunks (which using ``hunks[0]`` alone would do).
+        new_file_lines = [ln for h in fp.hunks for ln in h.new_lines]
+        content = '\n'.join(new_file_lines)
         if not dry_run:
             write_result = file_ops.write_file(path, content)
             if write_result.error:
@@ -131,7 +135,7 @@ def _apply_file_patch(
         else:
             lsp = None
         diff = f"--- /dev/null\n+++ b/{path}\n"
-        diff += '\n'.join(f"+{ln}" for ln in (fp.hunks[0].new_lines if fp.hunks else []))
+        diff += '\n'.join(f"+{ln}" for ln in new_file_lines)
         return True, diff, lsp
 
     # UPDATE
@@ -148,11 +152,15 @@ def _apply_file_patch(
     if file_lines and file_lines[-1] == '':
         file_lines.pop()
 
-    # Apply from bottom to top so later hunks do not shift earlier ones.
-    sorted_hunks = sorted(fp.hunks, key=lambda h: h.old_start, reverse=True)
-    new_lines = list(file_lines)
-
-    for hi, hunk in enumerate(sorted_hunks):
+    # Pass 1 — resolve every hunk's start index against the ORIGINAL file.
+    # Resolving against the immutable original (rather than a progressively
+    # mutated buffer) lets us derive the apply order from the RESOLVED
+    # positions: auto_fix_start may relocate a hunk far from its declared @@
+    # line, and sorting by the declared old_start (as we used to) would then
+    # splice relocated hunks out of order and corrupt the file.
+    # Each entry: (resolved_idx, old_count, new_lines, original_hunk_index).
+    resolved_hunks: List[Tuple[int, int, List[str], int]] = []
+    for hi, hunk in enumerate(fp.hunks):
         start_idx = hunk.old_start - 1
         if start_idx < 0:
             if hunk.old_count == 0:
@@ -163,17 +171,17 @@ def _apply_file_patch(
                 ), None
 
         end_idx = start_idx + hunk.old_count
-        if end_idx > len(new_lines) and not auto_fix_start:
+        if end_idx > len(file_lines) and not auto_fix_start:
             return False, (
                 f"{path}: hunk {hi + 1} exceeds file bounds "
-                f"(needs lines {start_idx + 1}-{end_idx}, file has {len(new_lines)})"
+                f"(needs lines {start_idx + 1}-{end_idx}, file has {len(file_lines)})"
             ), None
 
         resolved_idx, hint = _resolve_hunk_start(
-            new_lines, hunk.old_lines, start_idx, hunk.old_count, auto_fix_start
+            file_lines, hunk.old_lines, start_idx, hunk.old_count, auto_fix_start
         )
         if resolved_idx is None:
-            declared_actual = new_lines[start_idx:end_idx]
+            declared_actual = file_lines[start_idx:end_idx]
             for offset, (actual, expected) in enumerate(zip(declared_actual, hunk.old_lines)):
                 if actual.rstrip() != expected.rstrip():
                     line_no = start_idx + offset + 1
@@ -188,9 +196,29 @@ def _apply_file_patch(
                 f"Hint: {hint}"
             ), None
 
-        start_idx = resolved_idx
-        end_idx = start_idx + hunk.old_count
-        new_lines = new_lines[:start_idx] + hunk.new_lines + new_lines[end_idx:]
+        resolved_hunks.append((resolved_idx, hunk.old_count, hunk.new_lines, hi))
+
+    # Detect overlapping hunks — possible once auto_fix_start relocates a hunk
+    # onto a region another hunk also claims. Splicing overlapping ranges would
+    # silently corrupt the file, so fail loudly instead. A pure insertion
+    # (old_count == 0) touching the boundary is not an overlap.
+    by_position = sorted(resolved_hunks, key=lambda r: (r[0], r[1]))
+    for (s1, c1, _n1, hi1), (s2, _c2, _n2, hi2) in zip(by_position, by_position[1:]):
+        if c1 > 0 and s1 + c1 > s2:
+            return False, (
+                f"{path}: hunks {hi1 + 1} and {hi2 + 1} overlap after position "
+                f"resolution (lines {s1 + 1}-{s1 + c1} vs starting {s2 + 1}). "
+                "Combine them into one hunk or add disambiguating context."
+            ), None
+
+    # Pass 2 — apply bottom-to-top by RESOLVED start so earlier (higher-line)
+    # hunks do not shift the indices of later (lower-line) ones.
+    new_lines = list(file_lines)
+    for start_idx, old_count, hunk_new_lines, _hi in sorted(
+        resolved_hunks, key=lambda r: r[0], reverse=True
+    ):
+        end_idx = start_idx + old_count
+        new_lines = new_lines[:start_idx] + hunk_new_lines + new_lines[end_idx:]
 
     new_content_lf = '\n'.join(new_lines)
     if has_trailing_nl:

@@ -3,16 +3,25 @@
 # 将各配置文件复制到 ~/projects/settings/mac/ 对应子目录
 #
 # 用法:
-#   backup-configs.sh              # 正常模式，显示所有日志
+#   backup-configs.sh                   # 正常模式，跳过 .env 等秘密文件
 #   backup-configs.sh --no-success-log  # 静默模式，只输出错误日志
+#   backup-configs.sh --include-secrets # 同时备份 .env 等秘密文件（opt-in）
 
 set -e
 
 # 参数解析
 NO_SUCCESS_LOG=false
-if [[ "$1" == "--no-success-log" ]]; then
-    NO_SUCCESS_LOG=true
-fi
+INCLUDE_SECRETS=false
+for arg in "$@"; do
+    case "$arg" in
+        --no-success-log)
+            NO_SUCCESS_LOG=true
+            ;;
+        --include-secrets)
+            INCLUDE_SECRETS=true
+            ;;
+    esac
+done
 
 # 目标根目录
 SETTINGS_DIR="$HOME/projects/settings/mac"
@@ -41,16 +50,24 @@ log_done() {
 }
 
 log_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
+    echo -e "${RED}[ERROR]${NC} $1" >&2
 }
 
 # 备份函数：复制文件到目标目录
+# 默认跳过 .env 秘密文件，除非显式传入 --include-secrets
 backup_file() {
     local src="$1"
     local dest_dir="$2"
-    
+
+    if [[ "$INCLUDE_SECRETS" == "false" && "$(basename "$src")" == ".env" ]]; then
+        log_info "跳过 (秘密文件，使用 --include-secrets 可备份): $src"
+        BACKUP_SKIP=$((BACKUP_SKIP + 1))
+        return
+    fi
+
     if [[ -f "$src" ]]; then
         mkdir -p "$dest_dir"
+        chmod 700 "$dest_dir"
         if cp -X "$src" "$dest_dir/"; then
             log_done "已备份: $src → $dest_dir/"
             BACKUP_SUCCESS=$((BACKUP_SUCCESS + 1))
@@ -64,14 +81,17 @@ backup_file() {
     fi
 }
 
-# 检查目标目录，不存在则创建
+# 检查目标目录，不存在则创建，并限制访问权限（0700）
 if [[ ! -d "$SETTINGS_DIR" ]]; then
     if ! mkdir -p "$SETTINGS_DIR" 2>/dev/null; then
         log_error "目标目录不存在且无法创建: $SETTINGS_DIR"
         log_info "请检查 rclone 挂载状态或磁盘空间"
         exit 1
     fi
+    chmod 700 "$SETTINGS_DIR"
     log_info "已创建目标目录: $SETTINGS_DIR"
+else
+    chmod 700 "$SETTINGS_DIR"
 fi
 
 if [[ ! -w "$SETTINGS_DIR" ]]; then
@@ -117,6 +137,7 @@ backup_file "$HOME/.openviking/ovcli.conf" "$SETTINGS_DIR/openviking"
 # ========================================
 log_info "备份 profiled 脚本..."
 mkdir -p "$SETTINGS_DIR/profiled"
+chmod 700 "$SETTINGS_DIR/profiled"
 if ls /etc/profile.d/*.sh 1>/dev/null 2>&1; then
     if sudo cp /etc/profile.d/*.sh "$SETTINGS_DIR/profiled/" 2>/dev/null; then
         # 恢复用户权限

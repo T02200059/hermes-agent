@@ -1887,27 +1887,9 @@ class FeishuAdapter(BasePlatformAdapter):
         metadata: Optional[Dict[str, Any]] = None,
     ) -> Optional[SendResult]:
         """Send compression feedback as a dedicated Feishu card if content matches."""
-        if not content:
-            return None
-        # Match both Chinese (current default) and English fallback strings so
-        # a future locale change does not silently break the card path.
-        if not (
-            content.startswith("🗜️ 上下文已压缩")
-            or content.startswith("🗜️ Context compressed")
-        ):
-            return None
-        try:
-            _build_card = _owner_import(
-                "owner.feishu.compression_summary_card", "build_compression_summary_card"
-            )
-            return await self.send_card(
-                chat_id=chat_id,
-                card=_build_card(content),
-                metadata=metadata,
-            )
-        except Exception as exc:
-            logger.debug("[Feishu] compression summary card failed: %s", exc)
-            return None
+        from owner.feishu.compression_summary_card import try_send_compression_summary
+
+        return await try_send_compression_summary(self, chat_id, content, metadata)
 
     async def send(
         self,
@@ -2201,6 +2183,28 @@ class FeishuAdapter(BasePlatformAdapter):
         except Exception as exc:
             logger.warning("[Feishu] send_update_prompt failed: %s", exc)
             return SendResult(success=False, error=str(exc))
+
+    # [owner] resume: send interactive /resume list card with number buttons (see owner/feishu/resume_card.py)
+    async def send_resume_card(
+        self,
+        chat_id: str,
+        header_text: str,
+        sessions: List[Dict[str, Any]],
+        session_key: str,
+        source_dict: Optional[Dict[str, Any]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> SendResult:
+        """Send /resume session list as an interactive card with number buttons."""
+        from owner.feishu.resume_card import send_resume_card as _owner_send
+        return await _owner_send(
+            adapter=self,
+            chat_id=chat_id,
+            header_text=header_text,
+            sessions=sessions,
+            session_key=session_key,
+            source_dict=source_dict,
+            metadata=metadata,
+        )
 
     async def send_voice(
         self,
@@ -2705,13 +2709,11 @@ class FeishuAdapter(BasePlatformAdapter):
         self._submit_on_loop(loop, self._handle_reaction_event(event_type, data))
 
     def _on_card_action_trigger(self, data: Any) -> Any:
-        """Handle card-action callback from the Feishu SDK (synchronous).
+        """Handle a card-action callback from the Feishu SDK (synchronous).
 
-        For approval actions: parses the event once, returns the resolved card
-        inline (the only reliable way to sync all clients), and schedules a
-        lightweight async method to actually unblock the agent.
-
-        For other card actions: delegates to ``_handle_card_action_event``.
+        Thin entry point: validates the adapter loop, parses the event once, then
+        delegates to the shared ``_dispatch_card_action`` (also reused by the
+        sub-profile's ``/v1/feishu/card-actions`` HTTP handler).
         """
         loop = self._loop
         if not self._loop_accepts_callbacks(loop):
@@ -2721,18 +2723,46 @@ class FeishuAdapter(BasePlatformAdapter):
         event = getattr(data, "event", None)
         action = getattr(event, "action", None)
         action_value = getattr(action, "value", {}) or {}
+        return self._dispatch_card_action(
+            event, action_value, loop, data=data, allow_profile_routing=True
+        )
+
+    def _dispatch_card_action(
+        self,
+        event: Any,
+        action_value: Dict[str, Any],
+        loop: Any,
+        *,
+        data: Any = None,
+        allow_profile_routing: bool = True,
+    ) -> Any:
+        """Dispatch a parsed card action to the right per-type handler.
+
+        Shared by two callers:
+          * the WebSocket SDK callback ``_on_card_action_trigger``
+            (``allow_profile_routing=True``, ``data`` = raw lark event);
+          * the sub-profile container's ``/v1/feishu/card-actions`` HTTP handler
+            (``allow_profile_routing=False`` — the click was already routed here
+            and the ``hermes_profile`` tag stripped).
+
+        For approval/clarify/picker/memory/resume/diff/recall it returns a
+        ``P2CardActionTriggerResponse`` whose ``card`` inline-updates the message.
+        The HTTP caller serialises ``response.card.data`` back to the main
+        gateway, which relays that update over the WebSocket it owns.
+        """
         hermes_action = action_value.get("hermes_action") if isinstance(action_value, dict) else None
         update_prompt_action = (
             action_value.get("hermes_update_prompt_action")
             if isinstance(action_value, dict) else None
         )
 
-        # [owner] multi-profile routing: card actions may belong to a routed profile container
-        _try_card_route = _owner_import("owner.feishu.profile_routing", "try_route_card_action")
-        if _try_card_route is not None:
-            _route_response = _try_card_route(event, action_value)
-            if _route_response is not None:
-                return _route_response
+        # [owner] multi-profile routing: forward to the sub-profile that sent the card.
+        if allow_profile_routing:
+            _try_card_route = _owner_import("owner.feishu.profile_routing", "try_route_card_action")
+            if _try_card_route is not None:
+                _route_response = _try_card_route(event, action_value)
+                if _route_response is not None:
+                    return _route_response
 
         # [owner] model picker: dispatch picker card callbacks (see owner/feishu/model_picker.py)
         model_picker = action_value.get("hermes_model_picker") if isinstance(action_value, dict) else None
@@ -2742,6 +2772,15 @@ class FeishuAdapter(BasePlatformAdapter):
         if hermes_action and hermes_action.startswith("memory_"):
             # [owner] memory_propose: resolve memory proposal buttons (see owner/feishu/memory_proposal.py)
             return self._handle_memory_card_action(event=event, action_value=action_value, loop=loop)
+        if hermes_action == "resume_select":
+            # [owner] resume: handle resume selection button click (see owner/feishu/resume_card.py)
+            from owner.feishu.resume_card import handle_resume_card_action
+            return handle_resume_card_action(
+                adapter=self,
+                event=event,
+                action_value=action_value,
+                loop=loop,
+            )
         if hermes_action:
             return self._handle_approval_card_action(event=event, action_value=action_value, loop=loop)
         if update_prompt_action:
@@ -2769,7 +2808,10 @@ class FeishuAdapter(BasePlatformAdapter):
             from owner.diff_card.feishu import handle_feishu_diff_action
             return handle_feishu_diff_action(self, event, action_value)
 
-        self._submit_on_loop(loop, self._handle_card_action_event(data))
+        # Generic button → synthetic COMMAND. Requires a ``data`` carrier; the
+        # HTTP path passes ``SimpleNamespace(event=event)``.
+        if data is not None:
+            self._submit_on_loop(loop, self._handle_card_action_event(data))
         if P2CardActionTriggerResponse is None:
             return None
         return P2CardActionTriggerResponse()

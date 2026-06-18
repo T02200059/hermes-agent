@@ -582,6 +582,7 @@ gateway:
     list_footer:           "\n用法：`/resume <会话名称>`"
     list_footer_numbered:  "\n用法：`/resume <会话名称>` 或 `/resume <编号>`（例如，`/resume 1` 表示最近的会话）"
     list_failed:           "无法列出会话：{error}"
+    card_title:            "恢复最近会话"
     out_of_range:          "恢复索引 {index} 超出范围。\n请使用不带参数的 `/resume` 查看可用会话。"
     not_found:             "未找到匹配 '**{name}**' 的会话。\n使用不带参数的 `/resume` 查看可用会话。"
     already_on:            "📌 已在会话 **{name}** 上。"

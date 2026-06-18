@@ -10,10 +10,19 @@ structured summary sections.
 
 from __future__ import annotations
 
+import logging
 import re
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional
+from weakref import WeakKeyDictionary
 
-from agent.context_compressor import ContextCompressor
+from agent.context_compressor import (
+    SUMMARY_PREFIX,
+    LEGACY_SUMMARY_PREFIX,
+    _HISTORICAL_SUMMARY_PREFIXES,
+    _SUMMARY_END_MARKER,
+)
+
+logger = logging.getLogger(__name__)
 
 
 _SECTION_RE = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)
@@ -110,9 +119,26 @@ def _first_lines(text: Optional[str], max_lines: int = 2, max_chars: int = 240) 
     return joined
 
 
+def _strip_summary_prefix(summary: str) -> str:
+    """Return summary body without the current, legacy, or any historical
+    handoff prefix, plus the trailing end marker.
+
+    This is a local copy of the logic in ``ContextCompressor`` so the owner
+    module does not depend on upstream private method names.
+    """
+    text = (summary or "").strip()
+    for prefix in (SUMMARY_PREFIX, LEGACY_SUMMARY_PREFIX, *_HISTORICAL_SUMMARY_PREFIXES):
+        if text.startswith(prefix):
+            text = text[len(prefix):].lstrip()
+            break
+    if text.endswith(_SUMMARY_END_MARKER):
+        text = text[: -len(_SUMMARY_END_MARKER)].rstrip()
+    return text
+
+
 def _parse_summary_sections(summary_text: str) -> Dict[str, str]:
     """Split a structured handoff summary into section title → content."""
-    text = ContextCompressor._strip_summary_prefix(summary_text)
+    text = _strip_summary_prefix(summary_text)
     sections: Dict[str, str] = {}
     matches = list(_SECTION_RE.finditer(text))
     for i, match in enumerate(matches):
@@ -152,6 +178,13 @@ def summarize_compression_feedback(
     sections = _parse_summary_sections(summary_text)
 
     task = _first_line(sections.get("task"), max_chars=220)
+    # Strip the literal "User asked:" wrapper and surrounding quotes that the
+    # compressor adds to the task snapshot; users should see their ask, not the
+    # machine prompt.
+    if task.startswith("User asked:"):
+        task = task[len("User asked:"):].strip()
+    task = task.strip("'\"")
+
     goal = _first_line(sections.get("goal"), max_chars=220)
     completed = sections.get("completed actions", "")
     active = sections.get("active state", "")
@@ -169,21 +202,23 @@ def summarize_compression_feedback(
     state_parts: List[str] = []
     active_line = _first_lines(active, max_lines=3, max_chars=220)
     if active_line:
-        state_parts.append(active_line)
+        # Label the active-state line so it matches the other rows instead of
+        # floating as a bare, unlabelled line.
+        state_parts.append(f"**状态**：{active_line}")
     in_progress_line = _first_line(in_progress, max_chars=120)
     if in_progress_line:
-        state_parts.append(f"进行中：{in_progress_line}")
+        state_parts.append(f"**进行中**：{in_progress_line}")
     blocked_line = _first_line(blocked, max_chars=120)
     if blocked_line:
-        state_parts.append(f"阻塞：{blocked_line}")
+        state_parts.append(f"**阻塞**：{blocked_line}")
 
     next_parts: List[str] = []
     pending_line = _first_line(pending, max_chars=120)
     if pending_line:
-        next_parts.append(f"待处理：{pending_line}")
+        next_parts.append(f"**待处理**：{pending_line}")
     remaining_line = _first_line(remaining, max_chars=120)
     if remaining_line:
-        next_parts.append(f"剩余工作：{remaining_line}")
+        next_parts.append(f"**剩余工作**：{remaining_line}")
 
     if before_count > 0 and after_count < before_count:
         saved_pct = int((before_count - after_count) / before_count * 100)
@@ -203,15 +238,18 @@ def summarize_compression_feedback(
 
     body_lines: List[str] = [headline]
     if active_task:
-        body_lines.append(f"任务：{active_task}")
+        body_lines.append(f"**任务**：{active_task}")
     if completed_bullets:
-        body_lines.append("进度：\n" + "\n".join(f"• {b}" for b in completed_bullets))
+        body_lines.append("**进度**：\n" + "\n".join(f"• {b}" for b in completed_bullets))
     if state_parts:
-        body_lines.append(" · ".join(state_parts))
+        # One row per line. Joining with a newline (not an inline separator)
+        # keeps the Feishu card builder dumb — it never has to split a line and
+        # so can never mangle content that legitimately contains the separator.
+        body_lines.append("\n".join(state_parts))
     if file_bullets:
-        body_lines.append("文件：" + ", ".join(file_bullets))
+        body_lines.append("**文件**：" + ", ".join(file_bullets))
     if next_parts:
-        body_lines.append(" · ".join(next_parts))
+        body_lines.append("\n".join(next_parts))
 
     return {
         "headline": headline,
@@ -263,7 +301,82 @@ def summarize_compression_fallback(
     }
 
 
+# External state for the last display summary per compressor instance.
+# We key by the compressor object itself in a WeakKeyDictionary so entries are
+# dropped automatically when the compressor is garbage collected. This avoids
+# a slow memory leak in long-running gateway processes where each session may
+# create a fresh AIAgent/ContextCompressor pair, and it keeps the upstream
+# ContextCompressor lifecycle untouched.
+_last_display_summary: WeakKeyDictionary[Any, str] = WeakKeyDictionary()
+
+
+def set_last_summary(compressor: Any, summary: str) -> None:
+    """Store the raw handoff summary for a compressor instance."""
+    _last_display_summary[compressor] = summary
+
+
+def get_last_summary(compressor: Any) -> Optional[str]:
+    """Return the raw handoff summary stored for a compressor instance."""
+    return _last_display_summary.get(compressor)
+
+
+def clear_last_summary(compressor: Any) -> None:
+    """Drop stored summary for a compressor instance.
+
+    Currently used as defense-in-depth; callers may invoke this when a
+    compressor/session is explicitly destroyed to release the stored summary
+    immediately rather than waiting for garbage collection.
+    """
+    _last_display_summary.pop(compressor, None)
+
+
+def emit_compression_summary(
+    agent,
+    before_count: int,
+    after_count: int,
+    before_tokens: Optional[int] = None,
+    after_tokens: Optional[int] = None,
+) -> None:
+    """Emit a concise user-facing summary after context compression.
+
+    This is a platform-agnostic lifecycle status; rich platforms (e.g. Feishu)
+    can detect the emitted text and render an interactive card.
+    """
+    compressor = getattr(agent, "context_compressor", None)
+    summary_for_display = get_last_summary(compressor) or "" if compressor else ""
+
+    if summary_for_display:
+        feedback = summarize_compression_feedback(
+            summary_text=summary_for_display,
+            before_count=before_count,
+            after_count=after_count,
+            compression_count=getattr(compressor, "compression_count", 1) if compressor else 1,
+            before_tokens=before_tokens,
+            after_tokens=after_tokens,
+        )
+    else:
+        feedback = summarize_compression_fallback(
+            before_count=before_count,
+            after_count=after_count,
+            compression_count=getattr(compressor, "compression_count", 1) if compressor else 1,
+            before_tokens=before_tokens,
+            after_tokens=after_tokens,
+        )
+
+    emit = getattr(agent, "_emit_status", None)
+    if emit is None:
+        return
+    try:
+        emit(feedback["text"])
+    except Exception:
+        logger.debug("Failed to emit compression feedback summary", exc_info=True)
+
+
 __all__ = [
     "summarize_compression_feedback",
     "summarize_compression_fallback",
+    "set_last_summary",
+    "get_last_summary",
+    "clear_last_summary",
+    "emit_compression_summary",
 ]

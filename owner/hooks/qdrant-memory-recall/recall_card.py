@@ -242,20 +242,42 @@ def handle_recall_card_action(
     else:
         return _empty_card_response(lark_api)
 
-    if lark_api.P2CardActionTriggerResponse is None:
+    response_cls, callback_cls = _lark_card_response_classes()
+    if response_cls is None:
         return None
-    resp = lark_api.P2CardActionTriggerResponse()
-    if lark_api.CallBackCard is not None and card:
-        cb = lark_api.CallBackCard()
+    resp = response_cls()
+    if callback_cls is not None and card:
+        cb = callback_cls()
         cb.type = "raw"
         cb.data = card
         resp.card = cb
     return resp
 
 
+def _lark_card_response_classes() -> tuple:
+    """Return ``(P2CardActionTriggerResponse, CallBackCard)`` or ``(None, None)``.
+
+    These classes live in ``lark_oapi.event.callback.model.p2_card_action_trigger``
+    and are NOT exported on the top-level ``lark_oapi`` module, so importing from
+    the submodule (as every other card handler does) is the only correct access —
+    ``lark_oapi.P2CardActionTriggerResponse`` raises ``AttributeError`` on
+    lark-oapi 1.5.x.
+    """
+    try:
+        from lark_oapi.event.callback.model.p2_card_action_trigger import (
+            CallBackCard,
+            P2CardActionTriggerResponse,
+        )
+
+        return P2CardActionTriggerResponse, CallBackCard
+    except ImportError:
+        return None, None
+
+
 def _empty_card_response(lark_api: Any) -> Any:
     """Return an empty (no-op) P2CardActionTriggerResponse."""
-    if lark_api.P2CardActionTriggerResponse is None:
+    response_cls, _ = _lark_card_response_classes()
+    if response_cls is None:
         return None
-    return lark_api.P2CardActionTriggerResponse()
+    return response_cls()
 

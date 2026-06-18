@@ -3091,6 +3091,27 @@ class GatewaySlashCommandsMixin:
                         return t("gateway.resume.matrix_no_named_sessions")
                     return t("gateway.resume.no_named_sessions")
                 lines = [t("gateway.resume.list_header")]
+
+                # [owner] feishu: send interactive card with number buttons (see owner/feishu/resume_card.py)
+                if source.platform == Platform.FEISHU:
+                    adapter = self.adapters.get(Platform.FEISHU)
+                    if adapter is not None and hasattr(adapter, "send_resume_card"):
+                        try:
+                            from owner.feishu.resume_card import try_send_resume_card_list
+                            return await try_send_resume_card_list(
+                                adapter,
+                                source=source,
+                                event=event,
+                                titled_sessions=titled,
+                                session_key=self._session_key_for_source(source),
+                                header_text=t("gateway.resume.list_header"),
+                            )
+                        except Exception as card_exc:
+                            logger.warning(
+                                "Feishu /resume card send failed, falling back to plain text: %s",
+                                card_exc,
+                            )
+                            # Fall through to plain-text rendering below.
                 for idx, s in enumerate(titled[:10], start=1):
                     title = s["title"]
                     if source.platform == Platform.MATRIX and allow_all:

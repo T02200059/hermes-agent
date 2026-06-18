@@ -658,17 +658,6 @@ class ContextCompressor(ContextEngine):
         owning session ends.
         """
         self._previous_summary = None
-        self._last_summary_for_display = None
-
-    def get_last_summary_for_display(self) -> Optional[str]:
-        """Return the raw handoff summary of the last successful compression.
-
-        This is the same text inserted into the compressed message list,
-        including the reference-only prefix and end marker. Callers that
-        want a shorter display version should parse it via
-        agent.compression_summary_feedback.
-        """
-        return self._last_summary_for_display
 
     def update_model(
         self,
@@ -877,9 +866,6 @@ class ContextCompressor(ContextEngine):
 
         # Stores the previous compaction summary for iterative updates
         self._previous_summary: Optional[str] = None
-        # Raw handoff summary (with prefix/marker) from the most recent
-        # successful compression, exposed for user-facing feedback cards.
-        self._last_summary_for_display: Optional[str] = None
         # Anti-thrashing: track whether last compression was effective
         self._last_compression_savings_pct: float = 100.0
         self._ineffective_compression_count: int = 0
@@ -2573,9 +2559,14 @@ This compaction should PRIORITISE preserving all information related to the focu
                 reason=self._last_summary_error,
             )
 
-        # Preserve the raw summary (before merge-into-tail mutation) so
+        # [owner] preserve the raw summary (before merge-into-tail mutation) so
         # user-facing feedback can parse its structured sections.
-        self._last_summary_for_display = summary
+        try:
+            from owner.compression_summary_feedback import set_last_summary
+            set_last_summary(self, summary)
+        except Exception:
+            # [owner] debug only; failure here must never break compression
+            logger.debug("Failed to store compression summary externally", exc_info=True)
 
         _merge_summary_into_tail = False
         last_head_role = messages[compress_start - 1].get("role", "user") if compress_start > 0 else "user"

@@ -1,10 +1,10 @@
-"""Tests for agent.compression_summary_feedback."""
+"""Tests for owner.compression_summary_feedback."""
 
 from __future__ import annotations
 
 import pytest
 
-from agent.compression_summary_feedback import (
+from owner.compression_summary_feedback import (
     summarize_compression_fallback,
     summarize_compression_feedback,
 )
@@ -76,14 +76,31 @@ def test_summarize_compression_feedback_basic():
     assert "32 → 8" in result["headline"]
     assert "缩短 75%" in result["text"]
     assert "~15,000 → ~5,000 tokens" in result["text"]
-    assert "任务：" in result["text"]
+    assert "**任务**：" in result["text"]
     assert "refactor the auth module" in result["text"]
-    assert "进度：" in result["text"]
+    assert "**进度**：" in result["text"]
     assert "config.py" in result["text"]
     assert "47/50 passing" in result["text"]
+    # The active-state line is now labelled instead of floating bare.
+    assert "**状态**：" in result["text"]
     assert result["task"]
     assert len(result["completed"]) == 3
     assert len(result["files"]) == 4
+
+
+def test_summarize_compression_feedback_strips_user_asked_prefix():
+    summary = f"""{SUMMARY_PREFIX}
+## Historical Task Snapshot
+User asked: 'refactor the auth module to use JWT instead of sessions'
+
+## Completed Actions
+1. READ config.py — reviewed current auth logic
+"""
+    result = summarize_compression_feedback(summary, 10, 5)
+    assert "User asked:" not in result["task"]
+    assert not result["task"].startswith("'")
+    assert not result["task"].startswith('"')
+    assert result["task"] == "refactor the auth module to use JWT instead of sessions"
 
 
 def test_summarize_compression_feedback_uses_goal_when_no_task():
@@ -119,9 +136,24 @@ None.
 None.
 """
     result = summarize_compression_feedback(summary, 10, 5)
-    assert "进度：" not in result["text"]
-    assert "文件：" not in result["text"]
-    assert "阻塞：" not in result["text"]
+    assert "**进度**：" not in result["text"]
+    assert "**文件**：" not in result["text"]
+    assert "**阻塞**：" not in result["text"]
+
+
+def test_summarize_compression_feedback_separator_in_content_not_split():
+    """A literal ' · ' inside the user's task must survive into the text as-is
+    (regression guard for the card builder no longer splitting on ' · ')."""
+    summary = f"""{SUMMARY_PREFIX}
+## Historical Task Snapshot
+User asked: 'migrate the a · b module to v2'
+
+## Completed Actions
+1. READ a.py — reviewed module [tool: read_file]
+"""
+    result = summarize_compression_feedback(summary, 10, 5)
+    assert "a · b module" in result["text"]
+    assert "a · b module" in result["task"]
 
 
 def test_summarize_compression_feedback_truncates_long_items():

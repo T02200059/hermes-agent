@@ -21,6 +21,17 @@ _UNIFIED_DIFF_PATCH_DESCRIPTION = (
     "stripped) or simply `relative/path`. Absolute paths may be written directly as "
     "`/absolute/path`.\n\n"
 
+    "USING read_file OUTPUT: read_file prints each line as `N|CONTENT` (e.g. "
+    "`34|    return x`). The number `N` before the `|` is the 1-based line "
+    "number — use it directly as the hunk start (`@@ -34 @@`). The `N|` gutter "
+    "is NOT part of the file: strip it off and copy only the text after `|` into "
+    "context / `-` / `+` lines. Pasting `34|` into the hunk body is the #1 cause "
+    "of context-mismatch failures.\n"
+    "Note: the `@@` line number is only a hint — `auto_fix_start` relocates the "
+    "hunk by matching its context lines, so a slightly-off number still applies "
+    "as long as the context is unique. Getting the CONTEXT LINES right matters "
+    "far more than getting the number exact.\n\n"
+
     "TIPS FOR HAND-WRITTEN DIFFS:\n"
     "- Always set `strict: true` when writing a diff by hand. It rejects formatting "
     "mistakes (blank lines, bare lines, wrong prefixes) with the exact body line number.\n"

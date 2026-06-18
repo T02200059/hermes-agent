@@ -75,6 +75,17 @@ def _get_current_attribution(agent) -> Optional[str]:
     except ImportError:
         return None
 
+
+def _get_api_error_hint(status_code: Optional[int], reason: Optional[str] = None) -> Optional[str]:
+    """[owner] Chinese hint for terminal API errors (see owner/api_error_hints.py)."""
+    try:
+        from owner.api_error_hints import get_api_error_hint
+
+        return get_api_error_hint(status_code, reason)
+    except Exception:
+        return None
+
+
 # Stable prefix of the local interrupt status string emitted when a turn is
 # cancelled while waiting on the provider. Surfaces (ACP, TUI) match on this
 # to treat it as cancellation metadata rather than assistant prose.
@@ -1397,13 +1408,18 @@ def run_conversation(
                         # Terminal — flush buffered retry trace so user sees what happened.
                         agent._flush_status_buffer()
                         agent._emit_status(f"❌ Max retries ({max_retries}) exceeded for invalid responses. Giving up.")
+                        # [owner] append Chinese hint for terminal API errors
+                        _zh_hint = _get_api_error_hint(_resp_error_code)
+                        if _zh_hint:
+                            agent._emit_status(f"💡 {_zh_hint}")
                         logger.error(f"{agent.log_prefix}Invalid API response after {max_retries} retries.")
                         agent._persist_session(messages, conversation_history)
                         return {
                             "messages": messages,
                             "completed": False,
                             "api_calls": api_call_count,
-                            "error": f"Invalid API response after {max_retries} retries: {_failure_hint}",
+                            "error": f"Invalid API response after {max_retries} retries: {_failure_hint}"
+                            + (f"\n\n💡 {_zh_hint}" if _zh_hint else ""),
                             "failed": True  # Mark as failure for filtering
                         }
                     
@@ -3330,6 +3346,13 @@ def run_conversation(
                             f"❌ Non-retryable error (HTTP {status_code}): "
                             f"{_nonretryable_summary}"
                         )
+                    # [owner] append Chinese hint for terminal API errors
+                    _zh_hint = _get_api_error_hint(
+                        status_code,
+                        classified.reason.value if classified else None,
+                    )
+                    if _zh_hint:
+                        agent._emit_status(f"💡 {_zh_hint}")
                     agent._vprint(f"{agent.log_prefix}❌ Non-retryable client error (HTTP {status_code}). Aborting.", force=True)
                     agent._vprint(f"{agent.log_prefix}   🔌 Provider: {_provider}  Model: {_model}", force=True)
                     agent._vprint(f"{agent.log_prefix}   🌐 Endpoint: {_base}", force=True)
@@ -3431,7 +3454,7 @@ def run_conversation(
                         "api_calls": api_call_count,
                         "completed": False,
                         "failed": True,
-                        "error": _nonretryable_summary,
+                        "error": f"{api_error}\n\n💡 {_zh_hint}" if _zh_hint else str(api_error),
                     }
 
                 if retry_count >= max_retries:
@@ -3478,6 +3501,13 @@ def run_conversation(
                         agent._emit_status(f"❌ Rate limited after {max_retries} retries — {_final_summary}")
                     else:
                         agent._emit_status(f"❌ API failed after {max_retries} retries — {_final_summary}")
+                    # [owner] append Chinese hint for terminal API errors
+                    _zh_hint = _get_api_error_hint(
+                        getattr(api_error, "status_code", None),
+                        classified.reason.value if classified else None,
+                    )
+                    if _zh_hint:
+                        agent._emit_status(f"💡 {_zh_hint}")
                     agent._vprint(f"{agent.log_prefix}   💀 Final error: {_final_summary}", force=True)
 
                     # Detect SSE stream-drop pattern (e.g. "Network
@@ -3534,13 +3564,16 @@ def run_conversation(
                             "execute_code with Python's open() for large "
                             "files, or to write in smaller sections."
                         )
+                    # [owner] append Chinese hint to final response / error
+                    if _zh_hint:
+                        _final_response += f"\n\n💡 {_zh_hint}"
                     return {
                         "final_response": _final_response,
                         "messages": messages,
                         "api_calls": api_call_count,
                         "completed": False,
                         "failed": True,
-                        "error": _final_summary,
+                        "error": f"{_final_summary}\n\n💡 {_zh_hint}" if _zh_hint else _final_summary,
                         # Surface the classified reason so callers (notably the
                         # kanban worker path in cli.py) can distinguish a
                         # transient throttle from a real failure and choose a

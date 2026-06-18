@@ -9438,6 +9438,28 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                                             f"{_new_tokens:,}",
                                         )
 
+                                    # [owner] hygiene compression notice: thin
+                                    # delegate to owner/gateway/hygiene_compression_notice.py
+                                    _hyg_adapter = self.adapters.get(source.platform)
+                                    try:
+                                        from owner.gateway.hygiene_compression_notice import (
+                                            send_hygiene_compression_notice,
+                                        )
+                                        await send_hygiene_compression_notice(
+                                            _hyg_adapter,
+                                            source,
+                                            msg_count=_msg_count,
+                                            new_count=_new_count,
+                                            approx_tokens=_approx_tokens,
+                                            new_tokens=_new_tokens,
+                                            hard_msg_limit=_HARD_MSG_LIMIT,
+                                            hyg_threshold_pct=_hyg_threshold_pct,
+                                            hyg_context_length=_hyg_context_length,
+                                            metadata=_hyg_meta,
+                                        )
+                                    except Exception:
+                                        pass
+
                                     # If summary generation failed, the
                                     # compressor aborts entirely and returns
                                     # messages unchanged — nothing is dropped.
@@ -14970,6 +14992,12 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             else {"thread_id": _progress_thread_id}
         ) if _progress_thread_id else None
         _progress_metadata = _non_conversational_metadata(_progress_metadata, platform=source.platform)
+        # Mark progress bubbles so downstream consumers (e.g. Feishu auto-card)
+        # know these messages are editable progress and should not be transformed.
+        if _progress_metadata is not None:
+            _progress_metadata["__hermes_progress_bubble"] = True
+        else:
+            _progress_metadata = {"__hermes_progress_bubble": True}
         _progress_reply_to = (
             event_message_id
             if source.platform in (Platform.FEISHU, Platform.MATTERMOST) and source.thread_id and event_message_id
@@ -15164,6 +15192,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                         progress_lines = []
                         last_progress_msg[0] = None
                         repeat_count[0] = 0
+                        last_was_terminal_block[0] = False
                         continue
                     else:
                         msg = raw

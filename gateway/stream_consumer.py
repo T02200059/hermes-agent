@@ -599,13 +599,14 @@ class GatewayStreamConsumer:
                         # finalize=True so the adapter applies platform-specific
                         # rich-text markup (e.g. Telegram MarkdownV2). This
                         # sealed chunk will never be edited again — _message_id
-                        # is reset to None right below — so it must receive its
-                        # final formatting pass now, or early split messages
+                        # moves to the overflow chunk below — so it must receive
+                        # its final formatting pass now, or early split messages
                         # render raw markdown while only the last chunk renders.
                         # is_turn_final=False: this is the first of several split
                         # messages, NOT the turn-final answer, so the fresh-final
                         # path (opt-in fresh_final_after_seconds) must not mark
                         # the turn delivered on it (#29346 semantics).
+                        # [owner] overflow chunk splitting: see owner/docs/24h-review-fixes.md
                         ok = await self._send_or_edit(
                             chunk, finalize=True, is_turn_final=False,
                         )
@@ -616,9 +617,27 @@ class GatewayStreamConsumer:
                             # fallback final-send path can deliver the remaining
                             # continuation without dropping content.
                             break
-                        self._accumulated = self._accumulated[split_at:].lstrip("\n")
-                        self._message_id = None
-                        self._last_sent_text = ""
+                        # [owner] send the overflow segment as a new message and
+                        # continue editing the remainder under the new message id.
+                        reply_to = self._initial_reply_to_id
+                        _cp_budget = _custom_unit_to_cp(
+                            self._accumulated, _safe_limit, _len_fn
+                        )
+                        split_at_new = self._accumulated.rfind("\n", 0, _cp_budget)
+                        if split_at_new < _safe_limit // 2:
+                            split_at_new = _cp_budget
+                        if split_at_new <= split_at:
+                            # No forward progress possible — let the fallback
+                            # final-send path deliver the remainder.
+                            break
+                        chunk_new = self._accumulated[split_at:split_at_new]
+                        new_id = await self._send_new_chunk(chunk_new, reply_to)
+                        if new_id is not None and new_id != reply_to:
+                            self._accumulated = self._accumulated[split_at_new:].lstrip("\n")
+                            self._message_id = new_id
+                            self._last_sent_text = chunk_new
+                        else:
+                            break
 
                     display_text = self._accumulated
                     if not got_done and not got_segment_break and commentary_text is None:
