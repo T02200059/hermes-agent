@@ -202,21 +202,23 @@ def summarize_compression_feedback(
     state_parts: List[str] = []
     active_line = _first_lines(active, max_lines=3, max_chars=220)
     if active_line:
-        state_parts.append(active_line)
+        # Label the active-state line so it matches the other rows instead of
+        # floating as a bare, unlabelled line.
+        state_parts.append(f"**状态**：{active_line}")
     in_progress_line = _first_line(in_progress, max_chars=120)
     if in_progress_line:
-        state_parts.append(f"进行中：{in_progress_line}")
+        state_parts.append(f"**进行中**：{in_progress_line}")
     blocked_line = _first_line(blocked, max_chars=120)
     if blocked_line:
-        state_parts.append(f"阻塞：{blocked_line}")
+        state_parts.append(f"**阻塞**：{blocked_line}")
 
     next_parts: List[str] = []
     pending_line = _first_line(pending, max_chars=120)
     if pending_line:
-        next_parts.append(f"待处理：{pending_line}")
+        next_parts.append(f"**待处理**：{pending_line}")
     remaining_line = _first_line(remaining, max_chars=120)
     if remaining_line:
-        next_parts.append(f"剩余工作：{remaining_line}")
+        next_parts.append(f"**剩余工作**：{remaining_line}")
 
     if before_count > 0 and after_count < before_count:
         saved_pct = int((before_count - after_count) / before_count * 100)
@@ -236,15 +238,18 @@ def summarize_compression_feedback(
 
     body_lines: List[str] = [headline]
     if active_task:
-        body_lines.append(f"任务：{active_task}")
+        body_lines.append(f"**任务**：{active_task}")
     if completed_bullets:
-        body_lines.append("进度：\n" + "\n".join(f"• {b}" for b in completed_bullets))
+        body_lines.append("**进度**：\n" + "\n".join(f"• {b}" for b in completed_bullets))
     if state_parts:
-        body_lines.append(" · ".join(state_parts))
+        # One row per line. Joining with a newline (not an inline separator)
+        # keeps the Feishu card builder dumb — it never has to split a line and
+        # so can never mangle content that legitimately contains the separator.
+        body_lines.append("\n".join(state_parts))
     if file_bullets:
-        body_lines.append("文件：" + ", ".join(file_bullets))
+        body_lines.append("**文件**：" + ", ".join(file_bullets))
     if next_parts:
-        body_lines.append(" · ".join(next_parts))
+        body_lines.append("\n".join(next_parts))
 
     return {
         "headline": headline,
