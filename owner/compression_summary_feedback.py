@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional
 from weakref import WeakKeyDictionary
 
 from agent.context_compressor import (
@@ -316,7 +316,12 @@ def get_last_summary(compressor: Any) -> Optional[str]:
 
 
 def clear_last_summary(compressor: Any) -> None:
-    """Drop stored summary for a compressor instance (defense-in-depth)."""
+    """Drop stored summary for a compressor instance.
+
+    Currently used as defense-in-depth; callers may invoke this when a
+    compressor/session is explicitly destroyed to release the stored summary
+    immediately rather than waiting for garbage collection.
+    """
     _last_display_summary.pop(compressor, None)
 
 
