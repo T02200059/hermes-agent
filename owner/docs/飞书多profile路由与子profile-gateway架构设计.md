@@ -200,6 +200,26 @@ try_route_card_action()   ——纯按 tag 路由，不再用 chat/user 反查�
 `_dispatch_card_action`（SDK 路径与 HTTP 路径共用，避免漂移）；`api_server.py` 的
 `/v1/feishu/card-actions` 只是 auth + 读 body + 委托到 `owner/feishu/profile_routing.py::handle_card_action_request` 的薄胶水。所有真实逻辑在 owner/ 下。
 
+#### send_message 无 target 默认目标
+
+在子容器 `connection_mode=send_only` 场景下，LLM 调用 `send_message` 时如果省略 `target`，没有 `FEISHU_HOME_CHANNEL` 可以回退（只有主 gateway 才持有 home channel）。但当前 routed conversation 携带了完整的会话上下文，因此通过 `owner/feishu/default_target.py::resolve_default_send_target` 从 `gateway/session_context.py` 的会话变量解析出默认目标：
+
+```text
+HERMES_SESSION_PLATFORM == feishu
+HERMES_SESSION_CHAT_ID  → chat_id
+HERMES_SESSION_KEY      → 解析 chat_type (dm/group/thread/p2p)
+HERMES_SESSION_USER_ID  → open_id（DM 场景使用）
+HERMES_SESSION_THREAD_ID→ thread_id（可选）
+```
+
+- 子 profile + `send_only` + 无 target → 自动填充为当前会话 chat
+- `chat_type=dm/p2p` 时把 `open_id` 透传给 `_send_feishu`， downstream `_resolve_receive_target` 会优先用 `open_id` 发 DM
+- `chat_type=group` 时用 `chat_id` 发群聊
+- `chat_type=thread` 时额外携带 `thread_id` 保持话题上下文
+- 主 gateway（`connection_mode=websocket`）、非飞书会话、或显式指定 target 时不受影响
+
+`tools/send_message_tool.py` 的改动是薄胶水：无 target 分支先咨询解析器，再把返回的 metadata 通过新增的 `extra_metadata` 参数一路透传到 `_send_feishu`，最终合并进 adapter.send 的 metadata。
+
 #### Bot 菜单
 
 ```text
