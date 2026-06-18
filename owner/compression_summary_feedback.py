@@ -178,6 +178,13 @@ def summarize_compression_feedback(
     sections = _parse_summary_sections(summary_text)
 
     task = _first_line(sections.get("task"), max_chars=220)
+    # Strip the literal "User asked:" wrapper and surrounding quotes that the
+    # compressor adds to the task snapshot; users should see their ask, not the
+    # machine prompt.
+    if task.startswith("User asked:"):
+        task = task[len("User asked:"):].strip()
+    task = task.strip("'\"")
+
     goal = _first_line(sections.get("goal"), max_chars=220)
     completed = sections.get("completed actions", "")
     active = sections.get("active state", "")

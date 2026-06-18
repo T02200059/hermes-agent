@@ -86,6 +86,21 @@ def test_summarize_compression_feedback_basic():
     assert len(result["files"]) == 4
 
 
+def test_summarize_compression_feedback_strips_user_asked_prefix():
+    summary = f"""{SUMMARY_PREFIX}
+## Historical Task Snapshot
+User asked: 'refactor the auth module to use JWT instead of sessions'
+
+## Completed Actions
+1. READ config.py — reviewed current auth logic
+"""
+    result = summarize_compression_feedback(summary, 10, 5)
+    assert "User asked:" not in result["task"]
+    assert not result["task"].startswith("'")
+    assert not result["task"].startswith('"')
+    assert result["task"] == "refactor the auth module to use JWT instead of sessions"
+
+
 def test_summarize_compression_feedback_uses_goal_when_no_task():
     summary = f"""{SUMMARY_PREFIX}
 ## Goal
