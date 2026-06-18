@@ -448,7 +448,7 @@ platforms:
       connection_mode: send_only   # 只发不连 WebSocket（不抢主 gateway 的连接）
 
 # .env 文件（同一个飞书应用凭据 + api_server key）
-FEISHU_APP_ID=cli_YOUR_APP_ID_HERE     # 与主 gateway 同一应用（毕方）
+FEISHU_APP_ID=cli_YOUR_APP_ID_HERE     # 与主 gateway 同一应用
 FEISHU_APP_SECRET=...
 API_SERVER_KEY=YOUR_API_KEY_HERE  # 统一 key，与 patch_feishu_profile 的 api_key 一致
 GATEWAY_ALLOW_ALL_USERS=true           # 信任主 gateway 鉴权

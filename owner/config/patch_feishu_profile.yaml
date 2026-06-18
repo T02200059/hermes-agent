@@ -4,10 +4,10 @@
 
 feishu:
   bots:
-    cli_YOUR_APP_ID_HERE: # YangtbClawProMax
+    cli_YOUR_APP_ID_HERE: # YOUR_BOT_NAME
       user_routing:
         whitelist:
-          - ou_YOUR_OPEN_ID_HERE # 杨天宝
+          - ou_YOUR_OPEN_ID_HERE
         chat_profile_routes: {}
         user_profile_routes: {}
         default_profile: hermesxiyun
@@ -17,10 +17,10 @@ feishu:
             # Must match the container's API_SERVER_KEY (profile .env), else the
             # container's _check_auth rejects forwarded requests with 401.
             api_key: "YOUR_API_KEY_HERE"
-    cli_YOUR_APP_ID_HERE: # 毕方
+    cli_YOUR_APP_ID_HERE: # YOUR_BOT_NAME
       user_routing:
         whitelist:
-          - ou_23270fbce80e70282797919e4b254fa5  # 王庭威
+          - ou_YOUR_OPEN_ID_HERE
         chat_profile_routes: {}
         user_profile_routes: {}
         default_profile: hermesxiyun
