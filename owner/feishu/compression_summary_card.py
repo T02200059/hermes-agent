@@ -23,20 +23,18 @@ def build_compression_summary_card(summary_text: str) -> Dict[str, Any]:
     Formatting rules:
     * Blank lines in the source are preserved as ``\\n\\n`` paragraph breaks
       so Feishu markdown renders each section on its own line.
-    * `` · `` separators (used by ``summarize_compression_feedback`` to join
-      state/next parts into a single text line) are converted to ``\\n`` so
-      each item renders as a separate line in the card.
+
+    The body is passed through verbatim (lines are only stripped). The builder
+    deliberately does NOT split on any inline separator: ``summarize_compression_feedback``
+    already emits one item per line, so splitting would only risk mangling
+    content that legitimately contains the separator string (e.g. a task or
+    file note that itself reads ``a · b``).
     """
     lines: list[str] = summary_text.splitlines()
     title = lines[0].strip() if lines else "🗜️ 上下文压缩完成"
 
-    processed: list[str] = []
-    for raw in lines[1:]:
-        line = raw.strip()
-        if line:
-            processed.append(line.replace(" · ", "\n"))
-        else:
-            processed.append("")  # preserve section break
+    # Preserve each line as-is; blank lines stay as paragraph breaks.
+    processed: list[str] = [raw.strip() for raw in lines[1:]]
     body = "\n".join(processed).strip()
 
     elements: list[Dict[str, Any]] = []
