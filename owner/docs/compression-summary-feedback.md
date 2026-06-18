@@ -42,9 +42,10 @@ agent._emit_status(text)  ──▶  gateway/platforms/feishu.py::send()
 |------|------|--------------|
 | `owner/compression_summary_feedback.py` | 解析结构化 summary、生成中文摘要、通过 `WeakKeyDictionary` 存储/读取每个 compressor 实例的 summary、提供 `emit_compression_summary()` | owner |
 | `owner/feishu/compression_summary_card.py` | 构建非折叠 Schema 2.0 卡片；提供 `try_send_compression_summary()` 完成前缀检测与发送 | owner |
-| `agent/context_compressor.py` | 仅新增 `[owner]` 标记的一行胶水：summary 生成后调用 `set_last_summary(self, summary)` | 官方（最小改动） |
-| `agent/conversation_compression.py` | 仅新增 `[owner]` 标记的 3 行胶水：压缩完成后调用 `emit_compression_summary(...)` | 官方（最小改动） |
-| `gateway/platforms/feishu.py` | 仅保留 `[owner]` 标记的薄委托 `send_compression_summary()` | 官方（最小改动） |
+| `agent/context_compressor.py` | 约 7 行 `[owner]` 胶水：summary 生成后 try/import 并调用 `set_last_summary(self, summary)`，失败仅 debug | 官方（最小改动） |
+| `agent/conversation_compression.py` | 约 10 行 `[owner]` 胶水：压缩完成后 try/import 并调用 `emit_compression_summary(...)` | 官方（最小改动） |
+| `gateway/platforms/feishu.py` | 约 12 行 `[owner]` 胶水：新增 `send_compression_summary()` 薄委托，并在 `send()` 中前置调用以替换为卡片 | 官方（最小改动） |
+| `gateway/run.py` | 约 5 行 `[owner]` 胶水：session hygiene 压缩成功后委托 `owner/gateway/hygiene_compression_notice.py::send_hygiene_compression_notice()` 发送中文运营通知 | 官方（最小改动） |
 
 ## 设计决策
 
@@ -53,7 +54,7 @@ agent._emit_status(text)  ──▶  gateway/platforms/feishu.py::send()
 3. **平台无关 fallback**：`emit_compression_summary()` 只调用 `agent._emit_status()` 发送文本。飞书 adapter 在 `send()` 中检测文本前缀并转换为卡片。
 4. **不折叠卡片**：摘要文本本身已很简短，使用普通卡片（header + markdown body）即可，避免 fold/expand 的交互复杂度。
 5. **前缀匹配**：同时支持中文 `🗜️ 上下文已压缩` 和英文 `🗜️ Context compressed`，防止未来 locale 切换导致卡片路径静默失效。
-6. **hygiene 压缩通知**：gateway 的 session hygiene 在正式 agent 启动前执行，使用临时 `AIAgent` 且没有设置 `status_callback`，因此目前仍通过 `adapter.send()` 发送一条简洁的运营通知。这与正常压缩的结构化卡片路径不同，是架构限制（hygiene 发生在主 agent 外部），暂时接受。未来若要将 hygiene 也纳入统一卡片路径，需要给临时 agent 装配 `status_callback` 或把 hygiene 接到 `conversation_compression.compress_history()`。
+6. **hygiene 压缩通知**：gateway 的 session hygiene 在正式 agent 启动前执行，使用临时 `AIAgent` 且没有设置 `status_callback`。因此 hygiene 压缩成功后，由 `gateway/run.py` 通过一行 `# [owner]` 委托调用 `owner/gateway/hygiene_compression_notice.py::send_hygiene_compression_notice()`，直接 `adapter.send()` 一条简洁的中文运营通知。这与正常压缩的结构化卡片路径不同，是架构限制（hygiene 发生在主 agent 外部），暂时接受。未来若要将 hygiene 也纳入统一卡片路径，需要给临时 agent 装配 `status_callback` 或把 hygiene 接到 `conversation_compression.compress_history()`。
 
 ## sync fork 注意事项
 
