@@ -16,11 +16,11 @@
 
 feishu:
   bots:
-    # ── YangtbClawProMax (杨天宝的主 bot) ─────────────────────────────────────
     cli_a96f6714a2781cb3: # YangtbClawProMax
       user_routing:
         whitelist:
-          - ou_2924a1f56adac3a07a0fef2cea2543c5  # 杨天宝
+        # - 1 # 占位符
+        - ou_2924a1f56adac3a07a0fef2cea2543c5  # 杨天宝
         chat_profile_routes: {}
         user_profile_routes: {}
         default_profile: hermesxiyun
@@ -29,30 +29,4 @@ feishu:
             url: http://localhost:26026
             # Must match the container's API_SERVER_KEY (profile .env), else the
             # container's _check_auth rejects forwarded requests with 401.
-            api_key: "sk-HpFO0tO2GKpEmkTO4020Cf3454224306B3C11393D22007D9"
-
-    # ── 毕方 (王庭威的 bot) ───────────────────────────────────────────────────
-    # TODO: 填入毕方 bot 的真实 app_id（从飞书开放平台获取）
-    cli_BIFANG_APP_ID_HERE: # 毕方
-      user_routing:
-        whitelist:
-          - ou_23270fbce80e70282797919e4b254fa5  # 王庭威
-        chat_profile_routes: {}
-        user_profile_routes: {}
-        default_profile: hermesxiyun
-        profile_endpoints:
-          hermesxiyun:
-            url: http://localhost:26026
-            api_key: "sk-HpFO0tO2GKpEmkTO4020Cf3454224306B3C11393D22007D9"
-          hermeswangtingwei:
-            url: http://localhost:26027
-            api_key: "sk-HpFO0tO2GKpEmkTO4020Cf3454224306B3C11393D22007D9"
-          hermesyangtb:
-            url: http://localhost:26028
-            api_key: "sk-HpFO0tO2GKpEmkTO4020Cf3454224306B3C11393D22007D9"
-          liruiyang:
-            url: http://localhost:26029
-            api_key: "sk-HpFO0tO2GKpEmkTO4020Cf3454224306B3C11393D22007D9"
-          sunqifei:
-            url: http://localhost:26030
             api_key: "sk-HpFO0tO2GKpEmkTO4020Cf3454224306B3C11393D22007D9"
