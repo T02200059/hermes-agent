@@ -387,6 +387,17 @@ def _handle_send(args):
     mirror_text = cleaned_message.strip() or _describe_media_for_mirror(media_files)
 
     used_home_channel = False
+    owner_extra_md = None
+    # [owner] sub-profile: default no-target feishu send to current session chat
+    # (logic in owner/feishu/default_target.py)
+    if not chat_id:
+        try:
+            from owner.feishu.default_target import resolve_default_send_target
+            _sub = resolve_default_send_target(platform_name, pconfig)
+            if _sub:
+                chat_id, owner_extra_md = _sub
+        except Exception:
+            logger.debug("[owner] sub-profile default target resolution skipped", exc_info=True)
     if not chat_id:
         home = config.get_home_channel(platform)
         if not home and platform_name == "weixin":
@@ -445,6 +456,7 @@ def _handle_send(args):
                 media_files=media_files,
                 force_document=force_document_attachments,
                 card=card,
+                extra_metadata=owner_extra_md,  # [owner]
             )
         )
         if used_home_channel and isinstance(result, dict) and result.get("success"):
@@ -717,7 +729,7 @@ async def _send_via_adapter(
     }
 
 
-async def _send_to_platform(platform, pconfig, chat_id, message, thread_id=None, media_files=None, force_document=False, card=None):
+async def _send_to_platform(platform, pconfig, chat_id, message, thread_id=None, media_files=None, force_document=False, card=None, extra_metadata=None):  # [owner]
     """Route a message to the appropriate platform sender.
 
     Long messages are automatically chunked to fit within platform limits
@@ -895,6 +907,7 @@ async def _send_to_platform(platform, pconfig, chat_id, message, thread_id=None,
                 media_files=media_files if is_last else None,
                 thread_id=thread_id,
                 card=card if is_last else None,
+                extra_metadata=extra_metadata,  # [owner]
             )
             if isinstance(result, dict) and result.get("error"):
                 return result
@@ -943,7 +956,7 @@ async def _send_to_platform(platform, pconfig, chat_id, message, thread_id=None,
         elif platform == Platform.DINGTALK:
             result = await _registry_standalone_send("dingtalk", pconfig, chat_id, chunk, thread_id)
         elif platform == Platform.FEISHU:
-            result = await _registry_standalone_send("feishu", pconfig, chat_id, chunk, thread_id, card=card)
+            result = await _send_feishu(pconfig, chat_id, chunk, thread_id=thread_id, card=card, extra_metadata=extra_metadata)  # [owner]
         elif platform == Platform.WECOM:
             result = await _registry_standalone_send("wecom", pconfig, chat_id, chunk, thread_id)
         elif platform == Platform.BLUEBUBBLES:
@@ -1550,9 +1563,77 @@ async def _send_bluebubbles(extra, chat_id, message):
         return _error(f"BlueBubbles send failed: {e}")
 
 
-# _send_feishu moved to plugins/platforms/feishu/adapter.py::_standalone_send,
-# wired via standalone_sender_fn and reached through _registry_standalone_send
-# (and the feishu media branch above). #41112.
+async def _send_feishu(pconfig, chat_id, message, media_files=None, thread_id=None, card=None, extra_metadata=None):  # [owner]
+    """Send via Feishu/Lark using the adapter's send pipeline."""
+    try:
+        from plugins.platforms.feishu.adapter import FeishuAdapter, FEISHU_AVAILABLE
+        if not FEISHU_AVAILABLE:
+            return {"error": "Feishu dependencies not installed. Run: pip install 'hermes-agent[feishu]'"}
+        from plugins.platforms.feishu.adapter import FEISHU_DOMAIN, LARK_DOMAIN
+    except ImportError:
+        return {"error": "Feishu dependencies not installed. Run: pip install 'hermes-agent[feishu]'"}
+
+    media_files = media_files or []
+
+    try:
+        adapter = FeishuAdapter(pconfig)
+        domain_name = getattr(adapter, "_domain_name", "feishu")
+        domain = FEISHU_DOMAIN if domain_name != "lark" else LARK_DOMAIN
+        adapter._client = adapter._build_lark_client(domain)
+        # [owner] sub-profile: carry chat_type/open_id so DMs resolve to open_id
+        metadata = dict(extra_metadata or {})
+        if thread_id:
+            metadata["thread_id"] = thread_id
+        metadata = metadata or None
+
+        # Card send path — bypass chunking, send as interactive card
+        if card:
+            result = await adapter.send_card(chat_id=chat_id, card=card, metadata=metadata)
+            if not result.success:
+                return _error(f"Feishu card send failed: {result.error}")
+            return {
+                "success": True,
+                "platform": "feishu",
+                "chat_id": chat_id,
+                "message_id": result.message_id,
+            }
+
+        last_result = None
+        if message.strip():
+            last_result = await adapter.send(chat_id, message, metadata=metadata)
+            if not last_result.success:
+                return _error(f"Feishu send failed: {last_result.error}")
+
+        for media_path, is_voice in media_files:
+            if not os.path.exists(media_path):
+                return _error(f"Media file not found: {media_path}")
+
+            ext = os.path.splitext(media_path)[1].lower()
+            if ext in _IMAGE_EXTS:
+                last_result = await adapter.send_image_file(chat_id, media_path, metadata=metadata)
+            elif ext in _VIDEO_EXTS:
+                last_result = await adapter.send_video(chat_id, media_path, metadata=metadata)
+            elif ext in _VOICE_EXTS and is_voice:
+                last_result = await adapter.send_voice(chat_id, media_path, metadata=metadata)
+            elif ext in _AUDIO_EXTS:
+                last_result = await adapter.send_voice(chat_id, media_path, metadata=metadata)
+            else:
+                last_result = await adapter.send_document(chat_id, media_path, metadata=metadata)
+
+            if not last_result.success:
+                return _error(f"Feishu media send failed: {last_result.error}")
+
+        if last_result is None:
+            return {"error": "No deliverable text or media remained after processing MEDIA tags"}
+
+        return {
+            "success": True,
+            "platform": "feishu",
+            "chat_id": chat_id,
+            "message_id": last_result.message_id,
+        }
+    except Exception as e:
+        return _error(f"Feishu send failed: {e}")
 
 
 def _check_send_message():
