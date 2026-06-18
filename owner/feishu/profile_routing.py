@@ -265,17 +265,73 @@ async def _forward_to_profile_container(
         return False
 
 
-async def _notify_forward_failure(adapter: Any, receive_id: str) -> None:
-    """Best-effort notify user when profile container forward fails."""
+async def _notify_forward_failure(
+    adapter: Any, receive_id: str, profile_name: str = ""
+) -> None:
+    """Best-effort notify user when the routed sub-gateway is unreachable.
+
+    ``profile_name`` is the route's profile (the key resolved from
+    ``patch_feishu_profile.yaml``); it is spliced into the notice so the user
+    knows which sub-gateway is down rather than seeing a generic message.
+    """
     if not receive_id:
         return
+    label = f"「{profile_name}」" if profile_name else ""
     try:
         await adapter.send(
             chat_id=receive_id,
-            content="⚠️ 服务暂时不可用，请稍后再试",
+            content=f"⚠️ 子网关{label}暂时不可用，请稍后再试",
         )
     except Exception:
         pass
+
+
+def _lark_response_classes() -> Tuple[Any, Any]:
+    """Return ``(P2CardActionTriggerResponse, CallBackCard)`` or ``(None, None)``.
+
+    Imported from the submodule (not the top-level ``lark_oapi`` module, which
+    does not export them on lark-oapi 1.5.x).
+    """
+    try:
+        from lark_oapi.event.callback.model.p2_card_action_trigger import (
+            CallBackCard,
+            P2CardActionTriggerResponse,
+        )
+
+        return P2CardActionTriggerResponse, CallBackCard
+    except Exception:
+        return None, None
+
+
+def _build_card_response(card_data: Optional[Dict[str, Any]]) -> Any:
+    """Build a ``P2CardActionTriggerResponse``, inline-updating the card if given.
+
+    ``card_data`` is the raw Feishu card JSON the sub-profile computed for the
+    resolved state. Returning it as ``CallBackCard(type="raw")`` lets the main
+    gateway relay the sub-profile's card update over the WebSocket it owns.
+    """
+    response_cls, callback_cls = _lark_response_classes()
+    if response_cls is None:
+        return None
+    resp = response_cls()
+    if card_data and callback_cls is not None:
+        cb = callback_cls()
+        cb.type = "raw"
+        cb.data = card_data
+        resp.card = cb
+    return resp
+
+
+def _build_error_card_response(profile_name: str) -> Any:
+    """Inline-replace the card with a 'sub-gateway unavailable' notice."""
+    label = f"「{profile_name}」" if profile_name else ""
+    card = {
+        "config": {"wide_screen_mode": True},
+        "elements": [
+            {"tag": "markdown", "content": f"⚠️ 子网关{label}暂时不可用，请稍后再试"}
+        ],
+    }
+    return _build_card_response(card)
 
 
 def _forward_card_action_sync(
@@ -283,12 +339,14 @@ def _forward_card_action_sync(
     event: Any,
     action_value: Dict[str, Any],
 ) -> Any:
-    """Synchronously forward a card action to a profile container.
+    """Synchronously forward a card action to a profile container and relay back.
 
     Runs in the Feishu SDK callback thread (synchronous context), so uses
-    ``urllib`` rather than ``aiohttp``. Returns a
-    ``P2CardActionTriggerResponse`` to acknowledge the event to Feishu
-    regardless of container outcome.
+    ``urllib`` rather than ``aiohttp``. The sub-profile resolves the click and
+    returns ``{"card": <json|null>}``; we wrap that card into the
+    ``P2CardActionTriggerResponse`` so the card updates inline for all clients
+    (the main gateway owns the only WebSocket). On any failure the user sees an
+    explicit "sub-gateway unavailable" card — never a silent drop.
     """
     profile_name, endpoint, api_key = route
     operator = getattr(event, "operator", None)
@@ -314,23 +372,43 @@ def _forward_card_action_sync(
             },
             method="POST",
         )
-        _urlreq.urlopen(req, timeout=8)
-        logger.info("[Feishu] Forwarded card action to profile '%s'", profile_name)
+        # Feishu requires a card.action.trigger response within 3s (else the user
+        # sees Feishu's own failure toast). Cap the forward below that so our
+        # error card still lands in time on a slow/hung container; the happy path
+        # is a localhost round-trip of a few ms.
+        with _urlreq.urlopen(req, timeout=2.5) as resp:
+            status = int(getattr(resp, "status", 0) or getattr(resp, "code", 0) or 200)
+            raw = resp.read()
     except Exception as exc:
         logger.warning(
-            "[Feishu] Failed to forward card action to profile '%s': %s",
+            "[Feishu] Sub-gateway '%s' unreachable for card action: %s",
             profile_name,
             exc,
         )
+        return _build_error_card_response(profile_name)
 
-    try:
-        from lark_oapi.event.callback.model.p2_card_action_trigger import (
-            P2CardActionTriggerResponse,
+    if status not in (200, 202):
+        logger.warning(
+            "[Feishu] Card action forward to '%s' returned HTTP %s",
+            profile_name,
+            status,
         )
+        return _build_error_card_response(profile_name)
 
-        return P2CardActionTriggerResponse()
-    except Exception:
-        return None
+    card_data: Optional[Dict[str, Any]] = None
+    if raw:
+        try:
+            body = json.loads(raw.decode("utf-8"))
+            if isinstance(body, dict) and isinstance(body.get("card"), dict):
+                card_data = body["card"]
+        except Exception:
+            card_data = None
+    logger.info(
+        "[Feishu] Routed card action to profile '%s'%s",
+        profile_name,
+        " (card updated)" if card_data else "",
+    )
+    return _build_card_response(card_data)
 
 
 # ---------------------------------------------------------------------------
@@ -375,8 +453,14 @@ async def try_route_inbound_message(
 ) -> bool:
     """Route an inbound message to a profile container if configured.
 
-    Returns True if the message was forwarded (caller should stop local
-    processing), False otherwise.
+    Returns True when the caller must stop local processing. This is the case
+    whenever the user resolves to a sub-profile route — regardless of whether
+    the forward actually succeeded. Once a user is bound to a sub-profile, the
+    main gateway must NEVER serve them locally; a down container yields an error
+    notice + drop, never a silent fallback to the main gateway.
+
+    Returns False only when the message legitimately belongs to the main
+    gateway: a local-only command, or no route resolved for this user.
     """
     if not _should_route_text(text):
         return False
@@ -408,49 +492,98 @@ async def try_route_inbound_message(
         )
         return True
 
-    await _notify_forward_failure(adapter, notify_target)
-    return False
+    # Container down / forward failed: notify the user, but DO NOT fall back to
+    # the main gateway. This user is bound to a sub-profile; serving them on the
+    # main gateway would leak a routed conversation into the wrong agent.
+    await _notify_forward_failure(adapter, notify_target, profile)
+    return True
 
 
 def try_route_card_action(event: Any, action_value: Dict[str, Any]) -> Any:
-    """Route a card action to a profile container if configured.
+    """Route a card action to the sub-profile that sent the card.
 
-    Returns a ``P2CardActionTriggerResponse`` when the action is handled
-    (either forwarded or explicitly dropped), None when the caller should
-    continue with local processing.
+    Routing is driven solely by the ``hermes_profile`` tag the sub-profile
+    stamped onto each button (see ``card_sender._maybe_tag_card_profile``):
+
+      * tagged + endpoint known → forward to that container and relay its card
+        update back (Option B);
+      * tagged + endpoint unknown (config drift / container removed) → explicit
+        "sub-gateway unavailable" card, never a silent drop;
+      * untagged → ``None`` → handle locally. An untagged card is one the main
+        gateway itself sent (to a non-routed user); its correlation state lives
+        in this process.
+
+    Returns a ``P2CardActionTriggerResponse`` when handled, ``None`` when the
+    caller should continue with local processing.
     """
-    from lark_oapi.event.callback.model.p2_card_action_trigger import (
-        P2CardActionTriggerResponse,
-    )
-
-    context = getattr(event, "context", None)
-    chat_id = str(getattr(context, "open_chat_id", "") or "")
-    operator = getattr(event, "operator", None)
-    open_id = str(getattr(operator, "open_id", "") or "")
     card_profile = (
         action_value.get("hermes_profile")
         if isinstance(action_value, dict)
         else None
     )
-
-    if card_profile:
-        # B3: card was sent by a named profile container — forward to it.
-        route = resolve_profile_route_by_name(str(card_profile))
-        if route is not None:
-            return _forward_card_action_sync(route, event, action_value)
-        # Profile not in endpoints — fall through to local handling.
+    if not card_profile:
         return None
 
-    route = resolve_profile_route(chat_id, open_id)
+    route = resolve_profile_route_by_name(str(card_profile))
     if route is not None:
-        logger.debug(
-            "[Feishu] Dropping card action for routed profile '%s' (chat=%s, user=%s)",
-            route[0],
-            chat_id,
-            open_id,
-        )
-        return P2CardActionTriggerResponse()
+        return _forward_card_action_sync(route, event, action_value)
 
+    logger.warning(
+        "[Feishu] Card action tagged profile '%s' has no endpoint; "
+        "showing sub-gateway-unavailable card",
+        card_profile,
+    )
+    return _build_error_card_response(str(card_profile))
+
+
+def handle_card_action_request(
+    adapter: Any, body: Dict[str, Any]
+) -> Optional[Dict[str, Any]]:
+    """Replay a main-gateway-forwarded card action inside this sub-profile.
+
+    Called by the thin ``/v1/feishu/card-actions`` glue in
+    ``gateway/platforms/api_server.py``. Reconstructs the minimal lark-event
+    shape the per-type handlers read, dispatches through the shared
+    ``_dispatch_card_action`` (profile routing disabled — the click was already
+    routed here and the ``hermes_profile`` tag stripped), then returns the
+    resolved card JSON for the main gateway to relay inline.
+
+    The returned card is re-tagged with this profile via
+    ``_maybe_tag_card_profile`` so that *updated* cards which still carry buttons
+    (recall expand/collapse, diff expand/collapse/full) keep routing their next
+    click back here — those cards are returned over HTTP and never pass through
+    the ``send_card`` choke point where the initial tagging happens.
+
+    Returns the resolved card dict, or ``None`` for a no-update acknowledgement.
+    """
+    from types import SimpleNamespace
+
+    action_value = body.get("action_value") or {}
+    if not isinstance(action_value, dict):
+        return None
+    event = SimpleNamespace(
+        action=SimpleNamespace(value=action_value, tag="button"),
+        operator=SimpleNamespace(
+            open_id=str(body.get("open_id") or "").strip(),
+            user_id=str(body.get("user_id") or "").strip(),
+        ),
+        context=SimpleNamespace(open_chat_id=str(body.get("chat_id") or "").strip()),
+        token="",
+    )
+    response = adapter._dispatch_card_action(
+        event,
+        action_value,
+        getattr(adapter, "_loop", None),
+        data=SimpleNamespace(event=event),
+        allow_profile_routing=False,
+    )
+    card_obj = getattr(response, "card", None)
+    card_data = getattr(card_obj, "data", None) if card_obj is not None else None
+    if isinstance(card_data, dict):
+        from owner.feishu.card_sender import _maybe_tag_card_profile
+
+        _maybe_tag_card_profile(adapter, card_data)
+        return card_data
     return None
 
 
@@ -463,7 +596,9 @@ async def try_route_bot_menu_command(
 ) -> bool:
     """Route a bot menu synthetic command to a profile container if configured.
 
-    Returns True if forwarded, False otherwise.
+    Returns True when the caller must stop local processing — true for any
+    routed user, even if the forward failed (no silent fallback to the main
+    gateway). Returns False only for local-only commands or unrouted users.
     """
     if not _should_route_text(synthetic_text):
         return False
@@ -493,8 +628,10 @@ async def try_route_bot_menu_command(
         )
         return True
 
-    await _notify_forward_failure(adapter, open_id)
-    return False
+    # Container down / forward failed: notify, but do NOT fall back to the main
+    # gateway (see try_route_inbound_message for rationale).
+    await _notify_forward_failure(adapter, open_id, profile)
+    return True
 
 
 def _get_inprocess_feishu_adapter() -> Any:
