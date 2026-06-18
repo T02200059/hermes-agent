@@ -124,6 +124,21 @@ class TestFeishuCompressionSummaryCard(unittest.TestCase):
         self.assertEqual(card["body"]["elements"][0]["tag"], "markdown")
         self.assertIn("任务：修复 bug", card["body"]["elements"][0]["content"])
 
+    def test_build_compression_summary_card_preserves_inline_separator(self):
+        """The builder must not split a body line on ' · ' — content that
+        legitimately contains the separator has to survive verbatim."""
+        from owner.feishu.compression_summary_card import build_compression_summary_card
+
+        content = (
+            "🗜️ 上下文已压缩：10 → 5 条消息（缩短 50%）\n\n"
+            "**任务**：迁移 a · b 模块"
+        )
+        card = build_compression_summary_card(content)
+        body = card["body"]["elements"][0]["content"]
+        self.assertIn("迁移 a · b 模块", body)
+        # The separator inside the task must NOT have become a line break.
+        self.assertNotIn("迁移 a\nb 模块", body)
+
     def test_build_compression_summary_card_body_only_header_when_no_body(self):
         from owner.feishu.compression_summary_card import build_compression_summary_card
 
