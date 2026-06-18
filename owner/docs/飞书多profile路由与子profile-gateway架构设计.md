@@ -440,8 +440,6 @@ platforms:
     enabled: true
     extra:
       port: 26026                    # 每个用户用不同端口（见端口规划表）
-      model: MiniMax-M3
-      provider: minimax-cn
   feishu:
     enabled: true                  # 必须启用：要有一个活着的 adapter 才能回复
     extra:
@@ -570,7 +568,7 @@ export PATH="$HOME/.local/bin:$PATH"
 
 #### Step 2: 端口规划
 
-每个子 profile 的 `api_server.port` 必须唯一，避免端口冲突：
+每个子 profile 的 `api_server.extra.port` 必须唯一，避免端口冲突：
 
 | Profile | Port | 备注 |
 |---------|------|------|
@@ -686,13 +684,14 @@ feishu:
 
 ```yaml
 platforms:
+  api_server:
+    enabled: true
+    extra:
+      port: 26026                  # 每个 profile 用不同端口（见端口规划表）
   feishu:
     enabled: true                  # 必须启用，否则没有可用于回复的 send_only adapter
     extra:
       connection_mode: send_only   # 只发不连 WebSocket（不抢主 gateway 的连接）
-  api_server:
-    enabled: true
-    port: 26026
 ```
 
 对应的 `~/.hermes/profiles/hermesxiyun/.env`：
@@ -755,7 +754,7 @@ hermes profile create alice --description "Alice 的独立助手实例"
 
 **创建后的步骤**：
 
-1. 编辑 `~/.hermes/profiles/alice/config.yaml`：设 `api_server.port`、`feishu.enabled: true` + `feishu.extra.connection_mode: send_only`、`model`（见 4.4）；在 `.env` 设 `API_SERVER_KEY`、`FEISHU_APP_ID/SECRET`、`GATEWAY_ALLOW_ALL_USERS=true`
+1. 编辑 `~/.hermes/profiles/alice/config.yaml`：设 `api_server.extra.port`、`feishu.enabled: true` + `feishu.extra.connection_mode: send_only`；在 `.env` 设 `API_SERVER_KEY`、`FEISHU_APP_ID/SECRET`、`GATEWAY_ALLOW_ALL_USERS=true`
 2. 在主 gateway 的 `~/.hermes/patch_feishu_profile.yaml` 中添加路由（`bots.<key>` 必须 == 主 gateway 的 `FEISHU_APP_ID`）：
    ```yaml
    user_profile_routes:
