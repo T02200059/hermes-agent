@@ -2881,33 +2881,15 @@ class GatewaySlashCommandsMixin:
                     adapter = self.adapters.get(Platform.FEISHU)
                     if adapter is not None and hasattr(adapter, "send_resume_card"):
                         try:
-                            card_sessions = [
-                                {
-                                    "id": s.get("id"),
-                                    "title": s.get("title"),
-                                    "preview": s.get("preview", ""),
-                                }
-                                for s in titled[:10]
-                            ]
-                            # send_card_via_rest needs chat_type + open_id to compute receive_id_type
-                            event_meta = getattr(event, "metadata", None)
-                            metadata = dict(event_meta) if event_meta is not None else {}
-                            metadata["chat_type"] = source.chat_type
-                            # SessionSource.user_id holds the Feishu open_id (see _resolve_sender_profile)
-                            if source.user_id:
-                                metadata["open_id"] = source.user_id
-                            elif source.user_id_alt:
-                                metadata["open_id"] = source.user_id_alt
-                            await adapter.send_resume_card(
-                                chat_id=source.chat_id,
-                                header_text=t("gateway.resume.list_header"),
-                                sessions=card_sessions,
+                            from owner.feishu.resume_card import try_send_resume_card_list
+                            return await try_send_resume_card_list(
+                                adapter,
+                                source=source,
+                                event=event,
+                                titled_sessions=titled,
                                 session_key=self._session_key_for_source(source),
-                                source_dict=source.to_dict(),
-                                metadata=metadata,
+                                header_text=t("gateway.resume.list_header"),
                             )
-                            # Card path delivered (or already fell back to plain text inside the helper).
-                            return ""
                         except Exception as card_exc:
                             logger.warning(
                                 "Feishu /resume card send failed, falling back to plain text: %s",

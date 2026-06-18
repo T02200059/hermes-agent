@@ -133,6 +133,59 @@ def _make_button_row(buttons: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
+async def try_send_resume_card_list(
+    adapter: Any,
+    *,
+    source: Any,
+    event: Any,
+    titled_sessions: List[Any],
+    session_key: str,
+    header_text: str,
+) -> str:
+    """Feishu-specific path for /resume list: send an interactive number card.
+
+    Returns an empty string when the card path delivered (or gracefully fell
+    back to plain text inside the helper), indicating the caller should stop
+    rendering the list. Raises on unexpected failure so the caller can fall
+    back to the normal plain-text list.
+
+    This keeps gateway/slash_commands.py free of Feishu-specific card building,
+    metadata injection and fallback logic per 二次开发规范.
+    """
+    if not adapter or not hasattr(adapter, "send_resume_card"):
+        raise RuntimeError("Feishu adapter does not support resume card")
+
+    card_sessions = [
+        {
+            "id": s.get("id"),
+            "title": s.get("title"),
+            "preview": s.get("preview", ""),
+        }
+        for s in titled_sessions[:10]
+    ]
+
+    # send_card_via_rest needs chat_type + open_id to compute receive_id_type
+    event_meta = getattr(event, "metadata", None)
+    metadata = dict(event_meta) if event_meta is not None else {}
+    metadata["chat_type"] = source.chat_type
+    # SessionSource.user_id holds the Feishu open_id (see _resolve_sender_profile)
+    if source.user_id:
+        metadata["open_id"] = source.user_id
+    elif source.user_id_alt:
+        metadata["open_id"] = source.user_id_alt
+
+    await adapter.send_resume_card(
+        chat_id=source.chat_id,
+        header_text=header_text,
+        sessions=card_sessions,
+        session_key=session_key,
+        source_dict=source.to_dict(),
+        metadata=metadata,
+    )
+    # Card path delivered (or already fell back to plain text inside the helper).
+    return ""
+
+
 async def send_resume_card(
     adapter: "FeishuAdapter",
     *,
