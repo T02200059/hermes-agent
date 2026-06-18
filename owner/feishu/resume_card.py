@@ -259,6 +259,18 @@ def handle_resume_card_action(
         logger.warning("[Feishu] /resume failed to rebuild SessionSource: %s", exc)
         return _empty_response()
 
+    # [owner] Validate that the operator who clicked the button is the same
+    # user whose sessions are being listed. Prevents group members from
+    # impersonating the card owner and resuming someone else's session.
+    operator = getattr(event, "operator", None)
+    operator_id = str(getattr(operator, "open_id", "") or "")
+    if operator_id and operator_id != source.user_id:
+        logger.warning(
+            "[owner] resume card action rejected: operator %s != source user %s",
+            operator_id, source.user_id,
+        )
+        return _empty_response()
+
     # Schedule the synthetic /resume N command on the adapter loop.
     if not adapter._loop_accepts_callbacks(loop):
         logger.warning("[Feishu] /resume card callback: loop not accepting work")
