@@ -380,6 +380,17 @@ def _handle_send(args):
     mirror_text = cleaned_message.strip() or _describe_media_for_mirror(media_files)
 
     used_home_channel = False
+    owner_extra_md = None
+    # [owner] sub-profile: default no-target feishu send to current session chat
+    # (logic in owner/feishu/default_target.py)
+    if not chat_id:
+        try:
+            from owner.feishu.default_target import resolve_default_send_target
+            _sub = resolve_default_send_target(platform_name, pconfig)
+            if _sub:
+                chat_id, owner_extra_md = _sub
+        except Exception:
+            logger.debug("[owner] sub-profile default target resolution skipped", exc_info=True)
     if not chat_id:
         home = config.get_home_channel(platform)
         if not home and platform_name == "weixin":
@@ -438,6 +449,7 @@ def _handle_send(args):
                 media_files=media_files,
                 force_document=force_document_attachments,
                 card=card,
+                extra_metadata=owner_extra_md,  # [owner]
             )
         )
         if used_home_channel and isinstance(result, dict) and result.get("success"):
@@ -704,7 +716,7 @@ async def _send_via_adapter(
     }
 
 
-async def _send_to_platform(platform, pconfig, chat_id, message, thread_id=None, media_files=None, force_document=False, card=None):
+async def _send_to_platform(platform, pconfig, chat_id, message, thread_id=None, media_files=None, force_document=False, card=None, extra_metadata=None):  # [owner]
     """Route a message to the appropriate platform sender.
 
     Long messages are automatically chunked to fit within platform limits
@@ -882,6 +894,7 @@ async def _send_to_platform(platform, pconfig, chat_id, message, thread_id=None,
                 media_files=media_files if is_last else None,
                 thread_id=thread_id,
                 card=card if is_last else None,
+                extra_metadata=extra_metadata,  # [owner]
             )
             if isinstance(result, dict) and result.get("error"):
                 return result
@@ -920,7 +933,7 @@ async def _send_to_platform(platform, pconfig, chat_id, message, thread_id=None,
         elif platform == Platform.DINGTALK:
             result = await _send_dingtalk(pconfig.extra, chat_id, chunk)
         elif platform == Platform.FEISHU:
-            result = await _send_feishu(pconfig, chat_id, chunk, thread_id=thread_id, card=card)
+            result = await _send_feishu(pconfig, chat_id, chunk, thread_id=thread_id, card=card, extra_metadata=extra_metadata)  # [owner]
         elif platform == Platform.WECOM:
             result = await _send_wecom(pconfig.extra, chat_id, chunk)
         elif platform == Platform.BLUEBUBBLES:
@@ -1719,7 +1732,7 @@ async def _send_bluebubbles(extra, chat_id, message):
         return _error(f"BlueBubbles send failed: {e}")
 
 
-async def _send_feishu(pconfig, chat_id, message, media_files=None, thread_id=None, card=None):
+async def _send_feishu(pconfig, chat_id, message, media_files=None, thread_id=None, card=None, extra_metadata=None):  # [owner]
     """Send via Feishu/Lark using the adapter's send pipeline."""
     try:
         from gateway.platforms.feishu import FeishuAdapter, FEISHU_AVAILABLE
@@ -1736,7 +1749,11 @@ async def _send_feishu(pconfig, chat_id, message, media_files=None, thread_id=No
         domain_name = getattr(adapter, "_domain_name", "feishu")
         domain = FEISHU_DOMAIN if domain_name != "lark" else LARK_DOMAIN
         adapter._client = adapter._build_lark_client(domain)
-        metadata = {"thread_id": thread_id} if thread_id else None
+        # [owner] sub-profile: carry chat_type/open_id so DMs resolve to open_id
+        metadata = dict(extra_metadata or {})
+        if thread_id:
+            metadata["thread_id"] = thread_id
+        metadata = metadata or None
 
         # Card send path — bypass chunking, send as interactive card
         if card:
