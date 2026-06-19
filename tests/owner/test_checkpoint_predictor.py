@@ -253,3 +253,43 @@ def test_safe_roots_drops_home_and_root(mock_agent, monkeypatch):
     predictor.predict_and_checkpoint("python -c 'x'", "/cwd", mock_agent)
     mock_agent._checkpoint_mgr.ensure_checkpoint.assert_not_called()
     mock_agent._owner_warn_callback.assert_called_once()
+
+
+# ── E2E: 消息隔离 ──────────────────────────────────────────────────────
+
+
+def test_e2e_predictor_does_not_touch_main_messages(mock_agent, monkeypatch):
+    """预测器的 LLM 调用走 auxiliary 侧路, 不进 agent 主 messages。
+
+    关键: call_llm 是独立侧路, 不接收也不修改 agent.messages。
+    mock_agent 是 MagicMock, 这里验证它没被 append/extend。
+    """
+    from owner.checkpoint_predictor import config, predictor, llm_predict
+
+    monkeypatch.setattr(config, "_load_owner_checkpoints_cfg", lambda: {})
+    llm_predict._cache_clear()
+
+    captured_messages = []
+
+    class _FakeResp:
+        class _Choice:
+            class _Msg:
+                content = '["out.txt"]'
+            message = _Msg()
+        choices = [_Choice()]
+
+    def _capture_messages(**kwargs):
+        captured_messages.append(kwargs.get("messages"))
+        return _FakeResp()
+
+    monkeypatch.setattr(llm_predict, "_call_llm_sync", _capture_messages)
+
+    predictor.predict_and_checkpoint("make", "/tmp/fakeproj", mock_agent)
+
+    # 预测器确实调了 LLM (走侧路)
+    assert len(captured_messages) == 1
+    # 侧路的 messages 只含 prompt, 不含 agent 的对话历史
+    side_messages = captured_messages[0]
+    assert len(side_messages) == 1
+    assert side_messages[0]["role"] == "user"
+    assert "file-mutation predictor" in side_messages[0]["content"]
