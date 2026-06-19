@@ -79,6 +79,7 @@ def _sync_prefetch(self: OpenVikingMemoryProvider, query: str, *, session_id: st
         result = data.get("result", {}) if isinstance(data, dict) else {}
 
         parts = []
+        all_hits = []
         for ctx_type in ("memories", "resources"):
             for item in result.get(ctx_type, [])[:3]:
                 uri = item.get("uri", "")
@@ -86,6 +87,13 @@ def _sync_prefetch(self: OpenVikingMemoryProvider, query: str, *, session_id: st
                 score = item.get("score", 0)
                 if abstract:
                     parts.append(f"- [{score:.2f}] {abstract} ({uri})")
+                    hit = dict(item)
+                    hit["type"] = ctx_type[:-1]  # memory / resource
+                    all_hits.append(hit)
+
+        self._recall_card_hits = sorted(
+            all_hits, key=lambda h: h.get("score", 0), reverse=True
+        )
 
         if not parts:
             return ""
@@ -207,6 +215,13 @@ def apply_patch(force_sync: bool | None = None, advisory_tone: bool | None = Non
     else:
         if _applied["advisory"]:
             _revert_advisory()
+
+    # [owner] recall-card: mount visualization patch (best-effort, fail-silent)
+    try:
+        from owner.patches.openviking_recall_card_patch import apply_patch as _ov_card_apply
+        _ov_card_apply()
+    except Exception as exc:
+        logger.info("openviking_recall_card_patch mount skipped: %s", exc)
 
 
 def revert_patch() -> None:
