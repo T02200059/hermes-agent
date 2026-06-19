@@ -27,8 +27,13 @@ def _clean_env_and_patch(monkeypatch):
         "OPENVIKING_SEARCH_TIMEOUT",
     ):
         monkeypatch.delenv(name, raising=False)
+    # The sync patch auto-mounts the card patch; revert both to avoid leakage.
+    from owner.patches.openviking_recall_card_patch import revert_patch as revert_card
+
+    revert_card()
     revert_patch()
     yield
+    revert_card()
     revert_patch()
 
 
@@ -225,3 +230,71 @@ def test_queue_prefetch_is_noop():
     apply_patch()
     provider = _make_provider()
     assert provider.queue_prefetch("query") is None
+
+
+import owner.patches.openviking_recall_config as recall_config
+
+
+def test_patch_yaml_overrides_env(monkeypatch):
+    """patch.yaml enabled=false wins over OPENVIKING_SYNC_RECALL=1."""
+    from owner.patches.openviking_recall_card_patch import revert_patch as revert_card
+
+    monkeypatch.setenv("OPENVIKING_SYNC_RECALL", "1")
+    monkeypatch.setattr(
+        recall_config,
+        "_read_patch_yaml",
+        lambda: {"owner": {"openviking_sync_recall": {"enabled": False}}},
+    )
+    original_prefetch = OpenVikingMemoryProvider.prefetch
+    apply_patch()
+    revert_card()  # unwrap auto-mounted card patch for identity check
+    assert OpenVikingMemoryProvider.prefetch is original_prefetch
+
+
+def test_patch_yaml_sets_search_timeout(monkeypatch):
+    """patch.yaml search_timeout is used by the synchronous HTTP call."""
+    captured: Dict[str, Any] = {}
+
+    def mock_post(url, **kwargs):
+        captured["timeout"] = kwargs.get("timeout")
+        return _MockResponse(
+            {
+                "result": {
+                    "memories": [
+                        {
+                            "uri": "viking://memories/preferences/a",
+                            "abstract": "User prefers dark mode",
+                            "score": 0.95,
+                        }
+                    ]
+                }
+            }
+        )
+
+    monkeypatch.setattr("httpx.post", mock_post)
+    monkeypatch.setattr(
+        recall_config,
+        "_read_patch_yaml",
+        lambda: {"owner": {"openviking_sync_recall": {"search_timeout": 5}}},
+    )
+    apply_patch()
+
+    provider = _make_provider()
+    provider.prefetch("what do you know about me")
+
+    assert captured["timeout"] == 5.0
+
+
+def test_force_sync_param_wins_over_patch_yaml(monkeypatch):
+    """apply_patch(force_sync=True) applies even when patch.yaml says false."""
+    from owner.patches.openviking_recall_card_patch import revert_patch as revert_card
+
+    monkeypatch.setattr(
+        recall_config,
+        "_read_patch_yaml",
+        lambda: {"owner": {"openviking_sync_recall": {"enabled": False}}},
+    )
+    apply_patch(force_sync=True)
+    revert_card()  # unwrap auto-mounted card patch for identity check
+    assert OpenVikingMemoryProvider.prefetch is _sync_prefetch
+    assert OpenVikingMemoryProvider.queue_prefetch is _noop_queue_prefetch
