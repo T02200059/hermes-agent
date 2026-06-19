@@ -252,3 +252,10 @@ def async_delivery_supported() -> bool:
     if value is _UNSET:
         return True
     return bool(value)
+
+
+# [owner] cron: register HERMES_CRON_SESSION ContextVar (see owner/cron/session_context.py)
+try:
+    import owner.cron.session_context  # noqa: F401
+except Exception:
+    pass
