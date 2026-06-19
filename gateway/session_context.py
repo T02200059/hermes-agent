@@ -195,3 +195,10 @@ def get_session_env(name: str, default: str = "") -> str:
             return value
     # Fall back to os.environ for CLI, cron, and test compatibility
     return os.getenv(name, default)
+
+
+# [owner] cron: register HERMES_CRON_SESSION ContextVar (see owner/cron/session_context.py)
+try:
+    import owner.cron.session_context  # noqa: F401
+except Exception:
+    pass
