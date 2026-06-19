@@ -5010,6 +5010,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             # inherits the gateway marker, `hermes gateway restart` refuses to
             # run as a self-restart loop guard and the gateway stays stopped.
             watcher_env.pop("_HERMES_GATEWAY", None)
+            # [owner] cron-env-leak: scrub session/cron env (see owner/cron/restart_scrub.py)
+            from owner.cron.restart_scrub import owner_cron_scrub_watcher_env
+            owner_cron_scrub_watcher_env(watcher_env)
             project_root = Path(__file__).resolve().parent.parent
             venv_dir = Path(watcher_env.get("VIRTUAL_ENV") or project_root / "venv")
             site_packages = venv_dir / "Lib" / "site-packages"
@@ -5040,6 +5043,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         # gateway stops and never comes back.
         watcher_env = os.environ.copy()
         watcher_env.pop("_HERMES_GATEWAY", None)
+        # [owner] cron-env-leak: scrub session/cron env (see owner/cron/restart_scrub.py)
+        from owner.cron.restart_scrub import owner_cron_scrub_watcher_env
+        owner_cron_scrub_watcher_env(watcher_env)
         setsid_bin = shutil.which("setsid")
         if setsid_bin:
             subprocess.Popen(
