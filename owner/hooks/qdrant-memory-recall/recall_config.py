@@ -92,6 +92,7 @@ def get_env() -> dict:
             "DAMODEL_API_KEY": env.get("DAMODEL_API_KEY") or "",
             "QDRANT_URL": (env.get("QDRANT_URL") or "").rstrip("/"),
             "QDRANT_KEY": env.get("QDRANT_KEY") or "",
+            "QDRANT_TENANT_ID": env.get("QDRANT_TENANT_ID") or "",
         }
     except Exception as e:
         logger.error(f".env load failed: {e}")
@@ -100,6 +101,7 @@ def get_env() -> dict:
             "DAMODEL_API_KEY": "",
             "QDRANT_URL": "",
             "QDRANT_KEY": "",
+            "QDRANT_TENANT_ID": "",
         }
     return _env_cache
 
