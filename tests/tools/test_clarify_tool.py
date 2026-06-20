@@ -33,10 +33,20 @@ class TestClarifyToolBasics:
         assert result["user_response"] == "blue"
 
     def test_question_with_choices(self):
-        """Should pass choices to callback and return response."""
-        def mock_callback(question: str, choices: Optional[List[str]]) -> str:
+        """Should pass choices to callback and return response.
+
+        Choices are normalized to ``{display, key}`` dicts by owner/ for rich
+        platform rendering (see owner/clarify/choice_normalizer.py).
+        """
+        expected = [
+            {"display": "1", "key": "1"},
+            {"display": "2", "key": "2"},
+            {"display": "3", "key": "3"},
+        ]
+
+        def mock_callback(question: str, choices) -> str:
             assert question == "Pick a number"
-            assert choices == ["1", "2", "3"]
+            assert choices == expected
             return "2"
 
         result = json.loads(clarify_tool(
@@ -45,7 +55,7 @@ class TestClarifyToolBasics:
             callback=mock_callback
         ))
         assert result["question"] == "Pick a number"
-        assert result["choices_offered"] == ["1", "2", "3"]
+        assert result["choices_offered"] == expected
         assert result["user_response"] == "2"
 
     def test_empty_question_returns_error(self):
@@ -104,7 +114,11 @@ class TestClarifyToolChoicesValidation:
             return "answer"
 
         clarify_tool("Pick", choices=["valid", "  ", "", "also valid"], callback=mock_callback)
-        assert choices_received == ["valid", "also valid"]
+        # Normalized to {display, key} dicts; whitespace-only items dropped.
+        assert choices_received == [
+            {"display": "valid", "key": "valid"},
+            {"display": "also valid", "key": "also valid"},
+        ]
 
     def test_invalid_choices_type_returns_error(self):
         """Non-list choices should return error."""
@@ -125,7 +139,12 @@ class TestClarifyToolChoicesValidation:
             return "answer"
 
         clarify_tool("Pick", choices=[1, 2, 3], callback=mock_callback)  # type: ignore
-        assert choices_received == ["1", "2", "3"]
+        # Non-string items are stringified, then normalized to {display, key}.
+        assert choices_received == [
+            {"display": "1", "key": "1"},
+            {"display": "2", "key": "2"},
+            {"display": "3", "key": "3"},
+        ]
 
 
 class TestClarifyToolCallbackHandling:
