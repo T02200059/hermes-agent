@@ -9626,10 +9626,9 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
         self._clarify_deadline = 0
         self._paint_now()
         _cprint(f"\n{_DIM}(clarify timed out after {timeout}s — agent will decide){_RST}")
-        return (
-            "The user did not provide a response within the time limit. "
-            "Use your best judgement to make the choice and proceed."
-        )
+        # [owner] clarify timeout sentinel (see owner/clarify/timeout_handler.py)
+        from tools.clarify_tool import CLARIFY_TIMEOUT_SENTINEL
+        return CLARIFY_TIMEOUT_SENTINEL
 
     def _sudo_password_callback(self) -> str:
         """

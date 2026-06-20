@@ -37,6 +37,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
+from tools.clarify_tool import CLARIFY_SESSION_CLEARED_SENTINEL
+
 logger = logging.getLogger(__name__)
 
 
@@ -221,11 +223,10 @@ def clear_session(session_key: str) -> int:
     for entry in entries:
         if entry is None:
             continue
-        # Empty string sentinel — agent code can distinguish from a real
-        # response by inspecting the wait_for_response return value
-        # alongside its own timeout deadline.  Most callers just treat any
-        # falsy result as "user did not respond".
-        entry.response = ""
+        # [owner] clarify session cleanup sentinel (see owner/clarify/timeout_handler.py)
+        # Use a dedicated sentinel so session-boundary cleanup is not confused
+        # with a real user response or a natural timeout.
+        entry.response = CLARIFY_SESSION_CLEARED_SENTINEL
         entry.event.set()
         cancelled += 1
     return cancelled

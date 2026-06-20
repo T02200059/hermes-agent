@@ -20,6 +20,18 @@ from typing import Any, List, Optional, Callable
 MAX_CHOICES = 4
 
 
+class ClarifyTimeout(Exception):
+    """Raised when the user does not respond to a clarify prompt in time."""
+    pass
+
+
+# Unified sentinel returned by platform callbacks when a clarify prompt times out.
+CLARIFY_TIMEOUT_SENTINEL = "__CLARIFY_TIMEOUT__"
+
+# Distinct sentinel used when a session-boundary cleanup cancels a pending clarify.
+CLARIFY_SESSION_CLEARED_SENTINEL = "__CLARIFY_SESSION_CLEARED__"
+
+
 def _normalize_choices(choices: Any) -> Optional[List[Any]]:
     """Normalize choices via owner/ if available, with legacy fallback.
 
@@ -81,11 +93,16 @@ def clarify_tool(
 
     try:
         user_response = callback(question, choices)
+    except ClarifyTimeout:
+        raise
     except Exception as exc:
         return json.dumps(
             {"error": f"Failed to get user input: {exc}"},
             ensure_ascii=False,
         )
+
+    if user_response == CLARIFY_TIMEOUT_SENTINEL or user_response == CLARIFY_SESSION_CLEARED_SENTINEL:
+        raise ClarifyTimeout("User did not respond within the time limit or session was cleared")
 
     return json.dumps({
         "question": question,

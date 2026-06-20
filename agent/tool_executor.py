@@ -1107,6 +1107,9 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
             if agent._should_emit_quiet_tool_messages():
                 agent._vprint(f"  {_get_cute_tool_message_impl('memory_propose', function_args, tool_duration, result=function_result)}")
         elif function_name == "clarify":
+            # [owner] clarify timeout: stop agent on user inactivity (see owner/clarify/timeout_handler.py)
+            from tools.clarify_tool import ClarifyTimeout as _ClarifyTimeout
+
             def _execute(next_args: dict) -> Any:
                 from tools.clarify_tool import clarify_tool as _clarify_tool
                 return _clarify_tool(
@@ -1114,14 +1117,27 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
                     choices=next_args.get("choices"),
                     callback=agent.clarify_callback,
                 )
-            function_result, function_args = _run_agent_tool_execution_middleware(
-                agent,
-                function_name=function_name,
-                function_args=function_args,
-                effective_task_id=effective_task_id,
-                tool_call_id=getattr(tool_call, "id", "") or "",
-                execute=_execute,
-            )
+
+            try:
+                function_result, function_args = _run_agent_tool_execution_middleware(
+                    agent,
+                    function_name=function_name,
+                    function_args=function_args,
+                    effective_task_id=effective_task_id,
+                    tool_call_id=getattr(tool_call, "id", "") or "",
+                    execute=_execute,
+                )
+            except _ClarifyTimeout:
+                try:
+                    from owner.clarify.timeout_handler import handle_clarify_timeout
+                    function_result = handle_clarify_timeout(agent, getattr(tool_call, "id", "") or "")
+                except Exception:
+                    # Fallback when owner/clarify/ is removed: still stop the agent.
+                    try:
+                        agent.interrupt("clarify timed out")
+                    except Exception:
+                        pass
+                    function_result = "[Clarify timed out after user inactivity — stopping agent]"
             tool_duration = time.time() - tool_start_time
             if agent._should_emit_quiet_tool_messages():
                 agent._vprint(f"  {_get_cute_tool_message_impl('clarify', function_args, tool_duration, result=function_result)}")
