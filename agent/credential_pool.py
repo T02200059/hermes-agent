@@ -2046,6 +2046,9 @@ def _seed_from_env(provider: str, entries: List[PooledCredential]) -> Tuple[bool
         auth_type = AUTH_TYPE_OAUTH if provider == "anthropic" and not token.startswith("sk-ant-api") else AUTH_TYPE_API_KEY
         base_url = env_url or pconfig.inference_base_url
         # [owner] pool-base-url-override: honour model.base_url config (see owner/patches/pool_base_url_override.py)
+        # NOTE: applied BEFORE the kimi-coding/zai branches on purpose — those
+        # providers have token-aware URL resolution (_resolve_kimi/zai_base_url)
+        # that must win, so the config override only affects the generic case.
         from owner.patches.pool_base_url_override import config_base_url_override as _cfg_burl
         _ov = _cfg_burl(provider, base_url)
         base_url = _ov if _ov else base_url
