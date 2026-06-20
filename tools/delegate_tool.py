@@ -38,6 +38,14 @@ from toolsets import TOOLSETS
 _RUNTIME_PROVIDER_CUSTOM = "custom"
 from tools import file_state
 from tools.terminal_tool import set_approval_callback as _set_subagent_approval_cb
+# [owner] memory_propose / approval: propagate the parent agent-turn's
+# ContextVars (_approval_session_key etc.) into batch-delegation worker
+# threads. A bare ThreadPoolExecutor worker starts with an empty
+# contextvars.Context, so without this a batch child's memory_propose
+# proposals / dangerous-command approvals would fall back to os.environ and
+# land in the wrong session's queue under concurrent gateway load. See
+# agent/tool_executor.py:~605 for the same pattern in concurrent tool dispatch.
+from tools.thread_context import propagate_context_to_thread
 from utils import base_url_hostname, is_truthy_value
 
 
@@ -2333,8 +2341,12 @@ def delegate_task(
         with ThreadPoolExecutor(max_workers=max_children) as executor:
             futures = {}
             for i, t, child in children:
+                # [owner] memory_propose / approval: wrap _run_single_child so
+                # each batch worker inherits the parent turn's ContextVars
+                # (tools.thread_context.propagate_context_to_thread). Same fix
+                # as agent/tool_executor.py concurrent tool dispatch.
                 future = executor.submit(
-                    _run_single_child,
+                    propagate_context_to_thread(_run_single_child),
                     task_index=i,
                     goal=t["goal"],
                     child=child,
