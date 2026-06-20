@@ -1133,8 +1133,10 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
                     function_result = handle_clarify_timeout(agent, getattr(tool_call, "id", "") or "")
                 except Exception:
                     # Fallback when owner/clarify/ is removed: still stop the agent.
+                    # Bare interrupt() (no message) so the gateway/CLI don't
+                    # re-feed it as a phantom next turn — see owner/clarify/timeout_handler.py.
                     try:
-                        agent.interrupt("clarify timed out")
+                        agent.interrupt()
                     except Exception:
                         pass
                     function_result = "[Clarify timed out after user inactivity — stopping agent]"
