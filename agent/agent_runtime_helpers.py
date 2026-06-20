@@ -2041,8 +2041,10 @@ def invoke_tool(agent, function_name: str, function_args: dict, effective_task_i
             return handle_clarify_timeout(agent, tool_call_id or "")
         except Exception:
             # Fallback when owner/clarify/ is removed: still stop the agent.
+            # Bare interrupt() (no message) so the gateway/CLI don't re-feed the
+            # message as a phantom next turn — see owner/clarify/timeout_handler.py.
             try:
-                agent.interrupt("clarify timed out")
+                agent.interrupt()
             except Exception:
                 pass
             return "[Clarify timed out after user inactivity — stopping agent]"
