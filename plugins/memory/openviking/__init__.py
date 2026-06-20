@@ -188,6 +188,12 @@ class _VikingClient:
         )
         return self._parse_response(resp)
 
+    def delete(self, path: str, **kwargs) -> dict:
+        resp = self._httpx.delete(
+            self._url(path), headers=self._headers(), timeout=_TIMEOUT, **kwargs
+        )
+        return self._parse_response(resp)
+
     def upload_temp_file(self, file_path: Path) -> str:
         mime_type = mimetypes.guess_type(file_path.name)[0] or "application/octet-stream"
         with file_path.open("rb") as f:
@@ -239,6 +245,14 @@ SEARCH_SCHEMA = {
                 "description": "Viking URI prefix to scope search (e.g. 'viking://resources/docs/').",
             },
             "limit": {"type": "integer", "description": "Max results (default: 10)."},
+            "types": {
+                "type": "array",
+                "items": {
+                    "type": "string",
+                    "enum": ["memory", "resource", "skill"],
+                },
+                "description": "Optional context type filter. Defaults to all types.",
+            },
         },
         "required": ["query"],
     },
@@ -260,6 +274,18 @@ READ_SCHEMA = {
             "level": {
                 "type": "string", "enum": ["abstract", "overview", "full"],
                 "description": "Detail level (default: overview).",
+            },
+            "offset": {
+                "type": "integer",
+                "description": "Starting line number for full reads (0-indexed, default: 0).",
+            },
+            "limit": {
+                "type": "integer",
+                "description": "Number of lines to read for full reads (-1 means to end, default: -1).",
+            },
+            "raw": {
+                "type": "boolean",
+                "description": "Return raw stored content without memory-field cleanup (full level only).",
             },
         },
         "required": ["uri"],
@@ -284,6 +310,18 @@ BROWSE_SCHEMA = {
             "path": {
                 "type": "string",
                 "description": "Viking URI path (default: viking://). Examples: 'viking://resources/', 'viking://user/memories/'.",
+            },
+            "recursive": {
+                "type": "boolean",
+                "description": "For list/tree: include subdirectories recursively (default: false).",
+            },
+            "node_limit": {
+                "type": "integer",
+                "description": "Max entries to return (default: 1000).",
+            },
+            "level_limit": {
+                "type": "integer",
+                "description": "For tree: max directory depth (default: 3).",
             },
         },
         "required": ["action"],
@@ -349,6 +387,109 @@ ADD_RESOURCE_SCHEMA = {
             },
         },
         "required": ["url"],
+    },
+}
+
+DELETE_SCHEMA = {
+    "name": "viking_delete",
+    "description": (
+        "Delete a file or directory in the OpenViking knowledge store. "
+        "Use recursive=true to delete a directory and all its contents."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "uri": {
+                "type": "string",
+                "description": "viking:// URI of the file or directory to delete.",
+            },
+            "recursive": {
+                "type": "boolean",
+                "description": "Delete directories recursively (default: false).",
+            },
+        },
+        "required": ["uri"],
+    },
+}
+
+GREP_SCHEMA = {
+    "name": "viking_grep",
+    "description": (
+        "Search file contents by regex pattern in the OpenViking knowledge store. "
+        "Returns matching lines with file URIs."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "uri": {
+                "type": "string",
+                "description": "viking:// URI to search under (default: viking://).",
+            },
+            "pattern": {
+                "type": "string",
+                "description": "Regex pattern to search for.",
+            },
+            "case_insensitive": {
+                "type": "boolean",
+                "description": "Ignore case when matching (default: false).",
+            },
+            "exclude_uri": {
+                "type": "string",
+                "description": "Optional viking:// URI prefix to exclude from search.",
+            },
+            "node_limit": {
+                "type": "integer",
+                "description": "Maximum number of matches to return.",
+            },
+            "level_limit": {
+                "type": "integer",
+                "description": "Maximum directory depth to traverse (default: 5).",
+            },
+        },
+        "required": ["pattern"],
+    },
+}
+
+MOVE_SCHEMA = {
+    "name": "viking_move",
+    "description": (
+        "Move or rename a file or directory in the OpenViking knowledge store."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "from_uri": {
+                "type": "string",
+                "description": "Source viking:// URI.",
+            },
+            "to_uri": {
+                "type": "string",
+                "description": "Destination viking:// URI.",
+            },
+        },
+        "required": ["from_uri", "to_uri"],
+    },
+}
+
+MKDIR_SCHEMA = {
+    "name": "viking_mkdir",
+    "description": (
+        "Create a directory in the OpenViking knowledge store. "
+        "Optionally provide a description to seed the directory abstract."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "uri": {
+                "type": "string",
+                "description": "viking:// URI of the new directory.",
+            },
+            "description": {
+                "type": "string",
+                "description": "Optional directory description written to .abstract.md.",
+            },
+        },
+        "required": ["uri"],
     },
 }
 
@@ -542,7 +683,7 @@ class OpenVikingMemoryProvider(MemoryProvider):
                 )
                 resp = client.post("/api/v1/search/find", {
                     "query": query,
-                    "top_k": 5,
+                    "limit": 5,
                 })
                 result = resp.get("result", {})
                 parts = []
@@ -626,6 +767,43 @@ class OpenVikingMemoryProvider(MemoryProvider):
         except Exception as e:
             logger.warning("OpenViking session commit failed: %s", e)
 
+    def on_session_switch(
+        self,
+        new_session_id: str,
+        *,
+        parent_session_id: str = "",
+        reset: bool = False,
+        **kwargs,
+    ) -> None:
+        """Rotate cached per-session state when the agent switches session_id.
+
+        Core already calls commit_memory_session() before this hook, so we only
+        need to flush the in-flight sync thread and reset counters. Creating a
+        second commit here would double-archive the same conversation.
+        """
+        if not self._client or not new_session_id:
+            return
+
+        # Flush any pending turn writes so they land in the old session.
+        if self._sync_thread and self._sync_thread.is_alive():
+            self._sync_thread.join(timeout=10.0)
+
+        # Rotate state.
+        self._session_id = new_session_id
+        self._turn_count = 0
+
+        # Prefetch is tied to the upcoming turn, not the old session; clearing it
+        # avoids stale context being injected under the new session_id.
+        if self._prefetch_thread and self._prefetch_thread.is_alive():
+            self._prefetch_thread.join(timeout=3.0)
+        with self._prefetch_lock:
+            self._prefetch_result = ""
+
+        logger.debug(
+            "OpenViking switched session: new=%s parent=%s reset=%s",
+            new_session_id, parent_session_id, reset,
+        )
+
     def _build_memory_uri(self, subdir: str) -> str:
         """Build a viking:// memory URI under the configured user/agent/subdir."""
         slug = uuid.uuid4().hex[:12]
@@ -663,24 +841,38 @@ class OpenVikingMemoryProvider(MemoryProvider):
         t.start()
 
     def get_tool_schemas(self) -> List[Dict[str, Any]]:
-        return [SEARCH_SCHEMA, READ_SCHEMA, BROWSE_SCHEMA, REMEMBER_SCHEMA, ADD_RESOURCE_SCHEMA]
+        return [
+            SEARCH_SCHEMA,
+            READ_SCHEMA,
+            BROWSE_SCHEMA,
+            REMEMBER_SCHEMA,
+            ADD_RESOURCE_SCHEMA,
+            DELETE_SCHEMA,
+            GREP_SCHEMA,
+            MOVE_SCHEMA,
+            MKDIR_SCHEMA,
+        ]
 
     def handle_tool_call(self, tool_name: str, args: dict, **kwargs) -> str:
         if not self._client:
             return tool_error("OpenViking server not connected")
 
-        try:
-            if tool_name == "viking_search":
-                return self._tool_search(args)
-            elif tool_name == "viking_read":
-                return self._tool_read(args)
-            elif tool_name == "viking_browse":
-                return self._tool_browse(args)
-            elif tool_name == "viking_remember":
-                return self._tool_remember(args)
-            elif tool_name == "viking_add_resource":
-                return self._tool_add_resource(args)
+        dispatch = {
+            "viking_search": self._tool_search,
+            "viking_read": self._tool_read,
+            "viking_browse": self._tool_browse,
+            "viking_remember": self._tool_remember,
+            "viking_add_resource": self._tool_add_resource,
+            "viking_delete": self._tool_delete,
+            "viking_grep": self._tool_grep,
+            "viking_move": self._tool_move,
+            "viking_mkdir": self._tool_mkdir,
+        }
+        handler = dispatch.get(tool_name)
+        if handler is None:
             return tool_error(f"Unknown tool: {tool_name}")
+        try:
+            return handler(args)
         except Exception as e:
             return tool_error(str(e))
 
@@ -748,7 +940,9 @@ class OpenVikingMemoryProvider(MemoryProvider):
         if args.get("scope"):
             payload["target_uri"] = args["scope"]
         if args.get("limit"):
-            payload["top_k"] = args["limit"]
+            payload["limit"] = args["limit"]
+        if args.get("types"):
+            payload["context_type"] = args["types"]
 
         resp = self._client.post("/api/v1/search/find", payload)
         result = resp.get("result", {})
@@ -811,14 +1005,28 @@ class OpenVikingMemoryProvider(MemoryProvider):
             elif level == "overview":
                 endpoint = "/api/v1/content/overview"
 
+        # Build params for content/read only (abstract/overview ignore offset/limit/raw)
+        params: Dict[str, Any] = {"uri": resolved_uri}
+        if endpoint == "/api/v1/content/read":
+            offset = args.get("offset", 0)
+            line_limit = args.get("limit", -1)
+            raw = args.get("raw", False)
+            if offset not in {None, 0}:
+                params["offset"] = offset
+            if line_limit not in {None, -1}:
+                params["limit"] = line_limit
+            if raw:
+                params["raw"] = True
+
         try:
-            resp = self._client.get(endpoint, params={"uri": resolved_uri})
+            resp = self._client.get(endpoint, params=params)
         except Exception:
             # OpenViking may return HTTP 500 for abstract/overview reads on normal
             # file URIs (mem_*.md). For those, gracefully fallback to full read.
             if not summary_level or resolved_uri != uri or used_fallback:
                 raise
-            resp = self._client.get("/api/v1/content/read", params={"uri": uri})
+            params["uri"] = uri
+            resp = self._client.get("/api/v1/content/read", params=params)
             used_fallback = True
 
         result = self._unwrap_result(resp)
@@ -858,7 +1066,17 @@ class OpenVikingMemoryProvider(MemoryProvider):
         # Map action to the correct fs endpoint (all GET with uri= param)
         endpoint_map = {"tree": "/api/v1/fs/tree", "list": "/api/v1/fs/ls", "stat": "/api/v1/fs/stat"}
         endpoint = endpoint_map.get(action, "/api/v1/fs/ls")
-        resp = self._client.get(endpoint, params={"uri": path})
+
+        params: Dict[str, Any] = {"uri": path}
+        if action in {"list", "tree"}:
+            if args.get("recursive"):
+                params["recursive"] = True
+            if args.get("node_limit") is not None:
+                params["node_limit"] = args["node_limit"]
+            if action == "tree" and args.get("level_limit") is not None:
+                params["level_limit"] = args["level_limit"]
+
+        resp = self._client.get(endpoint, params=params)
         result = self._unwrap_result(resp)
 
         # Format list/tree results for readability
@@ -868,8 +1086,9 @@ class OpenVikingMemoryProvider(MemoryProvider):
                 raw_entries = result.get("entries") or result.get("items") or result.get("children") or []
 
             if isinstance(raw_entries, list):
+                node_limit = args.get("node_limit", 50)
                 entries = []
-                for e in raw_entries[:50]:  # cap at 50 entries
+                for e in raw_entries[:node_limit]:
                     uri = e.get("uri", "")
                     name = e.get("rel_path") or e.get("name") or (uri.rsplit("/", 1)[-1] if uri else "")
                     is_dir = bool(e.get("isDir") or e.get("is_dir") or e.get("type") == "dir")
@@ -890,25 +1109,58 @@ class OpenVikingMemoryProvider(MemoryProvider):
 
         category = args.get("category", "")
         subdir = _CATEGORY_SUBDIR_MAP.get(category, _DEFAULT_MEMORY_SUBDIR)
-        uri = self._build_memory_uri(subdir)
 
-        # Write directly via content/write API.
-        # This creates the file, stores the content, and queues vector indexing
-        # in a single call — no dependency on session commit / VLM extraction.
+        # 1. Create or reuse a dedicated remember session (isolated from the
+        #    main conversation session).
+        ephe_id = f"remember-{uuid.uuid4().hex[:8]}"
         try:
-            result = self._client.post("/api/v1/content/write", {
-                "uri": uri,
-                "content": content,
-                "mode": "create",
-            })
-            written = result.get("result", {}).get("written_bytes", 0)
-            return json.dumps({
-                "status": "stored",
-                "message": f"Memory stored ({written}b) and queued for vector indexing.",
+            self._client.post("/api/v1/sessions", {"session_id": ephe_id})
+        except Exception as e:
+            logger.warning("OpenViking remember session creation failed: %s", e)
+            return tool_error(f"Failed to create remember session: {e}")
+
+        # 2. Write the memory content (with a category hint for the VLM).
+        try:
+            self._client.post(f"/api/v1/sessions/{ephe_id}/messages", {
+                "role": "user",
+                "content": f"[category:{subdir}] {content}",
             })
         except Exception as e:
-            logger.error("OpenViking content/write failed: %s", e)
-            return tool_error(f"Failed to store memory: {e}")
+            logger.warning("OpenViking remember message failed: %s", e)
+            return tool_error(f"Failed to store memory message: {e}")
+
+        # 3. Commit immediately to trigger the memory extraction pipeline.
+        try:
+            commit_resp = self._client.post(f"/api/v1/sessions/{ephe_id}/commit")
+        except Exception as e:
+            logger.warning("OpenViking remember commit failed: %s", e)
+            return tool_error(f"Failed to commit memory: {e}")
+
+        # 4. Wait briefly for background semantic/embedding processing.
+        wait_timeout = 15.0
+        try:
+            self._client.post("/api/v1/system/wait", {"timeout": wait_timeout})
+        except Exception as e:
+            logger.debug("OpenViking remember wait_processed failed: %s", e)
+            # Wait failure is not a total failure — commit has already been accepted.
+
+        # 5. Clean up the ephemeral session (best-effort, failures ignored).
+        try:
+            self._client._httpx.delete(
+                self._client._url(f"/api/v1/sessions/{ephe_id}"),
+                headers=self._client._headers(),
+                timeout=_TIMEOUT,
+            )
+        except Exception:
+            pass
+
+        task_id = commit_resp.get("result", {}).get("task_id", "")
+        return json.dumps({
+            "status": "stored",
+            "session_id": ephe_id,
+            "task_id": task_id,
+            "message": "Memory committed via session pipeline. It will be searchable once background processing finishes.",
+        }, ensure_ascii=False)
 
     def _tool_add_resource(self, args: dict) -> str:
         url = args.get("url", "")
@@ -965,7 +1217,84 @@ class OpenVikingMemoryProvider(MemoryProvider):
         return json.dumps({
             "status": "added",
             "root_uri": result.get("root_uri", ""),
+            "task_id": result.get("task_id", ""),
+            "queue_status": result.get("queue_status", {}),
             "message": "Resource queued for processing. Use viking_search after a moment to find it.",
+        }, ensure_ascii=False)
+
+    def _tool_delete(self, args: dict) -> str:
+        uri = args.get("uri", "")
+        if not uri:
+            return tool_error("uri is required")
+
+        params: Dict[str, Any] = {"uri": uri}
+        if args.get("recursive"):
+            params["recursive"] = True
+
+        resp = self._client.delete("/api/v1/fs", params=params)
+        result = self._unwrap_result(resp) or {}
+        return json.dumps({
+            "status": "deleted",
+            "uri": result.get("uri", uri),
+            "estimated_deleted_count": result.get("estimated_deleted_count"),
+        }, ensure_ascii=False)
+
+    def _tool_grep(self, args: dict) -> str:
+        pattern = args.get("pattern", "")
+        if not pattern:
+            return tool_error("pattern is required")
+
+        payload: Dict[str, Any] = {
+            "uri": args.get("uri", "viking://"),
+            "pattern": pattern,
+        }
+        if args.get("case_insensitive"):
+            payload["case_insensitive"] = True
+        if args.get("exclude_uri"):
+            payload["exclude_uri"] = args["exclude_uri"]
+        if args.get("node_limit") is not None:
+            payload["node_limit"] = args["node_limit"]
+        if args.get("level_limit") is not None:
+            payload["level_limit"] = args["level_limit"]
+
+        resp = self._client.post("/api/v1/search/grep", payload)
+        result = self._unwrap_result(resp) or {}
+        return json.dumps({
+            "count": result.get("count", 0),
+            "matches": result.get("matches", []),
+        }, ensure_ascii=False)
+
+    def _tool_move(self, args: dict) -> str:
+        from_uri = args.get("from_uri", "")
+        to_uri = args.get("to_uri", "")
+        if not from_uri or not to_uri:
+            return tool_error("from_uri and to_uri are required")
+
+        resp = self._client.post("/api/v1/fs/mv", {
+            "from_uri": from_uri,
+            "to_uri": to_uri,
+        })
+        result = self._unwrap_result(resp) or {}
+        return json.dumps({
+            "status": "moved",
+            "from": result.get("from", from_uri),
+            "to": result.get("to", to_uri),
+        }, ensure_ascii=False)
+
+    def _tool_mkdir(self, args: dict) -> str:
+        uri = args.get("uri", "")
+        if not uri:
+            return tool_error("uri is required")
+
+        payload: Dict[str, Any] = {"uri": uri}
+        if args.get("description"):
+            payload["description"] = args["description"]
+
+        resp = self._client.post("/api/v1/fs/mkdir", payload)
+        result = self._unwrap_result(resp) or {}
+        return json.dumps({
+            "status": "created",
+            "uri": result.get("uri", uri),
         }, ensure_ascii=False)
 
 
