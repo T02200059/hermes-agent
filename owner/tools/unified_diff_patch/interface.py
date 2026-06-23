@@ -80,6 +80,11 @@ def _suggest_path(original: str, resolved: str, base_dir: Path) -> str:
     """如果相对路径在工作区根的某个子目录下存在同名文件，给出建议。"""
     if Path(original).expanduser().is_absolute():
         return ""
+    # Defense-in-depth: never probe outside the workspace via a '..' path.
+    # (Traversal is already rejected upstream in _resolve_and_guard_paths;
+    # this guards the read-only existence probe if called from elsewhere.)
+    if has_traversal_component(original):
+        return ""
     rel = Path(original)
     suggestions = []
     try:
