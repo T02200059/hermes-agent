@@ -16048,7 +16048,24 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     # [owner] clarify session cleanup sentinel (see owner/clarify/timeout_handler.py)
                     return CLARIFY_SESSION_CLEARED_SENTINEL
                 if response is None or response == "":
-                    # [owner] clarify timeout sentinel (see owner/clarify/timeout_handler.py)
+                    # [owner] clarify timeout: notify the user the operation
+                    # stopped (the agent loop exits silently via interrupt(),
+                    # so without this the user sees nothing). Best-effort send,
+                    # then return the sentinel that raises ClarifyTimeout.
+                    # See owner/clarify/timeout_handler.py.
+                    try:
+                        safe_schedule_threadsafe(
+                            _status_adapter.send(
+                                _status_chat_id,
+                                f"⏳ 未在 {int(timeout / 60)} 分钟内收到回复，已停止当前操作。需要的话再发消息给我。",
+                                metadata=_status_thread_metadata,
+                            ),
+                            _loop_for_step,
+                            logger=logger,
+                            log_message="clarify timeout notice scheduling error",
+                        )
+                    except Exception as _notice_exc:
+                        logger.debug("clarify timeout notice failed: %s", _notice_exc)
                     return CLARIFY_TIMEOUT_SENTINEL
                 return response
 
