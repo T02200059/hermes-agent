@@ -19,6 +19,7 @@ import base64
 import logging
 import os
 from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import urlparse
 
 import requests
 
@@ -275,6 +276,34 @@ class DashScopeImageGenProvider(ImageGenProvider):
             source_images.append(image_url)
         if reference_image_urls:
             source_images.extend(reference_image_urls)
+
+        # WR-01: honor the advertised reference-image cap instead of shipping an
+        # oversized payload and getting an opaque API error back.
+        max_ref = int(self.capabilities().get("max_reference_images", 3) or 3)
+        if len(source_images) > max_ref:
+            return error_response(
+                error=f"At most {max_ref} reference images supported; got {len(source_images)}.",
+                error_type="invalid_input",
+                provider=self.name,
+                model=actual_model,
+                prompt=prompt,
+                aspect_ratio=aspect,
+            )
+
+        # WR-02: reject non-http(s)/data source URLs before they enter the
+        # payload (DashScope fetches these server-side).
+        for img in source_images:
+            scheme = urlparse(str(img)).scheme.lower()
+            if scheme not in ("http", "https", "data"):
+                return error_response(
+                    error=f"Unsupported image URL scheme {scheme!r}; only http/https/data are allowed.",
+                    error_type="invalid_input",
+                    provider=self.name,
+                    model=actual_model,
+                    prompt=prompt,
+                    aspect_ratio=aspect,
+                )
+
         for img in source_images:
             content.append({"image": img})
         content.append({"text": prompt})
