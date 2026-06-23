@@ -548,7 +548,7 @@ def test_resolve_sender_profile_uses_open_id_for_bot_name_lookup():
     async def _direct(func, *args, **kwargs):
         return func(*args, **kwargs)
 
-    with patch("gateway.platforms.feishu.asyncio.to_thread", side_effect=_direct):
+    with patch("plugins.platforms.feishu.adapter.asyncio.to_thread", side_effect=_direct):
         profile = asyncio.run(
             adapter._resolve_sender_profile(
                 SimpleNamespace(open_id="ou_peer", user_id="u_peer", union_id="on_peer"),

@@ -14,7 +14,7 @@ class TestFeishuCompressionSummaryCard(unittest.TestCase):
     @patch.dict(os.environ, {}, clear=True)
     def test_send_uses_interactive_card_for_compression_summary(self):
         from gateway.config import PlatformConfig
-        from gateway.platforms.feishu import FeishuAdapter, SendResult
+        from plugins.platforms.feishu.adapter import FeishuAdapter, SendResult
 
         adapter = FeishuAdapter(PlatformConfig())
         adapter._client = SimpleNamespace()  # satisfy send() connection check
@@ -34,7 +34,7 @@ class TestFeishuCompressionSummaryCard(unittest.TestCase):
             "进度：\n• 读取 config.py\n• 修改 jwt 逻辑"
         )
 
-        with patch("gateway.platforms.feishu.asyncio.to_thread", side_effect=_direct), \
+        with patch("plugins.platforms.feishu.adapter.asyncio.to_thread", side_effect=_direct), \
              patch.object(FeishuAdapter, "send_card", _fake_send_card):
             result = asyncio.run(
                 adapter.send(
@@ -57,7 +57,7 @@ class TestFeishuCompressionSummaryCard(unittest.TestCase):
     @patch.dict(os.environ, {}, clear=True)
     def test_send_falls_through_for_non_compression_text(self):
         from gateway.config import PlatformConfig
-        from gateway.platforms.feishu import FeishuAdapter
+        from plugins.platforms.feishu.adapter import FeishuAdapter
 
         adapter = FeishuAdapter(PlatformConfig())
         captured = {}
@@ -82,7 +82,7 @@ class TestFeishuCompressionSummaryCard(unittest.TestCase):
             return func(*args, **kwargs)
 
         # Auto-card is not relevant for this test; make it fall through.
-        from gateway.platforms import feishu as _feishu_module
+        import plugins.platforms.feishu.adapter as _feishu_module
 
         _feishu_module._owner_lazy.pop("owner.feishu.auto_card.try_auto_card", None)
 
@@ -94,7 +94,7 @@ class TestFeishuCompressionSummaryCard(unittest.TestCase):
                 return _fake_try_auto_card
             return None
 
-        with patch("gateway.platforms.feishu.asyncio.to_thread", side_effect=_direct), \
+        with patch("plugins.platforms.feishu.adapter.asyncio.to_thread", side_effect=_direct), \
              patch.object(_feishu_module, "_owner_import", _fake_owner_import):
             result = asyncio.run(
                 adapter.send(

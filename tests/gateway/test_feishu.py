@@ -1627,8 +1627,8 @@ class TestAdapterBehavior(unittest.TestCase):
     @patch("owner.feishu.sender_name_helpers.pre_warm_sender_name")
     def test_process_inbound_message_pre_warms_sender_name(self, mock_pre_warm):
         from gateway.config import PlatformConfig
-        from gateway.platforms import feishu as feishu_mod
-        from gateway.platforms.feishu import FeishuAdapter
+        from plugins.platforms.feishu.adapter import FeishuAdapter
+        import plugins.platforms.feishu.adapter as feishu_mod
 
         feishu_mod._owner_lazy.clear()
         adapter = FeishuAdapter(PlatformConfig())
@@ -1660,7 +1660,7 @@ class TestAdapterBehavior(unittest.TestCase):
     @patch.dict(os.environ, {}, clear=True)
     def test_process_inbound_group_message_does_not_cache_p2p_chat_id(self):
         from gateway.config import PlatformConfig
-        from gateway.platforms.feishu import FeishuAdapter
+        from plugins.platforms.feishu.adapter import FeishuAdapter
         from owner.feishu.user_cache import get_cached_chat_id
 
         adapter = FeishuAdapter(PlatformConfig())

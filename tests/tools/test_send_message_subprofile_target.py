@@ -28,7 +28,7 @@ async def test_send_feishu_merges_extra_metadata(monkeypatch):
             captured["metadata"] = metadata
             return types.SimpleNamespace(success=True, message_id="m1")
 
-    import gateway.platforms.feishu as feishu_mod
+    import plugins.platforms.feishu.adapter as feishu_mod
     monkeypatch.setattr(feishu_mod, "FeishuAdapter", FakeAdapter, raising=False)
     monkeypatch.setattr(feishu_mod, "FEISHU_AVAILABLE", True, raising=False)
 

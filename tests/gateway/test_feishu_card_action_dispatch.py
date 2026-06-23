@@ -39,8 +39,8 @@ def _ensure_feishu_mocks():
 _ensure_feishu_mocks()
 
 from gateway.config import PlatformConfig  # noqa: E402
-import gateway.platforms.feishu as feishu_module  # noqa: E402
-from gateway.platforms.feishu import FeishuAdapter  # noqa: E402
+import plugins.platforms.feishu.adapter as feishu_module  # noqa: E402
+from plugins.platforms.feishu.adapter import FeishuAdapter  # noqa: E402
 
 
 def _make_adapter() -> FeishuAdapter:

@@ -55,7 +55,7 @@ def test_send_result_rotate_independent_of_retryable():
 @pytest.fixture
 def _feishu_adapter():
     from gateway.config import PlatformConfig
-    from gateway.platforms.feishu import FeishuAdapter
+    from plugins.platforms.feishu.adapter import FeishuAdapter
     return FeishuAdapter(PlatformConfig())
 
 
@@ -87,7 +87,7 @@ def _run_edit_with_response_codes(adapter, codes):
     async def _direct(func, *args, **kwargs):
         return func(*args, **kwargs)
 
-    with patch("gateway.platforms.feishu.asyncio.to_thread", side_effect=_direct):
+    with patch("plugins.platforms.feishu.adapter.asyncio.to_thread", side_effect=_direct):
         return asyncio.run(
             adapter.edit_message(
                 chat_id="oc_chat",

@@ -158,7 +158,7 @@ class TestFeishuExecApproval:
 
     @pytest.mark.asyncio
     async def test_pre_warms_sender_name_cache(self):
-        from gateway.platforms import feishu as feishu_mod
+        import plugins.platforms.feishu.adapter as feishu_mod
 
         feishu_mod._owner_lazy.clear()
         adapter = _make_adapter()
@@ -517,6 +517,13 @@ def _patch_callback_card_types(monkeypatch):
     """Provide real-ish P2CardActionTriggerResponse / CallBackCard for tests."""
     monkeypatch.setattr(feishu_module, "P2CardActionTriggerResponse", _FakeP2Response)
     monkeypatch.setattr(feishu_module, "CallBackCard", _FakeCallBackCard)
+    # Owner helpers import directly from lark_oapi, so patch the canonical source too.
+    try:
+        import lark_oapi.event.callback.model.p2_card_action_trigger as _lark_trigger
+        monkeypatch.setattr(_lark_trigger, "P2CardActionTriggerResponse", _FakeP2Response)
+        monkeypatch.setattr(_lark_trigger, "CallBackCard", _FakeCallBackCard)
+    except Exception:
+        pass
 
 
 class TestCardActionCallbackResponse:
