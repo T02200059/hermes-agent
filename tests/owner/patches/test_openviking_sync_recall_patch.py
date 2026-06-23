@@ -55,7 +55,12 @@ def _make_provider() -> OpenVikingMemoryProvider:
 
 def test_default_env_vars_enable_patch():
     """With no env vars set, apply_patch enables both sync and advisory."""
+    from owner.patches.openviking_recall_card_patch import revert_patch as revert_card
+
     apply_patch()
+    # The sync patch auto-mounts the recall card patch, which wraps prefetch.
+    # Revert the card wrapper so we can verify the sync patch itself is in place.
+    revert_card()
     assert OpenVikingMemoryProvider.prefetch is _sync_prefetch
     assert OpenVikingMemoryProvider.queue_prefetch is _noop_queue_prefetch
     assert memory_manager.build_memory_context_block is _build_advisory_memory_context_block
@@ -63,10 +68,14 @@ def test_default_env_vars_enable_patch():
 
 def test_sync_recall_disabled(monkeypatch):
     """OPENVIKING_SYNC_RECALL=0 leaves prefetch/queue_prefetch unchanged."""
+    from owner.patches.openviking_recall_card_patch import revert_patch as revert_card
+
     monkeypatch.setenv("OPENVIKING_SYNC_RECALL", "0")
     original_prefetch = OpenVikingMemoryProvider.prefetch
     original_queue_prefetch = OpenVikingMemoryProvider.queue_prefetch
     apply_patch()
+    # The sync patch auto-mounts the recall card patch; unwrap for identity check.
+    revert_card()
     assert OpenVikingMemoryProvider.prefetch is original_prefetch
     assert OpenVikingMemoryProvider.queue_prefetch is original_queue_prefetch
     assert memory_manager.build_memory_context_block is _build_advisory_memory_context_block
@@ -74,9 +83,13 @@ def test_sync_recall_disabled(monkeypatch):
 
 def test_advisory_memory_disabled(monkeypatch):
     """OPENVIKING_ADVISORY_MEMORY=0 leaves build_memory_context_block unchanged."""
+    from owner.patches.openviking_recall_card_patch import revert_patch as revert_card
+
     monkeypatch.setenv("OPENVIKING_ADVISORY_MEMORY", "0")
     original_build = memory_manager.build_memory_context_block
     apply_patch()
+    # Unwrap the auto-mounted recall card patch for identity checks.
+    revert_card()
     assert memory_manager.build_memory_context_block is original_build
     assert OpenVikingMemoryProvider.prefetch is _sync_prefetch
     assert OpenVikingMemoryProvider.queue_prefetch is _noop_queue_prefetch
@@ -84,12 +97,15 @@ def test_advisory_memory_disabled(monkeypatch):
 
 def test_apply_and_revert_idempotent():
     """apply_patch and revert_patch can be called repeatedly without corruption."""
+    from owner.patches.openviking_recall_card_patch import revert_patch as revert_card
+
     original_prefetch = OpenVikingMemoryProvider.prefetch
     original_queue_prefetch = OpenVikingMemoryProvider.queue_prefetch
     original_build = memory_manager.build_memory_context_block
 
     apply_patch()
     apply_patch()
+    revert_card()  # unwrap auto-mounted card patch for identity checks
     assert OpenVikingMemoryProvider.prefetch is _sync_prefetch
 
     revert_patch()
@@ -101,6 +117,7 @@ def test_apply_and_revert_idempotent():
     assert OpenVikingMemoryProvider.prefetch is original_prefetch
 
     apply_patch()
+    revert_card()  # unwrap auto-mounted card patch for identity check
     assert OpenVikingMemoryProvider.prefetch is _sync_prefetch
 
 
