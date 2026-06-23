@@ -2947,3 +2947,95 @@ def test_queue_prefetch_sends_limit_not_legacy_top_k():
 
     assert captured_payloads == [{"query": "anything", "limit": 5}]
     assert "top_k" not in captured_payloads[0]
+def test_tool_read_passes_pagination_and_raw():
+    provider = OpenVikingMemoryProvider()
+    provider._client = MagicMock()
+    provider._client.get.return_value = {"result": "line1\nline2\nline3"}
+
+    result = json.loads(provider._tool_read({
+        "uri": "viking://resources/docs/api.md",
+        "level": "full",
+        "offset": 10,
+        "limit": 20,
+        "raw": True,
+    }))
+
+    provider._client.get.assert_called_once_with("/api/v1/content/read", params={
+        "uri": "viking://resources/docs/api.md",
+        "offset": 10,
+        "limit": 20,
+        "raw": True,
+    })
+    assert result["level"] == "full"
+
+
+def test_tool_browse_passes_recursive_and_node_limit():
+    provider = OpenVikingMemoryProvider()
+    provider._client = MagicMock()
+    provider._client.get.return_value = {"result": []}
+
+    provider._tool_browse({
+        "action": "list",
+        "path": "viking://resources/",
+        "recursive": True,
+        "node_limit": 200,
+    })
+
+    provider._client.get.assert_called_once_with("/api/v1/fs/ls", params={
+        "uri": "viking://resources/",
+        "recursive": True,
+        "node_limit": 200,
+    })
+
+
+def test_tool_delete_calls_fs_delete():
+    provider = OpenVikingMemoryProvider()
+    provider._client = MagicMock()
+    provider._client.delete.return_value = {"result": {"uri": "viking://resources/old.md"}}
+
+    result = json.loads(provider._tool_delete({"uri": "viking://resources/old.md"}))
+
+    provider._client.delete.assert_called_once_with("/api/v1/fs", params={"uri": "viking://resources/old.md"})
+    assert result["status"] == "deleted"
+
+
+def test_tool_grep_calls_search_grep():
+    provider = OpenVikingMemoryProvider()
+    provider._client = MagicMock()
+    provider._client.post.return_value = {"result": {"matches": [], "count": 0}}
+
+    provider._tool_grep({"uri": "viking://resources/", "pattern": "TODO", "case_insensitive": True})
+
+    provider._client.post.assert_called_once_with("/api/v1/search/grep", {
+        "uri": "viking://resources/",
+        "pattern": "TODO",
+        "case_insensitive": True,
+    })
+
+
+def test_tool_move_calls_fs_mv():
+    provider = OpenVikingMemoryProvider()
+    provider._client = MagicMock()
+    provider._client.post.return_value = {"result": {"from": "a", "to": "b"}}
+
+    result = json.loads(provider._tool_move({"from_uri": "viking://a", "to_uri": "viking://b"}))
+
+    provider._client.post.assert_called_once_with("/api/v1/fs/mv", {
+        "from_uri": "viking://a",
+        "to_uri": "viking://b",
+    })
+    assert result["status"] == "moved"
+
+
+def test_tool_mkdir_calls_fs_mkdir():
+    provider = OpenVikingMemoryProvider()
+    provider._client = MagicMock()
+    provider._client.post.return_value = {"result": {"uri": "viking://resources/new/"}}
+
+    result = json.loads(provider._tool_mkdir({"uri": "viking://resources/new/", "description": "docs"}))
+
+    provider._client.post.assert_called_once_with("/api/v1/fs/mkdir", {
+        "uri": "viking://resources/new/",
+        "description": "docs",
+    })
+    assert result["status"] == "created"
