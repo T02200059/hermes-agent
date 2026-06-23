@@ -209,8 +209,8 @@ class DashScopeImageGenProvider(ImageGenProvider):
 
     def capabilities(self) -> Dict[str, Any]:
         return {
-            "modalities": ["text"],  # DashScope text-to-image only for now
-            "max_reference_images": 0,
+            "modalities": ["text", "image"],
+            "max_reference_images": 3,
         }
 
     def generate(
@@ -224,12 +224,6 @@ class DashScopeImageGenProvider(ImageGenProvider):
     ) -> Dict[str, Any]:
         """Generate an image via DashScope multimodal generation API."""
         aspect = resolve_aspect_ratio(aspect_ratio)
-
-        # image_url / reference_image_urls: DashScope multimodal-generation API
-        # does not yet support image-to-image via this provider.  The parameters
-        # are accepted (ABC contract) but ignored — text-to-image only for now.
-        _ = image_url
-        _ = reference_image_urls
 
         # Determine active model / preset.
         model_arg = str(kwargs.get("model") or "").strip()
@@ -274,10 +268,25 @@ class DashScopeImageGenProvider(ImageGenProvider):
 
         size = str(preset.get("size") or _ASPECT_RATIO_SIZES.get(aspect, "1024*1024")).strip()
 
+        # Build content: image editing when source images provided, text-to-image otherwise
+        content: list = []
+        source_images: list = []
+        if image_url:
+            source_images.append(image_url)
+        if reference_image_urls:
+            source_images.extend(reference_image_urls)
+        for img in source_images:
+            content.append({"image": img})
+        content.append({"text": prompt})
+
         # Use message-based format for newer models (qwen-image-2.0, wan2.6+),
         # fall back to legacy input.prompt format when preset specifies mode: prompt
         preset_mode = str(preset.get("mode") or "message").strip().lower()
         if preset_mode == "prompt":
+            # Legacy prompt format — DashScope legacy models don't support image editing
+            # via this format, so only use it for text-to-image
+            if source_images:
+                logger.warning("DashScope preset mode='prompt' does not support image editing; ignoring source images")
             payload: Dict[str, Any] = {
                 "model": actual_model,
                 "input": {"prompt": prompt},
@@ -288,7 +297,7 @@ class DashScopeImageGenProvider(ImageGenProvider):
                 "model": actual_model,
                 "input": {
                     "messages": [
-                        {"role": "user", "content": [{"text": prompt}]}
+                        {"role": "user", "content": content}
                     ]
                 },
                 "parameters": {"size": size, "n": 1},
@@ -453,6 +462,6 @@ class DashScopeImageGenProvider(ImageGenProvider):
             prompt=prompt,
             aspect_ratio=aspect,
             provider=self.name,
-            modality="text",
+            modality="image" if source_images else "text",
             extra=extra,
         )
