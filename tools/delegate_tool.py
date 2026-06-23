@@ -38,6 +38,14 @@ from toolsets import TOOLSETS
 _RUNTIME_PROVIDER_CUSTOM = "custom"
 from tools import file_state
 from tools.terminal_tool import set_approval_callback as _set_subagent_approval_cb
+# [owner] memory_propose / approval: propagate the parent agent-turn's
+# ContextVars (_approval_session_key etc.) into batch-delegation worker
+# threads. A bare ThreadPoolExecutor worker starts with an empty
+# contextvars.Context, so without this a batch child's memory_propose
+# proposals / dangerous-command approvals would fall back to os.environ and
+# land in the wrong session's queue under concurrent gateway load. See
+# agent/tool_executor.py:~605 for the same pattern in concurrent tool dispatch.
+from tools.thread_context import propagate_context_to_thread
 from utils import base_url_hostname, is_truthy_value
 
 
@@ -2301,41 +2309,144 @@ def delegate_task(
                 # still-pending futures can carry the correct _delegate_role.
                 _child_by_index = {i: child for (i, _, child) in children}
 
-                pending = set(futures.keys())
-                while pending:
-                    if getattr(parent_agent, "_interrupt_requested", False) is True:
-                        # Parent interrupted — collect whatever finished and
-                        # abandon the rest.  Children already received the
-                        # interrupt signal; we just can't wait forever.
-                        for f in pending:
-                            idx = futures[f]
-                            if f.done():
-                                try:
-                                    entry = f.result()
-                                except Exception as exc:
-                                    entry = {
-                                        "task_index": idx,
-                                        "status": "error",
-                                        "summary": None,
-                                        "error": str(exc),
-                                        "api_calls": 0,
-                                        "duration_seconds": 0,
-                                        "_child_role": getattr(
-                                            _child_by_index.get(idx), "_delegate_role", None
-                                        ),
-                                    }
-                            else:
+            # Detach the child from the parent's interrupt-propagation list.
+            # _build_child_agent registered it there (correct for sync
+            # children, which block the parent's turn), but a BACKGROUND
+            # child must survive parent-turn interrupts (Ctrl+C, mid-turn
+            # steering), cache evicts (release_clients), and session close
+            # (/new) — otherwise the detached subagent dies with whatever
+            # the parent was doing when it was dispatched. Its lifecycle is
+            # owned by the async-delegation registry (interrupt_fn below),
+            # and _run_single_child's finally block closes its resources
+            # when it finishes.
+            if hasattr(parent_agent, "_active_children"):
+                try:
+                    _ac_lock = getattr(parent_agent, "_active_children_lock", None)
+                    if _ac_lock:
+                        with _ac_lock:
+                            parent_agent._active_children.remove(child)
+                    else:
+                        parent_agent._active_children.remove(child)
+                except ValueError:
+                    pass
+
+            def _async_runner(_child=child, _goal=_t["goal"]):
+                return _run_single_child(0, _goal, _child, parent_agent)
+
+            def _async_interrupt(_child=child):
+                try:
+                    if hasattr(_child, "interrupt"):
+                        _child.interrupt("Async delegation cancelled")
+                    elif hasattr(_child, "_interrupt_requested"):
+                        _child._interrupt_requested = True
+                except Exception:
+                    pass
+
+            dispatch = dispatch_async_delegation(
+                goal=_t["goal"],
+                context=_t.get("context"),
+                toolsets=_t.get("toolsets") or toolsets,
+                role=_normalize_role(_t.get("role") or top_role),
+                model=creds["model"],
+                session_key=_session_key,
+                runner=_async_runner,
+                interrupt_fn=_async_interrupt,
+                max_async_children=_get_max_async_children(),
+            )
+
+            if dispatch.get("status") == "dispatched":
+                return json.dumps(
+                    {
+                        "status": "dispatched",
+                        "delegation_id": dispatch["delegation_id"],
+                        "goal": _t["goal"],
+                        "mode": "background",
+                        "note": (
+                            "Subagent is running in the background. You and the "
+                            "user can keep working; the full task source and "
+                            "result will re-enter the conversation as a new "
+                            "message when it finishes. Do not wait or poll — "
+                            "just continue."
+                        ),
+                    },
+                    ensure_ascii=False,
+                )
+            # Rejected (at capacity or schedule failure) — surface as a tool
+            # error so the model can fall back to synchronous delegation.
+            return tool_error(
+                dispatch.get("error", "Async delegation could not be scheduled.")
+            )
+
+        result = _run_single_child(0, _t["goal"], child, parent_agent)
+        results.append(result)
+    else:
+        # Batch -- run in parallel with per-task progress lines
+        completed_count = 0
+        spinner_ref = getattr(parent_agent, "_delegate_spinner", None)
+
+        with ThreadPoolExecutor(max_workers=max_children) as executor:
+            futures = {}
+            for i, t, child in children:
+                # [owner] memory_propose / approval: wrap _run_single_child so
+                # each batch worker inherits the parent turn's ContextVars
+                # (tools.thread_context.propagate_context_to_thread). Same fix
+                # as agent/tool_executor.py concurrent tool dispatch.
+                future = executor.submit(
+                    propagate_context_to_thread(_run_single_child),
+                    task_index=i,
+                    goal=t["goal"],
+                    child=child,
+                    parent_agent=parent_agent,
+                )
+                futures[future] = i
+
+            # Poll futures with interrupt checking.  as_completed() blocks
+            # until ALL futures finish — if a child agent gets stuck,
+            # the parent blocks forever even after interrupt propagation.
+            # Instead, use wait() with a short timeout so we can bail
+            # when the parent is interrupted.
+            # Map task_index -> child agent, so fabricated entries for
+            # still-pending futures can carry the correct _delegate_role.
+            _child_by_index = {i: child for (i, _, child) in children}
+
+            pending = set(futures.keys())
+            while pending:
+                if getattr(parent_agent, "_interrupt_requested", False) is True:
+                    # Parent interrupted — collect whatever finished and
+                    # abandon the rest.  Children already received the
+                    # interrupt signal; we just can't wait forever.
+                    for f in pending:
+                        idx = futures[f]
+                        if f.done():
+                            try:
+                                entry = f.result()
+                            except Exception as exc:
                                 entry = {
                                     "task_index": idx,
-                                    "status": "interrupted",
+                                    "status": "error",
                                     "summary": None,
-                                    "error": "Parent agent interrupted — child did not finish in time",
+                                    "error": str(exc),
                                     "api_calls": 0,
                                     "duration_seconds": 0,
                                     "_child_role": getattr(
                                         _child_by_index.get(idx), "_delegate_role", None
                                     ),
                                 }
+                        else:
+                            entry = {
+                                "task_index": idx,
+                                "status": "interrupted",
+                                "summary": None,
+                                "error": "Parent agent interrupted — child did not finish in time",
+                                "api_calls": 0,
+                                "duration_seconds": 0,
+                                "_child_role": getattr(
+                                    _child_by_index.get(idx), "_delegate_role", None
+                                ),
+                            }
+                        results.append(entry)
+                        completed_count += 1
+                    break
                             results.append(entry)
                             completed_count += 1
                         break

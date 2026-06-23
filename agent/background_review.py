@@ -601,6 +601,16 @@ def _run_review_in_thread(
 
     review_agent = None
     review_messages: List[Dict] = []
+    # [owner] memory_propose: bg-review 静默自动批准 — 把当前线程的
+    # _approval_session_key 重绑到隔离的 <parent>#bg-review key，并在该 key
+    # 下注册 auto-approve 回调。bg-review fork 的 memory_propose 提案全部
+    # 落到隔离队列、立刻自动批准，既不打扰用户、也不与并发主 session 共享
+    # 队列/notify 回调，彻底避免审批串台。
+    # 核心实现见 owner/memory/bg_review_auto_approve.py。
+    from owner.memory.bg_review_auto_approve import (
+        setup_bg_review_memory_auto_approve,
+    )
+    _bg_review_mp_cleanup = setup_bg_review_memory_auto_approve()
     try:
         with open(os.devnull, "w", encoding="utf-8") as _devnull, \
              contextlib.redirect_stdout(_devnull), \
@@ -834,6 +844,17 @@ def _run_review_in_thread(
             _set_approval_callback(None)
         except Exception:
             pass
+        # [owner] memory_propose: tear down the isolated bg-review approval
+        # queue — restore the ContextVar to the parent's session_key and
+        # unregister the auto-approve callback. Only touches the isolated
+        # <parent>#bg-review key; the parent session is untouched.
+        try:
+            _bg_review_mp_cleanup()
+        except Exception:
+            logger.debug(
+                "bg-review memory auto-approve cleanup failed",
+                exc_info=True,
+            )
 
 
 def spawn_background_review_thread(
@@ -858,10 +879,19 @@ def spawn_background_review_thread(
     else:
         prompt = getattr(agent, "_SKILL_REVIEW_PROMPT", _SKILL_REVIEW_PROMPT)
 
+    # [owner] memory_propose: propagate the parent thread's ContextVars
+    # (notably _approval_session_key, used by tools.approval AND
+    # owner/memory/gateway._get_session_key for memory_propose routing) into
+    # the bg-review daemon thread. A bare threading.Thread starts with an
+    # empty contextvars.Context, so without this the bg-review thread falls
+    # back to os.environ for session identity and races concurrent sessions
+    # (see tools/thread_context.py for the shared helper).
+    from tools.thread_context import propagate_context_to_thread
+
     def _target() -> None:
         _run_review_in_thread(agent, messages_snapshot, prompt)
 
-    return _target, prompt
+    return propagate_context_to_thread(_target), prompt
 
 
 __all__ = [

@@ -11382,43 +11382,146 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     except Exception as e:
                         logger.warning("Background task vision enrichment failed: %s", e)
 
-            def run_sync():
-                agent = AIAgent(
-                    model=turn_route["model"],
-                    **turn_route["runtime"],
-                    max_iterations=max_iterations,
-                    quiet_mode=True,
-                    verbose_logging=False,
-                    enabled_toolsets=enabled_toolsets,
-                    disabled_toolsets=disabled_toolsets,
-                    reasoning_config=reasoning_config,
-                    service_tier=self._service_tier,
-                    request_overrides=turn_route.get("request_overrides"),
-                    providers_allowed=pr.get("only"),
-                    providers_ignored=pr.get("ignore"),
-                    providers_order=pr.get("order"),
-                    provider_sort=pr.get("sort"),
-                    provider_require_parameters=pr.get("require_parameters", False),
-                    provider_data_collection=pr.get("data_collection"),
-                    session_id=task_id,
-                    platform=platform_key,
-                    user_id=source.user_id,
-                    user_id_alt=source.user_id_alt,
-                    user_name=source.user_name,
-                    chat_id=source.chat_id,
-                    chat_name=source.chat_name,
-                    chat_type=source.chat_type,
-                    thread_id=source.thread_id,
-                    session_db=self._session_db,
-                    fallback_model=self._fallback_model,
+            # [owner] memory_propose / approval: capture the event loop + the
+            # per-source session_key in the async scope so the background-task's
+            # run_sync (which executes in an executor thread) can register the
+            # same per-session routing trio the main path uses
+            # (set_current_session_key + setup_gateway_memory_routing +
+            # register_gateway_notify). Without this, a background task's
+            # memory_propose proposals and dangerous-command approvals had NO
+            # per-session notify callback registered, so they either hung
+            # forever or fell into the os.environ fallback and landed in a
+            # concurrent session's queue (approval 串台). See owner/memory/gateway.py
+            # and the Bug 2 removal of the os.environ write above.
+            _bg_loop = asyncio.get_running_loop()
+            _bg_session_key = self._session_key_for_source(source)
+
+            def _bg_approval_notify_sync(approval_data: dict) -> None:
+                """Minimal text-only approval notify for background tasks.
+
+                Background tasks don't have an interactive button handler
+                wired up, so we send a plain-text prompt and ask the user to
+                reply with /approve (or /deny). Mirrors the main path's
+                fallback branch but without the button-approval attempt.
+                """
+                try:
+                    adapter.pause_typing_for_chat(source.chat_id)
+                except Exception:
+                    pass
+                cmd = approval_data.get("command", "")
+                desc = approval_data.get("description", "dangerous command")
+                _p = getattr(adapter, "typed_command_prefix", "/")
+                cmd_preview = cmd[:200] + "..." if len(cmd) > 200 else cmd
+                msg = (
+                    f"⚠️ **Background task — dangerous command requires approval:**\n"
+                    f"```\n{cmd_preview}\n```\n"
+                    f"Reason: {desc}\n\n"
+                    f"Reply `{_p}approve` to execute, `{_p}approve session` to approve this pattern "
+                    f"for the session, `{_p}approve always` to approve permanently, or `{_p}deny` to cancel."
                 )
                 try:
-                    return agent.run_conversation(
-                        user_message=enriched_prompt,
-                        task_id=task_id,
+                    _fut = safe_schedule_threadsafe(
+                        adapter.send(
+                            source.chat_id,
+                            msg,
+                            metadata=_thread_metadata,
+                        ),
+                        _bg_loop,
+                        logger=logger,
+                        log_message="bg-task approval text-send scheduling error",
                     )
+                    if _fut is not None:
+                        _fut.result(timeout=15)
+                except Exception as _e:
+                    logger.error("bg-task approval notify failed: %s", _e)
+
+            def run_sync():
+                # [owner] memory_propose / approval: bind the per-session
+                # approval ContextVar + register the gateway notify callbacks
+                # for THIS background task's session. Without set_current_session_key
+                # the bg-task thread would read whatever os.environ value a
+                # concurrent session last wrote (Bug 2). The memory routing
+                # notify is what makes memory_propose approval cards reach the
+                # user; the gateway notify is what makes dangerous-command
+                # approval prompts reach the user. Both must be cleaned up in
+                # the finally below so blocked agent threads unwind.
+                from tools.approval import (
+                    set_current_session_key as _bg_set_session_key,
+                    reset_current_session_key as _bg_reset_session_key,
+                    register_gateway_notify as _bg_register_gateway_notify,
+                    unregister_gateway_notify as _bg_unregister_gateway_notify,
+                )
+                # [owner] memory_propose: ensure tool registration + toolset patch
+                import tools.memory_propose_tool  # noqa: F401
+                from owner.memory.gateway import setup_gateway_memory_routing
+
+                _bg_approval_key = _bg_session_key or ""
+                _bg_token = _bg_set_session_key(_bg_approval_key)
+                _bg_mp_cleanup = setup_gateway_memory_routing(
+                    session_key=_bg_approval_key,
+                    adapter=adapter,
+                    chat_id=source.chat_id,
+                    metadata=_thread_metadata,
+                    loop=_bg_loop,
+                    logger=logger,
+                )
+                _bg_register_gateway_notify(_bg_approval_key, _bg_approval_notify_sync)
+                try:
+                    agent = AIAgent(
+                        model=turn_route["model"],
+                        **turn_route["runtime"],
+                        max_iterations=max_iterations,
+                        quiet_mode=True,
+                        verbose_logging=False,
+                        enabled_toolsets=enabled_toolsets,
+                        disabled_toolsets=disabled_toolsets,
+                        reasoning_config=reasoning_config,
+                        service_tier=self._service_tier,
+                        request_overrides=turn_route.get("request_overrides"),
+                        providers_allowed=pr.get("only"),
+                        providers_ignored=pr.get("ignore"),
+                        providers_order=pr.get("order"),
+                        provider_sort=pr.get("sort"),
+                        provider_require_parameters=pr.get("require_parameters", False),
+                        provider_data_collection=pr.get("data_collection"),
+                        session_id=task_id,
+                        platform=platform_key,
+                        user_id=source.user_id,
+                        user_id_alt=source.user_id_alt,
+                        user_name=source.user_name,
+                        chat_id=source.chat_id,
+                        chat_name=source.chat_name,
+                        chat_type=source.chat_type,
+                        thread_id=source.thread_id,
+                        session_db=self._session_db,
+                        fallback_model=self._fallback_model,
+                    )
+                    try:
+                        return agent.run_conversation(
+                            user_message=enriched_prompt,
+                            task_id=task_id,
+                        )
+                    finally:
+                        self._cleanup_agent_resources(agent)
                 finally:
-                    self._cleanup_agent_resources(agent)
+                    # [owner] memory_propose / approval: unregister both
+                    # notify callbacks so blocked agent threads unwind and
+                    # the next bg-task on a recycled thread can't inherit a
+                    # stale session_key. Order: gateway notify first, then
+                    # memory routing (which also clears pending memory
+                    # proposals), then restore the ContextVar.
+                    try:
+                        _bg_unregister_gateway_notify(_bg_approval_key)
+                    except Exception:
+                        pass
+                    try:
+                        _bg_mp_cleanup()
+                    except Exception:
+                        pass
+                    try:
+                        _bg_reset_session_key(_bg_token)
+                    except Exception:
+                        pass
 
             result = await self._run_in_executor_with_context(run_sync)
 
@@ -15467,9 +15570,28 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             # `_resolve_turn_agent_config(message, …)`.
             nonlocal message
 
-            # session_key is now set via contextvars in _set_session_env()
-            # (concurrency-safe). Keep os.environ as fallback for CLI/cron.
-            os.environ["HERMES_SESSION_KEY"] = session_key or ""
+            # session_key is set via contextvars in _set_session_env()
+            # (concurrency-safe) and propagated into the executor thread by
+            # _run_in_executor_with_context() (which uses copy_context()). It
+            # is ALSO read via contextvars first in
+            # tools.approval.get_current_session_key and
+            # gateway.session_context.get_session_env, so the agent turn and
+            # all of its tools see the right per-session value.
+            # [owner] memory_propose / approval: the previous
+            # `os.environ["HERMES_SESSION_KEY"] = session_key` write was a
+            # process-global mutation that raced concurrent gateway sessions
+            # — a second session could overwrite it mid-turn, making the
+            # first session's memory_propose proposals and dangerous-command
+            # approvals land in the wrong session's queue (approval
+            # "串台"). Removing it is safe because:
+            #   - concurrent gateway sessions read session_key via ContextVar
+            #     (set in _set_session_env, propagated by copy_context);
+            #   - CLI/cron/test single-process callers fall through to the
+            #     os.environ fallback inside get_session_env/get_current_session_key,
+            #     which is concurrency-safe because there is no concurrency.
+
+            # Read from env var or use default (same as CLI)
+            max_iterations = int(os.getenv("HERMES_MAX_ITERATIONS", "90"))
             
             # Map platform enum to the platform hint key the agent understands.
             # Platform.LOCAL ("local") maps to "cli"; others pass through as-is.
