@@ -16195,13 +16195,49 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     # Couldn't deliver the prompt — clean up and return
                     # sentinel so the agent can fall back to a sensible
                     # default rather than hanging.
+                    try:
+                        from tools.clarify_gateway import _trace as _ct
+                        _ct("_clarify_callback_sync: send_ok=False (card not delivered) for clarify_id=%s", clarify_id)
+                    except Exception:
+                        pass
                     _clarify_mod.clear_session(session_key or "")
                     return "[clarify prompt could not be delivered]"
 
                 timeout = _clarify_mod.get_clarify_timeout()
+                try:
+                    from tools.clarify_gateway import _trace as _ct, _entries as _dbg_entries, _session_index as _dbg_sidx
+                    _entry_still_there = clarify_id in _dbg_entries
+                    _sidx_list = list(_dbg_sidx.get(session_key or "", []))
+                    _ct(
+                        "_clarify_callback_sync: PRE-WAIT CHECK clarify_id=%s entry_still_in_entries=%s session_index[%s]=%s",
+                        clarify_id, _entry_still_there, session_key, _sidx_list,
+                    )
+                    if not _entry_still_there:
+                        import traceback as _tb_pre
+                        _ct(
+                            "_clarify_callback_sync: *** SMOKING GUN *** entry vanished between register and wait! caller stack:\n%s",
+                            "".join(_tb_pre.format_stack()),
+                        )
+                except Exception:
+                    pass
+                try:
+                    from tools.clarify_gateway import _trace as _ct
+                    _ct("_clarify_callback_sync: calling wait_for_response clarify_id=%s timeout=%s", clarify_id, timeout)
+                except Exception:
+                    pass
                 response = _clarify_mod.wait_for_response(clarify_id, timeout=float(timeout))
+                try:
+                    from tools.clarify_gateway import _trace as _ct
+                    _ct("_clarify_callback_sync: wait_for_response returned clarify_id=%s response=%r", clarify_id, response)
+                except Exception:
+                    pass
                 if response == CLARIFY_SESSION_CLEARED_SENTINEL:
                     # [owner] clarify session cleanup sentinel (see owner/clarify/timeout_handler.py)
+                    try:
+                        from tools.clarify_gateway import _trace as _ct
+                        _ct("_clarify_callback_sync: returning SESSION_CLEARED sentinel clarify_id=%s", clarify_id)
+                    except Exception:
+                        pass
                     return CLARIFY_SESSION_CLEARED_SENTINEL
                 if response is None or response == "":
                     # [owner] clarify timeout: notify the user the operation
@@ -16209,6 +16245,15 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     # so without this the user sees nothing). Best-effort send,
                     # then return the sentinel that raises ClarifyTimeout.
                     # See owner/clarify/timeout_handler.py.
+                    try:
+                        from tools.clarify_gateway import _trace as _ct
+                        import traceback as _tb2
+                        _ct(
+                            "_clarify_callback_sync: PREMATURE TIMEOUT clarify_id=%s response=%r elapsed_since_register=<see register ts>, caller stack:\n%s",
+                            clarify_id, response, "".join(_tb2.format_stack()),
+                        )
+                    except Exception:
+                        pass
                     try:
                         safe_schedule_threadsafe(
                             _status_adapter.send(

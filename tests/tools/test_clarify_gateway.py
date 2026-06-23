@@ -110,8 +110,9 @@ class TestClarifyPrimitive:
         assert result is False
 
     def test_clear_session_cancels_pending_entries(self):
-        """clear_session unblocks blocked threads with empty response."""
+        """clear_session unblocks blocked threads with the session-cleared sentinel."""
         from tools import clarify_gateway as cm
+        from tools.clarify_tool import CLARIFY_SESSION_CLEARED_SENTINEL
 
         cm.register("id7", "sk7", "Q?", ["A"])
 
@@ -124,8 +125,10 @@ class TestClarifyPrimitive:
             cancelled = cm.clear_session("sk7")
             assert cancelled == 1
             result = fut.result(timeout=2.0)
-            # clear_session sets response="" then the wait returns it
-            assert result == ""
+            # clear_session sets response=CLARIFY_SESSION_CLEARED_SENTINEL
+            # (see owner/clarify/timeout_handler.py) so the caller can
+            # distinguish a session-boundary cleanup from a real timeout.
+            assert result == CLARIFY_SESSION_CLEARED_SENTINEL
 
     def test_has_pending(self):
         from tools import clarify_gateway as cm
@@ -137,6 +140,7 @@ class TestClarifyPrimitive:
     def test_notify_register_unregister_clears_pending(self):
         """unregister_notify cancels any pending clarify so threads unwind."""
         from tools import clarify_gateway as cm
+        from tools.clarify_tool import CLARIFY_SESSION_CLEARED_SENTINEL
 
         cm.register("id9", "sk9", "Q?", ["A"])
 
@@ -150,9 +154,10 @@ class TestClarifyPrimitive:
             cm.register_notify("sk9", lambda entry: None)
             cm.unregister_notify("sk9")
 
-            # unregister_notify calls clear_session; thread unwinds
+            # unregister_notify calls clear_session; thread unwinds with
+            # the session-cleared sentinel (not empty string).
             result = fut.result(timeout=2.0)
-            assert result == ""
+            assert result == CLARIFY_SESSION_CLEARED_SENTINEL
 
     def test_session_index_isolation(self):
         """Entries from different sessions don't leak across get_pending lookups."""
@@ -175,6 +180,68 @@ class TestClarifyPrimitive:
         # Floor check: must be a positive int, not crashed.
         assert isinstance(timeout, int)
         assert timeout > 0
+
+    def test_wait_returns_session_cleared_when_entry_vanishes_before_wait(self):
+        """Defense for the premature-timeout race.
+
+        register() creates the entry, then a concurrent clear_session()
+        (session boundary, /new, run finally, etc.) removes it BEFORE
+        wait_for_response() starts. The old behavior returned None,
+        which the gateway mistook for a genuine user-inactivity timeout
+        and fired the misleading "未在 N 分钟内收到回复" notice seconds
+        after the card was sent. The fix returns the session-cleared
+        sentinel so the turn ends quietly.
+        """
+        from tools import clarify_gateway as cm
+        from tools.clarify_tool import CLARIFY_SESSION_CLEARED_SENTINEL
+
+        cm.register("idRace", "skRace", "Q?", ["A"])
+        # Simulate the concurrent clear that wins the race.
+        cancelled = cm.clear_session("skRace")
+        assert cancelled == 1
+        # Now wait_for_response finds no entry — must NOT return None
+        # (that would trigger the bogus timeout notice).
+        result = cm.wait_for_response("idRace", timeout=10.0)
+        assert result == CLARIFY_SESSION_CLEARED_SENTINEL
+
+    def test_wait_returns_session_cleared_when_event_set_without_response(self):
+        """Defense for the second race: event fired but response stays None.
+
+        If something sets entry.event without going through
+        resolve_gateway_clarify() (which always writes response first),
+        the wait loop exits with _resolved_by_event=True but
+        entry.response=None. Returning None here would again trigger
+        the bogus timeout notice. The fix returns the session-cleared
+        sentinel in this case too.
+        """
+        from tools import clarify_gateway as cm
+        from tools.clarify_tool import CLARIFY_SESSION_CLEARED_SENTINEL
+
+        cm.register("idRace2", "skRace2", "Q?", ["A"])
+        # Signal the event directly, bypassing resolve_gateway_clarify.
+        with cm._lock:
+            entry = cm._entries.get("idRace2")
+        assert entry is not None
+        entry.event.set()
+        # event fired, but response is still None (race condition).
+        result = cm.wait_for_response("idRace2", timeout=10.0)
+        # Must return the sentinel, NOT None.
+        assert result == CLARIFY_SESSION_CLEARED_SENTINEL
+
+    def test_wait_returns_none_on_genuine_deadline_timeout(self):
+        """Genuine user-inactivity timeout must still return None.
+
+        This is the legitimate path that SHOULD fire the "未在 N 分钟内
+        收到回复" notice: the deadline elapsed with no event, meaning
+        the user truly did not respond. The race-defense fix must not
+        mask this case.
+        """
+        from tools import clarify_gateway as cm
+
+        cm.register("idDeadline", "skDeadline", "Q?", ["A"])
+        # Short timeout, no resolve, no clear — pure deadline.
+        result = cm.wait_for_response("idDeadline", timeout=0.3)
+        assert result is None
 
 
 class TestGatewayTextIntercept:
