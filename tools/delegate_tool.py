@@ -998,6 +998,7 @@ def _build_child_agent(
     # Per-call role controlling whether the child can further delegate.
     # 'leaf' (default) cannot; 'orchestrator' retains the delegation
     # toolset subject to depth/kill-switch bounds applied below.
+    override_owner_provider_name: Optional[str] = None,
     role: str = "leaf",
 ):
     """
@@ -1156,7 +1157,7 @@ def _build_child_agent(
         else (getattr(parent_agent, "acp_args", []) or [])
     )
     effective_owner_provider_name = (
-        creds.get("owner_provider_name")
+        override_owner_provider_name
         or getattr(parent_agent, "owner_provider_name", None)
     )
 
@@ -2249,6 +2250,7 @@ def delegate_task(
                     if task_acp_args is not None
                     else (acp_args if acp_args is not None else creds.get("args"))
                 ),
+                override_owner_provider_name=creds.get("owner_provider_name"),
                 role=effective_role,
             )
             # Override with correct parent tool names (before child construction mutated global)
