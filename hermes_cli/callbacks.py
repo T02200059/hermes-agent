@@ -22,6 +22,7 @@ def clarify_callback(cli, question, choices):
     responds. Returns the user's choice or a timeout message.
     """
     from cli import CLI_CONFIG
+    from tools.clarify_tool import CLARIFY_TIMEOUT_SENTINEL
 
     timeout = CLI_CONFIG.get("clarify", {}).get("timeout", 120)
     response_queue = queue.Queue()
@@ -57,10 +58,8 @@ def clarify_callback(cli, question, choices):
     if hasattr(cli, "_app") and cli._app:
         cli._app.invalidate()
     cprint(f"\n{_DIM}(clarify timed out after {timeout}s — agent will decide){_RST}")
-    return (
-        "The user did not provide a response within the time limit. "
-        "Use your best judgement to make the choice and proceed."
-    )
+    # [owner] clarify timeout sentinel (see owner/clarify/timeout_handler.py)
+    return CLARIFY_TIMEOUT_SENTINEL
 
 
 def prompt_for_secret(cli, var_name: str, prompt: str, metadata=None) -> dict:

@@ -1761,6 +1761,8 @@ def invoke_tool(agent, function_name: str, function_args: dict, effective_task_i
     tools. Used by the concurrent execution path; the sequential path retains
     its own inline invocation for backward-compatible display handling.
     """
+    # [owner] clarify timeout: import shared exception (see owner/clarify/timeout_handler.py)
+    from tools.clarify_tool import ClarifyTimeout as _ClarifyTimeout
     if not isinstance(function_args, dict):
         function_args = {}
 
@@ -2009,17 +2011,30 @@ def invoke_tool(agent, function_name: str, function_args: dict, effective_task_i
             _file_tool_timeout_guard.active = False
             guard.shutdown(wait=False, cancel_futures=True)
 
-    return run_tool_execution_middleware(
-        function_name,
-        function_args,
-        _inner,
-        original_args=function_args,
-        task_id=effective_task_id or "",
-        session_id=getattr(agent, "session_id", "") or "",
-        tool_call_id=tool_call_id or "",
-        turn_id=getattr(agent, "_current_turn_id", "") or "",
-        api_request_id=getattr(agent, "_current_api_request_id", "") or "",
-    )
+    try:
+        return run_tool_execution_middleware(
+            function_name,
+            function_args,
+            _inner,
+            original_args=function_args,
+            task_id=effective_task_id or "",
+            session_id=getattr(agent, "session_id", "") or "",
+            tool_call_id=tool_call_id or "",
+            turn_id=getattr(agent, "_current_turn_id", "") or "",
+            api_request_id=getattr(agent, "_current_api_request_id", "") or "",
+        )
+    except _ClarifyTimeout:
+        # [owner] clarify timeout: stop agent on user inactivity (see owner/clarify/timeout_handler.py)
+        try:
+            from owner.clarify.timeout_handler import handle_clarify_timeout
+            return handle_clarify_timeout(agent, tool_call_id or "")
+        except Exception:
+            # Fallback when owner/clarify/ is removed: still stop the agent.
+            try:
+                agent.interrupt("clarify timed out")
+            except Exception:
+                pass
+            return "[Clarify timed out after user inactivity — stopping agent]"
 
 
 

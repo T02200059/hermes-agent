@@ -25,6 +25,7 @@ from hermes_constants import (
 )
 from hermes_cli.env_loader import load_hermes_dotenv
 from utils import is_truthy_value
+from tools.clarify_tool import CLARIFY_TIMEOUT_SENTINEL
 from tui_gateway.transport import (
     StdioTransport,
     Transport,
@@ -1523,22 +1524,32 @@ def _enable_gateway_prompts() -> None:
 # ── Blocking prompt factory ──────────────────────────────────────────
 
 
-def _block(event: str, sid: str, payload: dict, timeout: int = 300) -> str:
+def _block(
+    event: str,
+    sid: str,
+    payload: dict,
+    timeout: int = 300,
+    timeout_sentinel: Optional[str] = None,
+) -> str:
     rid = uuid.uuid4().hex[:8]
     ev = threading.Event()
     with _prompt_lock:
         _pending[rid] = (sid, ev)
         payload["request_id"] = rid
         _pending_prompt_payloads[rid] = (event, dict(payload))
+    signalled = False
     try:
         _emit(event, sid, payload)
-        ev.wait(timeout=timeout)
+        signalled = ev.wait(timeout=timeout)
     finally:
         with _prompt_lock:
             _pending.pop(rid, None)
             _pending_prompt_payloads.pop(rid, None)
     with _prompt_lock:
-        return _answers.pop(rid, "")
+        if signalled:
+            return _answers.pop(rid, "")
+        # [owner] clarify timeout sentinel (see owner/clarify/timeout_handler.py)
+        return timeout_sentinel if timeout_sentinel is not None else ""
 
 
 def _clear_pending(sid: str | None = None) -> None:
@@ -3252,7 +3263,10 @@ def _agent_cbs(sid: str) -> dict:
             "notification.clear", sid, {"key": key}
         ),
         "clarify_callback": lambda q, c: _block(
-            "clarify.request", sid, {"question": q, "choices": c}
+            "clarify.request",
+            sid,
+            {"question": q, "choices": c},
+            timeout_sentinel=CLARIFY_TIMEOUT_SENTINEL,
         ),
         # read_terminal tool (desktop GUI): same blocking bridge as clarify — the
         # renderer answers terminal.read.respond with the serialized buffer.

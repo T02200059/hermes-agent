@@ -15985,6 +15985,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             # ------------------------------------------------------------------
             def _clarify_callback_sync(question: str, choices) -> str:
                 from tools import clarify_gateway as _clarify_mod
+                from tools.clarify_tool import (
+                    CLARIFY_TIMEOUT_SENTINEL,
+                    CLARIFY_SESSION_CLEARED_SENTINEL,
+                )
                 import uuid as _uuid
 
                 if not _status_adapter:
@@ -16040,9 +16044,12 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
 
                 timeout = _clarify_mod.get_clarify_timeout()
                 response = _clarify_mod.wait_for_response(clarify_id, timeout=float(timeout))
+                if response == CLARIFY_SESSION_CLEARED_SENTINEL:
+                    # [owner] clarify session cleanup sentinel (see owner/clarify/timeout_handler.py)
+                    return CLARIFY_SESSION_CLEARED_SENTINEL
                 if response is None or response == "":
-                    # Timeout or session-boundary cancellation
-                    return f"[user did not respond within {int(timeout / 60)}m]"
+                    # [owner] clarify timeout sentinel (see owner/clarify/timeout_handler.py)
+                    return CLARIFY_TIMEOUT_SENTINEL
                 return response
 
             agent.clarify_callback = _clarify_callback_sync

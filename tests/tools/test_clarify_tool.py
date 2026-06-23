@@ -3,6 +3,8 @@
 import json
 from typing import List, Optional
 
+import pytest
+
 
 from tools.clarify_tool import (
     clarify_tool,
@@ -10,6 +12,9 @@ from tools.clarify_tool import (
     MAX_CHOICES,
     CLARIFY_SCHEMA,
     _flatten_choice,
+    ClarifyTimeout,
+    CLARIFY_TIMEOUT_SENTINEL,
+    CLARIFY_SESSION_CLEARED_SENTINEL,
 )
 
 
@@ -257,3 +262,31 @@ class TestClarifySchema:
     def test_max_choices_is_four(self):
         """MAX_CHOICES constant should be 4."""
         assert MAX_CHOICES == 4
+
+
+class TestClarifyTimeoutSentinel:
+    """Tests for the owner clarify-timeout contract."""
+
+    def test_timeout_sentinel_raises_clarify_timeout(self):
+        """Callback returning the timeout sentinel must raise ClarifyTimeout."""
+        def timeout_callback(question: str, choices: Optional[List[str]]) -> str:
+            return CLARIFY_TIMEOUT_SENTINEL
+
+        with pytest.raises(ClarifyTimeout):
+            clarify_tool("Question?", callback=timeout_callback)
+
+    def test_session_cleared_sentinel_raises_clarify_timeout(self):
+        """Callback returning the session-cleared sentinel must raise ClarifyTimeout."""
+        def cleared_callback(question: str, choices: Optional[List[str]]) -> str:
+            return CLARIFY_SESSION_CLEARED_SENTINEL
+
+        with pytest.raises(ClarifyTimeout):
+            clarify_tool("Question?", callback=cleared_callback)
+
+    def test_non_sentinel_callback_returns_json(self):
+        """Normal callback responses still produce the expected JSON result."""
+        def mock_callback(question: str, choices: Optional[List[str]]) -> str:
+            return "normal answer"
+
+        result = json.loads(clarify_tool("Question?", callback=mock_callback))
+        assert result["user_response"] == "normal answer"
