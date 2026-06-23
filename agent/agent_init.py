@@ -1769,7 +1769,8 @@ def init_agent(
     agent._primary_runtime = {
         "model": agent.model,
         "provider": agent.provider,
-        "owner_provider_name": agent.owner_provider_name,
+        # [owner] §2.1 getattr for safety/consistency with siblings below
+        "owner_provider_name": getattr(agent, "owner_provider_name", agent.provider),
         "base_url": agent.base_url,
         "api_mode": agent.api_mode,
         "api_key": getattr(agent, "api_key", ""),
