@@ -298,3 +298,132 @@ def test_revert_patch():
     revert_patch()
     assert OpenVikingMemoryProvider.initialize is original_initialize
     assert OpenVikingMemoryProvider.prefetch is original_prefetch
+
+
+import owner.patches.openviking_recall_config as recall_config
+
+
+def _apply_card_only(monkeypatch, patch_data):
+    """Apply just the card patch with the given patch.yaml data."""
+    monkeypatch.setattr(recall_config, "_read_patch_yaml", lambda: patch_data)
+    apply_patch()
+
+
+def test_patch_yaml_disables_feishu_card(monkeypatch):
+    """patch.yaml feishu_card=false prevents the Feishu thread from starting."""
+    captured: Dict[str, Any] = {}
+
+    def fake_thread_ctor(*args, **kwargs):
+        captured["target"] = kwargs.get("target")
+        return _FakeThread(*args, **kwargs)
+
+    monkeypatch.setattr(threading, "Thread", fake_thread_ctor)
+
+    def mock_post(url, **kwargs):
+        return _MockResponse(
+            {
+                "result": {
+                    "memories": [
+                        {"uri": "viking://memories/a", "abstract": "User prefers dark mode", "score": 0.95}
+                    ]
+                }
+            }
+        )
+
+    monkeypatch.setattr("httpx.post", mock_post)
+
+    _apply_card_only(
+        monkeypatch,
+        {"owner": {"openviking_recall_card": {"feishu_card": False}}},
+    )
+
+    provider = _make_provider()
+    provider.initialize(
+        "session-1",
+        platform="feishu",
+        chat_id="chat-1",
+        chat_type="group",
+        user_id="user-1",
+    )
+    provider.prefetch("what do you know about me", session_id="session-1")
+    assert "target" not in captured
+
+
+def test_patch_yaml_displays_master_off(monkeypatch):
+    """patch.yaml enabled=false skips recall display for all platforms."""
+    captured: Dict[str, Any] = {}
+
+    def fake_thread_ctor(*args, **kwargs):
+        captured["target"] = kwargs.get("target")
+        return _FakeThread(*args, **kwargs)
+
+    monkeypatch.setattr(threading, "Thread", fake_thread_ctor)
+
+    def mock_post(url, **kwargs):
+        return _MockResponse(
+            {
+                "result": {
+                    "memories": [
+                        {"uri": "viking://memories/a", "abstract": "User prefers dark mode", "score": 0.95}
+                    ]
+                }
+            }
+        )
+
+    monkeypatch.setattr("httpx.post", mock_post)
+
+    _apply_card_only(
+        monkeypatch,
+        {"owner": {"openviking_recall_card": {"enabled": False}}},
+    )
+
+    provider = _make_provider()
+    provider.initialize(
+        "session-1",
+        platform="qqbot",
+        chat_id="chat-1",
+        chat_type="group",
+        user_id="user-1",
+    )
+    provider.prefetch("what do you know about me", session_id="session-1")
+    assert "target" not in captured
+
+
+def test_patch_yaml_qqbot_text_off(monkeypatch):
+    """patch.yaml qqbot_text=false skips the QQ Bot text path."""
+    captured: Dict[str, Any] = {}
+
+    def fake_thread_ctor(*args, **kwargs):
+        captured["target"] = kwargs.get("target")
+        return _FakeThread(*args, **kwargs)
+
+    monkeypatch.setattr(threading, "Thread", fake_thread_ctor)
+
+    def mock_post(url, **kwargs):
+        return _MockResponse(
+            {
+                "result": {
+                    "memories": [
+                        {"uri": "viking://memories/a", "abstract": "User prefers dark mode", "score": 0.95}
+                    ]
+                }
+            }
+        )
+
+    monkeypatch.setattr("httpx.post", mock_post)
+
+    _apply_card_only(
+        monkeypatch,
+        {"owner": {"openviking_recall_card": {"qqbot_text": False}}},
+    )
+
+    provider = _make_provider()
+    provider.initialize(
+        "session-1",
+        platform="qqbot",
+        chat_id="chat-1",
+        chat_type="group",
+        user_id="user-1",
+    )
+    provider.prefetch("what do you know about me", session_id="session-1")
+    assert "target" not in captured

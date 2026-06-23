@@ -11,7 +11,6 @@ modified.
 from __future__ import annotations
 
 import logging
-import os
 import sys
 from typing import Any, Dict
 
@@ -23,6 +22,11 @@ from plugins.memory.openviking import (
 
 import agent.memory_manager as _memory_manager_module
 
+# [owner] recall-config: load from patch.yaml with env fallback
+from owner.patches.openviking_recall_config import (
+    load_sync_recall_config as _load_sync_cfg,
+)
+
 logger = logging.getLogger(__name__)
 
 # Patch state
@@ -30,20 +34,12 @@ _originals: Dict[str, Any] = {}
 _applied: Dict[str, bool] = {"sync": False, "advisory": False}
 
 
-def _env_bool(name: str, default: bool) -> bool:
-    """Read a boolean-ish environment variable."""
-    value = os.environ.get(name, "")
-    if value == "":
-        return default
-    return value.lower() not in ("0", "false", "no", "off", "")
-
-
 def _search_timeout() -> float:
     """Return the synchronous search timeout in seconds (default: 10)."""
-    try:
-        return float(os.environ.get("OPENVIKING_SEARCH_TIMEOUT", "10"))
-    except Exception:
-        return 10.0
+    # patch.yaml ``owner.openviking_sync_recall.search_timeout`` wins;
+    # OPENVIKING_SEARCH_TIMEOUT env is the legacy fallback.
+    cfg = _load_sync_cfg()
+    return float(cfg["search_timeout"])
 
 
 # ---------------------------------------------------------------------------
@@ -193,13 +189,21 @@ def _revert_advisory() -> None:
 def apply_patch(force_sync: bool | None = None, advisory_tone: bool | None = None) -> None:
     """Apply the OpenViking synchronous recall and advisory wording patch.
 
+    Configuration is read from ``owner.openviking_sync_recall`` in patch.yaml
+    (with ``OPENVIKING_*`` env fallback). The ``force_sync`` /
+    ``advisory_tone`` parameters take precedence over both — useful for
+    cron jobs, tests, and ad-hoc toggles that don't want to edit patch.yaml.
+
     Args:
         force_sync: If given, override ``OPENVIKING_SYNC_RECALL``.
         advisory_tone: If given, override ``OPENVIKING_ADVISORY_MEMORY``.
     """
-    sync_enabled = _env_bool("OPENVIKING_SYNC_RECALL", True) if force_sync is None else bool(force_sync)
+    cfg = _load_sync_cfg()
+    sync_enabled = (
+        bool(force_sync) if force_sync is not None else bool(cfg["enabled"])
+    )
     advisory_enabled = (
-        _env_bool("OPENVIKING_ADVISORY_MEMORY", True) if advisory_tone is None else bool(advisory_tone)
+        bool(advisory_tone) if advisory_tone is not None else bool(cfg["advisory"])
     )
 
     if sync_enabled:

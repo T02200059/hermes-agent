@@ -19,6 +19,11 @@ from typing import Any, Dict, List, Optional
 
 from plugins.memory.openviking import OpenVikingMemoryProvider
 
+# [owner] recall-config: load from patch.yaml with env fallback
+from owner.patches.openviking_recall_config import (
+    load_recall_card_config as _load_card_cfg,
+)
+
 logger = logging.getLogger("openviking_recall_card")
 
 # Patch state
@@ -32,13 +37,6 @@ _TOKEN_CACHE: Dict[str, tuple[str, float]] = {}
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-def _env_bool(name: str, default: bool) -> bool:
-    value = os.environ.get(name, "")
-    if value == "":
-        return default
-    return value.lower() not in ("0", "false", "no", "off", "")
-
 
 def _truncate(text: str, max_len: int) -> str:
     if len(text) > max_len:
@@ -265,7 +263,11 @@ def _fire_recall_display(hits: List[dict], ctx: dict, elapsed_ms: float) -> None
     if not chat_id:
         return
 
-    if platform == "feishu" and _env_bool("OPENVIKING_RECALL_FEISHU_CARD", True):
+    _card_cfg = _load_card_cfg()
+    feishu_card_enabled = bool(_card_cfg["feishu_card"])
+    qqbot_text_enabled = bool(_card_cfg["qqbot_text"])
+
+    if platform == "feishu" and feishu_card_enabled:
         card = build_viking_recall_card(hits, elapsed_ms)
         if card:
             metadata = {
@@ -279,7 +281,7 @@ def _fire_recall_display(hits: List[dict], ctx: dict, elapsed_ms: float) -> None
                 name="ov-feishu-card",
             ).start()
 
-    elif platform == "qqbot" and _env_bool("OPENVIKING_RECALL_QQBOT_TEXT", True):
+    elif platform == "qqbot" and qqbot_text_enabled:
         text = build_viking_recall_text(hits, elapsed_ms)
         if text:
             metadata = {
@@ -319,7 +321,9 @@ def _wrap_sync_prefetch(orig_sync):
         elapsed_ms = (time.time() - start) * 1000
 
         hits = getattr(self, "_recall_card_hits", [])
-        if hits and _env_bool("OPENVIKING_RECALL_DISPLAY", True):
+        _card_cfg = _load_card_cfg()
+        display_enabled = bool(_card_cfg["enabled"])
+        if hits and display_enabled:
             _fire_recall_display(hits, getattr(self, "_recall_card_ctx", {}), elapsed_ms)
 
         return ctx_text

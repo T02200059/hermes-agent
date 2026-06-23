@@ -18,6 +18,22 @@ owner:
     split_enabled: true
     split_max_chars: 24000
 
+  # ── OpenViking memory provider patches ────────────────────────────────────
+  # Runtime patches for the OpenViking sync recall + visualization:
+  #   - enabled:        master switch for synchronous HTTP recall (replaces OPENVIKING_SYNC_RECALL)
+  #   - advisory:       advisory wording in memory-context block (replaces OPENVIKING_ADVISORY_MEMORY)
+  #   - search_timeout: HTTP timeout in seconds (replaces OPENVIKING_SEARCH_TIMEOUT)
+  #   - recall_card.* : visualization — see owner/patches/openviking_recall_card_patch.py
+  openviking_sync_recall:
+    enabled: true
+    advisory: true
+    search_timeout: 10
+
+  openviking_recall_card:
+    enabled: true           # master switch (replaces OPENVIKING_RECALL_DISPLAY)
+    feishu_card: true       # (replaces OPENVIKING_RECALL_FEISHU_CARD)
+    qqbot_text: true        # (replaces OPENVIKING_RECALL_QQBOT_TEXT)
+
   # ── Approval configuration ─────────────────────────────────────────────────
   approvals:
     # Whether to show the "Always" (permanent) approval button on Feishu cards.
