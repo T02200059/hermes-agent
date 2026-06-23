@@ -8,7 +8,7 @@ from urllib.parse import urlparse
 def normalize_bare_domain_base_url(base_url: str) -> str:
     """Auto-append ``/v1`` for bare-domain base URLs that have no path component.
 
-    See owner/docs/原有改动清单.md P30 for rationale.
+    See owner/docs/v16改动清单.md P30 for rationale.
     """
     candidate = str(base_url or "").strip()
     if not candidate:

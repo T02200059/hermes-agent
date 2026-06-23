@@ -3,7 +3,7 @@
 核心逻辑全部在此包内 (遵循二次开发规范§2.2)。官方文件
 agent/tool_executor.py 只做薄胶水委托。
 
-详见 owner/docs/checkpoint-mutation-predictor.md 和
+详见
 docs/superpowers/specs/2026-06-19-checkpoint-mutation-predictor-design.md
 """
 
