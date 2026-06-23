@@ -489,3 +489,23 @@ class TestMemoryProposeBatchTool:
         # Deny it so the test exits without hanging the queue.
         resolve_memory_approval(session_key, "deny")
         assert entry.result == "deny"
+
+    def test_batch_incomplete_op_rejected_before_approval(self):
+        """WR-07: an op with a valid action but missing its required field is
+        rejected pre-approval (no card, no store call, no wasted approval)."""
+        store = MagicMock()
+        cases = [
+            [{"action": "add"}],                              # add needs content
+            [{"action": "replace", "old_text": "x"}],         # replace needs content
+            [{"action": "replace", "content": "y"}],          # replace needs old_text
+            [{"action": "remove"}],                           # remove needs old_text
+        ]
+        for operations in cases:
+            result = memory_propose_tool(
+                target="memory", operations=operations, store=store,
+            )
+            data = json.loads(result)
+            assert data["approved"] is False, operations
+            assert data["reason"] == "invalid_operations", operations
+        # Validation happens before any write attempt.
+        store.apply_batch.assert_not_called()
