@@ -517,11 +517,24 @@ def _patch_callback_card_types(monkeypatch):
     """Provide real-ish P2CardActionTriggerResponse / CallBackCard for tests."""
     monkeypatch.setattr(feishu_module, "P2CardActionTriggerResponse", _FakeP2Response)
     monkeypatch.setattr(feishu_module, "CallBackCard", _FakeCallBackCard)
-    # Owner helpers import directly from lark_oapi, so patch the canonical source too.
+    # Owner helpers import directly from lark_oapi; patch the source and the
+    # owner helper module bindings so the fake is used regardless of import order.
     try:
         import lark_oapi.event.callback.model.p2_card_action_trigger as _lark_trigger
         monkeypatch.setattr(_lark_trigger, "P2CardActionTriggerResponse", _FakeP2Response)
         monkeypatch.setattr(_lark_trigger, "CallBackCard", _FakeCallBackCard)
+    except Exception:
+        pass
+    try:
+        import owner.feishu.approval as _owner_approval
+        monkeypatch.setattr(_owner_approval, "P2CardActionTriggerResponse", _FakeP2Response)
+        monkeypatch.setattr(_owner_approval, "CallBackCard", _FakeCallBackCard)
+    except Exception:
+        pass
+    try:
+        import owner.feishu.update_prompt as _owner_update_prompt
+        monkeypatch.setattr(_owner_update_prompt, "P2CardActionTriggerResponse", _FakeP2Response)
+        monkeypatch.setattr(_owner_update_prompt, "CallBackCard", _FakeCallBackCard)
     except Exception:
         pass
 
