@@ -57,6 +57,26 @@ owner:
         paths: []
         extensions: [".sh", ".py"]
 
+  # ── Checkpoint mutation predictor ────────────────────────────
+  # 补全 /rollback 的盲区: terminal 工具执行前, 预测命令将要修改的文件,
+  # 对其所在项目根做预防性 ensure_checkpoint。静态解析优先, 失败时同步调
+  # auxiliary LLM (复用 task="approval", 即和 smart approval 同一个模型)
+  # 兜底; LLM 超时/失败/空时【不降级拍 cwd】, 只通过 adapter 报错
+  # 提示该命令的改动无法被 /rollback 回滚。
+  #
+  # 存储层/回滚层/`/rollback` 语义全部复用 config.yaml 的 checkpoints 段,
+  # 这里只管"预测触发源"的行为参数。
+  checkpoints:
+    # 总开关。false 时 terminal 不做任何 checkpoint (write_file/patch 不受影响)。
+    predict_enabled: true
+    # LLM 兜底超时 (毫秒)。超时即放弃预测、报错, 绝不阻塞工具执行。
+    predict_llm_timeout_ms: 3000
+    # 会话内 LLM 预测结果缓存大小 (LRU, 按 command+cwd 键)。
+    # 0 = 禁用缓存, 每次都调 LLM。
+    predict_cache_size: 32
+    # 静态解析置信度阈值: 静态解析出 >= N 个候选路径就直接用, 不调 LLM。
+    predict_static_threshold: 1
+
   # ── Image Generation Presets ───────────────────────────────────────────────
   # Presets for the DashScope image-gen plugin (owner/image_gen/dashscope_provider.py).
   # All owner.image_gen.* lives in patch.yaml and is loaded via the unified
