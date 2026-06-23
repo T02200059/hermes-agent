@@ -1306,6 +1306,16 @@ def _clear_planned_restart_notification() -> None:
 # knows not to clobber TERMINAL_CWD if lazily imported.
 os.environ["_HERMES_GATEWAY"] = "1"
 
+# [owner] cron-env-leak: the gateway must never carry HERMES_CRON_SESSION (or
+# stale session markers) in os.environ — cron context lives in a ContextVar now.
+# Scrub anything inherited from the launching environment so get_session_env()'s
+# os.environ fallback can't misclassify a live message as a cron session.
+try:
+    from owner.cron.restart_scrub import owner_cron_scrub_process_env
+    owner_cron_scrub_process_env()
+except Exception:
+    pass
+
 _ensure_ssl_certs()
 
 # Add parent directory to path
