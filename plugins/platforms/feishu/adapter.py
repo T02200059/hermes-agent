@@ -1913,19 +1913,12 @@ class FeishuAdapter(BasePlatformAdapter):
             return _compression_summary_result
 
         # Auto-card: wrap long text in an interactive card when streaming is
-<<<<<<< HEAD:plugins/platforms/feishu/adapter.py
-        # [owner] try auto-card before plain-text (see owner/feishu/auto_card.py)
-        # Pass explicit chat_id to avoid legacy adapter._chat_id degradation
-        # in synthetic/DM paths (owner/feishu/auto_card.py:488 follow-up).
-        auto_card_result = await _owner_import(
-            "owner.feishu.auto_card", "try_auto_card"
-        )(self, formatted, metadata, chat_id=chat_id)
-=======
         # disabled. Threshold from patch.yaml → owner.feishu_card.auto_card_threshold.
         # Uses send_card() with REST API (not lark_oapi SDK) so it won't
         # invalidate the WebSocket connection's token.
-        auto_card_result = await try_auto_card(self, formatted, metadata)
->>>>>>> parent of 4d55e6b13 (feat(feishu): auto-card — long text to interactive card when streaming off):gateway/platforms/feishu.py
+        auto_card_result = await _owner_import(
+            "owner.feishu.auto_card", "try_auto_card"
+        )(self, formatted, metadata, chat_id=chat_id)
         if auto_card_result is not None:
             return auto_card_result
 

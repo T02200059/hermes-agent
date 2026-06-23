@@ -736,10 +736,14 @@ class QQAdapter(BasePlatformAdapter):
 
     async def _read_events(self) -> None:
         """Read WebSocket frames until connection closes."""
-        # [owner] Simplified check: closed-but-non-None ws previously
-        # returned normally → 100% CPU spin in _listen_loop.
-        if not self._ws or self._ws.closed:
+        if not self._ws:
             raise RuntimeError("WebSocket not connected")
+        if self._ws.closed:
+            # A closed-but-non-None ws makes the while-condition false on entry,
+            # so this would return normally — which _listen_loop treats as a
+            # clean read and immediately retries with backoff reset to 0,
+            # producing a 100% CPU spin. Raise so the reconnect/backoff path runs.
+            raise RuntimeError("WebSocket closed")
 
         while self._running and self._ws and not self._ws.closed:
             msg = await self._ws.receive()

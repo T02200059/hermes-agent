@@ -1973,13 +1973,6 @@ def list_authenticated_providers(
             ).strip().rstrip("/")
             if not raw_name or not api_url:
                 continue
-            # [owner] skip if this entry matches a built-in provider already emitted
-            try:
-                from hermes_cli.providers import normalize_provider as _np
-                if _np(raw_name).lower() in seen_slugs:
-                    continue
-            except Exception:
-                pass
             inline_api_key = (entry.get("api_key") or "").strip()
             key_env = (entry.get("key_env") or "").strip()
             api_key = inline_api_key or (
