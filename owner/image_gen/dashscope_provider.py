@@ -207,14 +207,29 @@ class DashScopeImageGenProvider(ImageGenProvider):
             ],
         }
 
+    def capabilities(self) -> Dict[str, Any]:
+        return {
+            "modalities": ["text"],  # DashScope text-to-image only for now
+            "max_reference_images": 0,
+        }
+
     def generate(
         self,
         prompt: str,
         aspect_ratio: str = DEFAULT_ASPECT_RATIO,
+        *,
+        image_url: Optional[str] = None,
+        reference_image_urls: Optional[List[str]] = None,
         **kwargs: Any,
     ) -> Dict[str, Any]:
         """Generate an image via DashScope multimodal generation API."""
         aspect = resolve_aspect_ratio(aspect_ratio)
+
+        # image_url / reference_image_urls: DashScope multimodal-generation API
+        # does not yet support image-to-image via this provider.  The parameters
+        # are accepted (ABC contract) but ignored — text-to-image only for now.
+        _ = image_url
+        _ = reference_image_urls
 
         # Determine active model / preset.
         model_arg = str(kwargs.get("model") or "").strip()
@@ -259,11 +274,25 @@ class DashScopeImageGenProvider(ImageGenProvider):
 
         size = str(preset.get("size") or _ASPECT_RATIO_SIZES.get(aspect, "1024*1024")).strip()
 
-        payload: Dict[str, Any] = {
-            "model": actual_model,
-            "input": {"prompt": prompt},
-            "parameters": {"size": size},
-        }
+        # Use message-based format for newer models (qwen-image-2.0, wan2.6+),
+        # fall back to legacy input.prompt format when preset specifies mode: prompt
+        preset_mode = str(preset.get("mode") or "message").strip().lower()
+        if preset_mode == "prompt":
+            payload: Dict[str, Any] = {
+                "model": actual_model,
+                "input": {"prompt": prompt},
+                "parameters": {"size": size, "n": 1},
+            }
+        else:
+            payload = {
+                "model": actual_model,
+                "input": {
+                    "messages": [
+                        {"role": "user", "content": [{"text": prompt}]}
+                    ]
+                },
+                "parameters": {"size": size, "n": 1},
+            }
 
         headers = {
             "Authorization": f"Bearer {api_key}",
@@ -347,56 +376,72 @@ class DashScopeImageGenProvider(ImageGenProvider):
                 aspect_ratio=aspect,
             )
 
-        results = output.get("results")
-        if not isinstance(results, list) or not results:
-            return error_response(
-                error="DashScope returned no image results",
-                error_type="empty_response",
-                provider=self.name,
-                model=actual_model,
-                prompt=prompt,
-                aspect_ratio=aspect,
-            )
+        # Try message-based response format first (qwen-image-2.0, wan2.6+)
+        image_ref: Optional[str] = None
+        choices = output.get("choices")
+        if isinstance(choices, list) and choices:
+            msg_content = (choices[0].get("message") or {}).get("content")
+            if isinstance(msg_content, list) and msg_content:
+                img_url = msg_content[0].get("image") or msg_content[0].get("url")
+                if img_url:
+                    try:
+                        saved_path = save_url_image(str(img_url), prefix=f"dashscope_{actual_model}")
+                        image_ref = str(saved_path)
+                    except Exception as exc:
+                        logger.warning("DashScope image URL cache failed (%s); using bare URL.", exc)
+                        image_ref = str(img_url)
 
-        first = results[0]
-        b64 = first.get("b64_image")
-        url = first.get("url")
-
-        image_ref: str
-        if b64:
-            try:
-                saved_path = save_b64_image(b64, prefix=f"dashscope_{actual_model}")
-            except Exception as exc:
+        # Fallback: legacy results format
+        if image_ref is None:
+            results = output.get("results")
+            if not isinstance(results, list) or not results:
                 return error_response(
-                    error=f"Could not save image to cache: {exc}",
-                    error_type="io_error",
+                    error="DashScope returned no image results",
+                    error_type="empty_response",
                     provider=self.name,
                     model=actual_model,
                     prompt=prompt,
                     aspect_ratio=aspect,
                 )
-            image_ref = str(saved_path)
-        elif url:
-            try:
-                saved_path = save_url_image(url, prefix=f"dashscope_{actual_model}")
-            except Exception as exc:
-                logger.warning(
-                    "DashScope image URL %s could not be cached (%s); falling back to bare URL.",
-                    url,
-                    exc,
-                )
-                image_ref = url
-            else:
+
+            first = results[0]
+            b64 = first.get("b64_image")
+            url = first.get("url")
+
+            if b64:
+                try:
+                    saved_path = save_b64_image(b64, prefix=f"dashscope_{actual_model}")
+                except Exception as exc:
+                    return error_response(
+                        error=f"Could not save image to cache: {exc}",
+                        error_type="io_error",
+                        provider=self.name,
+                        model=actual_model,
+                        prompt=prompt,
+                        aspect_ratio=aspect,
+                    )
                 image_ref = str(saved_path)
-        else:
-            return error_response(
-                error="DashScope response contained neither b64_image nor URL",
-                error_type="empty_response",
-                provider=self.name,
-                model=actual_model,
-                prompt=prompt,
-                aspect_ratio=aspect,
-            )
+            elif url:
+                try:
+                    saved_path = save_url_image(url, prefix=f"dashscope_{actual_model}")
+                except Exception as exc:
+                    logger.warning(
+                        "DashScope image URL %s could not be cached (%s); falling back to bare URL.",
+                        url,
+                        exc,
+                    )
+                    image_ref = url
+                else:
+                    image_ref = str(saved_path)
+            else:
+                return error_response(
+                    error="DashScope response contained neither b64_image nor URL",
+                    error_type="empty_response",
+                    provider=self.name,
+                    model=actual_model,
+                    prompt=prompt,
+                    aspect_ratio=aspect,
+                )
 
         extra: Dict[str, Any] = {"size": size}
         if task_status:
@@ -408,5 +453,6 @@ class DashScopeImageGenProvider(ImageGenProvider):
             prompt=prompt,
             aspect_ratio=aspect,
             provider=self.name,
+            modality="text",
             extra=extra,
         )
