@@ -7,5 +7,6 @@ agent/tool_executor.py 只做薄胶水委托。
 docs/superpowers/specs/2026-06-19-checkpoint-mutation-predictor-design.md
 """
 
-# predict_and_checkpoint 在 Task 4 的 predictor.py 实现后从这里导出:
-# from owner.checkpoint_predictor.predictor import predict_and_checkpoint
+from owner.checkpoint_predictor.predictor import predict_and_checkpoint
+
+__all__ = ["predict_and_checkpoint"]
