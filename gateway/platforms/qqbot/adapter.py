@@ -2745,9 +2745,6 @@ class QQAdapter(BasePlatformAdapter):
         :func:`tools.approval.resolve_gateway_approval` — dispatched by the
         adapter's interaction callback (:meth:`_default_interaction_dispatch`).
         """
-        # [owner] approval: accept (but ignore) Feishu-specific sender_open_id/sender_is_bot
-        # for name-cache pre-warm contract. Using **kwargs keeps non-Feishu adapters clean.
-        # See owner/feishu/sender_name_cache.py
         kwargs.pop("sender_open_id", None)
         kwargs.pop("sender_is_bot", None)
         del metadata

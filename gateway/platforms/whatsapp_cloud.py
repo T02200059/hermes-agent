@@ -765,9 +765,6 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
         same mechanism as the text ``/approve`` flow. The agent thread
         is blocked until the user taps or types a response.
         """
-        # [owner] approval: accept (but ignore) Feishu-specific sender_open_id/sender_is_bot
-        # for name-cache pre-warm contract. Using **kwargs keeps non-Feishu adapters clean.
-        # See owner/feishu/sender_name_cache.py
         kwargs.pop("sender_open_id", None)
         kwargs.pop("sender_is_bot", None)
         if self._http_client is None:

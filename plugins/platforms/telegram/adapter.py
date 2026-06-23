@@ -3470,9 +3470,6 @@ class TelegramAdapter(BasePlatformAdapter):
         The buttons call ``resolve_gateway_approval()`` to unblock the waiting
         agent thread — same mechanism as the text ``/approve`` flow.
         """
-        # [owner] approval: accept (but ignore) Feishu-specific sender_open_id/sender_is_bot
-        # for name-cache pre-warm contract. Using **kwargs keeps non-Feishu adapters clean.
-        # See owner/feishu/sender_name_cache.py
         kwargs.pop("sender_open_id", None)
         kwargs.pop("sender_is_bot", None)
         if not self._bot:

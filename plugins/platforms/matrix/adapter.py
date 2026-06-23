@@ -1912,9 +1912,6 @@ class MatrixAdapter(BasePlatformAdapter):
         **kwargs,
     ) -> SendResult:
         """Send a reaction-based exec approval prompt for Matrix."""
-        # [owner] approval: accept (but ignore) Feishu-specific sender_open_id/sender_is_bot
-        # for name-cache pre-warm contract. Using **kwargs keeps non-Feishu adapters clean
-        # even if future params are added. See owner/feishu/sender_name_cache.py
         kwargs.pop("sender_open_id", None)
         kwargs.pop("sender_is_bot", None)
         if not self._client:

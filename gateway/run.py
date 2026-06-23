@@ -874,8 +874,6 @@ def _wrap_current_message_with_observed_context(
             f"{observed_context}",
             "",
         ])
-    # [owner] current-user: include name in per-turn message for group chats
-    # (model sees it even if sys prompt volatile not rebuilt; see agent/system_prompt.py + approval flow)
     if user_context:
         parts.append(f"[Current user: {user_context}]")
     parts.append(f"{_CURRENT_ADDRESSED_MESSAGE_HEADER}")
@@ -16350,8 +16348,6 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 # false positives from MagicMock auto-attribute creation in tests.
                 if getattr(type(_status_adapter), "send_exec_approval", None) is not None:
                     try:
-                        # [owner] approval: pass sender (open_id/is_bot) so Feishu can pre-warm open_id->中文名 cache
-                        # (see owner/feishu/sender_name_cache.py); other adapters accept & ignore for unified contract.
                         _approval_fut = safe_schedule_threadsafe(
                             _status_adapter.send_exec_approval(
                                 chat_id=_status_chat_id,
