@@ -1,8 +1,8 @@
-# owner-v16 改动清单
+# owner 改动清单
 
-> **范围**：owner-v16 分支，从首个杨天宝提交 `17e4a81a8` 到当前 HEAD `5c6e37292`（含 sync upstream/main merge）  
-> **最后更新**：2026-06-22（§11.8 progress dedup 代码块修复 + §11.9 飞书编辑上限轮转）  
-> **说明**：本清单替代 `原有改动清单.md`，按 v16 改造主题组织，只记录功能代码改动。
+> **范围**：owner 分支个人定制改动（主体为 owner-v16，v17 起增量追加）  
+> **最后更新**：2026-06-23（新增 §18 owner-v17 飞书 terminal bash fence；补充 §17 遗漏项梳理）  
+> **说明**：本清单替代 `原有改动清单.md`，按改造主题组织，只记录功能代码改动。`docs(owner)` / `docs(inventory)` 等纯清单维护提交不逐条列出。
 
 ---
 
@@ -448,3 +448,206 @@
   - **image_generation_tool（§3.3）**：owner 的 `model_from_args` 与 upstream 的 `image_url`/`reference_image_urls` 正交，融合为 `_dispatch_to_plugin_provider` 同时支持。
   - **createSlashHandler.ts（§6.1）**：采用 upstream 的 `handleDispatch` 重构，补回 chain type 处理（upstream 重构时遗漏）。
 - **相关 commit**：`a2703ab86`（sync merge commit）
+
+---
+
+## 十七、遗漏项补充（2026-06-23 梳理）
+
+> 本节补充 2026-06-22 及之前未在正文中逐条记录的功能代码改动。这些提交同样需要在 merge 官方代码时保留或重新评估。
+
+### 17.1 飞书平台深度定制
+
+- `97dd0d8b0` fix(auto_card): reserve footer size from split budget for final chunk (IN-05)
+- `7b07cb11b` fix(feishu): correct _Entry.operations annotation to Optional[list] (IN-02)
+- `2c5957a05` fix(gateway): rotate to fresh bubble on Feishu edit-limit instead of disabling edits
+- `c5e986fcb` test(owner): add send_message sub-profile target auto-fill + extra_metadata tests
+- `c7a655cd5` feat(owner): auto-fill feishu send_message target from session in sub-profiles [owner]
+- `f2cf79806` feat(owner): resolve default feishu send target from session for sub-profiles
+- `59da94339` chore(owner): add bot name comments and update whitelist in patch_feishu_profile.yaml
+- `7f1d53fc4` chore(owner): add node010 bot routing config to patch_feishu_profile.yaml
+- `fa6906ae3` chore(owner): update feishu profile config for routing test
+- `2f10bdac7` refactor(feishu): migrate profile routing to inject_inbound transport
+- `fa4f1505a` refactor(feishu): move api_key into profile_endpoints per-profile config
+- `984cf648a` chore(profiles): add hermesxiyun profile runtime SOUL.md
+- `8ea717389` feat(feishu): add hermesxiyun profile configuration template
+- `f7a3554c6` feat(feishu): multi-bot routing support
+- `8ced60ad9` feat(feishu): add send_only connection mode for multi-profile routing
+- `2e692b449` fix(feishu): respect explicit platform disable in config.yaml
+- `541c4bafe` feat(owner): add Feishu multi-profile routing with external containers
+- `78578d368` fix(feishu): improve markdown table rendering by isolating tables into dedicated post rows
+- `3afa0b303` refactor(owner): replace ~20-line auto_card block with delegation to owner/feishu/agent_end.py
+- `7964f98bd` feat(owner): extract agent:end auto_card dispatch to owner/feishu/agent_end.py
+- `da13b870f` feat(owner): add force param to try_auto_card for agent:end dispatch
+- `0c4c5733d` fix(owner): patch.yaml 补充飞书 bot_menu_dedup 缺失的 ack 文案（对照 owner 分支完整配置）
+- `46a6b6839` test(owner): 补全 card_sender resolver sender_open_id fallback、空 open_id 值、warning 带上下文日志测试（完成 auto-card DM follow-up #3）
+- `b5f19b9b3` fix(官方模块): 向 try_auto_card 传递显式 chat_id（auto-card DM 路径 chat_id 退化修复配套）+ 规范文档示例对齐
+- `938de6fde` fix(owner): auto-card 显式接收 chat_id 参数，消除对 adapter._chat_id 的退化依赖
+- `9b2a6cc94` fix(官方模块): gateway/run.py _thread_metadata_for_target 支持 chat_type 单独存在（Feishu DM synthetic auto-card 必需）+ docstring 更新
+- `b7255aad7` fix(owner): auto-card card_sender warning 日志补充定位上下文（B1 blocker）
+- `94614b6e7` test(owner): 为 card_sender._resolve_receive_target 增加 None/空 metadata/缺 chat_type 边界测试（B2 blocker）
+- `fa809e9ae` fix(owner): dedent bot_menu_dedup under existing feishu key
+- `e24ec9bdd` fix(owner): restore bot_menu_dedup ack configs (lost in owner-v16 refactor)
+
+### 17.2 Gateway 稳定性与进度编辑
+
+- `066a0ec50` test(gateway): assert cross-room-blocked message content, not raw key substring
+- `168038745` test(gateway): cover _loop_executor_unavailable + sentinel classification
+- `b952d32ec` fix(gateway): proactively fast-fail _run_in_executor_with_context on dead loop
+- `670e794e4` test(gateway): cover _is_executor_shutdown_error classifier
+- `5de44619b` fix(gateway): treat executor-shutdown RuntimeError as restart, not agent error
+- `883ca1acd` test(gateway): route rotate simulation through real _classify_edit_failure (WR-06)
+- `bf59069dd` refactor(gateway): extract _classify_edit_failure for the progress-edit decision (WR-06)
+- `4bf93c379` test(gateway): exercise production _append_dedup_counter, not a copy (WR-04)
+- `a45f406e8` refactor(gateway): extract _append_dedup_counter helper, dedupe both sites (WR-05)
+- `3d2846e10` fix(gateway): (×N) dedup counter breaks fenced code block on markdown platforms
+- `c3a6500ec` fix(owner): gateway/run.py tool_progress_grouping 用回 resolve_display_setting_for_source
+- `4a77d9510` fix(gateway): scrub session env on restart watcher
+- `d6349869f` fix(gateway): use resolve_display_setting_for_source for busy ack detail
+
+### 17.3 Clarify 超时与交互修复
+
+- `958759cd0` fix(clarify): defend against premature-timeout race when entry vanishes during card send
+- `c7bcb726c` test(owner): 更新 clarify choices 测试为 {display,key} 归一化格式
+- `84f799bb6` fix(owner): 给 clarify_tool ClarifyTimeout/sentinel 补 [owner] 标记
+- `da7dbb073` fix(owner): clarify 超时补发用户提示
+- `94eefd86d` fix(owner): clarify timeout sequential 分支 fallback 对齐无 message interrupt
+- `1bdce99a7` fix(owner): clarify timeout inline fallback 对齐无 message interrupt
+- `f1ecdf1d3` fix(owner): clarify timeout 改用无 message interrupt 防幻影轮
+
+### 17.4 Cron / 运维脚本
+
+- `6f631d035` fix(owner): update_newapi_exchange_rate 内网域名 + review date 续期
+- `54b72ec12` fix(gateway): scrub inherited HERMES_CRON_SESSION at process startup
+- `43dcf2833` feat(owner/cron): add owner_cron_scrub_process_env for startup env scrub
+- `b352980fa` fix(gateway): log instead of swallow owner.cron registration failure
+- `f3c64c18e` feat(owner/cron): isolate HERMES_CRON_SESSION via ContextVar
+- `4deb4fca3` feat(owner): add update_newapi_exchange_rate.py cron script
+- `6557933cd` feat(scripts): add mac config backup scripts
+
+### 17.5 Memory Proposal 批量审批与并发修复
+
+- `36b5c27e5` test(memory): cover pre-approval rejection of incomplete batch ops (WR-07)
+- `03de77ecc` fix(memory): reject structurally incomplete batch ops pre-approval (WR-07)
+- `10a5ea2ce` feat(owner): memory_propose batch approval card + i18n
+- `f983d9518` feat(owner): memory_propose batch schema + data path
+- `34031dc4b` test(owner): memory_propose 并发回归测试 + 修正 4 处测试侧断言
+- `4c1d2fe7d` fix(owner): bg-review memory auto-approve 改用隔离 key 消除同 session 串台
+
+### 17.6 Unified Diff Patch 工具增强
+
+- `68e5903a1` tools(file): temp enable official 'patch' alongside unified_diff_patch owner fork
+- `0496f6e49` feat(owner): improve unified_diff_patch error messages (R4)
+- `69b1caac0` fix(unified_diff_patch): skip _suggest_path probe on traversal paths (IN-04)
+- `2d996bace` refactor(unified_diff_patch): hoist import os to module scope (IN-03)
+- `b1706fe60` fix(unified_diff_patch): show resolved path + cwd + Did-you-mean on missing files
+- `f7655f1ee` chore(owner): rename unified_diff_patch tool emoji 🩹 → 🧩
+
+### 17.7 OpenViking 记忆召回增强
+
+- `fd8db307e` fix(openviking): remember 改为非阻塞 — wait+cleanup 移入后台线程
+- `9d8530b78` refactor(openviking-recall): move 6 OPENVIKING_* env vars to patch.yaml
+- `f81f16b34` feat(openviking-recall): add Feishu card + QQ Bot text visualization for sync recall
+- `76abc4ded` fix(openviking-sync-recall): replace top_k with limit in FindRequest
+- `b6679bd4f` test(owner): add unit tests for openviking_sync_recall_patch
+
+### 17.8 图像生成 / DashScope
+
+- `f53d38b34` fix(image_gen): enforce reference-image cap + validate source URL scheme
+- `6c7cbe6f0` fix(image_gen): reject non-http(s) schemes in save_url_image (WR-02 SSRF)
+- `d89351d61` fix(image_gen): guard non-dict DashScope response elements to avoid AttributeError crash
+- `d38f4c4a3` feat(owner): DashScope image editing support (image-to-image)
+- `281085f28` fix(owner): DashScope image-gen plugin compat with v17 ABC interface
+
+### 17.9 Skill 脚本自动审批
+
+- `ec7573522` chore(owner): expand skill_script_allowlist with individual xy-* skills
+- `66acc39fa` test(owner): add integration coverage for skill script bypass in check_all_command_guards
+- `79b31f65e` fix(owner): skill_script_approval: update module header for accuracy and removability notes
+- `15619c551` fix(官方模块): skill script auto-approval: wire bypass into check_all_command_guards (the live terminal guard)
+
+### 17.10 工程/配置杂项
+
+- `682b4f502` chore: ignore *.bak-YYYYMMDD editor/temp backup files
+- `5d27ea00c` chore(owner): recover full owner-v16 development after git-filter-repo rewrite
+- `1b4edfad5` chore: update package-lock.json
+- `a435683af` chore: add Serena project configuration
+
+### 17.11 Checkpoint Mutation Predictor
+
+- `751e4b54b` feat(owner): document checkpoint predictor timeout + model routing
+- `23461d762` test(owner): add e2e test for checkpoint predictor message isolation
+- `b6f2d81b5` feat(owner): add checkpoints config + predictor docs
+
+### 17.12 Read/Search 单执行超时保护
+
+- `2e5d5a10a` test(agent): add unit tests for read_file/search_files single-execution timeout guards
+- `e3afed52d` feat(agent): integrate single-execution timeout guard at _run_tool entry for read_file/search_files
+- `b0502f299` feat(agent): add single-execution timeout protection for read_file/search_files in invoke_tool
+
+### 17.13 Recall Card 可视化
+
+- `6c99d5396` feat(recall-card): wire expand_recall/collapse_recall callbacks in _on_card_action_trigger
+- `408f17709` feat(recall-card): add import bridge for hyphens-in-path hook directory
+- `4beff2cfc` fix(recall-card): extract shared _extract_title and _sanitize_markdown_inline
+
+### 17.14 i18n 补全
+
+- `482868df7` fix(i18n): add the 17 missing gateway keys to zh.yaml
+- `ef200216a` fix(i18n): add 17 missing gateway keys to en.yaml
+- `b70109f93` refactor(i18n): route get_random_tip through agent.i18n.get_language()
+
+### 17.15 Provider 名称归因修复
+
+- `6a5317b85` fix(owner): owner_provider_name 改为 getattr 防 __new__ 构造对象 AttributeError
+- `2e6ecd778` fix(delegate_tool): pass owner_provider_name to _build_child_agent
+
+### 17.16 上下文压缩中文摘要
+
+- `33c994231` feat(feishu): send context compression summary as plain interactive card
+- `0e7f732d8` feat(compression): emit user-facing Chinese summary after context compression
+
+### 17.17 Hook 体系薄胶水
+
+- `0771db81e` refactor(owner): thin api_server.py hook glue per adversarial review
+
+### 17.18 NewAPI Base URL 可覆盖
+
+- `3b98ebe78` fix(owner): make NewAPI base URL env-overridable + plaintext-HTTP warning (WR-03, IN-01)
+
+### 17.19 Owner 迁移/代码治理
+
+- `436ec3775` fix(owner): add graceful degradation to _owner_import for removability
+
+### 17.20 Patch 配置修复
+
+- `f4437f5e8` fix(cli): correct import indentation for owner.tools.schema_patches
+
+### 17.21 Qdrant 记忆召回
+
+- `e3b50e206` feat(qdrant): add tenant_id isolation for multi-tenant knowledge base
+
+### 17.22 TUI 修复
+
+- `31709b9ed` fix(tui): mark slash command dispatch callback as async
+
+### 17.23 模型选择器修复
+
+- `dc7a2ff60` fix(model-picker): route confirm command through adapter loop instead of dead _running_runner
+
+### 17.24 其他
+
+- `296656b09` style(agent): format background review actions as multi-line bullets
+- `5de861c10` fix(owner/scripts): harden newapi exchange-rate updater
+- `5e9963e7b` fix(tests): update whatsapp send mock for new _send_to_platform signature
+- `16f34c3ad` chore(owner): fix sync_git_hermes bot menu prompt to reference owner-v16
+- `3fc04ba61` fix(owner): repair owner integration call sites (missing self/indent)
+- `032dcbfe4` chore(owner): mark 0be2695 timestamp-pinning as deprecated
+
+---
+
+## 十八、owner-v17 更新
+
+### 18.1 飞书 terminal 进度命令使用 bash 代码块
+- **背景问题**：gateway 在渲染 terminal 工具进度时对所有 markdown 平台使用裸 ``` fence，因为 Slack mrkdwn 会把语言标签渲染成代码块首行字面文本；但飞书正确支持 ```bash 标签，缺失语言标签导致代码块缺少语法高亮提示。
+- **解决方案**：在 `BasePlatformAdapter` 新增 `terminal_code_block_language` 能力属性（默认空串保持裸 fence），`FeishuAdapter` 覆盖为 `"bash"`；`gateway/run.py` 的 `progress_callback` 读取该属性，非空时生成 ```{language} 开头的 fenced code block。
+- **相关 commit**：`343792ede`
