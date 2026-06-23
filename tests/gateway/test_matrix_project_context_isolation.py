@@ -443,7 +443,9 @@ async def test_matrix_resume_quoted_title_cross_room_blocked():
         _event('/resume "Project A Plan"', source_b)
     )
 
-    assert "blocked" in result
+    # Cross-room resume is refused: the user sees a "belongs to another room"
+    # message (gateway.resume.matrix_blocked_other_room) and no switch happens.
+    assert "Cannot resume" in result and "another room" in result
     runner.session_store.switch_session.assert_not_called()
 
 
