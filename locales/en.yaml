@@ -162,6 +162,7 @@ gateway:
   no_active_goal:   "No active goal."
   config_read_failed: "⚠️ Could not read config.yaml: {error}"
   config_save_failed: "⚠️ Could not save config: {error}"
+  silent_api_disconnect: "⚠️ The API connection dropped before any response arrived. This is usually a transient network or provider issue — please try again."
 
   # Gateway lifecycle messages — shown during restart/shutdown/draining.
   shutdown_notify_restart: "🌆 Gateway restarting — Your current task will be interrupted. Send any message after restart and I'll try to resume where you left off."
@@ -232,6 +233,10 @@ gateway:
     session_plural:        "✅ Commands approved (pattern approved for this session) ({count} commands). The agent is resuming..."
     always_singular:       "✅ Command approved (pattern approved permanently). The agent is resuming..."
     always_plural:         "✅ Commands approved (pattern approved permanently) ({count} commands). The agent is resuming..."
+    singular:              "✅ Memory updated — approved {count} proposal(s)."
+
+  credits:
+    not_logged_in:         "Not logged in to Nous Portal. Run `hermes login` to view your credits."
 
   background:
     usage:                 "Usage: /background <prompt>\nExample: /background Summarize the top HN stories today\n\nRuns the prompt in a separate session. You can keep chatting — the result will appear here when done."
@@ -411,6 +416,11 @@ gateway:
     resumed_one:           "↻ Resumed session **{title}** ({count} message). Conversation restored."
     resumed_many:          "↻ Resumed session **{title}** ({count} messages). Conversation restored."
     resumed_no_count:      "↻ Resumed session **{title}**. Conversation restored."
+    parse_error:           "Could not parse the resume command: {error}"
+    matrix_no_named_sessions: "No named sessions found in this room.\nUse `/title My Session` to name your current session, then `/resume My Session` to return to it later."
+    matrix_blocked_no_origin: "Cannot resume **{name}** — it isn't linked to a Matrix room, and cross-room resume is disabled. Use `/resume --all` to override."
+    matrix_blocked_other_room: "Cannot resume **{name}** — it belongs to another room (**{room}**). Cross-room resume is disabled. Use `/resume --all` to override."
+    matrix_cross_room_success: "↻ Resumed session **{title}**{msg_part} into **{room}**. Conversation restored."
 
   retry:
     no_previous:           "No previous message to retry."
@@ -442,6 +452,12 @@ gateway:
     state_no:              "No"
     queued:                "**Queued follow-ups:** {count}"
     platforms:             "**Connected Platforms:** {platforms}"
+    matrix_scope_header:   "**Matrix session scope:**"
+    matrix_scope_room:     "**Room:** {room}"
+    matrix_scope_room_id:  "**Room ID:** `{room_id}`"
+    matrix_scope_thread:   "**Thread:** {thread_id}"
+    matrix_scope_mode:     "**Scope mode:** {scope}"
+    matrix_scope_key:      "**Session key:** `{session_key}`"
 
   stop:
     stopped_pending:       "⚡ Stopped. The agent hadn't started yet — you can continue this session."
@@ -472,6 +488,7 @@ gateway:
   undo:
     nothing:               "Nothing to undo."
     removed:               "↩️ Undid {count} message(s).\nRemoved: \"{preview}\""
+    invalid_count:         "Invalid turn count '{arg}'. Usage: `/undo` or `/undo <n>` (e.g. `/undo 3`)."
 
   update:
     platform_not_messaging:  "✗ /update is only available from messaging platforms. Run `hermes update` from the terminal."
@@ -524,6 +541,8 @@ gateway:
     label_off:             "Off (text only)"
     label_voice_only:      "On (voice reply to voice messages)"
     label_all:             "TTS (voice reply to all messages)"
+    help:                  "{toggle}\nSubcommands: `/voice on` · `/voice off` · `/voice tts` · `/voice status`{channels}"
+    help_channels:         "\nVoice channels: `/voice join` · `/voice leave`"
 
   yolo:
     disabled:                   "⚠️ YOLO mode **OFF** for this session — dangerous commands will require approval."
