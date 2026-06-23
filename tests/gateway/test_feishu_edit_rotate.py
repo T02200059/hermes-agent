@@ -23,6 +23,7 @@ from unittest.mock import patch
 import pytest
 
 from gateway.platforms.base import SendResult
+from gateway.run import _classify_edit_failure
 
 
 # ---------------------------------------------------------------------------
@@ -142,6 +143,11 @@ def _simulate_progress_loop_with_rotate(edit_results, send_results):
     Returns dict with final state: can_edit, progress_msg_id rotations,
     number of standalone sends, and whether any edit was attempted after
     a rotate.
+
+    The per-result DECISION is delegated to the production classifier
+    ``_classify_edit_failure`` (WR-06) — only the loop bookkeeping around it is
+    simulated here, so a regression in the real decision logic fails these
+    tests.
     """
     can_edit = True
     progress_msg_id = "om_initial"
@@ -153,9 +159,10 @@ def _simulate_progress_loop_with_rotate(edit_results, send_results):
     for result in edit_results:
         if result.success:
             continue
-        if getattr(result, "retryable", False):
+        action = _classify_edit_failure(result)
+        if action == "retryable":
             continue
-        if getattr(result, "rotate", False):
+        if action == "rotate":
             # Rotate: clear msg id, keep can_edit, send new bubble.
             progress_msg_id = None
             rotations += 1
@@ -165,7 +172,10 @@ def _simulate_progress_loop_with_rotate(edit_results, send_results):
                 progress_msg_id = new.message_id
                 edit_after_rotate += 1  # next edit will target the new bubble
             continue
-        # Permanent failure (old behavior)
+        if action == "flood":
+            # Flood control: keep editing, just back off — no standalone bubble.
+            continue
+        # action == "disable": permanent failure (old behavior)
         can_edit = False
         standalone_sends += 1
         break
@@ -232,5 +242,39 @@ def test_bare_permanent_failure_still_disables_can_edit():
     state = _simulate_progress_loop_with_rotate(edit_results, [])
     assert state["can_edit"] is False
     assert state["standalone_sends"] == 1
+
+
+# ---------------------------------------------------------------------------
+# 4. _classify_edit_failure — production decision function (WR-06)
+# ---------------------------------------------------------------------------
+
+class TestClassifyEditFailure:
+    """Direct unit tests for the extracted decision function in gateway/run.py.
+
+    The progress-loop simulation above delegates to this same function, so the
+    rotate/flood/disable decision is now exercised against production code
+    rather than a hand-written re-implementation.
+    """
+
+    def test_retryable_takes_precedence(self):
+        # retryable wins even if rotate is also set.
+        r = SendResult(success=False, error="connect timeout", retryable=True, rotate=True)
+        assert _classify_edit_failure(r) == "retryable"
+
+    def test_rotate_when_not_retryable(self):
+        r = SendResult(success=False, error="[230072] edit limit", rotate=True)
+        assert _classify_edit_failure(r) == "rotate"
+
+    def test_flood_from_error_text(self):
+        assert _classify_edit_failure(SendResult(success=False, error="flood control")) == "flood"
+        assert _classify_edit_failure(SendResult(success=False, error="Please retry after 5s")) == "flood"
+
+    def test_disable_for_bare_permanent_failure(self):
+        r = SendResult(success=False, error="message to edit not found")
+        assert _classify_edit_failure(r) == "disable"
+
+    def test_disable_when_error_missing(self):
+        # No error attribute set / empty → permanent disable, not a crash.
+        assert _classify_edit_failure(SendResult(success=False)) == "disable"
 
 
