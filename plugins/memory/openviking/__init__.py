@@ -3011,43 +3011,6 @@ class OpenVikingMemoryProvider(MemoryProvider):
             old_session_id, new_id, parent_session_id, reset,
         )
 
-    def on_session_switch(
-        self,
-        new_session_id: str,
-        *,
-        parent_session_id: str = "",
-        reset: bool = False,
-        **kwargs,
-    ) -> None:
-        """Rotate cached per-session state when the agent switches session_id.
-
-        Core already calls commit_memory_session() before this hook, so we only
-        need to flush the in-flight sync thread and reset counters. Creating a
-        second commit here would double-archive the same conversation.
-        """
-        if not self._client or not new_session_id:
-            return
-
-        # Flush any pending turn writes so they land in the old session.
-        if self._sync_thread and self._sync_thread.is_alive():
-            self._sync_thread.join(timeout=10.0)
-
-        # Rotate state.
-        self._session_id = new_session_id
-        self._turn_count = 0
-
-        # Prefetch is tied to the upcoming turn, not the old session; clearing it
-        # avoids stale context being injected under the new session_id.
-        if self._prefetch_thread and self._prefetch_thread.is_alive():
-            self._prefetch_thread.join(timeout=3.0)
-        with self._prefetch_lock:
-            self._prefetch_result = ""
-
-        logger.debug(
-            "OpenViking switched session: new=%s parent=%s reset=%s",
-            new_session_id, parent_session_id, reset,
-        )
-
     def _build_memory_uri(self, subdir: str) -> str:
         """Build a viking:// memory URI under the configured peer namespace."""
         slug = uuid.uuid4().hex[:12]

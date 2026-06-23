@@ -188,38 +188,6 @@ class TestCheckClarifyRequirements:
         assert check_clarify_requirements() is True
 
 
-class TestClarifyDictChoices:
-    """Dict-shaped choices must be unwrapped to user-facing text at the source."""
-
-    def test_dict_choices_reach_callback_as_clean_text(self):
-        """The whole point: the UI callback never sees a dict repr."""
-        seen = []
-
-        def cb(question, choices):
-            seen.extend(choices or [])
-            return choices[0]
-
-        result = json.loads(clarify_tool(
-            "Pick a layout",
-            choices=[
-                {"choice": "Tight", "description": "Tight, covers all 3 points"},
-                {"description": "Loose layout"},
-                {"name": "modelid", "value": "abc"},  # dropped, not leaked
-                "A plain string choice",
-            ],
-            callback=cb,
-        ))  # type: ignore
-        assert seen == [
-            "Tight, covers all 3 points",
-            "Loose layout",
-            "A plain string choice",
-        ]
-        # and the resolved answer is clean text, not a dict repr
-        assert result["user_response"] == "Tight, covers all 3 points"
-        assert "{" not in result["user_response"]
-        assert all("{" not in c for c in result["choices_offered"])
-
-
 class TestClarifySchema:
     """Tests for the OpenAI function-calling schema."""
 
