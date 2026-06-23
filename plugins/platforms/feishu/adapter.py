@@ -2078,7 +2078,9 @@ class FeishuAdapter(BasePlatformAdapter):
         old_text: str,
         new_content: str,
         metadata: Optional[Dict[str, Any]] = None,
+        operations: Optional[list] = None,
     ) -> SendResult:
+        # [owner] memory_propose: forward batch ops (see owner/memory/tool.py)
         """Send a Feishu interactive card for memory proposal approval.
 
         Thin glue only — card construction and callback handling live in
@@ -2099,6 +2101,7 @@ class FeishuAdapter(BasePlatformAdapter):
                 target: str
                 old_text: str
                 new_content: str
+                operations: list = None
 
             session_key = ""
             if metadata and isinstance(metadata, dict):
@@ -2109,6 +2112,7 @@ class FeishuAdapter(BasePlatformAdapter):
                 target=target,
                 old_text=old_text,
                 new_content=new_content,
+                operations=operations,
             )
             result = await send_memory_proposal_card(self, chat_id=chat_id, entry=entry, metadata=metadata)
             return result

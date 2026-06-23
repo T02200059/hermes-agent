@@ -2933,7 +2933,9 @@ class BasePlatformAdapter(ABC):
         old_text: str,
         new_content: str,
         metadata: Optional[Dict[str, Any]] = None,
+        operations: Optional[list] = None,
     ) -> SendResult:
+        # [owner] memory_propose: forward batch ops (see owner/memory/tool.py)
         """Send a memory proposal approval message to the user.
 
         Adapters with button UI support (Feishu) override this to render

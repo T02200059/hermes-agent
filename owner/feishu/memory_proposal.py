@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from agent.async_utils import safe_schedule_threadsafe
 from agent.i18n import t
@@ -23,6 +23,12 @@ _ACTION_KEYS = {
     "remove": "memory_proposal.action_remove",
 }
 
+# Batch rendering thresholds.
+_OP_CONTENT_PREVIEW_LEN = 60    # truncate each op's content preview
+_OP_OLDTEXT_PREVIEW_LEN = 40    # truncate each op's old_text preview
+_BATCH_COLLAPSE_THRESHOLD = 5   # show at most this many op lines before "还有 N 条"
+_BATCH_COLLAPSE_KEEP = 3        # leading ops kept when collapsing
+
 
 def _action_label(action: str) -> str:
     key = _ACTION_KEYS.get(action)
@@ -32,26 +38,117 @@ def _action_label(action: str) -> str:
     return action if label == key else label
 
 
+def _truncate(text: str, limit: int) -> str:
+    """Truncate ``text`` to ``limit`` chars, appending ``…`` when truncated."""
+    if not text:
+        return ""
+    if len(text) <= limit:
+        return text
+    return text[:limit] + "…"
+
+
+def _build_batch_proposal_md(
+    operations: List[Dict[str, Any]],
+    target: str,
+    char_budget: Optional[Dict[str, int]] = None,
+) -> str:
+    """Render the markdown body for a batch proposal card.
+
+    Shows one line per op: ``({idx}/{total}) · {action}  {preview}`` where
+    preview is content (add/replace) or old_text (remove/replace). When N >
+    ``_BATCH_COLLAPSE_THRESHOLD``, only the first ``_BATCH_COLLAPSE_KEEP`` lines
+    are shown plus a "还有 N-M 条" footer.
+    """
+    total = len(operations)
+    lines = [
+        f"**{t('memory_proposal.card_target')}**: {target}",
+        f"**{t('memory_proposal.card_summary_label')}**:",
+    ]
+
+    # Collapse past the threshold: keep the first _BATCH_COLLAPSE_KEEP ops and
+    # summarize the rest with a "... 还有 N 条" footer.
+    collapse = total > _BATCH_COLLAPSE_THRESHOLD
+    if collapse:
+        shown = operations[:_BATCH_COLLAPSE_KEEP]
+        collapsed = total - _BATCH_COLLAPSE_KEEP
+    else:
+        shown = operations
+        collapsed = 0
+
+    for i, op in enumerate(shown, start=1):
+        act = str(op.get("action", "") or "")
+        act_label = _action_label(act) if act in _ACTION_KEYS else act
+        idx_prefix = t("memory_proposal.card_op_index", idx=i, total=total)
+
+        content = str(op.get("content", "") or "")
+        old_text = str(op.get("old_text", "") or "")
+
+        if act == "add":
+            preview = _truncate(content, _OP_CONTENT_PREVIEW_LEN)
+            lines.append(f"{idx_prefix}· {act_label}  `{preview}`")
+        elif act == "replace":
+            old_prev = _truncate(old_text, _OP_OLDTEXT_PREVIEW_LEN)
+            new_prev = _truncate(content, _OP_CONTENT_PREVIEW_LEN)
+            lines.append(f"{idx_prefix}· {act_label}  `{old_prev}` → `{new_prev}`")
+        elif act == "remove":
+            old_prev = _truncate(old_text, _OP_OLDTEXT_PREVIEW_LEN)
+            lines.append(f"{idx_prefix}· {act_label}  `{old_prev}`")
+        else:
+            lines.append(f"{idx_prefix}· {act}")
+
+    if collapsed > 0:
+        lines.append(t("memory_proposal.card_more_ops", count=collapsed))
+
+    if char_budget:
+        final = int(char_budget.get("final", 0))
+        limit = int(char_budget.get("limit", 0))
+        if limit > 0:
+            lines.append(t("memory_proposal.card_char_budget", final=final, limit=limit))
+
+    return "\n".join(lines)
+
+
 def build_memory_proposal_card(
     *,
-    action: str,
-    target: str,
-    old_text: str,
-    new_content: str,
-    session_key: str,
+    action: str = "",
+    target: str = "",
+    old_text: str = "",
+    new_content: str = "",
+    session_key: str = "",
+    operations: Optional[List[Dict[str, Any]]] = None,
+    char_budget: Optional[Dict[str, int]] = None,
 ) -> Dict[str, Any]:
-    """Build the interactive memory-proposal card JSON."""
-    content_preview = new_content[:1000] if new_content else t("memory_proposal.card_empty_content")
-    old_preview = old_text[:200] if old_text else t("memory_proposal.card_empty")
+    """Build the interactive memory-proposal card JSON.
 
-    # WR-10: pre-build proposal markdown so button callback can preserve content
-    proposal_md = (
-        f"**{t('memory_proposal.card_operation')}**: {_action_label(action)}\n"
-        f"**{t('memory_proposal.card_target')}**: {target}\n"
-        f"**{t('memory_proposal.card_existing')}**: `...{old_preview}...`\n\n"
-        f"**{t('memory_proposal.card_new_content')}**:\n"
-        f"```\n{content_preview}\n```"
-    )
+    Two shapes (mirrors the dual tool shape):
+
+    - **Batch** (``operations`` non-empty): renders a title showing the op
+      count, followed by one preview line per op (collapsed past
+      ``_BATCH_COLLAPSE_THRESHOLD``) and an optional char budget line.
+    - **Single-op** (legacy, ``operations`` empty/None): renders the original
+      operation/target/existing/new-content card unchanged.
+
+    ``char_budget`` is optional — pass ``{"final": <int>, "limit": <int>}`` if
+    the caller has the live usage; when None the budget line is omitted (the
+    card builder has no store access of its own).
+    """
+    is_batch = bool(operations)
+
+    if is_batch:
+        title = t("memory_proposal.card_title_batch", count=len(operations))
+        proposal_md = _build_batch_proposal_md(operations, target, char_budget=char_budget)
+    else:
+        content_preview = new_content[:1000] if new_content else t("memory_proposal.card_empty_content")
+        old_preview = old_text[:200] if old_text else t("memory_proposal.card_empty")
+        title = t("memory_proposal.card_title")
+        # WR-10: pre-build proposal markdown so button callback can preserve content
+        proposal_md = (
+            f"**{t('memory_proposal.card_operation')}**: {_action_label(action)}\n"
+            f"**{t('memory_proposal.card_target')}**: {target}\n"
+            f"**{t('memory_proposal.card_existing')}**: `...{old_preview}...`\n\n"
+            f"**{t('memory_proposal.card_new_content')}**:\n"
+            f"```\n{content_preview}\n```"
+        )
 
     def _btn(label: str, action_name: str, btn_type: str = "default") -> dict:
         return {
@@ -68,7 +165,7 @@ def build_memory_proposal_card(
     return {
         "config": {"wide_screen_mode": True},
         "header": {
-            "title": {"content": t("memory_proposal.card_title"), "tag": "plain_text"},
+            "title": {"content": title, "tag": "plain_text"},
             "template": "purple",
         },
         "elements": [
@@ -233,6 +330,7 @@ def send_memory_proposal_card(
         old_text=getattr(entry, "old_text", ""),
         new_content=getattr(entry, "new_content", ""),
         session_key=session_key,
+        operations=getattr(entry, "operations", None),
     )
 
     # Inject session_key into metadata so button callbacks can correlate.
