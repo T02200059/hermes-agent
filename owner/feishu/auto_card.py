@@ -402,7 +402,13 @@ async def try_auto_card(
     split_enabled = get_auto_card_split_enabled()
     if plan.needs_split and split_enabled:
         budget = get_auto_card_split_max_chars()
-        body_chunks = _split_text_for_card(formatted_text, budget)
+        # [owner] IN-05: the footer + hr divider is appended to the FINAL chunk
+        # after splitting, but _split_text_for_card sizes every chunk to
+        # `budget` without knowing about it. Reserve the footer's size so a
+        # near-budget final chunk + footer cannot exceed the card ceiling.
+        # Footers are normally tiny, so the extra headroom is negligible.
+        footer_reserve = (len(footer) + len("\n---\n")) if footer else 0
+        body_chunks = _split_text_for_card(formatted_text, max(1, budget - footer_reserve))
     else:
         body_chunks = [formatted_text]
 
