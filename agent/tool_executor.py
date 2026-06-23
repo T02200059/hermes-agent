@@ -422,17 +422,17 @@ def execute_tool_calls_concurrent(agent, assistant_message, messages: list, effe
                 except Exception:
                     pass
 
-            # Checkpoint before destructive terminal commands
+            # [owner] checkpoint: terminal 预测式快照 (委托 owner/checkpoint_predictor)
+            # 原 _is_destructive_command + ensure_checkpoint(cwd) 无差别快照已移除,
+            # 见 owner/docs/checkpoint-mutation-predictor.md
             if function_name == "terminal" and agent._checkpoint_mgr.enabled:
                 try:
+                    from owner.checkpoint_predictor import predict_and_checkpoint
                     cmd = function_args.get("command", "")
-                    if _is_destructive_command(cmd):
-                        cwd = function_args.get("workdir") or os.getenv("TERMINAL_CWD", os.getcwd())
-                        agent._checkpoint_mgr.ensure_checkpoint(
-                            cwd, f"before terminal: {cmd[:60]}"
-                        )
+                    cwd = function_args.get("workdir") or os.getenv("TERMINAL_CWD", os.getcwd())
+                    predict_and_checkpoint(cmd, cwd, agent)
                 except Exception:
-                    pass
+                    pass  # never block tool execution
 
         parsed_calls.append((tool_call, function_name, function_args, middleware_trace, block_result, blocked_by_guardrail))
 
@@ -976,15 +976,15 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
             except Exception:
                 pass  # never block tool execution
 
-        # Checkpoint before destructive terminal commands
+        # [owner] checkpoint: terminal 预测式快照 (委托 owner/checkpoint_predictor)
+        # 原 _is_destructive_command + ensure_checkpoint(cwd) 无差别快照已移除,
+        # 见 owner/docs/checkpoint-mutation-predictor.md
         if not _execution_blocked and function_name == "terminal" and agent._checkpoint_mgr.enabled:
             try:
+                from owner.checkpoint_predictor import predict_and_checkpoint
                 cmd = function_args.get("command", "")
-                if _is_destructive_command(cmd):
-                    cwd = function_args.get("workdir") or os.getenv("TERMINAL_CWD", os.getcwd())
-                    agent._checkpoint_mgr.ensure_checkpoint(
-                        cwd, f"before terminal: {cmd[:60]}"
-                    )
+                cwd = function_args.get("workdir") or os.getenv("TERMINAL_CWD", os.getcwd())
+                predict_and_checkpoint(cmd, cwd, agent)
             except Exception:
                 pass  # never block tool execution
 

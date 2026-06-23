@@ -3054,8 +3054,11 @@ class TestConcurrentToolExecution:
 
         with patch("run_agent.handle_function_call", side_effect=fake_handle):
             with patch.object(agent._checkpoint_mgr, "ensure_checkpoint") as cp_mock:
-                with patch("agent.tool_executor._is_destructive_command", return_value=True):
-                    agent._execute_tool_calls_concurrent(mock_msg, messages, "task-1")
+                # [owner] terminal checkpoint now goes through
+                # owner.checkpoint_predictor.predict_and_checkpoint, gated by
+                # `block_result is None`. Since terminal is blocked here,
+                # the checkpoint branch is skipped regardless.
+                agent._execute_tool_calls_concurrent(mock_msg, messages, "task-1")
 
         cp_mock.assert_not_called()
 
