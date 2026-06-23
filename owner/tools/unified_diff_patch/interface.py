@@ -100,6 +100,40 @@ def _suggest_path(original: str, resolved: str, base_dir: Path) -> str:
     return ""
 
 
+_ABSOLUTE_LOOKING_PREFIXES = (
+    "Users/", "home/", "etc/", "var/", "tmp/", "opt/", "usr/",
+)
+
+
+def _suggest_absolute_missing_slash(
+    original: str,
+    file_ops,
+    base_dir: Path,
+) -> str:
+    """If the original looks like an absolute path missing its leading '/',
+    probe the absolute variant and suggest it.
+
+    R4 / P1-C: covers the common typo where a user pastes a path like
+    'Users/yangtb/.ssh/config' (forgot the leading slash). Without this,
+    _suggest_path only searches inside the workspace and never hits the
+    real absolute target.
+    """
+    if Path(original).expanduser().is_absolute():
+        return ""
+    if has_traversal_component(original):
+        return ""
+    if not any(original.startswith(p) for p in _ABSOLUTE_LOOKING_PREFIXES):
+        return ""
+    guess = "/" + original
+    try:
+        rr = file_ops.read_file_raw(guess)
+        if not rr.error:
+            return f"\n    Did you mean: {guess!r}?"
+    except Exception:
+        pass
+    return ""
+
+
 def _prevalidate_patch_paths(
     file_patches,
     *,
@@ -138,6 +172,10 @@ def _prevalidate_patch_paths(
     ]
     for original, resolved, similar in missing:
         suggestion = _suggest_path(original, resolved, base_dir)
+        if not suggestion:
+            suggestion = _suggest_absolute_missing_slash(
+                original, file_ops, base_dir
+            )
         similar_hint = ""
         if similar:
             similar_hint = f"\n    Similar files: {', '.join(repr(s) for s in similar[:3])}"
@@ -198,7 +236,7 @@ def unified_diff_patch_tool(
     if not patch or not patch.strip():
         return tool_error("patch content is required")
 
-    file_patches, parse_err = parse_unified_diff(
+    file_patches, parse_err, parse_warn = parse_unified_diff(
         patch,
         strict=strict,
         auto_fix_header=auto_fix_header,
@@ -226,6 +264,8 @@ def unified_diff_patch_tool(
             task_id=task_id,
             auto_fix_start=auto_fix_start,
         )
+        if parse_warn:
+            result_dict["warnings"] = parse_warn
         return json.dumps(result_dict, ensure_ascii=False)
 
     # Real apply: resolve paths, lock, check staleness, write, update timestamps.
@@ -284,6 +324,9 @@ def unified_diff_patch_tool(
                 dry_run=False,
             )
             result_dict = result.to_dict()
+
+            if parse_warn:
+                result_dict["warnings"] = parse_warn
 
             if stale_warnings:
                 result_dict["_warning"] = (

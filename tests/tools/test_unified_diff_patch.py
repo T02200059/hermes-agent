@@ -1,6 +1,7 @@
 """Tests for unified_diff_patch tool strict mode + path resolution behavior."""
 import json
 import pytest
+from owner.tools.unified_diff_patch.interface import _suggest_absolute_missing_slash
 from tools.unified_diff_patch_tool import parse_unified_diff, unified_diff_patch_tool
 
 
@@ -17,7 +18,7 @@ def test_lenient_mode_treats_blank_line_in_hunk_body_as_context():
         "\n"          # truly blank line (no leading space)
         " line3\n"
     )
-    fps, err = parse_unified_diff(diff, strict=False)
+    fps, err, warn = parse_unified_diff(diff, strict=False)
     assert err is None
     assert len(fps) == 1
     assert len(fps[0].hunks[0].old_lines) == 3
@@ -35,7 +36,7 @@ def test_strict_mode_rejects_blank_line_in_hunk_body():
         "\n"          # blank line — would be silently accepted in lenient mode
         " line3\n"
     )
-    fps, err = parse_unified_diff(diff, strict=True)
+    fps, err, warn = parse_unified_diff(diff, strict=True)
     assert fps == []
     assert err is not None
     assert "Strict parse error" in err
@@ -54,7 +55,7 @@ def test_strict_mode_rejects_bare_line_in_hunk_body():
         "bareline\n"  # no leading space
         " line3\n"
     )
-    fps, err = parse_unified_diff(diff, strict=True)
+    fps, err, warn = parse_unified_diff(diff, strict=True)
     assert fps == []
     assert err is not None
     assert "Strict parse error" in err
@@ -71,7 +72,7 @@ def test_strict_mode_accepts_well_formed_diff():
         "+new line\n"
         " line2\n"
     )
-    fps, err = parse_unified_diff(diff, strict=True)
+    fps, err, warn = parse_unified_diff(diff, strict=True)
     assert err is None
     assert len(fps) == 1
     assert len(fps[0].hunks) == 1
@@ -90,10 +91,10 @@ def test_line_count_mismatch_reported_in_both_modes():
         " line4\n"
     )
     # lenient: still reports mismatch when auto_fix_header is disabled
-    _, err_lenient = parse_unified_diff(diff, strict=False, auto_fix_header=False)
+    _, err_lenient, _ = parse_unified_diff(diff, strict=False, auto_fix_header=False)
     assert "mismatch" in err_lenient
     # strict: also reports mismatch when auto_fix_header is disabled
-    _, err_strict = parse_unified_diff(diff, strict=True, auto_fix_header=False)
+    _, err_strict, _ = parse_unified_diff(diff, strict=True, auto_fix_header=False)
     assert "mismatch" in err_strict
 
 
@@ -111,7 +112,7 @@ def test_strict_error_takes_precedence_over_count_mismatch():
         "line3\n"     # BARE: no leading space
         " line4\n"     # extra context line -> count mismatch
     )
-    fps, err = parse_unified_diff(diff, strict=True)
+    fps, err, warn = parse_unified_diff(diff, strict=True)
     assert fps == []
     assert err is not None
     assert "Strict parse error" in err, f"Expected strict error first, got: {err}"
@@ -133,7 +134,7 @@ def test_strict_error_includes_body_line_number():
         "line3\n"     # BARE at body line 3
         " line4\n"
     )
-    fps, err = parse_unified_diff(diff, strict=True)
+    fps, err, warn = parse_unified_diff(diff, strict=True)
     assert err is not None
     assert "line 3" in err, f"Expected 'line 3' in error, got: {err}"
 
@@ -147,7 +148,7 @@ def test_strict_error_includes_body_line_number():
         " line3\n"
         " line4\n"
     )
-    fps, err = parse_unified_diff(diff_empty, strict=True)
+    fps, err, warn = parse_unified_diff(diff_empty, strict=True)
     assert err is not None
     assert "line 2" in err, f"Expected 'line 2' in error, got: {err}"
 
@@ -157,7 +158,7 @@ def test_strict_error_includes_body_line_number():
 def test_crlf_line_endings_normalized():
     """\r\n endings must be normalized so context matching works."""
     diff = "--- a/test.py\r\n+++ b/test.py\r\n@@ -1,2 +1,3 @@\r\n line1\r\n+new\r\n line2\r\n"
-    fps, err = parse_unified_diff(diff)
+    fps, err, warn = parse_unified_diff(diff)
     assert err is None, f"CRLF parsing failed: {err}"
     assert len(fps) == 1
     h = fps[0].hunks[0]
@@ -169,7 +170,7 @@ def test_crlf_line_endings_normalized():
 def test_cr_only_line_endings_normalized():
     """\r-only endings (old Mac) must be normalized."""
     diff = "--- a/test.py\r+++ b/test.py\r@@ -1,2 +1,3 @@\r line1\r+new\r line2\r"
-    fps, err = parse_unified_diff(diff)
+    fps, err, warn = parse_unified_diff(diff)
     assert err is None, f"CR-only parsing failed: {err}"
     assert len(fps) == 1
     h = fps[0].hunks[0]
@@ -395,3 +396,104 @@ def test_new_file_with_multiple_hunks_keeps_all(dry_run_sandbox):
     assert result["success"] is True, result.get("error")
     assert target.exists()
     assert target.read_text().splitlines() == ["alpha", "beta", "gamma", "delta"]
+
+
+# ===== R4 new tests =====
+
+def test_ambiguous_context_shows_all_candidates(dry_run_sandbox):
+    """3 行 context 重复 3 次，错误信息必须列出所有候选行号"""
+    target = dry_run_sandbox
+    config = target.parent / "config"
+    config.write_text(
+        "Host a\n    ControlMaster auto\n    ControlPath p\n    ControlPersist 600\n"
+        "Host b\n    ControlMaster auto\n    ControlPath p\n    ControlPersist 600\n"
+        "Host c\n    ControlMaster auto\n    ControlPath p\n    ControlPersist 600\n"
+    )
+    patch = (
+        f"--- {config}\n"
+        f"+++ {config}\n"
+        "@@ -1,3 +1,4 @@\n"
+        "     ControlMaster auto\n"
+        "     ControlPath p\n"
+        "     ControlPersist 600\n"
+        "+new\n"
+    )
+    result = json.loads(unified_diff_patch_tool(patch=patch, dry_run=True, strict=True))
+    assert result["success"] is False
+    err = result["error"]
+    assert "Candidate locations" in err
+    assert "line 2" in err
+    assert "line 6" in err
+    assert "line 10" in err
+
+
+def test_exceeds_bounds_suggests_correct_line(dry_run_sandbox):
+    """old_start 偏到文件末尾时，错误信息应给出 Did-you-mean"""
+    target = dry_run_sandbox
+    fpath = target.parent / "f.py"
+    fpath.write_text("a\nb\nc\n")
+    patch = (
+        f"--- {fpath}\n"
+        f"+++ {fpath}\n"
+        "@@ -10,3 +10,4 @@\n"
+        " b\n"
+        " c\n"
+        "+d\n"
+    )
+    result = json.loads(
+        unified_diff_patch_tool(
+            patch=patch, dry_run=True, strict=True, auto_fix_start=False
+        )
+    )
+    assert result["success"] is False
+    err = result["error"]
+    assert "exceeds file bounds" in err
+    assert "Did you mean @@ -2 @@" in err
+
+
+def test_parser_strict_warns_on_header_count_mismatch():
+    """strict 模式下 header count 与 body count 不一致时，parse_unified_diff 警告但不失败"""
+    patch = (
+        "--- a/x\n"
+        "+++ b/x\n"
+        "@@ -1,2 +1,2 @@\n"
+        "-old\n"
+        "+new\n"
+    )
+    fps, err, warn = parse_unified_diff(patch, strict=True, auto_fix_header=True)
+    assert err is None
+    assert warn is not None
+    assert "header count mismatch" in warn
+    assert "old header 2 vs 1 body lines" in warn
+
+
+def test_context_mismatch_shows_full_blocks(dry_run_sandbox):
+    """context mismatch 错误应同时显示期望 block 和实际 block"""
+    target = dry_run_sandbox
+    patch = (
+        f"--- {target}\n"
+        f"+++ {target}\n"
+        "@@ -1,3 +1,4 @@\n"
+        " line1\n"
+        " WRONG\n"
+        " line3\n"
+        "+inserted\n"
+    )
+    result = json.loads(unified_diff_patch_tool(patch=patch, dry_run=True, strict=True))
+    assert result["success"] is False
+    err = result["error"]
+    assert "Expected old lines:" in err
+    assert "Actual old lines:" in err
+    assert "line1" in err
+    assert "WRONG" in err
+
+
+def test_suggest_absolute_missing_slash(tmp_path):
+    """相对路径以 'Users/' 开头时，给出 Did you mean 绝对路径建议"""
+
+    class FakeOps:
+        def read_file_raw(self, path):
+            return type("RR", (), {"error": ""})()
+
+    hint = _suggest_absolute_missing_slash("Users/test/file.txt", FakeOps(), tmp_path)
+    assert "Did you mean: '/Users/test/file.txt'" in hint

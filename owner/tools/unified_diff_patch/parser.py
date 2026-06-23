@@ -58,7 +58,7 @@ def parse_unified_diff(
     *,
     strict: bool = False,
     auto_fix_header: bool = True,
-) -> Tuple[List[FilePatch], Optional[str]]:
+) -> Tuple[List[FilePatch], Optional[str], Optional[str]]:
     """Parse a standard unified diff into structured FilePatch/Hunk objects.
 
     Args:
@@ -76,6 +76,7 @@ def parse_unified_diff(
         lines.pop()
 
     strict_errors: List[str] = []
+    strict_warnings: List[str] = []
     file_patches: List[FilePatch] = []
     current: Optional[FilePatch] = None
     current_hunk: Optional[Hunk] = None
@@ -120,7 +121,7 @@ def parse_unified_diff(
 
             m = _HUNK_HEADER_RE.match(line)
             if not m:
-                return [], f"Invalid hunk header: {line!r}"
+                return [], f"Invalid hunk header: {line!r}", None
 
             current_hunk = Hunk(
                 old_start=int(m.group('old_start')),
@@ -172,17 +173,27 @@ def parse_unified_diff(
         file_patches.append(current)
 
     if not file_patches:
-        return [], "No file patches found in diff"
+        return [], "No file patches found in diff", None
 
     # Strict format errors are root causes; report them before count mismatches.
     if strict and strict_errors:
-        return [], "Strict parse error: " + "; ".join(strict_errors)
+        return [], "Strict parse error: " + "; ".join(strict_errors), None
 
     errors: List[str] = []
     for fp in file_patches:
         for hi, h in enumerate(fp.hunks):
             actual_old = len(h.old_lines)
             actual_new = len(h.new_lines)
+            if strict and auto_fix_header and (
+                actual_old != h.old_count or actual_new != h.new_count
+            ):
+                strict_warnings.append(
+                    f"{fp.new_path}: hunk {hi + 1} header count mismatch "
+                    f"(old header {h.old_count} vs {actual_old} body lines, "
+                    f"new header {h.new_count} vs {actual_new} body lines). "
+                    "Tip: count context + removed/added lines before writing the header. "
+                    "Auto-corrected because auto_fix_header=True (default)."
+                )
             if actual_old != h.old_count:
                 if auto_fix_header:
                     h.old_count = actual_old
@@ -203,6 +214,10 @@ def parse_unified_diff(
                     )
 
     if errors:
-        return [], "Parse error: " + "; ".join(errors)
+        return [], "Parse error: " + "; ".join(errors), None
 
-    return file_patches, None
+    return (
+        file_patches,
+        None,
+        "\n".join(strict_warnings) if strict_warnings else None,
+    )

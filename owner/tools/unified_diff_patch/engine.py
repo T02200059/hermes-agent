@@ -20,6 +20,29 @@ from tools.file_operations import (
 from .parser import FilePatch, Hunk
 
 
+def _find_context_matches(
+    lines: List[str],
+    hunk_old_lines: List[str],
+    old_count: int,
+) -> List[int]:
+    """Return 1-based line numbers of every full match of the hunk context.
+
+    R4 / P0-A: helper for the ambiguous-context error path. Tries both an
+    exact match and a trailing-whitespace-tolerant match at each sliding
+    window, mirroring the resolution logic in _resolve_hunk_start.
+    """
+    if old_count == 0:
+        return []
+    stripped_expected = [ln.rstrip() for ln in hunk_old_lines]
+    matches: List[int] = []
+    limit = max(0, len(lines) - old_count + 1)
+    for idx in range(limit):
+        candidate = lines[idx : idx + old_count]
+        if candidate == hunk_old_lines or [ln.rstrip() for ln in candidate] == stripped_expected:
+            matches.append(idx + 1)
+    return matches
+
+
 def _resolve_hunk_start(
     lines: List[str],
     hunk_old_lines: List[str],
@@ -66,10 +89,26 @@ def _resolve_hunk_start(
         if not ambiguous and found_at is not None:
             return found_at, None
         if ambiguous:
-            return None, (
-                "Context is ambiguous — found at multiple file locations. "
-                "Add more context lines to make the hunk unique."
+            # R4 / P0-A: list every candidate location with a short preview so
+            # the user can pick the right Host block instead of guessing.
+            matches = _find_context_matches(lines, hunk_old_lines, old_count)
+            preview_limit = 10
+            preview_lines: List[str] = []
+            for loc in matches[:preview_limit]:
+                preview_start = max(0, loc - 2)
+                snippet_end = loc + old_count
+                snippet = lines[preview_start:snippet_end]
+                joined = " | ".join(snippet)
+                preview_lines.append(f"  - line {loc}: {joined}")
+            if len(matches) > preview_limit:
+                preview_lines.append(f"  ... and {len(matches) - preview_limit} more")
+            hint = (
+                f"Context is ambiguous — found at {len(matches)} file locations.\n"
+                f"Candidate locations:\n"
+                + "\n".join(preview_lines)
+                + "\nAdd more context lines to make the hunk unique."
             )
+            return None, hint
 
     # Build a location hint by scanning the file for the expected context.
     alt_loc: Optional[int] = None
@@ -179,26 +218,50 @@ def _apply_file_patch(
                     f"{path}: hunk {hi + 1} invalid old_start {hunk.old_start}"
                 ), None
 
-        end_idx = start_idx + hunk.old_count
-        if end_idx > len(file_lines) and not auto_fix_start:
-            return False, (
-                f"{path}: hunk {hi + 1} exceeds file bounds "
-                f"(needs lines {start_idx + 1}-{end_idx}, file has {len(file_lines)})"
-            ), None
-
         resolved_idx, hint = _resolve_hunk_start(
             file_lines, hunk.old_lines, start_idx, hunk.old_count, auto_fix_start
         )
         if resolved_idx is None:
+            # R4 / P0-B: bounds check moved here so alt_loc / Did-you-mean hint
+            # can ride along on the "exceeds file bounds" error too. Previously
+            # the bounds branch at L182-187 returned early and short-circuited
+            # the existing alt_loc scan in _resolve_hunk_start.
+            end_idx = start_idx + hunk.old_count
+            if end_idx > len(file_lines) and not auto_fix_start:
+                bounds_hint = (
+                    f"\nHint: {hint}" if hint else ""
+                )
+                return False, (
+                    f"{path}: hunk {hi + 1} exceeds file bounds "
+                    f"(needs lines {start_idx + 1}-{end_idx}, file has {len(file_lines)})"
+                    f"{bounds_hint}"
+                ), None
+
             declared_actual = file_lines[start_idx:end_idx]
+            # R4 / P1-D: show the full expected vs actual block so the user
+            # can spot the offset at a glance, instead of just the first
+            # mismatching line.
+            first_bad_line: Optional[int] = None
             for offset, (actual, expected) in enumerate(zip(declared_actual, hunk.old_lines)):
                 if actual.rstrip() != expected.rstrip():
-                    line_no = start_idx + offset + 1
-                    return False, (
-                        f"{path}: context mismatch at line {line_no} in hunk {hi + 1}. "
-                        f"Expected {expected!r}, got {actual!r}\n"
-                        f"Hint: {hint}"
-                    ), None
+                    first_bad_line = start_idx + offset + 1
+                    break
+            if first_bad_line is not None:
+                expected_display = "\n".join(
+                    f"    {start_idx + i + 1}|{line}"
+                    for i, line in enumerate(hunk.old_lines)
+                )
+                actual_display = "\n".join(
+                    f"    {start_idx + i + 1}|{line}"
+                    for i, line in enumerate(declared_actual)
+                )
+                return False, (
+                    f"{path}: context mismatch in hunk {hi + 1} "
+                    f"at declared position (first difference at line {first_bad_line}).\n"
+                    f"Expected old lines:\n{expected_display}\n"
+                    f"Actual old lines:\n{actual_display}\n"
+                    f"Hint: {hint}"
+                ), None
             return False, (
                 f"{path}: line count mismatch in hunk {hi + 1} "
                 f"(expected {len(hunk.old_lines)} lines, found {len(declared_actual)})\n"
