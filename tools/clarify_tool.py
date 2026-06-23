@@ -20,6 +20,10 @@ from typing import Any, List, Optional, Callable
 MAX_CHOICES = 4
 
 
+# [owner] clarify timeout: shared exception + sentinels for the timeout-stops-agent
+# behavior (see owner/clarify/timeout_handler.py and v16改动清单 §15.1). Kept here
+# rather than in owner/ because 6 official files import these by this path; the
+# definitions are tiny and inert (an Exception subclass + two string constants).
 class ClarifyTimeout(Exception):
     """Raised when the user does not respond to a clarify prompt in time."""
     pass
