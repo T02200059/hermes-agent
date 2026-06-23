@@ -24,12 +24,22 @@ def search_collection_sync(collection: str, vector: list[float], cfg: dict) -> l
     search_url = f"{env['QDRANT_URL']}/collections/{collection}/points/search"
     headers = {"api-key": env["QDRANT_KEY"], "Content-Type": "application/json"}
     base_params = {"limit": cfg["per_collection_k"], "with_payload": True}
+    
+    # Add tenant_id filter if QDRANT_TENANT_ID is set
+    tenant_id = env.get("QDRANT_TENANT_ID", "")
+    if tenant_id:
+        tenant_filter = {"must": [{"key": "tenant_id", "match": {"value": tenant_id}}]}
+    else:
+        tenant_filter = None
 
     try:
+        search_body = {"vector": {"name": "dense", "vector": vector}, **base_params}
+        if tenant_filter:
+            search_body["filter"] = tenant_filter
         resp = requests.post(
             search_url,
             headers=headers,
-            json={"vector": {"name": "dense", "vector": vector}, **base_params},
+            json=search_body,
             timeout=cfg["per_collection_timeout_sec"],
         )
         if resp.status_code in (400, 404):
@@ -50,10 +60,13 @@ def search_collection_sync(collection: str, vector: list[float], cfg: dict) -> l
         logger.debug(f"collection={collection} named vector search error: {e}, trying fallback")
 
     try:
+        search_body = {"vector": vector, **base_params}
+        if tenant_filter:
+            search_body["filter"] = tenant_filter
         resp = requests.post(
             search_url,
             headers=headers,
-            json={"vector": vector, **base_params},
+            json=search_body,
             timeout=cfg["per_collection_timeout_sec"],
         )
         if resp.status_code in (400, 404):

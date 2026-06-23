@@ -627,6 +627,7 @@ def archive_session(
                 "model": session.get("model", ""),
                 "message_count": len(messages),
                 "source": source,
+                "tenant_id": _cfg("QDRANT_TENANT_ID", "default"),
             },
         }
 
