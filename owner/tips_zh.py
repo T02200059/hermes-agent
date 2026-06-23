@@ -73,12 +73,10 @@ TIPS = [
     "hermes --yolo 跳过整个会话的所有危险命令审批提示。",
     "hermes chat --source telegram 为会话打标签，方便在 hermes sessions list 中筛选。",
     "hermes -p work chat 在指定 profile 下运行，不改变默认配置。",
-    "/reasoning low 或 /reasoning minimal 将思考深度降到默认（medium）以下 — 更快更省。",
-    "hermes models routes 将 vision、压缩和辅助任务路由到更便宜的模型 — 不降级主聊天模型的情况下削减 85%+ 的后台 token 开销。",
-
-    # --- CLI 子命令 ---
     "hermes doctor --fix 诊断并自动修复配置和依赖问题。",
     "hermes dump 输出精简的配置摘要 — 适合写 bug 报告。",
+
+    # --- CLI 子命令 ---
     "hermes config set KEY VALUE 自动将密钥路由到 .env，其余写入 config.yaml。",
     "hermes config edit 在默认编辑器中打开 config.yaml。",
     "hermes config check 扫描缺失或过期的配置项。",
@@ -102,6 +100,8 @@ TIPS = [
     "hermes memory setup 让你配置外部 memory provider（Honcho、Mem0 等）。",
     "hermes webhook subscribe 创建带 HMAC 验证的事件驱动 webhook 路由。",
     "省钱技巧：hermes tools 禁用不用的工具，hermes skills config 精简 skill 列表。",
+    "/reasoning low 或 /reasoning minimal 将思考深度降到默认（medium）以下 — 更快更省。",
+    "hermes models routes 将 vision、压缩和辅助任务路由到更便宜的模型 — 不降级主聊天模型的情况下削减 85%+ 的后台 token 开销。",
 
     # --- 配置 ---
     "在 config.yaml 中设置 display.bell_on_complete: true，长任务完成时响铃。",
