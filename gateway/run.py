@@ -2570,6 +2570,36 @@ def _classify_edit_failure(result) -> str:
     return "disable"
 
 
+class _GatewayExecutorUnavailable(RuntimeError):
+    """The running loop's default executor can no longer accept work.
+
+    Raised proactively by ``_run_in_executor_with_context`` when the loop is
+    already closed or its default executor has been shut down (a SIGTERM/restart
+    drain in progress). Lets an in-flight turn fail fast and deterministically
+    instead of bottoming out in asyncio's own RuntimeError, whose message text
+    varies across Python versions.
+    """
+
+
+def _loop_executor_unavailable(loop) -> bool:
+    """True when ``loop``'s default executor can no longer accept work.
+
+    Cross-platform and a no-op in normal operation: ``is_closed()`` is public,
+    and ``_executor_shutdown_called`` is CPython's BaseEventLoop flag (set by
+    ``shutdown_default_executor()``) read defensively via ``getattr`` — on loops
+    that lack it (e.g. uvloop on Linux, where this race is not observed in
+    practice) the check is simply ``False`` and behaviour is unchanged. The
+    restart race is seen almost exclusively under macOS launchd.
+    """
+    try:
+        if loop.is_closed():
+            return True
+    except Exception:
+        # A loop that can't even report its state is not usable.
+        return True
+    return bool(getattr(loop, "_executor_shutdown_called", False))
+
+
 def _is_executor_shutdown_error(exc: BaseException) -> bool:
     """True when ``exc`` is asyncio's "default executor torn down" RuntimeError.
 
@@ -2581,7 +2611,12 @@ def _is_executor_shutdown_error(exc: BaseException) -> bool:
     than from a real bug, so it should surface as a transient "restarting"
     condition, not a scary generic agent error. See the gateway restart-race
     investigation (2026-06-22).
+
+    Also matches our own ``_GatewayExecutorUnavailable``, raised proactively by
+    ``_run_in_executor_with_context``.
     """
+    if isinstance(exc, _GatewayExecutorUnavailable):
+        return True
     if not isinstance(exc, RuntimeError):
         return False
     msg = str(exc).lower()
@@ -13112,6 +13147,16 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
     async def _run_in_executor_with_context(self, func, *args):
         """Run blocking work in the thread pool while preserving session contextvars."""
         loop = asyncio.get_running_loop()
+        # Fast-fail if the loop's default executor is already gone (SIGTERM/
+        # restart drain in progress). Avoids bottoming out in asyncio's own
+        # version-variant RuntimeError; the caller's error handler maps
+        # _GatewayExecutorUnavailable to a friendly "restarting, resend"
+        # message via _is_executor_shutdown_error. No-op in normal operation
+        # and on platforms/loops where the race doesn't occur.
+        if _loop_executor_unavailable(loop):
+            raise _GatewayExecutorUnavailable(
+                "Gateway is restarting (default executor shut down)"
+            )
         ctx = copy_context()
         return await loop.run_in_executor(None, ctx.run, func, *args)
 
