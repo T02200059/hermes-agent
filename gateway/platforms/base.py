@@ -2132,6 +2132,11 @@ class BasePlatformAdapter(ABC):
     # preview (see gateway/run.py progress_callback).
     supports_code_blocks: bool = False
 
+    # Optional language tag for terminal tool progress fenced code blocks.
+    # Empty string keeps the bare ``` fence (Slack-compatible).  Adapters that
+    # render language tags correctly can override, e.g. "bash" for Feishu.
+    terminal_code_block_language: str = ""
+
     # Whether this adapter can deliver an ASYNC notification back to the agent
     # AFTER a turn ends — i.e. wake a fresh turn to surface a background
     # process completion (terminal notify_on_complete / watch_patterns) or a

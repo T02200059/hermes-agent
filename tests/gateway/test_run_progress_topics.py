@@ -1565,3 +1565,120 @@ async def test_consecutive_terminal_progress_collapses_headers(monkeypatch, tmp_
     # Exactly TWO terminal headers: one for the first run of three calls,
     # one for the terminal call after web_search broke the streak.
     assert final.count("terminal\n```") == 2
+
+
+
+class BashFenceTerminalAgent:
+    """Emits a terminal tool.started with a single-line command in args."""
+
+    def __init__(self, **kwargs):
+        self.tool_progress_callback = kwargs.get("tool_progress_callback")
+        self.tools = []
+
+    def run_conversation(self, message, conversation_history=None, task_id=None):
+        self.tool_progress_callback(
+            "tool.started", "terminal", None,
+            {"command": "ls -la"},
+        )
+        # Let the async progress task drain the queue and send before returning.
+        time.sleep(0.35)
+        return {
+            "final_response": "done",
+            "messages": [],
+            "api_calls": 1,
+        }
+
+
+class MarkdownProgressAdapter(ProgressCaptureAdapter):
+    supports_code_blocks = True
+    terminal_code_block_language = "bash"
+
+
+class SlackMarkdownProgressAdapter(MarkdownProgressAdapter):
+    terminal_code_block_language = ""
+
+
+@pytest.mark.asyncio
+async def test_run_agent_feishu_terminal_progress_uses_bash_fence(monkeypatch, tmp_path):
+    monkeypatch.setenv("HERMES_TOOL_PROGRESS_MODE", "all")
+
+    fake_dotenv = types.ModuleType("dotenv")
+    fake_dotenv.load_dotenv = lambda *args, **kwargs: None
+    monkeypatch.setitem(sys.modules, "dotenv", fake_dotenv)
+
+    fake_run_agent = types.ModuleType("run_agent")
+    fake_run_agent.AIAgent = BashFenceTerminalAgent
+    monkeypatch.setitem(sys.modules, "run_agent", fake_run_agent)
+
+    adapter = MarkdownProgressAdapter(platform=Platform.FEISHU)
+    runner = _make_runner(adapter)
+    gateway_run = importlib.import_module("gateway.run")
+    monkeypatch.setattr(gateway_run, "_hermes_home", tmp_path)
+    monkeypatch.setattr(gateway_run, "_resolve_runtime_agent_kwargs", lambda: {"api_key": "***"})
+
+    source = SessionSource(
+        platform=Platform.FEISHU,
+        chat_id="oc_chat",
+        chat_type="group",
+        thread_id="topic_17585",
+    )
+
+    result = await runner._run_agent(
+        message="hello",
+        context_prompt="",
+        history=[],
+        source=source,
+        session_id="sess-feishu-bash",
+        session_key="agent:main:feishu:group:oc_chat:topic_17585",
+        event_message_id="om_event",
+    )
+
+    assert result["final_response"] == "done"
+    all_progress = [str(call["content"]) for call in adapter.sent + adapter.edits]
+    assert any("```bash" in content for content in all_progress), f"no bash fence in {all_progress!r}"
+
+
+@pytest.mark.asyncio
+async def test_run_agent_slack_terminal_progress_keeps_bare_fence(monkeypatch, tmp_path):
+    monkeypatch.setenv("HERMES_TOOL_PROGRESS_MODE", "all")
+    import yaml
+    (tmp_path / "config.yaml").write_text(
+        yaml.dump({"display": {"platforms": {"slack": {"tool_progress": "all"}}}}),
+        encoding="utf-8",
+    )
+
+    fake_dotenv = types.ModuleType("dotenv")
+    fake_dotenv.load_dotenv = lambda *args, **kwargs: None
+    monkeypatch.setitem(sys.modules, "dotenv", fake_dotenv)
+
+    fake_run_agent = types.ModuleType("run_agent")
+    fake_run_agent.AIAgent = BashFenceTerminalAgent
+    monkeypatch.setitem(sys.modules, "run_agent", fake_run_agent)
+
+    adapter = SlackMarkdownProgressAdapter(platform=Platform.SLACK)
+    runner = _make_runner(adapter)
+    gateway_run = importlib.import_module("gateway.run")
+    monkeypatch.setattr(gateway_run, "_hermes_home", tmp_path)
+    monkeypatch.setattr(gateway_run, "_resolve_runtime_agent_kwargs", lambda: {"api_key": "***"})
+
+    source = SessionSource(
+        platform=Platform.SLACK,
+        chat_id="D123",
+        chat_type="dm",
+        thread_id=None,
+    )
+
+    result = await runner._run_agent(
+        message="hello",
+        context_prompt="",
+        history=[],
+        source=source,
+        session_id="sess-slack-bare",
+        session_key="agent:main:slack:dm:D123",
+        event_message_id="1234567890.000001",
+    )
+
+    assert result["final_response"] == "done"
+    all_progress = [str(call["content"]) for call in adapter.sent + adapter.edits]
+    assert not any("```bash" in content for content in all_progress), f"unexpected bash fence in {all_progress!r}"
+    assert any("```\nls -la\n```" in content for content in all_progress), f"expected bare fence in {all_progress!r}"
