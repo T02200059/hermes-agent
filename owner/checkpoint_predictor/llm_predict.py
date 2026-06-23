@@ -72,7 +72,12 @@ def _call_llm_sync(
 ) -> object:
     """实际调 auxiliary_client.call_llm (便于测试 mock)。
 
-    task="approval" 复用 smart approval 的模型路由 (默认=主聊天模型)。
+    模型路由: task="approval" 复用 smart approval 的配置 (config.yaml 的
+    auxiliary.approval)。若未配 auxiliary.approval, fallback 到 _resolve_auto
+    链 (Priority 1 = 主聊天模型)。当前 owner 配置: deepseek-v4-pro。
+
+    timeout 覆盖: 这里显式传 timeout (来自 owner.checkpoints.
+    predict_llm_timeout_ms), 覆盖 auxiliary.approval.timeout 默认值。
     """
     from agent.auxiliary_client import call_llm
 
