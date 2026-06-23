@@ -42,6 +42,30 @@ def _search_timeout() -> float:
     return float(cfg["search_timeout"])
 
 
+# [owner] recall-dedup: collapse peer-mirror URIs to their owner URI by
+# stripping the ``/peers/<segment>`` path component (note: regex does NOT
+# include the trailing ``/`` — that way the path-separator slash between
+# the segment and the next path component is preserved when stripped).
+_PEER_SEGMENT_RE = __import__("re").compile(r"/peers/[^/]+")
+
+
+def _dedup_uri_canonical(uri: str) -> str:
+    """Return the URI with any ``/peers/<name>/`` segment stripped.
+
+    Examples
+    --------
+    >>> _dedup_uri_canonical(
+    ...     "viking://user/yangtb/peers/hermes/memories/events/x.md"
+    ... )
+    'viking://user/yangtb/memories/events/x.md'
+    >>> _dedup_uri_canonical(
+    ...     "viking://user/yangtb/memories/events/x.md"
+    ... )
+    'viking://user/yangtb/memories/events/x.md'
+    """
+    return _PEER_SEGMENT_RE.sub("", uri or "")
+
+
 # ---------------------------------------------------------------------------
 # Replacement implementations
 # ---------------------------------------------------------------------------
@@ -63,33 +87,69 @@ def _sync_prefetch(self: OpenVikingMemoryProvider, query: str, *, session_id: st
             user=self._user,
             agent=self._agent,
         )
+        # [owner] recall-dedup: fetch a bit more headroom so cross-bucket dedup
+        # still yields >= top_n unique hits when peer mirrors occupy slots.
+        cfg = _load_sync_cfg()  # already imported at module top
+        top_n = max(1, int(cfg.get("top_n", 6)))
+        dedup_enabled = bool(cfg.get("dedup", True))
+        fetch_limit = max(int(cfg["top_n"]) * 3, 15)
         resp = httpx.post(
             client._url("/api/v1/search/find"),
             # OpenViking FindRequest uses ``limit`` (integer, default 10);
             # ``top_k`` is rejected because ``additionalProperties`` is false.
-            json={"query": query, "limit": 10},
+            json={"query": query, "limit": fetch_limit},
             headers=client._headers(),
             timeout=_search_timeout(),
         )
         data = client._parse_response(resp)
         result = data.get("result", {}) if isinstance(data, dict) else {}
 
-        parts = []
-        all_hits = []
+        # [owner] recall-dedup: collect first, dedup across buckets, then take
+        # top_n globally by score. Peer mirrors (URI path contains
+        # ``/peers/<name>/``) collapse to the owner URI via _dedup_uri_canonical,
+        # then abstract+score double-check catches future mirror variants.
+        all_hits: list = []
+        seen_keys: set = set()
+        seen_abstract_score: set = set()
         for ctx_type in ("memories", "resources"):
-            for item in result.get(ctx_type, [])[:3]:
+            for item in result.get(ctx_type, []):
                 uri = item.get("uri", "")
                 abstract = item.get("abstract", "")
                 score = item.get("score", 0)
-                if abstract:
-                    parts.append(f"- [{score:.2f}] {abstract} ({uri})")
-                    hit = dict(item)
-                    hit["type"] = ctx_type[:-1]  # memory / resource
-                    all_hits.append(hit)
+                if not abstract:
+                    continue
+                if dedup_enabled:
+                    canon = _dedup_uri_canonical(uri)
+                    primary_key = (canon, abstract)
+                    if primary_key in seen_keys:
+                        logger.debug(
+                            "recall-dedup: skipped peer mirror uri=%s (canon=%s)",
+                            uri, canon,
+                        )
+                        continue
+                    secondary_key = (abstract[:200], round(float(score), 3))
+                    if secondary_key in seen_abstract_score:
+                        logger.debug(
+                            "recall-dedup: skipped abstract+score duplicate uri=%s",
+                            uri,
+                        )
+                        continue
+                    seen_keys.add(primary_key)
+                    seen_abstract_score.add(secondary_key)
+                hit = dict(item)
+                hit["type"] = ctx_type[:-1]  # memory / resource
+                all_hits.append(hit)
 
-        self._recall_card_hits = sorted(
-            all_hits, key=lambda h: h.get("score", 0), reverse=True
-        )
+        # Global sort by score desc, then take top_n. ``parts`` for the LLM
+        # context block and ``_recall_card_hits`` for the Feishu/QQ card use
+        # the SAME ordered, deduped list — single source of truth.
+        ranked = sorted(all_hits, key=lambda h: h.get("score", 0), reverse=True)[:top_n]
+        self._recall_card_hits = ranked
+
+        parts = [
+            f"- [{h.get('score', 0):.2f}] {h.get('abstract', '')} ({h.get('uri', '')})"
+            for h in ranked
+        ]
 
         if not parts:
             return ""

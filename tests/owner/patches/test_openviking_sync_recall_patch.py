@@ -298,3 +298,206 @@ def test_force_sync_param_wins_over_patch_yaml(monkeypatch):
     revert_card()  # unwrap auto-mounted card patch for identity check
     assert OpenVikingMemoryProvider.prefetch is _sync_prefetch
     assert OpenVikingMemoryProvider.queue_prefetch is _noop_queue_prefetch
+
+
+# ---------------------------------------------------------------------------
+# recall-dedup tests (T1-T8 in owner/patches/openviking_sync_recall_patch.DEDUP_DESIGN.md)
+# ---------------------------------------------------------------------------
+
+
+def test_recall_dedup_no_duplicates(monkeypatch):
+    """T1: 10 unique hits → top_n=6 by score, no dedup log."""
+    hits_memories = [
+        {"uri": f"viking://user/yangtb/memories/e/{i}.md",
+         "abstract": f"unique memory {i}", "score": round(0.9 - i * 0.05, 3)}
+        for i in range(5)
+    ]
+    hits_resources = [
+        {"uri": f"viking://user/yangtb/resources/d/{i}.md",
+         "abstract": f"unique doc {i}", "score": round(0.8 - i * 0.05, 3)}
+        for i in range(5)
+    ]
+    monkeypatch.setattr(
+        "httpx.post",
+        lambda *a, **kw: _MockResponse(
+            {"result": {"memories": hits_memories, "resources": hits_resources}}),
+    )
+    apply_patch()
+    provider = _make_provider()
+    out = provider.prefetch("anything")
+    # 6 lines under ## OpenViking Context
+    lines = [l for l in out.splitlines() if l.startswith("- [")]
+    assert len(lines) == 6
+    assert len(provider._recall_card_hits) == 6
+
+
+def test_recall_dedup_peer_mirrors(monkeypatch):
+    """T2: 3 peer-mirror duplicates collapse; top_n=6 by score."""
+    owner_uri = "viking://user/yangtb/memories/events/2026/06/22/{name}.md"
+    peer_uri = "viking://user/yangtb/peers/hermes/memories/events/2026/06/22/{name}.md"
+    dup_pairs = [
+        ("sop_recorded.md", "viking_delete SOP procedure", 0.561),
+        ("peer_mirror_deleted.md", "deletion SOP for peer mirrors", 0.458),
+        ("dedup_root_cause.md", "root cause of recall dedup issue", 0.402),
+    ]
+    memories = []
+    for name, abstract, score in dup_pairs:
+        # owner copy
+        memories.append({"uri": owner_uri.format(name=name),
+                         "abstract": abstract, "score": score})
+        # peer mirror — same abstract + score, different URI
+        memories.append({"uri": peer_uri.format(name=name),
+                         "abstract": abstract, "score": score})
+    # 6 memories (3 owner + 3 peer) + 4 unique = 10 total
+    memories += [
+        {"uri": "viking://user/yangtb/memories/events/x1.md",
+         "abstract": "unique A", "score": 0.35},
+        {"uri": "viking://user/yangtb/memories/events/x2.md",
+         "abstract": "unique B", "score": 0.30},
+        {"uri": "viking://user/yangtb/memories/entities/n1.md",
+         "abstract": "unique C", "score": 0.25},
+        {"uri": "viking://user/yangtb/memories/events/x3.md",
+         "abstract": "unique D", "score": 0.20},
+    ]
+    monkeypatch.setattr(
+        "httpx.post",
+        lambda *a, **kw: _MockResponse({"result": {"memories": memories, "resources": []}}),
+    )
+    apply_patch()
+    provider = _make_provider()
+    out = provider.prefetch("peers SOP")
+    lines = [l for l in out.splitlines() if l.startswith("- [")]
+    # 7 unique after dedup, top_n=6 → 6 lines
+    assert len(lines) == 6
+    assert len(provider._recall_card_hits) == 6
+    # peer-mirror URIs must NOT appear in card_hits (they were dropped)
+    assert all("/peers/hermes/" not in h.get("uri", "") for h in provider._recall_card_hits)
+
+
+def test_recall_dedup_cross_bucket(monkeypatch):
+    """T3: Same abstract in memories AND resources → only one survives."""
+    shared = "shared abstract about deployment"
+    monkeypatch.setattr(
+        "httpx.post",
+        lambda *a, **kw: _MockResponse({"result": {
+            "memories": [{"uri": "viking://m/a.md", "abstract": shared, "score": 0.7}],
+            "resources": [{"uri": "viking://r/a.md", "abstract": shared, "score": 0.7}],
+        }}),
+    )
+    apply_patch()
+    provider = _make_provider()
+    provider.prefetch("deployment")
+    assert len(provider._recall_card_hits) == 1
+    # First-seen wins (memories bucket iterates first in current order).
+    # Note: ctx_type[:-1] gives "memorie" / "resource" (existing convention).
+    assert provider._recall_card_hits[0]["type"] == "memorie"
+
+
+def test_recall_dedup_keeps_peer_only(monkeypatch):
+    """T4: A peer-only URI (no owner copy) must survive dedup."""
+    monkeypatch.setattr(
+        "httpx.post",
+        lambda *a, **kw: _MockResponse({"result": {
+            "memories": [{
+                "uri": "viking://user/yangtb/peers/hermes/memories/entities/节点配置/node010 OpenViking.md",
+                "abstract": "node010 OpenViking configuration", "score": 0.5}],
+            "resources": [],
+        }}),
+    )
+    apply_patch()
+    provider = _make_provider()
+    out = provider.prefetch("node010")
+    assert "node010 OpenViking" in out
+    assert len(provider._recall_card_hits) == 1
+
+
+def test_recall_dedup_disabled(monkeypatch):
+    """T5: dedup=false restores pre-patch behavior (peer mirrors surface)."""
+    monkeypatch.setattr(
+        recall_config, "_read_patch_yaml",
+        lambda: {"owner": {"openviking_sync_recall": {"dedup": False}}},
+    )
+    owner = "viking://user/yangtb/memories/x.md"
+    peer = "viking://user/yangtb/peers/hermes/memories/x.md"
+    monkeypatch.setattr(
+        "httpx.post",
+        lambda *a, **kw: _MockResponse({"result": {
+            "memories": [
+                {"uri": owner, "abstract": "same", "score": 0.5},
+                {"uri": peer, "abstract": "same", "score": 0.5},
+            ],
+            "resources": [],
+        }}),
+    )
+    apply_patch()
+    provider = _make_provider()
+    provider.prefetch("x")
+    # Without dedup, both copies appear (back-compat path)
+    assert len(provider._recall_card_hits) == 2
+
+
+def test_recall_dedup_top_n_1(monkeypatch):
+    """T6: top_n=1 → exactly 1 hit after dedup, even if both buckets have data."""
+    monkeypatch.setattr(
+        recall_config, "_read_patch_yaml",
+        lambda: {"owner": {"openviking_sync_recall": {"top_n": 1}}},
+    )
+    monkeypatch.setattr(
+        "httpx.post",
+        lambda *a, **kw: _MockResponse({"result": {
+            "memories": [
+                {"uri": "viking://m/a", "abstract": "alpha", "score": 0.9},
+                {"uri": "viking://m/b", "abstract": "beta", "score": 0.7},
+            ],
+            "resources": [
+                {"uri": "viking://r/c", "abstract": "gamma", "score": 0.6},
+            ],
+        }}),
+    )
+    apply_patch()
+    provider = _make_provider()
+    out = provider.prefetch("anything")
+    lines = [l for l in out.splitlines() if l.startswith("- [")]
+    assert len(lines) == 1
+    assert "alpha" in lines[0]
+    assert len(provider._recall_card_hits) == 1
+
+
+def test_dedup_uri_canonical_strips_peer_segment():
+    """T7: _dedup_uri_canonical strips /peers/<name>/ segments."""
+    from owner.patches.openviking_sync_recall_patch import _dedup_uri_canonical
+    assert _dedup_uri_canonical(
+        "viking://user/yangtb/peers/hermes/memories/x.md"
+    ) == "viking://user/yangtb/memories/x.md"
+    assert _dedup_uri_canonical(
+        "viking://user/yangtb/memories/x.md"
+    ) == "viking://user/yangtb/memories/x.md"
+    assert _dedup_uri_canonical("") == ""
+    # multiple peer segments (defensive)
+    assert _dedup_uri_canonical(
+        "viking://u/peers/a/memories/peers/b/x.md"
+    ) == "viking://u/memories/x.md"
+
+
+def test_recall_dedup_logs_skipped(monkeypatch, caplog):
+    """T8: Skipped peer mirrors emit a logger.debug line."""
+    owner = "viking://user/yangtb/memories/x.md"
+    peer = "viking://user/yangtb/peers/hermes/memories/x.md"
+    monkeypatch.setattr(
+        "httpx.post",
+        lambda *a, **kw: _MockResponse({"result": {
+            "memories": [
+                {"uri": owner, "abstract": "same", "score": 0.5},
+                {"uri": peer, "abstract": "same", "score": 0.5},
+            ], "resources": [],
+        }}),
+    )
+    apply_patch()
+    provider = _make_provider()
+    with caplog.at_level(
+        logging.DEBUG,
+        logger="owner.patches.openviking_sync_recall_patch",
+    ):
+        provider.prefetch("x")
+    assert any("recall-dedup: skipped peer mirror" in rec.message
+               for rec in caplog.records)

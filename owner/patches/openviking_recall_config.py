@@ -27,6 +27,12 @@ SYNC_RECALL_DEFAULTS: dict[str, Any] = {
     "enabled": True,        # master switch — replaces OPENVIKING_SYNC_RECALL
     "advisory": True,       # advisory wording — replaces OPENVIKING_ADVISORY_MEMORY
     "search_timeout": 10,   # seconds — replaces OPENVIKING_SEARCH_TIMEOUT
+    # [owner] recall-dedup: collapse peer-mirror URIs that share abstract+score
+    # with their owner copy. Default ON; set false to restore pre-patch behavior.
+    "dedup": True,
+    # [owner] recall-dedup: how many unique (post-dedup) hits to keep globally.
+    # The HTTP fetch requests max(top_n*3, 15) to leave headroom after dedup.
+    "top_n": 6,
 }
 
 # ── Recall visualization defaults ───────────────────────────────────────────
@@ -85,6 +91,8 @@ def load_sync_recall_config() -> dict[str, Any]:
         "enabled": cfg.get("enabled", _env_bool("OPENVIKING_SYNC_RECALL", SYNC_RECALL_DEFAULTS["enabled"])),
         "advisory": cfg.get("advisory", _env_bool("OPENVIKING_ADVISORY_MEMORY", SYNC_RECALL_DEFAULTS["advisory"])),
         "search_timeout": cfg.get("search_timeout", _env_float("OPENVIKING_SEARCH_TIMEOUT", SYNC_RECALL_DEFAULTS["search_timeout"])),
+        "dedup": cfg.get("dedup", SYNC_RECALL_DEFAULTS["dedup"]),
+        "top_n": int(cfg.get("top_n", SYNC_RECALL_DEFAULTS["top_n"])),
     }
 
 
