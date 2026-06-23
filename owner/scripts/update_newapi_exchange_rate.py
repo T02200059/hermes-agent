@@ -22,7 +22,7 @@ import urllib.request
 
 # ── Config ──────────────────────────────────────────────────────────────
 EXCHANGE_API_URL = "https://open.er-api.com/v6/latest/USD"
-NEWAPI_BASE_URL = "https://genai.damodel.com"
+NEWAPI_BASE_URL = "http://10.10.100.10:3000"
 NEWAPI_USERNAME = os.environ.get("NEWAPI_USERNAME", "admin")
 NEWAPI_PASSWORD = os.environ.get("NEWAPI_PASSWORD", "")
 
@@ -41,7 +41,7 @@ NEWAPI_PASSWORD = os.environ.get("NEWAPI_PASSWORD", "")
 # past the review date the script SKIPS ModelRatio updates (still updates the
 # exchange rate) rather than pushing outdated pricing every day.
 # ─────────────────────────────────────────────────────────────────────────
-PRICING_REVIEW_BY = "2026-05-31"  # last verified through this date
+PRICING_REVIEW_BY = "2026-06-30"  # last verified through this date
 
 DEEPSEEK_PRICING_CNY = {
     # v4-flash (aliases point to same pricing)
