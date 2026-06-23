@@ -2101,7 +2101,7 @@ class FeishuAdapter(BasePlatformAdapter):
                 target: str
                 old_text: str
                 new_content: str
-                operations: list = None
+                operations: Optional[list] = None
 
             session_key = ""
             if metadata and isinstance(metadata, dict):
