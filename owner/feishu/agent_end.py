@@ -53,9 +53,17 @@ async def try_auto_card_on_end(
         meta = runner._thread_metadata_for_source(
             source, runner._reply_anchor_for_event(event)
         )
+        # [owner] auto-card: split footer from response so it can be rendered after hr divider
+        body_text = response
+        footer_text = ""
+        if footer_line and response.endswith(footer_line):
+            body_text = response[: -len(footer_line)].rstrip("\n")
+            footer_text = footer_line
+
         result = await try_auto_card(
-            adapter, response, meta,  # type: ignore[arg-type]  # runtime is FeishuAdapter
+            adapter, body_text, meta,  # type: ignore[arg-type]  # runtime is FeishuAdapter
             chat_id=source.chat_id, force=True,
+            footer=footer_text,
         )
     except Exception as exc:
         logger.debug("agent:end auto_card failed: %s", exc)

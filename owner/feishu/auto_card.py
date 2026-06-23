@@ -154,25 +154,41 @@ def is_feishu_streaming_disabled() -> bool:
 # Card construction
 # ---------------------------------------------------------------------------
 
-def make_auto_card(markdown_text: str) -> Dict[str, Any]:
-    """Build the auto-card JSON envelope around a single markdown body."""
+def _build_card_elements(markdown_text: str, footer: str = "") -> List[Dict[str, Any]]:
+    """Build the body elements for an auto-card."""
+    elements: List[Dict[str, Any]] = [{"tag": "markdown", "content": markdown_text}]
+    if footer:
+        # [owner] auto-card: render footer after a horizontal divider
+        elements.append({"tag": "hr"})
+        elements.append({"tag": "markdown", "content": footer})
+    return elements
+
+
+def make_auto_card(markdown_text: str, footer: str = "") -> Dict[str, Any]:
+    """Build the auto-card JSON envelope around a single markdown body.
+
+    Optional footer is rendered after a horizontal divider.
+    """
     return {
         "schema": "2.0",
         "config": {"wide_screen_mode": True},
         "body": {
-            "elements": [{"tag": "markdown", "content": markdown_text}],
+            "elements": _build_card_elements(markdown_text, footer=footer),
         },
     }
 
 
-def estimate_auto_card_json_bytes(markdown_text: str) -> int:
-    """Byte length of the serialized auto-card JSON for this body."""
+def estimate_auto_card_json_bytes(markdown_text: str, footer: str = "") -> int:
+    """Byte length of the serialized auto-card JSON for this body.
+
+    Includes the hr + footer markdown elements when footer is non-empty.
+    """
     return len(
         json.dumps(
             {
                 "schema": "2.0",
                 "config": {"wide_screen_mode": True},
-                "body": {"elements": [{"tag": "markdown", "content": markdown_text}]},
+                "body": {"elements": _build_card_elements(markdown_text, footer=footer)},
             },
             ensure_ascii=False,
         ).encode("utf-8")
@@ -220,7 +236,7 @@ def _find_code_block_over(text: str, limit: int) -> List[str]:
     return offenders
 
 
-def _evaluate_card_feasibility(text: str) -> _FeishuCardPlan:
+def _evaluate_card_feasibility(text: str, footer: str = "") -> _FeishuCardPlan:
     """Decide whether ``text`` can be auto-carded, and whether to split first.
 
     The JSON-byte estimate is the final authority on needs_split. The risk
@@ -250,11 +266,11 @@ def _evaluate_card_feasibility(text: str) -> _FeishuCardPlan:
             can_use_card=False,
             needs_split=False,
             risk_reasons=tuple(risks),
-            estimated_json_bytes=estimate_auto_card_json_bytes(text),
+            estimated_json_bytes=estimate_auto_card_json_bytes(text, footer=footer),
         )
 
     budget = get_auto_card_split_max_chars()
-    estimated = estimate_auto_card_json_bytes(text)
+    estimated = estimate_auto_card_json_bytes(text, footer=footer)
     if len(text) > budget:
         return _FeishuCardPlan(
             can_use_card=True,
@@ -343,6 +359,7 @@ async def try_auto_card(
     metadata: Optional[Dict[str, Any]] = None,
     chat_id: str = "",
     force: bool = False,  # [owner] agent:end forces card dispatch regardless of streaming
+    footer: str = "",  # [owner] auto-card: optional footer rendered after hr divider
 ) -> Optional[SendResult]:
     """Attempt to send long text as an interactive card.
 
@@ -374,7 +391,7 @@ async def try_auto_card(
     if not force and len(formatted_text) <= threshold:
         return None
 
-    plan = _evaluate_card_feasibility(formatted_text)
+    plan = _evaluate_card_feasibility(formatted_text, footer=footer)
     if not plan.can_use_card:
         logger.info(
             "[Feishu] auto-card skipped (%s); falling through to plain text",
@@ -410,7 +427,9 @@ async def try_auto_card(
             card_text = f"{body}\n\n_({idx + 1}/{n_chunks})_"
         else:
             card_text = body
-        card = make_auto_card(card_text)
+        # [owner] auto-card: footer + hr only on the last chunk
+        card_footer = footer if idx == n_chunks - 1 else ""
+        card = make_auto_card(card_text, footer=card_footer)
 
         card_result = None
         for attempt in range(_MAX_CARD_SEND_ATTEMPTS):
