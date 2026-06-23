@@ -15375,6 +15375,35 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                                     adapter.name,
                                 )
                                 continue
+                            # [owner] 平台报告此 bubble 已不可编辑（如飞书 ~20
+                            # 次编辑上限，错误码 230072/230075）但可开新 bubble
+                            # 继续 —— 轮转：清空 progress_msg_id，发新消息开新
+                            # bubble，保持 can_edit=True。此前下方分支把这类
+                            # 失败一律置 can_edit=False，导致后续进度消息无法合并。
+                            # rotate 由适配器按平台错误码设置（见 feishu.py
+                            # edit_message），gateway 完全平台无关。
+                            if getattr(result, "rotate", False):
+                                logger.info(
+                                    "[%s] Progress edit rotate — starting fresh bubble",
+                                    adapter.name,
+                                )
+                                progress_msg_id = None
+                                _rotate_send = await adapter.send(
+                                    chat_id=source.chat_id,
+                                    content=full_text,
+                                    reply_to=_progress_reply_to,
+                                    metadata=_progress_metadata,
+                                )
+                                if (
+                                    _cleanup_progress
+                                    and getattr(_rotate_send, "success", False)
+                                    and getattr(_rotate_send, "message_id", None)
+                                ):
+                                    _cleanup_msg_ids.append(str(_rotate_send.message_id))
+                                if getattr(_rotate_send, "success", False) and getattr(_rotate_send, "message_id", None):
+                                    progress_msg_id = _rotate_send.message_id
+                                _last_edit_ts = time.monotonic()
+                                continue
                             if "flood" in _err or "retry after" in _err:
                                 # Flood control hit — backoff but keep editing.
                                 # Only disable edits for non-recoverable errors.

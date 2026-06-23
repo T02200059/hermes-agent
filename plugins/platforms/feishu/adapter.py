@@ -1998,6 +1998,13 @@ class FeishuAdapter(BasePlatformAdapter):
                 result = self._finalize_send_result(fallback_response, "update failed")
             if result.success:
                 result.message_id = message_id
+            # [owner] 飞书对单条消息有 ~20 次编辑上限（错误码 230072 / 230075）。
+            # 这是 message_id 维度的永久上限（post→text 降级无法绕过），
+            # 通知 gateway 轮转到新 bubble 继续编辑，而不是永久关闭 can_edit。
+            if not result.success and any(
+                f"[{c}]" in (result.error or "") for c in ("230072", "230075")
+            ):
+                result.rotate = True
             return result
         except Exception as exc:
             logger.error("[Feishu] Failed to edit message %s: %s", message_id, exc, exc_info=True)

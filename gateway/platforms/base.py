@@ -1743,6 +1743,12 @@ class SendResult:
     # stream consumer can send the missing tail instead of marking a clipped
     # response complete.
     retryable: bool = False  # True for transient connection errors — base will retry automatically
+    # [owner] 适配器判定「此消息已不可编辑（如平台编辑次数上限 230072），
+    # 但下一轮可开一条新消息继续编辑」时返回 rotate=True。与 retryable 互不
+    # 蕴含：retryable 是「同一操作稍后可重试」（瞬时网络错误）；
+    # rotate 是「放弃此 bubble、开新 bubble 继续」（永久上限）。gateway 收到
+    # rotate=True 时清空 progress_msg_id、保持 can_edit=True、发新消息。
+    rotate: bool = False
     # When the adapter had to split an oversized payload across multiple
     # platform messages (e.g. Telegram edit_message overflow split-and-deliver),
     # ``message_id`` is the LAST visible message id (so subsequent edits target
