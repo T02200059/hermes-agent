@@ -7,6 +7,7 @@ other callers that already have a FileOperations object.
 from __future__ import annotations
 
 import difflib
+import os
 from typing import List, Optional, Tuple
 
 from tools.file_operations import (
@@ -108,7 +109,6 @@ def _apply_file_patch(
     if fp.is_deleted:
         read_result = file_ops.read_file_raw(path)
         if read_result.error:
-            import os
             return False, (
                 f"Cannot read file for deletion: {read_result.error}\n"
                 f"  Resolved target: {path}\n"
@@ -146,7 +146,6 @@ def _apply_file_patch(
     # UPDATE
     read_result = file_ops.read_file_raw(path)
     if read_result.error:
-        import os
         return False, (
             f"Cannot read file: {read_result.error}\n"
             f"  Resolved target: {path}\n"
