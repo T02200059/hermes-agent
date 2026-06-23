@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
 from contextlib import ExitStack
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from tools import check_file_requirements
@@ -54,6 +56,94 @@ def _resolve_and_guard_paths(
                 return cross_warn
 
     return None
+
+
+def _materialize_patch_paths(
+    file_patches,
+    *,
+    task_id: str,
+) -> None:
+    """将 diff header 中的相对路径解析为绝对路径并写回 FilePatch。"""
+    from tools.file_tools import _resolve_path_for_task
+
+    for fp in file_patches:
+        target = fp.new_path if not fp.is_deleted else fp.old_path
+        if target == '/dev/null':
+            continue
+        resolved = str(_resolve_path_for_task(target, task_id))
+        fp.new_path = resolved
+        if not fp.is_new:
+            fp.old_path = resolved
+
+
+def _suggest_path(original: str, resolved: str, base_dir: Path) -> str:
+    """如果相对路径在工作区根的某个子目录下存在同名文件，给出建议。"""
+    if Path(original).expanduser().is_absolute():
+        return ""
+    rel = Path(original)
+    suggestions = []
+    try:
+        for child in base_dir.iterdir():
+            if child.is_dir():
+                candidate = child / rel
+                if candidate.exists():
+                    suggestions.append(str(candidate.resolve()))
+    except Exception:
+        pass
+    if suggestions:
+        return f"\n    Did you mean: {suggestions[0]!r}?"
+    return ""
+
+
+def _prevalidate_patch_paths(
+    file_patches,
+    *,
+    task_id: str,
+) -> Optional[str]:
+    """在真正 apply 前一次性检查所有非新建文件是否可读。
+
+    返回 None 表示全部可读；否则返回聚合错误字符串，包含每个缺失文件的
+    原始路径、解析后的绝对路径、工作区根以及可能的建议路径。
+    """
+    from tools.file_tools import (
+        _get_file_ops,
+        _resolve_base_dir,
+        _resolve_path_for_task,
+    )
+
+    base_dir = _resolve_base_dir(task_id)
+    file_ops = _get_file_ops(task_id)
+
+    missing = []
+    for fp in file_patches:
+        target = fp.new_path if not fp.is_deleted else fp.old_path
+        if target == '/dev/null' or fp.is_new:
+            continue
+        resolved = str(_resolve_path_for_task(target, task_id))
+        rr = file_ops.read_file_raw(resolved)
+        if rr.error:
+            missing.append((target, resolved, rr.similar_files or []))
+
+    if not missing:
+        return None
+
+    lines = [
+        f"The following patch target(s) cannot be read "
+        f"(workspace root: {base_dir}, process CWD: {os.getcwd()}):"
+    ]
+    for original, resolved, similar in missing:
+        suggestion = _suggest_path(original, resolved, base_dir)
+        similar_hint = ""
+        if similar:
+            similar_hint = f"\n    Similar files: {', '.join(repr(s) for s in similar[:3])}"
+        lines.append(
+            f"  • {original!r} resolved to {resolved!r}{suggestion}{similar_hint}"
+        )
+    lines.append(
+        "Hint: use absolute paths, cd into the target directory, "
+        "or add the correct repository prefix (e.g. hermes-agent/...) to the diff paths."
+    )
+    return "\n".join(lines)
 
 
 def _build_dry_run_result(
@@ -118,6 +208,12 @@ def unified_diff_patch_tool(
     )
     if guard_err:
         return tool_error(guard_err)
+
+    prevalidate_err = _prevalidate_patch_paths(file_patches, task_id=task_id)
+    if prevalidate_err:
+        return tool_error(prevalidate_err)
+
+    _materialize_patch_paths(file_patches, task_id=task_id)
 
     if dry_run:
         result_dict = _build_dry_run_result(

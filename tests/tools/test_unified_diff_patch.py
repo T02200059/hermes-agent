@@ -310,6 +310,71 @@ def test_overlapping_hunks_rejected(dry_run_sandbox):
     assert target.read_text() == "line1\nline2\nline3\nline4\n"
 
 
+@pytest.fixture
+def path_validation_sandbox(tmp_path, monkeypatch):
+    """Sandbox for testing path-validation diagnostics.
+
+    Forces workspace root to ``tmp_path`` and creates a ``hermes-agent/``
+    subdirectory so :func:`_suggest_path` can propose the actual target file.
+    """
+    from tools import file_tools
+    from tools.environments.local import LocalEnvironment
+    from tools.file_operations import ShellFileOperations
+
+    monkeypatch.setattr(
+        file_tools, "_check_sensitive_path", lambda filepath, task_id="default": None
+    )
+    monkeypatch.setattr(
+        file_tools, "_check_cross_profile_path", lambda filepath, task_id="default": None
+    )
+
+    # Create repo-like subdirectory with the actual target file.
+    repo = tmp_path / "hermes-agent"
+    target = repo / "owner" / "checkpoint_predictor" / "__init__.py"
+    target.parent.mkdir(parents=True)
+    target.write_text('"""Checkpoint predictor."""\n')
+
+    # Force workspace root and file_ops to use tmp_path consistently.
+    monkeypatch.setattr(file_tools, "_resolve_base_dir", lambda task_id="default": tmp_path)
+
+    env = LocalEnvironment(cwd=str(tmp_path))
+    file_ops = ShellFileOperations(env, cwd=str(tmp_path))
+    monkeypatch.setattr(file_tools, "_get_file_ops", lambda task_id="default": file_ops)
+
+    return tmp_path
+
+
+def test_prevalidate_reports_missing_paths_with_resolution(path_validation_sandbox):
+    """Missing relative-path targets are reported in bulk with resolved paths,
+    workspace root, process CWD, and a Did-you-mean suggestion."""
+    root = path_validation_sandbox
+    patch = (
+        "--- owner/checkpoint_predictor/__init__.py\n"
+        "+++ owner/checkpoint_predictor/__init__.py\n"
+        "@@ -1,1 +1,1 @@\n"
+        '-"""Checkpoint predictor."""\n'
+        '+"""Changed predictor."""\n'
+        "--- owner/missing_file.py\n"
+        "+++ owner/missing_file.py\n"
+        "@@ -1,1 +1,1 @@\n"
+        "-old\n"
+        "+new\n"
+    )
+    result = json.loads(unified_diff_patch_tool(patch=patch, dry_run=True, strict=True))
+    assert "error" in result
+    error = result["error"]
+    assert "workspace root:" in error
+    assert "process CWD:" in error
+    # Resolved absolute path is surfaced for the first missing file.
+    assert "owner/checkpoint_predictor/__init__.py" in error
+    assert str(root / "owner" / "checkpoint_predictor" / "__init__.py") in error
+    # Suggestion points at the real file under the hermes-agent subdirectory.
+    assert "Did you mean:" in error
+    assert str(root / "hermes-agent" / "owner" / "checkpoint_predictor" / "__init__.py") in error
+    # Multiple missing files are reported in one shot.
+    assert "owner/missing_file.py" in error
+
+
 # ===== new-file creation uses ALL hunks, not just hunks[0] =====
 
 def test_new_file_with_multiple_hunks_keeps_all(dry_run_sandbox):

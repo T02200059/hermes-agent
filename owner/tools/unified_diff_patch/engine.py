@@ -108,7 +108,12 @@ def _apply_file_patch(
     if fp.is_deleted:
         read_result = file_ops.read_file_raw(path)
         if read_result.error:
-            return False, f"Cannot read file for deletion: {read_result.error}", None
+            import os
+            return False, (
+                f"Cannot read file for deletion: {read_result.error}\n"
+                f"  Resolved target: {path}\n"
+                f"  Process CWD: {os.getcwd()}"
+            ), None
         removed = read_result.content.splitlines(keepends=True)
         if not dry_run:
             delete_result = file_ops.delete_file(path)
@@ -141,7 +146,12 @@ def _apply_file_patch(
     # UPDATE
     read_result = file_ops.read_file_raw(path)
     if read_result.error:
-        return False, f"Cannot read file: {read_result.error}", None
+        import os
+        return False, (
+            f"Cannot read file: {read_result.error}\n"
+            f"  Resolved target: {path}\n"
+            f"  Process CWD: {os.getcwd()}"
+        ), None
 
     original = read_result.content
     line_ending = _detect_line_ending(original)
