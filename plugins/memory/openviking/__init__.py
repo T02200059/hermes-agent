@@ -3415,23 +3415,33 @@ class OpenVikingMemoryProvider(MemoryProvider):
             logger.warning("OpenViking remember commit failed: %s", e)
             return tool_error(f"Failed to commit memory: {e}")
 
-        # 4. Wait briefly for background semantic/embedding processing.
-        wait_timeout = 15.0
-        try:
-            self._client.post("/api/v1/system/wait", {"timeout": wait_timeout})
-        except Exception as e:
-            logger.debug("OpenViking remember wait_processed failed: %s", e)
-            # Wait failure is not a total failure — commit has already been accepted.
+        # 4 + 5. Wait for background processing, then clean up the ephemeral
+        # session — OFF the agent's tool thread. The commit is already accepted
+        # and the return message tells the user it becomes searchable async, so
+        # blocking the agent up to ~15s on system/wait here was pure latency
+        # with no benefit. Detach it; preserve the wait→delete order so the
+        # ephemeral session isn't dropped mid-extraction.
+        _client = self._client
 
-        # 5. Clean up the ephemeral session (best-effort, failures ignored).
-        try:
-            self._client._httpx.delete(
-                self._client._url(f"/api/v1/sessions/{ephe_id}"),
-                headers=self._client._headers(),
-                timeout=_TIMEOUT,
-            )
-        except Exception:
-            pass
+        def _finalize_remember() -> None:
+            try:
+                _client.post("/api/v1/system/wait", {"timeout": 15.0})
+            except Exception as e:
+                logger.debug("OpenViking remember wait_processed failed: %s", e)
+            try:
+                _client._httpx.delete(
+                    _client._url(f"/api/v1/sessions/{ephe_id}"),
+                    headers=_client._headers(),
+                    timeout=_TIMEOUT,
+                )
+            except Exception:
+                pass
+
+        threading.Thread(
+            target=_finalize_remember,
+            name=f"ov-remember-finalize-{ephe_id}",
+            daemon=True,
+        ).start()
 
         task_id = commit_resp.get("result", {}).get("task_id", "")
         return json.dumps({
