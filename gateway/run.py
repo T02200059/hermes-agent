@@ -45,6 +45,15 @@ from pathlib import Path
 from datetime import datetime
 from typing import Dict, Optional, Any, List, Set, Union
 
+# [owner] OpenViking memory provider — sync recall + advisory prompt
+# (see owner/docs/openviking-sync-recall-design.md).  Thin delegation to
+# owner/patches/; all logic lives there.  Fails open if patch is absent.
+try:
+    from owner.patches.openviking_sync_recall_patch import apply_patch as _owner_ov_apply
+    _owner_ov_apply()
+except Exception:
+    pass
+
 # account_usage imports the OpenAI SDK chain (~230 ms). Only needed by
 # /usage; we still import it at module top in the gateway because test
 # patches (tests/gateway/test_usage_command.py) target
