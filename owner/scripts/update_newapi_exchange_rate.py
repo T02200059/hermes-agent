@@ -15,6 +15,7 @@ NewAPI pricing formula:
 
 This script runs daily (08:30) as a no_agent cron job.
 """
+import datetime
 import json
 import os
 import urllib.request
@@ -24,7 +25,6 @@ EXCHANGE_API_URL = "https://open.er-api.com/v6/latest/USD"
 NEWAPI_BASE_URL = "https://genai.damodel.com"
 NEWAPI_USERNAME = os.environ.get("NEWAPI_USERNAME", "admin")
 NEWAPI_PASSWORD = os.environ.get("NEWAPI_PASSWORD", "")
-COOKIE_FILE = "/tmp/napi_rate_cookie.txt"
 
 # ── Pricing Source (extensible) ─────────────────────────────────────────
 #
@@ -35,7 +35,14 @@ COOKIE_FILE = "/tmp/napi_rate_cookie.txt"
 # To add a model: append an entry.
 # To replace with scraper: swap this dict with a fetch_deepseek_pricing() call.
 # To add a provider: create e.g. OPENAI_PRICING_USD dict + its own compute fn.
+#
+# ⚠️ Static prices go stale (DeepSeek changes prices; promo discounts lapse).
+# Re-verify against the pricing page and bump PRICING_REVIEW_BY. Until then,
+# past the review date the script SKIPS ModelRatio updates (still updates the
+# exchange rate) rather than pushing outdated pricing every day.
 # ─────────────────────────────────────────────────────────────────────────
+PRICING_REVIEW_BY = "2026-05-31"  # last verified through this date
+
 DEEPSEEK_PRICING_CNY = {
     # v4-flash (aliases point to same pricing)
     "deepseek-chat":   {"input": 1.0, "output": 2.0, "blend_weight": 3},
@@ -46,6 +53,16 @@ DEEPSEEK_PRICING_CNY = {
 }
 
 # ── Helpers ─────────────────────────────────────────────────────────────
+
+def _pricing_is_stale() -> bool:
+    """True once today is past PRICING_REVIEW_BY (static prices need re-check)."""
+    try:
+        review_by = datetime.date.fromisoformat(PRICING_REVIEW_BY)
+    except ValueError:
+        # Malformed constant — treat as stale so a human notices.
+        return True
+    return datetime.date.today() > review_by
+
 
 def _blend_cny_price(input_cny: float, output_cny: float, blend_weight: int) -> float:
     """Blended CNY price per M tokens using weighted input:output ratio."""
@@ -76,7 +93,13 @@ def _fetch_cny_rate() -> float:
     return float(cny)
 
 
-def _newapi_login():
+def _newapi_login() -> str:
+    """Authenticate and return the session cookie string.
+
+    The cookie is kept in memory (never written to disk) so it is not exposed
+    via a predictable world-readable path and cannot be silently reused stale
+    across runs.
+    """
     payload = json.dumps({"username": NEWAPI_USERNAME, "password": NEWAPI_PASSWORD}).encode()
     req = urllib.request.Request(
         f"{NEWAPI_BASE_URL}/api/user/login",
@@ -86,36 +109,33 @@ def _newapi_login():
     try:
         with urllib.request.urlopen(req, timeout=15) as resp:
             data = json.loads(resp.read().decode())
+            cookies = resp.headers.get_all("Set-Cookie")
     except Exception as e:
         raise RuntimeError(f"NewAPI login failed: {e}")
     if not data.get("success"):
         raise RuntimeError(f"NewAPI login rejected: {data.get('message')}")
-    cookies = resp.headers.get_all("Set-Cookie")
-    if cookies:
-        cookie_str = "; ".join(c.split(";")[0] for c in cookies)
-        with open(COOKIE_FILE, "w") as f:
-            f.write(cookie_str)
+    if not cookies:
+        raise RuntimeError("NewAPI login returned no Set-Cookie header; cannot authenticate")
+    return "; ".join(c.split(";")[0] for c in cookies)
 
 
-def _newapi_get_option(key: str):
-    """Return raw option value as a string (or None if not found)."""
-    with open(COOKIE_FILE) as f:
-        cookie_str = f.read().strip()
+def _newapi_get_option(cookie_str: str, key: str):
+    """Return raw option value as a string (or None if the key is absent)."""
     req = urllib.request.Request(
         f"{NEWAPI_BASE_URL}/api/option/",
         headers={"Cookie": cookie_str, "New-Api-User": "1"},
     )
     with urllib.request.urlopen(req, timeout=15) as resp:
         data = json.loads(resp.read().decode())
-    for opt in data["data"]:
-        if opt["key"] == key:
-            return opt["value"]
+    if not data.get("success"):
+        raise RuntimeError(f"GET options rejected: {data.get('message')}")
+    for opt in data.get("data") or []:
+        if opt.get("key") == key:
+            return opt.get("value")
     return None
 
 
-def _newapi_put_option(key: str, value):
-    with open(COOKIE_FILE) as f:
-        cookie_str = f.read().strip()
+def _newapi_put_option(cookie_str: str, key: str, value):
     payload = json.dumps({"key": key, "value": value}).encode()
     req = urllib.request.Request(
         f"{NEWAPI_BASE_URL}/api/option/",
@@ -136,7 +156,7 @@ def main():
         raise RuntimeError("NEWAPI_PASSWORD env var not set.")
 
     # 1. Login
-    _newapi_login()
+    cookie = _newapi_login()
     print("🔑 NewAPI login OK")
 
     # 2. Fetch exchange rate
@@ -144,40 +164,53 @@ def main():
     print(f"📊 USD/CNY: {usd_rate:.4f}")
 
     # 3. Update USDExchangeRate
-    old_rate_str = _newapi_get_option("USDExchangeRate")
+    old_rate_str = _newapi_get_option(cookie, "USDExchangeRate")
+    if old_rate_str is None:
+        raise RuntimeError("USDExchangeRate option not found in NewAPI")
     old_rate = float(old_rate_str)
     if abs(usd_rate - old_rate) > 0.0001:
-        _newapi_put_option("USDExchangeRate", f"{usd_rate:.4f}")
+        _newapi_put_option(cookie, "USDExchangeRate", f"{usd_rate:.4f}")
         print(f"✅ USDExchangeRate: {old_rate} → {usd_rate:.4f}")
     else:
         print(f"⏭️  USDExchangeRate unchanged: {old_rate}")
 
-    # 4. Recompute DeepSeek ModelRatios from CNY pricing
-    model_ratios = json.loads(_newapi_get_option("ModelRatio"))
-    updated = 0
-
-    for model_name, price_info in DEEPSEEK_PRICING_CNY.items():
-        blend_cny = _blend_cny_price(
-            price_info["input"], price_info["output"], price_info.get("blend_weight", 3)
+    # 4. Recompute DeepSeek ModelRatios from CNY pricing.
+    #    Skip when the static pricing table is past its review date so a daily
+    #    cron does not push outdated prices unattended.
+    if _pricing_is_stale():
+        print(
+            f"⚠️  Static DeepSeek pricing past review date ({PRICING_REVIEW_BY}); "
+            "skipping ModelRatio update. Re-verify prices and bump PRICING_REVIEW_BY."
         )
-        new_ratio = _compute_model_ratio(blend_cny, usd_rate)
-        old_ratio = model_ratios.get(model_name)
-
-        if old_ratio is not None and abs(new_ratio - old_ratio) < 0.0001:
-            continue  # unchanged
-
-        model_ratios[model_name] = new_ratio
-        updated += 1
-        print(f"  {model_name}: {old_ratio} → {new_ratio}  (CNY blend={blend_cny}/M)")
-
-    if updated > 0:
-        _newapi_put_option("ModelRatio", json.dumps(model_ratios, ensure_ascii=False))
-        print(f"✅ Updated {updated} ModelRatio entries")
     else:
-        print("⏭️  ModelRatio unchanged")
+        raw_ratios = _newapi_get_option(cookie, "ModelRatio")
+        if raw_ratios is None:
+            raise RuntimeError("ModelRatio option not found in NewAPI")
+        model_ratios = json.loads(raw_ratios)
+        updated = 0
+
+        for model_name, price_info in DEEPSEEK_PRICING_CNY.items():
+            blend_cny = _blend_cny_price(
+                price_info["input"], price_info["output"], price_info.get("blend_weight", 3)
+            )
+            new_ratio = _compute_model_ratio(blend_cny, usd_rate)
+            old_ratio = model_ratios.get(model_name)
+
+            if old_ratio is not None and abs(new_ratio - old_ratio) < 0.0001:
+                continue  # unchanged
+
+            model_ratios[model_name] = new_ratio
+            updated += 1
+            print(f"  {model_name}: {old_ratio} → {new_ratio}  (CNY blend={blend_cny}/M)")
+
+        if updated > 0:
+            _newapi_put_option(cookie, "ModelRatio", json.dumps(model_ratios, ensure_ascii=False))
+            print(f"✅ Updated {updated} ModelRatio entries")
+        else:
+            print("⏭️  ModelRatio unchanged")
 
     # 5. Verify
-    verify_rate = _newapi_get_option("USDExchangeRate")
+    verify_rate = _newapi_get_option(cookie, "USDExchangeRate")
     print(f"✔️  Verified USDExchangeRate: {verify_rate}")
 
 
