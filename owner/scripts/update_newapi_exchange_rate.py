@@ -7,7 +7,10 @@ Data sources:
   - DeepSeek pricing: static mapping (CNY, from https://api-docs.deepseek.com/zh-cn/quick_start/pricing/)
     Extensible: replace DEEPSEEK_PRICING_CNY with a scraper function.
 
-NewAPI endpoint: https://genai.damodel.com
+NewAPI endpoint: http://10.10.100.10:3000 (internal LAN; override with
+NEWAPI_BASE_URL). NOTE: an http:// base sends the admin login + session cookie
+in plaintext, so it is only safe on a trusted/isolated network segment — set
+NEWAPI_BASE_URL to an https:// URL when one is available.
 
 NewAPI pricing formula:
     CNY per M = ModelRatio × 2 × USDExchangeRate
@@ -22,7 +25,7 @@ import urllib.request
 
 # ── Config ──────────────────────────────────────────────────────────────
 EXCHANGE_API_URL = "https://open.er-api.com/v6/latest/USD"
-NEWAPI_BASE_URL = "http://10.10.100.10:3000"
+NEWAPI_BASE_URL = os.environ.get("NEWAPI_BASE_URL", "http://10.10.100.10:3000").rstrip("/")
 NEWAPI_USERNAME = os.environ.get("NEWAPI_USERNAME", "admin")
 NEWAPI_PASSWORD = os.environ.get("NEWAPI_PASSWORD", "")
 
@@ -156,6 +159,12 @@ def main():
         raise RuntimeError("NEWAPI_PASSWORD env var not set.")
 
     # 1. Login
+    if NEWAPI_BASE_URL.lower().startswith("http://"):
+        print(
+            "⚠️  NEWAPI_BASE_URL uses plaintext HTTP — admin credentials and the "
+            "session cookie are sent unencrypted. Use this only on a trusted "
+            "network segment, or set NEWAPI_BASE_URL to an https:// URL."
+        )
     cookie = _newapi_login()
     print("🔑 NewAPI login OK")
 
