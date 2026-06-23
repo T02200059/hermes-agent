@@ -35,21 +35,34 @@ _VALID_TARGETS = ("memory", "user")
 
 
 def _validate_operations(operations: Any) -> Optional[str]:
-    """Return an error reason string if ``operations`` is malformed, else None.
+    """Return a human-readable error reason if ``operations`` is malformed, else None.
 
-    Each item must be a dict with an ``action`` in {add, replace, remove}.
-    content/old_text requirements are NOT checked here — MemoryStore.apply_batch
-    enforces them at write time with rich per-op errors (and we want to surface
-    those errors AFTER approval, exactly like the single-op path does).
+    Each item must be a dict with an ``action`` in {add, replace, remove} AND the
+    fields that action requires, mirroring ``MemoryStore.apply_batch``:
+      - add     → non-empty ``content``
+      - replace → non-empty ``old_text`` AND non-empty ``content``
+      - remove  → non-empty ``old_text``
+
+    Validating shape here (pre-approval) means the model gets an immediate
+    ``invalid_operations`` error instead of rendering an empty/partial approval
+    card the user wastes a decision on, only for ``apply_batch`` to reject it
+    after approval. This matches the single-op path, which validates early.
     """
     if not isinstance(operations, list) or not operations:
-        return "invalid_operations"
-    for op in operations:
+        return "operations must be a non-empty array."
+    for i, op in enumerate(operations):
+        pos = f"operation {i + 1}"
         if not isinstance(op, dict):
-            return "invalid_operations"
+            return f"{pos}: each operation must be an object."
         act = op.get("action")
         if act not in _VALID_ACTIONS:
-            return "invalid_operations"
+            return f"{pos}: action must be one of add, replace, remove (got {act!r})."
+        content = (op.get("content") or "").strip()
+        old_text = (op.get("old_text") or "").strip()
+        if act in ("add", "replace") and not content:
+            return f"{pos}: action {act!r} requires non-empty 'content'."
+        if act in ("replace", "remove") and not old_text:
+            return f"{pos}: action {act!r} requires non-empty 'old_text'."
     return None
 
 
@@ -107,8 +120,9 @@ def memory_propose_tool(
                 "approved": False,
                 "reason": "invalid_operations",
                 "message": (
-                    "Each item in 'operations' must be an object "
-                    "{action: add|replace|remove, content?, old_text?}."
+                    f"{bad} Each item must be "
+                    "{action: add|replace|remove, content?, old_text?} with the "
+                    "fields that action requires."
                 ),
             }, ensure_ascii=False)
     else:
