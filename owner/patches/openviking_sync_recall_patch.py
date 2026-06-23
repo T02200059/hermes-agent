@@ -69,7 +69,9 @@ def _sync_prefetch(self: OpenVikingMemoryProvider, query: str, *, session_id: st
         )
         resp = httpx.post(
             client._url("/api/v1/search/find"),
-            json={"query": query, "top_k": 5},
+            # OpenViking FindRequest uses ``limit`` (integer, default 10);
+            # ``top_k`` is rejected because ``additionalProperties`` is false.
+            json={"query": query, "limit": 10},
             headers=client._headers(),
             timeout=_search_timeout(),
         )
