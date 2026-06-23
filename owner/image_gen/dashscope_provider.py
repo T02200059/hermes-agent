@@ -388,9 +388,9 @@ class DashScopeImageGenProvider(ImageGenProvider):
         # Try message-based response format first (qwen-image-2.0, wan2.6+)
         image_ref: Optional[str] = None
         choices = output.get("choices")
-        if isinstance(choices, list) and choices:
+        if isinstance(choices, list) and choices and isinstance(choices[0], dict):
             msg_content = (choices[0].get("message") or {}).get("content")
-            if isinstance(msg_content, list) and msg_content:
+            if isinstance(msg_content, list) and msg_content and isinstance(msg_content[0], dict):
                 img_url = msg_content[0].get("image") or msg_content[0].get("url")
                 if img_url:
                     try:
@@ -414,6 +414,15 @@ class DashScopeImageGenProvider(ImageGenProvider):
                 )
 
             first = results[0]
+            if not isinstance(first, dict):
+                return error_response(
+                    error="DashScope returned malformed image result",
+                    error_type="empty_response",
+                    provider=self.name,
+                    model=actual_model,
+                    prompt=prompt,
+                    aspect_ratio=aspect,
+                )
             b64 = first.get("b64_image")
             url = first.get("url")
 
