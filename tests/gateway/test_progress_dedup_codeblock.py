@@ -15,18 +15,10 @@ from __future__ import annotations
 
 import re
 
-# Mirrors the gateway/run.py dedup-concatenation logic under fix.
-_FENCE = "```"
-
-
-def _apply_dedup_counter(base_msg: str, count: int) -> str:
-    """Reproduce the (×N) concatenation rule.
-
-    ``count`` is the repeat count as queued (already incremented upstream),
-    matching ``f"{base_msg} (×{count + 1})"`` semantics in run.py.
-    """
-    sep = "\n" if base_msg.endswith(_FENCE) else " "
-    return f"{base_msg}{sep}(×{count + 1})"
+# Exercise the PRODUCTION helper, not a local copy — a regression in
+# gateway/run.py must fail these tests (WR-04). The rule lives in one place
+# (_append_dedup_counter) and is called from both dedup sites (WR-05).
+from gateway.run import _append_dedup_counter as _apply_dedup_counter
 
 
 # ---------------------------------------------------------------------------
