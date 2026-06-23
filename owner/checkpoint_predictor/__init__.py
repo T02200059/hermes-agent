@@ -1,0 +1,11 @@
+"""Checkpoint mutation predictor — terminal 工具执行前的预测式快照触发。
+
+核心逻辑全部在此包内 (遵循二次开发规范§2.2)。官方文件
+agent/tool_executor.py 只做薄胶水委托。
+
+详见 owner/docs/checkpoint-mutation-predictor.md 和
+docs/superpowers/specs/2026-06-19-checkpoint-mutation-predictor-design.md
+"""
+
+# predict_and_checkpoint 在 Task 4 的 predictor.py 实现后从这里导出:
+# from owner.checkpoint_predictor.predictor import predict_and_checkpoint
