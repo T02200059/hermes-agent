@@ -15308,7 +15308,13 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     if isinstance(raw, tuple) and len(raw) == 3 and raw[0] == "__dedup__":
                         _, base_msg, count = raw
                         if progress_lines:
-                            progress_lines[-1] = f"{base_msg} (×{count + 1})"
+                            # [owner] 当 base_msg 以闭合 fence (```) 结尾时
+                            # (×N) 必须换行追加 —— 内联追加会让 "``` (×N)"
+                            # 失去 CommonMark 合法闭合 fence 资格，代码块永不
+                            # 闭合，后续 terminal 进度行被吞入代码块。仅影响
+                            # supports_code_blocks=True 平台（飞书/Slack）。
+                            _sep = "\n" if base_msg.endswith("```") else " "
+                            progress_lines[-1] = f"{base_msg}{_sep}(×{count + 1})"
                         msg = progress_lines[-1] if progress_lines else base_msg
                     elif isinstance(raw, tuple) and len(raw) >= 1 and raw[0] == "__reset__":
                         # Content bubble just landed on the platform — close off
@@ -15431,7 +15437,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                             if isinstance(raw, tuple) and len(raw) == 3 and raw[0] == "__dedup__":
                                 _, base_msg, count = raw
                                 if progress_lines:
-                                    progress_lines[-1] = f"{base_msg} (×{count + 1})"
+                                    # [owner] 同主循环 dedup 修复：fence 结尾时
+                                    # 换行追加 (×N)，避免污染闭合 fence。
+                                    _sep = "\n" if base_msg.endswith("```") else " "
+                                    progress_lines[-1] = f"{base_msg}{_sep}(×{count + 1})"
                                     await _roll_progress_overflow_if_needed()
                             elif isinstance(raw, tuple) and len(raw) >= 1 and raw[0] == "__reset__":
                                 # Content-bubble marker during drain: close off
