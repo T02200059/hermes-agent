@@ -28,6 +28,7 @@ def _handle_memory_propose(args: dict, **kw: Any) -> str:
         target=args.get("target", ""),
         old_text=args.get("old_text", ""),
         new_content=args.get("new_content", ""),
+        operations=args.get("operations"),
         store=kw.get("store"),
     )
 

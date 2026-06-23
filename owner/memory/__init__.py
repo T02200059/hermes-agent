@@ -7,6 +7,7 @@ or an interactive card button.
 """
 
 from owner.memory.gateway import (
+    _MemoryApprovalEntry,
     clear_memory_proposal,
     get_memory_timeout,
     handle_deny_command,
@@ -23,6 +24,7 @@ from owner.memory.tool import memory_propose_tool
 
 __all__ = [
     "MEMORY_PROPOSE_SCHEMA",
+    "_MemoryApprovalEntry",
     "clear_memory_proposal",
     "get_memory_timeout",
     "handle_approve_command",

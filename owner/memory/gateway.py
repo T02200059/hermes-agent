@@ -21,15 +21,29 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class _MemoryApprovalEntry:
-    """One pending memory proposal inside a gateway session."""
+    """One pending memory proposal inside a gateway session.
+
+    Supports two shapes (mirrors the dual shape in tools/memory_tool.py):
+
+    - **Single-op shape** (legacy): ``action``/``old_text``/``new_content``
+      describe one operation. ``operations`` is None.
+    - **Batch shape**: ``operations`` is a list of ``{action, content?, old_text?}``
+      dicts applied atomically on approval. The single-op fields are derived
+      from ``operations[0]`` (or empty) so legacy notify/card-render code that
+      reads ``entry.action`` / ``entry.new_content`` etc. keeps working until
+      the card render is upgraded to display every op.
+    """
 
     session_key: str
-    action: str            # "add", "replace", "remove"
+    action: str            # "add", "replace", "remove" (operations[0]['action'] for batch)
     target: str            # "memory" or "user"
-    old_text: str          # for replace/remove
-    new_content: str       # for add/replace
+    old_text: str          # for replace/remove (operations[0]['old_text'] for batch)
+    new_content: str       # for add/replace (operations[0]['content'] for batch)
     event: threading.Event = field(default_factory=threading.Event)
     result: Optional[str] = None  # "approve" | "deny"
+    # Batch shape: when non-None, all ops are applied atomically via
+    # ``MemoryStore.apply_batch(target, operations)`` on approval.
+    operations: Optional[List[Dict[str, Any]]] = None
 
 
 _lock = threading.RLock()
@@ -50,19 +64,43 @@ def _get_session_key() -> str:
 
 
 def submit_memory_proposal(
-    action: str,
-    target: str,
-    old_text: str,
-    new_content: str,
+    action: str = "",
+    target: str = "",
+    old_text: str = "",
+    new_content: str = "",
+    operations: Optional[List[Dict[str, Any]]] = None,
     session_key: Optional[str] = None,
 ) -> _MemoryApprovalEntry:
-    """Submit a memory proposal and return the entry (caller blocks on entry.event)."""
+    """Submit a memory proposal and return the entry (caller blocks on entry.event).
+
+    Two shapes are supported (see ``_MemoryApprovalEntry``):
+
+    - **Single-op** (legacy): pass ``action``/``target``/``old_text``/``new_content``.
+    - **Batch**: pass ``target`` + ``operations`` (a list of
+      ``{action, content?, old_text?}`` dicts). The single-op fields are
+      derived from ``operations[0]`` so legacy notify/card code keeps working.
+
+    ``target`` is required for both shapes. Backward compatible: the original
+    call ``submit_memory_proposal(action, target, old_text, new_content)`` is
+    unchanged (all four positionals stay in the same order, all others are
+    optional with defaults).
+    """
+    # Derive single-op fields from operations[0] so legacy notify/card-render
+    # code that reads entry.action / entry.new_content etc. still has a sane
+    # value to show. The full operations list is preserved on entry.operations.
+    if operations:
+        first = operations[0] if isinstance(operations[0], dict) else {}
+        action = action or str(first.get("action", "") or "")
+        old_text = old_text or str(first.get("old_text", "") or "")
+        new_content = new_content or str(first.get("content", "") or "")
+
     entry = _MemoryApprovalEntry(
         session_key=session_key or _get_session_key(),
         action=action,
         target=target,
         old_text=old_text,
         new_content=new_content,
+        operations=list(operations) if operations else None,
     )
     with _lock:
         _memory_queues.setdefault(entry.session_key, []).append(entry)
@@ -272,6 +310,7 @@ def setup_gateway_memory_routing(
                     target=entry.target,
                     old_text=entry.old_text,
                     new_content=entry.new_content,
+                    operations=getattr(entry, "operations", None),
                     metadata=metadata,
                 ),
                 loop,
@@ -287,21 +326,43 @@ def setup_gateway_memory_routing(
 
         if not send_ok:
             # Fallback text message when card UI is unavailable or sending failed.
-            new_content = getattr(entry, "new_content", "")
-            if new_content:
+            entry_ops = getattr(entry, "operations", None) or []
+            if entry_ops:
+                # Batch fallback: list op count + each op's preview.
+                op_lines = []
+                for i, op in enumerate(entry_ops, start=1):
+                    act = str((op or {}).get("action", ""))
+                    content = str((op or {}).get("content", "") or "")
+                    old_t = str((op or {}).get("old_text", "") or "")
+                    if act == "add":
+                        op_lines.append(f"  {i}. add: `{content[:60]}`")
+                    elif act == "replace":
+                        op_lines.append(f"  {i}. replace: `{old_t[:40]}` → `{content[:60]}`")
+                    elif act == "remove":
+                        op_lines.append(f"  {i}. remove: `{old_t[:40]}`")
+                    else:
+                        op_lines.append(f"  {i}. {act}")
                 fallback_text = (
-                    f"💾 **Memory 提案确认**\n\n"
-                    f"**操作**: {entry.action} → {entry.target}\n\n"
-                    f"**内容预览**:\n"
-                    f"```\n{str(new_content)[:500]}\n```\n\n"
-                    f"回复 `/approve` 批准，或 `/deny` 拒绝。"
+                    f"💾 **Memory 提案确认（批量 · {len(entry_ops)} 条操作）**\n\n"
+                    f"**操作列表**:\n" + "\n".join(op_lines) +
+                    f"\n\n回复 `/approve` 批准，或 `/deny` 拒绝。"
                 )
             else:
-                fallback_text = (
-                    f"💾 **Memory 提案确认**\n\n"
-                    f"**操作**: {entry.action} → {entry.target}\n\n"
-                    f"回复 `/approve` 批准，或 `/deny` 拒绝。"
-                )
+                new_content = getattr(entry, "new_content", "")
+                if new_content:
+                    fallback_text = (
+                        f"💾 **Memory 提案确认**\n\n"
+                        f"**操作**: {entry.action} → {entry.target}\n\n"
+                        f"**内容预览**:\n"
+                        f"```\n{str(new_content)[:500]}\n```\n\n"
+                        f"回复 `/approve` 批准，或 `/deny` 拒绝。"
+                    )
+                else:
+                    fallback_text = (
+                        f"💾 **Memory 提案确认**\n\n"
+                        f"**操作**: {entry.action} → {entry.target}\n\n"
+                        f"回复 `/approve` 批准，或 `/deny` 拒绝。"
+                    )
             try:
                 _fb_fut = safe_schedule_threadsafe(
                     adapter.send(chat_id=chat_id, content=fallback_text),

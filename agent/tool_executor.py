@@ -1109,7 +1109,7 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
             if agent._should_emit_quiet_tool_messages():
                 agent._vprint(f"  {_get_cute_tool_message_impl('memory', function_args, tool_duration, result=function_result)}")
         elif function_name == "memory_propose":
-            # [owner] memory_propose: inject MemoryStore so approved proposals can write
+            # [owner] memory_propose: inject MemoryStore + forward operations array for batch proposals (see owner/memory/tool.py)
             def _execute_memory_propose(next_args: dict) -> Any:
                 from owner.memory import memory_propose_tool as _memory_propose_tool
                 return _memory_propose_tool(
@@ -1117,6 +1117,7 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
                     target=next_args.get("target", ""),
                     old_text=next_args.get("old_text", ""),
                     new_content=next_args.get("new_content", ""),
+                    operations=next_args.get("operations"),
                     store=agent._memory_store,
                 )
             function_result, function_args = _run_agent_tool_execution_middleware(
