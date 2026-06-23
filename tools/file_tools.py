@@ -1756,6 +1756,7 @@ def _handle_search_files(args, **kw):
 
 registry.register(name="read_file", toolset="file", schema=READ_FILE_SCHEMA, handler=_handle_read_file, check_fn=_check_file_reqs, emoji="📖", max_result_size_chars=100_000)
 registry.register(name="write_file", toolset="file", schema=WRITE_FILE_SCHEMA, handler=_handle_write_file, check_fn=_check_file_reqs, emoji="✍️", max_result_size_chars=100_000)
-# [owner] unified_diff_patch replaces agent-facing patch; registration suppressed.
+# 2026-06-22: 临时解禁官方 patch（配合 unified_diff_patch_tool.py 停用 unified_diff_patch），实测对比。
 # patch_tool / PATCH_SCHEMA / _handle_patch remain for upstream literal parity + unit tests.
+registry.register(name="patch", toolset="file", schema=PATCH_SCHEMA, handler=_handle_patch, check_fn=_check_file_reqs, emoji="🔧", max_result_size_chars=100_000)
 registry.register(name="search_files", toolset="file", schema=SEARCH_FILES_SCHEMA, handler=_handle_search_files, check_fn=_check_file_reqs, emoji="🔎", max_result_size_chars=100_000)

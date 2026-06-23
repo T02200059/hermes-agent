@@ -14,15 +14,6 @@ __all__ = [
     "unified_diff_patch_tool",
 ]
 
-registry.register(
-    name="unified_diff_patch",
-    toolset="file",
-    schema=UNIFIED_DIFF_PATCH_SCHEMA,
-    handler=_handle_unified_diff_patch,
-    check_fn=_check_file_reqs,
-    emoji="🧩",
-    max_result_size_chars=100_000,
-)
-
-# [owner] unified_diff_patch: disable legacy patch tool in favor of this tool.
-registry.deregister("patch")
+# 2026-06-22: 临时解禁官方 patch、停用 unified_diff_patch（实测对比）。
+# 恢复方式：恢复下方 unified_diff_patch 注册 + registry.deregister("patch")。
+# registry.register(name="unified_diff_patch", toolset="file", ...)  # 暂时停
