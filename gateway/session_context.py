@@ -258,4 +258,14 @@ def async_delivery_supported() -> bool:
 try:
     import owner.cron.session_context  # noqa: F401
 except Exception:
-    pass
+    # Fail loud (but non-fatally): if registration is skipped, _VAR_MAP has no
+    # HERMES_CRON_SESSION entry, so get_session_env() silently falls back to
+    # os.environ and cron approval mode is never detected. A swallowed failure
+    # here would hide that safety-relevant gap.
+    import logging as _logging
+
+    _logging.getLogger(__name__).warning(
+        "owner.cron.session_context import failed; HERMES_CRON_SESSION ContextVar "
+        "not registered — cron approval mode may not be detected",
+        exc_info=True,
+    )
