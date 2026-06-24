@@ -31,6 +31,7 @@ _TEXT = {
     "card.expired_body_short": "已超时（{timeout_minutes} 分钟），请重新发消息。",
     "btn.other_full": "✏️ 其他（输入答案）",
     "btn.other_short": "✏️ 其他",
+    "card.other_prompt": "*请在下方输入你的答案*",
 }
 
 # Feishu interactive card limits.
@@ -112,6 +113,10 @@ def build_frozen_clarify_card(
         context_md = f"**{question}**\n\n{option_lines}"
     else:
         context_md = f"{_TEXT['card.selected_prefix']}**{selected_label}**"
+
+    # Add prompt for "Other" selection
+    if selected_label == _TEXT["btn.other_short"]:
+        context_md += f"\n\n{_TEXT['card.other_prompt']}"
 
     return {
         "schema": "2.0",
