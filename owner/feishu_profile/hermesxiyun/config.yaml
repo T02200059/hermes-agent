@@ -421,7 +421,6 @@ plugins:
   disabled: []
   enabled:
   - image-hub
-  - session-archiver
 prefill_messages_file: ''
 privacy:
   redact_pii: false
