@@ -178,6 +178,7 @@ _LONG_HANDLERS = frozenset(
         "billing.step_up",
         "browser.manage",
         "cli.exec",
+        "llm.oneshot",
         # Pet RPCs hit the network (manifest fetch / spritesheet download) or do
         # per-frame PNG decode/encode (pet.cells): inline they serialize on the
         # reader thread, so picker previews trickle in one at a time and the
@@ -186,7 +187,6 @@ _LONG_HANDLERS = frozenset(
         "pet.gallery",
         "pet.select",
         "pet.thumb",
-        "llm.oneshot",
         "plugins.manage",
         "session.branch",
         "session.compress",
