@@ -1,0 +1,37 @@
+flowchart TD
+    A[参考架构图] --> B{是否需要结构保持?}
+    B -->|是| C[ControlNet<br/>Canny/LineArt/MLSD]
+    B -->|否| D[直接加载参考图]
+    C --> E[KSampler img2img<br/>denoise 0.5-0.7]
+    D --> E
+    E --> F[Inpainting + mask<br/>精确控制编辑区域]
+    F --> G{修改类型判断}
+    G -->|非文本区域| H[Auto-Detect Edit Region<br/>保持未修改区域像素级不变]
+    G -->|文本标签| I[Qwen-Image-Edit<br/>保留字体/字号/风格]
+    H --> J[风格统一检查]
+    I --> J
+    J --> K{是否满足要求?}
+    K -->|否| L[保存当前版本为检查点]
+    L --> M{轮次 >= 5?}
+    M -->|是| N[从最新检查点重新开始<br/>避免累积漂移]
+    M -->|否| O[接收新一轮修改指令]
+    N --> O
+    O --> B
+    K -->|是| P[输出最终架构图]
+    
+    style A fill:#7B6D8D,stroke:#584A6E,color:#fff
+    style C fill:#6C5B7B,stroke:#584A6E,color:#fff
+    style E fill:#6C5B7B,stroke:#584A6E,color:#fff
+    style F fill:#6C5B7B,stroke:#584A6E,color:#fff
+    style I fill:#6C5B7B,stroke:#584A6E,color:#fff
+    style H fill:#6C5B7B,stroke:#584A6E,color:#fff
+    style P fill:#7B6D8D,stroke:#584A6E,color:#fff
+    style B fill:#B8A9C9,stroke:#9B8EA8,color:#333
+    style G fill:#B8A9C9,stroke:#9B8EA8,color:#333
+    style K fill:#B8A9C9,stroke:#9B8EA8,color:#333
+    style M fill:#B8A9C9,stroke:#9B8EA8,color:#333
+    style D fill:#9B8EA8,stroke:#8E7BA5,color:#333
+    style J fill:#9B8EA8,stroke:#8E7BA5,color:#333
+    style L fill:#9B8EA8,stroke:#8E7BA5,color:#333
+    style N fill:#A394B4,stroke:#8E7BA5,color:#333
+    style O fill:#A394B4,stroke:#8E7BA5,color:#333
