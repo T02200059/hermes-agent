@@ -572,6 +572,13 @@ gateway:
     title_error_untitled:  "\n⚠️ {error} — 会话以未命名方式启动。"
     title_empty_untitled:  "\n⚠️ 清理后标题为空 — 会话以未命名方式启动。"
     tip:                   "\n✦ 提示：{tip}"
+    session_info_model:    "◆ 模型：`{model}`"
+    session_info_provider: "◆ 提供商：{provider}"
+    session_info_context:  "◆ 上下文：{tokens} tokens（{source}）"
+    session_info_endpoint: "◆ 端点：{url}"
+    ctx_source_config:     "配置"
+    ctx_source_detected:   "已检测"
+    ctx_source_default:    "默认 — 在 config 中设置 model.context_length 来覆盖"
 
   restart:
     in_progress:           "⏳ 网关重启已在进行中……"

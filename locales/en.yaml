@@ -393,6 +393,13 @@ gateway:
     title_error_untitled:  "\n⚠️ {error} — session started untitled."
     title_empty_untitled:  "\n⚠️ Title is empty after cleanup — session started untitled."
     tip:                   "\n✦ Tip: {tip}"
+    session_info_model:    "◆ Model: `{model}`"
+    session_info_provider: "◆ Provider: {provider}"
+    session_info_context:  "◆ Context: {tokens} tokens ({source})"
+    session_info_endpoint: "◆ Endpoint: {url}"
+    ctx_source_config:     "config"
+    ctx_source_detected:   "detected"
+    ctx_source_default:    "default — set model.context_length in config to override"
 
   restart:
     in_progress:           "⏳ Gateway restart already in progress..."

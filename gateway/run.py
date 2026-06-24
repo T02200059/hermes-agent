@@ -10513,11 +10513,11 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
 
         # Format context source hint
         if config_context_length is not None:
-            ctx_source = "config"
+            ctx_source = t("gateway.reset.ctx_source_config")
         elif context_length == DEFAULT_FALLBACK_CONTEXT:
-            ctx_source = "default — set model.context_length in config to override"
+            ctx_source = t("gateway.reset.ctx_source_default")
         else:
-            ctx_source = "detected"
+            ctx_source = t("gateway.reset.ctx_source_detected")
 
         # Format context length for display
         if context_length >= 1_000_000:
@@ -10528,14 +10528,14 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             ctx_display = str(context_length)
 
         lines = [
-            f"◆ Model: `{model}`",
-            f"◆ Provider: {provider or 'openrouter'}",
-            f"◆ Context: {ctx_display} tokens ({ctx_source})",
+            t("gateway.reset.session_info_model", model=model),
+            t("gateway.reset.session_info_provider", provider=provider or "openrouter"),
+            t("gateway.reset.session_info_context", tokens=ctx_display, source=ctx_source),
         ]
 
         # Show endpoint for local/custom setups
         if base_url and ("localhost" in base_url or "127.0.0.1" in base_url or "0.0.0.0" in base_url):
-            lines.append(f"◆ Endpoint: {base_url}")
+            lines.append(t("gateway.reset.session_info_endpoint", url=base_url))
 
         return "\n".join(lines)
 
