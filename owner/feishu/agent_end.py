@@ -47,6 +47,41 @@ async def try_auto_card_on_end(
     if adapter is None:
         return response, footer_line
 
+    # [owner] auto-card: 提前抽出并投递 MEDIA: 标签 / 裸本地路径。
+    # 否则整段 response（含 ``MEDIA:<path>`` 字面文本）会被 try_auto_card 包进卡片
+    # 当作纯文本发出，文件永远不会被上传；而下游 ``_process_message_background`` 在
+    # already_sent=True 时又会跳过 ``extract_media``，三道防线全部 miss（详见
+    # owner/docs/feishu-autocard-media-delivery.md）。
+    #
+    # 复用 gateway 的 ``_deliver_media_from_response``：它是权威的 response→附件管线
+    # （MEDIA 标签 + 裸路径联合提取、图片/视频/语音/文档分流、安全过滤、
+    # [[as_document]] / [[audio_as_voice]] 指令）。该方法内部会再 extract_media 一次，
+    # 但标签已被剥光、第二次扫幂等无副作用。
+    #
+    # 顺序：先投附件，后发卡片。投递失败只 warning 不 raise —— 卡片照发，文本信息不丢。
+    # 用 adapter.extract_media 取清理后的文本喂给卡片，避免 MEDIA: 标签泄漏到用户可见
+    # 的卡片正文里。
+    if hasattr(adapter, "extract_media"):
+        try:
+            from gateway.platforms.base import BasePlatformAdapter
+
+            _media_files, _cleaned = adapter.extract_media(response)
+            _media_files = BasePlatformAdapter.filter_media_delivery_paths(_media_files)
+            if _media_files:
+                # 把附件投递 + 联合管线（extract_images / extract_local_files）交给 gateway，
+                # 我们只用清理后的 _cleaned 去包卡片。
+                await runner._deliver_media_from_response(response, event, adapter)
+                # _deliver_media_from_response 不返回清理文本，用本地的 _cleaned。
+                response = _cleaned
+                # 边界：response 原本只有 MEDIA 标签 → 清理后为空。附件已投递，没有正文
+                # 可包卡片，直接返回 already_sent 让下游 plain-text 跳过（否则
+                # try_auto_card(force=True) 会发一张空卡片）。
+                if not response:
+                    agent_result["already_sent"] = True
+                    return "", ""
+        except Exception as exc:
+            logger.debug("auto-card pre-deliver media failed: %s", exc)
+
     try:
         from owner.feishu.auto_card import try_auto_card
 
