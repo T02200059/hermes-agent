@@ -333,11 +333,6 @@ class _VikingClient:
             )
         )
 
-    def delete(self, path: str, **kwargs) -> dict:
-        resp = self._httpx.delete(
-            self._url(path), headers=self._headers(), timeout=_TIMEOUT, **kwargs
-        )
-        return self._parse_response(resp)
 
     def upload_temp_file(self, file_path: Path) -> str:
         mime_type = mimetypes.guess_type(file_path.name)[0] or "application/octet-stream"
@@ -3064,6 +3059,7 @@ class OpenVikingMemoryProvider(MemoryProvider):
             READ_SCHEMA,
             BROWSE_SCHEMA,
             REMEMBER_SCHEMA,
+            FORGET_SCHEMA,
             ADD_RESOURCE_SCHEMA,
             DELETE_SCHEMA,
             GREP_SCHEMA,
@@ -3080,6 +3076,7 @@ class OpenVikingMemoryProvider(MemoryProvider):
             "viking_read": self._tool_read,
             "viking_browse": self._tool_browse,
             "viking_remember": self._tool_remember,
+            "viking_forget": self._tool_forget,
             "viking_add_resource": self._tool_add_resource,
             "viking_delete": self._tool_delete,
             "viking_grep": self._tool_grep,
@@ -3413,6 +3410,31 @@ class OpenVikingMemoryProvider(MemoryProvider):
             "task_id": task_id,
             "message": "Memory committed via session pipeline. It will be searchable once background processing finishes.",
         }, ensure_ascii=False)
+
+    def _tool_forget(self, args: dict) -> str:
+        uri, error = _validate_forget_memory_uri(args.get("uri"))
+        if error:
+            return tool_error(error)
+
+        resp = self._client.delete(
+            "/api/v1/fs",
+            params={"uri": uri, "recursive": False},
+        )
+        result = self._unwrap_result(resp)
+        payload: Dict[str, Any] = {"status": "deleted", "uri": uri}
+        if isinstance(result, dict):
+            payload["uri"] = result.get("uri") or uri
+            for key in (
+                "estimated_deleted_count",
+                "memory_cleanup",
+                "semantic_root_uri",
+                "semantic_status",
+                "queue_status",
+            ):
+                if key in result:
+                    payload[key] = result[key]
+
+        return json.dumps(payload, ensure_ascii=False)
 
     def _tool_forget(self, args: dict) -> str:
         uri, error = _validate_forget_memory_uri(args.get("uri"))
