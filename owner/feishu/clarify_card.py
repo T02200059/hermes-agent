@@ -32,6 +32,9 @@ _TEXT = {
     "btn.other_full": "✏️ 其他（输入答案）",
     "btn.other_short": "✏️ 其他",
     "card.other_prompt": "*请在下方输入你的答案*",
+    "card.input_placeholder": "请输入你的答案",
+    "card.input_label": "答案：",
+    "card.submit_btn": "提交",
 }
 
 # Feishu interactive card limits.
@@ -140,6 +143,79 @@ def build_frozen_clarify_card(
                     }
                     for lbl in all_labels
                 ),
+            ],
+        },
+    }
+
+
+def build_input_clarify_card(
+    question: str,
+    choices: List[Any],
+    clarify_id: str,
+) -> Dict[str, Any]:
+    """Build a card with input form for 'Other' selection.
+
+    When user clicks the 'Other' button, this card replaces the original
+    clarify card with an input form. User can type their answer and submit.
+    """
+    # Build context markdown showing the original question and options
+    if question:
+        option_lines = "\n".join(
+            f"{i + 1}. {get_choice_display(c)}"
+            for i, c in enumerate(choices)
+        )
+        context_md = f"**{question}**\n\n{option_lines}"
+    else:
+        context_md = ""
+
+    # Add prompt for input
+    if context_md:
+        context_md += f"\n\n{_TEXT['card.other_prompt']}"
+    else:
+        context_md = _TEXT['card.other_prompt']
+
+    return {
+        "schema": "2.0",
+        "config": {"wide_screen_mode": True},
+        "header": {
+            "title": {"content": f"✏️ {_TEXT['btn.other_short']}", "tag": "plain_text"},
+            "template": "purple",
+        },
+        "body": {
+            "elements": [
+                {"tag": "markdown", "content": context_md},
+                {
+                    "tag": "form",
+                    "name": f"clarify_form_{clarify_id}",
+                    "elements": [
+                        {
+                            "tag": "input",
+                            "name": "clarify_answer",
+                            "placeholder": {
+                                "tag": "plain_text",
+                                "content": _TEXT["card.input_placeholder"],
+                            },
+                            "label": {
+                                "tag": "plain_text",
+                                "content": _TEXT["card.input_label"],
+                            },
+                            "label_position": "left",
+                            "required": True,
+                            "max_length": 1000,
+                            "input_type": "multiline_text",
+                            "rows": 3,
+                            "auto_resize": True,
+                        },
+                        {
+                            "tag": "button",
+                            "text": {"tag": "plain_text", "content": _TEXT["card.submit_btn"]},
+                            "type": "primary",
+                            "action_type": "form_submit",
+                            "name": "submit_clarify",
+                            "value": {"clarify_id": clarify_id},
+                        },
+                    ],
+                },
             ],
         },
     }
@@ -321,7 +397,7 @@ def handle_clarify_card_action(
     action_value: Dict[str, Any],
     loop: Any,
 ) -> Any:
-    """Handle clarify button click: resolve or switch to text-capture.
+    """Handle clarify button click: resolve or switch to input form.
 
     Returns a P2CardActionTriggerResponse whose ``card`` field replaces the
     original card with a frozen, disabled version showing the selected
@@ -341,6 +417,11 @@ def handle_clarify_card_action(
 
     clarify_id = action_value.get("clarify_id")
     choice = action_value.get("choice", "")
+    form_value = action_value.get("form_value", {})
+
+    # Also check form_value for clarify_id (form submissions)
+    if not clarify_id and isinstance(form_value, dict):
+        clarify_id = form_value.get("clarify_id")
 
     if not clarify_id:
         return P2CardActionTriggerResponse()
@@ -349,11 +430,44 @@ def handle_clarify_card_action(
     cached = adapter._clarify_state.get(clarify_id, {})
     stored_choices: list = cached.get("choices") or []
 
-    if choice == "__other__":
-        # Switch to text-capture mode.
-        from tools.clarify_gateway import mark_awaiting_text
-        mark_awaiting_text(clarify_id)
+    # Handle form submission from input card
+    if form_value and "clarify_answer" in form_value:
+        answer = form_value["clarify_answer"]
+        if not answer:
+            # Empty answer: keep the input card as-is, do not resolve.
+            return P2CardActionTriggerResponse()
+
+        from tools.clarify_gateway import resolve_gateway_clarify
         adapter._clarify_state.pop(clarify_id, None)
+        try:
+            resolve_gateway_clarify(clarify_id, answer)
+        except Exception as exc:
+            logger.error("[Feishu] resolve_gateway_clarify failed: %s", exc)
+
+        # Return frozen card showing the answer
+        question = cached.get("question", "")
+        frozen_card = build_frozen_clarify_card(question, stored_choices, answer)
+
+        response = P2CardActionTriggerResponse()
+        if CallBackCard is not None:
+            card = CallBackCard()
+            card.type = "raw"
+            card.data = frozen_card
+            response.card = card
+        return response
+
+    if choice == "__other__":
+        # Return input form card instead of text-capture mode.
+        question = cached.get("question", "")
+        input_card = build_input_clarify_card(question, stored_choices, clarify_id)
+        
+        response = P2CardActionTriggerResponse()
+        if CallBackCard is not None:
+            card = CallBackCard()
+            card.type = "raw"
+            card.data = input_card
+            response.card = card
+        return response
     else:
         from tools.clarify_gateway import resolve_gateway_clarify
         adapter._clarify_state.pop(clarify_id, None)
@@ -362,16 +476,13 @@ def handle_clarify_card_action(
         except Exception as exc:
             logger.error("[Feishu] resolve_gateway_clarify failed: %s", exc)
 
-    # Map __other__ / choice-key back to user-facing display label.
+    # Map choice-key back to user-facing display label.
     all_labels = [get_choice_display(c) for c in stored_choices] + [_TEXT["btn.other_short"]]
-    if choice == "__other__":
-        selected_label = _TEXT["btn.other_short"]
-    else:
-        selected_label = choice  # fallback if no match
-        for c in stored_choices:
-            if get_choice_key(c) == choice:
-                selected_label = get_choice_display(c)
-                break
+    selected_label = choice  # fallback if no match
+    for c in stored_choices:
+        if get_choice_key(c) == choice:
+            selected_label = get_choice_display(c)
+            break
 
     question = cached.get("question", "")
     frozen_card = build_frozen_clarify_card(question, stored_choices, selected_label)

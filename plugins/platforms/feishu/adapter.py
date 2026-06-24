@@ -2734,6 +2734,10 @@ class FeishuAdapter(BasePlatformAdapter):
         event = getattr(data, "event", None)
         action = getattr(event, "action", None)
         action_value = getattr(action, "value", {}) or {}
+        # For form submissions, form_value is on the action object, not in action.value
+        form_value = getattr(action, "form_value", None)
+        if form_value and isinstance(action_value, dict):
+            action_value["form_value"] = form_value
         return self._dispatch_card_action(
             event, action_value, loop, data=data, allow_profile_routing=True
         )
@@ -2803,6 +2807,14 @@ class FeishuAdapter(BasePlatformAdapter):
 
         # [owner] clarify: route clarify card button clicks (see owner/feishu/clarify_card.py)
         clarify_id = action_value.get("clarify_id") if isinstance(action_value, dict) else None
+        # Also check form_value for form submissions
+        if not clarify_id and isinstance(action_value, dict):
+            form_value = action_value.get("form_value", {})
+            if isinstance(form_value, dict):
+                clarify_id = form_value.get("clarify_id")
+        # DEBUG: log full action_value for all clarify-related actions
+        if clarify_id or (isinstance(action_value, dict) and action_value.get("form_value")):
+            logger.info("[Feishu] DEBUG _dispatch_card_action: action_value=%s, clarify_id=%s", action_value, clarify_id)
         if clarify_id:
             return self._handle_clarify_card_action(event=event, action_value=action_value, loop=loop)
 
