@@ -54,6 +54,15 @@ try:
 except Exception:
     pass
 
+# [owner] memory: skip recall/sync for synthetic system messages
+# (async delegation completion, bg process notify, watch match, handoff).
+# See owner/patches/memory_synthetic_guard_patch.py
+try:
+    from owner.patches.memory_synthetic_guard_patch import apply_patch as _owner_msg_guard_apply
+    _owner_msg_guard_apply()
+except Exception:
+    pass
+
 # account_usage imports the OpenAI SDK chain (~230 ms). Only needed by
 # /usage; we still import it at module top in the gateway because test
 # patches (tests/gateway/test_usage_command.py) target

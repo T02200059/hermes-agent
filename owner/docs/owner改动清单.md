@@ -277,6 +277,12 @@
 - **解决方案**：新增 `qdrant-memory-recall` hook，从 Qdrant 向量库召回相关记忆并以飞书卡片展示；支持 patch.yaml 配置化与 bot_menu 命令跳过。
 - **相关 commit**：`6bd8d4fe3`
 
+### 9.3 Memory 合成消息 Recall Guard
+- **背景问题**：`MemoryManager.prefetch_all`（recall）在每个 `run_conversation` turn 开始时无条件触发（`agent/turn_context.py:417-424`），唯一守卫是 `if agent._memory_manager`——不检查消息来源。但异步委托完成（`[ASYNC DELEGATION COMPLETE — …]`）、后台进程通知（`[IMPORTANT: Background process …]`）、watch pattern 命中、CLI→gateway handoff（`[Session was just handed off from CLI…]`）等**合成系统消息**会通过和真实用户消息相同的管道重新进入对话（gateway 的 `_inject_watch_notification` 构造 `MessageEvent(internal=True)` 走 `handle_message` → `run_conversation`；CLI 的 `drain_notifications` 塞进 `_pending_input` 同一队列），导致合成文本被原样当作用户意图喂给 recall——recall 相关性错误、浪费 provider 调用、`sync_all` 还会把合成消息当用户输入污染 memory 存储。
+- **解决方案**：`owner/patches/memory_synthetic_guard_patch.py` 通过运行时 patch `MemoryManager` 的 4 个方法（`prefetch_all` / `queue_prefetch_all` / `on_turn_start` / `sync_all`），在入口处用前缀匹配拦截 4 类已知合成消息前缀（来自 `tools/process_registry.py::format_process_notification` 和 `gateway/run.py::_process_handoff` 的协议级稳定标记），命中则跳过 recall/sync/turn 通知。选择 patch `MemoryManager` 层（而非每个 provider）是因为它是所有 provider 的唯一 orchestrator，一次覆盖所有 provider 和所有路径（CLI/gateway/cron/TUI），无需改 `run_conversation` 官方签名。`gateway/run.py` 增加 4 行 apply glue（与 §11.6 OpenViking patch 同构），官方源码零行为改动。详见 `owner/docs/memory-synthetic-recall-guard.md`。
+- **回归测试**：`tests/owner/patches/test_memory_synthetic_guard_patch.py`（25 用例：前缀检测全覆盖 + 4 方法各自 guard/透传 + apply/revert 幂等 + 还原 + 无 patch 基线无回归）。
+- **相关 commit**：（待提交）
+
 ---
 
 ## 十、显示与个性化
