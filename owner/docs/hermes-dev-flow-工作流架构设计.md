@@ -269,8 +269,11 @@ EOF
 
 **Tmux 模式**（如 kimi worker 跑后台）：
 ```bash
+cat > /tmp/kimi-<feature>-r1-prompt.md <<'EOF'
+<完整 prompt>
+EOF
 tmux new-session -d -s kimi-<feature>-r1 \
-  "bash -c 'cd ~/.hermes/hermes-agent && kimi --yolo --print --thinking < /tmp/kimi-prompt.md > /tmp/kimi-stdout.log 2>&1'"
+  "bash -c 'cd ~/.hermes/hermes-agent && ~/.kimi-code/bin/kimi -p \"$(cat /tmp/kimi-<feature>-r1-prompt.md)\" --output-format text > /tmp/kimi-stdout.log 2>&1'"
 # 不阻塞主 session, 宝哥问"看进度"时 tmux capture-pane
 ```
 
