@@ -226,6 +226,7 @@ gateway:
   # ("Provider:", "Context:", etc.) and the help/footer lines are localized.
   model:
     error_prefix:           "Error: {error}"
+    code_skew_switch_blocked: "This gateway is running code from {boot_rev} but the checkout on disk is now {disk_rev}. Switching models would risk a stale-module crash — restart the gateway to load the new code: hermes gateway restart"
     switched:               "Model switched to `{model}`"
     provider_label:         "Provider: {provider}"
     context_label:          "Context: {tokens} tokens"

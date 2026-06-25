@@ -405,6 +405,7 @@ gateway:
 
   model:
     error_prefix:           "错误：{error}"
+    code_skew_switch_blocked: "当前网关运行的代码版本是 {boot_rev}，但磁盘上的 checkout 现在已是 {disk_rev}。此时切换模型可能触发过时模块崩溃 — 请重新启动网关以加载新代码：hermes gateway restart"
     switched:               "已切换模型为 `{model}`"
     provider_label:         "提供方：{provider}"
     context_label:          "上下文：{tokens} tokens"
