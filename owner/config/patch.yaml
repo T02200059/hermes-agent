@@ -199,7 +199,6 @@ owner:
       model_pro: "/model deepseek-v4-pro --provider damodel"
       model_flash: "/model deepseek-v4-flash --provider damodel"
       model_mimo: "/model mimo-v2.5-pro --provider xiaomi --global"
-      model_minimax: "/model MiniMax-M3 --provider minimax-cn --global"
       list_models: "/providers"
       yolo_on: "/yolo on"
       yolo_off: "/yolo off"
@@ -238,8 +237,6 @@ owner:
           ack: "🤖 切换模型…"
         model_mimo:
           ack: "🤖 切换 mimo-v2.5-pro…"
-        model_minimax:
-          ack: "🤖 切换 MiniMax-M3…"
         inspect_gpu_cluster:
           ack: "🔍 启动 GPU 集群巡检流程中…"
         resume:
