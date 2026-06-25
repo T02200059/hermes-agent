@@ -34,6 +34,38 @@ owner:
     feishu_card: true       # (replaces OPENVIKING_RECALL_FEISHU_CARD)
     qqbot_text: true        # (replaces OPENVIKING_RECALL_QQBOT_TEXT)
 
+  # ── Mixture-of-Agents (MoA) tool configuration ────────────────────────────
+  # Replaces the hardcoded OpenRouter model list in tools/mixture_of_agents_tool.py.
+  # Applied at runtime via owner/tools/moa_patch.py (registry override, no edits
+  # to the upstream tool file). Each entry routes through Hermes' central
+  # resolve_provider_client() so auth/base_url/api_mode come from config.yaml /
+  # custom_providers — no OpenRouter binding, no OPENROUTER_API_KEY requirement.
+  #
+  # - reference_models: run in parallel (layer 1), generate diverse responses
+  # - aggregator_model: synthesizes reference responses (layer 2)
+  # - min_successful_references: floor below which MoA aborts
+  # - max_retries: per-model retry count on rate-limit / transient errors
+  mixture_of_agents:
+    reference_models:
+      - model: mimo-v2.5-pro
+        provider: xiaomi
+        temperature: 0.6
+      - model: kimi-k2.7-code
+        provider: damodel
+        temperature: 1.0       # kimi 锁定 temp=1.0 (官方要求)
+      - model: qwen3.7-plus
+        provider: damodel
+        temperature: 0.6
+      - model: deepseek-v4-flash
+        provider: deepseek
+        temperature: 0.6
+    aggregator_model:
+      model: deepseek-v4-pro
+      provider: deepseek
+      temperature: 0.4
+    min_successful_references: 1
+    max_retries: 6
+
   # ── Approval configuration ─────────────────────────────────────────────────
   approvals:
     # Whether to show the "Always" (permanent) approval button on Feishu cards.

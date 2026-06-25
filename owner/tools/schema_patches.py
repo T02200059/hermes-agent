@@ -74,3 +74,9 @@ def apply_send_message_schema_patch() -> None:
 # Auto-apply on import (early enough if this module is imported before agent run)
 apply_image_generate_schema_patch()
 apply_send_message_schema_patch()
+
+# [owner] Override the MoA tool with the config-driven implementation
+# (patch.yaml + resolve_provider_client). See owner/tools/moa_patch.py.
+from owner.tools.moa_patch import apply_moa_tool_patch  # noqa: E402
+
+apply_moa_tool_patch()
