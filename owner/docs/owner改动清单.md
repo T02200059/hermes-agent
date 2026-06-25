@@ -675,3 +675,9 @@
 - **解决方案**：在 `BasePlatformAdapter` 新增 `terminal_code_block_language` 能力属性（默认空串保持裸 fence），`FeishuAdapter` 覆盖为 `"bash"`；`gateway/run.py` 的 `progress_callback` 读取该属性，非空时生成 ```{language} 开头的 fenced code block。
 - **相关 commit**：`343792ede`
 - **本次 sync 补充**：upstream 带来 terminal cwd sanitize 修复（host/relative cwd OVERRIDE for docker）。与我们的语言标签互补，保留我们的 §18.1。✅ 仍有效。
+
+### 18.2 Mixture-of-Agents 工具去 OpenRouter 硬绑定
+- **背景问题**：`tools/mixture_of_agents_tool.py`（upstream 文件，PR #6621/#1307/#23940）硬编码 OpenRouter API + 4 个顶级闭源模型（claude-opus-4.6, gemini-2.5-pro, gpt-5.4-pro, deepseek-v3.2），无法使用 config.yaml 中配置的 provider，且强制依赖 `OPENROUTER_API_KEY` 环境变量。
+- **解决方案**：采用 P1 运行时 patch（`owner/tools/moa_patch.py`），通过 `registry.register(override=True)` 替换 handler/check_fn/requires_env，upstream 源码字面零改动。配置从 `patch.yaml` 的 `owner.mixture_of_agents` 段读取，每个模型通过 `resolve_provider_client()` 走 Hermes provider 路由。5 个模型：mimo-v2.5-pro(xiaomi)、kimi-k2.7-code(damodel)、qwen3.7-plus(damodel)、deepseek-v4-flash(deepseek) 做 reference，deepseek-v4-pro(deepseek) 做 aggregator。去掉 OpenRouter 特有的 `reasoning:{effort:xhigh}` 参数，per-model thinking/reasoning 改由 `owner.model_extra_body` 控制。
+- **相关 commit**：`8f9d3e369`
+- **改动文件**：`owner/config/patch.yaml`（+32）、`owner/tools/moa_patch.py`（新增 427 行）、`owner/tools/schema_patches.py`（+6）
