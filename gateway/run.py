@@ -10031,7 +10031,16 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                         )
                         response = f"> 💭 **Reasoning:**\n{_quoted}\n\n{response}"
                     else:
-                        response = f"💭 **Reasoning:**\n```\n{display_reasoning}\n```\n\n{response}"
+                        # Escape triple-backtick fences inside the reasoning so
+                        # they don't terminate the wrapping code block early
+                        # and leak the rest as plain markdown on platforms like
+                        # Feishu/Telegram. Only line-leading ``` is rewritten
+                        # (covers both opening and closing fences); inline
+                        # single backticks are left untouched.
+                        _safe_reasoning = re.sub(
+                            r'^```', "'''", display_reasoning, flags=re.MULTILINE
+                        )
+                        response = f"💭 **Reasoning:**\n```\n{_safe_reasoning}\n```\n\n{response}"
 
             # Runtime-metadata footer — only on the FINAL message of the turn.
             # Off by default (display.runtime_footer.enabled=false).  When
