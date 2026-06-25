@@ -1,7 +1,7 @@
 # owner 改动清单
 
 > **范围**：owner 分支个人定制改动（主体为 owner-v16，v17 起增量追加）  
-> **最后更新**：2026-06-23（新增 §18 owner-v17 飞书 terminal bash fence；补充 §17 遗漏项梳理）  
+> **最后更新**：2026-06-25（本次 upstream 批量 sync 复盘：viking prefetch/tools/on_session_switch 等进一步对齐 upstream，patch 保留 dedup+advisory+cards 价值；开始全面核对清单；详见 §11.6/11.7 更新）  
 > **说明**：本清单替代 `原有改动清单.md`，按改造主题组织，只记录功能代码改动。`docs(owner)` / `docs(inventory)` 等纯清单维护提交不逐条列出。
 
 ---
@@ -330,6 +330,7 @@
 - **解决方案**：`owner/patches/openviking_sync_recall_patch.py` 通过运行时 post-registration patch 替换 3 个方法——`prefetch` 同步 `POST /api/v1/search/find`（timeout 10s，httpx 异常全兜底）；`queue_prefetch` 替换为 noop（同步化后不再需要后台线程）；`build_memory_context_block` 改写为 advisory 融合版（"may help inform" + "only when relevant" + "helpful hints, not authoritative facts"）。Feature flag 保护：`OPENVIKING_SYNC_RECALL`（默认 1）/ `OPENVIKING_ADVISORY_MEMORY`（默认 1）/ `OPENVIKING_SEARCH_TIMEOUT`（默认 10），设置 0 即可秒级回滚。官方源码 0 改动；`gateway/run.py` 增加 9 行薄胶水（[owner] 注释 + try/import + 异常兜底），参照已有 `display_config` 委托模式。详见 `owner/docs/openviking-sync-recall-design.md`。
 - **相关 commit**：`a4e6e2b95`（初始实现）, 本 commit（新增 Feishu/QQ 可视化召回卡片）
 - **补充说明**：本 commit 在保留 provider 内 LLM 注入（`## OpenViking Context`）的前提下，通过新增 `owner/patches/openviking_recall_card_patch.py` 给 Feishu 发送 compact 召回卡片（schema 2.0，无展开/折叠按钮），给 QQ Bot 发送 markdown 纯文字摘要（`msg_type=0`），其他平台 no-op；后台 daemon thread 异步发送、token 模块级缓存、所有失败均 fail-silent 不影响 LLM。Feature flags：`OPENVIKING_RECALL_DISPLAY`（总开关，默认 1）、`OPENVIKING_RECALL_FEISHU_CARD`（默认 1）、`OPENVIKING_RECALL_QQBOT_TEXT`（默认 1）。详见 `owner/docs/openviking-recall-card-design.md`。
+- **本次 sync 复盘（本批次含 openviking fusion + ab9134bf1 full recall prefetch 等）**：upstream prefetch 现已原生支持 session search + find fallback + 超时/预算控制（与 patch 的 _sync_prefetch 模型对齐），queue_prefetch 为 noop。patch 继续提供：peer-mirror 专用 dedup（upstream 有基础 dedupe，但我们的更针对多 profile 场景）、advisory 提示词（核心价值，upstream 默认仍强硬）、召回卡片可视化。sync 动机已弱化，保留 patch 主要为 tone + viz + 特定 dedup。建议本次 sync 后验证 patch 仍 clean apply 且 advisory 生效。✅ 进一步收敛，可简化 sync 逻辑。
 
 ### 11.7 OpenViking Memory Provider 全面增强
 - **背景问题**：官方 `OpenVikingMemoryProvider` 只实现了 Viking API 约 20% 的能力（50+ 端点用了 10 个，5 个 tool），存在多个问题：`viking_search` 用 `top_k` 而非 `limit`（API 拒绝额外字段）；`viking_remember` 走 `content/write` 旁路，embedding 异步不可靠，agent 验证搜索找不到结果；`on_session_switch()` 未实现导致 `/reset` `/new` 后 session 污染；`viking_read`/`viking_browse` 参数缺失（无分页、无递归、硬编码 cap）。
@@ -345,14 +346,16 @@
 - **相关 commit**：`4177645d0`（初始实现）, 本次（remember 非阻塞化）
 - **sync 复盘（2026-06-20，merge upstream b88d0007c）**：upstream 对 openviking 做了大规模重构（deferred commit 机制、`_inflight_writers`、`on_session_switch` 完整实现、`sync_turn` 批量写入），**部分覆盖了本节方案**：
   - `top_k`→`limit`：upstream 已修复，合并后对齐 ✅；
-  - `context_type` 过滤、4 个新 tool（delete/grep/move/mkdir）：upstream 未实现，合并后完整保留 ✅；
+  - `context_type` 过滤、4 个新 tool（delete/grep/move/mkdir）：本次 sync upstream 已实现（provider 核心有 _tool_*），之前保留的现对齐 ✅；
   - `on_session_switch`：采用 upstream 完整版（含 rewind 处理、`_finalize_session_async`、prefetch invalidation），删除 owner 旧版（其依赖的 `_sync_thread` 已被 theirs 的 deferred commit 机制取代，保留会 AttributeError）；
   - **Remember 重构**：本节的 ephemeral session + `system/wait` 方案被 upstream 的 `content/write` + deferred commit 取代。合并后采用 upstream 实现。原方案解决"content/write embedding 不可靠"的初衷待重新评估——upstream 的 deferred commit 是否已用不同方式缓解该问题，需后续验证。**标记待评估**。
+- **本次 sync（2026-06，本批次含 ab9134bf1 full recall prefetch policy、00c045b43 harden session writes 等）复盘**：upstream 进一步原生实现了 recall prefetch（session search + /search/find fallback，与我们的 _sync_prefetch 高度对齐，包括 timeout/context_type）、deferred commit + sync_turn 写路径、on_session_switch 完整逻辑、remember 非阻塞化、以及原先我们扩展的 4 个新 tool（delete/grep/move/mkdir 等现已在 provider 核心）。patch 仍保留价值：peer-mirror 专用 dedup、advisory 提示词（upstream 默认仍强 "authoritative"）、Feishu/QQ 召回卡片可视化（独立 card patch）。sync forcing 动机已大部分被 upstream 架构满足，可 review patch 是否简化。on_session_switch 等已采用 upstream 版，无 owner 旧版残留。✅ 进一步对齐，建议更新 patch 注释并测试 dedup/advisory 仍生效。 patch 继续 override prefetch 为 sync（立即召回 on user message），queue noop。 viking 仍保持同步。
 
 ### 11.8 Progress dedup (×N) 计数破坏 markdown 代码块结构
 - **背景问题**：飞书（及任何 `supports_code_blocks=True` 平台如 Slack）下连续调用 terminal 工具执行相同命令时，进度消息 dedup 逻辑会把 `(×N)` 计数内联追加到闭合 ``` fence 后（如 ` ``` (×3)`），CommonMark 不再识别为合法闭合 fence，代码块永不闭合，后续 terminal 进度行被吞入代码块或降级为纯文本。触发条件：terminal + supports_code_blocks + 连续 ≥3 次相同命令（第 1-2 次因 header 折叠使 msg 文本不同，第 3 次起触发 dedup）。
 - **解决方案**：`gateway/run.py` 两处 dedup 拼接（主循环 + CancelledError drain 镜像）改为条件拼接 —— `base_msg` 以 ``` 结尾时用 `\n(×N)` 换行追加，否则保留内联 ` (×N)`。纯逻辑 bug，2 处单行改动 + `[owner]` 标记。
 - **相关 commit**：本次
+- **本次 sync 复盘**：upstream gateway/run.py 现已实现 _append_dedup_counter 处理 fence 情况（新行追加）。我们的条件逻辑可能已被覆盖或对齐。建议 review 是否仍需 owner 版本或可移除。✅ 可能 covered。
 
 ### 11.9 飞书编辑上限（230072/230075）轮转到新 bubble
 - **背景问题**：飞书对单条消息有 ~20 次编辑上限（错误码 `230072` / `230075`）。gateway 进度循环把这类失败当作永久失败，`can_edit = False` 一刀切关闭，导致后续所有进度消息无法合并成一条已编辑消息，每个 terminal 进度都拆成独立 bubble。一度被误判为「⏳ Working」长时运行提示触发的并发问题 —— 实为时间相邻的巧合（~20 min 编辑次数累积 vs ~20 min 心跳首次触发），`_notify_long_running()` 是独立 task，从未触碰 `progress_msg_id` / `can_edit`。
@@ -362,6 +365,7 @@
   - `gateway/run.py` 进度循环在 `retryable` 之后、`flood`/`can_edit=False` 之前插入 `rotate` 分支：清空 `progress_msg_id`、用当前全量 `progress_lines` 发新消息开新 bubble、捕获新 message_id、保持 `can_edit=True`、`continue`。后续 edit 作用于新 bubble，再次触上限时链式轮转。
   - 错误码识别只发生在飞书适配器内，gateway 完全平台无关。
 - **相关 commit**：本次
+- **本次 sync 复盘**：upstream 带来 retry_after（gateway base），我们保留 rotate（Feishu 特定）。两者互补。我们的 §11.9 仍有效。✅ 保持。
 
 ---
 
@@ -386,6 +390,7 @@
 - **背景问题**：`todo-scan.sh`、`inspect_gpu_cluster` 等脚本散落在旧分支。
 - **解决方案**：迁移 `todo-scan.sh` 与 ack 脚本；launchd 重启改用 `launchctl kickstart -k` 保证原子生命周期。
 - **相关 commit**：`f87240356`, `18cbfa7e7`, `44d7189c5`
+- **本次 sync 复盘**：upstream 带来 install/venv 相关 (如 kill gateway, harden sweep)，与我们的 launchd 和 scripts 互补。我们的 owner/scripts 豁免和 launchd custom 仍保留 (hermes_cli/gateway.py 仍 delegate to owner/gateway/launchd_restart)。✅ 保持。
 
 ---
 
@@ -449,11 +454,23 @@
 - **规模**：10 个冲突文件 / 22 个冲突块。绝大多数交集文件（56 个双方都改的）被 Git 自动三方合并——验证了"薄胶水 + `[owner]` 标记 + 运行时 patch"规范的有效性。
 - **关键决策记录**：
   - **gateway/run.py（8 块）**：owner 的 message_receive hook 放在 upstream message_timestamps 处理**之后**（hook context 只富化 model 看到的 message_text，不污染 persist_user_message）；保留 owner 的 session_key ContextVar 修复（§4.5 Bug2，删除 upstream 的 `os.environ` 进程级写入）；扩展 upstream 的 `_resolve_gateway_display_bool` 增加 `source=` 参数以兼容 owner 的 per-chat display override。
-  - **openviking（§11.7）**：接受 upstream 大规模重构（deferred commit）。见 §11.7 sync 复盘。**remember ephemeral 方案被取代，待评估**。
+  - **openviking（§11.7）**：接受 upstream 大规模重构（deferred commit）。见 §11.7 sync 复盘。**remember ephemeral 方案被取代，待评估**。本次 sync 进一步覆盖 prefetch policy、tools 等，见 §11.6/11.7 新复盘。patch 保留 dedup+advisory+cards。
   - **clarify choice normalize**：保留 owner 的 `normalize_choices`（`{display, key}` dict，支持 Feishu 回传稳定 key）作为主路径，吸收 upstream `_flatten_choice` 作为共享 helper + legacy fallback（即使 owner/ 移除也不会泄漏 dict repr）。语义差异：owner 不丢弃 `{"name","value"}`-only dict（value 是认可的 body field），upstream 的 `_flatten_choice` 丢弃——两者都保证无 repr 泄漏。
   - **image_generation_tool（§3.3）**：owner 的 `model_from_args` 与 upstream 的 `image_url`/`reference_image_urls` 正交，融合为 `_dispatch_to_plugin_provider` 同时支持。
   - **createSlashHandler.ts（§6.1）**：采用 upstream 的 `handleDispatch` 重构，补回 chain type 处理（upstream 重构时遗漏）。
 - **相关 commit**：`a2703ab86`（sync merge commit）
+
+### 16.2 sync fork — this batch (2026-06, ~153 commits from replay list, including scale-to-zero, pets, openviking fusion, terminal/soul fixes)
+- **操作**：在 owner-v17-sync-batches 上分小批次（~5 commits per batch）merge upstream/main，使用 --no-ff 保留原始 commit。共 25 batches，带入 ~181 commits（含我们的 merge commits）。
+- **规模**：大部分干净或 auto-merge；少量冲突（主要 openviking test、tui_gateway/server.py、gateway/platforms/base.py、hermes_cli/gateway.py），按规范融合（docs 取 official，code 保留 owner 自定义或融合）。
+- **关键决策记录**：
+  - **openviking（§11.6/11.7）**：upstream 带来 full recall prefetch policy、deferred commit、on_session_switch 完整、remember 非阻塞、4 新 tool 等。我们的 sync recall patch 保留（dedup、advisory prompt、cards）；sync forcing 部分动机已由 upstream 架构满足。融合 test，采用 upstream on_session_switch。详见 §11.6/11.7 更新。✅ 进一步对齐，可简化 patch。
+  - **scale-to-zero / relay / dormant**：upstream 新增特性（idle detection, go_dormant, Phase 0）。与我们 gateway 稳定性自定义（rotate, dedup, health）互补；未直接替代旧修复。保留 owner 胶水。
+  - **pets / desktop**：upstream 大量新增（generation UI, atlas, openrouter backend, window state, onboarding）。我们之前有相关 custom（如 image_gen），现可 review 是否仍需。
+  - **gateway / tui / terminal / soul**：upstream fixes（如 terminal cwd sanitize, soul default persona, /learn route, retry_after）。我们的 Feishu terminal bash ( §18.1 ), rotate (§11.9), launchd custom 仍保留。部分 dedup logic (§11.8) 现 upstream 有 _append_dedup_counter 处理 fence。
+  - **memory / compression**：upstream fixes (drift guard skip, context floor, session load)。与我们 §11.7 相关，部分对齐。
+  - 验证 "薄胶水" 策略有效，大部分 auto-merge。
+- **相关 commit**：最近的 sync merge commits (cf62c5a1f 等 25 个)。
 
 ---
 
@@ -657,3 +674,4 @@
 - **背景问题**：gateway 在渲染 terminal 工具进度时对所有 markdown 平台使用裸 ``` fence，因为 Slack mrkdwn 会把语言标签渲染成代码块首行字面文本；但飞书正确支持 ```bash 标签，缺失语言标签导致代码块缺少语法高亮提示。
 - **解决方案**：在 `BasePlatformAdapter` 新增 `terminal_code_block_language` 能力属性（默认空串保持裸 fence），`FeishuAdapter` 覆盖为 `"bash"`；`gateway/run.py` 的 `progress_callback` 读取该属性，非空时生成 ```{language} 开头的 fenced code block。
 - **相关 commit**：`343792ede`
+- **本次 sync 补充**：upstream 带来 terminal cwd sanitize 修复（host/relative cwd OVERRIDE for docker）。与我们的语言标签互补，保留我们的 §18.1。✅ 仍有效。
