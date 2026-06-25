@@ -37,6 +37,7 @@ from pathlib import Path
 from typing import Any, Optional, Tuple
 
 from agent.model_metadata import estimate_request_tokens_rough
+from agent.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -727,10 +728,8 @@ def compress_context(
     # re-deliver it once a late-bound gateway status_callback is wired (#36908).
     _cc = agent.context_compressor.compression_count
     if _cc >= 2:
-        _cc_msg = (
-            f"{agent.log_prefix}⚠️  Session compressed {_cc} times — "
-            f"accuracy may degrade. Consider /new to start fresh."
-        )
+        msg = t("gateway.compress.repeated_warning", count=_cc)
+        _cc_msg = f"{agent.log_prefix}{msg}"
         agent._compression_warning = _cc_msg
         agent._emit_status(_cc_msg)
 
