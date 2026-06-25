@@ -1851,7 +1851,7 @@ class GatewaySlashCommandsMixin:
         if lower == "wait" or lower.startswith("wait "):
             wait_arg = args[len("wait"):].strip()
             if not wait_arg:
-                return "Usage: /goal wait <pid> [reason]"
+                return t("gateway.goal_usage_wait")
             wtokens = wait_arg.split(None, 1)
             try:
                 pid = int(wtokens[0])
@@ -1869,7 +1869,7 @@ class GatewaySlashCommandsMixin:
         if lower == "unwait":
             if mgr.stop_waiting():
                 return "▶ Wait barrier cleared — goal loop resumes."
-            return "No wait barrier set."
+            return t("gateway.goal_no_wait_barrier")
 
         # /goal draft <objective> → draft a structured completion contract,
         # then set it. The aux LLM call is sync; run it off the event loop.
@@ -1877,7 +1877,7 @@ class GatewaySlashCommandsMixin:
         if lower.startswith("draft"):
             objective = args[len("draft"):].strip()
             if not objective:
-                return "Usage: /goal draft <objective in plain language>"
+                return t("gateway.goal_usage_draft")
             try:
                 import asyncio
                 from hermes_cli.goals import draft_contract
@@ -1943,7 +1943,7 @@ class GatewaySlashCommandsMixin:
         if mgr is None:
             return t("gateway.goal.unavailable")
         if not mgr.has_goal():
-            return "No active goal. Set one with /goal <text>."
+            return t("gateway.goal_no_active")
 
         # No args → list current subgoals.
         if not args:
@@ -1955,7 +1955,7 @@ class GatewaySlashCommandsMixin:
 
         if verb == "remove":
             if not rest:
-                return "Usage: /subgoal remove <n>"
+                return t("gateway.subgoal_usage_remove")
             try:
                 idx = int(rest.split()[0])
             except ValueError:
@@ -1973,7 +1973,7 @@ class GatewaySlashCommandsMixin:
                 return f"/subgoal clear: {exc}"
             if prev:
                 return f"✓ Cleared {prev} subgoal{'s' if prev != 1 else ''}."
-            return "No subgoals to clear."
+            return t("gateway.subgoal_no_subgoals")
 
         try:
             text = mgr.add_subgoal(args)

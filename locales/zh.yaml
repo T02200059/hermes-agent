@@ -343,6 +343,12 @@ gateway:
   draining:         "⏳ 正在等待 {count} 个活跃代理结束后重启..."
   goal_cleared:     "✓ 目标已清除。"
   no_active_goal:   "当前没有活跃的目标。"
+  goal_usage_wait:  "用法：/goal wait <pid> [reason]"
+  goal_no_wait_barrier: "没有设置等待屏障。"
+  goal_usage_draft: "用法：/goal draft <用自然语言描述的目标>"
+  goal_no_active:   "当前没有活跃的目标。请先使用 /goal <文本> 设置一个。"
+  subgoal_usage_remove: "用法：/subgoal remove <n>"
+  subgoal_no_subgoals: "没有可清除的子目标。"
   config_read_failed: "⚠️ 无法读取 config.yaml：{error}"
   config_save_failed: "⚠️ 无法保存配置：{error}"
   silent_api_disconnect: "⚠️ API 连接在收到任何响应前就断开了。这通常是临时的网络或服务商问题 — 请重试。"
@@ -375,12 +381,27 @@ gateway:
   steer_queued:            "⏩ 导向已排队 — 将在下一次工具调用后送达：'{preview}'"
   steer_empty:             "导向被拒绝（内容为空）。"
 
+  # 命令用法提示
+  queue_usage:             "用法：/queue <提示>"
+  queue_queued:            "已排队到下一轮。"
+  steer_usage:             "用法：/steer <提示>"
+  steer_usage_no_agent:    "用法：/steer <提示>（当前没有运行中的 Agent；将作为普通消息发送）"
+  learn_failed:            "无法启动 /learn — 请重试。"
+  quick_command_timeout:   "快捷命令已超时（30 秒）。"
+
   # 强制停止
   force_stop_pending:      "⚡ 已强制停止。代理尚未启动完成 — 会话已解锁。"
 
   # 长时间运行/无活动通知
   still_working:           "⏳ 仍在工作中...（已耗时 {elapsed} 分钟{status_detail}）"
   no_activity_warning:     "⚠️ 已 {elapsed} 分钟无活动。如果代理未在 {remaining} 分钟内响应，将会超时。可继续等待或使用 /reset。"
+
+  # Discord 语音频道消息
+  voice_not_supported:     "本平台不支持语音频道。"
+  voice_discord_only:      "此命令仅在 Discord 服务器中可用。"
+  voice_not_in_channel:    "你需要先加入一个语音频道。"
+  voice_join_failed:       "加入语音频道失败。请检查机器人权限（连接 + 说话）。"
+  voice_left:              "已离开语音频道。"
 
   model:
     error_prefix:           "错误：{error}"
@@ -493,6 +514,14 @@ gateway:
     example_line:          "\n示例：`{preview}`"
     state_on:              "ON"
     state_off:             "OFF"
+
+  # Telegram 话题 / 默认聊天名称消息
+  default_chat_name:     "Hermes Chat"
+  chat_id_unknown:       "无法确定聊天 ID。"
+  topic_mode_disabled:   "此聊天当前未启用多会话 topic 模式。"
+  topic_not_telegram_session: "该会话不是 Telegram 会话，无法恢复到当前 topic。"
+  topic_wrong_user:      "该会话不属于此 Telegram 用户。"
+  topic_already_linked:  "该会话已关联到另一个 Telegram topic。"
 
   goal:
     unavailable:           "此会话不支持目标功能。"
