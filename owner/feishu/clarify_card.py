@@ -35,6 +35,7 @@ _TEXT = {
     "card.input_placeholder": "请输入你的答案",
     "card.input_label": "答案：",
     "card.submit_btn": "提交",
+    "btn.back": "返回",
 }
 
 # Feishu interactive card limits.
@@ -99,12 +100,17 @@ def build_frozen_clarify_card(
     question: str,
     choices: List[Any],
     selected_label: str,
+    custom_answer: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Build a frozen card after the user clicked a choice.
 
     All buttons are disabled, the selected option is prefixed with ✅, and
     the header turns green. The original question and option list are
     repeated in a markdown block so context is not lost.
+
+    When custom_answer is provided (user chose "其他" and submitted text),
+    the title becomes "✅ 其他: <用户输入>", and the answer is also
+    supplemented in the body markdown (卡片上方的文案).
     """
     all_labels = [get_choice_display(c) for c in choices] + [_TEXT["btn.other_short"]]
 
@@ -117,15 +123,21 @@ def build_frozen_clarify_card(
     else:
         context_md = f"{_TEXT['card.selected_prefix']}**{selected_label}**"
 
-    # Add prompt for "Other" selection
-    if selected_label == _TEXT["btn.other_short"]:
-        context_md += f"\n\n{_TEXT['card.other_prompt']}"
+    if custom_answer:
+        # "其他" 已提交：title 用 "✅ 其他: 用户输入"，同时在 body 文案中补充完整输入
+        header_title = f"✅ 其他: {custom_answer}"
+        context_md += f"\n\n{_TEXT['card.input_label']}{custom_answer}"
+    else:
+        header_title = f"✅ {selected_label}"
+        # Add prompt for "Other" selection (legacy path where selected_label is the short text)
+        if selected_label == _TEXT["btn.other_short"]:
+            context_md += f"\n\n{_TEXT['card.other_prompt']}"
 
     return {
         "schema": "2.0",
         "config": {"wide_screen_mode": True},
         "header": {
-            "title": {"content": f"✅ {selected_label}", "tag": "plain_text"},
+            "title": {"content": header_title, "tag": "plain_text"},
             "template": "green",
         },
         "body": {
@@ -136,9 +148,11 @@ def build_frozen_clarify_card(
                         "tag": "button",
                         "text": {
                             "tag": "plain_text",
-                            "content": ("✅ " if lbl == selected_label else "　") + lbl,
+                            "content": (
+                                "✅ " if (custom_answer is not None and lbl == _TEXT["btn.other_short"]) or (lbl == selected_label and custom_answer is None) else "　"
+                            ) + lbl,
                         },
-                        "type": "primary" if lbl == selected_label else "default",
+                        "type": "primary" if (custom_answer is not None and lbl == _TEXT["btn.other_short"]) or (lbl == selected_label and custom_answer is None) else "default",
                         "disabled": True,
                     }
                     for lbl in all_labels
@@ -178,7 +192,7 @@ def build_input_clarify_card(
         "schema": "2.0",
         "config": {"wide_screen_mode": True},
         "header": {
-            "title": {"content": f"✏️ {_TEXT['btn.other_short']}", "tag": "plain_text"},
+            "title": {"content": _TEXT['btn.other_short'], "tag": "plain_text"},
             "template": "purple",
         },
         "body": {
@@ -215,6 +229,12 @@ def build_input_clarify_card(
                             "value": {"clarify_id": clarify_id},
                         },
                     ],
+                },
+                {
+                    "tag": "button",
+                    "text": {"tag": "plain_text", "content": _TEXT["btn.back"]},
+                    "type": "default",
+                    "value": {"clarify_id": clarify_id, "back": True},
                 },
             ],
         },
@@ -430,6 +450,19 @@ def handle_clarify_card_action(
     cached = adapter._clarify_state.get(clarify_id, {})
     stored_choices: list = cached.get("choices") or []
 
+    # Handle "返回" from the "其他" input form — restore the original button choices card.
+    # Do not pop state or resolve; user can pick again.
+    if isinstance(action_value, dict) and action_value.get("back"):
+        question = cached.get("question", "")
+        orig_card = build_clarify_card(question, stored_choices, clarify_id)
+        response = P2CardActionTriggerResponse()
+        if CallBackCard is not None:
+            card = CallBackCard()
+            card.type = "raw"
+            card.data = orig_card
+            response.card = card
+        return response
+
     # Handle form submission from input card
     if form_value and "clarify_answer" in form_value:
         answer = form_value["clarify_answer"]
@@ -438,15 +471,20 @@ def handle_clarify_card_action(
             return P2CardActionTriggerResponse()
 
         from tools.clarify_gateway import resolve_gateway_clarify
+        # 写回最终 answer（按方案：提交后把 resolved_answer 记录到 state 条目中，便于后续一致性/expire 等路径使用）
+        if clarify_id in adapter._clarify_state:
+            adapter._clarify_state[clarify_id]["resolved_answer"] = answer
         adapter._clarify_state.pop(clarify_id, None)
         try:
             resolve_gateway_clarify(clarify_id, answer)
         except Exception as exc:
             logger.error("[Feishu] resolve_gateway_clarify failed: %s", exc)
 
-        # Return frozen card showing the answer
+        # Return frozen card showing the answer（仅改提交后卡片，input 阶段不改）
         question = cached.get("question", "")
-        frozen_card = build_frozen_clarify_card(question, stored_choices, answer)
+        frozen_card = build_frozen_clarify_card(
+            question, stored_choices, _TEXT["btn.other_short"], custom_answer=answer
+        )
 
         response = P2CardActionTriggerResponse()
         if CallBackCard is not None:
