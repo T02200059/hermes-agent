@@ -361,6 +361,14 @@ gateway:
   busy_queue_ack:           "⏳ 已排队到下一轮{status_detail}。当前任务完成后我会回复你。"
   busy_interrupt_ack:       "⚡ 正在中断当前任务{status_detail}。稍后我会回复你的消息。"
   busy_subagent_queued:     "⏳ 子代理运行中{status_detail} — 你的消息已排队等待完成（使用 /stop 取消所有操作）。"
+  # Agent 运行中拦截文案 —— 当 slash command 在 Agent 活跃时被阻塞显示。
+  busy_agent_starting:     "Agent 正在启动 — /steer 已排队到下一轮。"
+  busy_no_active_agent:    "没有活跃的 Agent — /steer 已排队到下一轮。"
+  busy_model_blocked:      "Agent 运行中 — 请等待结束或先执行 /stop，再切换模型。"
+  busy_codex_runtime_blocked: "Agent 运行中 — 请等待结束或先执行 /stop，再切换运行时。"
+  busy_goal_blocked:       "Agent 运行中 — 请使用 /goal status / pause / clear / wait 进行中间操作，或先 /stop 再设置新目标。"
+  busy_cmd_blocked:        "⏳ Agent 运行中 — `/{cmd}` 无法在当前轮次执行。请等待响应结束或先执行 `/stop`。"
+
 
   # /steer 命令回复
   steer_failed:            "⚠️ 导向失败：{error}"

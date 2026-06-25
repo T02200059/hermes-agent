@@ -36,6 +36,14 @@ gateway:
   busy_steer_ack:          "⏩ Steered into current run{status_detail}. Your message arrives after the next tool call."
   busy_queue_ack:          "⏳ Queued for the next turn{status_detail}. I'll respond once the current task finishes."
   busy_interrupt_ack:      "⚡ Interrupting current task{status_detail}. I'll respond to your message shortly."
+  # Agent-running guard messages — shown when a slash command is blocked while agent is active.
+  busy_agent_starting:     "Agent still starting — /steer queued for the next turn."
+  busy_no_active_agent:    "No active agent — /steer queued for the next turn."
+  busy_model_blocked:      "Agent is running — wait or /stop first, then switch models."
+  busy_codex_runtime_blocked: "Agent is running — wait or /stop first, then change runtime."
+  busy_goal_blocked:       "Agent is running — use /goal status / pause / clear / wait mid-run, or /stop before setting a new goal."
+  busy_cmd_blocked:        "⏳ Agent is running — `/{cmd}` can't run mid-turn. Wait for the current response or `/stop` first."
+
 
   # Steer command replies.
   steer_failed:            "⚠️ Steer failed: {error}"
