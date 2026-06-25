@@ -195,7 +195,7 @@ function shouldPreserveConfiguredOnFallback(
   // A fallback result means both runtime probes were non-authoritative
   // (transport timeout/disconnect). Keep a previously verified configured
   // state instead of forcing the blocking onboarding overlay.
-  return runtime.source === 'fallback' && state.configured === true && !state.requested && !state.manual
+  return runtime.source === 'fallback' && state.configured === true && !state.requested
 }
 
 function notifyReady(provider: string) {
@@ -526,6 +526,17 @@ export async function refreshOnboarding(ctx: OnboardingContext) {
 
   const state = $desktopOnboarding.get()
   if (shouldPreserveConfiguredOnFallback(runtime, state)) {
+    // Gateway probes timed out but the user was already configured — don't
+    // downgrade to the blocking onboarding overlay. Surface a non-blocking
+    // notification with a stable id so repeated calls during an outage dedup
+    // instead of stacking toasts.
+    notify({
+      id: 'runtime-not-ready',
+      kind: 'error',
+      title: 'Runtime not ready',
+      message: 'Hermes Desktop could not verify the running backend on startup. Some features may be unavailable until the gateway is reachable.'
+    })
+
     return false
   }
 
