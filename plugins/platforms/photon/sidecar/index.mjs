@@ -203,7 +203,6 @@ console.log = (...args) => {
   originalConsoleLog(...args);
 };
 
-
 if (!projectId || !projectSecret || !sharedToken) {
   console.error(
     "photon-sidecar: PHOTON_PROJECT_ID, PHOTON_PROJECT_SECRET and " +
