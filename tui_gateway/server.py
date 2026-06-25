@@ -2313,23 +2313,24 @@ def _restart_slash_worker(sid: str, session: dict):
 
 
 def _persist_model_switch(result) -> None:
-    from hermes_cli.config import save_config
+    # Use targeted, atomic key writes (comment/ordering-preserving) instead of
+    # rewriting the whole `model:` block. A full-block rewrite via save_config()
+    # destroys sibling keys the user set under `model:` — `model_slots`,
+    # `model_fallback`, etc. — when switching models from the TUI (#48305).
+    from cli import save_config_value
 
-    cfg = _load_cfg()
-    model_cfg = cfg.get("model")
-    if not isinstance(model_cfg, dict):
-        model_cfg = {}
-        cfg["model"] = model_cfg
-
-    model_cfg["default"] = result.new_model
-    model_cfg["provider"] = result.target_provider
+    save_config_value("model.default", result.new_model)
+    save_config_value("model.provider", result.target_provider)
     if result.base_url:
-        model_cfg["base_url"] = result.base_url
-    # [owner] P29: Don't pop base_url when switch_model returns empty.
-    # An empty result.base_url means it couldn't be resolved, but the existing
-    # value (typically ${VAR}) is still valid.  Popping it causes downstream
-    # resolution to fall back to hardcoded defaults (#17101).
-    save_config(cfg)
+        save_config_value("model.base_url", result.base_url)
+    # [owner] P29: Don't pop/clear base_url when switch_model returns empty/falsy.
+    # An empty result.base_url often means it couldn't be resolved this time
+    # (e.g. templated ${VAR} from config/env), but the existing value is still
+    # valid for custom providers. Clearing would cause fallback to hardcoded
+    # defaults or stale host. Upstream clears for native switches, but we
+    # protect custom ${VAR} cases here (#17101, #48305).
+    # If explicit clear is needed for a native switch, the caller/result should
+    # provide a sentinel or we can extend later.
 
 
 def _apply_model_switch(
