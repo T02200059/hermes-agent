@@ -43,6 +43,7 @@ from urllib.parse import parse_qs, urlencode, urlparse
 
 import httpx
 
+from agent.i18n import t
 from hermes_cli.config import get_hermes_home, get_config_path, read_raw_config
 from hermes_constants import OPENROUTER_BASE_URL, secure_parent_dir
 from agent.credential_persistence import sanitize_borrowed_credential_payload
@@ -783,12 +784,12 @@ def format_auth_error(error: Exception) -> str:
     if error.code == "subscription_required":
         if error.provider == "nous":
             return _format_nous_entitlement_auth_error(error)
-        return "No active paid subscription found. Please purchase/activate a subscription, then retry."
+        return t("hermes_cli.auth.subscription_required")
 
     if error.code == "insufficient_credits":
         if error.provider == "nous":
             return _format_nous_entitlement_auth_error(error)
-        return "Subscription credits are exhausted. Top up/renew credits, then retry."
+        return t("hermes_cli.auth.insufficient_credits")
 
     if error.code in {"subscription_expired", "no_usable_credits", "account_missing"}:
         if error.provider == "nous":

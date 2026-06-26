@@ -39,6 +39,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import yaml
 
+from agent.i18n import t
+
 PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -5896,10 +5898,10 @@ def _oauth_provider_disconnect_hint(provider: Dict[str, Any], status: Dict[str, 
         if _oauth_provider_disconnect_command(provider):
             # The GUI offers a one-click "run in terminal" path; this hint is the
             # fallback wording for surfaces that only show text.
-            return "Managed outside Hermes — run the disconnect command to remove it."
-        return "Managed by that provider's CLI; remove it there."
+            return t("hermes_cli.web_server.disconnect_managed_outside")
+        return t("hermes_cli.web_server.disconnect_provider_cli")
     if status.get("source") == "env_var":
-        return "Remove the API key from Settings → Keys instead."
+        return t("hermes_cli.web_server.disconnect_env_var")
     return None
 
 

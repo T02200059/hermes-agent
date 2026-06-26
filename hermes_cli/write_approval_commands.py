@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 from typing import List, Optional
 
+from agent.i18n import t
 from tools import write_approval as wa
 
 
@@ -172,7 +173,7 @@ def _reject(subsystem: str, rest: List[str]) -> str:
 
 def _diff(rest: List[str]) -> str:
     if not rest:
-        return "Usage: /skills diff <id>"
+        return t("hermes_cli.skills.diff_usage")
     rec = wa.get_pending(wa.SKILLS, rest[0])
     if not rec:
         return f"No pending skill write with id '{rest[0]}'."

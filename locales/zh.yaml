@@ -709,6 +709,18 @@ gateway:
     bound_status:            "此 topic 已关联到：\n会话：{label}\nID：{session_id}\n\n使用 /new 将此 topic 替换为新会话。\n如需并行工作，请打开 All Messages 并在其中发送消息以创建另一个 topic。"
     thread_ready:            "Telegram 多会话 topics 已启用。\n\n此 topic 将作为独立的 Hermes 会话使用。使用 /new 替换此 topic 的当前会话。如需并行工作，请打开 All Messages 并在其中发送消息以创建另一个 topic。"
     untitled_session:        "未命名会话"
+    mode_turned_off:         "此聊天的多会话 topic 模式已关闭。\n\nTelegram 中现有的 topic 不会被移除 — 它们只是不再作为独立会话进行隔离。根 DM 重新作为普通 Hermes 聊天工作。稍后可通过 /topic 重新启用。"
+    multi_session_enabled:   "Telegram 多会话 topics 已启用。"
+    create_new_chat_instruction: "要创建新的 Hermes 聊天，请打开此 bot 界面顶部的 All Messages，并在其中发送任意消息。Telegram 会为此创建一个新 topic。"
+    previous_unlinked_sessions: "此前未关联的会话："
+    session_list_item:       "- {title} — `{session_id}`"
+    session_preview_suffix:  " — {preview}"
+    to_restore_one:          "要恢复其中一个："
+    restore_step_1:          "1. 创建或打开一个 topic。要新建 topic，请打开 All Messages 并在其中发送任意消息。"
+    restore_step_2:          "2. 在该 topic 中发送 /topic <session-id>。"
+    restore_example:         "示例：在 topic 中发送 /topic {session_id}。"
+    no_previous_unlinked:    "未找到此前未关联的 Telegram 会话。"
+    to_restore_previous:     "稍后恢复之前的会话："
 
   undo:
     nothing:               "没有可撤销的内容。"
@@ -779,6 +791,60 @@ gateway:
     session_db_unavailable_prefix: "会话数据库不可用"
     session_not_found:           "数据库中未找到该会话。"
     warn_passthrough:            "⚠️ {error}"
+
+  platform:
+    delivery_failed_after_retries: "⚠️ 消息多次投递失败，请重试 — 您的请求已处理，但回复无法发送。"
+    formatting_failed_plain_text: "（回复格式化失败，已转为纯文本：）\n\n{content}"
+    usage_action:                "用法：/platform {action} <名称>"
+    unknown:                     "未知平台：{platform}"
+    not_in_retry_queue:          "{platform} 不在重试队列中（它可能已连接或未启用）。"
+    already_paused:              "{platform} 已暂停。"
+    paused_success:              "✓ {platform} 已暂停。可通过 '/platform resume {platform}' 或 'hermes gateway restart' 恢复。"
+    nothing_to_resume:           "{platform} 不在重试队列中 — 没有可恢复的内容。"
+    already_retrying:            "{platform} 已在重试中 — 无需恢复。"
+    resumed_success:             "✓ {platform} 已恢复 — 将在下一次 watcher 轮询时重试。"
+    usage: |
+      用法：/platform <list|pause|resume> [名称]
+        /platform list — 显示平台状态
+        /platform pause <名称> — 停止对失败平台的重试
+        /platform resume <名称> — 将暂停的平台重新加入重试队列
+
+  telegram:
+    dm_topic_missing_anchor:     "Telegram DM topic 投递需要一个回复锚点；拒绝在请求的 topic 外发送。"
+    botfather_threads_settings_caption: "BotFather → 机器人设置 → 话题设置"
+
+  discord:
+    voice_left_inactivity:       "已离开语音频道（因超时而自动断开）。"
+
+  voice:
+    dependencies_missing:        "缺少语音依赖（PyNaCl / davey）。请使用：`{executable} -m pip install PyNaCl` 安装。"
+    join_failed_with_error:      "加入语音频道失败：{error}"
+
+hermes_cli:
+  suggestions:
+    unavailable_in_build:        "此构建版本暂不可用建议功能。"
+    accept_usage:                "用法：/suggestions accept <编号|id>"
+    no_pending_match:            "没有待处理建议匹配 '{rest}'。运行 /suggestions 查看列表。"
+    manage_with_cron:            "使用 /cron 管理它。"
+    manage_ask_agent:            "随时让我列出、暂停或移除它。"
+    scheduled:                   "已安排 '{name}'{sched}。{manage}"
+    dismiss_usage:               "用法：/suggestions dismiss <编号|id>"
+
+  skills:
+    diff_usage:                  "用法：/skills diff <id>"
+
+  auth:
+    subscription_required:       "未找到有效的付费订阅。请先购买/激活订阅后重试。"
+    insufficient_credits:        "订阅额度已用尽。请充值/续费额度后重试。"
+
+  web_server:
+    disconnect_managed_outside:  "此账号在 Hermes 外部管理 — 请运行断开连接命令来移除它。"
+    disconnect_provider_cli:     "此账号由对应服务商的 CLI 管理；请在该 CLI 中移除。"
+    disconnect_env_var:          "请改为从 Settings → Keys 中移除该 API key。"
+
+  blueprint:
+    manage_with_cron:            "使用 /cron 管理它。"
+    manage_ask_agent:            "随时让我列出、暂停或移除它。"
 
 memory_proposal:
   action_add: "添加"

@@ -728,7 +728,7 @@ class TelegramAdapter(BasePlatformAdapter):
 
     @staticmethod
     def _dm_topic_missing_anchor_error() -> str:
-        return "Telegram DM topic delivery requires a reply anchor; refusing to send outside the requested topic"
+        return t("gateway.telegram.dm_topic_missing_anchor")
 
     @classmethod
     def _reply_to_message_id_for_send(

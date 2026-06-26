@@ -11295,11 +11295,11 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             adapter._voice_input_callback = None
             err_lower = str(e).lower()
             if "pynacl" in err_lower or "nacl" in err_lower or "davey" in err_lower:
-                return (
-                    "Voice dependencies are missing (PyNaCl / davey). "
-                    f"Install with: `{sys.executable} -m pip install PyNaCl`"
+                return t(
+                    "gateway.voice.dependencies_missing",
+                    executable=sys.executable,
                 )
-            return f"Failed to join voice channel: {e}"
+            return t("gateway.voice.join_failed_with_error", error=e)
 
         if success:
             adapter._voice_text_channels[guild_id] = int(event.source.chat_id)
@@ -12103,7 +12103,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             await adapter.send_image_file(
                 chat_id=source.chat_id,
                 image_path=str(image_path),
-                caption="BotFather → Bot Settings → Threads Settings",
+                caption=t("gateway.telegram.botfather_threads_settings_caption"),
                 metadata={"thread_id": str(source.thread_id)} if source.thread_id else None,
             )
         except Exception:
@@ -12337,21 +12337,14 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             store = getattr(self, attr, None)
             if isinstance(store, dict):
                 store.pop(chat_id, None)
-        return (
-            "Multi-session topic mode is now OFF for this chat.\n\n"
-            "Existing topics in Telegram aren't removed — they'll just stop "
-            "being gated as independent sessions. The root DM works as a "
-            "normal Hermes chat again. Run /topic to re-enable later."
-        )
+        return t("gateway.topic.mode_turned_off")
 
 
     def _telegram_topic_root_status_message(self, source: SessionSource) -> str:
         lines = [
-            "Telegram multi-session topics are enabled.",
+            t("gateway.topic.multi_session_enabled"),
             "",
-            "To create a new Hermes chat, open All Messages at the top of this "
-            "bot interface and send any message there. Telegram will create a "
-            "new topic for it.",
+            t("gateway.topic.create_new_chat_instruction"),
             "",
         ]
         try:
@@ -12365,29 +12358,29 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             sessions = []
 
         if sessions:
-            lines.append("Previous unlinked sessions:")
+            lines.append(t("gateway.topic.previous_unlinked_sessions"))
             for session in sessions:
                 session_id = str(session.get("id") or "")
-                title = str(session.get("title") or "Untitled session")
+                title = str(session.get("title") or t("gateway.topic.untitled_session"))
                 preview = str(session.get("preview") or "").strip()
-                line = f"- {title} — `{session_id}`"
+                line = t("gateway.topic.session_list_item", title=title, session_id=session_id)
                 if preview:
-                    line += f" — {preview}"
+                    line += t("gateway.topic.session_preview_suffix", preview=preview)
                 lines.append(line)
             lines.extend([
                 "",
-                "To restore one:",
-                "1. Create or open a topic. To create a new one, open All Messages and send any message there.",
-                "2. Send /topic <session-id> inside that topic.",
-                f"Example: Send /topic {sessions[0].get('id')} inside a topic.",
+                t("gateway.topic.to_restore_one"),
+                t("gateway.topic.restore_step_1"),
+                t("gateway.topic.restore_step_2"),
+                t("gateway.topic.restore_example", session_id=sessions[0].get("id")),
             ])
         else:
             lines.extend([
-                "No previous unlinked Telegram sessions found.",
+                t("gateway.topic.no_previous_unlinked"),
                 "",
-                "To restore a previous session later:",
-                "1. Create or open a topic. To create a new one, open All Messages and send any message there.",
-                "2. Send /topic <session-id> inside that topic.",
+                t("gateway.topic.to_restore_previous"),
+                t("gateway.topic.restore_step_1"),
+                t("gateway.topic.restore_step_2"),
             ])
         return "\n".join(lines)
 

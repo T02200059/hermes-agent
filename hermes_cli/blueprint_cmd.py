@@ -37,6 +37,8 @@ import shlex
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
+from agent.i18n import t
+
 logger = logging.getLogger(__name__)
 
 
@@ -239,8 +241,8 @@ def _manage_hint(surface: str) -> str:
     gateway platforms the user manages jobs by asking the agent (cronjob tool)
     or from the dashboard."""
     if surface == "cli":
-        return "Manage it with /cron."
-    return "Ask me to list, pause, or remove it any time."
+        return t("hermes_cli.blueprint.manage_with_cron")
+    return t("hermes_cli.blueprint.manage_ask_agent")
 
 
 def handle_blueprint_command(

@@ -868,45 +868,42 @@ class GatewaySlashCommandsMixin:
 
         if action in {"pause", "resume"}:
             if not target:
-                return f"Usage: /platform {action} <name>"
+                return t("gateway.platform.usage_action", action=action)
             platform = _resolve_platform(target)
             if platform is None:
-                return f"Unknown platform: {target}"
+                return t("gateway.platform.unknown", platform=target)
             failed = getattr(self, "_failed_platforms", {}) or {}
             if action == "pause":
                 if platform not in failed:
-                    return (
-                        f"{platform.value} is not in the retry queue "
-                        f"(it's either connected or not enabled)."
+                    return t(
+                        "gateway.platform.not_in_retry_queue",
+                        platform=platform.value,
                     )
                 if failed[platform].get("paused"):
-                    return f"{platform.value} is already paused."
+                    return t("gateway.platform.already_paused", platform=platform.value)
                 self._pause_failed_platform(platform, reason="paused via /platform pause")
-                return (
-                    f"✓ {platform.value} paused. "
-                    f"Resume with `/platform resume {platform.value}` or "
-                    f"`hermes gateway restart` to reset."
+                return t(
+                    "gateway.platform.paused_success",
+                    platform=platform.value,
                 )
             # action == "resume"
             if platform not in failed:
-                return (
-                    f"{platform.value} is not in the retry queue — "
-                    f"nothing to resume."
+                return t(
+                    "gateway.platform.nothing_to_resume",
+                    platform=platform.value,
                 )
             if not failed[platform].get("paused"):
-                return (
-                    f"{platform.value} is already retrying — "
-                    f"no resume needed."
+                return t(
+                    "gateway.platform.already_retrying",
+                    platform=platform.value,
                 )
             self._resume_paused_platform(platform)
-            return f"✓ {platform.value} resumed — retrying on next watcher tick."
+            return t(
+                "gateway.platform.resumed_success",
+                platform=platform.value,
+            )
 
-        return (
-            "Usage: /platform <list|pause|resume> [name]\n"
-            "  /platform list — show platform status\n"
-            "  /platform pause <name> — stop retrying a failing platform\n"
-            "  /platform resume <name> — re-queue a paused platform"
-        )
+        return t("gateway.platform.usage")
 
     async def _handle_restart_command(self, event: MessageEvent) -> Union[str, EphemeralReply]:
         """Handle /restart command - drain active work, then restart the gateway."""

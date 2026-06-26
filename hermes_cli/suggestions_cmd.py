@@ -17,6 +17,8 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, Optional
 
+from agent.i18n import t
+
 logger = logging.getLogger(__name__)
 
 
@@ -84,7 +86,7 @@ def handle_suggestions_command(
         from cron import suggestions as store
     except Exception as e:  # pragma: no cover - import guard
         logger.debug("suggestions store import failed: %s", e)
-        return "Suggestions are unavailable in this build."
+        return t("hermes_cli.suggestions.unavailable_in_build")
 
     parts = (args or "").strip().split()
     sub = parts[0].lower() if parts else ""
@@ -96,31 +98,32 @@ def handle_suggestions_command(
 
     if sub in ("accept", "add", "schedule"):
         if not rest:
-            return "Usage: /suggestions accept <number|id>"
+            return t("hermes_cli.suggestions.accept_usage")
         job = store.accept_suggestion(rest, origin=origin)
         if job is None:
-            return f"No pending suggestion matches '{rest}'. Run /suggestions to list them."
+            return t("hermes_cli.suggestions.no_pending_match", rest=rest)
         sched = job.get("schedule_display") or (job.get("job_spec", {}) or {}).get("schedule", "")
         name = job.get("name", "automation")
         manage = (
-            "Manage it with /cron."
+            t("hermes_cli.suggestions.manage_with_cron")
             if surface == "cli"
-            else "Ask me to list, pause, or remove it any time."
+            else t("hermes_cli.suggestions.manage_ask_agent")
         )
-        return (
-            f"Scheduled '{name}'"
-            + (f" ({sched})" if sched else "")
-            + f". {manage}"
+        return t(
+            "hermes_cli.suggestions.scheduled",
+            name=name,
+            sched=f" ({sched})" if sched else "",
+            manage=manage,
         )
 
     if sub in ("dismiss", "no", "reject"):
         if not rest:
-            return "Usage: /suggestions dismiss <number|id>"
+            return t("hermes_cli.suggestions.dismiss_usage")
         ok = store.dismiss_suggestion(rest)
         return (
             f"Dismissed. Won't suggest that again."
             if ok
-            else f"No pending suggestion matches '{rest}'."
+            else t("hermes_cli.suggestions.no_pending_match", rest=rest)
         )
 
     if sub == "catalog":

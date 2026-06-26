@@ -20,6 +20,7 @@ import uuid
 from abc import ABC, abstractmethod
 from urllib.parse import urlsplit
 
+from agent.i18n import t
 from utils import normalize_proxy_url
 
 logger = logging.getLogger(__name__)
@@ -3911,10 +3912,7 @@ class BasePlatformAdapter(ABC):
             else:
                 # All retries exhausted (loop completed without break) — notify user
                 logger.error("[%s] Failed to deliver response after %d retries: %s", self.name, max_retries, error_str)
-                notice = (
-                    "\u26a0\ufe0f Message delivery failed after multiple attempts. "
-                    "Please try again \u2014 your request was processed but the response could not be sent."
-                )
+                notice = t("gateway.platform.delivery_failed_after_retries")
                 try:
                     await self.send(chat_id=chat_id, content=notice, reply_to=reply_to, metadata=metadata)
                 except Exception as notify_err:
@@ -3925,7 +3923,7 @@ class BasePlatformAdapter(ABC):
         logger.warning("[%s] Send failed: %s — trying plain-text fallback", self.name, error_str)
         fallback_result = await self.send(
             chat_id=chat_id,
-            content=f"(Response formatting failed, plain text:)\n\n{content[:3500]}",
+            content=t("gateway.platform.formatting_failed_plain_text", content=content[:3500]),
             reply_to=reply_to,
             metadata=metadata,
         )

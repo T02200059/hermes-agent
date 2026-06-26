@@ -332,6 +332,18 @@ gateway:
     bound_status:            "Цей topic пов'язано з:\nСесія: {label}\nID: {session_id}\n\nВикористовуйте /new, щоб замінити цей topic новою сесією.\nДля паралельної роботи відкрийте All Messages і надішліть там повідомлення, щоб створити інший topic."
     thread_ready:            "Багатосесійні Telegram topics увімкнено.\n\nЦей topic використовуватиметься як незалежна сесія Hermes. Використовуйте /new, щоб замінити поточну сесію цього topic. Для паралельної роботи відкрийте All Messages і надішліть там повідомлення, щоб створити інший topic."
     untitled_session:        "Сесія без назви"
+    mode_turned_off:         "Multi-session topic mode is now OFF for this chat.\n\nExisting topics in Telegram aren't removed — they'll just stop being gated as independent sessions. The root DM works as a normal Hermes chat again. Run /topic to re-enable later."
+    multi_session_enabled:   "Telegram multi-session topics are enabled."
+    create_new_chat_instruction: "To create a new Hermes chat, open All Messages at the top of this bot interface and send any message there. Telegram will create a new topic for it."
+    previous_unlinked_sessions: "Previous unlinked sessions:"
+    session_list_item:       "- {title} — `{session_id}`"
+    session_preview_suffix:  " — {preview}"
+    to_restore_one:          "To restore one:"
+    restore_step_1:          "1. Create or open a topic. To create a new one, open All Messages and send any message there."
+    restore_step_2:          "2. Send /topic <session-id> inside that topic."
+    restore_example:         "Example: Send /topic {session_id} inside a topic."
+    no_previous_unlinked:    "No previous unlinked Telegram sessions found."
+    to_restore_previous:     "To restore a previous session later:"
 
   undo:
     nothing:               "Немає чого скасовувати."
@@ -399,3 +411,57 @@ gateway:
     session_db_unavailable_prefix: "База даних сеансів недоступна"
     session_not_found:           "Сеанс не знайдено в базі даних."
     warn_passthrough:            "⚠️ {error}"
+
+  platform:
+    delivery_failed_after_retries: "⚠️ Message delivery failed after multiple attempts. Please try again — your request was processed but the response could not be sent."
+    formatting_failed_plain_text: "(Response formatting failed, plain text:)\n\n{content}"
+    usage_action:                "Usage: /platform {action} <name>"
+    unknown:                     "Unknown platform: {platform}"
+    not_in_retry_queue:          "{platform} is not in the retry queue (it's either connected or not enabled)."
+    already_paused:              "{platform} is already paused."
+    paused_success:              "✓ {platform} paused. Resume with '/platform resume {platform}' or 'hermes gateway restart' to reset."
+    nothing_to_resume:           "{platform} is not in the retry queue — nothing to resume."
+    already_retrying:            "{platform} is already retrying — no resume needed."
+    resumed_success:             "✓ {platform} resumed — retrying on next watcher tick."
+    usage: |
+      Usage: /platform <list|pause|resume> [name]
+        /platform list — show platform status
+        /platform pause <name> — stop retrying a failing platform
+        /platform resume <name> — re-queue a paused platform
+
+  telegram:
+    dm_topic_missing_anchor:     "Telegram DM topic delivery requires a reply anchor; refusing to send outside the requested topic"
+    botfather_threads_settings_caption: "BotFather → Bot Settings → Threads Settings"
+
+  discord:
+    voice_left_inactivity:       "Left voice channel (inactivity timeout)."
+
+  voice:
+    dependencies_missing:        "Voice dependencies are missing (PyNaCl / davey). Install with: `{executable} -m pip install PyNaCl`"
+    join_failed_with_error:      "Failed to join voice channel: {error}"
+
+hermes_cli:
+  suggestions:
+    unavailable_in_build:        "Suggestions are unavailable in this build."
+    accept_usage:                "Usage: /suggestions accept <number|id>"
+    no_pending_match:            "No pending suggestion matches '{rest}'. Run /suggestions to list them."
+    manage_with_cron:            "Manage it with /cron."
+    manage_ask_agent:            "Ask me to list, pause, or remove it any time."
+    scheduled:                   "Scheduled '{name}'{sched}. {manage}"
+    dismiss_usage:               "Usage: /suggestions dismiss <number|id>"
+
+  skills:
+    diff_usage:                  "Usage: /skills diff <id>"
+
+  auth:
+    subscription_required:       "No active paid subscription found. Please purchase/activate a subscription, then retry."
+    insufficient_credits:        "Subscription credits are exhausted. Top up/renew credits, then retry."
+
+  web_server:
+    disconnect_managed_outside:  "Managed outside Hermes — run the disconnect command to remove it."
+    disconnect_provider_cli:     "Managed by that provider's CLI; remove it there."
+    disconnect_env_var:          "Remove the API key from Settings → Keys instead."
+
+  blueprint:
+    manage_with_cron:            "Manage it with /cron."
+    manage_ask_agent:            "Ask me to list, pause, or remove it any time."

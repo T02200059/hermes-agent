@@ -24,6 +24,8 @@ from collections import defaultdict
 from contextlib import suppress
 from typing import Callable, Dict, List, Optional, Any, Tuple
 
+from agent.i18n import t
+
 logger = logging.getLogger(__name__)
 
 
@@ -2565,7 +2567,7 @@ class DiscordAdapter(BasePlatformAdapter):
             ch = self._client.get_channel(text_ch_id)
             if ch:
                 try:
-                    await ch.send("Left voice channel (inactivity timeout).")
+                    await ch.send(t("gateway.discord.voice_left_inactivity"))
                 except Exception:
                     pass
 
