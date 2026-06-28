@@ -23,6 +23,11 @@
 
 ---
 
+
+### 1.3 上游同步清理补充
+
+- `d1fc4474b` chore(owner): remove redundant owner patches covered by upstream main
+
 ## 二、配置与补丁系统（patch.yaml）
 
 ### 2.1 `owner_provider_name` 保持真实自定义供应商身份
@@ -110,6 +115,14 @@
 
 ---
 
+
+### 3.12 模型提供者与 API 适配补充
+
+- `ccc32c657` refactor(owner): consolidate 9 duplicated credential injection points into 3 helpers
+- `14492076b` fix(agent): add xfyun/damodel/GLM tool reasoning detectors + thinking config
+- `be6a38cf5` chore(owner): add [owner-patch] marker at message reconstruction site for owner_provider_name
+- `d0a3ab173` fix(owner): use DASHSCOPE_API_KEY instead of DASHSCOPE_COMPANY_API_KEY
+
 ## 四、审批、安全与风控
 
 ### 4.1 Copilot 环境拒绝 Classic PAT
@@ -173,6 +186,22 @@
 
 ---
 
+
+### 4.8 审批、安全与风控补充
+
+- `f9b9522f0` fix(owner): tool_guardrails warn messages with threshold values + code_execution emoji
+- `704ea7336` fix(owner): P0-P2 review fixes for skill-auto-approval + thinking-detectors batch
+- `0f0c18a6c` refactor(owner): unify [owner] comment in WhatsApp send_exec_approval for approval sender contract
+- `db2743166` refactor(owner): unify [owner] comment in Telegram send_exec_approval for approval sender contract
+- `621483baa` refactor(owner): unify [owner] comment in Slack send_exec_approval for approval sender contract
+- `89c651d84` refactor(owner): unify [owner] comment in QQ send_exec_approval for approval sender contract
+- `5c540b7f9` refactor(owner): unify [owner] comment in Matrix send_exec_approval for approval sender contract
+- `b59edf91b` refactor(owner): use **kwargs for send_exec_approval in WhatsAppCloudAdapter to reduce Feishu-specific param pollution
+- `7adffe4f7` refactor(owner): use **kwargs for send_exec_approval in TelegramAdapter to reduce Feishu-specific param pollution
+- `103d900bc` refactor(owner): use **kwargs for send_exec_approval in SlackAdapter to reduce Feishu-specific param pollution
+- `981d5f656` refactor(owner): use **kwargs for send_exec_approval in QQAdapter to reduce Feishu-specific param pollution
+- `96733a5b3` refactor(owner): use **kwargs for send_exec_approval in MatrixAdapter to reduce Feishu-specific param pollution
+
 ## 五、飞书平台深度定制
 
 ### 5.1 频道级系统提示（channel_prompts）
@@ -223,6 +252,24 @@
 
 ---
 
+
+### 5.9 飞书平台深度定制补充
+
+- `573aa5921` fix(owner): extract MEDIA tags before auto-card to prevent file attachment loss
+- `a259db16f` fix(owner): use dynamic branch name in sync_git_hermes bot menu
+- `bcb047f8f` owner(feishu): pass extra_metadata in standalone send + update tmux prompt doc
+- `3424a26af` fix(feishu): sender name cache refactoring + bug fixes
+- `7e296caa4` refactor(owner): FeishuUserStore Phase A facade
+- `59fdd3587` fix(owner): inbound p2p chat_id cache + sender name pre-warm on Feishu
+- `aa089f437` perf(owner): debounce feishu chat_id cache disk writes
+- `d5bc6ee37` fix(owner): P0-P2 review fixes for clarify card + choice normalizer batch
+- `2be0ac4fd` fix(owner/feishu): repair pre-existing sender-name cache regressions
+- `3e17ccba4` refactor(owner): thin FeishuAdapter approval cards + name cache glue (major diff reduction)
+- `04d639e79` feat(feishu): auto-card — long text to interactive card when streaming off
+- `a5ea4c9a2` feat(feishu): auto-card — long text to interactive card when streaming off
+- `27f306a82` fix(feishu): add channel_prompts support via resolve_channel_prompt
+- `a58bf2d6b` fix(owner): add legacy _sender_name_cache alias + delegate fire for test compat after name cache extraction
+
 ## 六、快捷命令与交互语法
 
 ### 6.1 链式快捷命令（;;）
@@ -236,6 +283,7 @@
 - **相关 commit**：`3692eac6d`, `d95d5a3c0`, `c21f45538`, `6371bd5b4`
 
 ---
+
 
 ## 七、TUI 与皮肤引擎
 
@@ -251,6 +299,11 @@
 
 ---
 
+
+### 7.3 TUI 与皮肤引擎补充
+
+- `63ce1df94` feat(owner): migrate skin spinner + tagline pipeline from owner branch
+
 ## 八、Diff / Patch 工具链
 
 ### 8.1 `unified_diff_patch` 工具
@@ -264,6 +317,13 @@
 - **相关 commit**：`9a6b9c0a9`（config reader）, `0c9f19b74`（static parser）, `79219c91f`（LLM fallback）, `a17b2ee7a`（orchestrator）, `965285f3b`（tool_executor 集成 + 删除 legacy）, `5e99d7aa7`（patch.yaml 配置 + 文档）
 
 ---
+
+
+### 8.3 Diff / Patch 工具链补充
+
+- `88b299f8b` fix(owner): complete unified_diff_patch registration in all explicit toolsets + strengthen legacy note
+- `374c30cd0` fix(agent): add [owner] markers for unified_diff_patch inline diff support in extract_edit_diff
+- `495c5d080` fix(agent): extract inline diff from unified_diff_patch tool results
 
 ## 九、Hook 体系与记忆召回
 
@@ -285,6 +345,11 @@
 
 ---
 
+
+### 9.4 Hook 体系与记忆召回补充
+
+- `fd3ddc224` refactor(owner): remove qdrant_memory_recall hook config from patch.yaml
+
 ## 十、显示与个性化
 
 ### 10.1 每会话显示覆盖
@@ -293,6 +358,11 @@
 - **相关 commit**：`3b07d0ab8`, `490b07219`, `cb7bc8417`, `d0f3e664f`, `2729c42a9`, `19ccd1917`
 
 ---
+
+
+### 10.2 显示与个性化补充
+
+- `63c4e9c1b` fix(owner): add invalidate support for per-chat display cache (#2)
 
 ## 十一、Gateway 稳定性修复
 
@@ -314,6 +384,9 @@
 - **背景问题**：API 返回空响应时，用户无法区分是内容为空还是连接已静默断开。
 - **解决方案**：检测 silent disconnect 场景，返回专门的提示文案。
 - **相关 commit**：`f94fe4719`
+
+
+- `a3d11707f` fix(owner): silent API disconnect notification — distinguish from generic empty response
 
 ### 11.4 `append_message` 语法错误修复
 - **背景问题**：`run_agent.py` 中 `append_message` 内联 import 位置错误导致 SyntaxError。
@@ -369,6 +442,11 @@
 
 ---
 
+
+### 11.10 Gateway 稳定性修复补充
+
+- `449d58db5` fix(gateway): P35 extract_local_files 双反引号行内代码跳过 📋 inventory 标记
+
 ## 十二、Cron / 脚本 / 运维
 
 ### 12.1 owner/scripts 与个人脚本
@@ -394,6 +472,11 @@
 
 ---
 
+
+### 12.5 Cron / 脚本 / 运维补充
+
+- `2790890d8` feat(owner): add hermes-backup.sh daily backup script with SQLite-safe snapshots
+
 ## 十三、性能监控与归档
 
 ### 13.1 `hermes_mon` 性能监控
@@ -407,6 +490,12 @@
 - **相关 commit**：`45ab4a0f0`
 
 ---
+
+
+### 13.3 性能监控与归档补充
+
+- `7e4269fa7` fix(owner): hermes_mon review fixes — CR-02 pgrep precision + WR-03 remove isolation
+- `cd65b8b8f` feat(owner): migrate hermes_mon perf monitoring + adversarial review fixes
 
 ## 十四、归因与计费
 
@@ -445,7 +534,13 @@
 - **补充说明（幻影轮修复）**：初版用 `agent.interrupt("clarify timed out")` 传了 message，而 `interrupt_message` 会被 gateway（`gateway/run.py` 的 `_CONTROL_INTERRUPT_MESSAGES` 未收录该串）与 CLI（`cli.py`）当作**下一轮用户输入**重新喂给 LLM —— 不但没停 agent，反而让模型对 "clarify timed out" 作答，比旧行为更糟。修复：`handle_clarify_timeout` 及两处 inline fallback 一律改为**无 message 的 `agent.interrupt()`**（仅置 `_interrupt_requested`，`interrupt_message` 保持 None，gateway/CLI 都不会生成幻影轮）。同时在 `gateway/run.py` 的 `_clarify_callback_sync` 超时分支补发一条用户提示（"未在 N 分钟内收到回复，已停止当前操作"），避免 agent 静默退出后用户侧无任何反馈；session-cleared 分支不发提示。
 - **相关 commit**：`62aa54950`（初始实现）, 本次（幻影轮修复 + 超时用户提示）
 
+### 15.2 Clarify 超时行为改造补充
+
+- `9e2dc28ad` fix(owner): clarify timeout now stops agent instead of letting LLM decide
+
 ---
+
+
 
 ## 十六、Sync upstream 复盘
 
@@ -573,6 +668,9 @@
 - `76abc4ded` fix(openviking-sync-recall): replace top_k with limit in FindRequest
 - `b6679bd4f` test(owner): add unit tests for openviking_sync_recall_patch
 
+
+- `3c6a72cbb` fix(tests): remove obsolete OpenViking forget tests and duplicate on_session_switch; align clarify tests with owner refactor
+
 ### 17.8 图像生成 / DashScope
 
 - `f53d38b34` fix(image_gen): enforce reference-image cap + validate source URL scheme
@@ -665,6 +763,11 @@
 - `16f34c3ad` chore(owner): fix sync_git_hermes bot menu prompt to reference owner-v16
 - `3fc04ba61` fix(owner): repair owner integration call sites (missing self/indent)
 - `032dcbfe4` chore(owner): mark 0be2695 timestamp-pinning as deprecated
+
+### 17.25 跨模块 Review Fix 补充
+
+- `a028b27c4` refactor(owner): P1 review fixes — owner/utils, dry-run reader, memory setup
+- `e01a6d465` fix(owner): P0 review fixes — profile paths, lazy imports, skill_script safety
 
 ---
 
