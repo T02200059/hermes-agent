@@ -1374,8 +1374,8 @@ MEDIA_DELIVERY_EXTS: Tuple[str, ...] = (
     ".xlsx", ".xls", ".ods", ".csv", ".tsv", ".json", ".xml", ".yaml", ".yml",
     # Presentations
     ".pptx", ".ppt", ".odp", ".key",
-    # Archives
-    ".zip", ".tar", ".gz", ".tgz", ".bz2", ".xz", ".7z", ".rar", ".apk", ".ipa",
+    # Archives / installers
+    ".zip", ".tar", ".gz", ".tgz", ".bz2", ".xz", ".7z", ".rar", ".apk", ".ipa", ".exe", ".msi", ".dmg", ".deb", ".rpm",
     # Web / rendered output
     ".html", ".htm",
 )

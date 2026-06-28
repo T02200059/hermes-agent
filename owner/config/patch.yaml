@@ -50,7 +50,7 @@ owner:
       - model: mimo-v2.5-pro
         provider: xiaomi
         temperature: 0.6
-      - model: kimi-k2.7-code
+      - model: kimi-for-coding
         provider: damodel
         temperature: 1.0       # kimi 锁定 temp=1.0 (官方要求)
       - model: qwen3.7-plus
@@ -143,6 +143,7 @@ owner:
   # Override per-call by passing model="wan" to the image_generate tool.
   # api_key supports ${ENV_VAR} references; expanded at runtime.
   image_gen:
+    current: dashscope-qwen
     presets:
       dashscope-qwen:
         alias:
