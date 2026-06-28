@@ -1556,8 +1556,6 @@ def list_authenticated_providers(
         except Exception:
             return False
 
-    data = fetch_models_dev()
-
     # Build curated model lists keyed by hermes provider ID
     curated: dict[str, list[str]] = dict(_PROVIDER_MODELS)
     curated["openrouter"] = [mid for mid, _ in OPENROUTER_MODELS]
@@ -1897,97 +1895,108 @@ def list_authenticated_providers(
                 _section3_emitted_pairs.add(_pair)
 
     # -----------------------------------------------------------------------
-    # Layer 2: env-var authenticated providers
+    # Early-exit: if all configured providers were emitted in Layer 1, skip
+    # the slower env-var / auth-store discovery layers entirely.
     # -----------------------------------------------------------------------
-    # Only env-var checks here — auth store / credential pool are handled in
-    # Layer 3 so they can run in parallel.
-
-    # 2a. Hermes-mapped providers (PROVIDER_TO_MODELS_DEV)
-    for hermes_id, mdev_id in PROVIDER_TO_MODELS_DEV.items():
-        if hermes_id.lower() in seen_slugs or mdev_id.lower() in seen_slugs:
-            continue
-
-        # Skip vendor names that are merely aliases routing through an aggregator.
-        _alias_target = _PROVIDER_ALIAS_TABLE.get(hermes_id)
-        if (
-            _alias_target
-            and _alias_target != hermes_id
-            and _alias_target in _AGG_PROVIDERS
-        ):
-            continue
-
-        if mdev_id in seen_mdev_ids:
-            continue
-        pdata = data.get(mdev_id)
-        if not isinstance(pdata, dict):
-            continue
-
-        # Skip non-API-key auth providers — handled via HERMES_OVERLAYS.
-        pconfig = PROVIDER_REGISTRY.get(hermes_id)
-        if pconfig and pconfig.auth_type != "api_key":
-            continue
-
-        if not _has_env_creds(hermes_id, mdev_id=mdev_id):
-            continue
-
-        model_ids = _resolve_model_ids(hermes_id, mdev_id=mdev_id, allow_merge=True)
-        pinfo = _mdev_pinfo(mdev_id)
-        display_name = pinfo.name if pinfo else mdev_id
-        _emit_builtin_row(
-            slug=hermes_id,
-            name=display_name,
-            is_current=hermes_id == current_provider or mdev_id == current_provider,
-            models=model_ids,
-            source="built-in",
-            mdev_id=mdev_id,
+    _skip_discovery = False
+    if user_providers and isinstance(user_providers, dict):
+        _configured_count = sum(
+            1 for _n, _c in user_providers.items() if isinstance(_c, dict)
         )
+        if _configured_count > 0 and len(results) >= _configured_count:
+            _skip_discovery = True
 
-    # 2b. Hermes-only overlays
-    for pid, overlay in HERMES_OVERLAYS.items():
-        if pid.lower() in seen_slugs:
-            continue
-        hermes_slug = _mdev_to_hermes.get(pid, pid)
-        if hermes_slug.lower() in seen_slugs:
-            continue
+    if not _skip_discovery:
+        # Fetch models.dev data only when discovery layers are actually needed.
+        data = fetch_models_dev()
 
-        if not _has_env_creds(hermes_slug, mdev_id=pid, overlay=overlay):
-            continue
+        # -----------------------------------------------------------------------
+        # Pre-compute the credential-signal set (Layer 2/3 short-circuit)
+        # -----------------------------------------------------------------------
+        # Build a set of provider slugs that have ANY credential signal:
+        #   - an entry in the auth store (providers or credential_pool), OR
+        #   - any registered api_key_env_vars / overlay extra_env_vars /
+        #     models.dev env list present in os.environ.
+        # Layer 2/3 then skip any slug not in this set (and not the current
+        # provider, not AWS-SDK) before invoking _has_env_creds/_has_auth_creds.
+        # This is sound: a slug with no auth-store entry AND no env var set has
+        # nothing for _has_env_creds to find and nothing for load_pool() to seed,
+        # so the per-slug check would return False anyway. Skipping it avoids
+        # ~77 wasted env/registry/load_pool lookups per /providers render.
+        # (``anthropic`` is force-included because it has external credential
+        # files read outside the auth store — see _has_auth_creds.)
+        _current_provider_norm_lc = str(current_provider or "").strip().lower()
 
-        model_ids = _resolve_model_ids(hermes_slug, mdev_id=pid, overlay=overlay, allow_merge=True)
-        _emit_builtin_row(
-            slug=hermes_slug,
-            name=get_label(hermes_slug),
-            is_current=hermes_slug == current_provider or pid == current_provider,
-            models=model_ids,
-            source="hermes",
-            mdev_id=pid,
-        )
+        def _env_set(env_vars) -> bool:
+            for ev in env_vars or ():
+                if os.environ.get(ev, "").strip():
+                    return True
+            return False
 
-    # 2c. Canonical providers
-    for _cp in _canon_provs:
-        if _cp.slug.lower() in seen_slugs:
-            continue
-        _cp_config = _auth_registry.get(_cp.slug)
-        if not _has_env_creds(_cp.slug, cp_config=_cp_config):
-            continue
+        try:
+            from hermes_cli.auth import _load_auth_store as _las_fn
+            _layer3_auth_store = _las_fn() or {}
+        except Exception:
+            _layer3_auth_store = {}
 
-        model_ids = _resolve_model_ids(_cp.slug, cp_config=_cp_config, allow_merge=False)
-        _emit_builtin_row(
-            slug=_cp.slug,
-            name=_cp.label,
-            is_current=_cp.slug == current_provider,
-            models=model_ids,
-            source="canonical",
-        )
+        _cred_signal_slugs: set = set()
+        _providers_store = _layer3_auth_store.get("providers", {})
+        if isinstance(_providers_store, dict):
+            for _k in _providers_store:
+                _cred_signal_slugs.add(str(_k).strip().lower())
+        _cred_pool_store = _layer3_auth_store.get("credential_pool", {})
+        if isinstance(_cred_pool_store, dict):
+            for _k in _cred_pool_store:
+                _cred_signal_slugs.add(str(_k).strip().lower())
 
-    # -----------------------------------------------------------------------
-    # Layer 3: parallel auth-store / credential-pool detection
-    # -----------------------------------------------------------------------
-    # Gather all built-in providers not already emitted and check them in
-    # parallel.  The model-id cache is locked during resolution.
-    Layer3Candidate = NamedTuple(
-        "Layer3Candidate",
-        [
+        for _slug, _pcfg in PROVIDER_REGISTRY.items():
+            if _env_set(getattr(_pcfg, "api_key_env_vars", ())):
+                _cred_signal_slugs.add(_slug.strip().lower())
+
+        for _pid, _overlay in HERMES_OVERLAYS.items():
+            _hslug = _mdev_to_hermes.get(_pid, _pid)
+            _hit = _env_set(getattr(_overlay, "extra_env_vars", ()))
+            if not _hit:
+                _pdata = data.get(_pid)
+                if isinstance(_pdata, dict):
+                    _env_list = _pdata.get("env", [])
+                    if isinstance(_env_list, list):
+                        _hit = _env_set(_env_list)
+            if _hit:
+                _cred_signal_slugs.add(_hslug.strip().lower())
+                _cred_signal_slugs.add(_pid.strip().lower())
+
+        for _cp in _canon_provs:
+            _cpcfg = _auth_registry.get(_cp.slug)
+            if _cpcfg and _env_set(getattr(_cpcfg, "api_key_env_vars", ())):
+                _cred_signal_slugs.add(_cp.slug.strip().lower())
+
+        # Anthropic has external credential files (Claude Code / Hermes OAuth)
+        # read outside the auth store — always probe it.
+        _cred_signal_slugs.add("anthropic")
+
+        def _has_cred_signal(slug: str, *, is_aws: bool = False) -> bool:
+            """Fast pre-filter for Layer 2/3 candidate iteration."""
+            if is_aws:
+                return True  # AWS SDK uses _has_fast_aws_sdk_signal at check time
+            _lc = str(slug or "").strip().lower()
+            if _lc in _cred_signal_slugs:
+                return True
+            # Always let the current provider through — even without a signal —
+            # so /providers never drops the active row.
+            return _lc == _current_provider_norm_lc and bool(_lc)
+
+        # -----------------------------------------------------------------------
+        # Layer 2: env-var authenticated providers
+        # -----------------------------------------------------------------------
+        # Only env-var checks here — auth store / credential pool are handled in
+        # Layer 3 so they can run in parallel.
+
+        # Build a unified candidate list for Layer 2, merging all three sources
+        # (PROVIDER_TO_MODELS_DEV, HERMES_OVERLAYS, CANONICAL_PROVIDERS) and
+        # deduplicating by slug. This prevents the same provider from being
+        # checked and emitted multiple times when it appears in multiple lists.
+        _Layer2Candidate = NamedTuple("_Layer2Candidate", [
             ("slug", str),
             ("mdev_id", Optional[str]),
             ("overlay", Optional[object]),
@@ -1995,142 +2004,300 @@ def list_authenticated_providers(
             ("name", str),
             ("source", str),
             ("is_current", bool),
-            ("allow_merge", bool),
-        ],
-    )
+        ])
+        _l2_candidates: list = []
+        _l2_seen: set = set()  # slug.lower() dedup
 
-    candidates: list[Layer3Candidate] = []
+        # 2a. Hermes-mapped providers (PROVIDER_TO_MODELS_DEV)
+        for hermes_id, mdev_id in PROVIDER_TO_MODELS_DEV.items():
+            if hermes_id.lower() in seen_slugs or mdev_id.lower() in seen_slugs:
+                continue
+            if hermes_id.lower() in _l2_seen:
+                continue
 
-    for hermes_id, mdev_id in PROVIDER_TO_MODELS_DEV.items():
-        if hermes_id.lower() in seen_slugs or mdev_id.lower() in seen_slugs:
-            continue
-        _alias_target = _PROVIDER_ALIAS_TABLE.get(hermes_id)
-        if (
-            _alias_target
-            and _alias_target != hermes_id
-            and _alias_target in _AGG_PROVIDERS
-        ):
-            continue
-        if mdev_id in seen_mdev_ids:
-            continue
-        pdata = data.get(mdev_id)
-        if not isinstance(pdata, dict):
-            continue
-        pconfig = PROVIDER_REGISTRY.get(hermes_id)
-        if pconfig and pconfig.auth_type != "api_key":
-            continue
-        pinfo = _mdev_pinfo(mdev_id)
-        display_name = pinfo.name if pinfo else mdev_id
-        candidates.append(Layer3Candidate(
-            slug=hermes_id,
-            mdev_id=mdev_id,
-            overlay=None,
-            cp_config=None,
-            name=display_name,
-            source="built-in",
-            is_current=hermes_id == current_provider or mdev_id == current_provider,
-            allow_merge=True,
-        ))
+            # Skip vendor names that are merely aliases routing through an aggregator.
+            _alias_target = _PROVIDER_ALIAS_TABLE.get(hermes_id)
+            if (
+                _alias_target
+                and _alias_target != hermes_id
+                and _alias_target in _AGG_PROVIDERS
+            ):
+                continue
 
-    for pid, overlay in HERMES_OVERLAYS.items():
-        if pid.lower() in seen_slugs:
-            continue
-        hermes_slug = _mdev_to_hermes.get(pid, pid)
-        if hermes_slug.lower() in seen_slugs:
-            continue
-        candidates.append(Layer3Candidate(
-            slug=hermes_slug,
-            mdev_id=pid,
-            overlay=overlay,
-            cp_config=None,
-            name=get_label(hermes_slug),
-            source="hermes",
-            is_current=hermes_slug == current_provider or pid == current_provider,
-            allow_merge=True,
-        ))
+            if mdev_id in seen_mdev_ids:
+                continue
+            pdata = data.get(mdev_id)
+            if not isinstance(pdata, dict):
+                continue
 
-    for _cp in _canon_provs:
-        if _cp.slug.lower() in seen_slugs:
-            continue
-        _cp_config = _auth_registry.get(_cp.slug)
-        candidates.append(Layer3Candidate(
-            slug=_cp.slug,
-            mdev_id=None,
-            overlay=None,
-            cp_config=_cp_config,
-            name=_cp.label,
-            source="canonical",
-            is_current=_cp.slug == current_provider,
-            allow_merge=False,
-        ))
+            # Skip non-API-key auth providers — handled via HERMES_OVERLAYS.
+            pconfig = PROVIDER_REGISTRY.get(hermes_id)
+            if pconfig and pconfig.auth_type != "api_key":
+                continue
 
-    if candidates:
-        try:
-            from hermes_cli.auth import _load_auth_store
-            auth_store = _load_auth_store() or {}
-        except Exception:
-            auth_store = {}
+            # Pre-filter: no auth-store entry AND no env var → cannot have creds.
+            if not _has_cred_signal(hermes_id):
+                continue
 
-        def _check_and_resolve(c: Layer3Candidate):
-            is_aws = (
-                (c.overlay and getattr(c.overlay, "auth_type", "") == "aws_sdk")
-                or (c.cp_config and getattr(c.cp_config, "auth_type", "") == "aws_sdk")
-            )
-            if is_aws:
-                if not _has_aws_sdk_creds_for_listing(c.slug):
-                    return None
+            pinfo = _mdev_pinfo(mdev_id)
+            display_name = pinfo.name if pinfo else mdev_id
+            _l2_candidates.append(_Layer2Candidate(
+                slug=hermes_id,
+                mdev_id=mdev_id,
+                overlay=None,
+                cp_config=None,
+                name=display_name,
+                source="built-in",
+                is_current=hermes_id == current_provider or mdev_id == current_provider,
+            ))
+            _l2_seen.add(hermes_id.lower())
+
+        # 2b. Hermes-only overlays
+        for pid, overlay in HERMES_OVERLAYS.items():
+            if pid.lower() in seen_slugs:
+                continue
+            hermes_slug = _mdev_to_hermes.get(pid, pid)
+            if hermes_slug.lower() in seen_slugs:
+                continue
+            if hermes_slug.lower() in _l2_seen:
+                continue
+
+            if not _has_cred_signal(hermes_slug):
+                continue
+
+            _l2_candidates.append(_Layer2Candidate(
+                slug=hermes_slug,
+                mdev_id=pid,
+                overlay=overlay,
+                cp_config=None,
+                name=get_label(hermes_slug),
+                source="hermes",
+                is_current=hermes_slug == current_provider or pid == current_provider,
+            ))
+            _l2_seen.add(hermes_slug.lower())
+
+        # 2c. Canonical providers
+        for _cp in _canon_provs:
+            if _cp.slug.lower() in seen_slugs:
+                continue
+            if _cp.slug.lower() in _l2_seen:
+                continue
+            _cp_config = _auth_registry.get(_cp.slug)
+            if not _has_cred_signal(_cp.slug):
+                continue
+
+            _l2_candidates.append(_Layer2Candidate(
+                slug=_cp.slug,
+                mdev_id=None,
+                overlay=None,
+                cp_config=_cp_config,
+                name=_cp.label,
+                source="canonical",
+                is_current=_cp.slug == current_provider,
+            ))
+            _l2_seen.add(_cp.slug.lower())
+
+        # Now check credentials and emit for each unique candidate.
+        for c in _l2_candidates:
+            # Check env creds based on candidate type.
+            has_creds = False
+            if c.overlay:
+                has_creds = _has_env_creds(c.slug, mdev_id=c.mdev_id, overlay=c.overlay)
+            elif c.cp_config:
+                has_creds = _has_env_creds(c.slug, cp_config=c.cp_config)
             else:
-                if not _has_auth_creds(c.slug, mdev_id=c.mdev_id, auth_store=auth_store):
-                    return None
+                has_creds = _has_env_creds(c.slug, mdev_id=c.mdev_id)
 
-            models = _resolve_model_ids(
+            if not has_creds:
+                continue
+
+            model_ids = _resolve_model_ids(
                 c.slug,
                 mdev_id=c.mdev_id,
                 overlay=c.overlay,
                 cp_config=c.cp_config,
-                allow_merge=c.allow_merge,
+                allow_merge=(c.source != "canonical"),
             )
-            return {
-                "slug": c.slug,
-                "name": c.name,
-                "is_current": c.is_current,
-                "is_user_defined": False,
-                "models": models,
-                "total_models": len(models),
-                "source": c.source,
-            }
+            _emit_builtin_row(
+                slug=c.slug,
+                name=c.name,
+                is_current=c.is_current,
+                models=model_ids,
+                source=c.source,
+                mdev_id=c.mdev_id,
+            )
 
-        # Preserve deterministic emission order while running checks in parallel.
-        max_workers = min(32, len(candidates))
-        resolved_rows: list[dict | None] = [None] * len(candidates)
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            future_to_index = {
-                executor.submit(_check_and_resolve, c): i
-                for i, c in enumerate(candidates)
-            }
-            for future in as_completed(future_to_index):
-                i = future_to_index[future]
-                c = candidates[i]
-                try:
-                    resolved_rows[i] = future.result()
-                except Exception as exc:
-                    logger.debug("Layer 3 check failed for %s: %s", c.slug, exc)
-                    resolved_rows[i] = None
+        # -----------------------------------------------------------------------
+        # Layer 3: parallel auth-store / credential-pool detection
+        # -----------------------------------------------------------------------
+        # Gather all built-in providers not already emitted and check them in
+        # parallel.  The model-id cache is locked during resolution.
+        Layer3Candidate = NamedTuple(
+            "Layer3Candidate",
+            [
+                ("slug", str),
+                ("mdev_id", Optional[str]),
+                ("overlay", Optional[object]),
+                ("cp_config", Optional[object]),
+                ("name", str),
+                ("source", str),
+                ("is_current", bool),
+                ("allow_merge", bool),
+            ],
+        )
 
-        for i, c in enumerate(candidates):
-            row = resolved_rows[i]
-            if row:
-                # Apply max_models cap for Layer 3 emissions (Layer 2 already
-                # caps inside _emit_builtin_row).  total_models stays the full
-                # count, matching the existing contract.
-                if max_models is not None:
-                    row = dict(row)
-                    row["models"] = row["models"][:max_models]
-                results.append(row)
-                seen_slugs.add(c.slug.lower())
-                if c.mdev_id:
-                    seen_mdev_ids.add(c.mdev_id)
-                _record_builtin_endpoint(c.slug)
+        candidates: list[Layer3Candidate] = []
+
+        # Build unified candidate list for Layer 3, merging all three sources
+        # and deduplicating by slug. Same pattern as Layer 2.
+        _l3_seen: set = set()  # slug.lower() dedup
+
+        for hermes_id, mdev_id in PROVIDER_TO_MODELS_DEV.items():
+            if hermes_id.lower() in seen_slugs or mdev_id.lower() in seen_slugs:
+                continue
+            if hermes_id.lower() in _l3_seen:
+                continue
+            _alias_target = _PROVIDER_ALIAS_TABLE.get(hermes_id)
+            if (
+                _alias_target
+                and _alias_target != hermes_id
+                and _alias_target in _AGG_PROVIDERS
+            ):
+                continue
+            if mdev_id in seen_mdev_ids:
+                continue
+            pdata = data.get(mdev_id)
+            if not isinstance(pdata, dict):
+                continue
+            pconfig = PROVIDER_REGISTRY.get(hermes_id)
+            if pconfig and pconfig.auth_type != "api_key":
+                continue
+            # Pre-filter: no auth-store entry AND no env var → cannot have creds,
+            # so load_pool() under _has_auth_creds would only return an empty
+            # seed. Skipping avoids the slow per-slug credential-pool disk read.
+            if not _has_cred_signal(hermes_id):
+                continue
+            pinfo = _mdev_pinfo(mdev_id)
+            display_name = pinfo.name if pinfo else mdev_id
+            candidates.append(Layer3Candidate(
+                slug=hermes_id,
+                mdev_id=mdev_id,
+                overlay=None,
+                cp_config=None,
+                name=display_name,
+                source="built-in",
+                is_current=hermes_id == current_provider or mdev_id == current_provider,
+                allow_merge=True,
+            ))
+            _l3_seen.add(hermes_id.lower())
+
+        for pid, overlay in HERMES_OVERLAYS.items():
+            if pid.lower() in seen_slugs:
+                continue
+            hermes_slug = _mdev_to_hermes.get(pid, pid)
+            if hermes_slug.lower() in seen_slugs:
+                continue
+            if hermes_slug.lower() in _l3_seen:
+                continue
+            if not _has_cred_signal(hermes_slug):
+                continue
+            candidates.append(Layer3Candidate(
+                slug=hermes_slug,
+                mdev_id=pid,
+                overlay=overlay,
+                cp_config=None,
+                name=get_label(hermes_slug),
+                source="hermes",
+                is_current=hermes_slug == current_provider or pid == current_provider,
+                allow_merge=True,
+            ))
+            _l3_seen.add(hermes_slug.lower())
+
+        for _cp in _canon_provs:
+            if _cp.slug.lower() in seen_slugs:
+                continue
+            if _cp.slug.lower() in _l3_seen:
+                continue
+            _cp_config = _auth_registry.get(_cp.slug)
+            if not _has_cred_signal(_cp.slug):
+                continue
+            candidates.append(Layer3Candidate(
+                slug=_cp.slug,
+                mdev_id=None,
+                overlay=None,
+                cp_config=_cp_config,
+                name=_cp.label,
+                source="canonical",
+                is_current=_cp.slug == current_provider,
+                allow_merge=False,
+            ))
+            _l3_seen.add(_cp.slug.lower())
+
+        if candidates:
+            # Reuse the auth store already loaded by the pre-filter step above
+            # instead of hitting disk a second time.
+            auth_store = _layer3_auth_store
+
+            def _check_and_resolve(c: Layer3Candidate):
+                is_aws = (
+                    (c.overlay and getattr(c.overlay, "auth_type", "") == "aws_sdk")
+                    or (c.cp_config and getattr(c.cp_config, "auth_type", "") == "aws_sdk")
+                )
+                if is_aws:
+                    if not _has_aws_sdk_creds_for_listing(c.slug):
+                        return None
+                else:
+                    if not _has_auth_creds(c.slug, mdev_id=c.mdev_id, auth_store=auth_store):
+                        return None
+
+                models = _resolve_model_ids(
+                    c.slug,
+                    mdev_id=c.mdev_id,
+                    overlay=c.overlay,
+                    cp_config=c.cp_config,
+                    allow_merge=c.allow_merge,
+                )
+                return {
+                    "slug": c.slug,
+                    "name": c.name,
+                    "is_current": c.is_current,
+                    "is_user_defined": False,
+                    "models": models,
+                    "total_models": len(models),
+                    "source": c.source,
+                }
+
+            # Preserve deterministic emission order while running checks in parallel.
+            max_workers = min(32, len(candidates))
+            resolved_rows: list[dict | None] = [None] * len(candidates)
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                future_to_index = {
+                    executor.submit(_check_and_resolve, c): i
+                    for i, c in enumerate(candidates)
+                }
+                for future in as_completed(future_to_index):
+                    i = future_to_index[future]
+                    c = candidates[i]
+                    try:
+                        resolved_rows[i] = future.result(timeout=2.0)
+                    except Exception as exc:
+                        logger.debug("Layer 3 check failed for %s: %s", c.slug, exc)
+                        resolved_rows[i] = None
+
+            for i, c in enumerate(candidates):
+                row = resolved_rows[i]
+                if row:
+                    # Apply max_models cap for Layer 3 emissions (Layer 2 already
+                    # caps inside _emit_builtin_row).  total_models stays the full
+                    # count, matching the existing contract.
+                    if max_models is not None:
+                        row = dict(row)
+                        row["models"] = row["models"][:max_models]
+                    results.append(row)
+                    seen_slugs.add(c.slug.lower())
+                    if c.mdev_id:
+                        seen_mdev_ids.add(c.mdev_id)
+                    _record_builtin_endpoint(c.slug)
 
     # --- 3b. Active bare custom endpoint from model config ---
     # A config can still use the direct one-off form:
@@ -2318,7 +2485,7 @@ def list_authenticated_providers(
             # set. The built-in row carries the curated model list, correct
             # auth wiring, and canonical slug — keep it and hide the shadow.
             _grp_url_norm = _pair_key[1]
-            if _grp_url_norm and _grp_url_norm in _builtin_endpoints:
+            if not _skip_discovery and _grp_url_norm and _grp_url_norm in _builtin_endpoints:
                 continue
             # Live model discovery from custom provider endpoints (matches
             # Section 3 behavior for user ``providers:`` entries).
