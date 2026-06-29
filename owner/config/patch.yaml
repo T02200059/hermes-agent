@@ -50,7 +50,7 @@ owner:
       - model: mimo-v2.5-pro
         provider: xiaomi
         temperature: 0.6
-      - model: kimi-for-coding
+      - model: kimi-k2.6
         provider: damodel
         temperature: 1.0       # kimi 锁定 temp=1.0 (官方要求)
       - model: qwen3.7-plus
@@ -143,7 +143,6 @@ owner:
   # Override per-call by passing model="wan" to the image_generate tool.
   # api_key supports ${ENV_VAR} references; expanded at runtime.
   image_gen:
-    current: dashscope-qwen
     presets:
       dashscope-qwen:
         alias:
@@ -172,7 +171,6 @@ owner:
   #         tool_preview_length: 0
   #         streaming: false
 
-
   # ── display_hook_message_receive ─────────────────────────────────────
   # 控制 message:receive hook 召回的 extra_context 是否也作为 chat 消息投到当前对话。
   # 与 hook 自身的 LLM 拼写行为解耦 —— enabled=false 只关用户侧投送，hook 仍向 LLM 注入。
@@ -193,20 +191,12 @@ owner:
       new: "/new"
       status: "/status"
       stop: "/stop"
-      reasoning_off: "/reasoning off --global"
-      reasoning_medium: "/reasoning medium --global"
-      reasoning_high: "/reasoning xhigh --global"
-      model_max: "/model qwen3.7-max --provider damodel"
-      model_pro: "/model deepseek-v4-pro --provider damodel"
-      model_flash: "/model deepseek-v4-flash --provider damodel"
       model_mimo: "/model mimo-v2.5-pro --provider xiaomi --global"
       list_models: "/providers"
       yolo_on: "/yolo on"
       yolo_off: "/yolo off"
-      inspect_gpu_cluster: "帮我根据 sre-king 启动 GPU 集群巡检流程，先问我 IP 范围，等我确认后再执行"
       resume: "/resume"
       sync_git_hermes: "帮我同步 hermes-agent 代码：1) 检查 git status 确认无遗留；2) 按功能拆分成多个有意义的 commit；3) 确认全程在当前分支操作；4) push 到 github 和 gitlab。开始前先告诉我你的计划。"
-      sync_sre_king: "帮我同步本地 sre-king 目录代码，流程如下：1) 定位本地 sre-king 目录（~/.hermes/skills/westcloud/sre-king/）；2) 检查是否为 git 仓库，不是则停止并提示；3) 检查当前分支对远端是否有 push 权限，无权限则停止并提示；4) 检查本地未提交的改动，按功能合理拆分成一个或多个有意义的 commit；5) git fetch + git pull 同步远端当前分支；6) 如有冲突 → 停下来描述冲突文件，询问我如何解决；无冲突 → 直接 push。开始前先告诉我你的计划，每步执行后汇报结果。"
 
   # ── Feishu bot menu dedup + ack (per-key feedback for slow bot menu commands) ─
   # Sent immediately after a bot menu click so the user sees feedback before the
@@ -224,22 +214,8 @@ owner:
           ack: "⏹️ 停止当前任务…"
         status:
           ack: null
-        reasoning_off:
-          ack: "⚙️ 切换推理模式…"
-        reasoning_medium:
-          ack: "⚙️ 切换推理模式…"
-        reasoning_high:
-          ack: "⚙️ 切换推理模式…"
-        model_flash:
-          ack: "🤖 切换模型…"
-        model_pro:
-          ack: "🤖 切换模型…"
-        model_max:
-          ack: "🤖 切换模型…"
         model_mimo:
           ack: "🤖 切换 mimo-v2.5-pro…"
-        inspect_gpu_cluster:
-          ack: "🔍 启动 GPU 集群巡检流程中…"
         resume:
           ack: "📋 恢复会话中…"
         list_models:
@@ -250,8 +226,6 @@ owner:
           ack: "🔒 关闭 YOLO 模式…"
         sync_git_hermes:
           ack: "🔄 同步 hermes-agent 仓库…"
-        sync_sre_king:
-          ack: "📦 同步 sre-king 仓库…"
 
   # ── Model-level extra_body injection ───────────────────────────────────────
   # Per-provider, per-model extra_body merges. Use the *real* provider name
@@ -261,26 +235,8 @@ owner:
   # overrides. It lets you turn on provider-specific features like thinking
   # mode for one model without touching the global config.
   model_extra_body:
-    xfyun:
-      astron-code-latest:
-        enable_thinking: true
-      # [owner] xfyun 直连端点也需要 enable_thinking
-      # 验证 2026-06-12: enable_thinking=true → reasoning_content 填充
-      xopglm51:
-        enable_thinking: true
-      xopglm5:
-        enable_thinking: true
-      xopkimik26:
-        enable_thinking: true
     # [owner] damodel 思考模式配置
-    # xopglm51=GLM-5.1 / xopglm5=GLM-5 / xopkimik26=Kimi-K2.6 (讯飞 Coding Plan)
     damodel:
-      xopglm51:
-        enable_thinking: true
-      xopglm5:
-        enable_thinking: true
-      xopkimik26:
-        enable_thinking: true
       # [owner] glm-5.1/glm-5: Coding Plan 端点，使用官方格式 + clear_thinking=false
       # 验证 2026-06-12: thinking.type=enabled → reasoning_content 填满
       glm-5.1:
