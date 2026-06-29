@@ -4249,6 +4249,13 @@ def cmd_kanban(args):
     return kanban_command(args)
 
 
+def cmd_project(args):
+    """Manage projects (named, multi-folder workspaces)."""
+    from hermes_cli.projects_cmd import projects_command
+
+    return projects_command(args)
+
+
 def cmd_hooks(args):
     """Shell-hook inspection and management."""
     from hermes_cli.hooks import hooks_command
@@ -8317,13 +8324,12 @@ def _run_pre_update_backup(args) -> None:
         cfg = {}
 
     updates_cfg = cfg.get("updates", {}) if isinstance(cfg, dict) else {}
-    # The default config ships with ``pre_update_backup: true`` (see
-    # ``hermes_cli/config.py``). Fall back to true if the key is missing
-    # (e.g. a user has an older custom config without the field). The
-    # ``False`` default from before #48200 caused silent data loss when
-    # an update step computed a wrong path — the cost of a few minutes
-    # of zip time per update is negligible compared to the alternative.
-    enabled = updates_cfg.get("pre_update_backup", True)
+    # The default config ships with ``pre_update_backup: false`` (see
+    # ``hermes_cli/config.py``). Fall back to false if the key is missing
+    # so the default behaviour matches the shipped config: zipping a large
+    # HERMES_HOME can add minutes to every update. Users who want the
+    # #48200 safety net opt in via the config knob or ``--backup``.
+    enabled = updates_cfg.get("pre_update_backup", False)
     keep = updates_cfg.get("backup_keep", 5)
 
     if not enabled and not force_backup:
@@ -11580,7 +11586,8 @@ _BUILTIN_SUBCOMMANDS = frozenset(
         "config", "cron", "curator", "dashboard", "debug", "doctor",
         "dump", "fallback", "gateway", "hooks", "import", "insights",
         "gui", "desktop", "kanban", "login", "logout", "logs", "lsp", "mcp", "memory", "migrate", "moa",
-        "model", "pairing", "pets", "plugins", "portal", "postinstall", "profile", "proxy",
+        "model", "pairing", "pets", "plugins", "portal", "postinstall", "profile",
+        "project", "proxy",
         "prompt-size",
         "send", "sessions", "setup",
         "skills", "slack", "status", "tools", "uninstall", "update",
@@ -12331,6 +12338,14 @@ def main():
 
     kanban_parser = _build_kanban_parser(subparsers)
     kanban_parser.set_defaults(func=cmd_kanban)
+
+    # =========================================================================
+    # project command — named, multi-folder workspaces
+    # =========================================================================
+    from hermes_cli.projects_cmd import build_parser as _build_project_parser
+
+    project_parser = _build_project_parser(subparsers)
+    project_parser.set_defaults(func=cmd_project)
 
     # =========================================================================
     # hooks command — shell-hook inspection and management

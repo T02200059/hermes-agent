@@ -51,8 +51,7 @@ _BRANCH_CHILD_SQL = (
 _COMPRESSION_CHILD_SQL = (
     "EXISTS (SELECT 1 FROM sessions p"
     "        WHERE p.id = {a}.parent_session_id"
-    "        AND p.end_reason = 'compression'"
-    "        AND {a}.started_at >= p.ended_at)"
+    "        AND p.end_reason = 'compression')"
 )
 
 # Rows that surface in pickers: roots + branch children (subagent runs and
@@ -2064,7 +2063,6 @@ class SessionDB:
                     JOIN sessions child ON child.id = a.id
                     JOIN sessions parent ON parent.id = child.parent_session_id
                     WHERE parent.end_reason = 'compression'
-                      AND child.started_at >= parent.ended_at
                   ),
                   descendants(id) AS (
                     SELECT ?
@@ -2074,7 +2072,6 @@ class SessionDB:
                     JOIN sessions parent ON parent.id = d.id
                     JOIN sessions child ON child.parent_session_id = parent.id
                     WHERE parent.end_reason = 'compression'
-                      AND child.started_at >= parent.ended_at
                   ),
                   lineage(id) AS (
                     SELECT id FROM ancestors
@@ -2170,37 +2167,64 @@ class SessionDB:
     def get_compression_tip(self, session_id: str) -> Optional[str]:
         """Walk the compression-continuation chain forward and return the tip.
 
-        A compression continuation is a child session where:
-        1. The parent's ``end_reason = 'compression'``
-        2. The child was created AFTER the parent was ended (started_at >= ended_at)
+        A compression continuation is a child of a session whose
+        ``end_reason = 'compression'``.  Older builds tried to distinguish
+        continuations from branches/subagents by requiring
+        ``child.started_at >= parent.ended_at``.  That ordering is too brittle:
+        gateway + compression races can insert the real continuation row before
+        the parent row's ``ended_at`` is written, while a stale websocket later
+        creates/reuses a sibling that *does* satisfy the timestamp test.  The
+        visible symptom is brutal: desktop resume follows the stale sibling and
+        the user's latest messages look "lost" even though they are persisted in
+        the real continuation chain.
 
-        The second condition distinguishes compression continuations from
-        delegate subagents or branch children, which can also have a
-        ``parent_session_id`` but were created while the parent was still live.
-
-        Returns the session_id of the latest continuation in the chain, or the
-        input ``session_id`` if it isn't part of a compression chain (or if the
-        input itself doesn't exist).
+        Instead, only follow children of compression-ended parents, exclude
+        explicit branch/delegate/tool children, and prefer children that are
+        themselves continuing the compression chain (``end_reason='compression'``)
+        or still live over stale closed siblings such as ``ws_orphan_reap``.
+        Returns the latest continuation tip, or the input id when no
+        continuation exists.
         """
         current = session_id
+        seen = {current} if current else set()
         # Bound the walk defensively — compression chains this deep are
         # pathological and shouldn't happen in practice. 100 = plenty.
         for _ in range(100):
             with self._lock:
                 cursor = self._conn.execute(
-                    "SELECT id FROM sessions "
-                    "WHERE parent_session_id = ? "
-                    "  AND started_at >= ("
-                    "      SELECT ended_at FROM sessions "
-                    "      WHERE id = ? AND end_reason = 'compression'"
-                    "  ) "
-                    "ORDER BY started_at DESC LIMIT 1",
-                    (current, current),
+                    """
+                    SELECT child.id
+                    FROM sessions parent
+                    JOIN sessions child ON child.parent_session_id = parent.id
+                    WHERE parent.id = ?
+                      AND parent.end_reason = 'compression'
+                      AND json_extract(COALESCE(child.model_config, '{}'), '$._branched_from') IS NULL
+                      AND json_extract(COALESCE(child.model_config, '{}'), '$._delegate_from') IS NULL
+                      AND COALESCE(child.source, '') != 'tool'
+                    ORDER BY
+                      CASE
+                        WHEN child.end_reason = 'compression' THEN 0
+                        WHEN child.ended_at IS NULL THEN 1
+                        ELSE 2
+                      END,
+                      COALESCE(
+                        (SELECT MAX(m.timestamp) FROM messages m WHERE m.session_id = child.id),
+                        child.started_at
+                      ) DESC,
+                      child.started_at DESC,
+                      child.id DESC
+                    LIMIT 1
+                    """,
+                    (current,),
                 )
                 row = cursor.fetchone()
             if row is None:
                 return current
-            current = row["id"]
+            child_id = row["id"]
+            if not child_id or child_id in seen:
+                return current
+            seen.add(child_id)
+            current = child_id
         return current
 
     def distinct_session_cwds(self, include_archived: bool = False) -> List[Dict[str, Any]]:
@@ -2330,10 +2354,12 @@ class SessionDB:
             # still surfacing old compression roots whose live tip is fresh.
             #
             # The CTE seeds from rows the outer WHERE admits (roots + branch
-            # children), then recursively joins forward through
-            # compression-continuation edges using the same criteria as
-            # get_compression_tip (parent.end_reason='compression' AND
-            # child.started_at >= parent.ended_at).
+            # children), then recursively joins forward through robust
+            # compression-continuation edges. Do NOT require
+            # child.started_at >= parent.ended_at here: real desktop/gateway
+            # races can insert the continuation row before the parent's
+            # ended_at is written, while stale websocket siblings may satisfy
+            # the timestamp test and hijack resume/list projection.
             outer_where = where_sql
             id_params: List[Any] = []
             if id_needle:
@@ -2365,7 +2391,9 @@ class SessionDB:
                     JOIN sessions parent ON parent.id = c.cur_id
                     JOIN sessions child ON child.parent_session_id = c.cur_id
                     WHERE parent.end_reason = 'compression'
-                      AND child.started_at >= parent.ended_at
+                      AND json_extract(COALESCE(child.model_config, '{{}}'), '$._branched_from') IS NULL
+                      AND json_extract(COALESCE(child.model_config, '{{}}'), '$._delegate_from') IS NULL
+                      AND COALESCE(child.source, '') != 'tool'
                 ),
                 chain_max AS (
                     SELECT
@@ -3169,9 +3197,14 @@ class SessionDB:
         it before compression. See #15000.
 
         This helper walks ``parent_session_id`` forward from ``session_id`` and
-        returns the first descendant in the chain that has at least one message
-        row. If the original session already has messages, or no descendant
-        has any, the original ``session_id`` is returned unchanged.
+        returns the descendant in the chain that has the **most recent** messages.
+        Unlike the original logic, it does NOT short-circuit when the starting
+        session already has messages — a descendant that was created by
+        compression may hold the continuation content and should be preferred
+        by the WebUI and gateway for ``--resume`` and session loading.
+
+        If no descendant (including the starting session) has any messages,
+        the original ``session_id`` is returned unchanged.
 
         The chain is always walked via the child whose ``started_at`` is
         latest; that matches the single-chain shape that compression creates.
@@ -3199,48 +3232,49 @@ class SessionDB:
             session_id = tip
 
         with self._lock:
-            # If this session already has messages, nothing to redirect.
-            try:
-                row = self._conn.execute(
-                    "SELECT 1 FROM messages WHERE session_id = ? LIMIT 1",
-                    (session_id,),
-                ).fetchone()
-            except Exception:
-                return session_id
-            if row is not None:
-                return session_id
-
-            # Walk descendants: at each step, pick the most-recently-started
-                # child session; stop once we find one with messages.
             current = session_id
             seen = {current}
+            best = None  # tracks the last (deepest) node with messages
+
             for _ in range(32):
+                # Check if the current node has messages.
+                try:
+                    row = self._conn.execute(
+                        "SELECT 1 FROM messages WHERE session_id = ? LIMIT 1",
+                        (current,),
+                    ).fetchone()
+                except Exception:
+                    return session_id
+                if row is not None:
+                    best = current
+
+                # Walk to the most-recently-started child — but skip explicit
+                # branch (`_branched_from`), delegate/subagent (`_delegate_from`),
+                # and tool children. They also carry a ``parent_session_id`` yet
+                # are NOT compression continuations; following them would hijack
+                # the resume target to an unrelated session (e.g. a subagent
+                # run). This mirrors the child-exclusion in ``get_compression_tip``.
                 try:
                     child_row = self._conn.execute(
                         "SELECT id FROM sessions "
                         "WHERE parent_session_id = ? "
+                        "  AND json_extract(COALESCE(model_config, '{}'), '$._branched_from') IS NULL "
+                        "  AND json_extract(COALESCE(model_config, '{}'), '$._delegate_from') IS NULL "
+                        "  AND COALESCE(source, '') != 'tool' "
                         "ORDER BY started_at DESC, id DESC LIMIT 1",
                         (current,),
                     ).fetchone()
                 except Exception:
                     return session_id
                 if child_row is None:
-                    return session_id
+                    break
                 child_id = child_row["id"] if hasattr(child_row, "keys") else child_row[0]
                 if not child_id or child_id in seen:
-                    return session_id
+                    break
                 seen.add(child_id)
-                try:
-                    msg_row = self._conn.execute(
-                        "SELECT 1 FROM messages WHERE session_id = ? LIMIT 1",
-                        (child_id,),
-                    ).fetchone()
-                except Exception:
-                    return session_id
-                if msg_row is not None:
-                    return child_id
                 current = child_id
-        return session_id
+
+            return best if best is not None else session_id
 
     def get_messages_as_conversation(
         self,

@@ -2944,8 +2944,6 @@ def _get_usage(agent) -> dict:
         "model": getattr(agent, "model", "") or "",
         "input": g("session_input_tokens", "session_prompt_tokens"),
         "output": g("session_output_tokens", "session_completion_tokens"),
-        "cache_read": g("session_cache_read_tokens"),
-        "cache_write": g("session_cache_write_tokens"),
         "reasoning": g("session_reasoning_tokens"),
         "prompt": g("session_prompt_tokens"),
         "completion": g("session_completion_tokens"),
@@ -2967,25 +2965,6 @@ def _get_usage(agent) -> dict:
     try:
         from tools.async_delegation import active_count as _async_active_count
         usage["active_subagents"] = _async_active_count()
-    except Exception:
-        pass
-    try:
-        from agent.usage_pricing import CanonicalUsage, estimate_usage_cost
-
-        cost = estimate_usage_cost(
-            usage["model"],
-            CanonicalUsage(
-                input_tokens=usage["input"],
-                output_tokens=usage["output"],
-                cache_read_tokens=usage["cache_read"],
-                cache_write_tokens=usage["cache_write"],
-            ),
-            provider=getattr(agent, "provider", None),
-            base_url=getattr(agent, "base_url", None),
-        )
-        usage["cost_status"] = cost.status
-        if cost.amount_usd is not None:
-            usage["cost_usd"] = float(cost.amount_usd)
     except Exception:
         pass
     # Dev-only live credits-spent readout (L0 usage-aware-credits). Gated on
@@ -3443,11 +3422,6 @@ def _on_tool_progress(
                     payload[int_key] = int(val)
                 except (TypeError, ValueError):
                     pass
-        if _kwargs.get("cost_usd") is not None:
-            try:
-                payload["cost_usd"] = float(_kwargs["cost_usd"])
-            except (TypeError, ValueError):
-                pass
         if _kwargs.get("files_read"):
             payload["files_read"] = [str(p) for p in _kwargs["files_read"]]
         if _kwargs.get("files_written"):
@@ -4968,7 +4942,7 @@ def _(rid, params: dict) -> dict:
         fetch_limit = max(limit * 2, 200)
         rows = [
             s
-            for s in db.list_sessions_rich(source=None, limit=fetch_limit)
+            for s in db.list_sessions_rich(source=None, limit=fetch_limit, order_by_last_active=True)
             if (s.get("source") or "").strip().lower() not in deny
         ][:limit]
         return _ok(
@@ -5015,7 +4989,7 @@ def _(rid, params: dict) -> dict:
         # users (lots of recent ``tool`` rows) don't get a false
         # "no eligible session" answer.  ``session.list`` uses a
         # similar over-fetch strategy.
-        rows = db.list_sessions_rich(source=None, limit=200)
+        rows = db.list_sessions_rich(source=None, limit=200, order_by_last_active=True)
         for row in rows:
             src = (row.get("source") or "").strip().lower()
             if src in deny:
