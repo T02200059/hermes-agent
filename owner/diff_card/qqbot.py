@@ -12,7 +12,7 @@ from typing import Any, Optional, TYPE_CHECKING
 from owner.diff_card.common import basename_for_display, count_diff_changes, diff_card_emoji
 
 if TYPE_CHECKING:
-    from gateway.platforms.qqbot.adapter import QQBotAdapter
+    from gateway.platforms.qqbot.adapter import QQAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +68,7 @@ def diff_to_qq_markdown(
 
 
 async def send_qqbot_diff_markdown(
-    adapter: "QQBotAdapter",
+    adapter: "QQAdapter",
     chat_id: str,
     diff: str,
     tool_name: str,

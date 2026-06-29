@@ -348,14 +348,9 @@ TOOLSETS = {
         "description": "Coding-focused toolset: files, terminal, search, web docs, skills, todo, delegate, vision, browser",
         "tools": [
             "web_search", "web_extract",
-<<<<<<< HEAD
             "terminal", "process", "read_terminal", "close_terminal",
             # [owner] unified_diff_patch: include in coding posture
             "read_file", "write_file", "patch", "unified_diff_patch", "search_files",
-=======
-            "terminal", "process", "read_terminal", "close_terminal",
-            "read_file", "write_file", "patch", "search_files",
->>>>>>> 4488fe134b1de4359f3a4f1f8368576413e6e268
             "vision_analyze",
             "skills_list", "skill_view", "skill_manage",
             "browser_navigate", "browser_snapshot", "browser_click",

@@ -147,6 +147,22 @@ from utils import atomic_json_write, env_float, env_int
 
 logger = logging.getLogger(__name__)
 
+# [owner] lazy owner imports — adapter stays importable / removable without owner/
+_owner_lazy: Dict[str, Any] = {}
+
+
+def _owner_import(module: str, name: str) -> Any:
+    key = f"{module}.{name}"
+    if key not in _owner_lazy:
+        import importlib
+
+        try:
+            _owner_lazy[key] = getattr(importlib.import_module(module), name)
+        except (ImportError, AttributeError):
+            _owner_lazy[key] = None  # graceful degradation when owner/ removed
+    return _owner_lazy[key]
+
+
 # ---------------------------------------------------------------------------
 # Regex patterns
 # ---------------------------------------------------------------------------
@@ -1421,6 +1437,25 @@ class FeishuAdapter(BasePlatformAdapter):
     # is almost certain.
     _SPLIT_THRESHOLD = 4000
 
+    # [owner] user store: thin forwards (see owner/feishu/user_store.py)
+    @property
+    def _feishu_user_cache(self) -> Dict[str, Any]:
+        store = getattr(self, "_user_store", None)
+        if store is not None:
+            return store.users
+        return self._feishu_user_cache_impl
+
+    @property
+    def _client(self) -> Optional[Any]:
+        return getattr(self, "_client_impl", None)
+
+    @_client.setter
+    def _client(self, value: Optional[Any]) -> None:
+        self._client_impl = value
+        store = getattr(self, "_user_store", None)
+        if store is not None:
+            store.bind_client(value, adapter=self)  # sync store so name resolution works after client is set
+
     # =========================================================================
     # Lifecycle — init / settings / connect / disconnect
     # =========================================================================
@@ -1430,7 +1465,7 @@ class FeishuAdapter(BasePlatformAdapter):
 
         self._settings = self._load_settings(config.extra or {})
         self._apply_settings(self._settings)
-        self._client: Optional[Any] = None
+        self._client_impl: Optional[Any] = None
         # Adapter-owned thread pool for blocking Feishu SDK calls. Routing SDK
         # work through this pool (instead of asyncio's shared default executor)
         # means a torn-down default executor can no longer wedge sends with
@@ -1476,11 +1511,7 @@ class FeishuAdapter(BasePlatformAdapter):
         self._media_batch_state = FeishuBatchState()
         self._pending_media_batches = self._media_batch_state.events
         self._pending_media_batch_tasks = self._media_batch_state.tasks
-        # Exec approval button state (approval_id → {session_key, message_id, chat_id})
-        self._approval_state: Dict[int, Dict[str, str]] = {}
-        self._approval_counter = itertools.count(1)
         # Update prompt button state (prompt_id → {session_key, message_id, chat_id})
-        self._update_prompt_state: Dict[int, Dict[str, str]] = {}
         self._update_prompt_counter = itertools.count(1)
         # Feishu reaction deletion requires the opaque reaction_id returned
         # by create, so we cache it per message_id.
@@ -1666,6 +1697,8 @@ class FeishuAdapter(BasePlatformAdapter):
             .register_p2_im_chat_member_bot_added_v1(self._on_bot_added_to_chat)
             .register_p2_im_chat_member_bot_deleted_v1(self._on_bot_removed_from_chat)
             .register_p2_im_chat_access_event_bot_p2p_chat_entered_v1(self._on_p2p_chat_entered)
+            # [owner] bot-menu support
+            .register_p2_application_bot_menu_v6(self._on_bot_menu_event)
             .register_p2_im_message_recalled_v1(self._on_message_recalled)
             .register_p2_customized_event(
                 "drive.notice.comment_add_v1",
@@ -1889,6 +1922,18 @@ class FeishuAdapter(BasePlatformAdapter):
             logger.warning("[Feishu] owner send_card failed: %s", exc)
             return SendResult(success=False, error=str(exc))
 
+    # [owner] compression summary card: thin dispatch (see owner/feishu/compression_summary_card.py)
+    async def send_compression_summary(
+        self,
+        chat_id: str,
+        content: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Optional[SendResult]:
+        """Send compression feedback as a dedicated Feishu card if content matches."""
+        from owner.feishu.compression_summary_card import try_send_compression_summary
+
+        return await try_send_compression_summary(self, chat_id, content, metadata)
+
     async def send(
         self,
         chat_id: str,
@@ -1901,6 +1946,26 @@ class FeishuAdapter(BasePlatformAdapter):
             return SendResult(success=False, error="Not connected")
 
         formatted = self.format_message(content)
+
+        # Compression summary: render as a dedicated card with a header instead
+        # of falling through to the generic auto-card/plain-text path.
+        # [owner] see owner/feishu/compression_summary_card.py
+        _compression_summary_result = await self.send_compression_summary(
+            chat_id=chat_id, content=formatted, metadata=metadata
+        )
+        if _compression_summary_result is not None:
+            return _compression_summary_result
+
+        # Auto-card: wrap long text in an interactive card when streaming is
+        # disabled. Threshold from patch.yaml → owner.feishu_card.auto_card_threshold.
+        # Uses send_card() with REST API (not lark_oapi SDK) so it won't
+        # invalidate the WebSocket connection's token.
+        auto_card_result = await _owner_import(
+            "owner.feishu.auto_card", "try_auto_card"
+        )(self, formatted, metadata, chat_id=chat_id)
+        if auto_card_result is not None:
+            return auto_card_result
+
         chunks = self.truncate_message(formatted, self.MAX_MESSAGE_LENGTH)
         last_response = None
 
@@ -2003,7 +2068,7 @@ class FeishuAdapter(BasePlatformAdapter):
                 fire_delegate=True,
             )
 
-            approval_id = self._approval_ctx.next_id() if hasattr(self, '_approval_ctx') else next(getattr(self, '_approval_counter', itertools.count(1)))
+            approval_id = self._approval_ctx.next_id()
 
             # [owner] approval: build full interactive card (see owner/feishu/approval.py)
             card = _owner_import("owner.feishu.approval", "build_approval_card")(
@@ -2023,52 +2088,18 @@ class FeishuAdapter(BasePlatformAdapter):
 
             result = self._finalize_send_result(response, "send_exec_approval failed")
             if result.success:
-                # store in our ctx or legacy
-                if hasattr(self, '_approval_ctx'):
-                    self._approval_ctx.store(approval_id, session_key, result.message_id or "", chat_id)
-                else:
-                    self._approval_state[approval_id] = {
-                        "session_key": session_key,
-                        "message_id": result.message_id or "",
-                        "chat_id": chat_id,
-                    }
+                # [owner] approval: keep correlation state in owner context
+                self._approval_ctx.register(
+                    approval_id,
+                    session_key=session_key,
+                    message_id=result.message_id or "",
+                    chat_id=chat_id,
+                    command=command,
+                )
             return result
         except Exception as exc:
             logger.warning("[Feishu] send_exec_approval failed: %s", exc)
             return SendResult(success=False, error=str(exc))
-
-    @staticmethod
-    def _build_update_prompt_card(*, prompt: str, default: str, prompt_id: int) -> Dict[str, Any]:
-        default_hint = f"\n\nDefault: `{default}`" if default else ""
-
-        def _btn(label: str, answer: str, btn_type: str) -> dict:
-            return {
-                "tag": "button",
-                "text": {"tag": "plain_text", "content": label},
-                "type": btn_type,
-                "value": {
-                    "hermes_update_prompt_action": answer,
-                    "update_prompt_id": prompt_id,
-                },
-            }
-
-        return {
-            "config": {"wide_screen_mode": True},
-            "header": {
-                "title": {"content": "⚕ Update Needs Your Input", "tag": "plain_text"},
-                "template": "orange",
-            },
-            "elements": [
-                {"tag": "markdown", "content": f"{prompt}{default_hint}"},
-                {
-                    "tag": "action",
-                    "actions": [
-                        _btn("✓ Yes", "y", "primary"),
-                        _btn("✗ No", "n", "danger"),
-                    ],
-                },
-            ],
-        }
 
     async def send_update_prompt(
         self, chat_id: str, prompt: str, default: str = "",
@@ -2080,9 +2111,11 @@ class FeishuAdapter(BasePlatformAdapter):
             return SendResult(success=False, error="Not connected")
 
         try:
-            prompt_id = next(self._update_prompt_counter)
+            # [owner] update-prompt: build card + keep state in owner context
+            prompt_id = self._update_prompt_ctx.next_id()
+            from owner.feishu.update_prompt import build_update_prompt_card
             payload = json.dumps(
-                self._build_update_prompt_card(prompt=prompt, default=default, prompt_id=prompt_id),
+                build_update_prompt_card(prompt=prompt, default=default, prompt_id=prompt_id),
                 ensure_ascii=False,
             )
             response = await self._feishu_send_with_retry(
@@ -2095,11 +2128,12 @@ class FeishuAdapter(BasePlatformAdapter):
 
             result = self._finalize_send_result(response, "send_update_prompt failed")
             if result.success:
-                self._update_prompt_state[prompt_id] = {
-                    "session_key": session_key,
-                    "message_id": result.message_id or "",
-                    "chat_id": chat_id,
-                }
+                self._update_prompt_ctx.register(
+                    prompt_id,
+                    session_key=session_key,
+                    message_id=result.message_id or "",
+                    chat_id=chat_id,
+                )
             return result
         except Exception as exc:
             logger.warning("[Feishu] send_update_prompt failed: %s", exc)
@@ -2566,6 +2600,19 @@ class FeishuAdapter(BasePlatformAdapter):
     def _on_message_recalled(self, data: Any) -> None:
         logger.debug("[Feishu] Message recalled by user")
 
+    def _on_bot_menu_event(self, data: Any) -> None:
+        """[owner] Handle Feishu bot menu click (application.bot.menu_v6).
+
+        Delegates to owner/feishu/bot_menu.py for dedup, ack, and synthetic command.
+        Uses the same submit pattern as other events.
+        """
+        loop = self._loop
+        if not self._loop_accepts_callbacks(loop):
+            logger.warning("[Feishu] Dropping bot menu event before adapter loop is ready")
+            return
+        from owner.feishu.bot_menu import handle_bot_menu_event
+        self._submit_on_loop(loop, handle_bot_menu_event(self, data))
+
     def _on_drive_comment_event(self, data: Any) -> None:
         """Handle drive document comment notification (drive.notice.comment_add_v1).
 
@@ -2623,13 +2670,11 @@ class FeishuAdapter(BasePlatformAdapter):
         self._submit_on_loop(loop, self._handle_reaction_event(event_type, data))
 
     def _on_card_action_trigger(self, data: Any) -> Any:
-        """Handle card-action callback from the Feishu SDK (synchronous).
+        """Handle a card-action callback from the Feishu SDK (synchronous).
 
-        For approval actions: parses the event once, returns the resolved card
-        inline (the only reliable way to sync all clients), and schedules a
-        lightweight async method to actually unblock the agent.
-
-        For other card actions: delegates to ``_handle_card_action_event``.
+        Thin entry point: validates the adapter loop, parses the event once, then
+        delegates to the shared ``_dispatch_card_action`` (also reused by the
+        sub-profile's ``/v1/feishu/card-actions`` HTTP handler).
         """
         loop = self._loop
         if not self._loop_accepts_callbacks(loop):
@@ -2639,12 +2684,68 @@ class FeishuAdapter(BasePlatformAdapter):
         event = getattr(data, "event", None)
         action = getattr(event, "action", None)
         action_value = getattr(action, "value", {}) or {}
+        # For form submissions, form_value is on the action object, not in action.value
+        form_value = getattr(action, "form_value", None)
+        if form_value and isinstance(action_value, dict):
+            action_value["form_value"] = form_value
+        return self._dispatch_card_action(
+            event, action_value, loop, data=data, allow_profile_routing=True
+        )
+
+    def _dispatch_card_action(
+        self,
+        event: Any,
+        action_value: Dict[str, Any],
+        loop: Any,
+        *,
+        data: Any = None,
+        allow_profile_routing: bool = True,
+    ) -> Any:
+        """Dispatch a parsed card action to the right per-type handler.
+
+        Shared by two callers:
+          * the WebSocket SDK callback ``_on_card_action_trigger``
+            (``allow_profile_routing=True``, ``data`` = raw lark event);
+          * the sub-profile container's ``/v1/feishu/card-actions`` HTTP handler
+            (``allow_profile_routing=False`` — the click was already routed here
+            and the ``hermes_profile`` tag stripped).
+
+        For approval/clarify/picker/memory/resume/diff/recall it returns a
+        ``P2CardActionTriggerResponse`` whose ``card`` inline-updates the message.
+        The HTTP caller serialises ``response.card.data`` back to the main
+        gateway, which relays that update over the WebSocket it owns.
+        """
         hermes_action = action_value.get("hermes_action") if isinstance(action_value, dict) else None
         update_prompt_action = (
             action_value.get("hermes_update_prompt_action")
             if isinstance(action_value, dict) else None
         )
 
+        # [owner] multi-profile routing: forward to the sub-profile that sent the card.
+        if allow_profile_routing:
+            _try_card_route = _owner_import("owner.feishu.profile_routing", "try_route_card_action")
+            if _try_card_route is not None:
+                _route_response = _try_card_route(event, action_value)
+                if _route_response is not None:
+                    return _route_response
+
+        # [owner] model picker: dispatch picker card callbacks (see owner/feishu/model_picker.py)
+        model_picker = action_value.get("hermes_model_picker") if isinstance(action_value, dict) else None
+        if model_picker:
+            return self._handle_model_picker_action(event=event, action_value=action_value, loop=loop)
+
+        if hermes_action and hermes_action.startswith("memory_"):
+            # [owner] memory_propose: resolve memory proposal buttons (see owner/feishu/memory_proposal.py)
+            return self._handle_memory_card_action(event=event, action_value=action_value, loop=loop)
+        if hermes_action == "resume_select":
+            # [owner] resume: handle resume selection button click (see owner/feishu/resume_card.py)
+            from owner.feishu.resume_card import handle_resume_card_action
+            return handle_resume_card_action(
+                adapter=self,
+                event=event,
+                action_value=action_value,
+                loop=loop,
+            )
         if hermes_action:
             return self._handle_approval_card_action(event=event, action_value=action_value, loop=loop)
         if update_prompt_action:
@@ -2654,7 +2755,36 @@ class FeishuAdapter(BasePlatformAdapter):
                 loop=loop,
             )
 
-        self._submit_on_loop(loop, self._handle_card_action_event(data))
+        # [owner] clarify: route clarify card button clicks (see owner/feishu/clarify_card.py)
+        clarify_id = action_value.get("clarify_id") if isinstance(action_value, dict) else None
+        # Also check form_value for form submissions
+        if not clarify_id and isinstance(action_value, dict):
+            form_value = action_value.get("form_value", {})
+            if isinstance(form_value, dict):
+                clarify_id = form_value.get("clarify_id")
+        # DEBUG: log full action_value for all clarify-related actions
+        if clarify_id or (isinstance(action_value, dict) and action_value.get("form_value")):
+            logger.info("[Feishu] DEBUG _dispatch_card_action: action_value=%s, clarify_id=%s", action_value, clarify_id)
+        if clarify_id:
+            return self._handle_clarify_card_action(event=event, action_value=action_value, loop=loop)
+
+        # [owner] qdrant-recall: route expand/collapse actions (see owner/feishu/recall_card_handler.py)
+        if isinstance(action_value, dict) and any(
+            action_value.get(k) for k in ("expand_recall", "collapse_recall")
+        ):
+            return self._handle_recall_card_action(event=event, action_value=action_value)
+
+        # [owner] diff cards: route expand/collapse/full actions (see owner/diff_card/feishu.py)
+        if isinstance(action_value, dict) and any(
+            action_value.get(k) for k in ("expand_diff", "collapse_diff", "show_full_diff")
+        ):
+            from owner.diff_card.feishu import handle_feishu_diff_action
+            return handle_feishu_diff_action(self, event, action_value)
+
+        # Generic button → synthetic COMMAND. Requires a ``data`` carrier; the
+        # HTTP path passes ``SimpleNamespace(event=event)``.
+        if data is not None:
+            self._submit_on_loop(loop, self._handle_card_action_event(data))
         if P2CardActionTriggerResponse is None:
             return None
         return P2CardActionTriggerResponse()
@@ -2688,118 +2818,35 @@ class FeishuAdapter(BasePlatformAdapter):
             return True
         return "*" in allowed_ids or normalized in allowed_ids
 
+    @property
+    def _approval_state(self) -> Dict[int, Dict[str, str]]:
+        """Test compat: expose approval correlation dict from owner context."""
+        return self._approval_ctx.state
+
     def _handle_approval_card_action(self, *, event: Any, action_value: Dict[str, Any], loop: Any) -> Any:
         """Schedule approval resolution and build the synchronous callback response."""
-        approval_id = action_value.get("approval_id")
-        if approval_id is None:
-            logger.debug("[Feishu] Card action missing approval_id, ignoring")
-            return P2CardActionTriggerResponse() if P2CardActionTriggerResponse else None
-        state = self._approval_state.get(approval_id)
-        if not state:
-            logger.debug("[Feishu] Approval %s already resolved or unknown", approval_id)
-            return P2CardActionTriggerResponse() if P2CardActionTriggerResponse else None
-        choice = _APPROVAL_CHOICE_MAP.get(action_value.get("hermes_action"), "deny")
+        return _owner_import("owner.feishu.approval", "handle_approval_card_action")(
+            adapter=self,
+            ctx=self._approval_ctx,
+            event=event,
+            action_value=action_value,
+            loop=loop,
+        )
 
-        operator = getattr(event, "operator", None)
-        open_id = str(getattr(operator, "open_id", "") or "")
-        sender_id = SimpleNamespace(open_id=open_id, user_id=str(getattr(operator, "user_id", "") or ""))
-        if not self._allow_group_message(sender_id, state.get("chat_id", ""), is_bot=False):
-            logger.warning("[Feishu] Unauthorized approval click by %s", open_id or "<unknown>")
-            return P2CardActionTriggerResponse() if P2CardActionTriggerResponse else None
-
-        callback_chat_id = str(getattr(getattr(event, "context", None), "open_chat_id", "") or "")
-        expected_chat_id = str(state.get("chat_id", "") or "")
-        if callback_chat_id and expected_chat_id and callback_chat_id != expected_chat_id:
-            logger.warning(
-                "[Feishu] Approval callback chat mismatch for %s (expected=%s, got=%s)",
-                approval_id,
-                expected_chat_id,
-                callback_chat_id,
-            )
-            return P2CardActionTriggerResponse() if P2CardActionTriggerResponse else None
-
-        user_name = self._get_cached_sender_name(open_id) or open_id
-
-        chat_context = getattr(event, "context", None)
-        chat_id = str(getattr(chat_context, "open_chat_id", "") or "")
-        if not self._submit_on_loop(
-            loop,
-            self._resolve_approval(
-                approval_id=approval_id,
-                choice=choice,
-                user_name=user_name,
-                open_id=open_id,
-                chat_id=chat_id,
-            ),
-        ):
-            return P2CardActionTriggerResponse() if P2CardActionTriggerResponse else None
-
-        if P2CardActionTriggerResponse is None:
-            return None
-        response = P2CardActionTriggerResponse()
-        if CallBackCard is not None:
-            card = CallBackCard()
-            card.type = "raw"
-            card.data = self._build_resolved_approval_card(choice=choice, user_name=user_name)
-            response.card = card
-        return response
+    @property
+    def _update_prompt_state(self) -> Dict[int, Dict[str, str]]:
+        """Test compat: expose update-prompt correlation dict from owner context."""
+        return self._update_prompt_ctx.state
 
     def _handle_update_prompt_card_action(self, *, event: Any, action_value: Dict[str, Any], loop: Any) -> Any:
         """Schedule update prompt resolution and build the synchronous callback response."""
-        prompt_id = action_value.get("update_prompt_id")
-        if prompt_id is None:
-            logger.debug("[Feishu] Card action missing update_prompt_id, ignoring")
-            return P2CardActionTriggerResponse() if P2CardActionTriggerResponse else None
-        state = self._update_prompt_state.get(prompt_id)
-        if not state:
-            logger.debug("[Feishu] Update prompt %s already resolved or unknown", prompt_id)
-            return P2CardActionTriggerResponse() if P2CardActionTriggerResponse else None
-
-        answer = str(action_value.get("hermes_update_prompt_action", "") or "").strip().lower()
-        if answer not in {"y", "n"}:
-            logger.debug("[Feishu] Card action has invalid update prompt answer=%r", answer)
-            return P2CardActionTriggerResponse() if P2CardActionTriggerResponse else None
-
-        operator = getattr(event, "operator", None)
-        open_id = str(getattr(operator, "open_id", "") or "")
-        sender_id = SimpleNamespace(open_id=open_id, user_id=str(getattr(operator, "user_id", "") or ""))
-        if not self._allow_group_message(sender_id, state.get("chat_id", ""), is_bot=False):
-            logger.warning("[Feishu] Unauthorized update prompt click by %s", open_id or "<unknown>")
-            return P2CardActionTriggerResponse() if P2CardActionTriggerResponse else None
-
-        callback_chat_id = str(getattr(getattr(event, "context", None), "open_chat_id", "") or "")
-        expected_chat_id = str(state.get("chat_id", "") or "")
-        if callback_chat_id and expected_chat_id and callback_chat_id != expected_chat_id:
-            logger.warning(
-                "[Feishu] Update prompt callback chat mismatch for %s (expected=%s, got=%s)",
-                prompt_id,
-                expected_chat_id,
-                callback_chat_id,
-            )
-            return P2CardActionTriggerResponse() if P2CardActionTriggerResponse else None
-
-        user_name = self._get_cached_sender_name(open_id) or open_id
-        if not self._submit_on_loop(
-            loop,
-            self._resolve_update_prompt(
-                prompt_id,
-                answer,
-                user_name,
-                open_id=open_id,
-                chat_id=callback_chat_id,
-            ),
-        ):
-            return P2CardActionTriggerResponse() if P2CardActionTriggerResponse else None
-
-        if P2CardActionTriggerResponse is None:
-            return None
-        response = P2CardActionTriggerResponse()
-        if CallBackCard is not None:
-            card = CallBackCard()
-            card.type = "raw"
-            card.data = self._build_resolved_update_prompt_card(answer=answer, user_name=user_name)
-            response.card = card
-        return response
+        return _owner_import("owner.feishu.update_prompt", "handle_update_prompt_card_action")(
+            adapter=self,
+            ctx=self._update_prompt_ctx,
+            event=event,
+            action_value=action_value,
+            loop=loop,
+        )
 
     async def _resolve_approval(
         self,
@@ -2811,33 +2858,15 @@ class FeishuAdapter(BasePlatformAdapter):
         chat_id: str = "",
     ) -> None:
         """Pop approval state and unblock the waiting agent thread."""
-        state = self._approval_state.get(approval_id)
-        if not state:
-            logger.debug("[Feishu] Approval %s already resolved or unknown", approval_id)
-            return
-        if not self._is_interactive_operator_authorized(open_id):
-            logger.warning("[Feishu] Unauthorized approval click by %s for approval %s", open_id or "<unknown>", approval_id)
-            return
-        expected_chat_id = str(state.get("chat_id", "") or "")
-        if expected_chat_id and chat_id and expected_chat_id != chat_id:
-            logger.warning(
-                "[Feishu] Approval %s chat mismatch (expected=%s, got=%s)",
-                approval_id, expected_chat_id, chat_id,
-            )
-            return
-        state = self._approval_state.pop(approval_id, None)
-        if not state:
-            logger.debug("[Feishu] Approval %s already resolved while validating callback", approval_id)
-            return
-        try:
-            from tools.approval import resolve_gateway_approval
-            count = resolve_gateway_approval(state["session_key"], choice)
-            logger.info(
-                "Feishu button resolved %d approval(s) for session %s (choice=%s, user=%s)",
-                count, state["session_key"], choice, user_name,
-            )
-        except Exception as exc:
-            logger.error("Failed to resolve gateway approval from Feishu button: %s", exc)
+        await _owner_import("owner.feishu.approval", "resolve_approval")(
+            self._approval_ctx,
+            self,
+            approval_id,
+            choice,
+            user_name,
+            open_id=open_id,
+            chat_id=chat_id,
+        )
 
     async def _resolve_update_prompt(
         self,
@@ -2849,36 +2878,73 @@ class FeishuAdapter(BasePlatformAdapter):
         chat_id: str = "",
     ) -> None:
         """Persist an update prompt answer for the detached update process."""
-        state = self._update_prompt_state.get(prompt_id)
-        if not state:
-            logger.debug("[Feishu] Update prompt %s already resolved or unknown", prompt_id)
-            return
-        if open_id:
-            sender_id = SimpleNamespace(open_id=open_id, user_id="")
-            if not self._allow_group_message(sender_id, state.get("chat_id", ""), is_bot=False):
-                logger.warning("[Feishu] Unauthorized update prompt click by %s for prompt %s", open_id, prompt_id)
-                return
-        expected_chat_id = str(state.get("chat_id", "") or "")
-        if expected_chat_id and chat_id and expected_chat_id != chat_id:
-            logger.warning(
-                "[Feishu] Update prompt %s chat mismatch (expected=%s, got=%s)",
-                prompt_id,
-                expected_chat_id,
-                chat_id,
-            )
-            return
-        state = self._update_prompt_state.pop(prompt_id, None)
-        if not state:
-            logger.debug("[Feishu] Update prompt %s already resolved while validating callback", prompt_id)
-            return
-        try:
-            self._write_update_prompt_response(answer)
-            logger.info(
-                "Feishu update prompt resolved for session %s (answer=%s, user=%s)",
-                state["session_key"], answer, user_name,
-            )
-        except Exception as exc:
-            logger.error("Failed to resolve Feishu update prompt: %s", exc)
+        await _owner_import("owner.feishu.update_prompt", "resolve_update_prompt")(
+            self._update_prompt_ctx,
+            self,
+            prompt_id,
+            answer,
+            user_name,
+            open_id=open_id,
+            chat_id=chat_id,
+        )
+
+    # ── [owner] Model picker card ──────────────────────────────────────────
+
+    async def send_model_picker_card(
+        self,
+        chat_id: str,
+        providers: list,
+        source: Any,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Send an interactive model picker card.
+
+        Thin glue — card building lives in ``owner/feishu/model_picker.py``.
+        """
+        import uuid as _uuid
+        from owner.feishu.model_picker import build_provider_card
+
+        picker_id = str(_uuid.uuid4())
+        self._model_picker_state[picker_id] = {"providers": providers, "source": source}
+        await self.send_card(chat_id=chat_id, card=build_provider_card(picker_id, providers), metadata=metadata)
+
+    def _handle_model_picker_action(
+        self, *, event: Any, action_value: Dict[str, Any], loop: Any
+    ) -> Any:
+        """Handle model picker card callbacks.
+
+        Thin glue — callback logic lives in ``owner/feishu/model_picker.py``.
+        """
+        from owner.feishu.model_picker import handle_picker_action
+
+        return handle_picker_action(
+            adapter=self,
+            action_value=action_value,
+            event=event,
+        )
+
+    def _handle_memory_card_action(self, *, event: Any, action_value: Dict[str, Any], loop: Any) -> Any:
+        """Resolve a memory-proposal button click.
+
+        Thin glue only — card building, queue resolution, and CallBackCard data
+        live in owner/feishu/memory_proposal.py.
+        """
+        # [owner] memory_propose: delegate button click to owner helper
+        from owner.feishu.memory_proposal import handle_memory_card_action
+        return handle_memory_card_action(adapter=self, event=event, action_value=action_value, loop=loop)
+
+    # [owner] clarify: handle clarify card button click (see owner/feishu/clarify_card.py)
+    def _handle_clarify_card_action(
+        self, *, event: Any, action_value: Dict[str, Any], loop: Any
+    ) -> Any:
+        """Handle clarify button click: resolve or switch to text-capture."""
+        from owner.feishu.clarify_card import handle_clarify_card_action
+        return handle_clarify_card_action(adapter=self, event=event, action_value=action_value, loop=loop)
+
+    # [owner] qdrant-recall: handle expand/collapse button clicks (see owner/feishu/recall_card_handler.py)
+    def _handle_recall_card_action(self, *, event: Any, action_value: Dict[str, Any]) -> Any:
+        from owner.feishu.recall_card_handler import handle_recall_card_action
+        return handle_recall_card_action(self, action_value, lark)
 
     async def _handle_reaction_event(self, event_type: str, data: Any) -> None:
         """Fetch the reacted-to message; if it was sent by this bot, emit a synthetic text event."""
@@ -3293,6 +3359,40 @@ class FeishuAdapter(BasePlatformAdapter):
         )
 
         chat_id = getattr(message, "chat_id", "") or ""
+        # [owner] user store: p2p inbound warms open_id -> p2p_chat_id (see owner/feishu/user_store.py)
+        if chat_type == "p2p" and chat_id:
+            open_id = str(getattr(sender_id, "open_id", "") or "").strip()
+            if open_id and self._user_store.cache_p2p_chat_id(open_id, chat_id):
+                logger.debug(
+                    "[Feishu] Cached p2p_chat_id for %s from inbound message",
+                    open_id,
+                )
+        # [owner] multi-profile routing: forward to external container if configured
+        _try_msg_route = _owner_import(
+            "owner.feishu.profile_routing", "try_route_inbound_message"
+        )
+        if _try_msg_route is not None:
+            _routed = await _try_msg_route(
+                self,
+                chat_id=chat_id,
+                open_id=str(getattr(sender_id, "open_id", "") or "").strip(),
+                chat_type=chat_type,
+                text=text,
+                message_id=message_id,
+            )
+            if _routed:
+                return
+
+        # [owner] approval: pre-warm name cache before resolve (see owner/feishu/sender_name_helpers.py)
+        if not is_bot:
+            _warm_id = str(getattr(sender_id, "open_id", "") or "").strip()
+            if not _warm_id:
+                _warm_id = (
+                    str(getattr(sender_id, "user_id", "") or "").strip()
+                    or str(getattr(sender_id, "union_id", "") or "").strip()
+                )
+            if _warm_id:
+                self._pre_warm_sender_name(_warm_id, is_bot=False)
         chat_info = await self.get_chat_info(chat_id)
         sender_profile = await self._resolve_sender_profile(sender_id, is_bot=is_bot)
         source = self.build_source(
@@ -4055,8 +4155,9 @@ class FeishuAdapter(BasePlatformAdapter):
         open_id = getattr(sender_id, "open_id", None) or None
         user_id = getattr(sender_id, "user_id", None) or None
         union_id = getattr(sender_id, "union_id", None) or None
-        # Prefer tenant-scoped user_id; fall back to app-scoped open_id.
-        primary_id = user_id or open_id
+        # [owner] approval: prefer open_id so approval callback/cache keys (open_id -> 中文名) align
+        # (see owner/feishu/sender_name_cache.py)
+        primary_id = open_id or user_id
         # bot/v3/bots/basic_batch only accepts open_id.
         name_lookup_id = open_id if is_bot else (primary_id or union_id)
         display_name = await self._resolve_sender_name_from_api(
@@ -4069,17 +4170,14 @@ class FeishuAdapter(BasePlatformAdapter):
         }
 
     def _get_cached_sender_name(self, sender_id: Optional[str]) -> Optional[str]:
-        """Return a cached sender name only while its TTL is still valid."""
-        if not sender_id:
-            return None
-        cached = self._sender_name_cache.get(sender_id)
-        if cached is None:
-            return None
-        name, expire_at = cached
-        if time.time() < expire_at:
-            return name
-        self._sender_name_cache.pop(sender_id, None)
-        return None
+        """Return a cached sender name only while its TTL is still valid.
+
+        Thin delegate to owner/feishu/sender_name_helpers.py.
+        """
+        # [owner] approval: open_id -> 中文名 cache lookup (see owner/feishu/sender_name_helpers.py)
+        return _owner_import(
+            "owner.feishu.sender_name_helpers", "get_cached_sender_name"
+        )(self, sender_id)
 
     def _pre_warm_sender_name(
         self,
@@ -4104,52 +4202,12 @@ class FeishuAdapter(BasePlatformAdapter):
     ) -> Optional[str]:
         """Bots divert to bot/basic_batch — contact API doesn't return bot names.
         Failures are silent so the pipeline never blocks on name resolution.
+        Thin delegate.
         """
-        if not sender_id or not self._client:
-            return None
-        trimmed = sender_id.strip()
-        if not trimmed:
-            return None
-        now = time.time()
-        cached_name = self._get_cached_sender_name(trimmed)
-        if cached_name is not None:
-            return cached_name or None  # "" cached means "known nameless"
-        if is_bot:
-            names = await self._fetch_bot_names([trimmed])
-            if names is None:
-                return None
-            expire_at = now + _FEISHU_SENDER_NAME_TTL_SECONDS
-            for oid, name in names.items():
-                self._sender_name_cache[oid] = (name, expire_at)
-            hit = self._sender_name_cache.get(trimmed)
-            return (hit[0] or None) if hit else None
-        try:
-            from lark_oapi.api.contact.v3 import GetUserRequest  # lazy import
-            if trimmed.startswith("ou_"):
-                id_type = "open_id"
-            elif trimmed.startswith("on_"):
-                id_type = "union_id"
-            else:
-                id_type = "user_id"
-            request = GetUserRequest.builder().user_id(trimmed).user_id_type(id_type).build()
-            response = await self._run_blocking(self._client.contact.v3.user.get, request)
-            if not response or not response.success():
-                return None
-            user = getattr(getattr(response, "data", None), "user", None)
-            name = (
-                getattr(user, "name", None)
-                or getattr(user, "display_name", None)
-                or getattr(user, "nickname", None)
-                or getattr(user, "en_name", None)
-            )
-            if name and isinstance(name, str):
-                name = name.strip()
-                if name:
-                    self._sender_name_cache[trimmed] = (name, now + _FEISHU_SENDER_NAME_TTL_SECONDS)
-                    return name
-        except Exception:
-            logger.debug("[Feishu] Failed to resolve sender name for %s", sender_id, exc_info=True)
-        return None
+        # [owner] approval: cache + API resolve (see owner/feishu/sender_name_helpers.py)
+        return await _owner_import(
+            "owner.feishu.sender_name_helpers", "resolve_sender_name"
+        )(self, sender_id, is_bot=is_bot)
 
     async def _fetch_bot_names(self, bot_ids: List[str]) -> Optional[Dict[str, str]]:
         if not self._client or not bot_ids:
@@ -4671,6 +4729,12 @@ class FeishuAdapter(BasePlatformAdapter):
         data = getattr(response, "data", None)
         return getattr(data, field_name, None) if data else None
 
+    # Feishu caps edits to a single message at ~20; these codes mean "this
+    # bubble is no longer editable, open a fresh one" rather than a permanent
+    # failure. The gateway treats rotate=True as a signal to keep can_edit=True
+    # and start a new progress bubble.
+    _FEISHU_EDIT_ROTATE_CODES = frozenset({230072, 230075})
+
     def _response_error_result(
         self,
         response: Any,
@@ -4682,7 +4746,8 @@ class FeishuAdapter(BasePlatformAdapter):
             return SendResult(success=False, error=override_error, raw_response=response)
         code = getattr(response, "code", "unknown")
         msg = getattr(response, "msg", default_message)
-        return SendResult(success=False, error=f"[{code}] {msg}", raw_response=response)
+        rotate = isinstance(code, int) and code in self._FEISHU_EDIT_ROTATE_CODES
+        return SendResult(success=False, error=f"[{code}] {msg}", raw_response=response, rotate=rotate)
 
     def _finalize_send_result(self, response: Any, default_message: str) -> SendResult:
         if not self._response_succeeded(response):

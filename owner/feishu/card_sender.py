@@ -102,6 +102,7 @@ async def send_card_via_rest(
     adapter: "FeishuAdapter",
     chat_id: str,
     card: Dict[str, Any],
+    reply_to: Optional[str] = None,
     metadata: Optional[Dict[str, Any]] = None,
 ) -> SendResult:
     """Send an interactive card using direct Feishu REST API.
@@ -109,6 +110,9 @@ async def send_card_via_rest(
     Acquires its own tenant_access_token (never re-uses the WebSocket
     client's token) so that card sends cannot invalidate or interfere
     with the long-lived connection.
+
+    If reply_to (message_id) is provided, uses the reply endpoint to thread
+    the card under that message.
 
     The card dict must follow Feishu's interactive card schema.
     """
@@ -144,23 +148,31 @@ async def send_card_via_rest(
     except Exception as exc:
         return SendResult(success=False, error=f"Feishu token request failed: {exc}")
 
-    # Determine receive target (id + type) from metadata chat_type.
-    # Replaces the previous startswith("ou_") heuristic which was incorrect
-    # for DMs (chat_id is oc_xxx; upstream normalizes p2p->dm).
-    receive_id, receive_id_type = _resolve_receive_target(chat_id, metadata)
-
     # Send card via REST API (bypasses lark_oapi SDK entirely).
     try:
         payload = json.dumps(card, ensure_ascii=False)
-        send_resp = _requests.post(
-            f"{base_url}/im/v1/messages?receive_id_type={receive_id_type}",
-            headers={
-                "Authorization": f"Bearer {access_token}",
-                "Content-Type": "application/json",
-            },
-            json={"receive_id": receive_id, "msg_type": "interactive", "content": payload},
-            timeout=15,
-        )
+        if reply_to:
+            # Reply to a specific message (threads the card).
+            send_resp = _requests.post(
+                f"{base_url}/im/v1/messages/{reply_to}/reply",
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Content-Type": "application/json",
+                },
+                json={"msg_type": "interactive", "content": payload},
+                timeout=15,
+            )
+        else:
+            receive_id, receive_id_type = _resolve_receive_target(chat_id, metadata)
+            send_resp = _requests.post(
+                f"{base_url}/im/v1/messages?receive_id_type={receive_id_type}",
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Content-Type": "application/json",
+                },
+                json={"receive_id": receive_id, "msg_type": "interactive", "content": payload},
+                timeout=15,
+            )
         send_data = send_resp.json()
         code = send_data.get("code", -1)
         if code != 0:

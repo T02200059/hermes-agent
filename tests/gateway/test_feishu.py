@@ -3612,15 +3612,16 @@ class TestBotNameResolution(unittest.TestCase):
         result = asyncio.run(adapter._resolve_sender_name_from_api("ou_peer", is_bot=True))
         self.assertEqual(result, "Peer Bot")
 
-    @patch.dict(os.environ, {}, clear=True)
     def test_fetches_and_caches_bot_name(self):
-        adapter, calls = self._build_adapter_with_bots({"ou_peer": "Peer Bot"})
+        hermes_home = os.environ.get("HERMES_HOME", "")
+        with patch.dict(os.environ, {"HERMES_HOME": hermes_home}, clear=True):
+            adapter, calls = self._build_adapter_with_bots({"ou_peer": "Peer Bot"})
 
-        async def _direct(func, *args, **kwargs):
-            return func(*args, **kwargs)
+            async def _direct(func, *args, **kwargs):
+                return func(*args, **kwargs)
 
-        with patch("plugins.platforms.feishu.adapter.asyncio.to_thread", side_effect=_direct):
-            result = asyncio.run(adapter._resolve_sender_name_from_api("ou_peer", is_bot=True))
+            with patch("plugins.platforms.feishu.adapter.asyncio.to_thread", side_effect=_direct):
+                result = asyncio.run(adapter._resolve_sender_name_from_api("ou_peer", is_bot=True))
 
         self.assertEqual(result, "Peer Bot")
         self.assertEqual(adapter._get_cached_sender_name("ou_peer"), "Peer Bot")
@@ -3629,23 +3630,24 @@ class TestBotNameResolution(unittest.TestCase):
         # Feishu expects repeated ?bot_ids= params, not comma-joined.
         self.assertEqual(calls[0].queries, [("bot_ids", "ou_peer")])
 
-    @patch.dict(os.environ, {}, clear=True)
     def test_api_failure_returns_none_and_does_not_poison_cache(self):
-        from gateway.config import PlatformConfig
-        from plugins.platforms.feishu.adapter import FeishuAdapter
+        hermes_home = os.environ.get("HERMES_HOME", "")
+        with patch.dict(os.environ, {"HERMES_HOME": hermes_home}, clear=True):
+            from gateway.config import PlatformConfig
+            from plugins.platforms.feishu.adapter import FeishuAdapter
 
-        adapter = FeishuAdapter(PlatformConfig())
+            adapter = FeishuAdapter(PlatformConfig())
 
-        def _broken_request(_req):
-            raise RuntimeError("API down")
+            def _broken_request(_req):
+                raise RuntimeError("API down")
 
-        adapter._client = SimpleNamespace(request=_broken_request)
+            adapter._client = SimpleNamespace(request=_broken_request)
 
-        async def _direct(func, *args, **kwargs):
-            return func(*args, **kwargs)
+            async def _direct(func, *args, **kwargs):
+                return func(*args, **kwargs)
 
-        with patch("plugins.platforms.feishu.adapter.asyncio.to_thread", side_effect=_direct):
-            result = asyncio.run(adapter._resolve_sender_name_from_api("ou_peer", is_bot=True))
+            with patch("plugins.platforms.feishu.adapter.asyncio.to_thread", side_effect=_direct):
+                result = asyncio.run(adapter._resolve_sender_name_from_api("ou_peer", is_bot=True))
 
         self.assertIsNone(result)
         self.assertIsNone(adapter._get_cached_sender_name("ou_peer"))
@@ -3682,22 +3684,23 @@ class TestBotNameResolution(unittest.TestCase):
         self.assertEqual(adapter._get_cached_sender_name("ou_nameless"), "")
         self.assertEqual(len(calls), 1)
 
-    @patch.dict(os.environ, {}, clear=True)
     def test_non_zero_code_returns_none(self):
-        from gateway.config import PlatformConfig
-        from plugins.platforms.feishu.adapter import FeishuAdapter
+        hermes_home = os.environ.get("HERMES_HOME", "")
+        with patch.dict(os.environ, {"HERMES_HOME": hermes_home}, clear=True):
+            from gateway.config import PlatformConfig
+            from plugins.platforms.feishu.adapter import FeishuAdapter
 
-        adapter = FeishuAdapter(PlatformConfig())
-        error_payload = b'{"code":99991663,"msg":"permission denied"}'
-        adapter._client = SimpleNamespace(
-            request=lambda _r: SimpleNamespace(raw=SimpleNamespace(content=error_payload))
-        )
+            adapter = FeishuAdapter(PlatformConfig())
+            error_payload = b'{"code":99991663,"msg":"permission denied"}'
+            adapter._client = SimpleNamespace(
+                request=lambda _r: SimpleNamespace(raw=SimpleNamespace(content=error_payload))
+            )
 
-        async def _direct(func, *args, **kwargs):
-            return func(*args, **kwargs)
+            async def _direct(func, *args, **kwargs):
+                return func(*args, **kwargs)
 
-        with patch("plugins.platforms.feishu.adapter.asyncio.to_thread", side_effect=_direct):
-            result = asyncio.run(adapter._resolve_sender_name_from_api("ou_peer", is_bot=True))
+            with patch("plugins.platforms.feishu.adapter.asyncio.to_thread", side_effect=_direct):
+                result = asyncio.run(adapter._resolve_sender_name_from_api("ou_peer", is_bot=True))
 
         self.assertIsNone(result)
         self.assertIsNone(adapter._get_cached_sender_name("ou_peer"))

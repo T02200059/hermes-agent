@@ -16588,7 +16588,6 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             # `_resolve_turn_agent_config(message, …)`.
             nonlocal message
 
-<<<<<<< HEAD
             # session_key is propagated via contextvars in _set_session_env()
             # (and set_current_session_key for approvals) — both are concurrency-safe
             # and properly inherited by tool worker threads via copy_context.
