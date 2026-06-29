@@ -2,6 +2,11 @@ name: Tests
 
 on:
   workflow_call:
+    inputs:
+      slice_count:
+        description: Number of parallel test slices
+        type: number
+        default: 8
 
 permissions:
   contents: read
@@ -12,13 +17,29 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  generate:
+    name: "Generate slices"
+    runs-on: ubuntu-latest
+    outputs:
+      slices: ${{ steps.matrix.outputs.slices }}
+      slice_count: ${{ steps.matrix.outputs.slice_count }}
+    steps:
+      - name: Generate test slices
+        id: matrix
+        run: |
+          COUNT="${{ inputs.slice_count }}"
+          SLICES=$(python3 -c "import json; print(json.dumps({'slice': list(range(1, $COUNT + 1))}))")
+          echo "slices=$SLICES" >> "$GITHUB_OUTPUT"
+          echo "slice_count=$COUNT" >> "$GITHUB_OUTPUT"
+
   test:
+    name: Run tests slice
+    needs: generate
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
-      matrix:
-        slice: [1, 2, 3, 4, 5, 6]
+      matrix: ${{ fromJSON(needs.generate.outputs.slices) }}
     steps:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -49,7 +70,7 @@ jobs:
           rg --version
 
       - name: Install uv
-        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # 8.2.0
         with:
           # Persist uv's download/wheel cache (~/.cache/uv) across runs.
           # Keyed on the dependency manifests, so the cache is reused until
@@ -78,8 +99,8 @@ jobs:
         # re-download, keeping the persisted cache small and fast to restore.
         run: uv cache prune --ci
 
-      - name: Run tests (slice ${{ matrix.slice }}/6)
-        # Per-file isolation via scripts/run_tests_parallel.py: discovers
+      - name: Run tests (slice ${{ matrix.slice }}/${{ needs.generate.outputs.slice_count }})
+        # Per-file isolation via scripts/run_tests.sh: discovers
         # every test_*.py file under tests/ (excluding integration/ + e2e/),
         # then runs `python -m pytest <file>` in a freshly-spawned subprocess
         # with bounded parallelism. No xdist, no shared workers, no
@@ -97,14 +118,14 @@ jobs:
         # fix. ThreadPoolExecutor + subprocess.run is ~60 lines and does
         # the job with cleaner semantics.
         #
-        # Matrix slicing (--slice I/N): files are distributed across 6
+        # Matrix slicing (--slice I/N): files are distributed across N
         # jobs by cached duration (LPT algorithm) so each job gets
         # roughly equal wall time. Without a cache, files default to 2s
         # estimate and get split roughly evenly by count — still correct,
         # just not perfectly balanced.
         run: |
           source .venv/bin/activate
-          python scripts/run_tests_parallel.py --slice ${{ matrix.slice }}/6
+          scripts/run_tests.sh --slice ${{ matrix.slice }}/${{ needs.generate.outputs.slice_count }}
         env:
           # Ensure tests don't accidentally call real APIs
           OPENROUTER_API_KEY: ""
@@ -173,7 +194,7 @@ jobs:
           rg --version
 
       - name: Install uv
-        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # 8.2.0
         with:
           # Persist uv's download/wheel cache (~/.cache/uv) across runs.
           # Keyed on the dependency manifests, so the cache is reused until
