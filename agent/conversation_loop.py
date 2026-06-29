@@ -611,6 +611,13 @@ def run_conversation(
     compression_attempts = 0
     _turn_exit_reason = "unknown"  # Diagnostic: why the loop ended
 
+    # Per-turn tally of consecutive successful credential-pool token refreshes,
+    # keyed by (provider, pool-entry-id). A persistent upstream 401 lets
+    # ``try_refresh_current()`` "succeed" forever on a single-entry OAuth pool,
+    # so this tally caps same-entry refreshes and lets the fallback chain take
+    # over instead of spinning. Reset here so each turn starts fresh. See #26080.
+    agent._auth_pool_refresh_counts = {}
+
     # Optional opt-in runtime: if api_mode == codex_app_server, hand the
     # turn to the codex app-server subprocess (terminal/file ops/patching
     # all run inside Codex). Default Hermes path is bypassed entirely.
@@ -3738,7 +3745,12 @@ def run_conversation(
                         _ra_raw = _resp_headers.get("retry-after") or _resp_headers.get("Retry-After")
                         if _ra_raw:
                             try:
-                                _retry_after = min(float(_ra_raw), 120)  # Cap at 2 minutes
+                                # Cap at 10 minutes. Anthropic Tier 1 input-token
+                                # buckets reset in ~171s, so a 120s cap caused us to
+                                # retry before the actual reset window and re-trip the
+                                # limit. 600s covers all realistic provider reset
+                                # windows while still rejecting pathological values. (#26293)
+                                _retry_after = min(float(_ra_raw), 600)
                             except (TypeError, ValueError):
                                 pass
                 wait_time = _retry_after if _retry_after else jittered_backoff(retry_count, base_delay=2.0, max_delay=60.0)
