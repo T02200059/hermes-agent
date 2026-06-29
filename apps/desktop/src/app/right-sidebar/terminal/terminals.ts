@@ -87,10 +87,11 @@ export function openAgentTerminal(procId: string, title: string): void {
   setTerminalTakeover(true)
 }
 
-/** Guarantee at least one user shell exists (called when the pane opens) — agent
- *  mirror tabs don't count, so opening the pane always yields a real shell. */
+/** Guarantee at least one tab exists when the pane opens.
+ *  If a status-stack click already opened an agent tab, don't create a
+ *  second, unrelated user shell just because the pane became visible. */
 export function ensureTerminal(): void {
-  if (!$terminals.get().some(term => term.kind === 'user')) {
+  if ($terminals.get().length === 0) {
     createTerminal()
   }
 }
@@ -109,7 +110,10 @@ export function cycleTerminal(direction: 1 | -1): void {
     return
   }
 
-  const current = Math.max(0, list.findIndex(term => term.id === $activeTerminalId.get()))
+  const current = Math.max(
+    0,
+    list.findIndex(term => term.id === $activeTerminalId.get())
+  )
 
   $activeTerminalId.set(list[(current + direction + list.length) % list.length].id)
 }
@@ -136,12 +140,39 @@ export function closeTerminal(id: string): void {
   }
 }
 
+/** Close the read-only agent tab mirroring a background process. The agent
+ *  drives this via the desktop-gated `close_terminal` tool → `terminal.close`.
+ *  The process is NOT killed — only the view is dropped; `surfacedProcs` keeps
+ *  it from auto-resurfacing, and the status-stack row can reopen it on demand.
+ *  No-op when no such tab exists. */
+export function closeAgentTerminalByProc(procId: string): boolean {
+  const term = $terminals.get().find(t => t.kind === 'agent' && t.procId === procId)
+
+  if (!term) {
+    return false
+  }
+
+  closeTerminal(term.id)
+
+  return true
+}
+
 export function closeActiveTerminal(): void {
   const id = $activeTerminalId.get()
 
   if (id) {
     closeTerminal(id)
   }
+}
+
+export function closeAllTerminals(): void {
+  if ($terminals.get().length === 0) {
+    return
+  }
+
+  $terminals.set([])
+  $activeTerminalId.set(null)
+  setTerminalTakeover(false)
 }
 
 export function closeOtherTerminals(id: string): void {
@@ -156,7 +187,9 @@ export function closeOtherTerminals(id: string): void {
 export function renameTerminal(id: string, title: string): void {
   const trimmed = title.trim()
 
-  $terminals.set($terminals.get().map(term => (term.id === id ? { ...term, title: trimmed || term.title, auto: false } : term)))
+  $terminals.set(
+    $terminals.get().map(term => (term.id === id ? { ...term, title: trimmed || term.title, auto: false } : term))
+  )
 }
 
 /** A live terminal reports its resolved shell; adopt it as the label only while

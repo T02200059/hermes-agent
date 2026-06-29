@@ -75,16 +75,22 @@ export function TerminalInstance({ id, active, cwd, onAddSelectionToChat }: Term
 
 interface AgentTerminalInstanceProps {
   active: boolean
+  id: string
   procId: string
 }
 
 /** Read-only mirror of an agent background process — a write-only xterm streamed
  *  live from the backend output (no PTY, no input). */
-export function AgentTerminalInstance({ active, procId }: AgentTerminalInstanceProps) {
-  const { hostRef } = useAgentTerminal({ active, procId })
+export function AgentTerminalInstance({ active, id, procId }: AgentTerminalInstanceProps) {
+  const { hostRef } = useAgentTerminal({ active, id, procId })
 
   return (
-    <div className={cn(INSTANCE_CLASS, active ? 'visible' : 'invisible pointer-events-none')}>
+    <div
+      className={cn(INSTANCE_CLASS, active ? 'visible' : 'invisible pointer-events-none')}
+      // Same focus-scope marker as the user terminal so isFocusWithin('[data-terminal]')
+      // routes ⌘W here and closes the focused agent tab (not a preview).
+      data-terminal=""
+    >
       <div
         className="h-full min-h-0 overflow-hidden text-(--ui-text-secondary) [&_.xterm]:h-full [&_.xterm-screen]:bg-(--ui-editor-surface-background)! [&_.xterm-viewport]:bg-(--ui-editor-surface-background)!"
         ref={hostRef}
