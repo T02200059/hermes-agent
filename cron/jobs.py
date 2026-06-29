@@ -789,6 +789,7 @@ def create_job(
     enabled_toolsets: Optional[List[str]] = None,
     workdir: Optional[str] = None,
     no_agent: bool = False,
+    attach_to_session: Optional[bool] = None,
 ) -> Dict[str, Any]:
     """
     Create a new cron job.
@@ -873,6 +874,7 @@ def create_job(
     normalized_toolsets = normalized_toolsets or None
     normalized_workdir = _normalize_workdir(workdir)
     normalized_no_agent = bool(no_agent)
+    normalized_attach = attach_to_session if isinstance(attach_to_session, bool) else None
 
     # no_agent jobs are meaningless without a script — the script IS the job.
     # Surface this as a clear ValueError at create time so bad configs never
@@ -985,6 +987,11 @@ def create_job(
         "enabled_toolsets": normalized_toolsets,
         "workdir": normalized_workdir,
     }
+    # Only persist attach_to_session when explicitly set, so existing jobs and
+    # the common case stay byte-identical (absent key => fall back to the
+    # global cron.mirror_delivery config, default off).
+    if normalized_attach is not None:
+        job["attach_to_session"] = normalized_attach
 
     with _jobs_lock():
         jobs = load_jobs()
