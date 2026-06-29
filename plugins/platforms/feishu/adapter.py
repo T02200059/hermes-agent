@@ -1710,7 +1710,7 @@ class FeishuAdapter(BasePlatformAdapter):
             .build()
         )
 
-    async def connect(self) -> bool:
+    async def connect(self, *, is_reconnect: bool = False) -> bool:
         """Connect to Feishu/Lark."""
         logger.debug("[Feishu] connect() called, _connection_mode=%s", self._connection_mode)
         if not FEISHU_AVAILABLE:
