@@ -46,10 +46,12 @@ ACP_REGISTRY_MANIFEST = REPO_ROOT / "acp_registry" / "agent.json"
 # Auto-extracted from noreply emails + manual overrides
 AUTHOR_MAP = {
     "der@konsi.org": "konsisumer",  # PR #19608 salvage (read-modify-write merge in write_credential_pool to preserve concurrently-added credentials; #19566)
+    "linyubin@users.noreply.github.com": "linyubin",  # PR #50228 salvage (eager fallback on persistent transport timeout/overloaded; #22277)
     "dale@dalenguyen.me": "dalenguyen",  # PR #53678 salvage (strip VIRTUAL_ENV/CONDA_PREFIX from terminal subprocess env; #23473)
     "blaryx@gmail.com": "Blaryxoff",  # PR #32602 salvage (deep-merge PUT /api/config to preserve unrelated sections; #13396)
     "diamondeyesfox@gmail.com": "DiamondEyesFox",  # PR #53351 salvage (rebaseline in-place compression flushes to prevent duplicate compacted rows; #9096)
     "piyrw9754@gmail.com": "rlaope",  # PR #35075 salvage (align cron invisible-unicode set with install-time scanner; #35075)
+    "bukim0119@gmail.com": "bykim0119",  # PR #22335 salvage (honor "*" wildcard in DISCORD_ALLOWED_USERS; #22334)
     "rebel@rebels-Mac-Studio-2.local": "rebel0789",  # PR #47308 salvage (redact browser_type typed text across display surfaces; #47197)
     "267614622+agt-user@users.noreply.github.com": "agt-user",  # PR #48496 salvage (telegram CLOSE-WAIT polling heartbeat, #48495)
     "80915+DavidMetcalfe@users.noreply.github.com": "DavidMetcalfe",  # PR #52272 salvage (route reasoning-model thinking-timeouts to timeout not context_overflow + reasoning-specific guidance; #52271)
@@ -1573,6 +1575,7 @@ AUTHOR_MAP = {
     "david@loadmagic.ai": "davidcampbelldc",  # PR #26834 (web_server proxy_headers=False)
     "165905879+davidcampbelldc@users.noreply.github.com": "davidcampbelldc",
     "chazmaniandinkle@gmail.com": "chazmaniandinkle",  # PR #43888 (launchd /restart detection)
+    "sksmsghkdud1@gmail.com": "nodejun",  # PR #21112 (anthropic keychain/file credential desync)
     "hoangv.pham0803@gmail.com": "hehehe0803",  # PR #26212 salvage (codex kanban writable root)
     "26063003+hehehe0803@users.noreply.github.com": "hehehe0803",
     "kasunvinod@users.noreply.github.com": "kasunvinod",  # PR #24126 salvage (codex timeout propagation)
