@@ -5404,6 +5404,34 @@ def _desktop_macos_relaunchable_fixup(desktop_dir: Path) -> None:
         print(f"  (warning: macOS relaunch fixup skipped: {exc})")
 
 
+def _force_adhoc_macos_signing(env: dict, *, source_mode: bool) -> bool:
+    """Stop electron-builder grabbing a random keychain identity on self-update.
+
+    The desktop self-updater rebuilds *and re-signs the .app on the end user's
+    machine* (``hermes desktop --build-only`` → electron-builder ``--dir``).
+    With ``CSC_IDENTITY_AUTO_DISCOVERY`` on (its default), electron-builder
+    signs the ``type=distribution``, hardened-runtime bundle with whatever it
+    finds in that user's keychain — typically a personal "Apple Development"
+    cert. That stalls/fails the sign step (no Developer ID + no provisioning
+    profile) or clobbers your real notarized signature with an unusable one, so
+    every post-update launch trips Gatekeeper.
+
+    Force ad-hoc signing for the local packaged rebuild instead: deterministic,
+    and exactly what ``_desktop_macos_relaunchable_fixup`` already finishes off.
+    No-op for source runs, off-macOS, when a real identity is configured
+    (``CSC_LINK`` / ``APPLE_SIGNING_IDENTITY``), or when the caller already
+    pinned the flag. Mutates ``env``; returns True when it set the flag.
+    """
+    if sys.platform != "darwin" or source_mode:
+        return False
+    if env.get("CSC_LINK") or env.get("APPLE_SIGNING_IDENTITY"):
+        return False
+    if "CSC_IDENTITY_AUTO_DISCOVERY" in env:
+        return False
+    env["CSC_IDENTITY_AUTO_DISCOVERY"] = "false"
+    return True
+
+
 def _desktop_linux_sandbox_fixup(packaged_executable: Path) -> bool:
     """Configure Electron's Linux SUID sandbox helper when required."""
     if sys.platform != "linux":
@@ -5535,6 +5563,9 @@ def cmd_gui(args: argparse.Namespace):
             build_label = "source build" if source_mode else "packaged app"
             print(f"→ Building desktop {build_label}...")
             build_script = "build" if source_mode else "pack"
+            if _force_adhoc_macos_signing(env, source_mode=source_mode):
+                print("  → No Developer ID configured; ad-hoc signing this local rebuild "
+                      "(CSC_IDENTITY_AUTO_DISCOVERY=false)")
             if not source_mode:
                 # A running desktop instance launched from release/win-unpacked
                 # holds Hermes.exe locked on Windows, so the pack can't replace
@@ -11548,7 +11579,7 @@ _BUILTIN_SUBCOMMANDS = frozenset(
         "computer-use",
         "config", "cron", "curator", "dashboard", "debug", "doctor",
         "dump", "fallback", "gateway", "hooks", "import", "insights",
-        "gui", "desktop", "kanban", "login", "logout", "logs", "lsp", "mcp", "memory", "migrate",
+        "gui", "desktop", "kanban", "login", "logout", "logs", "lsp", "mcp", "memory", "migrate", "moa",
         "model", "pairing", "pets", "plugins", "portal", "postinstall", "profile", "proxy",
         "prompt-size",
         "send", "sessions", "setup",
@@ -12072,6 +12103,21 @@ def main():
     # model command  (parser built in hermes_cli/subcommands/model.py)
     # =========================================================================
     build_model_parser(subparsers, cmd_model=cmd_model)
+
+    from hermes_cli.moa_cmd import cmd_moa
+
+    moa_parser = subparsers.add_parser(
+        "moa",
+        help="Configure Mixture of Agents provider/model slots",
+        description="Configure the provider/model set used by /moa <prompt>.",
+    )
+    moa_subparsers = moa_parser.add_subparsers(dest="moa_command")
+    moa_subparsers.add_parser("list", aliases=["ls"], help="Show current MoA model slots")
+    moa_configure = moa_subparsers.add_parser("configure", aliases=["config"], help="Interactively pick MoA models")
+    moa_configure.add_argument("name", nargs="?", help="Preset name to create or update")
+    moa_delete = moa_subparsers.add_parser("delete", aliases=["rm"], help="Delete a MoA preset")
+    moa_delete.add_argument("name", help="Preset name to delete")
+    moa_parser.set_defaults(func=cmd_moa)
 
     # =========================================================================
     # fallback command — manage the fallback provider chain
