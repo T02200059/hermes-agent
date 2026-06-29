@@ -1,9 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { $sidebarAgentsGrouped } from '@/store/layout'
+
 import {
+  $activeProjectId,
   $projectScope,
   $worktreeRefreshToken,
   ALL_PROJECTS,
+  createProject,
   enterProject,
   exitProjectScope,
   pickProjectFolder,
@@ -13,13 +17,22 @@ import {
 vi.mock('@/lib/desktop-fs', () => ({
   desktopDefaultCwd: vi.fn(),
   isDesktopFsRemoteMode: vi.fn(),
-  selectDesktopPaths: vi.fn()
+  selectDesktopPaths: vi.fn(),
+  writeDesktopFileText: vi.fn()
+}))
+
+vi.mock('@/store/gateway', () => ({
+  activeGateway: vi.fn(),
+  ensureActiveGatewayOpen: vi.fn()
 }))
 
 const fs = await import('@/lib/desktop-fs')
 const desktopDefaultCwd = vi.mocked(fs.desktopDefaultCwd)
 const isDesktopFsRemoteMode = vi.mocked(fs.isDesktopFsRemoteMode)
 const selectDesktopPaths = vi.mocked(fs.selectDesktopPaths)
+
+const gw = await import('@/store/gateway')
+const activeGateway = vi.mocked(gw.activeGateway)
 
 describe('project scope', () => {
   beforeEach(() => {
@@ -68,13 +81,12 @@ describe('pickProjectFolder', () => {
     vi.clearAllMocks()
   })
 
-  it('uses the remote-aware directory picker locally (no backend default cwd probe)', async () => {
+  it('uses the remote-aware directory picker locally', async () => {
     isDesktopFsRemoteMode.mockReturnValue(false)
     selectDesktopPaths.mockResolvedValue(['/local/repo'])
 
     await expect(pickProjectFolder()).resolves.toBe('/local/repo')
     expect(selectDesktopPaths).toHaveBeenCalledWith({ defaultPath: undefined, directories: true, multiple: false })
-    expect(desktopDefaultCwd).not.toHaveBeenCalled()
   })
 
   it('seeds the picker with the backend cwd on a remote gateway', async () => {
@@ -95,5 +107,36 @@ describe('pickProjectFolder', () => {
     selectDesktopPaths.mockResolvedValue([])
 
     await expect(pickProjectFolder()).resolves.toBeNull()
+  })
+})
+
+describe('createProject', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    $sidebarAgentsGrouped.set(false)
+    $activeProjectId.set(null)
+  })
+
+  it('creates the project and flips into the grouped view so a blank slate shows it', async () => {
+    const created = { folders: [], id: 'p_new', name: 'Demo', primary_path: '/srv/demo' }
+
+    const request = vi.fn(async (method: string) => {
+      if (method === 'projects.create') {
+        return { project: created }
+      }
+
+      // Reconcile (fire-and-forget) re-reads list + tree; echo the project back
+      // so the optimistic state survives instead of being wiped to empty.
+      return { active_id: 'p_new', projects: [created], scoped_session_ids: [] }
+    })
+
+    activeGateway.mockReturnValue({ connectionState: 'open', request } as never)
+
+    const result = await createProject({ folders: ['/srv/demo'], name: 'Demo', use: true })
+
+    expect(result).toEqual(created)
+    expect(request).toHaveBeenCalledWith('projects.create', expect.objectContaining({ name: 'Demo' }))
+    expect($sidebarAgentsGrouped.get()).toBe(true)
+    expect($activeProjectId.get()).toBe('p_new')
   })
 })

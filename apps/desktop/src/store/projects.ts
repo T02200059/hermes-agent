@@ -2,7 +2,7 @@ import { atom } from 'nanostores'
 
 import { liveSessionProjectId, type SidebarProjectTree } from '@/app/chat/sidebar/projects/workspace-groups'
 import type { HermesGitBranch } from '@/global'
-import { desktopDefaultCwd, isDesktopFsRemoteMode, selectDesktopPaths, writeDesktopFileText } from '@/lib/desktop-fs'
+import { desktopDefaultCwd, selectDesktopPaths, writeDesktopFileText } from '@/lib/desktop-fs'
 import { desktopGit } from '@/lib/desktop-git'
 import { persistentAtom } from '@/lib/persisted'
 import { activeGateway, ensureActiveGatewayOpen } from '@/store/gateway'
@@ -282,7 +282,7 @@ export async function fetchProjectSessions(projectId: string): Promise<SidebarPr
 let didScanRepos = false
 
 export async function scanAndRecordRepos(force = false): Promise<void> {
-  const scan = window.hermesDesktop?.git?.scanRepos
+  const scan = desktopGit()?.scanRepos
 
   if (!scan || (didScanRepos && !force)) {
     return
@@ -444,6 +444,8 @@ export async function createProject(input: CreateProjectInput): Promise<ProjectI
     if (input.use) {
       $activeProjectId.set(created.id)
     }
+
+    setSidebarAgentsGrouped(true)
   }
 
   reconcileProjects()
@@ -737,12 +739,11 @@ export async function copyPath(path: null | string): Promise<void> {
 // the backend filesystem (seeded at its default cwd) where sessions run; local
 // mode opens the native dialog. Returns the absolute path, or null if cancelled.
 export async function pickProjectFolder(): Promise<null | string> {
-  try {
-    const defaultPath = isDesktopFsRemoteMode() ? (await desktopDefaultCwd())?.cwd : undefined
-    const [dir] = await selectDesktopPaths({ defaultPath, directories: true, multiple: false })
+  const [dir] = await selectDesktopPaths({
+    defaultPath: (await desktopDefaultCwd())?.cwd,
+    directories: true,
+    multiple: false
+  })
 
-    return dir || null
-  } catch {
-    return null
-  }
+  return dir || null
 }
