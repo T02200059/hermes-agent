@@ -33,9 +33,10 @@ _HERMES_CORE_TOOLS = [
     "web_search", "web_extract",
     # Terminal + process management
     "terminal", "process",
-    # Read the desktop GUI's embedded terminal pane (gated on HERMES_DESKTOP
-    # via check_fn in tools/read_terminal_tool.py — hidden outside the GUI).
-    "read_terminal",
+    # Read the desktop GUI's embedded terminal pane, and close an agent's
+    # read-only terminal tab (both gated on HERMES_DESKTOP via check_fn —
+    # hidden outside the GUI).
+    "read_terminal", "close_terminal",
     # File manipulation
     # [owner] unified_diff_patch: add exact line-number patch tool alongside legacy patch
     "read_file", "write_file", "patch", "unified_diff_patch", "search_files",
@@ -52,6 +53,11 @@ _HERMES_CORE_TOOLS = [
     "text_to_speech",
     # Planning & memory
     "todo", "memory",
+    # NOTE: the desktop Project tools (project_list/create/switch) are
+    # deliberately NOT here. They only make sense where a GUI can follow the
+    # move, so they live in the `project` toolset and are enabled solely by the
+    # GUI gateway (tui_gateway/server.py::_load_enabled_toolsets) — keeping them
+    # off every CLI/messaging/cron schema (narrow waist).
     # Session history search
     "session_search",
     # Clarifying questions
@@ -157,12 +163,6 @@ TOOLSETS = {
         "includes": []
     },
     
-    "moa": {
-        "description": "Advanced reasoning and problem-solving tools",
-        "tools": ["mixture_of_agents"],
-        "includes": []
-    },
-    
     "skills": {
         "description": "Access, create, edit, and manage skill documents with specialized instructions and knowledge",
         "tools": ["skills_list", "skill_view", "skill_manage"],
@@ -222,6 +222,12 @@ TOOLSETS = {
     "session_search": {
         "description": "Search and recall past conversations with summarization",
         "tools": ["session_search"],
+        "includes": []
+    },
+
+    "project": {
+        "description": "Desktop Projects — create/switch named workspaces (GUI sessions only)",
+        "tools": ["project_list", "project_create", "project_switch"],
         "includes": []
     },
     
@@ -342,9 +348,14 @@ TOOLSETS = {
         "description": "Coding-focused toolset: files, terminal, search, web docs, skills, todo, delegate, vision, browser",
         "tools": [
             "web_search", "web_extract",
-            "terminal", "process", "read_terminal",
+<<<<<<< HEAD
+            "terminal", "process", "read_terminal", "close_terminal",
             # [owner] unified_diff_patch: include in coding posture
             "read_file", "write_file", "patch", "unified_diff_patch", "search_files",
+=======
+            "terminal", "process", "read_terminal", "close_terminal",
+            "read_file", "write_file", "patch", "search_files",
+>>>>>>> 4488fe134b1de4359f3a4f1f8368576413e6e268
             "vision_analyze",
             "skills_list", "skill_view", "skill_manage",
             "browser_navigate", "browser_snapshot", "browser_click",

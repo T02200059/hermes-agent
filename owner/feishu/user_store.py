@@ -41,6 +41,7 @@ class FeishuUserStore:
         cache_path: Any,
     ) -> None:
         self._client: Any = None
+        self._adapter: Any = None  # for accessing _run_blocking under new upstream lifecycle
         self._users: Dict[str, FeishuUserEntry] = {}
         # lookup_id → (name, expire_at); "" name = known nameless
         self._name_ttl: Dict[str, Tuple[str, float]] = {}
@@ -60,8 +61,10 @@ class FeishuUserStore:
         """TTL name map keyed by lookup id (test introspection)."""
         return self._name_ttl
 
-    def bind_client(self, client: Any) -> None:
+    def bind_client(self, client: Any, *, adapter: Any = None) -> None:
         self._client = client
+        if adapter is not None:
+            self._adapter = adapter
 
     def _seed_name_ttl_from_users(self) -> None:
         now = time.time()
@@ -165,9 +168,15 @@ class FeishuUserStore:
                 .user_id_type(id_type)
                 .build()
             )
-            response = await asyncio.to_thread(
-                self._client.contact.v3.user.get, request
-            )
+            # Use adapter's protected executor under upstream new SDK lifecycle (batch ~33+)
+            if self._adapter and hasattr(self._adapter, "_run_blocking"):
+                response = await self._adapter._run_blocking(
+                    self._client.contact.v3.user.get, request
+                )
+            else:
+                response = await asyncio.to_thread(
+                    self._client.contact.v3.user.get, request
+                )
             if not response or not response.success():
                 return None
 
@@ -222,7 +231,11 @@ class FeishuUserStore:
                 .token_types({AccessTokenType.TENANT})
                 .build()
             )
-            resp = await asyncio.to_thread(self._client.request, req)
+            # Use adapter's protected executor under upstream new SDK lifecycle
+            if self._adapter and hasattr(self._adapter, "_run_blocking"):
+                resp = await self._adapter._run_blocking(self._client.request, req)
+            else:
+                resp = await asyncio.to_thread(self._client.request, req)
             content = getattr(getattr(resp, "raw", None), "content", None)
             if not content:
                 return None
