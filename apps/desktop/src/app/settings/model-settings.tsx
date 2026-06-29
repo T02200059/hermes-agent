@@ -182,6 +182,13 @@ export function ModelSettings({ onMainModelChanged }: ModelSettingsProps) {
 
   const providerOptions = providers.length ? providers : NO_PROVIDERS
 
+  // MoA reference/aggregator slots must never be the moa virtual provider —
+  // that would create a recursive MoA tree (the backend rejects it on save).
+  // Hide it from the slot selectors so it isn't offered as a dead choice.
+  const moaSlotProviderOptions = providerOptions.filter(
+    provider => (provider.slug || '').toLowerCase() !== 'moa'
+  )
+
   const selectedProviderRow = useMemo(
     () => providers.find(provider => provider.slug === selectedProvider),
     [providers, selectedProvider]
@@ -765,9 +772,13 @@ export function ModelSettings({ onMainModelChanged }: ModelSettingsProps) {
             </Select>
             <Button
               disabled={applying}
-              onClick={() =>
-                setMoa(prev => prev && { ...prev, default_preset: selectedMoaPreset || prev.default_preset })
-              }
+              onClick={() => {
+                const next: MoaConfigResponse = {
+                  ...moa,
+                  default_preset: selectedMoaPreset || moa.default_preset
+                }
+                void saveMoa(next)
+              }}
               size="sm"
               variant="text"
             >
@@ -776,23 +787,21 @@ export function ModelSettings({ onMainModelChanged }: ModelSettingsProps) {
             <Button
               disabled={Object.keys(moa.presets).length <= 1 || applying}
               onClick={() => {
-                setMoa(prev => {
-                  if (!prev || Object.keys(prev.presets).length <= 1) {
-                    return prev
-                  }
+                if (Object.keys(moa.presets).length <= 1) {
+                  return
+                }
 
-                  const next = { ...prev.presets }
-                  delete next[selectedMoaPreset]
-                  const fallback = Object.keys(next)[0]
-
-                  return {
-                    ...prev,
-                    presets: next,
-                    default_preset: prev.default_preset === selectedMoaPreset ? fallback : prev.default_preset,
-                    active_preset: prev.active_preset === selectedMoaPreset ? '' : prev.active_preset
-                  }
-                })
+                const presets = { ...moa.presets }
+                delete presets[selectedMoaPreset]
+                const fallback = Object.keys(presets)[0]
+                const next: MoaConfigResponse = {
+                  ...moa,
+                  presets,
+                  default_preset: moa.default_preset === selectedMoaPreset ? fallback : moa.default_preset,
+                  active_preset: moa.active_preset === selectedMoaPreset ? '' : moa.active_preset
+                }
                 setSelectedMoaPreset(Object.keys(moa.presets).find(name => name !== selectedMoaPreset) || '')
+                void saveMoa(next)
               }}
               size="sm"
               variant="ghost"
@@ -809,18 +818,16 @@ export function ModelSettings({ onMainModelChanged }: ModelSettingsProps) {
               disabled={!newMoaPresetName.trim() || !!moa.presets[newMoaPresetName.trim()] || applying}
               onClick={() => {
                 const name = newMoaPresetName.trim()
-                setMoa(
-                  prev =>
-                    prev && {
-                      ...prev,
-                      presets: {
-                        ...prev.presets,
-                        [name]: { ...currentMoaPreset, reference_models: [...currentMoaPreset.reference_models] }
-                      }
-                    }
-                )
+                const next: MoaConfigResponse = {
+                  ...moa,
+                  presets: {
+                    ...moa.presets,
+                    [name]: { ...currentMoaPreset, reference_models: [...currentMoaPreset.reference_models] }
+                  }
+                }
                 setSelectedMoaPreset(name)
                 setNewMoaPresetName('')
+                void saveMoa(next)
               }}
               size="sm"
               variant="textStrong"
@@ -851,7 +858,7 @@ export function ModelSettings({ onMainModelChanged }: ModelSettingsProps) {
                         <SelectValue placeholder={m.provider} />
                       </SelectTrigger>
                       <SelectContent>
-                        {providerOptions.map(provider => (
+                        {moaSlotProviderOptions.map(provider => (
                           <SelectItem key={provider.slug || 'none'} value={provider.slug || 'none'}>
                             {provider.name}
                           </SelectItem>
@@ -930,7 +937,7 @@ export function ModelSettings({ onMainModelChanged }: ModelSettingsProps) {
                       <SelectValue placeholder={m.provider} />
                     </SelectTrigger>
                     <SelectContent>
-                      {providerOptions.map(provider => (
+                      {moaSlotProviderOptions.map(provider => (
                         <SelectItem key={provider.slug || 'none'} value={provider.slug || 'none'}>
                           {provider.name}
                         </SelectItem>
