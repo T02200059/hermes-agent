@@ -25,6 +25,21 @@ approval:
   cancelled:       "      ✗ Cancelled"
   blocklist_message: "This command is on the unconditional blocklist and cannot be approved."
 
+  # Feishu approval card — interactive card UI text.
+  feishu_card_title: "⚠️ Command Approval Required"
+  feishu_reason_label: "**Reason:** {description}"
+  feishu_btn_once: "✅ Allow Once"
+  feishu_btn_session: "✅ Session"
+  feishu_btn_always: "✅ Always"
+  feishu_btn_deny: "❌ Deny"
+  feishu_resolved_once: "Approved once"
+  feishu_resolved_session: "Approved for session"
+  feishu_resolved_always: "Approved permanently"
+  feishu_resolved_deny: "Denied"
+  feishu_resolved_default: "Resolved"
+  feishu_resolved_body: "by {user_name}\n\n```\n{command}\n```"
+  feishu_permanent_disabled: "💡 Permanent approval is disabled. Choose Allow Once or Session instead."
+
 gateway:
   # Messenger replies to slash commands and implicit state changes.
   approval_expired: "⚠️ Approval expired (agent is no longer waiting). Ask the agent to try again."
