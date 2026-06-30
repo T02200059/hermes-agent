@@ -249,10 +249,13 @@ class ToolCallGuardrailController:
                 action="block",
                 code="repeated_exact_failure_block",
                 message=(
-                    f"Blocked {tool_name}: the same tool call failed {exact_count} "
-                    "times with identical arguments. Stop retrying it unchanged; "
-                    "change strategy or explain the blocker."
-                ),
+                    f"Blocked {tool_name}: the same call (identical arguments) failed "
+                    f"{exact_count} times — this is the `exact_failure` counter "
+                    f"(threshold: exact_failure_block_after="
+                    f"{self.config.exact_failure_block_after}, set in config.yaml under "
+                    "tool_loop_guardrails.hard_stop_after.exact_failure). "
+                    "Stop retrying the call unchanged; change the arguments or strategy."
+                ),  # [owner] guardrails UX
                 tool_name=tool_name,
                 count=exact_count,
                 signature=signature,
@@ -270,9 +273,13 @@ class ToolCallGuardrailController:
                         code="idempotent_no_progress_block",
                         message=(
                             f"Blocked {tool_name}: this read-only call returned the same "
-                            f"result {repeat_count} times. Stop repeating it unchanged; "
+                            f"result {repeat_count} times — this is the "
+                            f"`idempotent_no_progress` counter (threshold: "
+                            f"no_progress_block_after={self.config.no_progress_block_after}, "
+                            "set in config.yaml under tool_loop_guardrails.hard_stop_after."
+                            "idempotent_no_progress). Stop repeating it unchanged; "
                             "use the result already provided or try a different query."
-                        ),
+                        ),  # [owner] guardrails UX
                         tool_name=tool_name,
                         count=repeat_count,
                         signature=signature,
@@ -308,9 +315,13 @@ class ToolCallGuardrailController:
                     action="halt",
                     code="same_tool_failure_halt",
                     message=(
-                        f"Stopped {tool_name}: it failed {same_count} times this turn. "
-                        "Stop retrying the same failing tool path and choose a different approach."
-                    ),
+                        f"Stopped {tool_name}: it failed {same_count} times this turn — "
+                        f"this is the `same_tool_failure` counter (threshold: "
+                        f"same_tool_failure_halt_after="
+                        f"{self.config.same_tool_failure_halt_after}, set in config.yaml "
+                        "under tool_loop_guardrails.hard_stop_after.same_tool_failure). "
+                        "Stop retrying the same tool path; choose a different approach."
+                    ),  # [owner] guardrails UX
                     tool_name=tool_name,
                     count=same_count,
                     signature=signature,
