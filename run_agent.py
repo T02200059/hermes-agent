@@ -1718,6 +1718,8 @@ class AIAgent:
                     tool_call_id=msg.get("tool_call_id"),
                     finish_reason=msg.get("finish_reason"),
                     owner_provider_name=msg.get("owner_provider_name") if role == "assistant" else None,
+                    model=msg.get("model") if role == "assistant" else None,
+                    provider=msg.get("provider") if role == "assistant" else None,
                     reasoning=msg.get("reasoning") if role == "assistant" else None,
                     reasoning_content=msg.get("reasoning_content") if role == "assistant" else None,
                     reasoning_details=msg.get("reasoning_details") if role == "assistant" else None,

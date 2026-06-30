@@ -692,6 +692,8 @@ CREATE TABLE IF NOT EXISTS messages (
     token_count INTEGER,
     finish_reason TEXT,
     owner_provider_name TEXT,
+    model TEXT,
+    provider TEXT,
     reasoning TEXT,
     reasoning_content TEXT,
     reasoning_details TEXT,
@@ -2902,6 +2904,8 @@ class SessionDB:
         token_count: int = None,
         finish_reason: str = None,
         owner_provider_name: str = None,
+        model: str = None,
+        provider: str = None,
         reasoning: str = None,
         reasoning_content: str = None,
         reasoning_details: Any = None,
@@ -2960,9 +2964,9 @@ class SessionDB:
             cursor = conn.execute(
                 """INSERT INTO messages (session_id, role, content, tool_call_id,
                    tool_calls, tool_name, timestamp, token_count, finish_reason,
-                   owner_provider_name, reasoning, reasoning_content, reasoning_details,
+                   owner_provider_name, model, provider, reasoning, reasoning_content, reasoning_details,
                    codex_reasoning_items, codex_message_items, platform_message_id, observed)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     session_id,
                     role,
@@ -2974,6 +2978,8 @@ class SessionDB:
                     token_count,
                     finish_reason,
                     owner_provider_name,
+                    model,
+                    provider,
                     reasoning,
                     reasoning_content,
                     reasoning_details_json,
@@ -3052,9 +3058,9 @@ class SessionDB:
             conn.execute(
                 """INSERT INTO messages (session_id, role, content, tool_call_id,
                    tool_calls, tool_name, timestamp, token_count, finish_reason,
-                   owner_provider_name, reasoning, reasoning_content, reasoning_details,
+                   owner_provider_name, model, provider, reasoning, reasoning_content, reasoning_details,
                    codex_reasoning_items, codex_message_items, platform_message_id, observed)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     session_id,
                     role,
@@ -3066,6 +3072,8 @@ class SessionDB:
                     msg.get("token_count"),
                     msg.get("finish_reason"),
                     msg.get("owner_provider_name") if role == "assistant" else None,
+                    msg.get("model") if role == "assistant" else None,
+                    msg.get("provider") if role == "assistant" else None,
                     msg.get("reasoning") if role == "assistant" else None,
                     msg.get("reasoning_content") if role == "assistant" else None,
                     reasoning_details_json,
@@ -3199,6 +3207,30 @@ class SessionDB:
                     msg["tool_calls"] = []
             result.append(msg)
         return result
+
+    # [owner] per-turn model/provider attribution: backfill legacy NULLs
+    def backfill_assistant_models_from_sessions(self, only_null: bool = True) -> int:
+        """Back-fill ``model`` for assistant messages from session-level values.
+
+        Because ``sessions.model`` is the *creation-time* (or last-overwrite) value,
+        this helper is **approximate** for sessions where ``/model`` was switched
+        mid-conversation.  It is still useful for migrating legacy data so that
+        third-party queries have *something* rather than NULL.
+
+        Returns the number of rows updated.
+        """
+        null_clause = "AND m.model IS NULL" if only_null else ""
+        with self._lock:
+            cursor = self._conn.execute(
+                f"""UPDATE messages AS m
+                    SET model = COALESCE(m.model, s.model)
+                    FROM sessions AS s
+                    WHERE m.session_id = s.id
+                      AND m.role = 'assistant'
+                      {null_clause}"""
+            )
+            self._conn.commit()
+            return cursor.rowcount
 
     def get_messages_around(
         self,
