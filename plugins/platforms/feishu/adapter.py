@@ -1482,6 +1482,8 @@ class FeishuAdapter(BasePlatformAdapter):
         # Update prompt button state (prompt_id → {session_key, message_id, chat_id})
         self._update_prompt_state: Dict[int, Dict[str, str]] = {}
         self._update_prompt_counter = itertools.count(1)
+        # [owner] model picker state: picker_id → {providers, source}
+        self._model_picker_state: Dict[str, Dict[str, Any]] = {}
         # Feishu reaction deletion requires the opaque reaction_id returned
         # by create, so we cache it per message_id.
         self._pending_processing_reactions: "OrderedDict[str, str]" = OrderedDict()
@@ -2602,6 +2604,11 @@ class FeishuAdapter(BasePlatformAdapter):
             if isinstance(action_value, dict) else None
         )
 
+        # [owner] model picker: dispatch picker card callbacks (see owner/feishu/model_picker.py)
+        model_picker = action_value.get("hermes_model_picker") if isinstance(action_value, dict) else None
+        if model_picker:
+            return self._handle_model_picker_action(event=event, action_value=action_value, loop=loop)
+
         if hermes_action:
             return self._handle_approval_card_action(event=event, action_value=action_value, loop=loop)
         if update_prompt_action:
@@ -2757,6 +2764,41 @@ class FeishuAdapter(BasePlatformAdapter):
             card.data = self._build_resolved_update_prompt_card(answer=answer, user_name=user_name)
             response.card = card
         return response
+
+    # ── [owner] Model picker card ──────────────────────────────────────────
+
+    async def send_model_picker_card(
+        self,
+        chat_id: str,
+        providers: list,
+        source: Any,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Send an interactive model picker card.
+
+        Thin glue — card building lives in ``owner/feishu/model_picker.py``.
+        """
+        import uuid as _uuid
+        from owner.feishu.model_picker import build_provider_card
+
+        picker_id = str(_uuid.uuid4())
+        self._model_picker_state[picker_id] = {"providers": providers, "source": source}
+        await self.send_card(chat_id=chat_id, card=build_provider_card(picker_id, providers), metadata=metadata)
+
+    def _handle_model_picker_action(
+        self, *, event: Any, action_value: Dict[str, Any], loop: Any
+    ) -> Any:
+        """Handle model picker card callbacks.
+
+        Thin glue — callback logic lives in ``owner/feishu/model_picker.py``.
+        """
+        from owner.feishu.model_picker import handle_picker_action
+
+        return handle_picker_action(
+            adapter=self,
+            action_value=action_value,
+            event=event,
+        )
 
     async def _resolve_approval(
         self,

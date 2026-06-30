@@ -1409,6 +1409,45 @@ def prewarm_picker_cache_async() -> Optional["_threading.Thread"]:
     return t
 
 
+# [owner] credential bridging helpers — consolidate repeated try/except fallback
+# patterns so list_authenticated_providers stays readable without 9 separate
+# injection blocks.
+
+
+def _owner_check_env_creds(env_vars) -> bool:
+    """Check env vars with owner-specific filtering, fall back to any()."""
+    try:
+        from owner.providers.credential_helpers import has_valid_github_token
+        return has_valid_github_token(env_vars)
+    except Exception:
+        return any(os.environ.get(ev) for ev in env_vars)
+
+
+def _owner_check_auth_entry(providers_store: dict, key: str) -> bool:
+    """Check auth store entry with OAuth token expiration, fail-open."""
+    entry = providers_store.get(key)
+    if not entry or not isinstance(entry, dict):
+        return False
+    try:
+        from owner.providers.credential_helpers import is_token_expired
+        return not is_token_expired(entry.get("expires_at"))
+    except Exception:
+        return True  # fail-open: unparseable dates treated as not expired
+
+
+def _owner_check_pool_creds(pool) -> bool:
+    """Check credential pool with OAuth token expiration, fail-open."""
+    try:
+        from owner.providers.credential_helpers import is_token_expired
+        entries = pool.entries()
+        return any(
+            not is_token_expired(getattr(pe, "expires_at", None))
+            for pe in entries
+        )
+    except Exception:
+        return pool.has_credentials()
+
+
 def list_authenticated_providers(
     current_provider: str = "",
     current_base_url: str = "",
@@ -1633,12 +1672,15 @@ def list_authenticated_providers(
                 continue
 
         # Check if any env var is set
-        has_creds = any(os.environ.get(ev) for ev in env_vars)
+        has_creds = _owner_check_env_creds(env_vars)
         if not has_creds:
             try:
                 from hermes_cli.auth import _load_auth_store
                 store = _load_auth_store()
-                if store and store.get("credential_pool", {}).get(hermes_id):
+                providers_store = store.get("providers", {})
+                if _owner_check_auth_entry(providers_store, hermes_id):
+                    has_creds = True
+                elif store and store.get("credential_pool", {}).get(hermes_id):
                     has_creds = True
             except Exception:
                 pass
@@ -1700,13 +1742,13 @@ def list_authenticated_providers(
         if overlay.auth_type == "aws_sdk":
             has_creds = _has_aws_sdk_creds_for_listing(hermes_slug)
         elif overlay.extra_env_vars:
-            has_creds = any(os.environ.get(ev) for ev in overlay.extra_env_vars)
+            has_creds = _owner_check_env_creds(overlay.extra_env_vars)
         # Also check api_key_env_vars from PROVIDER_REGISTRY for api_key auth_type
         if not has_creds and overlay.auth_type == "api_key":
             for _key in (pid, hermes_slug):
                 pcfg = _auth_registry.get(_key)
                 if pcfg and pcfg.api_key_env_vars:
-                    if any(os.environ.get(ev) for ev in pcfg.api_key_env_vars):
+                    if _owner_check_env_creds(pcfg.api_key_env_vars):
                         has_creds = True
                         break
         # Check auth store and credential pool for non-env-var credentials.
@@ -1718,7 +1760,7 @@ def list_authenticated_providers(
                 from hermes_cli.auth import _load_auth_store
                 store = _load_auth_store()
                 providers_store = store.get("providers", {})
-                if store and (pid in providers_store or hermes_slug in providers_store):
+                if _owner_check_auth_entry(providers_store, pid) or _owner_check_auth_entry(providers_store, hermes_slug):
                     has_creds = True
             except Exception as exc:
                 logger.debug("Auth store check failed for %s: %s", pid, exc)
@@ -1730,8 +1772,7 @@ def list_authenticated_providers(
             try:
                 from agent.credential_pool import load_pool
                 pool = load_pool(hermes_slug)
-                if pool.has_credentials():
-                    has_creds = True
+                has_creds = _owner_check_pool_creds(pool)
             except Exception as exc:
                 logger.debug("Credential pool check failed for %s: %s", hermes_slug, exc)
         # Fallback: check external credential files directly.
@@ -1856,14 +1897,14 @@ def list_authenticated_providers(
         _cp_config = _auth_registry.get(_cp.slug)
         _cp_has_creds = False
         if _cp_config and _cp_config.api_key_env_vars:
-            _cp_has_creds = any(os.environ.get(ev) for ev in _cp_config.api_key_env_vars)
+            _cp_has_creds = _owner_check_env_creds(_cp_config.api_key_env_vars)
         # Also check auth store and credential pool
         if not _cp_has_creds:
             try:
                 from hermes_cli.auth import _load_auth_store
                 _cp_store = _load_auth_store()
                 _cp_providers_store = _cp_store.get("providers", {})
-                if _cp_store and _cp.slug in _cp_providers_store:
+                if _owner_check_auth_entry(_cp_providers_store, _cp.slug):
                     _cp_has_creds = True
             except Exception:
                 pass
@@ -1871,8 +1912,7 @@ def list_authenticated_providers(
             try:
                 from agent.credential_pool import load_pool
                 _cp_pool = load_pool(_cp.slug)
-                if _cp_pool.has_credentials():
-                    _cp_has_creds = True
+                _cp_has_creds = _owner_check_pool_creds(_cp_pool)
             except Exception:
                 pass
 
