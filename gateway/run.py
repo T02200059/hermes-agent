@@ -16746,6 +16746,8 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                                 session_key=_approval_session_key,
                                 description=desc,
                                 metadata=_status_thread_metadata,
+                                sender_open_id=source.user_id or "",
+                                sender_is_bot=source.is_bot,
                             ),
                             _loop_for_step,
                             logger=logger,

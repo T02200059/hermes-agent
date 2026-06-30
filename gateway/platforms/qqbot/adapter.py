@@ -2660,6 +2660,7 @@ class QQAdapter(BasePlatformAdapter):
             session_key: str,
             description: str = "dangerous command",
             metadata: Optional[Dict[str, Any]] = None,
+            **kwargs,
     ) -> SendResult:
         """Send a button-based exec-approval prompt for a dangerous command.
 
@@ -2669,6 +2670,8 @@ class QQAdapter(BasePlatformAdapter):
         adapter's interaction callback (:meth:`_default_interaction_dispatch`).
         """
         del metadata  # QQ doesn't have thread_id / DM targeting overrides.
+        kwargs.pop("sender_open_id", None)
+        kwargs.pop("sender_is_bot", None)
 
         # Use the reply-to message for passive-message context when we have one.
         # QQ requires a msg_id on outbound messages to a user we've never
