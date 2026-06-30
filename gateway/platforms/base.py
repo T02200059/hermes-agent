@@ -2120,6 +2120,18 @@ def _strip_media_directives(text: str) -> str:
     return MEDIA_TAG_CLEANUP_RE.sub("", text)
 
 
+def parse_chained_commands(text: str, sep: str = ";;") -> list[str]:
+    """Split ``text`` on *sep* and return non-empty stripped fragments.
+
+    ``"/model x ;; /reasoning low"`` → ``["/model x", "/reasoning low"]``
+
+    If *sep* is absent the original text is returned as a single-element list.
+    """
+    if not text or sep not in text:
+        return [text] if text else []
+    return [cmd.strip() for cmd in text.split(sep) if cmd.strip()]
+
+
 class BasePlatformAdapter(ABC):
     """
     Base class for platform adapters.

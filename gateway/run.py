@@ -8583,10 +8583,24 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 if qcmd.get("type") == "alias":
                     target = qcmd.get("target", "").strip()
                     if target:
-                        target = target if target.startswith("/") else f"/{target}"
-                        target_command = target.lstrip("/")
                         user_args = event.get_command_args().strip()
-                        event.text = f"{target} {user_args}".strip()
+                        chain_text = f"{target} {user_args}".strip()
+                        from gateway.platforms.base import parse_chained_commands
+                        chain = parse_chained_commands(chain_text)
+                        if len(chain) > 1:
+                            # Chained commands: execute each sequentially
+                            import dataclasses as _dc
+                            results = []
+                            for cmd_text in chain:
+                                cmd_text = cmd_text if cmd_text.startswith("/") else f"/{cmd_text}"
+                                tmp = _dc.replace(event, text=cmd_text)
+                                r = await self._handle_message(tmp)
+                                if r:
+                                    results.append(str(r))
+                            return "\n".join(results) if results else "Commands executed."
+                        # Single command — fall through to built-in dispatch
+                        target = chain[0] if chain[0].startswith("/") else f"/{chain[0]}"
+                        target_command = target.lstrip("/")
                         command = target_command.split()[0] if target_command else target_command
                         _cmd_def = _resolve_cmd(command) if command else None
                         canonical = _cmd_def.name if _cmd_def else command

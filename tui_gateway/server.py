@@ -11284,7 +11284,12 @@ def _(rid, params: dict) -> dict:
                 )
             return _ok(rid, {"type": "exec", "output": output})
         if qc.get("type") == "alias":
-            return _ok(rid, {"type": "alias", "target": qc.get("target", "")})
+            from gateway.platforms.base import parse_chained_commands
+            target = qc.get("target", "")
+            chain = parse_chained_commands(target)
+            if len(chain) > 1:
+                return _ok(rid, {"type": "chain", "commands": chain})
+            return _ok(rid, {"type": "alias", "target": target})
 
     try:
         from hermes_cli.plugins import (
