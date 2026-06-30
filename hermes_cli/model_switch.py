@@ -22,8 +22,8 @@ from __future__ import annotations
 
 import logging
 import re
-import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading  # [owner] Layer 3 parallel credential discovery
+from concurrent.futures import ThreadPoolExecutor, as_completed  # [owner] Layer 3
 from dataclasses import dataclass
 from typing import List, NamedTuple, Optional
 
@@ -49,6 +49,8 @@ from agent.models_dev import (
 # Providers whose picker model list should NOT be capped by max_models.
 # OpenCode Zen / Go are aggregators whose full catalogs (70+ models each) must
 # be visible so users can pick any model they have access to.
+# [owner] restored: lost during Layer 1/2/3 refactor (b881908c6), re-added to
+# preserve aggregator uncapping contract from upstream main.
 _UNCAPPED_PICKER_PROVIDERS: frozenset[str] = frozenset({"opencode-zen", "opencode-go"})
 
 logger = logging.getLogger(__name__)
@@ -1830,6 +1832,9 @@ def list_authenticated_providers(
 
         return False
 
+    # [owner] Layer 1/2/3 three-layer provider discovery (b881908c6, owner-v17).
+    # Layer 1: config.yaml → instant. Layer 2: env-var → fast. Layer 3: auth
+    # store + credential pool → ThreadPoolExecutor parallel.
     # -----------------------------------------------------------------------
     # Layer 1: config.yaml configured providers (user_providers)
     # -----------------------------------------------------------------------
