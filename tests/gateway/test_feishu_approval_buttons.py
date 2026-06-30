@@ -676,6 +676,8 @@ class TestCardActionCallbackResponse:
         adapter = _make_adapter()
         adapter._loop = MagicMock()
         adapter._loop.is_closed = MagicMock(return_value=False)
+        adapter._group_policy = "allowlist"
+        adapter._default_group_policy = "allowlist"
         adapter._allowed_group_users = {"ou_allowed"}
         adapter._approval_state[5] = {
             "session_key": "sess-5",
@@ -823,6 +825,8 @@ class TestCardActionCallbackResponse:
             "message_id": "msg_up_006",
             "chat_id": "oc_12345",
         }
+        adapter._group_policy = "allowlist"
+        adapter._default_group_policy = "allowlist"
         adapter._allowed_group_users = {"ou_allowed"}
         data = _make_card_action_data(
             {"hermes_update_prompt_action": "y", "update_prompt_id": 1},
@@ -840,6 +844,8 @@ class TestCardActionCallbackResponse:
         adapter = _make_adapter()
         adapter._loop = MagicMock()
         adapter._loop.is_closed = MagicMock(return_value=False)
+        adapter._group_policy = "allowlist"
+        adapter._default_group_policy = "allowlist"
         adapter._update_prompt_state[7] = {
             "session_key": "sess-up-7",
             "message_id": "msg_up_007",
