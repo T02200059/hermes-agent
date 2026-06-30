@@ -4175,6 +4175,11 @@ class AIAgent:
 
         self.api_key = runtime_key
         self.base_url = runtime_base.rstrip("/") if isinstance(runtime_base, str) else runtime_base
+        # [owner] pool-base-url-override: honour model.base_url on credential rotation (see owner/patches/pool_base_url_override.py)
+        from owner.patches.pool_base_url_override import config_base_url_override as _cfg_burl
+        _ov = _cfg_burl(self.provider, self.base_url)
+        if _ov:
+            self.base_url = _ov
         self._client_kwargs["api_key"] = self.api_key
         self._client_kwargs["base_url"] = self.base_url
         self._apply_client_headers_for_base_url(self.base_url)

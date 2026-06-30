@@ -393,6 +393,10 @@ def _resolve_runtime_from_pool_entry(
     elif provider == "copilot":
         api_mode = _copilot_runtime_api_mode(model_cfg, getattr(entry, "runtime_api_key", ""))
         base_url = base_url or PROVIDER_REGISTRY["copilot"].inference_base_url
+        # [owner] pool-base-url-override: honour model.base_url config (see owner/patches/pool_base_url_override.py)
+        from owner.patches.pool_base_url_override import config_base_url_override as _cfg_burl
+        _ov = _cfg_burl("copilot", base_url)
+        base_url = _ov if _ov else base_url
     elif provider == "azure-foundry":
         # Azure Foundry: read api_mode and base_url from config
         cfg_provider = str(model_cfg.get("provider") or "").strip().lower()
@@ -1390,6 +1394,10 @@ def _resolve_explicit_runtime(
                 base_url = creds.get("base_url", "").rstrip("/")
             else:
                 base_url = env_url or pconfig.inference_base_url
+                # [owner] pool-base-url-override: honour model.base_url config (see owner/patches/pool_base_url_override.py)
+                from owner.patches.pool_base_url_override import config_base_url_override as _cfg_burl
+                _ov = _cfg_burl(provider, base_url)
+                base_url = _ov if _ov else base_url
 
         api_key = explicit_api_key
         if not api_key:
