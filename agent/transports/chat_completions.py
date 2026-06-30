@@ -443,6 +443,10 @@ class ChatCompletionsTransport(ProviderTransport):
         if additions:
             extra_body.update(additions)
 
+        # [owner] model-level extra_body from patch.yaml (owner/extra_body_injection.py)
+        from owner.extra_body_injection import inject_model_extra_body
+        inject_model_extra_body(extra_body, params.get("owner_provider_name"), model)
+
         if extra_body:
             api_kwargs["extra_body"] = extra_body
 
@@ -554,6 +558,10 @@ class ChatCompletionsTransport(ProviderTransport):
         # Profile's reasoning/thinking extra_body entries
         if extra_body_from_profile:
             extra_body.update(extra_body_from_profile)
+
+        # [owner] model-level extra_body from patch.yaml (owner/extra_body_injection.py)
+        from owner.extra_body_injection import inject_model_extra_body
+        inject_model_extra_body(extra_body, params.get("owner_provider_name"), model)
 
         # Merge any pre-built extra_body additions from the caller
         additions = params.get("extra_body_additions")
