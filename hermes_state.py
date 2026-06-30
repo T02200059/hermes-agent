@@ -659,6 +659,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     cache_write_tokens INTEGER DEFAULT 0,
     reasoning_tokens INTEGER DEFAULT 0,
     cwd TEXT,
+    owner_provider_name TEXT,
     git_branch TEXT,
     git_repo_root TEXT,
     billing_provider TEXT,
@@ -690,6 +691,7 @@ CREATE TABLE IF NOT EXISTS messages (
     timestamp REAL NOT NULL,
     token_count INTEGER,
     finish_reason TEXT,
+    owner_provider_name TEXT,
     reasoning TEXT,
     reasoning_content TEXT,
     reasoning_details TEXT,
@@ -1485,6 +1487,7 @@ class SessionDB:
         thread_id: str = None,
         parent_session_id: str = None,
         cwd: str = None,
+        owner_provider_name: str = None,
     ) -> None:
         """Insert a session row, enriching NULL metadata on conflict.
 
@@ -1502,9 +1505,9 @@ class SessionDB:
             conn.execute(
                 """INSERT INTO sessions (
                    id, source, user_id, session_key, chat_id, chat_type, thread_id,
-                   model, model_config, system_prompt, parent_session_id, cwd, started_at
+                   model, model_config, system_prompt, parent_session_id, cwd, owner_provider_name, started_at
                 )
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(id) DO UPDATE SET
                        model = COALESCE(sessions.model, excluded.model),
                        model_config = COALESCE(sessions.model_config, excluded.model_config),
@@ -1514,7 +1517,8 @@ class SessionDB:
                        chat_type = COALESCE(sessions.chat_type, excluded.chat_type),
                        thread_id = COALESCE(sessions.thread_id, excluded.thread_id),
                        parent_session_id = COALESCE(sessions.parent_session_id, excluded.parent_session_id),
-                       cwd = COALESCE(sessions.cwd, excluded.cwd)""",
+                       cwd = COALESCE(sessions.cwd, excluded.cwd),
+                       owner_provider_name = COALESCE(sessions.owner_provider_name, excluded.owner_provider_name)""",
                 (
                     session_id,
                     source,
@@ -1528,6 +1532,7 @@ class SessionDB:
                     system_prompt,
                     parent_session_id,
                     cwd,
+                    owner_provider_name,
                     time.time(),
                 ),
             )
@@ -1936,6 +1941,7 @@ class SessionDB:
         billing_provider: Optional[str] = None,
         billing_base_url: Optional[str] = None,
         billing_mode: Optional[str] = None,
+        owner_provider_name: Optional[str] = None,
         api_call_count: int = 0,
         absolute: bool = False,
     ) -> None:
@@ -1971,6 +1977,7 @@ class SessionDB:
                    billing_provider = COALESCE(billing_provider, ?),
                    billing_base_url = COALESCE(billing_base_url, ?),
                    billing_mode = COALESCE(billing_mode, ?),
+                   owner_provider_name = COALESCE(?, owner_provider_name),
                    model = COALESCE(model, ?),
                    api_call_count = ?
                    WHERE id = ?"""
@@ -1992,6 +1999,7 @@ class SessionDB:
                    billing_provider = COALESCE(billing_provider, ?),
                    billing_base_url = COALESCE(billing_base_url, ?),
                    billing_mode = COALESCE(billing_mode, ?),
+                   owner_provider_name = COALESCE(?, owner_provider_name),
                    model = COALESCE(model, ?),
                    api_call_count = COALESCE(api_call_count, 0) + ?
                    WHERE id = ?"""
@@ -2010,6 +2018,7 @@ class SessionDB:
             billing_provider,
             billing_base_url,
             billing_mode,
+            owner_provider_name,
             model,
             api_call_count,
             session_id,
@@ -2892,6 +2901,7 @@ class SessionDB:
         tool_call_id: str = None,
         token_count: int = None,
         finish_reason: str = None,
+        owner_provider_name: str = None,
         reasoning: str = None,
         reasoning_content: str = None,
         reasoning_details: Any = None,
@@ -2950,9 +2960,9 @@ class SessionDB:
             cursor = conn.execute(
                 """INSERT INTO messages (session_id, role, content, tool_call_id,
                    tool_calls, tool_name, timestamp, token_count, finish_reason,
-                   reasoning, reasoning_content, reasoning_details, codex_reasoning_items,
-                   codex_message_items, platform_message_id, observed)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   owner_provider_name, reasoning, reasoning_content, reasoning_details,
+                   codex_reasoning_items, codex_message_items, platform_message_id, observed)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     session_id,
                     role,
@@ -2963,6 +2973,7 @@ class SessionDB:
                     message_timestamp,
                     token_count,
                     finish_reason,
+                    owner_provider_name,
                     reasoning,
                     reasoning_content,
                     reasoning_details_json,
@@ -3041,9 +3052,9 @@ class SessionDB:
             conn.execute(
                 """INSERT INTO messages (session_id, role, content, tool_call_id,
                    tool_calls, tool_name, timestamp, token_count, finish_reason,
-                   reasoning, reasoning_content, reasoning_details, codex_reasoning_items,
-                   codex_message_items, platform_message_id, observed)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   owner_provider_name, reasoning, reasoning_content, reasoning_details,
+                   codex_reasoning_items, codex_message_items, platform_message_id, observed)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     session_id,
                     role,
@@ -3054,6 +3065,7 @@ class SessionDB:
                     message_timestamp,
                     msg.get("token_count"),
                     msg.get("finish_reason"),
+                    msg.get("owner_provider_name") if role == "assistant" else None,
                     msg.get("reasoning") if role == "assistant" else None,
                     msg.get("reasoning_content") if role == "assistant" else None,
                     reasoning_details_json,
@@ -3127,7 +3139,6 @@ class SessionDB:
         for compaction. ``message_count`` is set to the ACTIVE (compacted) count,
         matching what the live load returns. Returns the new active count.
         """
-
         def _do(conn):
             # Soft-archive the live turns: active=0 hides them from the live
             # context load, compacted=1 marks them as "summarized away" (vs

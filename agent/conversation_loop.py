@@ -801,6 +801,15 @@ def run_conversation(
                 agent._sanitize_tool_calls_for_strict_api(api_msg, model=agent.model)
             # Keep 'reasoning_details' - OpenRouter uses this for multi-turn reasoning context
             # The signature field helps maintain reasoning continuity
+
+            # [owner-patch] owner_provider_name (and similar per-turn attribution
+            # fields like model/provider) are for internal use only: session DB,
+            # billing records, multi-profile routing, audit, qdrant recall etc.
+            # They must be stripped from the api_messages copy so they never
+            # affect the LLM request body, strict provider validation, or
+            # per-conversation prompt cache prefix.
+            api_msg.pop("owner_provider_name", None)
+
             api_messages.append(api_msg)
 
         # Build the final system message: cached prompt + ephemeral system prompt.
@@ -2002,6 +2011,7 @@ def run_conversation(
                                 cost_status=cost_result.status,
                                 cost_source=cost_result.source,
                                 billing_provider=agent.provider,
+                                owner_provider_name=getattr(agent, "owner_provider_name", None),
                                 billing_base_url=agent.base_url,
                                 billing_mode="subscription_included"
                                 if cost_result.status == "included" else None,

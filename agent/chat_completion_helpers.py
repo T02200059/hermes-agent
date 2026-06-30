@@ -1079,6 +1079,10 @@ def build_assistant_message(agent, assistant_message, finish_reason: str) -> dic
             tool_calls.append(tc_dict)
         msg["tool_calls"] = tool_calls
 
+    # Per-turn owner provider attribution: preserve the actual custom provider
+    # identity (e.g. xfyun, damodel) independently of the generic backend type.
+    msg["owner_provider_name"] = getattr(agent, "owner_provider_name", None)
+
     return msg
 
 

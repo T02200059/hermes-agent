@@ -384,6 +384,7 @@ class AIAgent:
         base_url: str = None,
         api_key: str = None,
         provider: str = None,
+        owner_provider_name: str = None,
         api_mode: str = None,
         acp_command: str = None,
         acp_args: list[str] | None = None,
@@ -459,6 +460,7 @@ class AIAgent:
             base_url=base_url,
             api_key=api_key,
             provider=provider,
+            owner_provider_name=owner_provider_name,
             api_mode=api_mode,
             acp_command=acp_command,
             acp_args=acp_args,
@@ -557,6 +559,7 @@ class AIAgent:
                 session_id=self.session_id,
                 source=source,
                 model=self.model,
+                owner_provider_name=self.owner_provider_name,
                 model_config=self._session_init_model_config,
                 system_prompt=self._cached_system_prompt,
                 user_id=None,
@@ -1714,6 +1717,7 @@ class AIAgent:
                     tool_calls=tool_calls_data,
                     tool_call_id=msg.get("tool_call_id"),
                     finish_reason=msg.get("finish_reason"),
+                    owner_provider_name=msg.get("owner_provider_name") if role == "assistant" else None,
                     reasoning=msg.get("reasoning") if role == "assistant" else None,
                     reasoning_content=msg.get("reasoning_content") if role == "assistant" else None,
                     reasoning_details=msg.get("reasoning_details") if role == "assistant" else None,
@@ -1721,6 +1725,8 @@ class AIAgent:
                     codex_message_items=msg.get("codex_message_items") if role == "assistant" else None,
                     timestamp=msg.get("timestamp"),
                 )
+                # [owner-patch] attribution reconstruction
+                from owner.attribution import get_current_attribution  # noqa: F401
                 flushed_ids.add(msg_id)
             self._last_flushed_db_idx = len(messages)
         except Exception as e:
