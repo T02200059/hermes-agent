@@ -898,6 +898,13 @@ def skill_view(
                 ensure_ascii=False,
             )
 
+        # [owner] skill-script auto-approval: track viewed skill names for this session
+        try:
+            from owner.approval.skill_script_approval import track_session_skill_view
+            track_session_skill_view(name)
+        except Exception:
+            pass
+
         local_category_name: str | None = None
         # ── Qualified name dispatch (plugin skills) ──────────────────
         # Names containing ':' are routed to the plugin skill registry.

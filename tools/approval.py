@@ -1328,6 +1328,19 @@ def check_dangerous_command(command: str, env_type: str,
         logger.warning("Hardline block: %s (command: %s)", hardline_desc, command[:200])
         return _hardline_block_result(hardline_desc)
 
+    # [owner] skill script auto-approval: if the command only runs scripts from
+    # skills viewed this session (via skill_view), bypass the approval prompt.
+    # Must be AFTER hardline floor — even skill scripts must not bypass
+    # unconditional blocks like rm -rf / or shutdown.
+    try:
+        from owner.approval.skill_script_approval import is_skill_script_allowed
+        _allow = is_skill_script_allowed(command)
+        if _allow:
+            logger.info("Skill script auto-approved (%s): %s", _allow, command[:200])
+            return {"approved": True, "message": None}
+    except Exception:
+        pass
+
     # --yolo: bypass all approval prompts. Gateway /yolo is session-scoped;
     # CLI --yolo remains process-scoped via the env var for local use.
     if _YOLO_MODE_FROZEN or is_current_session_yolo_enabled():
@@ -1594,6 +1607,19 @@ def check_all_command_guards(command: str, env_type: str,
         logger.warning("Sudo stdin guard block: %s (command: %s)",
                        sudo_guess_desc, command[:200])
         return _sudo_stdin_block_result(sudo_guess_desc)
+
+    # [owner] skill script auto-approval: if the command only runs scripts from
+    # skills viewed this session (via skill_view), bypass the approval prompt.
+    # Must be AFTER hardline floor — even skill scripts must not bypass
+    # unconditional blocks like rm -rf / or shutdown.
+    try:
+        from owner.approval.skill_script_approval import is_skill_script_allowed
+        _allow = is_skill_script_allowed(command)
+        if _allow:
+            logger.info("Skill script auto-approved (%s): %s", _allow, command[:200])
+            return {"approved": True, "message": None}
+    except Exception:
+        pass
 
     # --yolo or approvals.mode=off: bypass all approval prompts.
     # Gateway /yolo is session-scoped; CLI --yolo remains process-scoped.
