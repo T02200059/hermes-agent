@@ -334,10 +334,12 @@ class ToolCallGuardrailController:
                     action="warn",
                     code="repeated_exact_failure_warning",
                     message=(
-                        f"{tool_name} has failed {exact_count} times with identical arguments. "
-                        "This looks like a loop; inspect the error and change strategy "
-                        "instead of retrying it unchanged."
-                    ),
+                        f"{tool_name} has failed {exact_count} times with identical arguments "
+                        f"— this is the `exact_failure` counter (threshold: "
+                        f"exact_failure_warn_after={self.config.exact_failure_warn_after}, "
+                        "set in config.yaml under tool_loop_guardrails.warn_after.exact_failure). "
+                        "Change arguments or strategy instead of retrying it unchanged."
+                    ),  # [owner] guardrails UX
                     tool_name=tool_name,
                     count=exact_count,
                     signature=signature,
@@ -347,7 +349,13 @@ class ToolCallGuardrailController:
                 return ToolGuardrailDecision(
                     action="warn",
                     code="same_tool_failure_warning",
-                    message=_tool_failure_recovery_hint(tool_name, same_count),
+                    message=(
+                        f"{tool_name} has failed {same_count} times this turn with different "
+                        f"arguments — this is the `same_tool_failure` counter (threshold: "
+                        f"same_tool_failure_warn_after={self.config.same_tool_failure_warn_after}, "
+                        "set in config.yaml under tool_loop_guardrails.warn_after.same_tool_failure). "
+                        f"{_tool_failure_recovery_hint(tool_name, same_count)}"
+                    ),  # [owner] guardrails UX
                     tool_name=tool_name,
                     count=same_count,
                     signature=signature,
@@ -374,10 +382,13 @@ class ToolCallGuardrailController:
                 action="warn",
                 code="idempotent_no_progress_warning",
                 message=(
-                    f"{tool_name} returned the same result {repeat_count} times. "
+                    f"{tool_name} returned the same result {repeat_count} times "
+                    f"— this is the `idempotent_no_progress` counter (threshold: "
+                    f"no_progress_warn_after={self.config.no_progress_warn_after}, "
+                    "set in config.yaml under tool_loop_guardrails.warn_after.idempotent_no_progress). "
                     "Use the result already provided or change the query instead of "
                     "repeating it unchanged."
-                ),
+                ),  # [owner] guardrails UX
                 tool_name=tool_name,
                 count=repeat_count,
                 signature=signature,
