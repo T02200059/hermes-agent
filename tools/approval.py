@@ -953,6 +953,17 @@ def load_permanent_allowlist() -> set:
         from hermes_cli.config import load_config
         config = load_config()
         patterns = set(config.get("command_allowlist", []) or [])
+
+        # [owner] approval: merge patch.yaml allowlist (owner.approvals.command_allowlist)
+        try:
+            from owner.patch_config import _load_patch_owner_config
+            owner_cfg = _load_patch_owner_config()
+            patch_allowlist = owner_cfg.get("approvals", {}).get("command_allowlist", [])
+            if patch_allowlist:
+                patterns.update(patch_allowlist)
+        except Exception:
+            pass  # patch.yaml unavailable — use config.yaml entries only
+
         if patterns:
             load_permanent(patterns)
         return patterns
