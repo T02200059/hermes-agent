@@ -9540,6 +9540,14 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             except Exception as exc:
                 logger.debug("@ context reference expansion failed: %s", exc)
 
+        # [owner] inbound context: Feishu append open_id/chat_id/user_name (see owner/gateway/inbound_context.py)
+        try:
+            from owner.gateway.inbound_context import append_inbound_context as _append_inbound_context
+
+            message_text = _append_inbound_context(message_text, source)
+        except Exception:
+            logger.debug("Inbound context append failed (non-fatal)", exc_info=True)
+
         return message_text
 
     def _consume_pending_native_image_paths(self, session_key: str) -> List[str]:
