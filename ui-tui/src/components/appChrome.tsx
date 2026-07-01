@@ -7,13 +7,14 @@ import { $delegationState } from '../app/delegationStore.js'
 import type { IndicatorStyle, Notice } from '../app/interfaces.js'
 import { useTurnSelector } from '../app/turnStore.js'
 import { DEV_CREDITS_MODE } from '../config/env.js'
-import { FACES } from '../content/faces.js'
+import { DEFAULT_SPINNER } from '../owner/spinner.js'
 import { VERBS } from '../content/verbs.js'
 import { fmtDuration } from '../domain/messages.js'
 import { stickyPromptFromViewport } from '../domain/viewport.js'
 import { buildSubagentTree, treeTotals, widthByDepth } from '../lib/subagentTree.js'
 import { fmtK } from '../lib/text.js'
 import { useScrollbarSnapshot, useViewportSnapshot } from '../lib/viewportStore.js'
+import type { ThemeSpinner } from '../owner/spinner.js'
 import type { Theme } from '../theme.js'
 import type { Msg, Usage } from '../types.js'
 
@@ -44,9 +45,9 @@ interface IndicatorRender {
   showVerb: boolean
 }
 
-const renderIndicator = (style: IndicatorStyle, tick: number): IndicatorRender => {
+const renderIndicator = (style: IndicatorStyle, tick: number, faces: readonly string[] = DEFAULT_SPINNER.waitingFaces): IndicatorRender => {  // [owner-patch] +faces
   if (style === 'kaomoji') {
-    return { frame: FACES[tick % FACES.length] ?? '', intervalMs: FACE_TICK_MS, showVerb: true }
+    return { frame: faces[tick % faces.length] ?? '', intervalMs: FACE_TICK_MS, showVerb: true }  // [owner-patch] faces from spinner
   }
 
   if (style === 'emoji') {
@@ -75,14 +76,13 @@ const renderIndicator = (style: IndicatorStyle, tick: number): IndicatorRender =
   return { frame, intervalMs: Math.max(SPINNER_TICK_MS, spinner.interval), showVerb: false }
 }
 
-// `FACES` / `EMOJI_FRAMES` are static, so measure their widest glyph once at
+// `EMOJI_FRAMES` are static, so measure their widest glyph once at
 // module load instead of rescanning on every status render.
-const KAOMOJI_FRAME_WIDTH = FACES.reduce((max, f) => Math.max(max, stringWidth(f)), 1)
 const EMOJI_FRAME_WIDTH = EMOJI_FRAMES.reduce((max, f) => Math.max(max, stringWidth(f)), 1)
 
-const indicatorFrameWidth = (style: IndicatorStyle): number => {
+const indicatorFrameWidth = (style: IndicatorStyle, faces: readonly string[] = DEFAULT_SPINNER.waitingFaces): number => {  // [owner-patch] +faces
   if (style === 'kaomoji') {
-    return KAOMOJI_FRAME_WIDTH
+    return faces.reduce((max, f) => Math.max(max, stringWidth(f)), 1)  // [owner-patch] dynamic faces width
   }
 
   if (style === 'emoji') {
@@ -107,25 +107,25 @@ export const MAX_DURATION_WIDTH = Math.max(
 // `unicode` is a bare 1-col braille spinner with no verb, while kaomoji/emoji/
 // ascii add a fixed-width verb; any style adds a bounded elapsed-time tail.
 // Mirrors FaceTicker's `frame + verbSegment + durationSegment` layout.
-export const busyIndicatorWidth = (style: IndicatorStyle, hasDuration: boolean): number => {
+export const busyIndicatorWidth = (style: IndicatorStyle, hasDuration: boolean, faces: readonly string[] = DEFAULT_SPINNER.waitingFaces): number => {  // [owner-patch] +faces
   const { showVerb } = renderIndicator(style, 0)
   const verb = showVerb ? 1 + VERB_PAD_LEN : 0
   // ` · ` plus the bounded clock (e.g. `59m 59s`).
   const duration = hasDuration ? stringWidth(' · ') + MAX_DURATION_WIDTH : 0
 
-  return indicatorFrameWidth(style) + verb + duration
+  return indicatorFrameWidth(style, faces) + verb + duration  // [owner-patch] pass faces
 }
 
-function FaceTicker({ color, startedAt, style }: { color: string; startedAt?: null | number; style: IndicatorStyle }) {
+function FaceTicker({ color, startedAt, style, spinner }: { color: string; startedAt?: null | number; style: IndicatorStyle; spinner: ThemeSpinner }) {  // [owner-patch] +spinner
   const [tick, setTick] = useState(() => Math.floor(Math.random() * 1000))
-  const [verbTick, setVerbTick] = useState(() => Math.floor(Math.random() * VERBS.length))
+  const [verbTick, setVerbTick] = useState(() => Math.floor(Math.random() * spinner.thinkingVerbs.length))  // [owner-patch] spinner verbs
   const [now, setNow] = useState(() => Date.now())
 
   // Pre-compute cadence + verb-visibility for the active style so an
   // `/indicator` switch re-arms the interval (and skips the verb timer
   // for verb-less styles like `unicode`) without leaving the previous
   // timer dangling.
-  const { intervalMs, showVerb } = renderIndicator(style, 0)
+  const { intervalMs, showVerb } = renderIndicator(style, 0, spinner.waitingFaces)  // [owner-patch] pass faces
 
   useEffect(() => {
     const glyph = setInterval(() => setTick(n => n + 1), intervalMs)
@@ -144,13 +144,18 @@ function FaceTicker({ color, startedAt, style }: { color: string; startedAt?: nu
     }
   }, [intervalMs, showVerb])
 
-  const { frame } = renderIndicator(style, tick)
-  const verb = VERBS[verbTick % VERBS.length] ?? ''
-  const verbSegment = showVerb ? ` ${padVerb(verb)}` : ''
-  // Leading space keeps a gap between the frame and the duration when the
-  // verb segment is hidden (e.g. `unicode` spinner style).  When the verb
-  // IS shown, its trailing padding already provides the gap, so the extra
-  // space is harmless.
+  const { frame } = renderIndicator(style, tick, spinner.waitingFaces)  // [owner-patch] pass faces
+  const verbs = spinner.thinkingVerbs
+  const verb = verbs[verbTick % verbs.length] ?? ''
+  // Display-width-aware padding: padEnd() uses JS char length, but CJK
+  // verbs (2-column chars per char) would get way too many trailing spaces.
+  // Compute pad target from stringWidth() so all verbs render at the same
+  // visible width regardless of script.
+  const maxVerbWidth = Math.max(0, ...verbs.map(v => stringWidth(v)))
+  const verbText = verb ? `${verb}…` : ''
+  const verbPadded = verbText +
+    ' '.repeat(Math.max(0, maxVerbWidth + 1 - stringWidth(verbText)))
+  const verbSegment = showVerb && verb ? ` ${verbPadded}` : ''
   const durationSegment = startedAt ? ` · ${fmtDuration(now - startedAt)}` : ''
 
   return (
@@ -458,7 +463,7 @@ export function StatusRule({
   // (kaomoji is wide + verb; unicode is a bare 1-col spinner). When a notice
   // occupies the slot it reserves only `noticeReserve` (it shrinks/truncates).
   const slotWidth = busy
-    ? busyIndicatorWidth(indicatorStyle, turnStartedAt != null)
+    ? busyIndicatorWidth(indicatorStyle, turnStartedAt != null, t.spinner.waitingFaces)  // [owner-patch] pass faces
     : showNotice
       ? noticeReserve
       : stringWidth(status)
@@ -555,7 +560,7 @@ export function StatusRule({
         <Box flexDirection="row" flexShrink={0}>
           <Text color={t.color.border}>{'─ '}</Text>
           {busy ? (
-            <FaceTicker color={statusColor} startedAt={turnStartedAt} style={indicatorStyle} />
+            <FaceTicker color={statusColor} startedAt={turnStartedAt} style={indicatorStyle} spinner={t.spinner} />
           ) : showNotice ? null : (
             <Text color={statusColor} wrap="truncate-end">
               {status}

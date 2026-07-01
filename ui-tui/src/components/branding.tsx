@@ -99,7 +99,7 @@ export function Banner({ maxWidth, t }: { maxWidth?: number; t: Theme }) {
       <Box flexDirection="column" marginBottom={1}>
         <ArtLines lines={logoLines} />
         <Text color={t.color.muted} wrap="truncate-end">
-          {t.brand.icon} {TAG_FULL}
+          {t.brand.tagline}
         </Text>
       </Box>
     )
@@ -110,7 +110,7 @@ export function Banner({ maxWidth, t }: { maxWidth?: number; t: Theme }) {
   }
 
   const name = cols >= 52 ? t.brand.name : (t.brand.name.split(' ')[0] ?? t.brand.name)
-  const tag = cols >= 64 ? TAG_FULL : cols >= 46 ? TAG_MID : TAG_TINY
+  const tag = cols >= 64 ? t.brand.tagline : cols >= 46 ? TAG_MID : TAG_TINY
 
   return (
     <Box flexDirection="column" marginBottom={1}>

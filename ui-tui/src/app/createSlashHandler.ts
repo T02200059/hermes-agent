@@ -91,7 +91,7 @@ export function createSlashHandler(ctx: SlashHandlerContext): (cmd: string) => b
 
       if (d.type === 'chain') {
         for (const cmd of d.commands) {
-          await handler(`/${cmd}`)
+          void handler(`/${cmd}`)
         }
         return
       }

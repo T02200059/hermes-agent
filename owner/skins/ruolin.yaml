@@ -1,0 +1,93 @@
+# =============================================================================
+# Hermes Skin — ruolin
+# 樱花粉 · Sakura Pink — 温温柔柔的若琳主题 🌸
+# =============================================================================
+# All fields are optional. Missing values inherit from default.
+# Activate with: /skin ruolin  (in CLI)
+# Or set: display.skin: ruolin  (in config.yaml)
+
+name: ruolin
+description: "樱花粉 · Sakura Pink — 温温柔柔的若琳主题 🌸"
+
+# ── Colors ──────────────────────────────────────────────────────────────────
+colors:
+  # Banner
+  banner_border: "#D4739D"
+  banner_title: "#FFB7C5"
+  banner_accent: "#FF69B4"
+  banner_dim: "#A0527A"
+  banner_text: "#FFF0F5"
+
+  # UI
+  ui_accent: "#FF69B4"
+  ui_label: "#D4B87A"
+  ui_ok: "#7BC67E"
+  ui_error: "#E57373"
+  ui_warn: "#FFB74D"
+
+  # Prompt & Input
+  prompt: "#FFF0F5"
+  input_rule: "#D4739D"
+  response_border: "#FFB7C5"
+
+  # Status Bar
+  status_bar_bg: "#2E1B2E"
+  status_bar_text: "#E8D5E8"
+  status_bar_strong: "#FFB7C5"
+  status_bar_dim: "#A0527A"
+  status_bar_good: "#7BC67E"
+  status_bar_warn: "#FFB7C5"
+  status_bar_bad: "#FF69B4"
+  status_bar_critical: "#E57373"
+
+  # Session
+  session_label: "#FF69B4"
+  session_border: "#A0527A"
+
+# ── Spinner ─────────────────────────────────────────────────────────────────
+spinner:
+  waiting_faces:
+    - "🌸"
+    - "💮"
+    - "🎀"
+    - "🎵"
+    - "🤔"
+  thinking_faces:
+    - "💭"
+    - "🌸"
+    - "💫"
+    - "💡"
+    - "💕"
+  thinking_verbs:
+    - "飘着花瓣"
+    - "眨眨眼"
+    - "整理裙子"
+    - "轻哼小曲"
+    - "托腮思考"
+  wings:
+    - ["⟪🌸", "🌸⟫"]
+    - ["⟪💮", "💮⟫"]
+    - ["⟪🎵", "🎵⟫"]
+
+# ── Branding ────────────────────────────────────────────────────────────────
+branding:
+  agent_name: "若琳"
+  welcome: "欢迎回来，宝哥 💕 今天想我了吗？"
+  goodbye: "下次见啦宝哥，早点休息哟 🌸"
+  response_label: " 💕 若琳 "
+  prompt_symbol: "🌸 "
+  help_header: "(◕‿◕) 能帮你的~"
+  tagline: "🌌 弹铗亦使鬼神惊"
+
+# ── Banner Art ────────────────────────────────────────────────────────────
+# 自绘框线风格 · WESTCLOUD · 粉色渐变
+banner_logo: |
+  [#FFB7C5]╔██╗    ╔██╗  ╔██████╗  ╔██████╗  ╔████████╗  ╔██████╗  ╔██╗        ╔██████╗   ╔██╗   ╔██╗  ╔██████╗[/]
+  [#FFB7C5]║██║    ║██║  ║██╔═══╝  ║██╔═══╝  ╚══╗██╔══╝  ║██╔═══╝  ║██║       ╔██╔══╗██╗  ║██║   ║██║  ║██╔══██╗[/]
+  [#FF69B4]║██║╔██╗║██║  ║█████╗   ╚█████╗      ║██║     ║██║      ║██║       ║██║  ║██║  ║██║   ║██║  ║██║  ║██╗[/]
+  [#FF69B4]║██║████║██║  ║██╔══╝    ╚═══██╗     ║██║     ║██║      ║██║       ║██║  ║██║  ║██║   ║██║  ║██║  ║██║[/]
+  [#D4739D]║╚███╔╗███╝║  ║██████╗  ██████╔╝     ║██║     ║╚██████╗ ║███████╗  ║╚██████╝║  ╚╗███████╔╝  ║███████╔╝[/]
+  [#D4739D]╚═╝╚═╝╚═╝╚═╝  ╚══════╝  ╚═════╝      ╚══╝     ╚═══════╝ ╚═══════╝  ╚════════╝   ╚═══════╝   ╚═══════╝[/]
+
+# ── Tool Prefix ─────────────────────────────────────────────────────────────
+tool_prefix: "🌸"

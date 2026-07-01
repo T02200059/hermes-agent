@@ -7,6 +7,8 @@ export interface GatewaySkin {
   colors?: Record<string, string>
   help_header?: string
   tool_prefix?: string
+  /** Spinner faces/verbs from skin YAML (see ui-tui/src/owner/spinner.ts). */
+  spinner?: Record<string, string[]>
 }
 
 export interface GatewayCompletionItem {

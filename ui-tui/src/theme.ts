@@ -25,6 +25,7 @@ export interface ThemeColors {
   statusBad: string
   statusCritical: string
   selectionBg: string
+  userBg: string
 
   diffAdded: string
   diffRemoved: string
@@ -42,11 +43,20 @@ export interface ThemeBrand {
   goodbye: string
   tool: string
   helpHeader: string
+  tagline: string
 }
+
+export type { ThemeSpinner } from './owner/spinner.js'
+export { DEFAULT_SPINNER } from './owner/spinner.js'
+
+import { DEFAULT_SPINNER, mergeSpinnerFromSkin } from './owner/spinner.js'
+import { DEFAULT_TAGLINE, mergeTaglineFromBranding } from './owner/branding.js'
+import { mergeStatusBarFromSkin } from './owner/statusBar.js'
 
 export interface Theme {
   color: ThemeColors
   brand: ThemeBrand
+  spinner: import('./owner/spinner.js').ThemeSpinner
   bannerLogo: string
   bannerHero: string
 }
@@ -240,7 +250,8 @@ const BRAND: ThemeBrand = {
   welcome: 'Type your message or /help for commands.',
   goodbye: 'Goodbye! ⚕',
   tool: '┊',
-  helpHeader: '(^_^)? Commands'
+  helpHeader: '(^_^)? Commands',
+  tagline: DEFAULT_TAGLINE,
 }
 
 const cleanPromptSymbol = (s: string | undefined, fallback: string) => {
@@ -287,6 +298,7 @@ export const DARK_THEME: Theme = {
     statusBad: '#FF8C00',
     statusCritical: '#FF6B6B',
     selectionBg: '#3a3a55',
+    userBg: '',
 
     diffAdded: 'rgb(220,255,220)',
     diffRemoved: 'rgb(255,220,220)',
@@ -297,6 +309,7 @@ export const DARK_THEME: Theme = {
 
   brand: BRAND,
 
+  spinner: DEFAULT_SPINNER,
   bannerLogo: '',
   bannerHero: ''
 }
@@ -332,6 +345,7 @@ export const LIGHT_THEME: Theme = {
     statusBad: '#D84315',
     statusCritical: '#B71C1C',
     selectionBg: '#D4E4F7',
+    userBg: '',
 
     diffAdded: 'rgb(200,240,200)',
     diffRemoved: 'rgb(240,200,200)',
@@ -342,6 +356,7 @@ export const LIGHT_THEME: Theme = {
 
   brand: BRAND,
 
+  spinner: DEFAULT_SPINNER,
   bannerLogo: '',
   bannerHero: ''
 }
@@ -516,7 +531,8 @@ export function fromSkin(
   bannerLogo = '',
   bannerHero = '',
   toolPrefix = '',
-  helpHeader = ''
+  helpHeader = '',
+  spinner: Record<string, string[]> = {}
 ): Theme {
   const d = DEFAULT_THEME
   const c = (k: string) => colors[k]
@@ -556,8 +572,10 @@ export function fromSkin(
         sessionLabel: c('session_label') ?? muted,
         sessionBorder: c('session_border') ?? muted,
 
-        statusBg: d.color.statusBg,
-        statusFg: d.color.statusFg,
+        ...mergeStatusBarFromSkin(colors, {
+          statusBg: d.color.statusBg,
+          statusFg: d.color.statusFg
+        }),
         statusGood: c('ui_ok') ?? d.color.statusGood,
         statusWarn: c('ui_warn') ?? d.color.statusWarn,
         statusBad: d.color.statusBad,
@@ -566,6 +584,7 @@ export function fromSkin(
           c('selection_bg') ??
           c('completion_menu_current_bg') ??
           (hasSkinColors ? completionCurrentBg : d.color.selectionBg),
+        userBg: c('user_bg') ?? '',
 
         diffAdded: d.color.diffAdded,
         diffRemoved: d.color.diffRemoved,
@@ -581,8 +600,11 @@ export function fromSkin(
         welcome: branding.welcome ?? d.brand.welcome,
         goodbye: branding.goodbye ?? d.brand.goodbye,
         tool: toolPrefix || d.brand.tool,
-        helpHeader: branding.help_header ?? (helpHeader || d.brand.helpHeader)
+        helpHeader: branding.help_header ?? (helpHeader || d.brand.helpHeader),
+        tagline: mergeTaglineFromBranding(branding, d.brand.tagline)
       },
+
+      spinner: mergeSpinnerFromSkin(spinner, d.spinner),
 
       bannerLogo,
       bannerHero
