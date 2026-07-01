@@ -1,0 +1,561 @@
+"""OpenViking owner recall extensions (精简版).
+
+Patches the official OpenViking provider at runtime with three owner-specific
+extensions that are NOT in official main:
+
+1. Advisory memory-context wording (soften authoritative tone).
+2. Peer-mirror URI canonical deduplication (avoid user + peer duplicate recall).
+3. Recall card visualization (Feishu interactive card / QQ Bot text).
+
+Official main already provides synchronous prefetch, queue_prefetch no-op,
+limit/context_type/session-search fallback, etc.; this patch does NOT replace
+those.
+
+All changes are runtime monkey-patches in ``owner/``; the only official glue
+is a fail-open import in ``gateway/run.py``.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import os
+import re
+import sys
+import threading
+import time
+from typing import Any, Dict, List, Optional
+
+import agent.memory_manager as _memory_manager_module
+from owner.patches.openviking_recall_config import (
+    load_recall_card_config as _load_card_cfg,
+    load_sync_recall_config as _load_sync_cfg,
+)
+
+logger = logging.getLogger("openviking_owner_recall")
+
+_originals: Dict[str, Any] = {}
+_applied: Dict[str, bool] = {"advisory": False, "dedup": False, "card": False}
+
+# Token caches for Feishu/QQ recall-card sends: key -> (token, expires_at)
+_TOKEN_CACHE: Dict[str, tuple[str, float]] = {}
+
+_PEER_SEGMENT_RE = re.compile(r"/peers/[^/]+")
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _dedup_uri_canonical(uri: str) -> str:
+    """Return the URI with any ``/peers/<name>/`` segment stripped.
+
+    Examples
+    --------
+    >>> _dedup_uri_canonical(
+    ...     "viking://user/yangtb/peers/hermes/memories/events/x.md"
+    ... )
+    'viking://user/yangtb/memories/events/x.md'
+    """
+    return _PEER_SEGMENT_RE.sub("", uri or "")
+
+
+def _dedup_peer_mirrors(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Remove duplicate peer-mirror items, keeping the first occurrence.
+
+    Peer mirrors share the same canonical URI as the owner copy but live under
+    ``/peers/<name>/``. When both are returned we keep whichever appears first
+    (the owner copy is usually ranked higher).
+    """
+    seen: set = set()
+    filtered: List[Dict[str, Any]] = []
+    for item in items:
+        uri = str(item.get("uri") or "").strip()
+        if not uri:
+            filtered.append(item)
+            continue
+        canon = _dedup_uri_canonical(uri)
+        if canon in seen:
+            continue
+        seen.add(canon)
+        filtered.append(item)
+    return filtered
+
+
+def _truncate(text: str, max_len: int) -> str:
+    if len(text) > max_len:
+        return text[: max_len - 3] + "..."
+    return text
+
+
+_MARKDOWN_SPECIAL_CHARS_RE = re.compile(r"([\\`*_{}\[\]()#+\-!|>~])")
+
+
+def _sanitize_markdown_inline(text: str) -> str:
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    text = text.replace("\n", " ")
+    text = _MARKDOWN_SPECIAL_CHARS_RE.sub(r"\\\1", text)
+    return text.strip()
+
+
+# ---------------------------------------------------------------------------
+# Advisory memory-context wording
+# ---------------------------------------------------------------------------
+
+def _build_advisory_memory_context_block(raw_context: str) -> str:
+    """Wrap prefetched memory in a fenced block with an advisory system note."""
+    if not raw_context or not raw_context.strip():
+        return ""
+
+    clean = _memory_manager_module.sanitize_context(raw_context)
+    if clean != raw_context:
+        logger.warning("memory provider returned pre-wrapped context; stripped")
+
+    return (
+        "<memory-context>\n"
+        "[System note: The following is recalled memory context, "
+        "NOT new user input. It may help inform the response, but use it "
+        "only when relevant to the user's current message — treat as helpful "
+        "hints, not authoritative facts.]\n\n"
+        f"{clean}\n"
+        "</memory-context>"
+    )
+
+
+def _apply_advisory() -> None:
+    global _applied
+    _originals["build_memory_context_block"] = _memory_manager_module.build_memory_context_block
+    _memory_manager_module.build_memory_context_block = _build_advisory_memory_context_block
+
+    # Keep already-imported aliases in sync (e.g. agent.conversation_loop).
+    cl = sys.modules.get("agent.conversation_loop")
+    if cl is not None:
+        cl.build_memory_context_block = _build_advisory_memory_context_block
+
+    _applied["advisory"] = True
+    logger.info("openviking_owner_recall_patch applied: advisory")
+
+
+def _revert_advisory() -> None:
+    global _applied
+    orig = _originals.pop("build_memory_context_block", None)
+    if orig is not None:
+        _memory_manager_module.build_memory_context_block = orig
+        cl = sys.modules.get("agent.conversation_loop")
+        if cl is not None:
+            cl.build_memory_context_block = orig
+    _applied["advisory"] = False
+    logger.info("openviking_owner_recall_patch reverted: advisory")
+
+
+# ---------------------------------------------------------------------------
+# Peer-mirror deduplication
+# ---------------------------------------------------------------------------
+
+def _make_select_recall_candidates_wrapper(orig_fn):
+    """Return a classmethod wrapper that pre-dedups peer mirrors."""
+    def wrapper(cls, items, query, *, limit, score_threshold):
+        cfg = _load_sync_cfg()
+        if cfg.get("dedup", True):
+            items = _dedup_peer_mirrors(items)
+        return orig_fn(cls, items, query, limit=limit, score_threshold=score_threshold)
+    return classmethod(wrapper)
+
+
+def _apply_dedup() -> None:
+    global _applied
+    from plugins.memory.openviking import OpenVikingMemoryProvider
+
+    # Underlying function of the classmethod.
+    orig_fn = OpenVikingMemoryProvider._select_recall_candidates.__func__
+    _originals["select_recall_candidates"] = OpenVikingMemoryProvider.__dict__.get(
+        "_select_recall_candidates"
+    )
+    OpenVikingMemoryProvider._select_recall_candidates = _make_select_recall_candidates_wrapper(
+        orig_fn
+    )
+    _applied["dedup"] = True
+    logger.info("openviking_owner_recall_patch applied: dedup")
+
+
+def _revert_dedup() -> None:
+    global _applied
+    from plugins.memory.openviking import OpenVikingMemoryProvider
+
+    orig = _originals.pop("select_recall_candidates", None)
+    if orig is not None:
+        OpenVikingMemoryProvider._select_recall_candidates = orig
+    _applied["dedup"] = False
+    logger.info("openviking_owner_recall_patch reverted: dedup")
+
+
+# ---------------------------------------------------------------------------
+# Recall card visualization
+# ---------------------------------------------------------------------------
+
+def build_viking_recall_card(hits: List[dict], elapsed_ms: float) -> Optional[dict]:
+    """Build a Feishu interactive card summarizing recall hits."""
+    if not hits:
+        return None
+    top_score = max(h.get("score", 0) for h in hits)
+    types = sorted({h.get("type", "memory") for h in hits})
+
+    summary = (
+        f"**{len(hits)} 条匹配** · 最高 **{top_score:.3f}** · "
+        f"{len(types)} 类 · {elapsed_ms:.0f}ms"
+    )
+
+    hit_lines = []
+    for h in hits:
+        score = h.get("score", 0.0)
+        htype = h.get("type", "memory")
+        abstract = _sanitize_markdown_inline(_truncate(h.get("abstract", ""), 60))
+        hit_lines.append(f"• `{htype}` **{score:.3f}** {abstract}")
+
+    return {
+        "schema": "2.0",
+        "config": {"wide_screen_mode": True},
+        "header": {
+            "title": {"tag": "plain_text", "content": "🧠 知识库召回"},
+            "template": "blue",
+        },
+        "body": {
+            "elements": [
+                {"tag": "markdown", "content": summary},
+                {"tag": "hr"},
+                {"tag": "markdown", "content": "\n".join(hit_lines)},
+            ],
+        },
+    }
+
+
+def build_viking_recall_text(hits: List[dict], elapsed_ms: float) -> str:
+    """Build a plain-text recall summary for QQ Bot."""
+    if not hits:
+        return ""
+    top_score = max(h.get("score", 0) for h in hits)
+    lines = [
+        f"🧠 **OpenViking 召回** · {len(hits)} 条匹配 · 最高 **{top_score:.3f}** · {elapsed_ms:.0f}ms",
+        "",
+    ]
+    for h in hits:
+        score = h.get("score", 0.0)
+        htype = h.get("type", "memory")
+        abstract = _truncate(h.get("abstract", ""), 200)
+        lines.append(f"- `{htype}` **{score:.3f}** {abstract}")
+
+    text = "\n".join(lines)
+    if len(text) > 3800:
+        text = text[:3797] + "..."
+    return text
+
+
+def _acquire_feishu_token(app_id: str, app_secret: str) -> Optional[str]:
+    key = f"feishu:{app_id}"
+    now = time.time()
+    token, expires_at = _TOKEN_CACHE.get(key, (None, 0))
+    if token and now < expires_at - 60:
+        return token
+
+    try:
+        import requests as _requests
+        resp = _requests.post(
+            "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal",
+            json={"app_id": app_id, "app_secret": app_secret},
+            timeout=10,
+        )
+        data = resp.json()
+        token = data.get("tenant_access_token", "")
+        if not token:
+            logger.warning("feishu token acquire failed: %s", data)
+            return None
+        expires_in = int(data.get("expire", 7200))
+        _TOKEN_CACHE[key] = (token, now + expires_in)
+        return token
+    except Exception as e:
+        logger.warning("feishu token request failed: %s", e)
+        return None
+
+
+def _send_feishu_card_sync(chat_id: str, card: dict, metadata: dict) -> bool:
+    import requests as _requests
+
+    app_id = os.environ.get("FEISHU_APP_ID", "")
+    app_secret = os.environ.get("FEISHU_APP_SECRET", "")
+    if not app_id or not app_secret:
+        logger.warning("FEISHU_APP_ID/SECRET missing")
+        return False
+
+    token = _acquire_feishu_token(app_id, app_secret)
+    if not token:
+        return False
+
+    raw_chat_type = (metadata.get("chat_type") or "").strip().lower()
+    is_dm = raw_chat_type in ("p2p", "dm")
+    if is_dm:
+        receive_id = metadata.get("open_id") or metadata.get("sender_open_id") or chat_id
+        receive_id_type = "open_id"
+    else:
+        receive_id = chat_id
+        receive_id_type = "chat_id"
+
+    try:
+        payload = json.dumps(card, ensure_ascii=False)
+        resp = _requests.post(
+            f"https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type={receive_id_type}",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            },
+            json={"receive_id": receive_id, "msg_type": "interactive", "content": payload},
+            timeout=15,
+        )
+        data = resp.json()
+        code = data.get("code", -1)
+        if code != 0:
+            logger.warning("feishu card send API error (code %s): %s", code, data.get("msg", "unknown"))
+            return False
+        return True
+    except Exception as e:
+        logger.warning("feishu card send failed: %s", e)
+        return False
+
+
+def _acquire_qq_token(app_id: str, client_secret: str) -> Optional[str]:
+    key = f"qq:{app_id}"
+    now = time.time()
+    token, expires_at = _TOKEN_CACHE.get(key, (None, 0))
+    if token and now < expires_at - 60:
+        return token
+
+    try:
+        import requests as _requests
+        resp = _requests.post(
+            "https://bots.qq.com/app/getAppAccessToken",
+            json={"appId": app_id, "clientSecret": client_secret},
+            timeout=10,
+        )
+        data = resp.json()
+        token = data.get("access_token", "")
+        if not token:
+            logger.warning("qq token acquire failed: %s", data)
+            return None
+        expires_in = int(data.get("expires_in", 7200))
+        _TOKEN_CACHE[key] = (token, now + expires_in)
+        return token
+    except Exception as e:
+        logger.warning("qq token request failed: %s", e)
+        return None
+
+
+def _send_qqbot_text_sync(chat_id: str, content: str, metadata: dict) -> bool:
+    import requests as _requests
+
+    app_id = os.environ.get("QQ_APP_ID", "")
+    client_secret = os.environ.get("QQ_CLIENT_SECRET", "")
+    if not app_id or not client_secret:
+        logger.warning("QQ_APP_ID/CLIENT_SECRET missing")
+        return False
+
+    token = _acquire_qq_token(app_id, client_secret)
+    if not token:
+        return False
+
+    chat_type = (metadata.get("chat_type") or "").lower()
+    if chat_type == "group":
+        url = f"https://api.sgroup.qq.com/v2/groups/{chat_id}/messages"
+    else:
+        user_openid = metadata.get("open_id") or chat_id
+        url = f"https://api.sgroup.qq.com/v2/users/{user_openid}/messages"
+
+    try:
+        resp = _requests.post(
+            url,
+            headers={"Authorization": f"QQBot {token}", "Content-Type": "application/json"},
+            json={"content": content, "msg_type": 0},
+            timeout=10,
+        )
+        if resp.status_code != 200:
+            logger.warning("qq text send failed: HTTP %s: %s", resp.status_code, resp.text[:200])
+            return False
+        return True
+    except Exception as e:
+        logger.warning("qq text send failed: %s", e)
+        return False
+
+
+def _fire_recall_display(hits: List[dict], ctx: dict, elapsed_ms: float) -> None:
+    """Dispatch recall card/text asynchronously, fail-silent."""
+    if not hits:
+        return
+    platform = (ctx.get("platform") or "").lower()
+    chat_id = ctx.get("chat_id", "")
+    if not chat_id:
+        return
+
+    cfg = _load_card_cfg()
+    if not cfg.get("enabled", True):
+        return
+
+    metadata = {
+        "chat_type": ctx.get("chat_type", ""),
+        "open_id": ctx.get("user_id", ""),
+    }
+
+    if platform == "feishu" and cfg.get("feishu_card", True):
+        card = build_viking_recall_card(hits, elapsed_ms)
+        if card:
+            threading.Thread(
+                target=_send_feishu_card_sync,
+                args=(chat_id, card, metadata),
+                daemon=True,
+                name="ov-feishu-card",
+            ).start()
+
+    elif platform == "qqbot" and cfg.get("qqbot_text", True):
+        text = build_viking_recall_text(hits, elapsed_ms)
+        if text:
+            threading.Thread(
+                target=_send_qqbot_text_sync,
+                args=(chat_id, text, metadata),
+                daemon=True,
+                name="ov-qq-text",
+            ).start()
+
+
+def _wrap_initialize(orig_init):
+    def wrapped(self, session_id, **kwargs):
+        orig_init(self, session_id, **kwargs)
+        self._recall_card_ctx = {
+            "platform": kwargs.get("platform", ""),
+            "chat_id": kwargs.get("chat_id", ""),
+            "chat_type": kwargs.get("chat_type", ""),
+            "user_id": kwargs.get("user_id", ""),
+            "user_name": kwargs.get("user_name", ""),
+            "chat_name": kwargs.get("chat_name", ""),
+        }
+    return wrapped
+
+
+def _wrap_build_prefetch_entries(orig_fn):
+    def wrapped(self, client, items, *, prefer_abstract, max_injected_chars, deadline, request_timeout, full_read_limit):
+        cfg = _load_sync_cfg()
+        top_n = max(1, int(cfg.get("top_n", 6)))
+        # Store the selected hits (post-dedup) for the recall card.
+        self._owner_recall_hits = list(items)[:top_n]
+        return orig_fn(
+            self,
+            client,
+            items,
+            prefer_abstract=prefer_abstract,
+            max_injected_chars=max_injected_chars,
+            deadline=deadline,
+            request_timeout=request_timeout,
+            full_read_limit=full_read_limit,
+        )
+    return wrapped
+
+
+def _wrap_prefetch(orig_fn):
+    def wrapped(self, query, *, session_id=""):
+        start = time.time()
+        result = orig_fn(self, query, session_id=session_id)
+        elapsed_ms = (time.time() - start) * 1000
+
+        cfg = _load_card_cfg()
+        hits = getattr(self, "_owner_recall_hits", [])
+        if hits and cfg.get("enabled", True):
+            _fire_recall_display(hits, getattr(self, "_recall_card_ctx", {}), elapsed_ms)
+
+        return result
+    return wrapped
+
+
+def _apply_card() -> None:
+    global _applied
+    from plugins.memory.openviking import OpenVikingMemoryProvider
+
+    _originals["initialize"] = OpenVikingMemoryProvider.initialize
+    _originals["prefetch"] = OpenVikingMemoryProvider.prefetch
+    _originals["build_prefetch_entries"] = OpenVikingMemoryProvider._build_prefetch_entries
+
+    OpenVikingMemoryProvider.initialize = _wrap_initialize(_originals["initialize"])
+    OpenVikingMemoryProvider.prefetch = _wrap_prefetch(_originals["prefetch"])
+    OpenVikingMemoryProvider._build_prefetch_entries = _wrap_build_prefetch_entries(
+        _originals["build_prefetch_entries"]
+    )
+
+    _applied["card"] = True
+    logger.info("openviking_owner_recall_patch applied: recall-card")
+
+
+def _revert_card() -> None:
+    global _applied
+    from plugins.memory.openviking import OpenVikingMemoryProvider
+
+    orig_init = _originals.pop("initialize", None)
+    orig_prefetch = _originals.pop("prefetch", None)
+    orig_build = _originals.pop("build_prefetch_entries", None)
+    if orig_init is not None:
+        OpenVikingMemoryProvider.initialize = orig_init
+    if orig_prefetch is not None:
+        OpenVikingMemoryProvider.prefetch = orig_prefetch
+    if orig_build is not None:
+        OpenVikingMemoryProvider._build_prefetch_entries = orig_build
+    _applied["card"] = False
+    logger.info("openviking_owner_recall_patch reverted: recall-card")
+
+
+# ---------------------------------------------------------------------------
+# Patch registration
+# ---------------------------------------------------------------------------
+
+def apply_patch(
+    advisory: Optional[bool] = None,
+    dedup: Optional[bool] = None,
+    card: Optional[bool] = None,
+) -> None:
+    """Apply owner OpenViking recall extensions.
+
+    Args:
+        advisory: Override ``owner.openviking_sync_recall.advisory``.
+        dedup: Override ``owner.openviking_sync_recall.dedup``.
+        card: Override ``owner.openviking_recall_card.enabled``.
+    """
+    sync_cfg = _load_sync_cfg()
+    card_cfg = _load_card_cfg()
+
+    advisory_enabled = advisory if advisory is not None else bool(sync_cfg["advisory"])
+    dedup_enabled = dedup if dedup is not None else bool(sync_cfg["dedup"])
+    card_enabled = card if card is not None else bool(card_cfg["enabled"])
+
+    if advisory_enabled:
+        if not _applied["advisory"]:
+            _apply_advisory()
+    else:
+        if _applied["advisory"]:
+            _revert_advisory()
+
+    if dedup_enabled:
+        if not _applied["dedup"]:
+            _apply_dedup()
+    else:
+        if _applied["dedup"]:
+            _revert_dedup()
+
+    if card_enabled:
+        if not _applied["card"]:
+            _apply_card()
+    else:
+        if _applied["card"]:
+            _revert_card()
+
+
+def revert_patch() -> None:
+    """Revert all changes made by :func:`apply_patch`."""
+    if _applied["card"]:
+        _revert_card()
+    if _applied["dedup"]:
+        _revert_dedup()
+    if _applied["advisory"]:
+        _revert_advisory()

@@ -58,6 +58,13 @@ from agent.i18n import t
 from hermes_cli.config import cfg_get
 from hermes_cli.fallback_config import get_fallback_chain
 
+# [owner] OpenViking recall owner extensions: advisory prompt, peer dedup, recall card.
+try:
+    from owner.patches.openviking_owner_recall_patch import apply_patch as _owner_ov_apply
+    _owner_ov_apply()
+except Exception:
+    pass
+
 # --- Agent cache tuning ---------------------------------------------------
 # Bounds the per-session AIAgent cache to prevent unbounded growth in
 # long-lived gateways (each AIAgent holds LLM clients, tool schemas,
