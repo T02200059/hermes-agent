@@ -73,6 +73,15 @@ logger = logging.getLogger(__name__)
 INTERRUPT_WAITING_FOR_MODEL_PREFIX = "Operation interrupted: waiting for model response ("
 
 
+def _get_current_attribution(agent) -> Optional[str]:
+    """[owner] per-turn attribution — lazy import (owner/attribution.py)."""
+    try:
+        from owner.attribution import get_current_attribution
+        return get_current_attribution(agent)
+    except Exception:
+        return getattr(agent, "owner_provider_name", None)
+
+
 def _image_error_max_dimension(error: Exception) -> Optional[int]:
     """Extract a provider-reported image dimension ceiling, if present."""
     parts = []
@@ -2011,7 +2020,8 @@ def run_conversation(
                                 cost_status=cost_result.status,
                                 cost_source=cost_result.source,
                                 billing_provider=agent.provider,
-                                owner_provider_name=getattr(agent, "owner_provider_name", None),
+                                # [owner] attribution for billing record (owner/attribution.py)
+                                owner_provider_name=_get_current_attribution(agent),
                                 billing_base_url=agent.base_url,
                                 billing_mode="subscription_included"
                                 if cost_result.status == "included" else None,
