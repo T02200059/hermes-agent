@@ -1545,7 +1545,7 @@ def _get_script_timeout() -> int:
     return _DEFAULT_SCRIPT_TIMEOUT
 
 
-def _run_job_script(script_path: str) -> tuple[bool, str]:
+def _run_job_script(script_path: str, args: Optional[dict] = None) -> tuple[bool, str]:
     """Execute a cron job's data-collection script and capture its output.
 
     Scripts must reside within HERMES_HOME/scripts/.  Both relative and
@@ -1571,6 +1571,10 @@ def _run_job_script(script_path: str) -> tuple[bool, str]:
         script_path: Path to the script.  Relative paths are resolved
             against HERMES_HOME/scripts/.  Absolute and ~-prefixed paths
             are also validated to ensure they stay within the scripts dir.
+        args: Optional dict of arguments to pass as CLI flags. Keys become
+            ``--key`` flags. Boolean ``True`` becomes a flag without value,
+            ``False``/``None``/empty-string values are skipped.
+            Example: ``{"days": 7, "verbose": true}`` → ``--days 7 --verbose``.
 
     Returns:
         (success, output) — on failure *output* contains the error message so the
@@ -1626,6 +1630,20 @@ def _run_job_script(script_path: str) -> tuple[bool, str]:
         argv = [_bash, str(path)]
     else:
         argv = [sys.executable, str(path)]
+
+    # [owner-patch] cron job args support: map stored job args to CLI flags
+    if args:
+        for key, value in args.items():
+            key_str = str(key).strip()
+            if not key_str:
+                continue
+            if value is True:
+                argv.append(f"--{key_str}")
+            elif value is not None and value is not False:
+                value_str = str(value).strip()
+                if value_str:
+                    argv.append(f"--{key_str}")
+                    argv.append(value_str)
 
     try:
         from tools.environments.local import _sanitize_subprocess_env
@@ -1720,7 +1738,7 @@ def _build_job_prompt(job: dict, prerun_script: Optional[tuple] = None) -> str:
         if prerun_script is not None:
             success, script_output = prerun_script
         else:
-            success, script_output = _run_job_script(script_path)
+            success, script_output = _run_job_script(script_path, args=job.get("args"))
         if success:
             if script_output:
                 prompt = (
@@ -2014,7 +2032,7 @@ def run_job(job: dict) -> tuple[bool, str, str, Optional[str]]:
                 _prior_cwd = None
 
         try:
-            ok, output = _run_job_script(script_path)
+            ok, output = _run_job_script(script_path, args=job.get("args"))
         finally:
             if _prior_cwd is not None:
                 try:
@@ -2103,7 +2121,7 @@ def run_job(job: dict) -> tuple[bool, str, str, Optional[str]]:
     prerun_script = None
     script_path = job.get("script")
     if script_path:
-        prerun_script = _run_job_script(script_path)
+        prerun_script = _run_job_script(script_path, args=job.get("args"))
         _ran_ok, _script_output = prerun_script
         if _ran_ok and not _parse_wake_gate(_script_output):
             logger.info(
