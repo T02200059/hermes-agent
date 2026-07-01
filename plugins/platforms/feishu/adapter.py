@@ -148,19 +148,51 @@ from utils import atomic_json_write, env_float, env_int
 logger = logging.getLogger(__name__)
 
 # [owner] lazy owner imports — feishu.py stays importable without owner/
+# WR-01: cache successful resolutions, but DON'T cache transient
+# ImportError as permanent None. A confirmed-absent set holds keys
+# whose owner/ module is genuinely removed; transient misses retry on
+# the next call.
 _owner_lazy: Dict[str, Any] = {}
+_owner_lazy_absent: set = set()
 
 
 def _owner_import(module: str, name: str) -> Any:
     key = f"{module}.{name}"
-    if key not in _owner_lazy:
-        import importlib
+    if key in _owner_lazy_absent:
+        return None
+    if key in _owner_lazy:
+        return _owner_lazy[key]
+    import importlib
 
-        try:
-            _owner_lazy[key] = getattr(importlib.import_module(module), name)
-        except (ImportError, AttributeError):
-            _owner_lazy[key] = None  # graceful degradation when owner/ removed
-    return _owner_lazy[key]
+    try:
+        value = getattr(importlib.import_module(module), name)
+    except (ImportError, AttributeError) as exc:
+        # First-miss warning, then throttled. Do NOT cache None — the
+        # next call will retry the import. Caching the failure as a
+        # permanent None was the WR-01 regression.
+        if key not in _owner_import._warned_keys:
+            logger.warning(
+                "owner import %s.%s unavailable (%s); will retry on next call",
+                module, name, exc,
+            )
+            _owner_import._warned_keys[key] = True
+        return None
+    _owner_lazy[key] = value
+    return value
+
+
+_owner_import._warned_keys = {}  # type: ignore[attr-defined]
+
+
+def invalidate_owner_imports() -> None:
+    """Drop both the success and 'confirmed absent' caches.
+
+    Owner plugin reload / hot-restart hook. Use after installing or
+    updating a plugin or when ``owner/`` has been re-deployed.
+    """
+    _owner_lazy.clear()
+    _owner_lazy_absent.clear()
+    _owner_import._warned_keys.clear()
 
 # ---------------------------------------------------------------------------
 # Regex patterns
