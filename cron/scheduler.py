@@ -1545,6 +1545,27 @@ def _get_script_timeout() -> int:
     return _DEFAULT_SCRIPT_TIMEOUT
 
 
+# WR-03: cached allowlist of owner/scripts/ basenames built at first use.
+# A compromised cron entry cannot exfiltrate via a newly-dropped script
+# because the new file's basename is not in the allowlist. To pick up
+# new files, restart the gateway (which clears the cache via module
+# reload).
+_OWNER_SCRIPTS_ALLOWLIST: Optional[set] = None
+
+
+def _get_owner_scripts_allowlist() -> set:
+    global _OWNER_SCRIPTS_ALLOWLIST
+    if _OWNER_SCRIPTS_ALLOWLIST is None:
+        owner_scripts = (_get_hermes_home() / "owner" / "scripts").resolve()
+        basenames: set = set()
+        if owner_scripts.is_dir():
+            for f in owner_scripts.rglob("*"):
+                if f.is_file() and f.suffix.lower() in {".py", ".sh", ".bash"}:
+                    basenames.add(f.name)
+        _OWNER_SCRIPTS_ALLOWLIST = basenames
+    return _OWNER_SCRIPTS_ALLOWLIST
+
+
 def _run_job_script(script_path: str, args: Optional[dict] = None) -> tuple[bool, str]:
     """Execute a cron job's data-collection script and capture its output.
 
@@ -1597,7 +1618,10 @@ def _run_job_script(script_path: str, args: Optional[dict] = None) -> tuple[bool
     except ValueError:
         # EXEMPTION: symlinks into owner/scripts/ (branch-namespace
         # pattern for personal forks) are under the same project's VCS
-        # control and pose no additional risk — allow them through.
+        # control — but WR-03 narrows the exemption to a cached
+        # basename allowlist (built at first use from the files that
+        # already exist in owner/scripts/). New files added after
+        # startup require a gateway restart to be available.
         owner_scripts = (_get_hermes_home() / "owner" / "scripts").resolve()
         if owner_scripts.is_dir():
             try:
@@ -1607,6 +1631,13 @@ def _run_job_script(script_path: str, args: Optional[dict] = None) -> tuple[bool
                     f"Blocked: script path resolves outside both the scripts "
                     f"directory ({scripts_dir_resolved}) and the exempted "
                     f"owner/scripts/ ({owner_scripts}): {script_path!r}"
+                )
+            if path.name not in _get_owner_scripts_allowlist():
+                return False, (
+                    f"Blocked: owner/scripts/ exemption rejected for "
+                    f"{path.name!r} (not in startup allowlist; "
+                    f"restart the gateway after adding new scripts to "
+                    f"owner/scripts/)"
                 )
         else:
             return False, (

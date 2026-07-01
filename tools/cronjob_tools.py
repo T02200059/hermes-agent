@@ -507,17 +507,53 @@ def _validate_cron_script_path(script: Optional[str]) -> Optional[str]:
     if containment_error:
         # EXEMPTION: symlinks into owner/scripts/ (branch-namespace
         # pattern for personal forks) are under the same project's VCS
-        # control and pose no additional risk — allow them through.
+        # control — but WR-03 narrows the exemption to a cached
+        # basename allowlist (built at first use from the files that
+        # already exist in owner/scripts/). New files added after
+        # startup require a gateway restart to be available, so a
+        # compromised cron job can't immediately exfiltrate via a
+        # freshly-dropped script.
         owner_scripts = (get_hermes_home() / "owner" / "scripts").resolve()
         if owner_scripts.is_dir():
             exemption_error = validate_within_dir(scripts_dir / raw, owner_scripts)
             if not exemption_error:
-                return None
+                from pathlib import Path as _P
+                basename = _P(scripts_dir / raw).name
+                if basename in _get_owner_scripts_allowlist():
+                    return None
+                return (
+                    f"owner/scripts/ exemption rejected: {raw!r} "
+                    f"(basename {basename!r} not in startup allowlist; "
+                    f"restart the gateway after adding new scripts to "
+                    f"owner/scripts/)"
+                )
         return (
             f"Script path escapes the scripts directory via traversal: {raw!r}"
         )
 
     return None
+
+
+# WR-03: cached allowlist of owner/scripts/ basenames built at first use.
+# A compromised cron entry cannot exfiltrate via a newly-dropped script
+# because the new file's basename is not in the allowlist. To pick up
+# new files, restart the gateway (which clears the cache via module
+# reload).
+_OWNER_SCRIPTS_ALLOWLIST: Optional[set] = None
+
+
+def _get_owner_scripts_allowlist() -> set:
+    global _OWNER_SCRIPTS_ALLOWLIST
+    if _OWNER_SCRIPTS_ALLOWLIST is None:
+        from hermes_constants import get_hermes_home as _gh
+        owner_scripts = (_gh() / "owner" / "scripts").resolve()
+        basenames: set = set()
+        if owner_scripts.is_dir():
+            for f in owner_scripts.rglob("*"):
+                if f.is_file() and f.suffix.lower() in {".py", ".sh", ".bash"}:
+                    basenames.add(f.name)
+        _OWNER_SCRIPTS_ALLOWLIST = basenames
+    return _OWNER_SCRIPTS_ALLOWLIST
 
 
 def _format_job(job: Dict[str, Any]) -> Dict[str, Any]:
