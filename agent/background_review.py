@@ -791,7 +791,7 @@ def _run_review_in_thread(
         )
 
         if actions:
-            summary = " · ".join(dict.fromkeys(actions))
+            summary = "\n- " + "\n- ".join(dict.fromkeys(actions))
             agent._safe_print(
                 f"  💾 Self-improvement review: {summary}"
             )
