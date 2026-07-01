@@ -287,8 +287,22 @@ def save_url_image(
     Returns the absolute :class:`Path` to the saved file.  Raises on any
     network / HTTP / oversize / non-image-content-type error so callers can
     fall back to returning the bare URL with a clear error message.
+
+    Only ``http``/``https`` URLs are fetched. Other schemes (``file://``,
+    ``ftp://``, ``gopher://``, …) are rejected before any network/disk access
+    so an upstream-controlled or caller-controlled URL cannot be coerced into
+    reading a local file or probing non-HTTP services.
     """
     import requests
+    # [owner] §17.8 WR-02 SSRF: reject non-http(s) schemes before any network/disk access
+    from urllib.parse import urlparse
+
+    scheme = (urlparse(url).scheme or "").lower()
+    if scheme not in ("http", "https"):
+        raise ValueError(
+            f"Refusing to fetch image URL with unsupported scheme {scheme!r}; "
+            "only http/https are allowed."
+        )
 
     response = requests.get(url, timeout=timeout, stream=True)
     response.raise_for_status()

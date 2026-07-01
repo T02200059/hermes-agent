@@ -166,3 +166,16 @@ class TestSaveUrlImage:
         path1 = save_url_image(f"{base}/image.png", prefix="xai_collision")
         path2 = save_url_image(f"{base}/image.png", prefix="xai_collision")
         assert path1 != path2, "filename collision — uuid suffix isn't doing its job"
+
+    @pytest.mark.parametrize("bad_url", [
+        "file:///etc/passwd",
+        "ftp://example.com/x",
+        "gopher://example.com/",
+        "data:text/plain,hi",
+    ])
+    def test_non_http_scheme_rejected_before_fetch(self, bad_url):
+        """[owner] WR-02 SSRF: non-http(s) schemes must raise before any I/O."""
+        from agent.image_gen_provider import save_url_image
+
+        with pytest.raises(ValueError, match="unsupported scheme"):
+            save_url_image(bad_url)
