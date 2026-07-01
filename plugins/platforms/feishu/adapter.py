@@ -2674,6 +2674,16 @@ class FeishuAdapter(BasePlatformAdapter):
         if model_picker:
             return self._handle_model_picker_action(event=event, action_value=action_value, loop=loop)
 
+        # [owner] diff cards: route expand/collapse/full actions (see owner/diff_card/feishu.py)
+        diff_action = (
+            (isinstance(action_value, dict) and action_value.get("expand_diff"))
+            or (isinstance(action_value, dict) and action_value.get("collapse_diff"))
+            or (isinstance(action_value, dict) and action_value.get("show_full_diff"))
+        )
+        if diff_action:
+            from owner.diff_card.feishu import handle_feishu_diff_action
+            return handle_feishu_diff_action(self, event, action_value)
+
         if hermes_action:
             return self._handle_approval_card_action(event=event, action_value=action_value, loop=loop)
         if update_prompt_action:
@@ -2788,6 +2798,36 @@ class FeishuAdapter(BasePlatformAdapter):
             card.data = self._build_resolved_update_prompt_card(answer=answer, user_name=user_name)
             response.card = card
         return response
+
+    # ── [owner] Shared card sender ─────────────────────────────────────────
+    # [owner] send_card: thin wrapper over _send_raw_message used by both the
+    # auto-card and diff-card features to publish interactive cards.
+
+    async def send_card(
+        self,
+        chat_id: str,
+        card: Dict[str, Any],
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> SendResult:
+        """Send a Feishu interactive card (thin wrapper over _send_raw_message)."""
+        import json as _json
+        try:
+            payload = _json.dumps(card, ensure_ascii=False)
+            response = await self._send_raw_message(
+                chat_id=chat_id,
+                msg_type="interactive",
+                payload=payload,
+                reply_to=None,
+                metadata=metadata,
+            )
+            message_id = ""
+            data = getattr(response, "data", None)
+            if data:
+                message_id = getattr(data, "message_id", "") or ""
+            return SendResult(success=True, message_id=message_id)
+        except Exception as exc:
+            logger.warning("[Feishu] send_card failed: %s", exc)
+            return SendResult(success=False, error=str(exc))
 
     # ── [owner] Model picker card ──────────────────────────────────────────
 

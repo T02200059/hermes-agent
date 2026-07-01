@@ -16655,6 +16655,14 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 voice_ack_callback if _voice_ack_guild[0] is not None else None
             )
             agent.step_callback = _step_callback_sync if _hooks_ref.loaded_hooks else None
+            # [owner] Diff card support: wrap tool_start and step callbacks
+            # so file-mutating tool calls produce interactive diff cards on
+            # Feishu (compact → expand → full) and markdown diffs on QQ.
+            if source.platform in (Platform.FEISHU, Platform.QQBOT):
+                from owner.diff_card.dispatcher import install_diff_card_support
+                agent.tool_start_callback, agent.step_callback = install_diff_card_support(
+                    self, source, agent.tool_start_callback, agent.step_callback, _loop_for_step
+                )
             agent.stream_delta_callback = _stream_delta_cb
             agent.interim_assistant_callback = _interim_assistant_cb if _want_interim_messages else None
             agent.status_callback = _status_callback_sync
