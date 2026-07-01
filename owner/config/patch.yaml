@@ -1,0 +1,261 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# Owner patch configuration
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# ⚠️  本文件是实际在用的配置（通过软链接），不是模板！
+#
+# 软链接关系：
+#   ~/.hermes/patch.yaml
+#   → ~/.hermes/hermes-agent/owner/config/patch.yaml (本文件)
+#
+# 内部项目，不需要考虑 git 安全。
+# 如需脱敏用于分享/开源，另建 template 文件。
+# ═══════════════════════════════════════════════════════════════════════════════
+
+owner:
+  feishu_card:
+    auto_card_threshold: 57
+    split_enabled: true
+    split_max_chars: 24000
+
+  # ── OpenViking memory provider patches ────────────────────────────────────
+  # Runtime patches for the OpenViking sync recall + visualization:
+  #   - enabled:        master switch for synchronous HTTP recall (replaces OPENVIKING_SYNC_RECALL)
+  #   - advisory:       advisory wording in memory-context block (replaces OPENVIKING_ADVISORY_MEMORY)
+  #   - search_timeout: HTTP timeout in seconds (replaces OPENVIKING_SEARCH_TIMEOUT)
+  #   - recall_card.* : visualization — see owner/patches/openviking_recall_card_patch.py
+  openviking_sync_recall:
+    enabled: true
+    advisory: true
+    search_timeout: 10
+
+  openviking_recall_card:
+    enabled: true           # master switch (replaces OPENVIKING_RECALL_DISPLAY)
+    feishu_card: true       # (replaces OPENVIKING_RECALL_FEISHU_CARD)
+    qqbot_text: true        # (replaces OPENVIKING_RECALL_QQBOT_TEXT)
+
+  # ── Approval configuration ─────────────────────────────────────────────────
+  approvals:
+    # Whether to show the "Always" (permanent) approval button on Feishu cards.
+    # When false, only "Once" / "Session" / "Deny" are shown.
+    allow_permanent: false
+    # Permanent approval allowlist (merged with config.yaml command_allowlist).
+    # Format: "tirith:<rule_id>" or the exact DANGEROUS_PATTERNS description.
+    command_allowlist: []
+    # [owner] Skill script auto-approval allowlist
+    # 匹配逻辑：命令中所有脚本文件名都来自本 session 已加载的 skill 时自动批准。
+    skill_script_allowlist:
+      - skill: xy-info
+        paths: []
+        extensions: [".sh", ".py"]
+      - skill: xy-ansible
+        paths: []
+        extensions: [".sh", ".py"]
+      - skill: xy-damodel
+        paths: []
+        extensions: [".sh", ".py"]
+      - skill: xy-gitlab
+        paths: []
+        extensions: [".sh", ".py"]
+      - skill: xy-alert
+        paths: []
+        extensions: [".sh", ".py"]
+      - skill: xy-gpu
+        paths: []
+        extensions: [".sh", ".py"]
+      - skill: xy-storage
+        paths: []
+        extensions: [".sh", ".py"]
+      - skill: xy-diagnose
+        paths: []
+        extensions: [".sh", ".py"]
+      - skill: network-tool
+        paths: []
+        extensions: [".sh", ".py"]
+
+  # ── Checkpoint mutation predictor ────────────────────────────
+  # 补全 /rollback 的盲区: terminal 工具执行前, 预测命令将要修改的文件,
+  # 对其所在项目根做预防性 ensure_checkpoint。静态解析优先, 失败时同步调
+  # auxiliary LLM (复用 task="approval", 即和 smart approval 同一个模型)
+  # 兜底; LLM 超时/失败/空时【不降级拍 cwd】, 只通过 adapter 报错
+  # 提示该命令的改动无法被 /rollback 回滚。
+  #
+  # 存储层/回滚层/`/rollback` 语义全部复用 config.yaml 的 checkpoints 段,
+  # 这里只管"预测触发源"的行为参数。
+  checkpoints:
+    # 总开关。false 时 terminal 不做任何 checkpoint (write_file/patch 不受影响)。
+    predict_enabled: true
+    # LLM 兜底超时 (毫秒)。超时即放弃预测、报错, 绝不阻塞工具执行。
+    # 这个值在 call_llm(timeout=...) 显式传入, 覆盖 config.yaml 中
+    # auxiliary.approval.timeout 的默认值 (30s)。
+    # 模型本身复用 auxiliary.approval (config.yaml) 的 provider/model,
+    # 当前 owner 配置 = deepseek-v4-pro; 若删掉 auxiliary.approval 配置
+    # 则 fallback 到 _resolve_auto 链 (主聊天模型)。
+    predict_llm_timeout_ms: 20000
+    # 会话内 LLM 预测结果缓存大小 (LRU, 按 command+cwd 键)。
+    # 0 = 禁用缓存, 每次都调 LLM。
+    predict_cache_size: 32
+    # 静态解析置信度阈值: 静态解析出 >= N 个候选路径就直接用, 不调 LLM。
+    predict_static_threshold: 1
+
+  # ── Image Generation Presets ───────────────────────────────────────────────
+  # Presets for the DashScope image-gen plugin (owner/image_gen/dashscope_provider.py).
+  # All owner.image_gen.* lives in patch.yaml and is loaded via the unified
+  # owner.patch_config (with mtime + 5min periodic refresh).
+  #
+  # Select the active preset/model via:
+  #   owner:
+  #     image_gen:
+  #       model: qwen          # or "wan"  (preferred for owner custom)
+  # Or fall back to main config.yaml image_gen.model for compatibility.
+  # Override per-call by passing model="wan" to the image_generate tool.
+  # api_key supports ${ENV_VAR} references; expanded at runtime.
+  image_gen:
+    current: dashscope-qwen
+    presets:
+      dashscope-qwen:
+        alias:
+          - qwen
+        endpoint: https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation
+        model: qwen-image-2.0
+        api_key: ${DASHSCOPE_API_KEY}
+      dashscope-wan:
+        alias:
+          - wan
+        endpoint: https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation
+        model: wan2.6-t2i
+        api_key: ${DASHSCOPE_API_KEY}
+
+  # ── Per-chat display overrides ─────────────────────────────────────────────
+  # Override display settings for individual chats/groups (highest priority).
+  # Intended primarily for gateway messaging platforms (Telegram, Feishu, etc.).
+  # CLI sessions usually do not participate in per_chat.
+  # The chat_id is the platform's native chat/group identifier.
+  # display:
+  #   per_chat:
+  #     feishu:
+  #       oc_xxxxxxxxxxxxxxxx:
+  #         tool_progress: off
+  #         interim_assistant_messages: false
+  #         tool_preview_length: 0
+  #         streaming: false
+
+
+  # ── display_hook_message_receive ─────────────────────────────────────
+  # 控制 message:receive hook 召回的 extra_context 是否也作为 chat 消息投到当前对话。
+  # 与 hook 自身的 LLM 拼写行为解耦 —— enabled=false 只关用户侧投送，hook 仍向 LLM 注入。
+  # 配置层级：global enabled → per-platform → per-chat，默认全 on。
+  display_hook_message_receive:
+    enabled: true
+    mode: before_agent
+
+  # ── Feishu bot menu key→command mappings ──────────────────────────────────
+  # Maps bot menu event_key to slash command or text prompt.
+  # Falls back to _BUILTIN_BOT_MENU in feishu.py when config is unavailable.
+  #
+  # NOTE: Feishu multi-profile routing (user_routing / profile_endpoints) lives
+  # in a separate file: ~/.hermes/patch_feishu_profile.yaml. See
+  # owner/config/patch_feishu_profile.yaml for the template.
+  feishu:
+    bot_menu:
+      new: "/new"
+      status: "/status"
+      stop: "/stop"
+      reasoning_off: "/reasoning off --global"
+      reasoning_medium: "/reasoning medium --global"
+      reasoning_high: "/reasoning xhigh --global"
+      model_max: "/model qwen3.7-max --provider damodel"
+      model_pro: "/model deepseek-v4-pro --provider damodel"
+      model_flash: "/model deepseek-v4-flash --provider damodel"
+      model_mimo: "/model mimo-v2.5-pro --provider xiaomi --global"
+      list_models: "/providers"
+      yolo_on: "/yolo on"
+      yolo_off: "/yolo off"
+      inspect_gpu_cluster: "帮我根据 sre-king 启动 GPU 集群巡检流程，先问我 IP 范围，等我确认后再执行"
+      resume: "/resume"
+      sync_git_hermes: "帮我同步 hermes-agent 代码：1) 检查 git status 确认无遗留；2) 按功能拆分成多个有意义的 commit；3) 确认全程在当前分支操作；4) push 到 github 和 gitlab。开始前先告诉我你的计划。"
+      sync_sre_king: "帮我同步本地 sre-king 目录代码，流程如下：1) 定位本地 sre-king 目录（~/.hermes/skills/westcloud/sre-king/）；2) 检查是否为 git 仓库，不是则停止并提示；3) 检查当前分支对远端是否有 push 权限，无权限则停止并提示；4) 检查本地未提交的改动，按功能合理拆分成一个或多个有意义的 commit；5) git fetch + git pull 同步远端当前分支；6) 如有冲突 → 停下来描述冲突文件，询问我如何解决；无冲突 → 直接 push。开始前先告诉我你的计划，每步执行后汇报结果。"
+
+  # ── Feishu bot menu dedup + ack (per-key feedback for slow bot menu commands) ─
+  # Sent immediately after a bot menu click so the user sees feedback before the
+  # underlying command (e.g. /new resets the session, which is slow) finishes.
+  # 3-second per-(open_id, event_key) dedup is handled in owner/feishu/bot_menu.py.
+  # Set ack: null to suppress ack for a specific key; falls back to default_ack.
+    bot_menu_dedup:
+      enabled: true
+      default_ack: "⏳ 已收到…"
+      per_key:
+        # /new — 重置当前会话。Agent pipeline 耗时较长，提供明确 ack 让用户知道已触发。
+        new:
+          ack: "🔄 新建会话中…"
+        stop:
+          ack: "⏹️ 停止当前任务…"
+        status:
+          ack: null
+        reasoning_off:
+          ack: "⚙️ 切换推理模式…"
+        reasoning_medium:
+          ack: "⚙️ 切换推理模式…"
+        reasoning_high:
+          ack: "⚙️ 切换推理模式…"
+        model_flash:
+          ack: "🤖 切换模型…"
+        model_pro:
+          ack: "🤖 切换模型…"
+        model_max:
+          ack: "🤖 切换模型…"
+        model_mimo:
+          ack: "🤖 切换 mimo-v2.5-pro…"
+        inspect_gpu_cluster:
+          ack: "🔍 启动 GPU 集群巡检流程中…"
+        resume:
+          ack: "📋 恢复会话中…"
+        list_models:
+          ack: "📋 读取模型列表…"
+        yolo_on:
+          ack: "🔓 开启 YOLO 模式…"
+        yolo_off:
+          ack: "🔒 关闭 YOLO 模式…"
+        sync_git_hermes:
+          ack: "🔄 同步 hermes-agent 仓库…"
+        sync_sre_king:
+          ack: "📦 同步 sre-king 仓库…"
+
+  # ── Model-level extra_body injection ───────────────────────────────────────
+  # Per-provider, per-model extra_body merges. Use the *real* provider name
+  # (owner_provider_name) as the key, e.g. xfyun / damodel / deepseek-company.
+  # This is injected by owner/extra_body_injection.py in the chat_completions
+  # transport, after the provider profile's own extra_body but before request
+  # overrides. It lets you turn on provider-specific features like thinking
+  # mode for one model without touching the global config.
+  model_extra_body:
+    xfyun:
+      astron-code-latest:
+        enable_thinking: true
+      # [owner] xfyun 直连端点也需要 enable_thinking
+      # 验证 2026-06-12: enable_thinking=true → reasoning_content 填充
+      xopglm51:
+        enable_thinking: true
+      xopglm5:
+        enable_thinking: true
+      xopkimik26:
+        enable_thinking: true
+    # [owner] damodel 思考模式配置
+    # xopglm51=GLM-5.1 / xopglm5=GLM-5 / xopkimik26=Kimi-K2.6 (讯飞 Coding Plan)
+    damodel:
+      xopglm51:
+        enable_thinking: true
+      xopglm5:
+        enable_thinking: true
+      xopkimik26:
+        enable_thinking: true
+      # [owner] glm-5.1/glm-5: Coding Plan 端点，使用官方格式 + clear_thinking=false
+      # 验证 2026-06-12: thinking.type=enabled → reasoning_content 填满
+      glm-5.1:
+        thinking:
+          type: enabled
+          clear_thinking: false
+      glm-5:
+        thinking:
+          type: enabled
+          clear_thinking: false
