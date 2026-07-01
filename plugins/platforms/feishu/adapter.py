@@ -1895,6 +1895,17 @@ class FeishuAdapter(BasePlatformAdapter):
             return SendResult(success=False, error="Not connected")
 
         formatted = self.format_message(content)
+
+        # [owner] auto-card: wrap long text in interactive card when streaming is off
+        try:
+            auto_card_result = await _owner_import(
+                "owner.feishu.auto_card", "try_auto_card"
+            )(self, formatted, metadata, chat_id=chat_id)
+            if auto_card_result is not None:
+                return auto_card_result
+        except Exception:
+            logger.debug("[owner] auto_card failed, falling through to plain text", exc_info=True)
+
         chunks = self.truncate_message(formatted, self.MAX_MESSAGE_LENGTH)
         last_response = None
 

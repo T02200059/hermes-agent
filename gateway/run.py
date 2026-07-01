@@ -10676,6 +10676,22 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             if _footer_line and response and not agent_result.get("already_sent") and not _intentional_silence:
                 response = f"{response}\n\n{_footer_line}"
 
+            # [owner] auto-card: try wrapping long response in interactive card at agent:end
+            try:
+                from owner.feishu.agent_end import try_auto_card_on_end
+                response, _footer_line = await try_auto_card_on_end(
+                    runner=self,
+                    source=source,
+                    event=event,
+                    agent_result=agent_result,
+                    response=response,
+                    footer_line=_footer_line,
+                )
+            except ImportError:
+                pass
+            except Exception:
+                logger.debug("[owner] auto_card_on_end failed", exc_info=True)
+
             # Emit agent:end hook
             await self.hooks.emit("agent:end", {
                 **hook_ctx,
