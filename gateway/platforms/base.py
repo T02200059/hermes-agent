@@ -3511,6 +3511,10 @@ class BasePlatformAdapter(ABC):
         code_spans: list = []
         for m in re.finditer(r'```[^\n]*\n.*?```', content, re.DOTALL):
             code_spans.append((m.start(), m.end()))
+        # [owner-patch] P35: CommonMark double-backtick inline code.
+        # Without this, paths in `` `/tmp/file.png` `` get mis-extracted.
+        for m in re.finditer(r'``(?:[^`]|`[^`])+``', content):
+            code_spans.append((m.start(), m.end()))
         for m in re.finditer(r'`[^`\n]+`', content):
             code_spans.append((m.start(), m.end()))
 

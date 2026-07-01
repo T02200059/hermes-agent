@@ -225,6 +225,12 @@ class TestCodeBlockExclusion:
         assert paths == []
         assert "`/tmp/image.png`" in cleaned
 
+    def test_double_backtick_inline_code_skipped(self):
+        text = "Do not attach this code sample: `` `/tmp/secret.png` ``"
+        paths, cleaned = _extract(text, existing_files={"/tmp/secret.png"})
+        assert paths == []
+        assert "`` `/tmp/secret.png` ``" in cleaned
+
     def test_path_outside_code_block_still_matched(self):
         text = (
             "```\ncode: /tmp/inside.png\n```\n"
