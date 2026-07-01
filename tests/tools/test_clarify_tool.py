@@ -9,6 +9,8 @@ from tools.clarify_tool import (
     check_clarify_requirements,
     MAX_CHOICES,
     CLARIFY_SCHEMA,
+    CLARIFY_STOP_SENTINEL,
+    ClarifyStopped,
     _flatten_choice,
 )
 
@@ -155,6 +157,27 @@ class TestClarifyToolCallbackHandling:
 
         result = json.loads(clarify_tool("Q?", callback=mock_callback))
         assert result["user_response"] == "response with spaces"
+
+    def test_stop_sentinel_raises_clarify_stopped(self):
+        """Gateway/Feishu timeout sentinel should stop the agent, not feed LLM."""
+        def stop_callback(question: str, choices: Optional[List[str]]) -> str:
+            return CLARIFY_STOP_SENTINEL
+
+        try:
+            clarify_tool("Q?", callback=stop_callback)
+        except ClarifyStopped:
+            return
+        raise AssertionError("ClarifyStopped was not raised")
+
+    def test_callback_raising_clarify_stopped_propagates(self):
+        def stop_callback(question: str, choices: Optional[List[str]]) -> str:
+            raise ClarifyStopped("stop")
+
+        try:
+            clarify_tool("Q?", callback=stop_callback)
+        except ClarifyStopped:
+            return
+        raise AssertionError("ClarifyStopped was not propagated")
 
 
 class TestCheckClarifyRequirements:

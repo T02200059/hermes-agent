@@ -1149,14 +1149,24 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
                     choices=next_args.get("choices"),
                     callback=agent.clarify_callback,
                 )
-            function_result, function_args = _run_agent_tool_execution_middleware(
-                agent,
-                function_name=function_name,
-                function_args=function_args,
-                effective_task_id=effective_task_id,
-                tool_call_id=getattr(tool_call, "id", "") or "",
-                execute=_execute,
-            )
+            try:
+                function_result, function_args = _run_agent_tool_execution_middleware(
+                    agent,
+                    function_name=function_name,
+                    function_args=function_args,
+                    effective_task_id=effective_task_id,
+                    tool_call_id=getattr(tool_call, "id", "") or "",
+                    execute=_execute,
+                )
+            except Exception as exc:
+                from tools.clarify_tool import ClarifyStopped as _ClarifyStopped
+                if not isinstance(exc, _ClarifyStopped):
+                    raise
+                # [owner] Feishu clarify timeout: stop the turn without setting an
+                # interrupt message, otherwise gateway/CLI may feed it back as a
+                # phantom user turn.
+                agent.interrupt()
+                function_result = "[Clarify timed out after user inactivity — stopping agent]"
             tool_duration = time.time() - tool_start_time
             if agent._should_emit_quiet_tool_messages():
                 agent._vprint(f"  {_get_cute_tool_message_impl('clarify', function_args, tool_duration, result=function_result)}")

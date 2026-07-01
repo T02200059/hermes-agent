@@ -20,6 +20,15 @@ from typing import List, Optional, Callable
 MAX_CHOICES = 4
 
 
+class ClarifyStopped(Exception):
+    """Raised when a platform asks the agent to stop after a clarify timeout."""
+
+
+# [owner] Feishu/Gateway-only clarify timeout stop sentinel. Other platforms keep
+# upstream behavior by returning normal text and letting the model decide.
+CLARIFY_STOP_SENTINEL = "__CLARIFY_STOP__"
+
+
 def _flatten_choice(c) -> str:
     """Coerce a single choice into its user-facing display string.
 
@@ -100,11 +109,16 @@ def clarify_tool(
 
     try:
         user_response = callback(question, choices)
+    except ClarifyStopped:
+        raise
     except Exception as exc:
         return json.dumps(
             {"error": f"Failed to get user input: {exc}"},
             ensure_ascii=False,
         )
+
+    if user_response == CLARIFY_STOP_SENTINEL:
+        raise ClarifyStopped("Clarify timed out and the platform requested stop")
 
     return json.dumps({
         "question": question,
