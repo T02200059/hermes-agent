@@ -1509,6 +1509,9 @@ class FeishuAdapter(BasePlatformAdapter):
         self._pending_drain_scheduled = False
         self._pending_inbound_max_depth = 1000  # cap queue; drop oldest beyond
         self._chat_locks: "collections.OrderedDict[str, asyncio.Lock]" = collections.OrderedDict()  # chat_id → lock (per-chat serial processing, LRU-bounded)
+        # [owner] bot-menu: dedup + bot_menu_dedup_lock (see owner/feishu/bot_menu.py)
+        self._bot_menu_dedup: Dict[Tuple[str, str], float] = {}
+        self._bot_menu_dedup_lock = threading.Lock()
         self._sent_message_ids_to_chat: Dict[str, str] = {}  # message_id → chat_id (for reaction routing)
         self._sent_message_id_order: List[str] = []  # LRU order for _sent_message_ids_to_chat
         self._chat_info_cache: Dict[str, Dict[str, Any]] = {}
@@ -1685,6 +1688,8 @@ class FeishuAdapter(BasePlatformAdapter):
             .register_p2_card_action_trigger(self._on_card_action_trigger)
             .register_p2_im_chat_member_bot_added_v1(self._on_bot_added_to_chat)
             .register_p2_im_chat_member_bot_deleted_v1(self._on_bot_removed_from_chat)
+            # [owner] bot-menu: register bot menu event handler (see owner/feishu/bot_menu.py)
+            .register_p2_application_bot_menu_v6(self._on_bot_menu_event)
             .register_p2_im_chat_access_event_bot_p2p_chat_entered_v1(self._on_p2p_chat_entered)
             .register_p2_im_message_recalled_v1(self._on_message_recalled)
             .register_p2_customized_event(
@@ -2540,6 +2545,15 @@ class FeishuAdapter(BasePlatformAdapter):
         chat_id = str(getattr(event, "chat_id", "") or "")
         logger.info("[Feishu] Bot removed from chat: %s", chat_id)
         self._chat_info_cache.pop(chat_id, None)
+
+    # [owner] bot-menu: synchronous entry point for bot menu events (see owner/feishu/bot_menu.py)
+    def _on_bot_menu_event(self, data: Any) -> None:
+        from owner.feishu.bot_menu import handle_bot_menu_event
+        loop = getattr(self, "_loop", None)
+        if loop is None:
+            logger.warning("[Feishu] bot menu event but no event loop")
+            return
+        self._submit_on_loop(loop, handle_bot_menu_event(self, data))
 
     # [owner] user store: p2p chat enter cache warm (see owner/feishu/user_store.py)
     def _on_p2p_chat_entered(self, data: Any) -> None:
