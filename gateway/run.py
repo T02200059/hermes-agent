@@ -8834,6 +8834,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         if canonical == "memory":
             return await self._handle_memory_command(event)
 
+        if canonical == "providers":  # [owner] /providers command
+            return await self._handle_providers_command(event)
+
         if canonical == "skills":
             return await self._handle_skills_command(event)
 
