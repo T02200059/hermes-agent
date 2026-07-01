@@ -2187,9 +2187,9 @@ def run_job(job: dict) -> tuple[bool, str, str, Optional[str]]:
     agent = None
 
     # Mark this as a cron session so the approval system can apply cron_mode.
-    # This env var is process-wide and persists for the lifetime of the
-    # scheduler process — every job this process runs is a cron job.
-    os.environ["HERMES_CRON_SESSION"] = "1"
+    # [owner] cron-env-leak: ContextVar token replaces os.environ write (see owner/cron/run_job_hook.py)
+    from owner.cron.run_job_hook import owner_cron_session_enter, owner_cron_session_exit
+    _cron_session_token = owner_cron_session_enter()
 
     # Use ContextVars for per-job session/delivery state so parallel jobs
     # don't clobber each other's targets (os.environ is process-global).
@@ -2782,6 +2782,8 @@ def run_job(job: dict) -> tuple[bool, str, str, Optional[str]]:
             cleanup_stale_async_clients()
         except Exception as e:
             logger.debug("Job '%s': failed to reap stale auxiliary clients: %s", job_id, e)
+        # [owner] cron-env-leak: reset ContextVar + scrub env on exit (see owner/cron/run_job_hook.py)
+        owner_cron_session_exit(_cron_session_token)
 
 
 def run_one_job(job: dict, *, adapters=None, loop=None, verbose: bool = False) -> bool:

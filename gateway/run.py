@@ -1268,6 +1268,16 @@ def _clear_planned_restart_notification() -> None:
 # knows not to clobber TERMINAL_CWD if lazily imported.
 os.environ["_HERMES_GATEWAY"] = "1"
 
+# [owner] cron-env-leak: the gateway must never carry HERMES_CRON_SESSION (or
+# stale session markers) in os.environ — cron context lives in a ContextVar now.
+# Scrub anything inherited from the launching environment so get_session_env()'s
+# os.environ fallback can't misclassify a live message as a cron session.
+try:
+    from owner.cron.restart_scrub import owner_cron_scrub_process_env
+    owner_cron_scrub_process_env()
+except Exception:
+    pass
+
 _ensure_ssl_certs()
 
 # Add parent directory to path
@@ -5590,6 +5600,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             # inherits the gateway marker, `hermes gateway restart` refuses to
             # run as a self-restart loop guard and the gateway stays stopped.
             watcher_env.pop("_HERMES_GATEWAY", None)
+            # [owner] cron-env-leak: scrub session/cron env (see owner/cron/restart_scrub.py)
+            from owner.cron.restart_scrub import owner_cron_scrub_watcher_env
+            owner_cron_scrub_watcher_env(watcher_env)
             project_root = Path(__file__).resolve().parent.parent
             watcher_python = sys.executable
             try:
@@ -5634,6 +5647,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         # gateway stops and never comes back.
         watcher_env = os.environ.copy()
         watcher_env.pop("_HERMES_GATEWAY", None)
+        # [owner] cron-env-leak: scrub session/cron env (see owner/cron/restart_scrub.py)
+        from owner.cron.restart_scrub import owner_cron_scrub_watcher_env
+        owner_cron_scrub_watcher_env(watcher_env)
         setsid_bin = shutil.which("setsid")
         if setsid_bin:
             subprocess.Popen(
