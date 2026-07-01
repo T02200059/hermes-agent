@@ -2116,8 +2116,10 @@ def _runtime_model_config(agent, existing: dict | None = None) -> dict:
         config["provider"] = provider
     if base_url:
         config["base_url"] = base_url
-    else:
-        config.pop("base_url", None)
+    # [owner-patch] P29: Don't pop base_url when switch_model returns empty.
+    # An empty result.base_url means it couldn't be resolved, but the existing
+    # value (typically ${VAR}) is still valid.  Popping it causes downstream
+    # resolution to fall back to hardcoded defaults (#17101).
     if api_mode:
         config["api_mode"] = api_mode
     else:

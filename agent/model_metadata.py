@@ -1708,6 +1708,15 @@ def get_model_context_length(
     if config_context_length is not None and isinstance(config_context_length, int) and config_context_length > 0:
         return config_context_length
 
+    # [owner-patch] P29: Expand env var templates so ${VAR} strings from
+    # config.yaml don't leak into probe URLs or model-lookup keys.  See #17101.
+    if base_url and "${" in base_url:
+        try:
+            from hermes_cli.config import _expand_env_vars
+            base_url = str(_expand_env_vars(base_url))
+        except Exception:
+            pass
+
     # 0a. MoA virtual provider — ``model`` is a preset name, not a real model,
     # and ``base_url`` is the local virtual endpoint, so every probe below would
     # miss and fall through to the 256K default. The aggregator is the acting
