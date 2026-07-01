@@ -866,6 +866,16 @@ def clear_session(session_key: str) -> None:
         # immediately so the old run can unwind instead of idling until timeout.
         entry.result = "deny"
         entry.event.set()
+    # [owner] Skill-script auto-approval state for this session must also
+    # not survive a session boundary. WR-05 — /new, /reset, and any
+    # per-session clear_session() should clear the viewed-skills set.
+    try:
+        from owner.approval.skill_script_approval import reset_session_skills_viewed
+        reset_session_skills_viewed(session_key)
+    except Exception:
+        # owner/ may be removed or import-failing; never let a config
+        # boundary break a session cleanup.
+        pass
 
 
 def is_session_yolo_enabled(session_key: str) -> bool:

@@ -6700,6 +6700,14 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
             self._notify_session_boundary("on_session_finalize")
 
         old_session_id = self.session_id
+        # [owner] Clear per-session skill-script auto-approval state for the
+        # outgoing session. WR-05 — without this, scripts viewed under the
+        # old session_id would auto-approve under the new one.
+        try:
+            from owner.approval.skill_script_approval import reset_session_skills_viewed
+            reset_session_skills_viewed(old_session_id or None)
+        except Exception:
+            pass
         if self._session_db and old_session_id:
             # Flush any un-persisted messages from the current turn to the
             # old session *before* rotating.  /new can be called mid-turn

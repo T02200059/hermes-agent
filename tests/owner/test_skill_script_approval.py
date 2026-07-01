@@ -205,6 +205,52 @@ def test_cross_session_isolation_uses_contextvar(tmp_path, monkeypatch):
         reset_current_session_key(token_b2)
 
 
+def test_clear_session_via_approval_module_clears_viewed_set(tmp_path, monkeypatch):
+    """WR-05: tools.approval.clear_session() must clear the viewed-skills set.
+
+    /new and /reset call clear_session() to drop per-session approval state;
+    the skill-script auto-approval state must drop with it.
+    """
+    skills_root = tmp_path / "skills" / "devops" / "deploy-skill"
+    skills_root.mkdir(parents=True)
+    (skills_root / "deploy.sh").write_text("#!/bin/bash\n", encoding="utf-8")
+
+    patch_yaml = tmp_path / "patch.yaml"
+    patch_yaml.write_text(
+        json.dumps(
+            {
+                "owner": {
+                    "approvals": {
+                        "skill_script_allowlist": [
+                            {"skill": "deploy-skill", "paths": [], "extensions": [".sh"]}
+                        ]
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    ssa.invalidate_skill_scripts_cache()
+
+    from tools.approval import (
+        set_current_session_key,
+        reset_current_session_key,
+        clear_session,
+    )
+
+    token = set_current_session_key("session-X")
+    try:
+        ssa.track_session_skill_view("deploy-skill")
+        assert ssa.is_skill_script_allowed("bash deploy.sh") == "deploy-skill"
+
+        clear_session("session-X")
+        # Now session-X's viewed-skills set should be gone — must not auto-approve.
+        assert ssa.is_skill_script_allowed("bash deploy.sh") is None
+    finally:
+        reset_current_session_key(token)
+
+
 # ---------------------------------------------------------------------------
 # Integration: guard functions in tools/approval.py now respect the bypass
 # (both the unified check_all_command_guards used by terminal, and the
