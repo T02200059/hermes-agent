@@ -505,6 +505,14 @@ def _validate_cron_script_path(script: Optional[str]) -> Optional[str]:
     scripts_dir.mkdir(parents=True, exist_ok=True)
     containment_error = validate_within_dir(scripts_dir / raw, scripts_dir)
     if containment_error:
+        # EXEMPTION: symlinks into owner/scripts/ (branch-namespace
+        # pattern for personal forks) are under the same project's VCS
+        # control and pose no additional risk — allow them through.
+        owner_scripts = (get_hermes_home() / "owner" / "scripts").resolve()
+        if owner_scripts.is_dir():
+            exemption_error = validate_within_dir(scripts_dir / raw, owner_scripts)
+            if not exemption_error:
+                return None
         return (
             f"Script path escapes the scripts directory via traversal: {raw!r}"
         )

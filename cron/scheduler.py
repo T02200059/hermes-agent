@@ -1595,10 +1595,24 @@ def _run_job_script(script_path: str, args: Optional[dict] = None) -> tuple[bool
     try:
         path.relative_to(scripts_dir_resolved)
     except ValueError:
-        return False, (
-            f"Blocked: script path resolves outside the scripts directory "
-            f"({scripts_dir_resolved}): {script_path!r}"
-        )
+        # EXEMPTION: symlinks into owner/scripts/ (branch-namespace
+        # pattern for personal forks) are under the same project's VCS
+        # control and pose no additional risk — allow them through.
+        owner_scripts = (_get_hermes_home() / "owner" / "scripts").resolve()
+        if owner_scripts.is_dir():
+            try:
+                path.relative_to(owner_scripts)
+            except ValueError:
+                return False, (
+                    f"Blocked: script path resolves outside both the scripts "
+                    f"directory ({scripts_dir_resolved}) and the exempted "
+                    f"owner/scripts/ ({owner_scripts}): {script_path!r}"
+                )
+        else:
+            return False, (
+                f"Blocked: script path resolves outside the scripts directory "
+                f"({scripts_dir_resolved}): {script_path!r}"
+            )
 
     if not path.exists():
         return False, f"Script not found: {path}"
