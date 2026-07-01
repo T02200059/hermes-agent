@@ -15,11 +15,23 @@ approval:
   cancelled:       "      ✗ 已取消"
   blocklist_message: "此命令位于无条件拦截列表中，无法被批准。"
 
-  # 飞书审批卡片 — 交互式卡片 UI 文案
-  feishu_card_title: "⚠️ 命令审批"
-  feishu_reason_label: "**原因：**{description}"
+  # 拦截/硬拦截/拒绝消息 — 命令被阻止时返回给 agent。
+  hardline_blocked: "已拦截（硬拦截）：{description}。此命令位于无条件拦截列表中，无法通过 agent 执行 — 即使使用 --yolo、/yolo、approvals.mode=off 或 cron 批准模式也不行。如果你确实需要运行它，请在 agent 外的终端中手动运行。"
+  sudo_stdin_blocked: "已拦截：{description}。请勿通过管道向 'sudo -S' 传递密码 — 这是一个暴力破解攻击路径。如果 agent 需要免密 sudo，请在 .env 文件中设置 SUDO_PASSWORD，或者在你自己的终端中手动运行 sudo 命令。"
+  cron_blocked: "已拦截：命令被标记为危险（{description}），但定时任务运行时没有用户在场批准。请寻找替代方案来避免此命令。如需在定时任务中允许危险命令，请在 config.yaml 中设置 approvals.cron_mode: approve。"
+  gateway_asking: "⚠️ 此命令具有潜在危险（{description}）。正在请求用户批准。\n\n**命令：**\n```\n{command}\n```"
+  gateway_asking_combined: "⚠️ {description}。正在请求用户批准。\n\n**命令：**\n```\n{command}\n```"
+  user_denied: "已拦截：用户拒绝了此具有潜在危险的命令（匹配 '{description}' 模式）。请勿重试此命令 — 用户已明确拒绝。"
+  smart_denied: "智能审批拦截：{description}。此命令被评估为确实危险。请勿重试。"
+  gateway_notify_failed: "已拦截：无法向用户发送审批请求。请勿重试。"
+  gateway_timeout_denied: "已拦截：命令{reason}。请勿重试此命令。"
+  cli_denied: "已拦截：用户已拒绝。请勿重试。"
+
+  # 飞书审批卡片 — 交互式卡片 UI 文案。
+  feishu_card_title: "⚠️ 命令需要审批"
+  feishu_reason_label: "**原因：** {description}"
   feishu_btn_once: "✅ 允许一次"
-  feishu_btn_session: "✅ 本次会话允许"
+  feishu_btn_session: "✅ 本次会话"
   feishu_btn_always: "✅ 永久允许"
   feishu_btn_deny: "❌ 拒绝"
   feishu_resolved_once: "已允许一次"
@@ -28,7 +40,303 @@ approval:
   feishu_resolved_deny: "已拒绝"
   feishu_resolved_default: "已处理"
   feishu_resolved_body: "由 {user_name} 操作\n\n```\n{command}\n```"
-  feishu_permanent_disabled: "💡 永久允许已禁用，请选择“允许一次”或“本次会话允许”。"
+  feishu_permanent_disabled: "💡 永久允许已禁用，请选择允许一次或本次会话"
+  qqbot_permanent_disabled: "💡 永久允许已禁用，请选择允许一次或本次会话"
+  yolo_auto_resolved: "🔄 YOLO 模式已启用，{count} 条待审批命令已自动批准。"
+
+  # 通用原因标签 — fallback/Telegram/Discord/Slack 使用。
+  reason_label: "原因：{description}"
+  # 安全扫描前缀（tirith 发现）
+  scan_prefix: "安全扫描"
+
+  # 危险模式描述 — 从 DANGEROUS_PATTERNS key 翻译。命令/术语不翻译。
+  dangerous_desc:
+    delete_in_root_path: "根路径删除"
+    recursive_delete: "递归删除"
+    recursive_delete_long_flag: "递归删除（长选项）"
+    world_other_writable_permissions: "全局/其他用户可写权限"
+    recursive_world_other_writable_long_flag: "递归全局/其他用户可写（长选项）"
+    recursive_chown_to_root: "递归 chown 至 root"
+    recursive_chown_to_root_long_flag: "递归 chown 至 root（长选项）"
+    format_filesystem: "格式化文件系统"
+    disk_copy: "磁盘复制"
+    write_to_block_device: "写入块设备"
+    sql_drop: "SQL DROP"
+    sql_delete_without_where: "SQL DELETE 无 WHERE"
+    sql_truncate: "SQL TRUNCATE"
+    overwrite_system_config: "覆盖系统配置"
+    stop_restart_system_service: "停止/重启系统服务"
+    system_shutdown_reboot: "系统关机/重启"
+    init_0_6_shutdown_reboot: "init 0/6（关机/重启）"
+    systemctl_poweroff_reboot: "systemctl poweroff/reboot"
+    telinit_0_6_shutdown_reboot: "telinit 0/6（关机/重启）"
+    kill_all_processes: "杀死所有进程"
+    force_kill_processes: "强制杀死进程"
+    force_kill_processes_killall_kill: "强制杀死进程（killall -KILL）"
+    force_kill_processes_killall_s_kill: "强制杀死进程（killall -s KILL）"
+    kill_processes_by_regex_killall_r: "按正则杀死进程（killall -r）"
+    fork_bomb: "fork 炸弹"
+    shell_command_via_c_lc_flag: "通过 -c/-lc 选项执行 shell 命令"
+    script_execution_via_e_c_flag: "通过 -e/-c 选项执行脚本"
+    pipe_remote_content_to_shell: "远程内容管道至 shell"
+    execute_remote_script_via_process_substitution: "通过进程替换执行远程脚本"
+    overwrite_system_file_via_tee: "通过 tee 覆盖系统文件"
+    overwrite_system_file_via_redirection: "通过重定向覆盖系统文件"
+    overwrite_project_env_config_via_tee: "通过 tee 覆盖项目 env/config"
+    overwrite_project_env_config_via_redirection: "通过重定向覆盖项目 env/config"
+    xargs_with_rm: "xargs 配合 rm"
+    find_exec_execdir_rm: "find -exec/-execdir rm"
+    find_delete: "find -delete"
+    stop_restart_hermes_gateway_kills_running_agents: "停止/重启 hermes gateway（会杀死运行中的 agent）"
+    hermes_update_restarts_gateway_kills_running_agents: "hermes update（重启 gateway，会杀死运行中的 agent）"
+    start_gateway_outside_systemd: "在 systemd 外启动 gateway（请使用 'systemctl --user restart hermes-gateway'）"
+    nohup_gateway_run: "在 systemd 外启动 gateway（请使用 'systemctl --user restart hermes-gateway'）"
+    kill_hermes_gateway_process_self_termination: "杀死 hermes/gateway 进程（自毁）"
+    kill_process_via_pgrep_expansion_self_termination: "通过 pgrep 展开杀死进程（自毁）"
+    kill_process_via_backtick_pgrep_expansion_self_termination: "通过反引号 pgrep 展开杀死进程（自毁）"
+    copy_move_file_into_system_config_path: "复制/移动文件至系统配置路径"
+    overwrite_project_env_config_file: "覆盖项目 env/config 文件"
+    in_place_edit_of_system_config: "就地编辑系统配置"
+    in_place_edit_of_system_config_long_flag: "就地编辑系统配置（长选项）"
+    script_execution_via_heredoc: "通过 heredoc 执行脚本"
+    git_reset_hard_destroys_uncommitted_changes: "git reset --hard（销毁未提交的更改）"
+    git_force_push_rewrites_remote_history: "git force push（重写远端历史）"
+    git_force_push_short_flag_rewrites_remote_history: "git force push 短选项（重写远端历史）"
+    git_clean_with_force_deletes_untracked_files: "git clean 配合 force（删除未跟踪文件）"
+    git_branch_force_delete: "git branch 强制删除"
+    chmod_x_followed_by_immediate_execution: "chmod +x 后立即执行"
+    sudo_with_privilege_flag_stdin_askpass_shell_list: "sudo 带特权选项（stdin/askpass/shell/list）"
+    sudo_with_combined_flag_privilege_escalation: "sudo 组合选项特权提升"
+
+  # 硬拦截模式描述 — 从 HARDLINE_PATTERNS key 翻译。
+  hardline_desc:
+    recursive_delete_of_root_filesystem: "递归删除根文件系统"
+    recursive_delete_of_system_directory: "递归删除系统目录"
+    recursive_delete_of_home_directory: "递归删除主目录"
+    format_filesystem_mkfs: "格式化文件系统（mkfs）"
+    dd_to_raw_block_device: "dd 写入原始块设备"
+    redirect_to_raw_block_device: "重定向至原始块设备"
+    fork_bomb: "fork 炸弹"
+    kill_all_processes: "杀死所有进程"
+
+  # Tirith 规则翻译 — 按 tirith JSON 输出的 rule_id 索引。
+  # 仅翻译 title；description 含动态内容（IP 地址、URL）保留原文。
+  tirith:
+    raw_ip_url:
+      title: "URL 使用原始 IP 地址"
+    plain_http_to_sink:
+      title: "执行上下文中的明文 HTTP URL"
+    private_network_access:
+      title: "私有网络访问"
+    curl_pipe_shell:
+      title: "管道至解释器：curl | shell"
+    non_ascii_hostname:
+      title: "主机名含非 ASCII 字符"
+    punycode_domain:
+      title: "检测到 Punycode 域名"
+    lookalike_tld:
+      title: "检测到仿冒 TLD"
+    archive_extract:
+      title: "归档解压至敏感路径"
+    # === HOSTNAME ===
+    mixed_script_in_label:
+      title: "主机名标签中的混合 Unicode 脚本"
+    userinfo_trick:
+      title: "用户信息域欺骗"
+    confusable_domain:
+      title: "易混淆域名"
+    non_standard_port:
+      title: "已知域名上的非标准端口"
+    invalid_host_chars:
+      title: "主机名中的无效字符"
+    trailing_dot_whitespace:
+      title: "主机名末尾的点或空白"
+    # === PATH ===
+    non_ascii_path:
+      title: "URL 路径中的非 ASCII 字符"
+    homoglyph_in_path:
+      title: "URL 路径中的同形字"
+    double_encoding:
+      title: "URL 中的双重百分比编码"
+    # === TRANSPORT ===
+    schemeless_to_sink:
+      title: "下载命令中的无协议 URL"
+    insecure_tls_flags:
+      title: "不安全的 TLS 标志"
+    shortened_url:
+      title: "检测到短链接"
+    # === TERMINAL ===
+    ansi_escapes:
+      title: "粘贴内容中的 ANSI 转义序列"
+    control_chars:
+      title: "覆盖显示的控件字符"
+    bidi_controls:
+      title: "Unicode 双向覆盖字符"
+    zero_width_chars:
+      title: "零宽字符"
+    hidden_multiline:
+      title: "多行粘贴中的隐藏命令"
+    unicode_tags:
+      title: "Unicode 标签字符"
+    invisible_math_operator:
+      title: "不可见的数学运算符"
+    variation_selector:
+      title: "Unicode 变体选择符"
+    invisible_whitespace:
+      title: "异常不可见空白"
+    hangul_filler:
+      title: "韩文填充字符"
+    confusable_text:
+      title: "Unicode 易混淆文本"
+    # === COMMAND ===
+    pipe_to_interpreter:
+      title: "管道至 shell 解释器"
+    wget_pipe_shell:
+      title: "wget 管道至 shell"
+    httpie_pipe_shell:
+      title: "HTTPie 管道至 shell"
+    xh_pipe_shell:
+      title: "xh 管道至 shell"
+    dotfile_overwrite:
+      title: "通过重定向覆盖 dotfile"
+    proc_mem_access:
+      title: "通过 /proc 访问进程内存"
+    docker_remote_priv_esc:
+      title: "Docker 远程守护进程提权"
+    credential_file_sweep:
+      title: "多次访问凭据文件"
+    base64_decode_execute:
+      title: "Base64 解码并执行"
+    data_exfiltration:
+      title: "通过上传泄露数据"
+    # === CODE ===
+    dynamic_code_execution:
+      title: "带编码 payload 的动态代码执行"
+    obfuscated_payload:
+      title: "混淆代码 payload"
+    suspicious_code_exfiltration:
+      title: "代码文件中的可疑网络请求"
+    # === ENVIRONMENT ===
+    proxy_env_set:
+      title: "设置了代理环境变量"
+    sensitive_env_export:
+      title: "敏感凭据导出到环境变量"
+    code_injection_env:
+      title: "通过环境变量注入代码"
+    interpreter_hijack_env:
+      title: "解释器模块路径劫持"
+    shell_injection_env:
+      title: "通过启动变量注入 shell"
+    # === NETWORK ===
+    metadata_endpoint:
+      title: "云元数据端点访问"
+    command_network_deny:
+      title: "策略网络拒绝列表匹配"
+    # === CONFIG ===
+    config_injection:
+      title: "AI 配置文件中的提示注入"
+    config_suspicious_indicator:
+      title: "配置文件中的可疑指示"
+    config_malformed:
+      title: "配置文件格式错误"
+    config_non_ascii:
+      title: "ASCII 配置文件中的非 ASCII 字符"
+    config_invisible_unicode:
+      title: "配置文件中的不可见 Unicode"
+    mcp_insecure_server:
+      title: "MCP 服务器使用不安全传输"
+    mcp_untrusted_server:
+      title: "MCP 服务器来源不可信"
+    mcp_duplicate_server_name:
+      title: "重复的 MCP 服务器名称"
+    mcp_overly_permissive:
+      title: "过度宽松的 MCP 服务器"
+    mcp_suspicious_args:
+      title: "MCP 服务器参数中的 shell 元字符"
+    # === ECOSYSTEM ===
+    git_typosquat:
+      title: "Git 仓库模仿欺诈"
+    docker_untrusted_registry:
+      title: "来自不可信仓库的 Docker 镜像"
+    pip_url_install:
+      title: "pip 从非 PyPI URL 安装"
+    npm_url_install:
+      title: "npm 从非注册表 URL 安装"
+    web3_rpc_endpoint:
+      title: "Web3 RPC 端点"
+    web3_address_in_url:
+      title: "URL 中的以太坊地址"
+    vet_not_configured:
+      title: "未配置 cargo-vet"
+    # === RENDERED ===
+    hidden_css_content:
+      title: "CSS 隐藏内容"
+    hidden_color_content:
+      title: "同色隐藏文本"
+    hidden_html_attribute:
+      title: "隐藏的 HTML 属性"
+    markdown_comment:
+      title: "Markdown 中的 HTML 注释"
+    html_comment:
+      title: "HTML 注释"
+    # === CLOAKING ===
+    server_cloaking:
+      title: "服务端内容伪装"
+    # === CLIPBOARD ===
+    clipboard_hidden:
+      title: "剪贴板粘贴中的隐藏内容"
+    # === PDF ===
+    pdf_hidden_text:
+      title: "PDF 中的隐藏文本"
+    # === CREDENTIAL ===
+    credential_in_text:
+      title: "检测到已知凭据模式"
+    high_entropy_secret:
+      title: "检测到高熵密钥"
+    private_key_exposed:
+      title: "私钥泄露"
+    # === POLICY ===
+    policy_blocklisted:
+      title: "策略黑名单匹配"
+    # === CUSTOM ===
+    custom_rule_match:
+      title: "自定义规则匹配"
+    # === LICENSE ===
+    license_required:
+      title: "需要许可证"
+    # === THREATINTEL ===
+    threat_malicious_package:
+      title: "已知恶意包"
+    threat_malicious_ip:
+      title: "已知恶意 IP 地址"
+    threat_package_typosquat:
+      title: "确认的包名模仿"
+    threat_package_similar_name:
+      title: "包名与流行包相似"
+    threat_malicious_url:
+      title: "已知恶意 URL"
+    threat_phishing_url:
+      title: "已知钓鱼 URL"
+    threat_tor_exit_node:
+      title: "Tor 出口节点 IP"
+    threat_threat_fox_ioc:
+      title: "ThreatFox IOC 匹配"
+    threat_osv_vulnerable:
+      title: "OSV 漏洞检测"
+    threat_cisa_kev:
+      title: "CISA 已知利用漏洞"
+    threat_suspicious_package:
+      title: "可疑包元数据"
+    threat_safe_browsing:
+      title: "Google 安全浏览匹配"
+
+  # 更新提示卡片
+  feishu_update_card_title: "⚕ 更新需要你的确认"
+  feishu_update_default_hint: "默认：`{default}`"
+  feishu_update_yes: "是"
+  feishu_update_no: "否"
+  feishu_update_title: "更新提示已回答：{label}"
+  feishu_update_body: "由 **{user_name}** 回答"
 
 gateway:
   approval_expired: "⚠️ 批准已过期（代理不再等待）。请让代理重试。"
@@ -37,6 +345,34 @@ gateway:
   no_active_goal:   "当前没有活跃的目标。"
   config_read_failed: "⚠️ 无法读取 config.yaml：{error}"
   config_save_failed: "⚠️ 无法保存配置：{error}"
+  silent_api_disconnect: "⚠️ API 连接在收到任何响应前就断开了。这通常是临时的网络或服务商问题 — 请重试。"
+
+  # Gateway 生命周期消息 — 重启/关闭/排空时显示
+  shutdown_notify_restart: "🌆 网关正在重启 — 当前任务将被中断。重启后发送任意消息，我会尝试从断点处继续。"
+  shutdown_notify_stop:    "⏸️ 网关正在关闭 — 当前任务将被中断。"
+  restart_success:         "🌃 网关重启成功。你的会话继续。"
+  online:                  "🏙 网关已上线 — Hermes 已准备就绪。"
+
+  # 忙碌应答 — 代理正在运行时用户发消息的反馈
+  busy_drain_queued:        "⏳ 网关正在{action} — 消息已排队，待网关恢复后进入下一轮。"
+  busy_drain_not_accepting: "⏳ 网关正在{action}，目前无法接受新的轮次。"
+  busy_drain_no_work:       "⏳ 网关正在{action}，目前无法接受新任务。"
+  busy_steer_ack:           "⏩ 已导向当前运行{status_detail}。你的消息将在下一次工具调用后送达。"
+  busy_queue_ack:           "⏳ 已排队到下一轮{status_detail}。当前任务完成后我会回复你。"
+  busy_interrupt_ack:       "⚡ 正在中断当前任务{status_detail}。稍后我会回复你的消息。"
+  busy_subagent_queued:     "⏳ 子代理运行中{status_detail} — 你的消息已排队等待完成（使用 /stop 取消所有操作）。"
+
+  # /steer 命令回复
+  steer_failed:            "⚠️ 导向失败：{error}"
+  steer_queued:            "⏩ 导向已排队 — 将在下一次工具调用后送达：'{preview}'"
+  steer_empty:             "导向被拒绝（内容为空）。"
+
+  # 强制停止
+  force_stop_pending:      "⚡ 已强制停止。代理尚未启动完成 — 会话已解锁。"
+
+  # 长时间运行/无活动通知
+  still_working:           "⏳ 仍在工作中...（已耗时 {elapsed} 分钟{status_detail}）"
+  no_activity_warning:     "⚠️ 已 {elapsed} 分钟无活动。如果代理未在 {remaining} 分钟内响应，将会超时。可继续等待或使用 /reset。"
 
   model:
     error_prefix:           "错误：{error}"
@@ -76,6 +412,10 @@ gateway:
     session_plural:        "✅ 命令已批准（本次会话内允许该模式）（{count} 条命令）。代理正在恢复…"
     always_singular:       "✅ 命令已批准（永久允许该模式）。代理正在恢复…"
     always_plural:         "✅ 命令已批准（永久允许该模式）（{count} 条命令）。代理正在恢复…"
+    singular:              "✅ 记忆已更新 — 已批准 {count} 条提案。"
+
+  credits:
+    not_logged_in:         "尚未登录 Nous Portal。请运行 `hermes login` 后查看额度。"
 
   background:
     usage:                 "用法：/background <提示>\n示例：/background 总结今天 HN 上热门的故事\n\n在独立会话中运行该提示。你可以继续聊天 — 结果完成后将在此显示。"
@@ -115,6 +455,11 @@ gateway:
     auto_delete:           "⏱ 粘贴内容将在 6 小时后自动删除。"
     full_logs_hint:        "如需上传完整日志，请在 CLI 中使用 `hermes debug share`。"
     share_hint:            "请将这些链接分享给 Hermes 团队以获得支持。"
+
+  destructive_slash_confirm:
+    prompt: "⚠️ **确认 /{command}**\n\n{detail}\n\n请选择：\n• **批准一次** — 仅本次执行\n• **始终批准** — 立即执行并永久静默此提示\n• **取消** — 保持当前会话不变\n\n_文本备用：回复 `{_p}approve`、`{_p}always` 或 `{_p}cancel`。_"
+    cancelled: "🟡 /{command} 已取消。会话不变。"
+    always_note: "\n\nℹ️ 今后 /clear、/new、/reset 和 /undo 将直接执行，不再询问。如需重新启用，请在 config.yaml 中设置 `approvals.destructive_slash_confirm: true`。"
 
   deny:
     stale:                 "❌ 命令已拒绝（批准已过期）。"
@@ -230,18 +575,10 @@ gateway:
 
   restart:
     in_progress:           "⏳ 网关重启已在进行中……"
-    restarting:            "♻ 正在重启网关。如果 60 秒内没有收到通知，请在控制台运行 `hermes gateway restart` 重启。"
+    restarting:            "🌇 正在重启网关。如果 60 秒内没有收到通知，请在控制台运行 `hermes gateway restart` 重启。"
 
   resume:
     db_unavailable:        "会话数据库不可用。"
-    parse_error:           "⚠️ Could not parse `/resume` arguments: {error}.
-Use quotes around titles with spaces, for example: `/resume \"Project A Plan\"`."
-    matrix_no_named_sessions: "No named sessions found for this Matrix room.
-Use `/title My Session` to name the current room session, `/resume --all` to list all Matrix sessions, or `/resume --cross-room <session name>` to explicitly cross room boundaries."
-    matrix_blocked_no_origin: "⚠️ Matrix /resume blocked: this named session has no recorded room origin, so Hermes will not resume it inside the current room by default. Use `/resume --cross-room {name}` if you intentionally want to cross room boundaries."
-    matrix_blocked_other_room: "⚠️ Matrix /resume blocked: that session belongs to a different Matrix room ({room}). Use `/resume --cross-room {name}` if you intentionally want to resume it here."
-    matrix_cross_room_success: "⚠️ Cross-room resume: resumed **{title}** inside Matrix room **{room}**.
-Future messages in this room will use that transcript until `/reset` or another `/resume`.{msg_part}"
     no_named_sessions:     "未找到已命名的会话。\n使用 `/title 我的会话` 为当前会话命名，然后用 `/resume 我的会话` 返回。"
     list_header:           "📋 **已命名会话**\n"
     list_item:             "• **{title}**{preview_part}"
@@ -250,6 +587,7 @@ Future messages in this room will use that transcript until `/reset` or another 
     list_footer:           "\n用法：`/resume <会话名称>`"
     list_footer_numbered:  "\n用法：`/resume <会话名称>` 或 `/resume <编号>`（例如，`/resume 1` 表示最近的会话）"
     list_failed:           "无法列出会话：{error}"
+    card_title:            "恢复最近会话"
     out_of_range:          "恢复索引 {index} 超出范围。\n请使用不带参数的 `/resume` 查看可用会话。"
     not_found:             "未找到匹配 '**{name}**' 的会话。\n使用不带参数的 `/resume` 查看可用会话。"
     already_on:            "📌 已在会话 **{name}** 上。"
@@ -257,6 +595,11 @@ Future messages in this room will use that transcript until `/reset` or another 
     resumed_one:           "↻ 已恢复会话 **{title}**（{count} 条消息）。对话已还原。"
     resumed_many:          "↻ 已恢复会话 **{title}**（{count} 条消息）。对话已还原。"
     resumed_no_count:      "↻ 已恢复会话 **{title}**。对话已还原。"
+    parse_error:           "无法解析恢复命令：{error}"
+    matrix_no_named_sessions: "本房间内未找到已命名的会话。\n用 `/title 我的会话` 命名当前会话，之后再用 `/resume 我的会话` 返回。"
+    matrix_blocked_no_origin: "无法恢复 **{name}** — 它未关联到任何 Matrix 房间，且跨房间恢复已禁用。可用 `/resume --all` 覆盖。"
+    matrix_blocked_other_room: "无法恢复 **{name}** — 它属于另一个房间（**{room}**）。跨房间恢复已禁用。可用 `/resume --all` 覆盖。"
+    matrix_cross_room_success: "↻ 已将会话 **{title}**{msg_part} 恢复到 **{room}**。对话已还原。"
 
   retry:
     no_previous:           "没有可重试的上一条消息。"
@@ -274,12 +617,6 @@ Future messages in this room will use that transcript until `/reset` or another 
 
   status:
     header:                "📊 **Hermes 网关状态**"
-    matrix_scope_header:   "**Matrix scope:**"
-    matrix_scope_room:     "  room: {room}"
-    matrix_scope_room_id:  "  room_id: {room_id}"
-    matrix_scope_thread:   "  thread_id: {thread_id}"
-    matrix_scope_mode:     "  session_scope: {scope}"
-    matrix_scope_key:      "  session_key: {session_key}"
     session_id:            "**会话 ID：** `{session_id}`"
     title:                 "**标题：** {title}"
     created:               "**创建时间：** {timestamp}"
@@ -289,11 +626,17 @@ Future messages in this room will use that transcript until `/reset` or another 
     context:               "**Context:** {used} / {total} ({pct}%)"
     context_used:          "**Context:** ~{used} tokens"
     tokens:                "**Token 数：** {tokens}"
-    agent_running:         "**代理运行中：** {state}"
+    agent_running:         "**Agent运行中：** {state}"
     state_yes:             "是 ⚡"
     state_no:              "否"
     queued:                "**排队的后续：** {count}"
     platforms:             "**已连接平台：** {platforms}"
+    matrix_scope_header:   "**Matrix 会话作用域：**"
+    matrix_scope_room:     "**房间：** {room}"
+    matrix_scope_room_id:  "**房间 ID：** `{room_id}`"
+    matrix_scope_thread:   "**话题：** {thread_id}"
+    matrix_scope_mode:     "**作用域模式：** {scope}"
+    matrix_scope_key:      "**会话键：** `{session_key}`"
 
   stop:
     stopped_pending:       "⚡ 已停止。代理尚未启动 — 你可以继续此会话。"
@@ -323,8 +666,8 @@ Future messages in this room will use that transcript until `/reset` or another 
 
   undo:
     nothing:               "没有可撤销的内容。"
-    removed:               "↩️ 已撤销 {turns} 个回合（{count} 条消息）。\n已备份到：「{preview}」\n复制/编辑上面的文本并发送，即可从此处重新提问。"
-    invalid_count:         "无效的数量「{arg}」—— 请使用 /undo 或 /undo N。"
+    removed:               "↩️ 已撤销 {count} 条消息。\n已移除：「{preview}」"
+    invalid_count:         "无效的轮数 '{arg}'。用法：`/undo` 或 `/undo <n>`（例如 `/undo 3`）。"
 
   update:
     platform_not_messaging:  "✗ /update 仅在消息平台可用。请在终端运行 `hermes update`。"
@@ -339,6 +682,8 @@ Future messages in this room will use that transcript until `/reset` or another 
     label_model:              "模型：`{model}`"
     label_input_tokens:       "输入令牌：{count}"
     label_cache_read:         "缓存读取令牌：{count}"
+
+    label_cache_hit_rate:     "缓存命中率：{rate}%"
     label_cache_write:        "缓存写入令牌：{count}"
     label_output_tokens:      "输出令牌：{count}"
     label_total:              "总计：{count}"
@@ -352,9 +697,6 @@ Future messages in this room will use that transcript until `/reset` or another 
     label_estimated_context:  "估计上下文：~{count} 个令牌"
     detailed_after_first:     "_（首次代理响应后可查看详细使用情况）_"
     no_data:                  "此会话暂无使用数据。"
-
-  credits:
-    not_logged_in:            "未登录 Nous Portal。登录后即可查看额度余额并充值。"
 
   verbose:
     not_enabled:           "`/verbose` 命令未在消息平台启用。\n\n请在 `config.yaml` 中启用：\n```yaml\ndisplay:\n  tool_progress_command: true\n```"
@@ -379,8 +721,8 @@ Future messages in this room will use that transcript until `/reset` or another 
     label_off:             "关闭（仅文本）"
     label_voice_only:      "开启（仅对语音消息进行语音回复）"
     label_all:             "TTS（对所有消息进行语音回复）"
-    help:                  "{toggle}\n\n**/voice 用法**\n• `/voice on` — 当你发送语音消息时用语音回复\n• `/voice tts` — 对*每条*消息都用语音回复\n• `/voice off` — 恢复为纯文本回复\n• `/voice status` — 显示当前模式\n• `/voice`（无参数）— 在开启和关闭之间快速切换{channels}"
-    help_channels:         "\n\n**实时语音频道 (Discord)**\n• 先加入一个语音频道，然后 `/voice channel` — 我会加入、聆听并用语音回复\n• `/voice leave` — 断开语音频道"
+    help:                  "{toggle}\n子命令：`/voice on` · `/voice off` · `/voice tts` · `/voice status`{channels}"
+    help_channels:         "\n语音频道：`/voice join` · `/voice leave`"
 
   yolo:
     disabled:                   "⚠️ 本会话 YOLO 模式 **已关闭** — 危险命令将需要批准。"
@@ -391,3 +733,26 @@ Future messages in this room will use that transcript until `/reset` or another 
     session_db_unavailable_prefix: "会话数据库不可用"
     session_not_found:           "数据库中未找到该会话。"
     warn_passthrough:            "⚠️ {error}"
+
+memory_proposal:
+  action_add: "添加"
+  action_replace: "替换"
+  action_remove: "删除"
+  card_title: "💾 Memory 提案确认"
+  card_title_batch: "💾 Memory 提案确认（批量 · {count} 条操作）"
+  card_operation: "操作"
+  card_target: "目标"
+  card_existing: "现有内容"
+  card_new_content: "新内容"
+  card_empty: "(无)"
+  card_empty_content: "(无内容)"
+  card_summary_label: "操作列表"
+  card_op_index: "({idx}/{total}) "
+  card_more_ops: "… 还有 {count} 条操作"
+  card_char_budget: "预计字符: {final}/{limit}"
+  btn_approve: "✅ 批准"
+  btn_deny: "🟥 拒绝"
+  resolved_approved: "内存提案已批准"
+  resolved_denied: "内存提案已拒绝"
+  confirm_approved: "✅ 内存提案已批准"
+  confirm_denied: "🟥 内存提案已拒绝"

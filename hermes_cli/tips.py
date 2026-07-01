@@ -475,11 +475,25 @@ TIPS = [
 ]
 
 
-def get_random_tip(exclude_recent: int = 0) -> str:
+def get_random_tip(exclude_recent: int = 0) -> str:  # [owner] i18n: align with config
     """Return a random tip string.
+
+    Supports locale-aware tips via ``owner/tips_zh.py``.  Resolves the
+    active language through ``agent.i18n.get_language()`` (env > config >
+    default), so users who set ``display.language: zh`` in
+    ``config.yaml`` get Chinese tips without needing
+    ``HERMES_LANGUAGE=zh`` in the gateway process env.  Falls back to
+    the built-in English corpus on any failure.
 
     Args:
         exclude_recent: not used currently; reserved for future
             deduplication across sessions.
     """
+    try:
+        from agent.i18n import get_language as _get_language
+        if _get_language().lower().startswith("zh"):
+            from owner.tips_zh import TIPS as _TIPS_ZH  # [owner] i18n: Chinese tips
+            return random.choice(_TIPS_ZH)
+    except Exception:
+        pass
     return random.choice(TIPS)

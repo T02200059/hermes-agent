@@ -142,7 +142,7 @@ export function createSlashHandler(ctx: SlashHandlerContext): (cmd: string) => b
       })
       .catch(() => {
         gw.request('command.dispatch', { arg: parsed.arg, name: parsed.name, session_id: sid })
-          .then((raw: unknown) => {
+          .then(async (raw: unknown) => {
             if (stale()) {
               return
             }

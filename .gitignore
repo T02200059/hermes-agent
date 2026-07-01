@@ -5,7 +5,6 @@
 *.pyc*
 __pycache__/
 .venv/
-.venv
 .vscode/
 .env
 .env.local
@@ -134,12 +133,15 @@ scripts/out/
 # committed to the repo root. See the hermes-release skill.
 RELEASE_v*.md
 
+# Local editor/agent settings that are machine- or user-specific.
+.claude/settings.local.json
+.local/
+
 # Desktop demo-run scratch output (hermes writes demo/*.txt during recorded
 # walkthroughs). Throwaway artifacts, never part of the app.
 apps/desktop/demo/
 
-# PR infographics are rendered locally and embedded in PR descriptions via the
-# image-provider (fal.media) URL — they are NEVER committed to the repo. The
-# PR body is the archive. See the hermes-agent-dev skill's
-# pr-infographic-workflow reference (storage rule + lapse #8 / #COMMIT-1).
-infographic/
+# Runtime SQLite state database created by tests or local agent runs.
+state.db
+owner/feishu_profile/hermesxiyun/.env
+.bak-20260619
