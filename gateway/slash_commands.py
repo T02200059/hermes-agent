@@ -2987,6 +2987,34 @@ class GatewaySlashCommandsMixin:
                         error=(_aux_fail_err or "unknown error"),
                     )
                 )
+            # [owner] Feishu manual /compress: the throwaway tmp_agent has no
+            # status_callback wired to the user, so append the Chinese content
+            # summary to the command response for Feishu only.
+            try:
+                from gateway.config import Platform
+
+                if source.platform == Platform.FEISHU:
+                    from owner.feishu.compression_summary import (
+                        build_compression_summary_text,
+                    )
+
+                    _feishu_summary_text = build_compression_summary_text(
+                        compressed,
+                        before_count=len(msgs),
+                        after_count=len(compressed),
+                        compression_count=getattr(
+                            compressor, "compression_count", 1
+                        ),
+                        before_tokens=approx_tokens,
+                        after_tokens=new_tokens,
+                    )
+                    if _feishu_summary_text:
+                        lines.append(_feishu_summary_text)
+            except Exception:
+                logger.debug(
+                    "[owner] Feishu manual /compress summary failed",
+                    exc_info=True,
+                )
             return "\n".join(lines)
         except Exception as e:
             logger.warning("Manual compress failed: %s", e)

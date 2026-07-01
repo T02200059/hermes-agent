@@ -802,6 +802,24 @@ def compress_context(
     agent.context_compressor.last_completion_tokens = 0
     agent.context_compressor.awaiting_real_usage_after_compression = True
 
+    # [owner] Feishu compression summary: emit a short Chinese recap to Feishu
+    # users after successful compression.  The owner module gates on platform
+    # and fails open so this never interrupts compression.
+    try:
+        from owner.feishu.compression_summary import emit_compression_summary
+
+        emit_compression_summary(
+            agent,
+            compressed,
+            before_count=_pre_msg_count,
+            after_count=len(compressed),
+            compression_count=agent.context_compressor.compression_count,
+            before_tokens=approx_tokens,
+            after_tokens=_compressed_est,
+        )
+    except Exception:
+        pass
+
     # Clear the file-read dedup cache.  After compression the original
     # read content is summarised away — if the model re-reads the same
     # file it needs the full content, not a "file unchanged" stub.
