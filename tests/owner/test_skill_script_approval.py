@@ -129,6 +129,82 @@ def test_reset_session_clears_viewed_set():
     assert ssa.get_session_skills_viewed() == set()
 
 
+def test_cross_session_isolation_uses_contextvar(tmp_path, monkeypatch):
+    """CR-01: a skill viewed in session A must NOT auto-approve in session B.
+
+    Concurrent gateway sessions run in different executor threads/tasks,
+    each with its own ``_approval_session_key`` ContextVar. The per-session
+    viewed-skills dict must isolate them — viewing a skill in one session
+    must never leak to another session.
+    """
+    import contextvars
+
+    skills_root = tmp_path / "skills" / "devops" / "deploy-skill"
+    skills_root.mkdir(parents=True)
+    (skills_root / "deploy.sh").write_text("#!/bin/bash\necho deploy\n", encoding="utf-8")
+
+    patch_yaml = tmp_path / "patch.yaml"
+    patch_yaml.write_text(
+        json.dumps(
+            {
+                "owner": {
+                    "approvals": {
+                        "skill_script_allowlist": [
+                            {"skill": "deploy-skill", "paths": [], "extensions": [".sh"]}
+                        ]
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+
+    from tools.approval import (
+        set_current_session_key,
+        reset_current_session_key,
+    )
+
+    ssa.invalidate_skill_scripts_cache()
+
+    # Session A views the skill and runs a script — must auto-approve.
+    token_a = set_current_session_key("session-A")
+    try:
+        ssa.track_session_skill_view("deploy-skill")
+        assert ssa.is_skill_script_allowed("bash deploy.sh") == "deploy-skill"
+    finally:
+        reset_current_session_key(token_a)
+
+    # Session B starts fresh in the same process. It has NOT viewed the
+    # skill, so the same script invocation must NOT auto-approve.
+    token_b = set_current_session_key("session-B")
+    try:
+        assert ssa.is_skill_script_allowed("bash deploy.sh") is None
+    finally:
+        reset_current_session_key(token_b)
+
+    # Switching back to session A still works (its state is preserved).
+    token_a2 = set_current_session_key("session-A")
+    try:
+        assert ssa.is_skill_script_allowed("bash deploy.sh") == "deploy-skill"
+    finally:
+        reset_current_session_key(token_a2)
+
+    # Clearing session A's state must not touch session B.
+    ssa.reset_session_skills_viewed("session-A")
+    token_a3 = set_current_session_key("session-A")
+    try:
+        assert ssa.is_skill_script_allowed("bash deploy.sh") is None
+    finally:
+        reset_current_session_key(token_a3)
+    token_b2 = set_current_session_key("session-B")
+    try:
+        # Session B is still empty (was never viewed) — still no auto-approve.
+        assert ssa.is_skill_script_allowed("bash deploy.sh") is None
+    finally:
+        reset_current_session_key(token_b2)
+
+
 # ---------------------------------------------------------------------------
 # Integration: guard functions in tools/approval.py now respect the bypass
 # (both the unified check_all_command_guards used by terminal, and the

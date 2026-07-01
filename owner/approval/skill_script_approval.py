@@ -24,9 +24,29 @@ from typing import Dict, List, Optional, Set
 
 logger = logging.getLogger(__name__)
 
-# Session-scoped set of skill names that have been viewed this session.
-# Populated by skill_view() calls, consumed by is_skill_script_allowed().
-_session_skills_viewed: Set[str] = set()
+# Per-session set of skill names that have been viewed this session.
+# Keyed by the active approval session key (ContextVar) so concurrent
+# gateway sessions each get their own isolated set. CR-01 / WR-05 fix.
+_session_skills_viewed_by_key: Dict[str, Set[str]] = {}
+
+
+def _current_session_key() -> str:
+    try:
+        from tools.approval import get_current_session_key
+        return get_current_session_key(default="")
+    except Exception:
+        # Approval hot path: must never raise. tools.approval is only
+        # unavailable in minimal tool-only import contexts.
+        return ""
+
+
+def _get_or_create_viewed_set() -> Set[str]:
+    key = _current_session_key()
+    s = _session_skills_viewed_by_key.get(key)
+    if s is None:
+        s = set()
+        _session_skills_viewed_by_key[key] = s
+    return s
 
 _INTERPRETERS = frozenset({
     "bash", "sh", "zsh", "ksh", "dash",
@@ -174,17 +194,25 @@ def _scan_directory(dir_path: Path, extensions: List[str],
 def track_session_skill_view(skill_name: str) -> None:
     """Record that a skill was viewed (loaded) in the current session."""
     if skill_name:
-        _session_skills_viewed.add(skill_name)
+        _get_or_create_viewed_set().add(skill_name)
 
 
-def reset_session_skills_viewed() -> None:
-    """Clear the session-scoped skills viewed set (called on /new)."""
-    _session_skills_viewed.clear()
+def reset_session_skills_viewed(session_key: Optional[str] = None) -> None:
+    """Clear the session-scoped skills viewed set.
+
+    When ``session_key`` is provided, clear that specific session's set
+    (used by tools.approval.clear_session for an explicit session_key).
+    When omitted, clear the current context's session set (legacy /
+    test / CLI without a bound session).
+    """
+    if session_key is None:
+        session_key = _current_session_key()
+    _session_skills_viewed_by_key.pop(session_key, None)
 
 
 def get_session_skills_viewed() -> Set[str]:
     """Return the set of skill names viewed this session."""
-    return _session_skills_viewed
+    return _get_or_create_viewed_set()
 
 
 def is_skill_script_allowed(command: str) -> Optional[str]:
@@ -192,7 +220,8 @@ def is_skill_script_allowed(command: str) -> Optional[str]:
 
     Returns the skill name if the command is auto-approved, ``None`` otherwise.
     """
-    if not _session_skills_viewed:
+    viewed_set = _get_or_create_viewed_set()
+    if not viewed_set:
         return None
 
     filenames = extract_script_filenames(command)
@@ -205,7 +234,7 @@ def is_skill_script_allowed(command: str) -> Optional[str]:
         skills = scripts.get(fn)
         if not skills:
             return None
-        viewed = skills.intersection(_session_skills_viewed)
+        viewed = skills.intersection(viewed_set)
         if not viewed:
             return None
         matched_viewed |= viewed
