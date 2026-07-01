@@ -1531,6 +1531,8 @@ class FeishuAdapter(BasePlatformAdapter):
         self._update_prompt_counter = itertools.count(1)
         # [owner] model picker state: picker_id → {providers, source}
         self._model_picker_state: Dict[str, Dict[str, Any]] = {}
+        # [owner] clarify state: clarify_id → {session_key, choices, question, message_id}
+        self._clarify_state: Dict[str, Dict[str, Any]] = {}
         # Feishu reaction deletion requires the opaque reaction_id returned
         # by create, so we cache it per message_id.
         self._pending_processing_reactions: "OrderedDict[str, str]" = OrderedDict()
@@ -2674,6 +2676,11 @@ class FeishuAdapter(BasePlatformAdapter):
         if model_picker:
             return self._handle_model_picker_action(event=event, action_value=action_value, loop=loop)
 
+        # [owner] clarify: route clarify card button clicks (see owner/feishu/clarify_card.py)
+        clarify_id = action_value.get("clarify_id") if isinstance(action_value, dict) else None
+        if clarify_id:
+            return self._handle_clarify_card_action(event=event, action_value=action_value, loop=loop)
+
         # [owner] diff cards: route expand/collapse/full actions (see owner/diff_card/feishu.py)
         diff_action = (
             (isinstance(action_value, dict) and action_value.get("expand_diff"))
@@ -2828,6 +2835,66 @@ class FeishuAdapter(BasePlatformAdapter):
         except Exception as exc:
             logger.warning("[Feishu] send_card failed: %s", exc)
             return SendResult(success=False, error=str(exc))
+
+    # ── [owner] Clarify card ───────────────────────────────────────────────
+
+    # [owner] clarify: send interactive clarify card (see owner/feishu/clarify_card.py)
+    async def send_clarify(
+        self,
+        chat_id: str,
+        question: str,
+        choices: Optional[list],
+        clarify_id: str,
+        session_key: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> SendResult:
+        """Send a clarify prompt as a Feishu interactive card.
+
+        Thin glue — card building + state caching live in
+        ``owner/feishu/clarify_card.py``.
+        """
+        from owner.feishu.clarify_card import send_clarify as _owner_send_clarify
+        return await _owner_send_clarify(
+            adapter=self,
+            chat_id=chat_id,
+            question=question,
+            choices=choices,
+            clarify_id=clarify_id,
+            session_key=session_key,
+            metadata=metadata,
+        )
+
+    # [owner] clarify: expire interactive clarify card (see owner/feishu/clarify_card.py)
+    async def expire_clarify(
+        self,
+        clarify_id: str,
+        chat_id: str,
+        timeout_minutes: int = 10,
+    ) -> bool:
+        """Update the clarify card to a grey disabled state on timeout.
+
+        Thin glue — REST PATCH logic lives in ``owner/feishu/clarify_card.py``.
+        """
+        from owner.feishu.clarify_card import expire_clarify as _owner_expire_clarify
+        return await _owner_expire_clarify(
+            adapter=self,
+            clarify_id=clarify_id,
+            chat_id=chat_id,
+            timeout_minutes=timeout_minutes,
+        )
+
+    # [owner] clarify: handle clarify card button click (see owner/feishu/clarify_card.py)
+    def _handle_clarify_card_action(
+        self, *, event: Any, action_value: Dict[str, Any], loop: Any
+    ) -> Any:
+        """Handle clarify button click: resolve or switch to input form.
+
+        Thin glue — callback logic lives in ``owner/feishu/clarify_card.py``.
+        """
+        from owner.feishu.clarify_card import handle_clarify_card_action
+        return handle_clarify_card_action(
+            adapter=self, event=event, action_value=action_value, loop=loop
+        )
 
     # ── [owner] Model picker card ──────────────────────────────────────────
 

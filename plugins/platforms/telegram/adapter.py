@@ -4054,8 +4054,11 @@ class TelegramAdapter(BasePlatformAdapter):
                 # users can read long choices that would be truncated in
                 # inline button labels.  Buttons keep short numeric labels
                 # (1, 2, …, Other) to avoid Telegram truncation.
+                # [owner] clarify: render normalized choice display label
+                # (see owner/clarify/gateway_helpers.py)
+                from owner.clarify.gateway_helpers import get_choice_display
                 option_lines = "\n".join(
-                    f"{i + 1}. {_html.escape(str(c))}"
+                    f"{i + 1}. {_html.escape(get_choice_display(c))}"
                     for i, c in enumerate(choices)
                 )
                 text += f"\n\n{option_lines}"

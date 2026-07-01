@@ -12,7 +12,7 @@ a thin dispatcher that delegates to a platform-provided callback.
 """
 
 import json
-from typing import List, Optional, Callable
+from typing import Any, List, Optional, Callable
 
 
 # Maximum number of predefined choices the agent can offer.
@@ -27,6 +27,29 @@ class ClarifyStopped(Exception):
 # [owner] Feishu/Gateway-only clarify timeout stop sentinel. Other platforms keep
 # upstream behavior by returning normal text and letting the model decide.
 CLARIFY_STOP_SENTINEL = "__CLARIFY_STOP__"
+
+
+def _normalize_choices(choices: Any) -> Optional[List[Any]]:
+    """Normalize choices via owner/ if available, with legacy fallback.
+
+    When owner/clarify/ is installed, choices are normalized to
+    ``{"display", "key"}`` dicts for rich platform rendering (Feishu cards,
+    Telegram/Discord button labels). When owner/ is removed, falls back to
+    plain str() normalization so the clarify tool keeps working in a
+    degraded text-only mode.
+    """
+    try:
+        from owner.clarify.choice_normalizer import normalize_choices
+        return normalize_choices(choices)
+    except ImportError:
+        pass
+    # Legacy fallback: strip to strings, trim to MAX_CHOICES.
+    if choices is None:
+        return None
+    strs = [s for s in (_flatten_choice(c) for c in choices) if s]
+    if len(strs) > MAX_CHOICES:
+        strs = strs[:MAX_CHOICES]
+    return strs or None
 
 
 def _flatten_choice(c) -> str:
@@ -64,7 +87,7 @@ def _flatten_choice(c) -> str:
 
 def clarify_tool(
     question: str,
-    choices: Optional[List[str]] = None,
+    choices: Optional[List[Any]] = None,
     callback: Optional[Callable] = None,
 ) -> str:
     """
@@ -86,20 +109,15 @@ def clarify_tool(
 
     question = question.strip()
 
-    # Validate and trim choices
-    if choices is not None:
-        if not isinstance(choices, list):
-            return tool_error("choices must be a list of strings.")
-        # LLMs sometimes emit dict-shaped choices (e.g. [{"description": "..."}])
-        # instead of bare strings. _flatten_choice unwraps them to their
-        # user-facing text here — the single platform-agnostic entry point —
-        # so the CLI panel, Discord buttons, and Telegram list all render clean
-        # text and the resolved answer is never a raw Python dict repr.
-        choices = [s for s in (_flatten_choice(c) for c in choices) if s]
-        if len(choices) > MAX_CHOICES:
-            choices = choices[:MAX_CHOICES]
-        if not choices:
-            choices = None  # empty list → open-ended
+    # [owner] clarify: normalize model-provided choices to {display, key}.
+    # Lazy import with legacy fallback so the tool still works when owner/ is
+    # removed (degraded to text-only mode). When owner/ is present, choices
+    # become ``{"display", "key"}`` dicts so platform adapters (Feishu card,
+    # Telegram list, Discord buttons) can render rich labels via
+    # ``owner.clarify.gateway_helpers.get_choice_display``.
+    if choices is not None and not isinstance(choices, list):
+        return tool_error("choices must be a list.")
+    choices = _normalize_choices(choices)
 
     if callback is None:
         return json.dumps(

@@ -4986,8 +4986,17 @@ class DiscordAdapter(BasePlatformAdapter):
                     return " ".join(_flatten_choice(x) for x in c).strip()
                 return str(c).strip()
 
+            # [owner] clarify: render normalized choice display label
+            # (see owner/clarify/gateway_helpers.py). The local _flatten_choice
+            # above is retained as a legacy fallback for callers that still
+            # pass bare strings or non-normalized dicts; when owner/ is
+            # present the choices arrive as {"display", "key"} dicts and
+            # get_choice_display returns the rich label directly.
+            from owner.clarify.gateway_helpers import get_choice_display as _render_choice_display
             clean_choices = [
-                s for s in (_flatten_choice(c) for c in (choices or [])) if s
+                _render_choice_display(c).strip()
+                for c in (choices or [])
+                if c is not None and _render_choice_display(c).strip()
             ]
             # Discord allows up to 5 buttons per row, 5 rows per view = 25.
             # We reserve one slot for the "Other" button, so cap at 24 choices.

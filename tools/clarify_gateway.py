@@ -35,9 +35,43 @@ import logging
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
+
+
+# =========================================================================
+# [owner] clarify: choice display helpers (inline mirror of
+# owner.clarify.gateway_helpers — kept here for zero-import convenience so
+# callers in the gateway hot path don't pay an extra module load).
+# =========================================================================
+
+def get_choice_display(c: Any) -> str:
+    """Return the user-facing label for a choice item.
+
+    Accepts the normalized ``{"display", "key"}`` dict shape produced by
+    ``owner.clarify.choice_normalizer`` and returns ``c["display"]``.
+    Falls back to ``str(c)`` for legacy callers that still pass strings.
+    """
+    if isinstance(c, dict):
+        display = c.get("display")
+        if isinstance(display, str) and display:
+            return display
+    return str(c)
+
+
+def get_choice_key(c: Any) -> str:
+    """Return the stable identifier for a choice item (or empty string).
+
+    For normalized dicts: returns ``c["key"]`` (which may be ``None`` →
+    empty string). For legacy strings: returns the string itself.
+    """
+    if isinstance(c, dict):
+        key = c.get("key")
+        if isinstance(key, str):
+            return key
+        return ""
+    return str(c)
 
 
 # =========================================================================
@@ -50,7 +84,11 @@ class _ClarifyEntry:
     clarify_id: str
     session_key: str
     question: str
-    choices: Optional[List[str]]
+    # [owner] clarify: choices are normalized {"display", "key"} dicts as
+    # produced by owner.clarify.choice_normalizer. Legacy string lists are
+    # tolerated (e.g. when owner/ is removed) — adapters should read
+    # ``get_choice_display(c)`` for rendering instead of ``str(c)``.
+    choices: Optional[List[Dict[str, Optional[str]]]]
     event: threading.Event = field(default_factory=threading.Event)
     response: Optional[str] = None
     awaiting_text: bool = False  # set when user picked "Other" or clarify is open-ended
@@ -79,18 +117,24 @@ def register(
     clarify_id: str,
     session_key: str,
     question: str,
-    choices: Optional[List[str]],
+    choices: Optional[List[Any]],
 ) -> _ClarifyEntry:
     """Register a pending clarify request and return the entry.
 
     The caller (gateway clarify_callback) will then send the prompt to the
     user and block on ``wait_for_response(clarify_id, timeout)``.
+
+    ``choices`` items should be normalized ``{"display", "key"}`` dicts as
+    produced by ``owner.clarify.choice_normalizer``. Legacy string lists are
+    tolerated but adapters should read ``c["display"]`` for rendering.
     """
+    # [owner] clarify: keep choices as normalized dicts for adapters
+    normalized_choices = list(choices) if choices else None
     entry = _ClarifyEntry(
         clarify_id=clarify_id,
         session_key=session_key,
         question=question,
-        choices=list(choices) if choices else None,
+        choices=normalized_choices,
         # Open-ended (no choices) → next message IS the response, no buttons needed.
         awaiting_text=not bool(choices),
     )
@@ -200,7 +244,13 @@ def get_pending_for_session(
 
 
 def _coerce_text_response(entry: _ClarifyEntry, response: str) -> str:
-    """Map typed choice replies to canonical choice text, otherwise keep custom text."""
+    """Map typed choice replies to canonical choice text, otherwise keep custom text.
+
+    Handles both legacy string choices and normalized ``{"display", "key"}``
+    dict choices. For dict choices, the numeric/label match returns the
+    choice ``key`` (falling back to display) so the model sees the same
+    stable identifier whether the user tapped a button or typed the number.
+    """
     text = str(response).strip()
     if entry.choices:
         try:
@@ -208,10 +258,11 @@ def _coerce_text_response(entry: _ClarifyEntry, response: str) -> str:
         except ValueError:
             idx = -1
         if 0 <= idx < len(entry.choices):
-            return entry.choices[idx]
+            return get_choice_key(entry.choices[idx]) or get_choice_display(entry.choices[idx])
         for choice in entry.choices:
-            if text.casefold() == str(choice).strip().casefold():
-                return str(choice).strip()
+            display = get_choice_display(choice)
+            if text.casefold() == display.strip().casefold():
+                return get_choice_key(choice) or display.strip()
     return text
 
 
