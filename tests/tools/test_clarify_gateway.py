@@ -136,8 +136,9 @@ class TestClarifyPrimitive:
         assert result is False
 
     def test_clear_session_cancels_pending_entries(self):
-        """clear_session unblocks blocked threads with empty response."""
+        """clear_session unblocks blocked threads with the stop sentinel."""
         from tools import clarify_gateway as cm
+        from tools.clarify_tool import CLARIFY_STOP_SENTINEL
 
         cm.register("id7", "sk7", "Q?", ["A"])
 
@@ -150,8 +151,7 @@ class TestClarifyPrimitive:
             cancelled = cm.clear_session("sk7")
             assert cancelled == 1
             result = fut.result(timeout=2.0)
-            # clear_session sets response="" then the wait returns it
-            assert result == ""
+            assert result == CLARIFY_STOP_SENTINEL
 
     def test_has_pending(self):
         from tools import clarify_gateway as cm
@@ -163,6 +163,7 @@ class TestClarifyPrimitive:
     def test_notify_register_unregister_clears_pending(self):
         """unregister_notify cancels any pending clarify so threads unwind."""
         from tools import clarify_gateway as cm
+        from tools.clarify_tool import CLARIFY_STOP_SENTINEL
 
         cm.register("id9", "sk9", "Q?", ["A"])
 
@@ -176,9 +177,10 @@ class TestClarifyPrimitive:
             cm.register_notify("sk9", lambda entry: None)
             cm.unregister_notify("sk9")
 
-            # unregister_notify calls clear_session; thread unwinds
+            # unregister_notify calls clear_session; thread unwinds with
+            # the stop sentinel instead of looking like a real timeout.
             result = fut.result(timeout=2.0)
-            assert result == ""
+            assert result == CLARIFY_STOP_SENTINEL
 
     def test_session_index_isolation(self):
         """Entries from different sessions don't leak across get_pending lookups."""
@@ -201,6 +203,38 @@ class TestClarifyPrimitive:
         # Floor check: must be a positive int, not crashed.
         assert isinstance(timeout, int)
         assert timeout > 0
+
+    def test_wait_returns_stop_sentinel_when_entry_vanishes_before_wait(self):
+        """Session cleanup during card send must not look like inactivity timeout."""
+        from tools import clarify_gateway as cm
+        from tools.clarify_tool import CLARIFY_STOP_SENTINEL
+
+        cm.register("idRace", "skRace", "Q?", ["A"])
+        cancelled = cm.clear_session("skRace")
+        assert cancelled == 1
+        result = cm.wait_for_response("idRace", timeout=10.0)
+        assert result == CLARIFY_STOP_SENTINEL
+
+    def test_wait_returns_stop_sentinel_when_event_set_without_response(self):
+        """If event fires without response, treat it as cleanup, not timeout."""
+        from tools import clarify_gateway as cm
+        from tools.clarify_tool import CLARIFY_STOP_SENTINEL
+
+        cm.register("idRace2", "skRace2", "Q?", ["A"])
+        with cm._lock:
+            entry = cm._entries.get("idRace2")
+        assert entry is not None
+        entry.event.set()
+        result = cm.wait_for_response("idRace2", timeout=10.0)
+        assert result == CLARIFY_STOP_SENTINEL
+
+    def test_wait_returns_none_on_genuine_deadline_timeout(self):
+        """A real user-inactivity deadline still returns None."""
+        from tools import clarify_gateway as cm
+
+        cm.register("idDeadline", "skDeadline", "Q?", ["A"])
+        result = cm.wait_for_response("idDeadline", timeout=0.2)
+        assert result is None
 
 
 class TestGatewayTextIntercept:

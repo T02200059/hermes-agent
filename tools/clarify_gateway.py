@@ -108,12 +108,19 @@ def wait_for_response(clarify_id: str, timeout: float) -> Optional[str]:
     for 10 minutes with zero activity touches and the gateway's inactivity
     watchdog kills the agent while the user is still typing.
 
-    Returns the resolved response string, or ``None`` on timeout.
+    Returns the resolved response string, or ``None`` on genuine timeout.
+    If the entry was cleared by a session-boundary cleanup while the prompt
+    was being sent, returns ``CLARIFY_STOP_SENTINEL`` so Feishu can stop the
+    turn without showing a misleading user-inactivity timeout.
     """
     with _lock:
         entry = _entries.get(clarify_id)
     if entry is None:
-        return None
+        # [owner] Feishu clarify race defense: entry vanished before the
+        # wait loop started. That means a concurrent clear_session() won the
+        # race during card send; do not treat it as user-inactivity timeout.
+        from tools.clarify_tool import CLARIFY_STOP_SENTINEL
+        return CLARIFY_STOP_SENTINEL
 
     try:
         from tools.environments.base import touch_activity_if_due
@@ -122,11 +129,13 @@ def wait_for_response(clarify_id: str, timeout: float) -> Optional[str]:
 
     deadline = time.monotonic() + max(timeout, 0.0)
     activity_state = {"last_touch": time.monotonic(), "start": time.monotonic()}
+    resolved_by_event = False
     while True:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             break
         if entry.event.wait(timeout=min(1.0, remaining)):
+            resolved_by_event = True
             break
         if touch_activity_if_due is not None:
             touch_activity_if_due(activity_state, "waiting for user clarify response")
@@ -140,6 +149,9 @@ def wait_for_response(clarify_id: str, timeout: float) -> Optional[str]:
             if not ids:
                 _session_index.pop(entry.session_key, None)
 
+    if resolved_by_event and not entry.response:
+        from tools.clarify_tool import CLARIFY_STOP_SENTINEL
+        return CLARIFY_STOP_SENTINEL
     return entry.response
 
 
