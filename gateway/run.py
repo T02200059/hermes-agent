@@ -65,6 +65,15 @@ try:
 except Exception:
     pass
 
+# [owner] memory: skip recall/sync for synthetic system messages
+# (async delegation completion, bg process notify, watch match, handoff).
+# See owner/patches/memory_synthetic_guard_patch.py
+try:
+    from owner.patches.memory_synthetic_guard_patch import apply_patch as _owner_msg_guard_apply
+    _owner_msg_guard_apply()
+except Exception:
+    pass
+
 # --- Agent cache tuning ---------------------------------------------------
 # Bounds the per-session AIAgent cache to prevent unbounded growth in
 # long-lived gateways (each AIAgent holds LLM clients, tool schemas,
