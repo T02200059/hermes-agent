@@ -544,7 +544,36 @@ def execute_tool_calls_concurrent(agent, assistant_message, messages: list, effe
         start = time.time()
         try:
             try:
-                result = agent._invoke_tool(
+                # [owner] Single-execution timeout guard for read_file/search_files.
+                # Logic in owner.file_tool_timeout; here is thin glue only.
+                if function_name in ("read_file", "search_files"):
+                    from owner.file_tool_timeout import (
+                        resolve_file_tool_timeout,
+                        set_guard_active,
+                        guard_file_tool_call,
+                    )
+                    budget = resolve_file_tool_timeout(effective_task_id)
+                    prev_guard = set_guard_active(True)
+                    try:
+                        result = guard_file_tool_call(
+                            lambda: agent._invoke_tool(
+                                function_name,
+                                function_args,
+                                effective_task_id,
+                                tool_call.id,
+                                messages=messages,
+                                pre_tool_block_checked=True,
+                                skip_tool_request_middleware=True,
+                                tool_request_middleware_trace=list(middleware_trace),
+                            ),
+                            function_name=function_name,
+                            budget=budget,
+                            task_id=effective_task_id,
+                        )
+                    finally:
+                        set_guard_active(prev_guard)
+                else:
+                    result = agent._invoke_tool(
                     function_name,
                     function_args,
                     effective_task_id,

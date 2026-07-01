@@ -2027,10 +2027,56 @@ def invoke_tool(agent, function_name: str, function_args: dict, effective_task_i
 
     from hermes_cli.middleware import run_tool_execution_middleware
 
+    _inner = lambda next_args: _execute(next_args if isinstance(next_args, dict) else function_args)
+
+    # [owner] Single-execution timeout guard for read_file/search_files.
+    # Logic in owner.file_tool_timeout; here is thin glue only.
+    if function_name in ("read_file", "search_files"):
+        from owner.file_tool_timeout import (
+            is_guard_active,
+            resolve_file_tool_timeout,
+            set_guard_active,
+            guard_file_tool_call,
+        )
+        if is_guard_active():
+            # Outer _run_tool already set a guard; skip inner wrapper.
+            return run_tool_execution_middleware(
+                function_name,
+                function_args,
+                _inner,
+                original_args=function_args,
+                task_id=effective_task_id or "",
+                session_id=getattr(agent, "session_id", "") or "",
+                tool_call_id=tool_call_id or "",
+                turn_id=getattr(agent, "_current_turn_id", "") or "",
+                api_request_id=getattr(agent, "_current_api_request_id", "") or "",
+            )
+        budget = resolve_file_tool_timeout(effective_task_id)
+        prev = set_guard_active(True)
+        try:
+            return guard_file_tool_call(
+                lambda: run_tool_execution_middleware(
+                    function_name,
+                    function_args,
+                    _inner,
+                    original_args=function_args,
+                    task_id=effective_task_id or "",
+                    session_id=getattr(agent, "session_id", "") or "",
+                    tool_call_id=tool_call_id or "",
+                    turn_id=getattr(agent, "_current_turn_id", "") or "",
+                    api_request_id=getattr(agent, "_current_api_request_id", "") or "",
+                ),
+                function_name=function_name,
+                budget=budget,
+                task_id=effective_task_id or "",
+            )
+        finally:
+            set_guard_active(prev)
+
     return run_tool_execution_middleware(
         function_name,
         function_args,
-        lambda next_args: _execute(next_args if isinstance(next_args, dict) else function_args),
+        _inner,
         original_args=function_args,
         task_id=effective_task_id or "",
         session_id=getattr(agent, "session_id", "") or "",
