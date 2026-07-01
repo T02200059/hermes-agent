@@ -1,13 +1,14 @@
 """Per-platform display/verbosity configuration resolver.
 
 Provides ``resolve_display_setting()`` — the single entry-point for reading
-display settings with platform-specific overrides and sensible defaults.
+display settings with per-chat, per-platform, and global overrides.
 
 Resolution order (first non-None wins):
-    1. ``display.platforms.<platform>.<key>``  — explicit per-platform user override
-    2. ``display.<key>``                       — global user setting
-    3. ``_PLATFORM_DEFAULTS[<platform>][<key>]``  — built-in sensible default
-    4. ``_GLOBAL_DEFAULTS[<key>]``              — built-in global default
+    0. ``display.per_chat.<platform>.<chat_id>.<key>`` — per-chat override (highest)
+    1. ``display.platforms.<platform>.<key>``          — explicit per-platform user override
+    2. ``display.<key>``                               — global user setting
+    3. ``_PLATFORM_DEFAULTS[<platform>][<key>]``       — built-in sensible default
+    4. ``_GLOBAL_DEFAULTS[<key>]``                     — built-in global default
 
 Exception: ``display.streaming`` is CLI-only.  Gateway streaming follows the
 top-level ``streaming`` config unless ``display.platforms.<platform>.streaming``
@@ -22,6 +23,10 @@ config migration (version bump) automatically moves the old format into the new
 from __future__ import annotations
 
 from typing import Any
+
+# Note: the owner.display_overrides import is intentionally lazy + protected
+# inside resolve_display_setting (see below). This ensures the official module
+# remains importable even if the entire owner/ tree is removed.
 
 # ---------------------------------------------------------------------------
 # Overrideable display settings and their global defaults
@@ -162,8 +167,9 @@ def resolve_display_setting(
     platform_key: str,
     setting: str,
     fallback: Any = None,
+    chat_id: str | None = None,
 ) -> Any:
-    """Resolve a display setting with per-platform override support.
+    """Resolve a display setting with per-chat and per-platform override support.
 
     Parameters
     ----------
@@ -176,12 +182,42 @@ def resolve_display_setting(
         Display setting name (e.g. ``"tool_progress"``, ``"show_reasoning"``).
     fallback : Any
         Fallback value when the setting isn't found anywhere.
+    chat_id : str or None
+        Optional chat/group ID for per-chat overrides
+        (``display.per_chat.<platform>.<chat_id>.<key>``). When provided,
+        this is the highest-priority resolution tier.
+        Typically supplied for gateway messaging chats; CLI paths usually pass None.
 
     Returns
     -------
     The resolved value, or *fallback* if nothing is configured.
     """
     display_cfg = user_config.get("display") or {}
+
+    # [owner] per-chat display overrides: safe lazy import so the module remains
+    # importable (and fully functional as no-op) even if owner/display_overrides.py
+    # is deleted. This improves removability per 二次开发规范.
+    try:
+        from owner.display_overrides import (
+            merge_owner_display_config,
+            resolve_per_chat_override,
+        )
+    except Exception:
+        # [owner] graceful degradation – no per_chat or owner.display merge
+        # (this path is taken only if owner/display_overrides.py cannot be imported)
+        def merge_owner_display_config(cfg):  # type: ignore
+            return cfg
+        def resolve_per_chat_override(*_a, **_k):  # type: ignore
+            return None
+
+    # [owner] merge patch.yaml owner.display into config at call time
+    display_cfg = merge_owner_display_config(display_cfg)
+
+    # [owner] per-chat override (highest priority)
+    if chat_id:
+        val = resolve_per_chat_override(display_cfg, platform_key, chat_id, setting)
+        if val is not None:
+            return _normalise(setting, val)
 
     # 1. Explicit per-platform override (display.platforms.<platform>.<key>)
     platforms = display_cfg.get("platforms") or {}
@@ -220,6 +256,30 @@ def resolve_display_setting(
         return val
 
     return fallback
+
+
+# [owner] per-chat display overrides: convenience wrapper for gateway call sites.
+# Lets code pass `source=event.source` (or similar) instead of manually doing
+# chat_id=source.chat_id at every resolve site. Extraction logic lives in one
+# place; reduces repetition and future merge surface in gateway/run.py.
+#
+# Note on scope: per_chat overrides are primarily intended for gateway
+# messaging chats (where chat_id is the platform's native conversation id).
+# CLI sessions typically do not pass a meaningful chat_id (defaults to None).
+def resolve_display_setting_for_source(
+    user_config: dict,
+    platform_key: str,
+    setting: str,
+    fallback: Any = None,
+    *,
+    source: Any = None,
+    chat_id: str | None = None,
+) -> Any:
+    if chat_id is None and source is not None:
+        chat_id = getattr(source, "chat_id", None)
+    return resolve_display_setting(
+        user_config, platform_key, setting, fallback, chat_id=chat_id
+    )
 
 
 # ---------------------------------------------------------------------------

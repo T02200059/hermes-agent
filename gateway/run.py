@@ -508,6 +508,7 @@ def _resolve_gateway_display_bool(
     default: bool = False,
     platform: Any = None,
     require_platform_override_for: set[Any] | None = None,
+    chat_id: str | None = None,
 ) -> bool:
     """Resolve a boolean display setting with optional platform-only opt-in.
 
@@ -515,6 +516,9 @@ def _resolve_gateway_display_bool(
     user-facing output.  For high-noise threaded chat surfaces such as
     Mattermost, a global opt-in is too broad: they must be enabled with an
     explicit display.platforms.<platform>.<setting> override.
+
+    ``chat_id`` enables [owner] per-chat display overrides via
+    ``display.per_chat.<platform>.<chat_id>.<setting>``.
     """
     current_platform = _gateway_platform_value(platform or platform_key)
     platform_only = {
@@ -529,7 +533,10 @@ def _resolve_gateway_display_bool(
 
     from gateway.display_config import resolve_display_setting
 
-    value = resolve_display_setting(user_config, platform_key, setting, default)
+    value = resolve_display_setting(
+        user_config, platform_key, setting, default,
+        chat_id=chat_id,
+    )
     if isinstance(value, bool):
         return value
     if isinstance(value, str):
@@ -4853,14 +4860,15 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         # Build a status-rich acknowledgment. Mobile chat defaults keep this
         # terse; detailed iteration/tool state is still available in logs and
         # can be opted in per platform via display.platforms.<platform>.busy_ack_detail.
-        from gateway.display_config import resolve_display_setting
+        from gateway.display_config import resolve_display_setting_for_source
         status_parts = []
         busy_ack_detail_enabled = bool(
-            resolve_display_setting(
+            resolve_display_setting_for_source(
                 _load_gateway_config(),
                 _platform_config_key(event.source.platform),
                 "busy_ack_detail",
                 True,
+                source=event.source,  # [owner] per-chat display override (via owner/display_overrides)
             )
         )
 
@@ -10523,12 +10531,14 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     # subtext (native small grey metadata text); other
                     # platforms keep the fenced code block.
                     try:
-                        from gateway.display_config import resolve_display_setting
-                        _reasoning_style = resolve_display_setting(
+                        # [owner] use for_source helper to reduce chat_id repetition + centralize extraction
+                        from gateway.display_config import resolve_display_setting_for_source as _rds
+                        _reasoning_style = _rds(
                             _load_gateway_config(),
                             _platform_config_key(source.platform),
                             "reasoning_style",
                             "code",
+                            source=source,  # [owner] per-chat display override (via owner/display_overrides)
                         )
                     except Exception:
                         _reasoning_style = "code"
@@ -15037,9 +15047,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
 
         platform_key = _platform_config_key(source.platform)
         user_config = _load_gateway_config()
-        from gateway.display_config import resolve_display_setting
-        _plat_streaming = resolve_display_setting(
-            user_config, platform_key, "streaming"
+        from gateway.display_config import resolve_display_setting_for_source
+        _plat_streaming = resolve_display_setting_for_source(
+            user_config, platform_key, "streaming",
+            source=source,  # [owner] per-chat display override (via owner/display_overrides)
         )
         _streaming_enabled = (
             _scfg.enabled and _scfg.transport != "off"
@@ -15361,18 +15372,25 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         # Per-platform display settings — resolve via display_config module
         # which checks display.platforms.<platform>.<key> first, then
         # display.<key> global, then built-in platform defaults.
-        from gateway.display_config import resolve_display_setting
+        # [owner] prefer for_source helper for chat_id / per_chat support
+        from gateway.display_config import resolve_display_setting_for_source
 
         # Apply tool preview length config (0 = no limit)
         try:
             from agent.display import set_tool_preview_max_len
-            _tpl = resolve_display_setting(user_config, platform_key, "tool_preview_length", 0)
+            _tpl = resolve_display_setting_for_source(
+                user_config, platform_key, "tool_preview_length", 0,
+                source=source,  # [owner] per-chat display override (via owner/display_overrides)
+            )
             set_tool_preview_max_len(int(_tpl) if _tpl else 0)
         except Exception:
             pass
 
         # Tool progress mode — resolved per-platform with env var fallback
-        _resolved_tp = resolve_display_setting(user_config, platform_key, "tool_progress")
+        _resolved_tp = resolve_display_setting_for_source(
+            user_config, platform_key, "tool_progress",
+            source=source,  # [owner] per-chat display override (via owner/display_overrides)
+        )
         _env_tp = os.getenv("HERMES_TOOL_PROGRESS_MODE")
         _display_cfg = display_config if isinstance(display_config, dict) else {}
         _platforms_cfg = _display_cfg.get("platforms") or {}
@@ -15395,7 +15413,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             else (_resolved_tp or _env_tp or "all")
         )
         # Tool progress grouping: "accumulate" (edit one bubble) or "separate" (one msg per tool)
-        progress_grouping = resolve_display_setting(user_config, platform_key, "tool_progress_grouping") or "accumulate"
+        progress_grouping = resolve_display_setting_for_source(
+            user_config, platform_key, "tool_progress_grouping",
+            source=source,  # [owner] per-chat display override (via owner/display_overrides)
+        ) or "accumulate"
         # Disable tool progress for webhooks - they don't support message editing,
         # so each progress line would be sent as a separate message.
         from gateway.config import Platform
@@ -15487,7 +15508,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         # are collected here and deleted after the final response lands.
         # Failed runs skip cleanup so the bubbles remain as breadcrumbs.
         _cleanup_progress = bool(
-            resolve_display_setting(user_config, platform_key, "cleanup_progress")
+            resolve_display_setting_for_source(
+                user_config, platform_key, "cleanup_progress",
+                source=source,  # [owner] per-chat display override (via owner/display_overrides)
+            )
         )
         _cleanup_adapter = self.adapters.get(source.platform) if _cleanup_progress else None
         if _cleanup_adapter is not None and (
@@ -16217,8 +16241,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             # Per-platform streaming gate: display.platforms.<plat>.streaming
             # can disable streaming for specific platforms even when the global
             # streaming config is enabled.
-            _plat_streaming = resolve_display_setting(
-                user_config, platform_key, "streaming"
+            _plat_streaming = resolve_display_setting_for_source(
+                user_config, platform_key, "streaming",
+                source=source,  # [owner] per-chat display override (via owner/display_overrides)
             )
             # None = no per-platform override → follow global config
             _streaming_enabled = (
@@ -17356,11 +17381,12 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         _NOTIFY_INTERVAL_RAW = _float_env("HERMES_AGENT_NOTIFY_INTERVAL", 180)
         _NOTIFY_INTERVAL = _NOTIFY_INTERVAL_RAW if _NOTIFY_INTERVAL_RAW > 0 else None
         if not bool(
-            resolve_display_setting(
+            resolve_display_setting_for_source(
                 user_config,
                 platform_key,
                 "long_running_notifications",
                 True,
+                source=source,  # [owner] per-chat display override (via owner/display_overrides)
             )
         ):
             _NOTIFY_INTERVAL = None
@@ -17401,12 +17427,14 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 # who want it can opt in per platform.
                 _agent_ref = agent_holder[0]
                 _status_detail = ""
+                from gateway.display_config import resolve_display_setting_for_source
                 _want_iteration_detail = bool(
-                    resolve_display_setting(
+                    resolve_display_setting_for_source(
                         user_config,
                         platform_key,
                         "busy_ack_detail",
                         True,
+                        source=source,  # [owner] per-chat display override (via owner/display_overrides)
                     )
                 )
                 if _agent_ref and hasattr(_agent_ref, "get_activity_summary"):
