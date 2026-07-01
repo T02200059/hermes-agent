@@ -16799,6 +16799,21 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     # platforms keep the upstream textual timeout so the model
                     # can decide; Feishu is our safety-critical path.
                     if getattr(source.platform, "value", "") == "feishu":
+                        # Notify the user so they know the operation stopped
+                        # (the agent loop exits silently via interrupt()).
+                        try:
+                            safe_schedule_threadsafe(
+                                _status_adapter.send(
+                                    _status_chat_id,
+                                    f"⏳ 未在 {int(timeout / 60)} 分钟内收到回复，已停止当前操作。需要的话再发消息给我。",
+                                    metadata=_status_thread_metadata,
+                                ),
+                                _loop_for_step,
+                                logger=logger,
+                                log_message="clarify timeout notice scheduling error",
+                            )
+                        except Exception as _notice_exc:
+                            logger.debug("clarify timeout notice failed: %s", _notice_exc)
                         from tools.clarify_tool import CLARIFY_STOP_SENTINEL
                         return CLARIFY_STOP_SENTINEL
                     # Timeout or session-boundary cancellation
