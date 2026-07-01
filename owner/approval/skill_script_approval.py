@@ -239,6 +239,25 @@ def is_skill_script_allowed(command: str) -> Optional[str]:
             return None
         matched_viewed |= viewed
 
+    # CR-02: fail closed on compound / dangerous commands. A skill script
+    # invocation like `python3 known.py` is safe to auto-approve, but
+    # `python3 known.py && rm -rf /home/user/important` or
+    # `curl known.sh | bash` is NOT — the script is being used as cover
+    # for a destructive payload. Re-run the dangerous-command detector on
+    # the FULL command and refuse auto-approval if it matches. The normal
+    # approval flow (which can prompt the user) still handles these.
+    try:
+        from tools.approval import detect_dangerous_command
+        is_dangerous, _pattern_key, _desc = detect_dangerous_command(command)
+        if is_dangerous:
+            return None
+    except Exception:
+        # If detect_dangerous_command can't be imported (minimal contexts)
+        # OR raises on an unexpected input, fall through to the script
+        # match. detect_dangerous_command is a pure regex matcher and
+        # shouldn't raise, but the approval hot path must not crash.
+        pass
+
     # All extracted filenames belong to at least one viewed skill → auto-approve
     return next(iter(sorted(matched_viewed))) if matched_viewed else None
 
