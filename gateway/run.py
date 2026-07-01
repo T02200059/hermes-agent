@@ -2586,6 +2586,28 @@ def _classify_edit_failure(result) -> str:
     return "disable"
 
 
+def _is_executor_shutdown_error(exc: BaseException) -> bool:
+    """True when ``exc`` is asyncio's "default executor torn down" RuntimeError.
+
+    ``run_in_executor(None, ...)`` and ``asyncio.to_thread(...)`` raise this once
+    the running loop's default ThreadPoolExecutor has been shut down — which
+    happens during the asyncio teardown of a SIGTERM/restart drain while the loop
+    is *briefly still serving inbound events*. A message that lands in that
+    window (or an in-flight turn when SIGTERM arrives) then fails here rather
+    than from a real bug, so it should surface as a transient "restarting"
+    condition, not a scary generic agent error.
+    """
+    if not isinstance(exc, RuntimeError):
+        return False
+    msg = str(exc).lower()
+    return (
+        "executor shutdown has been called" in msg
+        or "cannot schedule new futures after shutdown" in msg
+        or "event loop is closed" in msg
+    )
+
+
+# [owner] §17.2 executor-shutdown RuntimeError → friendly restart message
 class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, GatewaySlashCommandsMixin):
     """
     Main gateway controller.
@@ -11005,6 +11027,15 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 logger.debug("Failed to persist inbound user message after agent exception", exc_info=True)
             # Log full details server-side only; never expose raw exception
             # types or messages to end users (info-leakage risk).
+            # [owner] §17.2 Gateway restart race: the loop's default executor was
+            # torn down by an in-progress SIGTERM/restart drain while this turn was
+            # running. Not a real failure — tell the user to resend instead of
+            # dumping a RuntimeError.
+            if _is_executor_shutdown_error(e):
+                return (
+                    "⚠️ The gateway is restarting, so your message wasn't fully "
+                    "processed.\nPlease send it again in a few seconds."
+                )
             status_hint = ""
             status_code = getattr(e, "status_code", None)
             _hist_len = len(history) if 'history' in locals() else 0
