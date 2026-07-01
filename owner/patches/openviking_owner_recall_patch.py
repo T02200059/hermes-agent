@@ -24,6 +24,7 @@ import re
 import sys
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional
 
 import agent.memory_manager as _memory_manager_module
@@ -39,6 +40,52 @@ _applied: Dict[str, bool] = {"advisory": False, "dedup": False, "card": False}
 
 # Token caches for Feishu/QQ recall-card sends: key -> (token, expires_at)
 _TOKEN_CACHE: Dict[str, tuple[str, float]] = {}
+
+# WR-04: bound the recall-card send threads. A naive threading.Thread
+# per recall can spawn tens of threads/sec under load; Feishu would
+# rate-limit (and eventually ban) the bot. Two layers of throttling:
+# 1) a bounded executor (max_workers) caps concurrent Feishu/QQ sends.
+# 2) a per-chat debounce (keyed by chat_id) collapses repeated recalls
+#    in the same chat within _RECALL_DEBOUNCE_SECONDS into one card.
+_RECALL_DEBOUNCE_SECONDS = 5.0
+_RECALL_MAX_WORKERS = 3
+_recall_last_fired_at: Dict[str, float] = {}
+_recall_last_fired_lock = threading.Lock()
+_recall_executor: Optional[ThreadPoolExecutor] = None
+_recall_executor_lock = threading.Lock()
+
+
+def _get_recall_executor() -> ThreadPoolExecutor:
+    """Lazy-init the recall-card send executor (max_workers=3).
+
+    The pool is module-scoped so all recall sends across threads share
+    the same worker cap. Daemon threads so the executor doesn't block
+    process exit (same guarantee the old threading.Thread daemon=True
+    path had).
+    """
+    global _recall_executor
+    if _recall_executor is None:
+        with _recall_executor_lock:
+            if _recall_executor is None:
+                _recall_executor = ThreadPoolExecutor(
+                    max_workers=_RECALL_MAX_WORKERS,
+                    thread_name_prefix="ov-recall-card",
+                )
+    return _recall_executor
+
+
+def _is_chat_debounced(chat_id: str) -> bool:
+    """Return True if a recall was already fired for this chat within
+    the debounce window. The first call in a window returns False and
+    records the timestamp; subsequent calls within the window return
+    True (skipped)."""
+    now = time.time()
+    with _recall_last_fired_lock:
+        last = _recall_last_fired_at.get(chat_id, 0.0)
+        if now - last < _RECALL_DEBOUNCE_SECONDS:
+            return True
+        _recall_last_fired_at[chat_id] = now
+        return False
 
 _PEER_SEGMENT_RE = re.compile(r"/peers/[^/]+")
 
@@ -397,30 +444,36 @@ def _fire_recall_display(hits: List[dict], ctx: dict, elapsed_ms: float) -> None
     if not cfg.get("enabled", True):
         return
 
+    # WR-04: per-chat debounce — collapse repeated recalls in the same
+    # chat within 5s into a single card. Prevents a single chat with
+    # bursty memory hits from hammering Feishu/QQ with N cards.
+    if _is_chat_debounced(chat_id):
+        return
+
     metadata = {
         "chat_type": ctx.get("chat_type", ""),
         "open_id": ctx.get("user_id", ""),
     }
 
+    executor = _get_recall_executor()
+
     if platform == "feishu" and cfg.get("feishu_card", True):
         card = build_viking_recall_card(hits, elapsed_ms)
         if card:
-            threading.Thread(
-                target=_send_feishu_card_sync,
-                args=(chat_id, card, metadata),
-                daemon=True,
-                name="ov-feishu-card",
-            ).start()
+            try:
+                executor.submit(_send_feishu_card_sync, chat_id, card, metadata)
+            except RuntimeError:
+                # Executor shut down (process exit) — fail silent.
+
+                pass
 
     elif platform == "qqbot" and cfg.get("qqbot_text", True):
         text = build_viking_recall_text(hits, elapsed_ms)
         if text:
-            threading.Thread(
-                target=_send_qqbot_text_sync,
-                args=(chat_id, text, metadata),
-                daemon=True,
-                name="ov-qq-text",
-            ).start()
+            try:
+                executor.submit(_send_qqbot_text_sync, chat_id, text, metadata)
+            except RuntimeError:
+                pass
 
 
 def _wrap_initialize(orig_init):

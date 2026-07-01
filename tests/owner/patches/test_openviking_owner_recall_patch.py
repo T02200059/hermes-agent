@@ -147,3 +147,75 @@ class TestPatchIdempotency:
         apply_patch()
         revert_patch()
         revert_patch()
+
+
+class TestRecallCardRateLimiting:
+    """ WR-04: per-chat debounce + bounded executor prevent Feishu/QQ
+    rate-limit under bursty memory recall load. """
+
+    def test_per_chat_debounce_skips_duplicate_within_window(self, monkeypatch):
+        """Repeated _fire_recall_display calls for the same chat within
+        5s must collapse into one actual send — only the first call
+        submits to the executor; the rest are dropped at the debounce
+        check."""
+        from owner.patches import openviking_owner_recall_patch as rp
+
+        # Reset debounce state for the test
+        rp._recall_last_fired_at.clear()
+        rp._recall_last_fired_lock  # touch
+
+        # Patch the executor.submit to track calls.
+        from unittest.mock import MagicMock
+
+        executor = MagicMock()
+        monkeypatch.setattr(rp, "_get_recall_executor", lambda: executor)
+
+        # Patch the card builder to return a non-empty card.
+        monkeypatch.setattr(rp, "build_viking_recall_card", lambda hits, ms: {"card": True})
+        monkeypatch.setattr(rp, "build_viking_recall_text", lambda hits, ms: "text")
+
+        # Patch config to allow all platforms
+        cfg = {"enabled": True, "feishu_card": True, "qqbot_text": True}
+        monkeypatch.setattr(rp, "_load_card_cfg", lambda: cfg)
+
+        hits = [{"uri": "viking://x", "score": 0.9, "abstract": "x", "type": "memory"}]
+        ctx = {"platform": "feishu", "chat_id": "oc_chat_1", "chat_type": "p2p", "user_id": "ou_1"}
+
+        # First call: passes the debounce, submits to executor.
+        rp._fire_recall_display(hits, ctx, 10.0)
+        assert executor.submit.call_count == 1
+
+        # Second call within the debounce window: blocked.
+        rp._fire_recall_display(hits, ctx, 10.0)
+        assert executor.submit.call_count == 1
+
+        # Third call, different chat: NOT debounced, submits.
+        ctx2 = {**ctx, "chat_id": "oc_chat_2"}
+        rp._fire_recall_display(hits, ctx2, 10.0)
+        assert executor.submit.call_count == 2
+
+        # After the debounce window: passes again.
+        rp._recall_last_fired_at["oc_chat_1"] = 0.0  # way in the past
+        rp._fire_recall_display(hits, ctx, 10.0)
+        assert executor.submit.call_count == 3
+
+    def test_executor_max_workers_capped(self):
+        """The recall-card executor is bounded at 3 workers — never a
+        naive threading.Thread per recall."""
+        from owner.patches import openviking_owner_recall_patch as rp
+
+        # Force lazy init.
+        executor = rp._get_recall_executor()
+        assert executor._max_workers == 3, (
+            "Recall-card executor must cap concurrent sends; "
+            "naive threading.Thread per recall was the WR-04 issue."
+        )
+
+    def test_executor_is_lazy_and_cached(self):
+        """The executor is module-scoped — every call returns the
+        same instance so all recall sends share the worker pool."""
+        from owner.patches import openviking_owner_recall_patch as rp
+
+        a = rp._get_recall_executor()
+        b = rp._get_recall_executor()
+        assert a is b
