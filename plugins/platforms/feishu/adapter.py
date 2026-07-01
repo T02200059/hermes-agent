@@ -1931,6 +1931,13 @@ class FeishuAdapter(BasePlatformAdapter):
                 fallback_request = self._build_update_message_request(message_id=message_id, request_body=fallback_body)
                 fallback_response = await self._run_blocking(self._client.im.v1.message.update, fallback_request)
                 result = self._finalize_send_result(fallback_response, "update failed")
+            # [owner] 飞书对单条消息有 ~20 次编辑上限（错误码 230072 / 230075）。
+            # 这是 message_id 维度的永久上限（post→text 降级无法绕过），
+            # 通知 gateway 轮转到新 bubble 继续编辑，而不是永久关闭 can_edit。
+            if not result.success and any(
+                f"[{c}]" in (result.error or "") for c in ("230072", "230075")
+            ):
+                result.rotate = True
             if result.success:
                 result.message_id = message_id
             return result

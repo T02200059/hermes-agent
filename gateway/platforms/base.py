@@ -1781,6 +1781,12 @@ class SendResult:
     # stream consumer can send the missing tail instead of marking a clipped
     # response complete.
     retryable: bool = False  # True for transient connection errors — base will retry automatically
+    # [owner] Adapter signaled "this bubble is no longer editable (platform edit
+    # cap reached, e.g. Feishu 230072/230075), but a fresh bubble may continue
+    # editing".  Gateway should open a new message and keep can_edit=True.
+    # Independent from retryable: retryable means "same operation may succeed
+    # later"; rotate means "abandon this bubble permanently".
+    rotate: bool = False
     # Server-requested retry delay in seconds (e.g. Telegram FloodWait retry_after).
     # When present, _send_with_retry() honors this instead of its default backoff.
     retry_after: Optional[float] = None
