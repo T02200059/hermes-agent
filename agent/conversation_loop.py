@@ -867,12 +867,14 @@ def run_conversation(
                     aggregator_temperature=float(moa_config.get("aggregator_temperature", 0.4) or 0.4),
                 )
                 if _moa_context:
-                    for _msg in reversed(api_messages):
-                        if _msg.get("role") == "user":
-                            _base = _msg.get("content", "")
-                            if isinstance(_base, str):
-                                _msg["content"] = _base + "\n\n" + _moa_context
-                            break
+                    # CR-005: separate user message after the system prompt
+                    # so the original user message bytes stay stable across
+                    # turns and the prompt cache prefix remains valid.
+                    _sys_offset = 1 if (api_messages and api_messages[0].get("role") == "system") else 0
+                    api_messages.insert(
+                        _sys_offset,
+                        {"role": "user", "content": f"[MoA reference context]\n{_moa_context}"},
+                    )
             except Exception as _moa_exc:
                 logger.warning("MoA context aggregation failed: %s", _moa_exc)
 
