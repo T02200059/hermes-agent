@@ -82,6 +82,16 @@ def _get_current_attribution(agent) -> Optional[str]:
         return getattr(agent, "owner_provider_name", None)
 
 
+def _get_api_error_hint(status_code: Optional[int], reason: Optional[str] = None) -> Optional[str]:
+    """[owner] Chinese hint for terminal API errors (see owner/api_error_hints.py)."""
+    try:
+        from owner.api_error_hints import get_api_error_hint
+
+        return get_api_error_hint(status_code, reason)
+    except Exception:
+        return None
+
+
 def _image_error_max_dimension(error: Exception) -> Optional[int]:
     """Extract a provider-reported image dimension ceiling, if present."""
     parts = []
@@ -664,6 +674,8 @@ def run_conversation(
                                 "name": tc["function"]["name"],
                                 "result": _results_by_id.get(tc.get("id")),
                                 "arguments": tc["function"].get("arguments"),
+                                # [owner] diff cards: tool_call_id for snapshot correlation (see owner/diff_card/)
+                                "tool_call_id": tc.get("id"),
                             }
                             for tc in _m["tool_calls"]
                             if isinstance(tc, dict)
@@ -1438,6 +1450,10 @@ def run_conversation(
                         # Terminal — flush buffered retry trace so user sees what happened.
                         agent._flush_status_buffer()
                         agent._emit_status(f"❌ Max retries ({max_retries}) exceeded for invalid responses. Giving up.")
+                        # [owner] append Chinese hint for terminal API errors
+                        _zh_hint = _get_api_error_hint(_resp_error_code)
+                        if _zh_hint:
+                            agent._emit_status(f"💡 {_zh_hint}")
                         logger.error(f"{agent.log_prefix}Invalid API response after {max_retries} retries.")
                         agent._persist_session(messages, conversation_history)
                         return {
@@ -3457,6 +3473,13 @@ def run_conversation(
                             f"❌ Non-retryable error (HTTP {status_code}): "
                             f"{_nonretryable_summary}"
                         )
+                    # [owner] append Chinese hint for terminal API errors
+                    _zh_hint = _get_api_error_hint(
+                        status_code,
+                        classified.reason.value if classified else None,
+                    )
+                    if _zh_hint:
+                        agent._emit_status(f"💡 {_zh_hint}")
                     agent._vprint(f"{agent.log_prefix}❌ Non-retryable client error (HTTP {status_code}). Aborting.", force=True)
                     agent._vprint(f"{agent.log_prefix}   🔌 Provider: {_provider}  Model: {_model}", force=True)
                     agent._vprint(f"{agent.log_prefix}   🌐 Endpoint: {_base}", force=True)
@@ -3612,6 +3635,13 @@ def run_conversation(
                         agent._emit_status(f"❌ Rate limited after {max_retries} retries — {_final_summary}")
                     else:
                         agent._emit_status(f"❌ API failed after {max_retries} retries — {_final_summary}")
+                    # [owner] append Chinese hint for terminal API errors
+                    _zh_hint = _get_api_error_hint(
+                        getattr(api_error, "status_code", None),
+                        classified.reason.value if classified else None,
+                    )
+                    if _zh_hint:
+                        agent._emit_status(f"💡 {_zh_hint}")
                     agent._vprint(f"{agent.log_prefix}   💀 Final error: {_final_summary}", force=True)
 
                     # Detect SSE stream-drop pattern (e.g. "Network

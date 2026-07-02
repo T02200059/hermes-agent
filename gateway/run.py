@@ -4812,9 +4812,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             thread_meta = self._thread_metadata_for_source(event.source, reply_anchor)
             if self._queue_during_drain_enabled():
                 self._queue_or_replace_pending_event(session_key, event)
-                message = f"⏳ Gateway {self._status_action_gerund()} — queued for the next turn after it comes back."
+                message = t("gateway.busy_drain_queued", action=self._status_action_gerund())
             else:
-                message = f"⏳ Gateway is {self._status_action_gerund()} and is not accepting another turn right now."
+                message = t("gateway.busy_drain_not_accepting", action=self._status_action_gerund())
 
             await adapter._send_with_retry(
                 chat_id=event.source.chat_id,
@@ -8616,9 +8616,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 if self._queue_during_drain_enabled():
                     self._queue_or_replace_pending_event(_quick_key, event)
                 return (
-                    f"⏳ Gateway {self._status_action_gerund()} — queued for the next turn after it comes back."
+                    t("gateway.busy_drain_queued", action=self._status_action_gerund())
                     if self._queue_during_drain_enabled()
-                    else f"⏳ Gateway is {self._status_action_gerund()} and is not accepting another turn right now."
+                    else t("gateway.busy_drain_not_accepting", action=self._status_action_gerund())
                 )
             if self._busy_input_mode == "queue":
                 logger.debug("PRIORITY queue follow-up for session %s", _quick_key)
@@ -9068,7 +9068,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             return await self._handle_voice_command(event)
 
         if self._draining:
-            return f"⏳ Gateway is {self._status_action_gerund()} and is not accepting new work right now."
+            return t("gateway.busy_drain_no_work", action=self._status_action_gerund())
 
         # User-defined quick commands (bypass agent loop, no LLM call)
         if command:
@@ -10253,6 +10253,28 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                                         _msg_count, _new_count,
                                         f"{_approx_tokens:,}", f"{_new_tokens:,}",
                                     )
+
+                                    # [owner] hygiene compression notice: thin
+                                    # delegate to owner/gateway/hygiene_compression_notice.py
+                                    _hyg_adapter = self.adapters.get(source.platform)
+                                    try:
+                                        from owner.gateway.hygiene_compression_notice import (
+                                            send_hygiene_compression_notice,
+                                        )
+                                        await send_hygiene_compression_notice(
+                                            _hyg_adapter,
+                                            source,
+                                            msg_count=_msg_count,
+                                            new_count=_new_count,
+                                            approx_tokens=_approx_tokens,
+                                            new_tokens=_new_tokens,
+                                            hard_msg_limit=_HARD_MSG_LIMIT,
+                                            hyg_threshold_pct=_hyg_threshold_pct,
+                                            hyg_context_length=_hyg_context_length,
+                                            metadata=_hyg_meta,
+                                        )
+                                    except Exception:
+                                        pass
 
                                     if _new_tokens >= _warn_token_threshold:
                                         logger.warning(

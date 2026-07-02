@@ -2138,6 +2138,28 @@ class FeishuAdapter(BasePlatformAdapter):
             logger.warning("[Feishu] send_update_prompt failed: %s", exc)
             return SendResult(success=False, error=str(exc))
 
+    # [owner] resume: send interactive /resume list card with number buttons (see owner/feishu/resume_card.py)
+    async def send_resume_card(
+        self,
+        chat_id: str,
+        header_text: str,
+        sessions: List[Dict[str, Any]],
+        session_key: str,
+        source_dict: Optional[Dict[str, Any]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> SendResult:
+        """Send /resume session list as an interactive card with number buttons."""
+        from owner.feishu.resume_card import send_resume_card as _owner_send
+        return await _owner_send(
+            adapter=self,
+            chat_id=chat_id,
+            header_text=header_text,
+            sessions=sessions,
+            session_key=session_key,
+            source_dict=source_dict,
+            metadata=metadata,
+        )
+
     @staticmethod
     def _build_resolved_update_prompt_card(*, answer: str, user_name: str) -> Dict[str, Any]:
         yes = answer == "y"
@@ -2743,6 +2765,16 @@ class FeishuAdapter(BasePlatformAdapter):
         if diff_action:
             from owner.diff_card.feishu import handle_feishu_diff_action
             return handle_feishu_diff_action(self, event, action_value)
+
+        # [owner] resume: handle resume selection button click (see owner/feishu/resume_card.py)
+        if hermes_action == "resume_select":
+            from owner.feishu.resume_card import handle_resume_card_action
+            return handle_resume_card_action(
+                adapter=self,
+                event=event,
+                action_value=action_value,
+                loop=loop,
+            )
 
         if hermes_action:
             return self._handle_approval_card_action(event=event, action_value=action_value, loop=loop)
