@@ -632,3 +632,13 @@ _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请在�
 - **机制**：patch 通过 PluginManager `register(ctx)` 在 `discover_plugins()` 时 apply，早于任何 agent turn，无需挂 hook
 - **验证**：25/25 测试全绿 + PluginManager 发现链路验证通过
 - **治理原则确立**：所有 hook/plugin 工作在 owner fork 闭环，不考虑给官方提 PR
+
+### 2026-07-02：附录 C 路线图审查 — §7.4 Cron env scrub 评估为不可迁移 plugin
+
+- **类型**：plugin 迁移可行性评估
+- **结论**：`gateway/run.py` 中 3 处 cron env scrub（L1270-1278 进程启动 scrub、L5604-5606/L5651-5653 watcher env scrub）**不能**迁入 owner-extensions plugin，保持现状
+- **原因**：
+  - L1270 是模块级代码，在 `discover_plugins()`（L6157）之前 ~4000 行执行，plugin register 时机太晚
+  - L5604/L5653 操作 `schedule_restart()` 函数局部变量 `watcher_env`，plugin register 无法访问
+- **风险评估**：低。3 处均为 `try-except` 包裹的薄胶水（~12 行），sync 冲突风险可控
+- **下一步**：OpenViking recall patch + schema patches 迁移评估中

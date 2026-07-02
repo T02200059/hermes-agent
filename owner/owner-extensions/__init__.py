@@ -24,6 +24,12 @@ def register(ctx) -> None:
     except Exception:
         logger.warning("owner: memory_synthetic_guard_patch failed", exc_info=True)
 
-    # (future) other owner patches migrate here, e.g.:
-    # - openviking_owner_recall_patch
-    # - future MemoryManager behavior patches
+    # §7.3 OpenViking recall owner extensions
+    # Advisory wording, peer-mirror dedup, recall card (Feishu/QQ).
+    # See owner/patches/openviking_owner_recall_patch.py
+    try:
+        from owner.patches.openviking_owner_recall_patch import apply_patch
+        apply_patch()
+        logger.debug("owner: openviking_owner_recall_patch applied via plugin register")
+    except Exception:
+        logger.warning("owner: openviking_owner_recall_patch failed", exc_info=True)
