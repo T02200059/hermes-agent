@@ -596,6 +596,8 @@
 
 本附录是给后续工作的路线图参考，**非**当前分支承诺。
 
+**治理原则**：所有迁移和 hook 化工作在 owner fork 内闭环完成，不考虑给 Hermes 官方提 PR。如果 Hermes core 缺少我们需要的扩展点（hook、ABC 方法等），在我们自己的 fork 里加，不等官方接受。上游同步时这些扩展点作为 owner diff 维护。
+
 1. **owner_provider_name 归因链** — 当前贯穿 10+ 官方文件。候选：通过 `on_session_start` / `pre_llm_call` hook + 一个 owner/ 维护的 ContextVar，减少官方文件的属性透传链。`hermes_state.py` 的 DB 列扩展是不可避免的持久层改动。
 2. **gateway/run.py** — 侵入最重（~20 处）。建议按功能拆分到独立 hook：cron env scrub（`on_session_start`）、OpenViking recall（`post_llm_call`/message-receive hook）、memory synthetic guard（message-receive hook）、per-chat display（display hook）。
 3. **plugins/platforms/feishu/adapter.py** — 64 处标记但大多是 1-3 行 `_owner_import` 委托，已是规范的薄胶水模式。保持现状即可；sync 冲突可通过 `_owner_import` 的 try-import 容错吸收。
