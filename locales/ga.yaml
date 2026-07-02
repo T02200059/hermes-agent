@@ -27,6 +27,45 @@ gateway:
   config_read_failed: "⚠️ Níorbh fhéidir config.yaml a léamh: {error}"
   config_save_failed: "⚠️ Níorbh fhéidir an chumraíocht a shábháil: {error}"
 
+# Agent-running guard messages
+  busy_agent_starting:     "Agent still starting — /steer queued for the next turn."
+  busy_no_active_agent:    "No active agent — /steer queued for the next turn."
+  busy_model_blocked:      "Agent is running — wait or /stop first, then switch models."
+  busy_codex_runtime_blocked: "Agent is running — wait or /stop first, then change runtime."
+  busy_goal_blocked:       "Agent is running — use /goal status / pause / clear / wait mid-run, or /stop before setting a new goal."
+  busy_cmd_blocked:        "⏳ Agent is running — `/{cmd}` can't run mid-turn. Wait for the current response or `/stop` first."
+
+  # Command usage hints
+  queue_usage:             "Usage: /queue <prompt>"
+  queue_queued:            "Queued for the next turn."
+  steer_usage:             "Usage: /steer <prompt>"
+  steer_usage_no_agent:    "Usage: /steer <prompt>  (no agent is running; sending as a normal message)"
+  learn_failed:            "Could not start /learn — please try again."
+  quick_command_timeout:   "Quick command timed out (30s)."
+
+  # Goal/subgoal usage
+  goal_usage_wait:  "Usage: /goal wait <pid> [reason]"
+  goal_no_wait_barrier: "No wait barrier set."
+  goal_usage_draft: "Usage: /goal draft <objective in plain language>"
+  goal_no_active:   "No active goal. Set one with /goal <text>."
+  subgoal_usage_remove: "Usage: /subgoal remove <n>"
+  subgoal_no_subgoals: "No subgoals to clear."
+
+  # Telegram topic messages
+  chat_id_unknown:       "Could not determine chat ID."
+  default_chat_name:     "Hermes Chat"
+  topic_mode_disabled:   "Multi-session topic mode is not currently enabled for this chat."
+  topic_not_telegram_session: "That session is not a Telegram session and cannot be restored into this topic."
+  topic_wrong_user:      "That session does not belong to this Telegram user."
+  topic_already_linked:  "That session is already linked to another Telegram topic."
+
+  # Discord voice channel messages
+  voice_not_supported:     "Voice channels are not supported on this platform."
+  voice_discord_only:      "This command only works in a Discord server."
+  voice_not_in_channel:    "You need to be in a voice channel first."
+  voice_join_failed:       "Failed to join voice channel. Check bot permissions (Connect + Speak)."
+  voice_left:              "Left voice channel."
+
   model:
     error_prefix:           "Earráid: {error}"
     switched:               "Athraíodh an tsamhail go `{model}`"

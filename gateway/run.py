@@ -8382,7 +8382,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             if event.get_command() in {"queue", "q"}:
                 queued_text = event.get_command_args().strip()
                 if not queued_text:
-                    return "Usage: /queue <prompt>"
+                    return t("gateway.queue_usage")
                 adapter = self.adapters.get(source.platform)
                 if adapter:
                     queued_event = MessageEvent(
@@ -8406,7 +8406,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             if _cmd_def_inner and _cmd_def_inner.name == "steer":
                 steer_text = event.get_command_args().strip()
                 if not steer_text:
-                    return "Usage: /steer <prompt>"
+                    return t("gateway.steer_usage")
                 running_agent = self._running_agents.get(_quick_key)
                 if running_agent is _AGENT_PENDING_SENTINEL:
                     # Agent hasn't started yet — queue as turn-boundary fallback.
@@ -8420,7 +8420,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                             channel_prompt=event.channel_prompt,
                         )
                         adapter._pending_messages[_quick_key] = queued_event
-                    return "Agent still starting — /steer queued for the next turn."
+                    return t("gateway.busy_agent_starting")
                 if running_agent and hasattr(running_agent, "steer"):
                     try:
                         accepted = running_agent.steer(steer_text)
@@ -8442,11 +8442,11 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                         channel_prompt=event.channel_prompt,
                     )
                     adapter._pending_messages[_quick_key] = queued_event
-                return "No active agent — /steer queued for the next turn."
+                return t("gateway.busy_no_active_agent")
 
             # /model must not be used while the agent is running.
             if _cmd_def_inner and _cmd_def_inner.name == "model":
-                return "Agent is running — wait or /stop first, then switch models."
+                return t("gateway.busy_model_blocked")
 
             # /codex-runtime must not be used while the agent is running.
             # Switching mid-turn would split a turn across two transports.
@@ -8499,10 +8499,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 )
                 if _is_control:
                     return await self._handle_goal_command(event)
-                return "Agent is running — use /goal status / pause / clear / wait mid-run, or /stop before setting a new goal."
+                return t("gateway.busy_goal_blocked")
 
             if _cmd_def_inner and _cmd_def_inner.name == "moa":
-                return "Agent is running — wait or /stop first, then run /moa."
+                return t("gateway.busy_cmd_blocked", cmd="moa")
 
             # /subgoal is safe mid-run — it only modifies the goal's
             # subgoals list, which the judge reads at the next turn
@@ -8866,7 +8866,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 event.text = build_learn_prompt(_learn_req)
                 # fall through to agent processing
             except Exception:
-                return "Could not start /learn — please try again."
+                return t("gateway.learn_failed")
 
         if canonical == "fast":
             return await self._handle_fast_command(event)
@@ -9012,7 +9012,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             # message. If the payload is empty, surface the usage hint.
             steer_payload = event.get_command_args().strip()
             if not steer_payload:
-                return "Usage: /steer <prompt>  (no agent is running; sending as a normal message)"
+                return t("gateway.steer_usage_no_agent")
             try:
                 event.text = steer_payload
             except Exception:
@@ -10653,7 +10653,16 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                         )
                         response = f"> 💭 **Reasoning:**\n{_quoted}\n\n{response}"
                     else:
-                        response = f"💭 **Reasoning:**\n```\n{display_reasoning}\n```\n\n{response}"
+                        # Escape triple-backtick fences inside the reasoning so
+                        # they don't terminate the wrapping code block early
+                        # and leak the rest as plain markdown on platforms like
+                        # Feishu/Telegram. Only line-leading ``` is rewritten
+                        # (covers both opening and closing fences); inline
+                        # single backticks are left untouched.
+                        _safe_reasoning = re.sub(
+                            r'^```', "'''", display_reasoning, flags=re.MULTILINE
+                        )
+                        response = f"💭 **Reasoning:**\n```\n{_safe_reasoning}\n```\n\n{response}"
 
             # Runtime-metadata footer — only on the FINAL message of the turn.
             # Off by default (display.runtime_footer.enabled=false).  When

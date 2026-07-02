@@ -2218,6 +2218,7 @@ def _manage_thinking_signatures(
     _preserve_unsigned_thinking = (
         _is_kimi_family_endpoint(base_url, model)
         or _is_deepseek_anthropic_endpoint(base_url)
+        or _is_minimax_anthropic_endpoint(base_url)
     )
 
     last_assistant_idx = None
@@ -2595,9 +2596,12 @@ def build_anthropic_kwargs(
                 # supported level (Opus/Sonnet 4.6). Opus 4.7+ keeps xhigh.
                 if adaptive_effort == "xhigh" and not _supports_xhigh_effort(model):
                     adaptive_effort = "max"
-                kwargs["output_config"] = {
-                    "effort": adaptive_effort,
-                }
+                # [owner] MiniMax supports adaptive thinking but ignores output_config.effort
+                # (per their docs). Send adaptive without the output_config block.
+                if not _is_minimax_anthropic_endpoint(base_url):
+                    kwargs["output_config"] = {
+                        "effort": adaptive_effort,
+                    }
             else:
                 kwargs["thinking"] = {"type": "enabled", "budget_tokens": budget}
                 # Anthropic requires temperature=1 when thinking is enabled on older models

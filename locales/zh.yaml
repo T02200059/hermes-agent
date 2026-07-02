@@ -374,6 +374,45 @@ gateway:
   still_working:           "⏳ 仍在工作中...（已耗时 {elapsed} 分钟{status_detail}）"
   no_activity_warning:     "⚠️ 已 {elapsed} 分钟无活动。如果代理未在 {remaining} 分钟内响应，将会超时。可继续等待或使用 /reset。"
 
+  # Agent 运行中拦截文案 —— 当 slash command 在 Agent 活跃时被阻塞显示。
+  busy_agent_starting:     "Agent 正在启动 — /steer 已排队到下一轮。"
+  busy_no_active_agent:    "没有活跃的 Agent — /steer 已排队到下一轮。"
+  busy_model_blocked:      "Agent 运行中 — 请等待结束或先执行 /stop，再切换模型。"
+  busy_codex_runtime_blocked: "Agent 运行中 — 请等待结束或先执行 /stop，再切换运行时。"
+  busy_goal_blocked:       "Agent 运行中 — 请使用 /goal status / pause / clear / wait 进行中间操作，或先 /stop 再设置新目标。"
+  busy_cmd_blocked:        "⏳ Agent 运行中 — `/{cmd}` 无法在当前轮次执行。请等待响应结束或先执行 `/stop`。"
+
+  # 命令用法提示
+  queue_usage:             "用法：/queue <提示>"
+  queue_queued:            "已排队到下一轮。"
+  steer_usage:             "用法：/steer <提示>"
+  steer_usage_no_agent:    "用法：/steer <提示>（当前没有运行中的 Agent；将作为普通消息发送）"
+  learn_failed:            "无法启动 /learn — 请重试。"
+  quick_command_timeout:   "快捷命令已超时（30 秒）。"
+
+  # Goal/subgoal 用法
+  goal_usage_wait:  "用法：/goal wait <pid> [reason]"
+  goal_no_wait_barrier: "没有设置等待屏障。"
+  goal_usage_draft: "用法：/goal draft <用自然语言描述的目标>"
+  goal_no_active:   "当前没有活跃的目标。请先使用 /goal <文本> 设置一个。"
+  subgoal_usage_remove: "用法：/subgoal remove <n>"
+  subgoal_no_subgoals: "没有可清除的子目标。"
+
+  # Telegram topic 消息
+  chat_id_unknown:       "无法确定聊天 ID。"
+  default_chat_name:     "Hermes Chat"
+  topic_mode_disabled:   "此聊天当前未启用多会话 topic 模式。"
+  topic_not_telegram_session: "该会话不是 Telegram 会话，无法恢复到当前 topic。"
+  topic_wrong_user:      "该会话不属于此 Telegram 用户。"
+  topic_already_linked:  "该会话已关联到另一个 Telegram topic。"
+
+  # Discord 语音频道消息
+  voice_not_supported:     "本平台不支持语音频道。"
+  voice_discord_only:      "此命令仅在 Discord 服务器中可用。"
+  voice_not_in_channel:    "你需要先加入一个语音频道。"
+  voice_join_failed:       "加入语音频道失败。请检查机器人权限（连接 + 说话）。"
+  voice_left:              "已离开语音频道。"
+
   model:
     error_prefix:           "错误：{error}"
     switched:               "已切换模型为 `{model}`"
