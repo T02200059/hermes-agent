@@ -105,19 +105,16 @@ _TELEGRAM_NOISY_STATUS_RE = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 
-# Surfaces that consume gateway text programmatically (CLI/TUI "local"
-# diagnostics, API JSON, webhook payloads) and therefore must keep RAW
-# status/error text. EVERY other platform is a human-facing chat surface
-# where operational lifecycle/provider-error noise (and any secrets in it)
-# must be suppressed or sanitized. Widens #28533's Telegram-only filter to
-# all chat gateways (#39293). Fail-closed: unknown/empty platform -> chat.
-_GATEWAY_RAW_TEXT_PLATFORMS = frozenset(
-    {"local", "api_server", "webhook", "msgraph_webhook"}
-)
+# CR-004: only the local CLI/TUI surface keeps raw status/error text.
+# api_server, webhook, and msgraph_webhook were removed because they accept
+# external traffic and an attacker could intentionally trigger an error to
+# elicit un-redacted credentials. Widens #28533's Telegram-only filter to
+# all chat gateways (#39293). Fail-closed: unknown/empty platform -> redacted.
+_GATEWAY_RAW_TEXT_PLATFORMS = frozenset({"local"})
 
 
 def _gateway_surface_passes_raw_text(platform: Any) -> bool:
-    """True only for programmatic/local surfaces that must keep raw text."""
+    """True only for the CLI/TUI local surface that must keep raw text."""
     return _gateway_platform_value(platform) in _GATEWAY_RAW_TEXT_PLATFORMS
 
 
