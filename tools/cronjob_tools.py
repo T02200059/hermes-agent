@@ -505,14 +505,11 @@ def _validate_cron_script_path(script: Optional[str]) -> Optional[str]:
     scripts_dir.mkdir(parents=True, exist_ok=True)
     containment_error = validate_within_dir(scripts_dir / raw, scripts_dir)
     if containment_error:
-        # EXEMPTION: symlinks into owner/scripts/ (branch-namespace
-        # pattern for personal forks) are under the same project's VCS
-        # control — but WR-03 narrows the exemption to a cached
-        # basename allowlist (built at first use from the files that
-        # already exist in owner/scripts/). New files added after
-        # startup require a gateway restart to be available, so a
-        # compromised cron job can't immediately exfiltrate via a
-        # freshly-dropped script.
+        # CR-002: symlinks into owner/scripts/ are allowed only when the
+        # basename appears in the mtime-rebuilt allowlist. New files in
+        # owner/scripts/ are picked up on the next cron call without a
+        # gateway restart. The gate is CRON-ONLY — terminal() validates
+        # path containment but does not enforce this allowlist.
         owner_scripts = (get_hermes_home() / "owner" / "scripts").resolve()
         if owner_scripts.is_dir():
             exemption_error = validate_within_dir(scripts_dir / raw, owner_scripts)
@@ -523,9 +520,9 @@ def _validate_cron_script_path(script: Optional[str]) -> Optional[str]:
                     return None
                 return (
                     f"owner/scripts/ exemption rejected: {raw!r} "
-                    f"(basename {basename!r} not in startup allowlist; "
-                    f"restart the gateway after adding new scripts to "
-                    f"owner/scripts/)"
+                    f"(basename {basename!r} not in allowlist; "
+                    f"the file is not visible to the cron entry-point — "
+                    f"this gate is cron-only and does not block terminal())"
                 )
         return (
             f"Script path escapes the scripts directory via traversal: {raw!r}"
@@ -534,25 +531,34 @@ def _validate_cron_script_path(script: Optional[str]) -> Optional[str]:
     return None
 
 
-# WR-03: cached allowlist of owner/scripts/ basenames built at first use.
-# A compromised cron entry cannot exfiltrate via a newly-dropped script
-# because the new file's basename is not in the allowlist. To pick up
-# new files, restart the gateway (which clears the cache via module
-# reload).
+# CR-002: mtime-based allowlist for owner/scripts/. CRON-ONLY — terminal()
+# does not consult this list. See the asymmetry note above the gate.
 _OWNER_SCRIPTS_ALLOWLIST: Optional[set] = None
+_OWNER_SCRIPTS_DIR_MTIME: Optional[float] = None
 
 
 def _get_owner_scripts_allowlist() -> set:
-    global _OWNER_SCRIPTS_ALLOWLIST
-    if _OWNER_SCRIPTS_ALLOWLIST is None:
-        from hermes_constants import get_hermes_home as _gh
-        owner_scripts = (_gh() / "owner" / "scripts").resolve()
+    """Return owner/scripts/ basenames, refreshing when the directory mtime changes."""
+    global _OWNER_SCRIPTS_ALLOWLIST, _OWNER_SCRIPTS_DIR_MTIME
+    from hermes_constants import get_hermes_home as _gh
+    owner_scripts = (_gh() / "owner" / "scripts").resolve()
+    current_mtime: Optional[float] = None
+    if owner_scripts.is_dir():
+        try:
+            current_mtime = owner_scripts.stat().st_mtime
+        except OSError:
+            current_mtime = None
+    if (
+        _OWNER_SCRIPTS_ALLOWLIST is None
+        or current_mtime != _OWNER_SCRIPTS_DIR_MTIME
+    ):
         basenames: set = set()
         if owner_scripts.is_dir():
             for f in owner_scripts.rglob("*"):
                 if f.is_file() and f.suffix.lower() in {".py", ".sh", ".bash"}:
                     basenames.add(f.name)
         _OWNER_SCRIPTS_ALLOWLIST = basenames
+        _OWNER_SCRIPTS_DIR_MTIME = current_mtime
     return _OWNER_SCRIPTS_ALLOWLIST
 
 
