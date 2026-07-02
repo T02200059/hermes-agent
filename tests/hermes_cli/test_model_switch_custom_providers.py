@@ -45,6 +45,52 @@ def test_list_authenticated_providers_includes_custom_providers(monkeypatch):
     )
 
 
+def test_list_authenticated_providers_discovers_env_providers_even_with_user_providers(monkeypatch):
+    """Configured ``providers:`` rows must not short-circuit env discovery.
+
+    A user can have many explicit config.yaml providers and still activate a
+    built-in provider only through ~/.hermes/.env.  /providers should include
+    both sources; otherwise env-only providers such as opencode-go disappear
+    as soon as every configured provider row is emitted.
+    """
+    monkeypatch.setenv("OPENCODE_GO_API_KEY", "test-opencode-go-key")
+    monkeypatch.setattr("agent.models_dev.fetch_models_dev", lambda: {})
+    monkeypatch.setattr("hermes_cli.models.cached_provider_model_ids", lambda slug: [])
+    monkeypatch.setattr(
+        providers_mod,
+        "HERMES_OVERLAYS",
+        {
+            "opencode-go": providers_mod.HermesOverlay(
+                transport="openai_chat",
+                is_aggregator=True,
+                extra_env_vars=("OPENCODE_GO_API_KEY",),
+            )
+        },
+    )
+
+    providers = list_authenticated_providers(
+        current_provider="configured-a",
+        user_providers={
+            "configured-a": {
+                "name": "Configured A",
+                "base_url": "https://a.example/v1",
+                "models": ["a-model"],
+            },
+            "configured-b": {
+                "name": "Configured B",
+                "base_url": "https://b.example/v1",
+                "models": ["b-model"],
+            },
+        },
+        custom_providers=[],
+        max_models=50,
+    )
+
+    assert providers[0]["slug"] == "configured-a"
+    assert any(p["slug"] == "configured-b" for p in providers)
+    assert any(p["slug"] == "opencode-go" for p in providers)
+
+
 def test_resolve_provider_full_finds_named_custom_provider():
     """Explicit /model --provider should resolve saved custom_providers entries."""
     resolved = resolve_provider_full(

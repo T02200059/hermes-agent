@@ -1934,17 +1934,13 @@ def list_authenticated_providers(
             if _pair[0] and _pair[1]:
                 _section3_emitted_pairs.add(_pair)
 
-    # -----------------------------------------------------------------------
-    # Early-exit: if all configured providers were emitted in Layer 1, skip
-    # the slower env-var / auth-store discovery layers entirely.
-    # -----------------------------------------------------------------------
+    # Continue into env-var / auth-store discovery even when every configured
+    # ``providers:`` row was emitted.  A user may still activate additional
+    # built-in providers only via ~/.hermes/.env (for example opencode-go via
+    # OPENCODE_GO_API_KEY); short-circuiting here makes those env-only
+    # providers disappear from /providers as soon as config.yaml has one or
+    # more explicit provider rows.
     _skip_discovery = False
-    if user_providers and isinstance(user_providers, dict):
-        _configured_count = sum(
-            1 for _n, _c in user_providers.items() if isinstance(_c, dict)
-        )
-        if _configured_count > 0 and len(results) >= _configured_count:
-            _skip_discovery = True
 
     if not _skip_discovery:
         # Fetch models.dev data only when discovery layers are actually needed.
