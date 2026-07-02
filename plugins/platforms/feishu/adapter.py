@@ -600,21 +600,25 @@ def _build_markdown_post_payload(content: str) -> str:
 
 
 def _build_markdown_post_rows(content: str) -> List[List[Dict[str, str]]]:
-    """Build Feishu post rows while isolating fenced code blocks.
+    """Build Feishu post rows while isolating fenced code blocks and tables.
 
     Feishu's `md` renderer can swallow trailing content when a fenced code block
     appears inside one large markdown element. Split the reply at real fence
     lines so prose before/after the code block remains visible while code stays
-    in a dedicated row.
+    in a dedicated row.  Tables are similarly isolated so they render correctly
+    instead of being treated as raw text.
     """
     if not content:
         return [[{"tag": "md", "text": ""}]]
-    if "```" not in content:
+    has_fences = "```" in content
+    has_tables = bool(_MARKDOWN_TABLE_RE.search(content))
+    if not has_fences and not has_tables:
         return [[{"tag": "md", "text": content}]]
 
     rows: List[List[Dict[str, str]]] = []
     current: List[str] = []
     in_code_block = False
+    in_table = False
 
     def _flush_current() -> None:
         nonlocal current
@@ -634,6 +638,9 @@ def _build_markdown_post_rows(content: str) -> List[List[Dict[str, str]]]:
         )
 
         if is_fence:
+            if in_table:
+                in_table = False
+                _flush_current()
             if not in_code_block:
                 _flush_current()
             current.append(raw_line)
@@ -641,6 +648,16 @@ def _build_markdown_post_rows(content: str) -> List[List[Dict[str, str]]]:
             if not in_code_block:
                 _flush_current()
             continue
+
+        # Isolate markdown table blocks into dedicated rows.
+        if not in_code_block:
+            is_table_line = stripped_line.startswith("|") and stripped_line.endswith("|")
+            if is_table_line and not in_table:
+                _flush_current()
+                in_table = True
+            elif not is_table_line and in_table:
+                in_table = False
+                _flush_current()
 
         current.append(raw_line)
 
@@ -1509,6 +1526,13 @@ class FeishuAdapter(BasePlatformAdapter):
         self._pending_drain_scheduled = False
         self._pending_inbound_max_depth = 1000  # cap queue; drop oldest beyond
         self._chat_locks: "collections.OrderedDict[str, asyncio.Lock]" = collections.OrderedDict()  # chat_id → lock (per-chat serial processing, LRU-bounded)
+        # [owner] auto-card: per-chat lock held across the WHOLE multi-chunk
+        # card dispatch so background watcher notifications can't interleave
+        # between two card chunks and reorder the message stream. Distinct from
+        # ``_chat_locks`` (which guards the inbound handle_message path and is
+        # already held when send()→try_auto_card runs) — re-acquiring that one
+        # here would deadlock asyncio.Lock.
+        self._card_send_locks: "collections.OrderedDict[str, asyncio.Lock]" = collections.OrderedDict()
         # [owner] bot-menu: dedup + bot_menu_dedup_lock (see owner/feishu/bot_menu.py)
         self._bot_menu_dedup: Dict[Tuple[str, str], float] = {}
         self._bot_menu_dedup_lock = threading.Lock()
@@ -2901,7 +2925,17 @@ class FeishuAdapter(BasePlatformAdapter):
         card: Dict[str, Any],
         metadata: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
-        """Send a Feishu interactive card (thin wrapper over _send_raw_message)."""
+        """Send a Feishu interactive card (thin wrapper over _send_raw_message).
+
+        Uses ``_finalize_send_result`` (like ``send`` / ``edit_message`` /
+        ``send_exec_approval``) instead of returning ``success=True``
+        unconditionally. Feishu returns API-level errors (9499 / 1120004 /
+        230002 / …) as a response object with ``success() == False`` — it does
+        NOT raise. The previous code surfaced those as success, which broke
+        auto-card's retry/fallback chain: retries never fired, the
+        ``return None`` fallback was skipped, and ``already_sent`` sealed the
+        plain-text safety net.
+        """
         import json as _json
         try:
             payload = _json.dumps(card, ensure_ascii=False)
@@ -2912,11 +2946,7 @@ class FeishuAdapter(BasePlatformAdapter):
                 reply_to=None,
                 metadata=metadata,
             )
-            message_id = ""
-            data = getattr(response, "data", None)
-            if data:
-                message_id = getattr(data, "message_id", "") or ""
-            return SendResult(success=True, message_id=message_id)
+            return self._finalize_send_result(response, "card send failed")
         except Exception as exc:
             logger.warning("[Feishu] send_card failed: %s", exc)
             return SendResult(success=False, error=str(exc))
@@ -3226,6 +3256,30 @@ class FeishuAdapter(BasePlatformAdapter):
                 self._chat_locks.pop(next(iter(self._chat_locks)))
         lock = asyncio.Lock()
         self._chat_locks[chat_id] = lock
+        return lock
+
+    def _get_card_send_lock(self, chat_id: str) -> asyncio.Lock:
+        """Per-chat lock serializing multi-chunk auto-card dispatch.
+
+        Separate from ``_get_chat_lock`` (inbound handling), which is already
+        held on the call path into ``send``→``try_auto_card``. Bounded the same
+        LRU way to keep memory in check.
+        """
+        lock = self._card_send_locks.get(chat_id)
+        if lock is not None:
+            self._card_send_locks.move_to_end(chat_id)
+            return lock
+        if len(self._card_send_locks) >= self.CHAT_LOCK_MAX_SIZE:
+            evicted = False
+            for key in list(self._card_send_locks):
+                if not self._card_send_locks[key].locked():
+                    self._card_send_locks.pop(key)
+                    evicted = True
+                    break
+            if not evicted:
+                self._card_send_locks.pop(next(iter(self._card_send_locks)))
+        lock = asyncio.Lock()
+        self._card_send_locks[chat_id] = lock
         return lock
 
     async def _handle_message_with_guards(self, event: MessageEvent) -> None:
@@ -4771,13 +4825,10 @@ class FeishuAdapter(BasePlatformAdapter):
     # =========================================================================
 
     def _build_outbound_payload(self, content: str) -> tuple[str, str]:
-        # Feishu post-type 'md' elements do not render markdown tables; sending
-        # table content as post causes the message to appear blank on the client.
-        # Force plain text for anything that looks like a markdown table.
-        if _MARKDOWN_TABLE_RE.search(content):
-            text_payload = {"text": content}
-            return "text", json.dumps(text_payload, ensure_ascii=False)
-        if _MARKDOWN_HINT_RE.search(content):
+        # Route markdown-rich content (including tables) through the post
+        # pathway so Feishu renders it with proper formatting instead of
+        # showing raw markdown source.
+        if _MARKDOWN_TABLE_RE.search(content) or _MARKDOWN_HINT_RE.search(content):
             return "post", _build_markdown_post_payload(content)
         text_payload = {"text": content}
         return "text", json.dumps(text_payload, ensure_ascii=False)

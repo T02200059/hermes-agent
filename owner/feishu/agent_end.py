@@ -43,6 +43,13 @@ async def try_auto_card_on_end(
     if source.platform != Platform.FEISHU or not response:
         return response, footer_line
 
+    # Medium#6: when streaming already delivered the body (already_sent=True),
+    # the response has been shown to the user live. force=True below would skip
+    # the streaming-disabled guard and re-fire the WHOLE body as a duplicate
+    # card. Bail before that.
+    if agent_result.get("already_sent"):
+        return response, footer_line
+
     adapter = runner.adapters.get(Platform.FEISHU)
     if adapter is None:
         return response, footer_line
@@ -67,18 +74,55 @@ async def try_auto_card_on_end(
 
             _media_files, _cleaned = adapter.extract_media(response)
             _media_files = BasePlatformAdapter.filter_media_delivery_paths(_media_files)
-            if _media_files:
+            # Medium#8: extract_media only strips ``MEDIA:`` tags; bare local
+            # paths (auto-detected by extract_local_files in the gateway
+            # delivery chain) are NOT stripped here, so a bare path would
+            # leak into the card body as literal text AND be re-delivered as
+            # an attachment. Mirror the gateway's chain order and detect bare
+            # paths; when we end up shipping attachments we then strip BOTH
+            # MEDIA tags and bare paths from the text fed to the card so
+            # nothing appears twice.
+            if hasattr(adapter, "extract_images"):
+                _, _cleaned_no_img = adapter.extract_images(_cleaned)
+            else:
+                _cleaned_no_img = _cleaned
+            _local_files: list = []
+            _cleaned_no_paths = _cleaned_no_img
+            if hasattr(adapter, "extract_local_files"):
+                _local_files, _cleaned_no_paths = adapter.extract_local_files(_cleaned_no_img)
+            has_attachments = bool(_media_files) or bool(_local_files)
+            if has_attachments:
                 # 把附件投递 + 联合管线（extract_images / extract_local_files）交给 gateway，
-                # 我们只用清理后的 _cleaned 去包卡片。
-                await runner._deliver_media_from_response(response, event, adapter)
-                # _deliver_media_from_response 不返回清理文本，用本地的 _cleaned。
-                response = _cleaned
-                # 边界：response 原本只有 MEDIA 标签 → 清理后为空。附件已投递，没有正文
-                # 可包卡片，直接返回 already_sent 让下游 plain-text 跳过（否则
-                # try_auto_card(force=True) 会发一张空卡片）。
+                # 我们只用剥光后的 _cleaned_no_paths 去包卡片。
+                #
+                # Medium#7: _deliver_media_from_response swallows per-item
+                # delivery errors as warnings and returns None. If the cleaned
+                # body is empty (a MEDIA-only / path-only response) and delivery
+                # failed, setting already_sent=True here would seal the plain-
+                # text safety net and leave the user with zero output. Track
+                # whether delivery even started; if the cleaned body is empty we
+                # don't claim success — fall through so the downstream plain-
+                # text path can retry delivery and at minimum surface a message.
+                deliv_started = True
+                try:
+                    await runner._deliver_media_from_response(response, event, adapter)
+                except Exception as deliv_exc:
+                    deliv_started = False
+                    logger.warning(
+                        "[Feishu] auto-card pre-deliver media raised: %s", deliv_exc
+                    )
+                # 附件已（尝试）投递；剥光 MEDIA 标签 + 裸路径后的文本喂给卡片，避免重复。
+                response = _cleaned_no_paths
+                # 边界：response 原本只有 MEDIA 标签 / 裸路径 → 清理后为空。
                 if not response:
-                    agent_result["already_sent"] = True
-                    return "", ""
+                    if deliv_started:
+                        # 附件投递链至少跑通了；没有正文可包卡片，直接返回 already_sent
+                        # 让下游 plain-text 跳过（否则 try_auto_card(force=True) 会发一张空卡片）。
+                        agent_result["already_sent"] = True
+                        return "", ""
+                    # 投递链异常 + 空正文：不设 already_sent，把原始 response 交还下游兜底，
+                    # 避免用户零输出。
+                    return response, footer_line
         except Exception as exc:
             logger.debug("auto-card pre-deliver media failed: %s", exc)
 

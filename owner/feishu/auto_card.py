@@ -291,14 +291,66 @@ def _evaluate_card_feasibility(text: str, footer: str = "") -> _FeishuCardPlan:
 # Splitting
 # ---------------------------------------------------------------------------
 
+def _line_starts_fence(line: str) -> bool:
+    """True for a fenced-code opening line, matching ``_find_code_block_over``.
+
+    Counts as a fence only lines whose first non-space chars are ``\\`\\`\\``.
+    Literal ``\\`\\`\\`` substrings inside a code span / inline code do NOT
+    flip fence parity (the previous ``text.count("\\`\\`\\`") % 2`` heuristic
+    did, which broke on bodies containing backtick-tickled examples).
+    """
+    return line.lstrip().startswith("```")
+
+
+def _find_leading_table_end(text: str) -> int:
+    """Return the exclusive end index of a GFM table that begins ``text``.
+
+    A table "begins" when the first non-blank line is a header row
+    (``| ... |``) immediately followed by a separator row
+    (``| --- | ... |``). The table extends through every subsequent line
+    that still looks like a table row (``|``-bearing, non-blank). Returns 0
+    when ``text`` does not start with a table.
+
+    Used by ``_split_text_for_card`` so a table is never split across two
+    cards — table rows are only ``\\n``-separated, so the old paragraph /
+    line / space cut priority would land between two rows and shatter the
+    rendering.
+    """
+    lines = text.splitlines()
+    if len(lines) < 2:
+        return 0
+    # Skip nothing — table must start at the very front (the caller already
+    # lstrips leading newlines). First two lines must be header + separator.
+    if not _AUTO_CARD_SPLIT_TABLE_HEADER_RE.match(text.lstrip("\n")):
+        return 0
+    header = lines[0]
+    sep = lines[1]
+    if "|" not in header or "|" not in sep:
+        return 0
+    if not re.match(r"^\s*\|?[\s:|-]+\|?\s*$", sep) or "-" not in sep:
+        return 0
+    # Consume contiguous table rows (lines containing a pipe).
+    end_line = 2
+    while end_line < len(lines):
+        ln = lines[end_line]
+        if not ln.strip() or "|" not in ln:
+            break
+        end_line += 1
+    # Length of lines[0:end_line] joined with newlines + trailing newline.
+    return sum(len(lines[i]) + 1 for i in range(end_line))
+
+
 def _split_text_for_card(text: str, max_chars: int) -> List[str]:
-    """Paragraph-aware splitter that keeps fenced code blocks intact.
+    """Paragraph-aware splitter that keeps fenced code blocks and GFM tables intact.
 
     Cut priority (in order): paragraph break ``\\n\\n``, line break ``\\n``,
     space. When a cut lands inside a fenced block the fence is closed on the
     current chunk and reopened (with the original language tag) on the next
-    chunk. ``INDICATOR_RESERVE = 30`` leaves room for the ``_(N/M)_``
-    indicator appended by the caller.
+    chunk. A GFM table at the start of the remaining text is treated as an
+    atomic unit — the whole table is taken in one chunk (or, if larger than
+    the budget, hard-cut at a row boundary as the last resort) rather than
+    letting the splitter land between two rows. ``INDICATOR_RESERVE = 30``
+    leaves room for the ``_(N/M)_`` indicator appended by the caller.
     """
     if len(text) <= max_chars:
         return [text]
@@ -313,7 +365,33 @@ def _split_text_for_card(text: str, max_chars: int) -> List[str]:
     while remaining:
         prefix = f"```{carry_lang}\n" if carry_lang is not None else ""
         headroom = max_chars - INDICATOR_RESERVE - len(prefix) - len(FENCE_CLOSE)
-        if headroom < 1:
+
+        # High#3: atomic GFM table at the head. Extend the cut to cover the
+        # whole table so we don't land between two rows.
+        table_end = _find_leading_table_end(remaining)
+        if table_end > 0:
+            if table_end >= len(remaining):
+                cut = len(remaining)
+            elif headroom < 1:
+                # Degenerate dense content: hard cut.
+                cut = max_chars
+            elif table_end <= headroom:
+                # Whole table fits in this chunk — take it whole.
+                cut = table_end
+                while cut < len(remaining) and remaining[cut] == "\n":
+                    cut += 1
+            else:
+                # Table bigger than one chunk. Walk row-by-row to the last
+                # row that still fits, rather than splitting mid-row.
+                lines = remaining.splitlines()
+                acc = len(lines[0]) + 1 + len(lines[1]) + 1  # header + sep
+                cut = acc
+                for ln in lines[2:]:
+                    if acc + len(ln) + 1 > headroom:
+                        break
+                    acc += len(ln) + 1
+                    cut = acc
+        elif headroom < 1:
             # Degenerate: content is so dense that no splitter cut can produce
             # anything smaller than the budget. Take a hard cut at max_chars.
             cut = max_chars
@@ -328,14 +406,33 @@ def _split_text_for_card(text: str, max_chars: int) -> List[str]:
                 cut = headroom
 
         body = prefix + remaining[:cut].rstrip()
-        total_fences = body.count("```")
-        inside_fence = (total_fences % 2) == 1
 
-        if inside_fence:
-            last_open = body.rfind("```")
-            if last_open >= 0:
-                after = body[last_open + 3 :].lstrip("\n").split("\n", 1)[0]
-                carry_lang = after if after and " " not in after else ""
+        # Medium#4: line-based fence parity instead of substring count. The
+        # old ``body.count("```") % 2 == 1`` counted literal backticks inside
+        # inline code / prose and falsely flipped parity, leaking the fence.
+        last_fence_line = -1
+        fence_line_count = 0
+        for i, line in enumerate(body.split("\n")):
+            if _line_starts_fence(line):
+                fence_line_count += 1
+                last_fence_line = i
+        inside_fence = (fence_line_count % 2) == 1
+
+        if inside_fence and last_fence_line >= 0:
+            # Medium#5: when the opening fence has NO info string (bare ```),
+            # ``body[last_open+3:]`` would grab the first line of code as the
+            # carry language. Detect an empty/whitespace-only info string and
+            # explicitly reset carry_lang to "" so the next chunk reopens with
+            # a bare ``` rather than smuggling code as a language tag.
+            joined = body.split("\n")
+            open_line = joined[last_fence_line]
+            info = open_line.lstrip()[3:].strip()
+            if info == "":
+                carry_lang = ""
+            else:
+                # First token of the info string is the language; ignore any
+                # trailing whitespace-only remainder.
+                carry_lang = info.split()[0]
             body += FENCE_CLOSE
         else:
             carry_lang = None
@@ -414,6 +511,16 @@ async def try_auto_card(
         body_chunks = [formatted_text]
 
     n_chunks = len(body_chunks)
+    # Low#10: all-whitespace input can survive feasibility (no risk tables /
+    # code blocks) yet produce an empty chunk list once _split_text_for_card
+    # filters blanks. Returning a fabricated success here would suppress the
+    # plain-text fallback and show the user nothing. Bail to None instead.
+    if not body_chunks:
+        logger.info(
+            "[Feishu] auto-card: splitter produced 0 chunks (text=%d); falling through to plain text",
+            len(formatted_text),
+        )
+        return None
     if n_chunks > 1:
         logger.info(
             "[Feishu] auto-card: sending %d chunks (text=%d, est_json=%d bytes)",
@@ -428,49 +535,66 @@ async def try_auto_card(
     # 推导退化" for synthetic DM / auto-card paths.
     chat_id = chat_id or getattr(adapter, "_chat_id", "") or ""
     last_error = ""
+    last_card_result: Optional[SendResult] = None
 
-    for idx, body in enumerate(body_chunks):
-        if n_chunks > 1:
-            card_text = f"{body}\n\n_({idx + 1}/{n_chunks})_"
-        else:
-            card_text = body
-        # [owner] auto-card: footer + hr only on the last chunk
-        card_footer = footer if idx == n_chunks - 1 else ""
-        card = make_auto_card(card_text, footer=card_footer)
+    # [owner] High#2: hold a per-chat card-send lock across the WHOLE chunk
+    # loop so a background-process watcher notification can't slip between
+    # two card sends and reorder the message stream. The lock is distinct
+    # from the inbound chat_lock (which is already held by the call path
+    # into send()→try_auto_card), so re-acquiring it here would deadlock.
+    # Fall back to a no-op context manager for adapters that predate this
+    # helper (defensive — shouldn't happen on the current plugin adapter).
+    send_lock = getattr(adapter, "_get_card_send_lock", None)
+    if send_lock is None or n_chunks <= 1:
+        import contextlib
+        lock_ctx = contextlib.nullcontext()
+    else:
+        lock_ctx = send_lock(chat_id)
 
-        card_result = None
-        for attempt in range(_MAX_CARD_SEND_ATTEMPTS):
-            card_result = await adapter.send_card(
-                chat_id=chat_id,
-                card=card,
-                metadata=metadata,
-            )
-            if card_result.success:
-                break
-            if attempt < _MAX_CARD_SEND_ATTEMPTS - 1:
+    async with lock_ctx:
+        for idx, body in enumerate(body_chunks):
+            if n_chunks > 1:
+                card_text = f"{body}\n\n_({idx + 1}/{n_chunks})_"
+            else:
+                card_text = body
+            # [owner] auto-card: footer + hr only on the last chunk
+            card_footer = footer if idx == n_chunks - 1 else ""
+            card = make_auto_card(card_text, footer=card_footer)
+
+            card_result = None
+            for attempt in range(_MAX_CARD_SEND_ATTEMPTS):
+                card_result = await adapter.send_card(
+                    chat_id=chat_id,
+                    card=card,
+                    metadata=metadata,
+                )
+                if card_result.success:
+                    break
+                if attempt < _MAX_CARD_SEND_ATTEMPTS - 1:
+                    logger.warning(
+                        "[Feishu] auto-card chunk %d/%d attempt %d/%d failed (%s), retrying in %.1fs",
+                        idx + 1,
+                        n_chunks,
+                        attempt + 1,
+                        _MAX_CARD_SEND_ATTEMPTS,
+                        card_result.error or "unknown",
+                        _CARD_SEND_RETRY_DELAY_SECONDS,
+                    )
+                    await asyncio.sleep(_CARD_SEND_RETRY_DELAY_SECONDS)
+
+            if card_result is None or not card_result.success:
+                last_error = (card_result.error or "unknown") if card_result else "unknown"
                 logger.warning(
-                    "[Feishu] auto-card chunk %d/%d attempt %d/%d failed (%s), retrying in %.1fs",
+                    "[Feishu] auto-card chunk %d/%d failed after %d attempts: %s; falling back to plain text",
                     idx + 1,
                     n_chunks,
-                    attempt + 1,
                     _MAX_CARD_SEND_ATTEMPTS,
-                    card_result.error or "unknown",
-                    _CARD_SEND_RETRY_DELAY_SECONDS,
+                    last_error,
                 )
-                await asyncio.sleep(_CARD_SEND_RETRY_DELAY_SECONDS)
-
-        if card_result is None or not card_result.success:
-            last_error = (card_result.error or "unknown") if card_result else "unknown"
-            logger.warning(
-                "[Feishu] auto-card chunk %d/%d failed after %d attempts: %s; falling back to plain text",
-                idx + 1,
-                n_chunks,
-                _MAX_CARD_SEND_ATTEMPTS,
-                last_error,
-            )
-            return None
+                return None
+            last_card_result = card_result
 
     # All chunks sent successfully.
-    if n_chunks == 1 and card_result is not None:
-        return card_result
-    return SendResult(success=True, message_id="auto-card")
+    if last_card_result is not None and last_card_result.success:
+        return last_card_result
+    return SendResult(success=True, message_id="")
