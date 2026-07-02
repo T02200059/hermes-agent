@@ -359,11 +359,18 @@ async def test_command_hook_rewrite_routes_to_plugin(monkeypatch):
         "get_plugin_commands",
         lambda: {"metricas": {"description": "Metrics", "args_hint": "dias:7"}},
     )
-    monkeypatch.setattr(
-        _plugins_mod,
-        "get_plugin_command_handler",
-        lambda name: (lambda args: f"metrics {args}") if name == "metricas" else None,
-    )
+
+    def _plugin_entry(name):
+        if name != "metricas":
+            return None
+        return {
+            "handler": lambda args: f"metrics {args}",
+            "description": "Metrics",
+            "args_hint": "dias:7",
+            "accepts_ctx": False,
+        }
+
+    monkeypatch.setattr(_plugins_mod, "get_plugin_command_entry", _plugin_entry)
 
     result = await runner._handle_message(_make_event("/status"))
 
@@ -371,3 +378,56 @@ async def test_command_hook_rewrite_routes_to_plugin(monkeypatch):
     # First emit_collect fires on the original command; after rewrite the
     # dispatcher does NOT re-fire for the new command (one decision per turn).
     assert call_log == ["command:status"]
+
+
+@pytest.mark.asyncio
+async def test_plugin_command_receives_gateway_context(monkeypatch):
+    """Context-aware plugin commands receive event/adapters/runner."""
+    import gateway.run as gateway_run
+    from hermes_cli import plugins as _plugins_mod
+
+    runner = _make_runner()
+    runner._run_agent = AsyncMock(
+        side_effect=AssertionError("plugin command leaked to the agent")
+    )
+    monkeypatch.setattr(
+        gateway_run, "_resolve_runtime_agent_kwargs", lambda: {"api_key": "***"}
+    )
+    monkeypatch.setattr(
+        _plugins_mod,
+        "get_plugin_commands",
+        lambda: {"ctxcmd": {"description": "Ctx", "args_hint": ""}},
+    )
+
+    seen = {}
+
+    async def _handler(args, *, hermes_ctx):
+        seen["args"] = args
+        seen["event"] = hermes_ctx.event
+        seen["adapters"] = hermes_ctx.adapters
+        seen["runner"] = hermes_ctx.runner
+        seen["platform"] = hermes_ctx.platform
+        return "ctx ok"
+
+    monkeypatch.setattr(
+        _plugins_mod,
+        "get_plugin_command_entry",
+        lambda name: {
+            "handler": _handler,
+            "description": "Ctx",
+            "args_hint": "",
+            "accepts_ctx": True,
+        } if name == "ctxcmd" else None,
+    )
+
+    event = _make_event("/ctxcmd alpha")
+    result = await runner._handle_message(event)
+
+    assert result == "ctx ok"
+    assert seen == {
+        "args": "alpha",
+        "event": event,
+        "adapters": runner.adapters,
+        "runner": runner,
+        "platform": "telegram",
+    }

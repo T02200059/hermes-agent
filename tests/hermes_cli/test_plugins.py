@@ -1449,6 +1449,43 @@ class TestPluginCommands:
         ctx.register_command("status-cmd", lambda a: a)
         assert mgr._plugin_commands["status-cmd"]["description"] == "Plugin command"
 
+    def test_register_command_detects_context_opt_in(self):
+        """Handlers declaring hermes_ctx are marked for context dispatch."""
+        mgr = PluginManager()
+        manifest = PluginManifest(name="test-plugin", source="user")
+        ctx = PluginContext(manifest, mgr)
+
+        def with_ctx(raw_args, *, hermes_ctx):
+            return raw_args, hermes_ctx
+
+        def legacy(raw_args):
+            return raw_args
+
+        ctx.register_command("with-ctx", with_ctx)
+        ctx.register_command("legacy", legacy)
+
+        assert mgr._plugin_commands["with-ctx"]["accepts_ctx"] is True
+        assert mgr._plugin_commands["legacy"]["accepts_ctx"] is False
+
+    def test_get_plugin_command_entry_returns_metadata_copy(self):
+        """get_plugin_command_entry() exposes accepts_ctx without mutating state."""
+        from hermes_cli.plugins import get_plugin_command_entry
+
+        mgr = PluginManager()
+        manifest = PluginManifest(name="test-plugin", source="user")
+        ctx = PluginContext(manifest, mgr)
+        handler = lambda args, **kwargs: "ok"
+        ctx.register_command("ctx-cmd", handler, description="Ctx command")
+
+        with patch("hermes_cli.plugins._plugin_manager", mgr):
+            entry = get_plugin_command_entry("ctx-cmd")
+
+        assert entry is not None
+        assert entry["handler"] is handler
+        assert entry["accepts_ctx"] is True
+        entry["description"] = "changed"
+        assert mgr._plugin_commands["ctx-cmd"]["description"] == "Ctx command"
+
     def test_get_plugin_command_handler_found(self):
         """get_plugin_command_handler() returns the handler for a registered command."""
         mgr = PluginManager()

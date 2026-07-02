@@ -2535,14 +2535,6 @@ class GatewaySlashCommandsMixin:
                      f"~/.hermes/pending/skills/{pending_id}.json)")
         return out
 
-    async def _handle_providers_command(self, event: MessageEvent) -> Optional[str]:
-        """Handle /providers — delegate to owner/commands/providers.py."""
-        try:
-            from owner.commands.providers import handle_providers_command
-            return await handle_providers_command(adapters=self.adapters, event=event)
-        except ImportError:
-            return "providers 命令不可用"
-
     async def _handle_fast_command(self, event: MessageEvent) -> str:
         """Handle /fast — mirror the CLI Priority Processing toggle in gateway chats."""
         from gateway.run import _hermes_home, _load_gateway_config, _resolve_gateway_model

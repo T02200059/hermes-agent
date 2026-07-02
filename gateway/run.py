@@ -8812,9 +8812,6 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         if canonical == "memory":
             return await self._handle_memory_command(event)
 
-        if canonical == "providers":  # [owner] /providers command
-            return await self._handle_providers_command(event)
-
         if canonical == "skills":
             return await self._handle_skills_command(event)
 
@@ -9111,14 +9108,32 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         # Plugin-registered slash commands
         if command:
             try:
-                from hermes_cli.plugins import get_plugin_command_handler
+                from hermes_cli.plugins import (
+                    get_plugin_command_entry,
+                    make_plugin_command_context,
+                )
                 # Normalize underscores to hyphens so Telegram's underscored
                 # autocomplete form matches plugin commands registered with
                 # hyphens. See hermes_cli/commands.py:_build_telegram_menu.
-                plugin_handler = get_plugin_command_handler(command.replace("_", "-"))
+                plugin_entry = get_plugin_command_entry(command.replace("_", "-"))
+                if plugin_entry:
+                    plugin_handler = plugin_entry.get("handler")
+                else:
+                    plugin_handler = None
                 if plugin_handler:
                     user_args = event.get_command_args().strip()
-                    result = plugin_handler(user_args)
+                    if plugin_entry.get("accepts_ctx"):
+                        result = plugin_handler(
+                            user_args,
+                            hermes_ctx=make_plugin_command_context(
+                                platform=source.platform.value if source and source.platform else None,
+                                event=event,
+                                adapters=self.adapters,
+                                runner=self,
+                            ),
+                        )
+                    else:
+                        result = plugin_handler(user_args)
                     if asyncio.iscoroutine(result):
                         result = await result
                     return str(result) if result else None

@@ -34,7 +34,7 @@ async def handle_providers_command(
     # Lazy imports — keep gateway dependency minimal.
     from gateway.config import Platform
 
-    source = event.source
+    source = getattr(event, "source", None)
     chat_id = getattr(source, "chat_id", "") or ""
 
     # Feishu: interactive card

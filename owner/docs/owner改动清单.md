@@ -112,7 +112,7 @@
   - 纯新增：`owner/tools/schema_patches.py`、`owner/patches/pool_base_url_override.py`
   - 侵入：`agent/credential_pool.py`、`hermes_cli/runtime_provider.py`（两处 `[owner-patch] P29` + base_url override 薄胶水）、`run_agent.py`、`agent/model_metadata.py`（`[owner-patch] P29`）、`tui_gateway/server.py`（`[owner-patch] P29`）
 - **侵入类型**：import 编排（schema_patches 是 runtime patch）、薄胶水（P29 三处 + base_url override）
-- **Commit**：`7f1a80ddb`（§3.10+§3.11）、`e78e53a71`（§11.2 P29 三处防泄露）、`de2295c0c`（补 schema_patches import 让 send_message card + image_generate model 参数生效）、`2c592b7ad`（upstream-native 检测）、当前未提交改动（迁入 `owner-extensions` plugin）
+- **Commit**：`7f1a80ddb`（§3.10+§3.11）、`e78e53a71`（§11.2 P29 三处防泄露）、`de2295c0c`（补 schema_patches import 让 send_message card + image_generate model 参数生效）、`2c592b7ad`（upstream-native 检测）、`7b54ff5e8`（迁入 `owner-extensions` plugin）
 
 ### 2.4 reasoning 显示转义 + MiniMax thinking-block + i18n 硬编码翻译
 
@@ -527,7 +527,7 @@
 | `owner/checkpoint_predictor/` | terminal 预测式 checkpoint（静态+LLM） | agent/tool_executor.py |
 | `owner/clarify/` | clarify choice 归一化 + gateway helpers | tools/clarify_tool.py / clarify_gateway.py |
 | `owner/cli/yolo.py` | YOLO on/off/status 命令 | — |
-| `owner/commands/providers.py` | /providers 斜杠命令实现 | gateway/run.py |
+| `owner/commands/providers.py` | /providers plugin 斜杠命令实现 | owner-extensions plugin |
 | `owner/cron/` | cron session 隔离 + restart scrub + run_job hook + approval helper | cron/* + gateway/run.py |
 | `owner/diff_card/` | diff 卡片平台分发（飞书/QQ） | feishu/adapter.py |
 | `owner/feishu/` | 飞书深度定制（16 模块） | feishu/adapter.py（64 处标记） |
@@ -544,7 +544,7 @@
 
 | 文件 | 侵入内容 | owner/ 对应模块 | 相关 commit |
 |------|----------|-----------------|-------------|
-| `gateway/run.py` | cron env scrub ×3、executor-shutdown、/providers、inbound context、hygiene notice、auto-card、per-chat display、chained quick command | owner/cron/、owner/commands/、owner/gateway/、owner/feishu/、owner/display_overrides.py | 几乎所有 §11/§17 commit |
+| `gateway/run.py` | cron env scrub ×3、executor-shutdown、inbound context、hygiene notice、auto-card、per-chat display、chained quick command | owner/cron/、owner/gateway/、owner/feishu/、owner/display_overrides.py | 几乎所有 §11/§17 commit |
 | `plugins/platforms/feishu/adapter.py` | 64 处 `[owner]` 标记：approval/auto_card/bot_menu/clarify/diff_card/model_picker/profile_routing/resume_card/sender_name/early-typing 委托 | owner/feishu/*（16 模块） | §4.2/§5.3-5.7/§17.1 |
 | `agent/conversation_loop.py` | MoA 注入（CR-005 已改为独立 message）、content-filter fallback、adaptive backoff、thinking-timeout、attribution 重建、tool_call_id 胶水 | owner/attribution.py、owner/api_error_hints.py | a6dcd6ed8、9a05e50b4、362304bc8 |
 | `tools/approval.py` | home-prefix fold（CR-001 修复）、skill script 自动审批（3 处委托）、patch.yaml allowlist 合并、cron active helper | owner/approval/、owner/patch_config.py、owner/cron/approval_helper.py | 82fe8c962、5dd9580b4、99a374f64 |
@@ -599,13 +599,13 @@
 **治理原则**：所有迁移和 hook 化工作在 owner fork 内闭环完成，不考虑给 Hermes 官方提 PR。如果 Hermes core 缺少我们需要的扩展点（hook、ABC 方法等），在我们自己的 fork 里加，不等官方接受。上游同步时这些扩展点作为 owner diff 维护。
 
 1. **owner_provider_name 归因链** — 当前贯穿 10+ 官方文件。候选：通过 `on_session_start` / `pre_llm_call` hook + 一个 owner/ 维护的 ContextVar，减少官方文件的属性透传链。`hermes_state.py` 的 DB 列扩展是不可避免的持久层改动。
-2. **gateway/run.py** — 侵入最重（~20 处，已移出 memory synthetic guard / OpenViking recall / runtime schema patches 三类顶层 runtime patch）。剩余建议继续按功能拆分：cron env scrub（已评估不能迁 plugin）、inbound context、hygiene notice、auto-card、chained quick command。
+2. **gateway/run.py** — 侵入最重（~20 处，已移出 memory synthetic guard / OpenViking recall / runtime schema patches / `/providers` 四类 owner 入口）。剩余建议继续按功能拆分：cron env scrub（已评估不能迁 plugin）、inbound context、hygiene notice、auto-card、chained quick command。
 3. **plugins/platforms/feishu/adapter.py** — 64 处标记但大多是 1-3 行 `_owner_import` 委托，已是规范的薄胶水模式。保持现状即可；sync 冲突可通过 `_owner_import` 的 try-import 容错吸收。
 4. **tools/approval.py** — home-prefix fold + skill script 自动审批是安全核心逻辑，建议保留在 owner/ 并继续薄胶水委托，不建议改成 hook（hook 时机不可靠）。
 5. **patch.yaml 配置系统** — 已是干净的 owner/ 集中加载，官方文件只 import。无需迁移。
 6. **runtime schema patches**（`owner/tools/schema_patches.py`）— 已迁入 `owner-extensions` plugin；验证依据：`model_tools.py` 先 `discover_builtin_tools()` 注册 schema dict 引用，再 `discover_plugins()`，plugin `register(ctx)` import 后可修改同一 dict；smoke test 已看到 `image_generate.model` 出现在工具 schema。
 7. **per-chat display overrides**（`owner/display_overrides.py`）— 不迁 plugin。原因：它不是独立启动期 patch，而是各个 display 决策点必须传入当前 `source/chat_id` 后同步解析；已通过 `gateway.display_config.resolve_display_setting_for_source()` 集中 chat_id 提取，`gateway/run.py` 只保留必要调用点。进一步迁 plugin 需要新增 display hook 并改所有调用路径，收益低于现状。
-8. **`/providers` command**（`owner/commands/providers.py`）— 已最小化，不再作为下一步迁移项。`gateway/run.py` 只剩 slash 分发一行，`gateway/slash_commands.py` 的 `_handle_providers_command()` 只做 try-import 委托和 ImportError fallback；实际实现全在 owner/。
+8. **`/providers` command**（`owner/commands/providers.py`）— 已迁入 `owner-extensions` plugin command。Hermes plugin slash command API 已扩展 opt-in `hermes_ctx`（event/adapters/runner/platform），保留 Feishu interactive provider picker；`gateway/run.py` 的 `canonical == "providers"` 分支和 `gateway/slash_commands.py::_handle_providers_command()` shim 已删除。
 9. **cron job args / owner/scripts allowlist** — inline `[owner-patch]`，建议未来在 cron 工具暴露扩展点后改为插件。
 10. **chained quick command（;;）** — 4 处 Python + 3 处 TS inline，是全平台语法增强，不适合 hook 化，建议保持。
 
@@ -652,3 +652,11 @@ _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请在�
   - L5604/L5653 操作 `schedule_restart()` 函数局部变量 `watcher_env`，plugin register 无法访问
 - **风险评估**：低。3 处均为 `try-except` 包裹的薄胶水（~12 行），sync 冲突风险可控
 - **下一步**：继续评估 `gateway/run.py` 剩余薄胶水：inbound context / hygiene notice / auto-card / chained quick command
+
+### 2026-07-03：`/providers` → plugin slash command（带 hermes_ctx）
+
+- **类型**：plugin command API 扩展 + owner command 迁移
+- **commit**：`623cee607`（`/providers` → plugin slash command）
+- **变动**：`hermes_cli/plugins.py` 增加 plugin command `accepts_ctx` 检测与 `make_plugin_command_context()`；`gateway/run.py` / `cli.py` 在 handler opt-in 时传 `hermes_ctx`；`owner-extensions` 注册 `/providers`；删除 `gateway/run.py` 内置 providers 分支与 `gateway/slash_commands.py` shim
+- **机制**：旧插件 `fn(raw_args)` 调用形状不变；声明 `*, hermes_ctx` 或 `**kwargs` 的 plugin command 可拿到 gateway event/adapters/runner，保留 Feishu card 能力
+- **验证**：`python3 -m pytest tests/hermes_cli/test_plugins.py tests/gateway/test_unknown_command.py tests/owner/test_providers_command.py -q -o 'addopts='` → 109 passed

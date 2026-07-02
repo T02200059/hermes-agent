@@ -11,8 +11,32 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def _wrap_providers_command(handler):
+    async def _providers_command(_raw_args: str, *, hermes_ctx):
+        return await handler(
+            adapters=getattr(hermes_ctx, "adapters", {}) or {},
+            event=getattr(hermes_ctx, "event", None),
+        )
+
+    return _providers_command
+
+
 def register(ctx) -> None:
     """Apply all owner runtime patches. Idempotent per-patch."""
+    # §2.5 /providers plugin slash command
+    # Uses PluginCommandContext (hermes_ctx) so Feishu can keep its interactive
+    # provider picker card via gateway adapters/event, while CLI falls back to text.
+    try:
+        from owner.commands.providers import handle_providers_command
+        ctx.register_command(
+            "providers",
+            _wrap_providers_command(handle_providers_command),
+            description="List configured providers",
+        )
+        logger.debug("owner: /providers registered via plugin command")
+    except Exception:
+        logger.warning("owner: /providers registration failed", exc_info=True)
+
     # §9.3 memory synthetic guard
     # Skip MemoryManager prefetch/sync/on_turn_start for synthetic system
     # messages (async delegation, bg process, watch match, CLI handoff).

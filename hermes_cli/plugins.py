@@ -43,6 +43,7 @@ import sys
 import threading
 import types
 from dataclasses import dataclass, field
+from types import SimpleNamespace
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Set, Union
 
@@ -514,6 +515,7 @@ class PluginContext:
             "description": description or "Plugin command",
             "plugin": self.manifest.name,
             "args_hint": (args_hint or "").strip(),
+            "accepts_ctx": _plugin_command_accepts_context(handler),
         }
         logger.debug("Plugin %s registered command: /%s", self.manifest.name, clean)
 
@@ -2048,6 +2050,39 @@ def get_plugin_command_handler(name: str) -> Optional[Callable]:
     """Return the handler for a plugin-registered slash command, or ``None``."""
     entry = _ensure_plugins_discovered()._plugin_commands.get(name)
     return entry["handler"] if entry else None
+
+
+def get_plugin_command_entry(name: str) -> Optional[dict]:
+    """Return metadata for a plugin-registered slash command, or ``None``."""
+    entry = _ensure_plugins_discovered()._plugin_commands.get(name)
+    return dict(entry) if entry else None
+
+
+def _plugin_command_accepts_context(handler: Callable) -> bool:
+    """Return True when a plugin command handler opts into hermes_ctx.
+
+    Legacy handlers keep the original ``fn(raw_args)`` call shape. Newer
+    handlers may declare ``*, hermes_ctx`` or ``**kwargs`` to receive a
+    PluginCommandContext from gateway/CLI dispatch.
+    """
+    try:
+        sig = inspect.signature(handler)
+    except (TypeError, ValueError):
+        return False
+    for param in sig.parameters.values():
+        if param.kind == inspect.Parameter.VAR_KEYWORD:
+            return True
+        if param.name == "hermes_ctx" and param.kind in {
+            inspect.Parameter.KEYWORD_ONLY,
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+        }:
+            return True
+    return False
+
+
+def make_plugin_command_context(**kwargs: Any) -> SimpleNamespace:
+    """Build a lightweight context object for plugin slash commands."""
+    return SimpleNamespace(**kwargs)
 
 
 _PLUGIN_COMMAND_AWAIT_TIMEOUT_SECS = 30.0
