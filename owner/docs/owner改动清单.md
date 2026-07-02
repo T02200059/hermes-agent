@@ -1,0 +1,619 @@
+# Owner 分支改动清单
+
+> 本文档是对 `owner` 分支 82 个 commit 的完整梳理，按功能模块组织，
+> 区分「owner/ 纯新增模块」与「官方文件薄胶水侵入」，标注每个侵入点的类型，
+> 作为后续上游同步、回滚定位、以及 hook/plugin 化迁移的参考地图。
+
+## 元数据
+
+| 项目 | 值 |
+|------|-----|
+| 分支 | `owner` |
+| 基点 | `upstream/main` @ `f53ba9bb5`（`fix(s6): dot-prefix gateway staging dir`，2026-06-29） |
+| Commit 数 | 82（全部为 owner 个人定制，无 merge commit） |
+| 改动文件总数 | 172（去重后） |
+| owner/ 纯新增 | ~75 个文件 |
+| 官方文件侵入 | ~70 个文件（含 ~20 个测试文件） |
+| 范围 | 模型归因 / patch.yaml 配置 / 审批安全 / 飞书深度定制 / TUI 皮肤 / Cron 运维 / Gateway 稳定性 / Checkpoint 预测 |
+| 最后更新 | 2026-07-02 |
+| 来源 | 从 `owner-v17`（500+ commit）清洗迁移而来；本分支是重新整理后的最小叠加版本 |
+
+### 侵入类型图例
+
+- **try-import / lazy import** — 官方文件用 `try: from owner.x import y` 或 `_owner_import(...)` 延迟加载，owner/ 缺失时降级。最干净、sync 冲突最小。
+- **import 编排**（runtime patch）— 官方模块加载后，由 `owner/patches/*` 或 `owner/tools/schema_patches.py` 动态修改已注册对象（schema、常量、方法）。官方源码字面定义不变。
+- **薄胶水 / 委托**（`[owner]` / `[owner-patch]` 标记）— 官方文件中 1~5 行 import + 委托调用，所有实现在 owner/。短标记 + 指向 owner/ 位置。
+- **inline 逻辑** — 官方文件中直接嵌入的实现逻辑（非委托）。最重，sync 冲突最大，是后续 hook/plugin 化的重点候选。
+
+---
+
+## 一、基础设施：patch.yaml 配置系统与 owner_provider_name 归因
+
+这一组是整个 owner 分支的地基，几乎所有其他模块都依赖它们。迁移顺序为：先建包 → 引入归因 → 引入配置加载器 → 模型级 extra_body → 审批白名单。
+
+### 1.1 owner 包初始化 + 归因骨架
+
+- **背景**：owner/ 需要作为独立包存在；每轮 API 调用需要知道真实自定义 provider 名（`owner_provider_name`），用于计费、审计、召回、多 profile 路由。这是其他所有模块的共同依赖。
+- **方案**：
+  - `owner/__init__.py`（空包）、`owner/attribution.py`（`get_current_attribution` + `inject_attribution_into_message`）、`owner/utils.py`（如 `normalize_bare_domain_base_url` 等工具）。
+  - `AIAgent.__init__` 增加 `owner_provider_name` 参数 → 存为属性 → 透传到 `init_agent` → `append_message` → session DB（新增列）。
+  - 官方代码在构造 assistant 消息持久化时调用 `inject_attribution_into_message(agent, msg)`，统一盖三个字段（model / provider / owner_provider_name）。
+- **涉及文件**：
+  - 纯新增：`owner/__init__.py`、`owner/attribution.py`、`owner/utils.py`
+  - 侵入（薄胶水 + 列扩展）：`run_agent.py`、`agent/agent_init.py`、`agent/agent_runtime_helpers.py`、`agent/chat_completion_helpers.py`、`agent/codex_runtime.py`、`agent/conversation_loop.py`、`cli.py`、`gateway/run.py`、`hermes_cli/runtime_provider.py`、`hermes_state.py`
+- **侵入类型**：薄胶水 + 委托（属性透传链），`hermes_state.py` 加 DB 列属 inline schema 扩展（不可避免）
+- **Commit**：`a6dcd6ed8`（§2.1）、`6eba93f33`（patch: acp_args 空列表 → None，与归因无关但同属基础设施首批）
+
+### 1.2 patch.yaml 统一加载器
+
+- **背景**：owner 的所有行为配置（审批、飞书卡片、OpenViking、checkpoint 预测、extra_body、image_gen、display 覆盖等）原本散落在各模块各自实现 YAML 加载，重复且易错。
+- **方案**：`owner/patch_config.py` 提供统一 fail-open 加载器，支持：
+  - `~/.hermes/patch.yaml`（`owner:` 段）与 `~/.hermes/patch_feishu_profile.yaml`（顶层）
+  - mtime 失效 + 60s TTL（防止网络挂载/外部编辑不更新 mtime 时的陈旧缓存）
+  - `load_patch_config()` 作为官方代码的公开入口（替代各处私有的 `_load_patch_owner_config`）
+  - 便捷访问器 `get_model_extra_body(owner_provider_name, model)`
+- **配置文件**（实际在用，软链接到 `~/.hermes/`）：`owner/config/patch.yaml`、`owner/config/patch_feishu_profile.yaml`
+- **侵入类型**：纯新增（加载器在 owner/），官方文件只是 import + 调用
+- **Commit**：`f181c7cad`（§2.2）、`6154c7474`（§2.2/§17.9: 迁入完整 patch.yaml 配置内容）
+
+### 1.3 模型级 extra_body 注入
+
+- **背景**：需要在 chat_completions 传输层按 provider+model 注入 extra_body（如 xfyun/damodel 的 `enable_thinking`、glm-5/5.1 的 `thinking.type=enabled`），但不想污染全局 config。
+- **方案**：`owner/extra_body_injection.py` 从 patch.yaml 的 `owner.model_extra_body` 读取配置，在 `agent/transports/chat_completions.py` 的请求构造处注入（provider profile 的 extra_body 之后、请求 override 之前）。`owner_provider_name` 作为查找 key，在 chat_completion_helpers 剥离时保留。
+- **涉及文件**：
+  - 纯新增：`owner/extra_body_injection.py`
+  - 侵入：`agent/transports/chat_completions.py`、`agent/chat_completion_helpers.py`、`hermes_cli/oneshot.py`、`tools/delegate_tool.py`
+- **侵入类型**：薄胶水（传输层插入一处注入调用）
+- **WR-02 加固**：`54522c59b` — 对 `model_extra_body` 的 key 做 allowlist 过滤，防止注入任意 key。
+- **Commit**：`6cb908115`（§2.3）、`54522c59b`（§11.x WR-02 allowlist）
+
+### 1.4 审批命令白名单（patch.yaml 合并）
+
+- **背景**：飞书「Always」永久审批按钮需要一组允许的命令白名单；官方 config.yaml 已有 `command_allowlist`，owner 需要叠加自己的允许列表。
+- **方案**：`tools/approval.py` 在读取 allowlist 时合并 `owner.approvals.command_allowlist`（来自 patch.yaml）。配合 `allow_permanent` 开关控制是否显示永久按钮。
+- **侵入类型**：薄胶水 + 委托（`tools/approval.py` 加 `[owner] approval: merge patch.yaml allowlist` 标记 + 调用 `owner.patch_config`）
+- **Commit**：`5dd9580b4`（§2.4）
+
+---
+
+## 二、模型 Provider 与 API 适配
+
+### 2.1 per-turn 归因 + credential 合并 + Layer 1/2/3 重构
+
+- **背景**：`owner_provider_name` 需要贯穿整个 API 调用链；同时 owner 自定义 provider 的 credential 解析逻辑需要集中化（之前散落在 model_switch、chat_completion_helpers 等多处）。
+- **方案**：将归因逻辑重构为三层：
+  - Layer 1（agent 层）：`agent.owner_provider_name` 属性 + 归因注入
+  - Layer 2（消息层）：`inject_attribution_into_message` 统一盖戳
+  - Layer 3（持久层）：hermes_state 的 owner_provider_name 列
+  - credential 合并：`hermes_cli/model_switch.py` 集中处理 owner provider 的 token 校验（GitHub token 过期检测等）
+- **侵入类型**：薄胶水 + inline（model_switch.py 中的 token 校验属 inline 逻辑）
+- **Commit**：`a887e62b0`（§3.8+§3.12）、`8b2ba9680`（§17.15: partial agent 上 guard owner_provider_name 防 AttributeError）
+
+### 2.2 credential_helpers + 飞书模型选择器卡片
+
+- **背景**：owner provider（如 GitHub Copilot）需要 token 有效性检测；飞书上需要一个交互卡片让用户切换模型/provider。
+- **方案**：
+  - `owner/providers/credential_helpers.py`：`has_valid_github_token`、`is_token_expired` 等，model_switch.py 薄调用。
+  - `owner/feishu/model_picker.py`：`build_provider_card`、`handle_picker_action` — 飞书交互卡片（provider/model 列表 + 切换回调）。adapter.py 通过 `_owner_import` 委托。
+- **涉及文件**：
+  - 纯新增：`owner/providers/__init__.py`、`owner/providers/credential_helpers.py`、`owner/feishu/model_picker.py`
+  - 侵入：`hermes_cli/model_switch.py`（薄调用 credential_helpers）、`plugins/platforms/feishu/adapter.py`（薄胶水 + `_owner_import`）
+- **侵入类型**：薄胶水 + try-import
+- **Commit**：`e0230f90a`（§3.4+§3.9）
+
+### 2.3 运行时 schema patches + credential pool base_url override
+
+- **背景**：`send_message` 卡片和 `image_generate` 的 model 参数需要扩展 schema，但不能改官方 toolsets 的字面定义（sync 冲突）。同时 credential pool 的 base_url 需要能被 model.base_url 覆盖（NewAPI 多 endpoint 场景）。
+- **方案**：
+  - `owner/tools/schema_patches.py`：模块加载后，在已注册的 tool schema 上 post-registration patch（运行时修改）。gateway/run.py 在 schema patch 阶段 `import owner.tools.schema_patches`。
+  - `owner/patches/pool_base_url_override.py`：`config_base_url_override()` — 当 model 配置了 base_url 时，覆盖 credential pool 的 base_url。`hermes_cli/runtime_provider.py` 两处薄胶水调用。
+  - **env-var template 泄露防护**（§11.2）：`hermes_cli/runtime_provider.py` + `agent/model_metadata.py` + `tui_gateway/server.py` 三处 `[owner-patch] P29` 防止 `${VAR}` 模板字符串泄露到运行时。
+- **涉及文件**：
+  - 纯新增：`owner/tools/schema_patches.py`、`owner/patches/pool_base_url_override.py`
+  - 侵入：`agent/credential_pool.py`、`hermes_cli/runtime_provider.py`（两处 `[owner-patch] P29` + base_url override 薄胶水）、`run_agent.py`、`agent/model_metadata.py`（`[owner-patch] P29`）、`tui_gateway/server.py`（`[owner-patch] P29`）、`gateway/run.py`（`import owner.tools.schema_patches`）
+- **侵入类型**：import 编排（schema_patches 是 runtime patch）、薄胶水（P29 三处 + base_url override）
+- **Commit**：`7f1a80ddb`（§3.10+§3.11）、`e78e53a71`（§11.2 P29 三处防泄露）、`de2295c0c`（补 schema_patches import 让 send_message card + image_generate model 参数生效）
+
+### 2.4 reasoning 显示转义 + MiniMax thinking-block + i18n 硬编码翻译
+
+- **背景**：(1) reasoning_content 中的特殊字符在 CLI/TUI 显示时需要转义；(2) MiniMax 的 Anthropic endpoint 需要支持 thinking-block 格式；(3) gateway 中有大量硬编码英文提示需要中文化。
+- **方案**：
+  - `agent/anthropic_adapter.py`：MiniMax thinking-block 解析支持（inline）
+  - `gateway/run.py`、`gateway/slash_commands.py`：硬编码英文字符串改走 i18n（locales/）
+  - 新增/补全 `locales/*.yaml`（zh、en、ja、ko 等全套）
+  - `owner/tips_zh.py`：中文 tips 数据源（CLI tips 中文化）
+- **侵入类型**：inline（anthropic_adapter thinking-block）+ 薄胶水（i18n 调用 + tips_zh）
+- **Commit**：`8d4eb626d`
+
+---
+
+## 三、审批、安全与风控
+
+这是侵入最深的区域之一（`00-REVIEW.md` 标注多个 P0/P1 blocker，后续 CR-001~CR-006 已修）。
+
+### 3.1 飞书审批卡片重构 + sender_name 缓存 + user_store
+
+- **背景**：飞书审批卡片逻辑复杂（CallBackCard、按钮状态、resolved 更新、open_id→中文名缓存预热+TTL），原官方 adapter 内联了太多逻辑，sync 冲突严重。
+- **方案**：按二次开发规范 §2.2「复杂交互/缓存的封装示例」重构：
+  - `owner/feishu/approval.py`：`FeishuApprovalContext` 类（correlation 状态 + 卡片构建 + 回调处理）
+  - `owner/feishu/sender_name_cache.py` + `owner/feishu/sender_name_helpers.py`：open_id→中文名缓存（pre-warm + TTL）
+  - `owner/feishu/user_store.py` + `owner/feishu/user_cache.py`：`ChatIdCacheDebouncer` + 用户身份存储
+  - 官方 `feishu/adapter.py` 只保留 `_approval_state` + 薄薄的 send_exec_approval / handler 委托 + pre_warm 调用 + build_xxx(data) + 短 `[owner] approval:` 标记
+  - `locales/*.yaml` 增加审批相关 i18n
+- **侵入类型**：薄胶水 + try-import（adapter 从 ~250 行审批逻辑压到 ~20-30 行委托）
+- **Commit**：`fa6995bc9`（§4.2）、`4a4b13226`（补 [owner] 标记到 sender_name TTL 注释行）、`d7c487275`（fix tests: group_policy=allowlist 显式设置）
+
+### 3.2 飞书 inbound context 用户身份注入
+
+- **背景**：飞书消息进入时需要把用户身份（open_id/chat_id/user_name）注入到 agent context，用于审批签名、归因、多 profile 路由。
+- **方案**：
+  - `owner/gateway/inbound_context.py`：`append_inbound_context()` — 提取并注入用户身份
+  - `gateway/run.py` 在消息接入处薄胶水调用
+  - `owner/feishu/inbound_context.py`：飞书专用身份提取
+- **侵入类型**：薄胶水（gateway/run.py 一处调用）
+- **Commit**：`2f913a40d`（§4.4）
+
+### 3.3 多平台审批签名统一
+
+- **背景**：不同平台（QQ、飞书、Discord）审批时传的 sender 身份字段不一致，导致审批记录无法关联到真实用户。
+- **方案**：`gateway/run.py` 统一传 `sender_open_id`/`sender_is_bot`；QQ adapter 用 `**kwargs` 吸收额外字段；Discord adapter 用 `get_choice_display` 渲染 clarify 按钮。
+- **侵入类型**：薄胶水（run.py 一处传参 + adapter **kwargs 吸收）
+- **Commit**：`72e6b4be9`（§4.3 QQ 审批签名统一）
+
+### 3.4 Guardrail 提示信息增强
+
+- **背景**：tool guardrail（连续失败次数超阈值时 block/halt/warn）的消息太简略，用户不知道是哪个计数器、阈值多少、在哪改。
+- **方案**：`agent/tool_guardrails.py` 的 warn/block/halt 消息增加计数器名、阈值、config.yaml 路径；warn 消息换 emoji（🐍→🛠️）。
+- **侵入类型**：inline（消息字符串增强，逻辑不变）
+- **Commit**：`2ad5aa2fb`（§4.7 block/halt）、`5e73d395f`（§4.8 warn + emoji）、`4661db389`（§4.8 验证 ChatIdCacheDebouncer 已存在，无代码变更）
+
+### 3.5 Skill 脚本自动审批 + YOLO 模式
+
+- **背景**：owner 的 xy-* 系列 skill 频繁执行脚本，每次都审批太烦；需要一个「当脚本来自本 session 已加载的 skill 时自动批准」的机制 + YOLO 开关。
+- **方案**：
+  - `owner/approval/skill_script_approval.py`：`is_skill_script_allowed()`（匹配逻辑：命令中所有脚本文件名都来自本 session 已加载 skill 时自动批准）+ `track_session_skill_view` / `reset_session_skills_viewed`（per-session 隔离）
+  - `owner/cli/yolo.py`：YOLO on/off/status 命令实现
+  - `tools/approval.py`：多处薄胶水调用 `is_skill_script_allowed`（约 3 处：主审批 + reset + cron helper）
+  - `tools/skills_tool.py`：view skill 时 `track_session_skill_view`
+  - 配置：`owner.approvals.skill_script_allowlist`（patch.yaml，列出哪些 skill 的脚本可自动审批）
+  - **per-session 隔离**（CR-01）：每次会话清空已 view 的 skill 列表
+  - **fail-closed on dangerous full command**（CR-02）：检测到完整危险命令时拒绝自动审批
+  - **session boundary 清理**（WR-05）：会话边界时 reset
+- **侵入类型**：薄胶水（tools/approval.py、tools/skills_tool.py 多处 import + 委托）+ 安全逻辑集中 owner/
+- **Commit**：`82fe8c962`（§4.6）、`0d7c08d59`（§17.9 集成测试）、`d4484aee4`（§17.9 per-session 隔离 CR-01）、`cb1d01678`（§17.9 fail-closed CR-02）、`a07cf733f`（§17.9 session boundary WR-05）、`01f158e59`（§17.12.1 narrow owner/scripts/ cron exemption WR-03）
+
+### 3.6 安全加固（CR 修复）
+
+这是 `00-REVIEW.md` 发现的 6 个 critical blocker 的修复，全部在 2026-07-02 由 gsd-code-fixer 完成。
+
+| CR | 问题 | 修复 | 文件 | Commit |
+|----|------|------|------|--------|
+| CR-001 | home-prefix fold 正则的 path-token 终止符缺 `\n`/`\r`，多行可绕过前缀检查 | `_PATH_TOKEN_STOP_TAIL` 加 `\n\r` | `tools/approval.py` | `99a374f64` |
+| CR-002 | cron `owner/scripts/` 白名单只在首次使用时构建并冻结，运行时新增脚本不生效 | 改为 mtime-based re-scan + 文档化 cron-vs-terminal 不对称 | `tools/cronjob_tools.py` | `890869693` |
+| CR-003 | `_auth_pool_refresh_counts` 在 per-turn prologue 初始化而非 `__init__`，delegated subagent 首次 401 触发 AttributeError | `init_agent` 中加 `agent._auth_pool_refresh_counts = {}` | `agent/agent_init.py` | `02a0c02b5` |
+| CR-004 | `_GATEWAY_RAW_TEXT_PLATFORMS` 含 api_server/webhook/msgraph_webhook，扩大了 redaction 旁路 | 缩减为只含 `{"local"}` | `gateway/run.py` | `eb49d3b18` |
+| CR-005 | MoA context 注入修改 user message body，破坏 prompt cache | 改为插入独立 user message（system prompt 之后） | `agent/conversation_loop.py` | `362304bc8` |
+| CR-006 | skill-script 自动审批可被含 `;`/`&`/`|` 的复合命令绕过 | 加两个 quote-aware 安全门（unquoted compound operator + quoted metachar） | `owner/approval/skill_script_approval.py` | `010186818` |
+
+- **报告**：`f4e82eba5`（docs(00): add code review fix report）、`f160dd359`（owner(§review): code review REPORT.md）
+
+### 3.7 其他安全修复
+
+- **SSRF 防护**（§17.8）：`1b0b3fce1` — `save_url_image` 拒绝非 http(s) scheme（WR-02）
+- **Feishu user_name sanitize**（§17.16）：`f28061959` — 注入 user turn 前清洗 Feishu user_name（CR-03）
+
+---
+
+## 四、飞书平台深度定制
+
+这是 owner 分支体量最大的功能区（~16 个 owner/feishu/ 模块 + adapter.py 64 处 owner 标记）。
+
+### 4.1 飞书多 profile 路由
+
+- **背景**：一个飞书 bot 需要把不同用户/群路由到不同 hermes profile（各自独立 HERMES_HOME、独立 model/API key），实现「一个 bot 入口，多 profile 后端」。
+- **方案**（3 commit 拆分迁移）：
+  - T1（纯新增模块）：`owner/feishu/profile_routing.py`（核心路由逻辑 + `try_route_card_action`）、`owner/feishu/default_target.py`（默认目标解析）、`owner/feishu/agent_end.py`（agent:end 钩子）、`owner/feishu/resume_card.py`（resume 卡片）
+  - T2（adapter 接线）：`plugins/platforms/feishu/adapter.py` 核心接线 + `_owner_import` 路由调用
+  - T3（api_server 端点 + config）：`gateway/platforms/api_server.py` 端点 + `send_only` config
+  - 配置：`owner/config/patch_feishu_profile.yaml`（`feishu.bots.<bot_id>.user_routing.{whitelist,chat_profile_routes,user_profile_routes,default_profile,profile_endpoints}`）
+- **侵入类型**：薄胶水 + try-import（adapter）、import 编排（profile_routing 全在 owner/）
+- **涉及文件**：`a0636e1ef`（T1）、`4839cd605`（T2）、`c06de158c`（T3）、`f9a38e9f0`（§5.9 `_standalone_send` 支持 extra_metadata 保留 chat_type/open_id）
+
+### 4.2 长文本自动卡片（auto-card）
+
+- **背景**：飞书长文本回复体验差，需要超过阈值时自动转交互卡片（可展开/折叠），并预提取 MEDIA 标签。
+- **方案**：
+  - `owner/feishu/auto_card.py`：`try_auto_card()` — 阈值判断 + 卡片构建 + 异常安全退避（失败回退纯文本）
+  - `owner/feishu/card_sender.py`：卡片发送封装
+  - `plugins/platforms/feishu/adapter.py`：agent:end 时 `_owner_import("owner.feishu.auto_card", "try_auto_card")` 薄胶水
+  - `gateway/run.py`：agent:end 时调用 `owner.feishu.agent_end.try_auto_card_on_end`
+  - 配置：`owner.feishu_card.{auto_card_threshold, split_enabled, split_max_chars}`
+- **侵入类型**：薄胶水 + try-import
+- **Commit**：`aa70fd675`（§5.3）
+
+### 4.3 输入中反应（early-typing）
+
+- **背景**：用户发消息后 agent 思考期间飞书没有即时反馈，体验差。
+- **方案**：飞书 adapter 在持有 `chat_lock` 时立即显示 Typing reaction（不等 API 响应）。
+- **侵入类型**：薄胶水（adapter.py 一处）
+- **Commit**：`ed20649ce`（§5.4）
+
+### 4.4 Diff 卡片
+
+- **背景**：agent 输出的 diff 在飞书纯文本里难读，需要交互式可展开/折叠/全屏卡片；QQ 上需要 markdown diff。
+- **方案**：
+  - `owner/diff_card/` 包：`dispatcher.py`（平台分发）、`feishu.py`（飞书交互卡片）、`qqbot.py`（QQ markdown）、`common.py`（共享逻辑）
+  - adapter 通过 `_owner_import("owner.diff_card.feishu", "handle_feishu_diff_action")` 等委托
+- **侵入类型**：薄胶水 + try-import
+- **Commit**：`e927a6adf`（§5.5）
+
+### 4.5 Clarify 交互卡片
+
+- **背景**：clarify（向用户提问）在飞书上需要交互卡片（按钮选择），而非纯文本；choices 语义从 `List[str]` 归一化为 `List[{display, key}]`。
+- **方案**：
+  - `owner/clarify/choice_normalizer.py`：`normalize_choices()` — `List[str]` → `List[{display, key}]`
+  - `owner/clarify/gateway_helpers.py`：`get_choice_display()` — 渲染 choice display
+  - `owner/feishu/clarify_card.py`：`send_clarify` / `expire_clarify` / `handle_clarify_card_action`
+  - `tools/clarify_tool.py` + `tools/clarify_gateway.py`：调用 `normalize_choices`（薄胶水，注释说明由 owner 归一化）
+  - `plugins/platforms/feishu/adapter.py`：clarify 卡片发送/过期/回调委托
+- **侵入类型**：薄胶水 + try-import（clarify_tool/gateway_helpers/adapter 多处）
+- **Commit**：`e823335b3`（§5.6 clarify card migration）、`2f012fc31`（§5.6 test: 适配 choices 归一化语义）
+
+### 4.6 Bot 菜单事件处理
+
+- **背景**：飞书 bot 菜单点击事件需要映射到斜杠命令/提示词，并有 dedup + ack（慢命令时即时反馈）。
+- **方案**：
+  - `owner/feishu/bot_menu.py`：`handle_bot_menu_event()` + 3 秒 per-(open_id, event_key) dedup + ack
+  - `plugins/platforms/feishu/adapter.py`：薄胶水调用
+  - 配置：`owner.feishu.bot_menu.{key→command 映射}` + `owner.feishu.bot_menu_dedup.{enabled, default_ack, per_key}`
+- **侵入类型**：薄胶水 + try-import
+- **Commit**：`a8aab3b30`（§5.7）
+
+### 4.7 飞书编辑上限轮转 + 进度 dedup
+
+- **背景**：(1) 飞书消息编辑次数达上限（错误码 230072/230075）时需要轮转到新 progress bubble；(2) progress dedup 的 `×N` 计数器会污染 markdown 代码块（插在代码块中间）。
+- **方案**：
+  - `owner/feishu/`（编辑上限轮转逻辑）+ adapter 薄胶水
+  - `gateway/platforms/base.py`：progress dedup 计数器改为只在代码块外插入
+- **侵入类型**：inline（base.py 的 dedup 计数器逻辑）+ 薄胶水（adapter）
+- **Commit**：`f6d0c6030`（§11.9 编辑上限轮转）、`2be0af638`（§11.8 progress dedup 避免污染 code fence）、`add176e9b`（§11.10 extract_local_files 跳过双反引号 inline code）
+
+### 4.8 飞书 context-compression 中文摘要
+
+- **背景**：上下文压缩时飞书需要显示中文摘要反馈。
+- **方案**：`owner/feishu/compression_summary.py` + `owner/gateway/hygiene_compression_notice.py`（hygiene 压缩通知）+ gateway/run.py 薄胶水。
+- **侵入类型**：薄胶水
+- **Commit**：`d80705074`（§17.16）
+
+### 4.9 /providers 斜杠命令
+
+- **背景**：需要在飞书上查看可用 provider/model 列表，用交互卡片展示（纯文本 fallback）。
+- **方案**：`owner/commands/providers.py` + `gateway/run.py` 的 `canonical == "providers"` 分支 + 飞书卡片渲染。
+- **侵入类型**：薄胶水（run.py 一处命令分发）
+- **Commit**：`ed20e193d`（§9.1）
+
+---
+
+## 五、快捷命令与交互语法
+
+### 5.1 链式快捷命令（;;分隔）
+
+- **背景**：用户想在一个输入里串多个斜杠命令/提示，用 `;;` 分隔，全平台（CLI/Gateway/TUI/TS）支持。
+- **方案**：在 4 个 Python 入口 + 3 个 TS 文件中增加 `;;` 分割 + 依次执行逻辑。
+- **涉及文件**：`cli.py`、`gateway/platforms/base.py`（`[owner-patch] Chained quick commands`）、`gateway/run.py`、`tui_gateway/server.py`、`ui-tui/src/app/createSlashHandler.ts`、`ui-tui/src/gatewayTypes.ts`、`ui-tui/src/lib/rpc.ts`
+- **侵入类型**：inline（4 处分割逻辑）+ TS inline
+- **Commit**：`1d908072a`（§6.1）
+
+### 5.2 Quick Alias 集中化
+
+- **背景**：链式快捷命令的 `expand_chained_quick_alias` 逻辑在 4 个平台重复实现，需要集中到共享 helper。
+- **方案**：抽取共享 `expand_chained_quick_alias` helper，4 个平台薄调用。
+- **涉及文件**：`cli.py`、`gateway/platforms/base.py`、`gateway/run.py`、`tui_gateway/server.py`
+- **侵入类型**：薄胶水（去重，集中到共享 helper）
+- **Commit**：`31c4788ad`（§6.2）
+
+---
+
+## 六、TUI 与皮肤引擎
+
+### 6.1 TUI skin engine 扩展
+
+- **背景**：TUI 的 spinner/tagline/statusBar pipeline 需要可扩展；Mac 上 Cmd+C 复制 fallback；新增 ruolin 系列皮肤。
+- **方案**：
+  - TS 侧：`ui-tui/src/owner/{branding.ts, spinner.ts, statusBar.ts}`（owner 专属 TS 模块）、`ui-tui/src/theme.ts` 扩展、`createGatewayEventHandler.ts` / `createSlashHandler.ts` / `useInputHandlers.ts` / `appChrome.tsx` / `branding.tsx` 接线
+  - Python 侧：`tui_gateway/server.py` 传递 skin 数据
+  - YAML 皮肤：`owner/skins/ruolin.yaml`、`owner/skins/ruolin-light.yaml`、`owner/skins/README.md`
+- **侵入类型**：inline（TS pipeline 扩展）+ 纯新增（owner TS 模块 + skin YAML）
+- **Commit**：`4a7be0eef`（§7）、`e93f3148e`（§17.22 TUI async fix）
+
+---
+
+## 七、Gateway 稳定性修复
+
+### 7.1 QQ Bot WebSocket 重连链
+
+- **背景**：QQ Bot 的 WebSocket 连接断线后重连不稳定（无 heartbeat/receive_timeout/stop_retry 机制）。
+- **方案**：`gateway/platforms/qqbot/adapter.py` + `constants.py` 增加 heartbeat、receive_timeout、stop_retry、rebuild_http_client 重连链。
+- **侵入类型**：inline（adapter 重连逻辑）
+- **Commit**：`135c5a147`（§11.1）
+
+### 7.2 Memory synthetic guard（跳过合成系统消息的 recall/sync）
+
+- **背景**：memory provider 的 recall/sync 不应该处理合成系统消息（如 MoA 注入的、压缩摘要等），否则会污染记忆。
+- **方案**：
+  - `owner/patches/memory_synthetic_guard_patch.py`：`apply_patch()` — 在 gateway/run.py 的 message-receive hook 处注入守卫，跳过合成系统消息
+  - `gateway/run.py`：`# [owner] memory: skip recall/sync for synthetic system messages` + 薄胶水
+  - `tests/owner/patches/test_memory_synthetic_guard_patch.py`
+- **侵入类型**：import 编排（runtime patch）+ 薄胶水
+- **Commit**：`a91689b08`（§9.3）
+
+### 7.3 OpenViking 同步召回 + advisory + recall-card
+
+- **背景**：OpenViking memory provider 需要同步召回（替代异步）+ advisory 提示词 + 召回结果可视化（飞书卡片/QQ 文本），并有线程池上限 + per-chat debounce。
+- **方案**：
+  - `owner/patches/openviking_owner_recall_patch.py`：`apply_patch()` — advisory 提示词、peer dedup、recall card 注入
+  - `owner/patches/openviking_recall_config.py`：从 patch.yaml 读配置（`owner.openviking_sync_recall.*` / `owner.openviking_recall_card.*`）
+  - `gateway/run.py`：`# [owner] OpenViking recall owner extensions` + 薄胶水
+  - **WR-04**：`684de6981` — bound recall-card thread pool + per-chat debounce
+- **侵入类型**：import 编排（runtime patch）+ 薄胶水
+- **Commit**：`76fa75f36`（§11.6 精简迁移）、`684de6981`（§11.6 WR-04 bound thread pool + debounce）
+
+### 7.4 Cron env 隔离（ContextVar + restart scrub）
+
+- **背景**：`HERMES_CRON_SESSION` 环境变量会从 cron 进程泄露到 gateway 的其他 session，导致非 cron 的 agent 误以为自己在 cron 上下文。
+- **方案**：
+  - `owner/cron/session_context.py`：用 ContextVar 隔离 `HERMES_CRON_SESSION`（而非环境变量）
+  - `owner/cron/restart_scrub.py`：`owner_cron_scrub_process_env` / `owner_cron_scrub_watcher_env` — restart/startup 时清洗
+  - `gateway/run.py`：3 处薄胶水（process env scrub + watcher env scrub × 2）
+  - 多处接线：`cron/jobs.py`、`cron/scheduler.py`、`gateway/session_context.py` 等
+- **侵入类型**：薄胶水（多处 import + 委托）
+- **Commit**：`8eaf0cc10`（§17.4）、文档 `owner/docs/cron-session-env-leak-fix.md`
+
+### 7.5 executor-shutdown 友好提示
+
+- **背景**：gateway 的 loop executor 关闭时抛 RuntimeError，用户看不懂。
+- **方案**：`gateway/run.py` 的 `[owner] §17.2` 把 RuntimeError 转成友好重启提示。
+- **侵入类型**：inline（run.py 一处）
+- **Commit**：`3c9ddba1d`（§17.2）
+
+### 7.6 Clarify 清理路径返回 stop sentinel + 飞书 clarify 超时中断 agent
+
+- **背景**：(1) clarify 清理路径需要返回 stop sentinel 而非继续；(2) 飞书 clarify 超时后需要中断 agent loop（不能继续等）。
+- **方案**：
+  - `tools/clarify_tool.py` + `owner/clarify/`：清理路径返回 stop sentinel
+  - `plugins/platforms/feishu/adapter.py` + `owner/feishu/clarify_card.py`：超时中断 agent
+  - **§17.3**：`4d1045fdd` — clarify 超时补发用户提示
+- **侵入类型**：薄胶水 + inline（sentinel 逻辑）
+- **Commit**：`e488cb348`（§15 stop sentinel）、`3de8ea088`（§15.1 飞书超时中断）、`4d1045fdd`（§17.3 超时补发提示）
+
+### 7.7 _owner_import 不缓存瞬时 ImportError（WR-01）
+
+- **背景**：`_owner_import` 缓存 None（owner/ 暂时不可用时），导致 owner/ 恢复后仍不重试。
+- **方案**：改为首次 miss 告警 + 不缓存 None，下次调用重试。
+- **侵入类型**：inline（helper 函数本身）
+- **Commit**：`89ff61c4e`（§11.x WR-01）
+
+### 7.8 补迁遗漏模块
+
+- **背景**：从 owner-v17 迁移时遗漏了几个模块。
+- **方案**：
+  - `owner/api_error_hints.py`：API 错误提示增强
+  - `owner/feishu/resume_card.py`：resume 卡片
+  - `owner/gateway/hygiene_compression_notice.py`：hygiene 压缩通知
+  - busy_drain i18n + tool_call_id 胶水
+  - `agent/conversation_loop.py`、`gateway/run.py`、`gateway/slash_commands.py`、`plugins/platforms/feishu/adapter.py` 薄胶水接线
+- **侵入类型**：薄胶水
+- **Commit**：`9a05e50b4`
+
+---
+
+## 八、Diff / Patch 工具链
+
+### 8.1 Checkpoint Mutation Predictor（terminal 预测式快照）
+
+- **背景**：`/rollback` 的盲区是 terminal 工具执行前没有预防性 checkpoint。需要在执行 terminal 命令前预测将要修改的文件，对其项目根做预防性 `ensure_checkpoint`。
+- **方案**：
+  - `owner/checkpoint_predictor/` 包：`predictor.py`（预测主逻辑）、`static_parser.py`（静态解析优先，提取命令中的文件路径）、`llm_predict.py`（静态失败时调 auxiliary LLM 兜底）、`config.py`（读 `owner.checkpoints.*`）
+  - `agent/tool_executor.py`：terminal 执行前薄胶水触发预测
+  - 行为：静态解析置信度 ≥ `predict_static_threshold` 直接用；否则 LLM 兜底（超时/失败/空时不降级拍 cwd，只报错提示无法回滚）；LLM 结果 LRU 缓存
+  - 存储层/回滚层/`/rollback` 语义全复用 config.yaml 的 `checkpoints` 段
+- **侵入类型**：薄胶水（tool_executor.py 一处触发）
+- **Commit**：`6c41f5b63`（§17.11）、文档 `owner/docs/checkpoint-mutation-predictor.md`
+
+### 8.2 read_file / search_files 单执行超时保护
+
+- **背景**：read_file/search_files 读取超大文件或网络挂载时会无限阻塞。
+- **方案**：
+  - `owner/file_tool_timeout.py`：单执行超时守卫
+  - `agent/tool_executor.py` + `agent/agent_runtime_helpers.py`：薄胶水接线
+- **侵入类型**：薄胶水
+- **Commit**：`8459eca7a`（§17.12）
+
+---
+
+## 九、显示与个性化
+
+### 9.1 每会话显示覆盖（per-chat display overrides）
+
+- **背景**：不同飞书群/会话需要不同的显示设置（tool_progress on/off、streaming、interim messages 等），不能全局一刀切。
+- **方案**：
+  - `owner/display_overrides.py`：`for_source(source)` 提取 chat_id + 查 patch.yaml 的 `owner.display.per_chat.<platform>.<chat_id>.*`
+  - `gateway/run.py`、`gateway/display_config.py`、`gateway/slash_commands.py`：多处 `source=source` 透传 + `for_source` 薄调用（约 6+ 处）
+- **侵入类型**：薄胶水（多处 `source=source` 透传 + `for_source` 调用）
+- **Commit**：`eb96240a4`（§10）
+
+---
+
+## 十、归因与计费
+
+### 10.1 集中式模型归因（billing records）
+
+- **背景**：billing 记录需要用 owner_provider_name 做归因，而非直接读 agent 属性。
+- **方案**：`agent/usage_pricing.py`（或相关 billing 模块）改用 owner/attribution helper。
+- **侵入类型**：薄胶水（改用 helper）
+- **Commit**：`ad8ea7fed`（§14.1）
+
+---
+
+## 十一、Cron / 脚本 / 运维
+
+### 11.1 owner/scripts 与 cron symlink 豁免
+
+- **背景**：owner 的运维脚本（在 `owner/scripts/`）和 cron 用的 symlink 需要被 cron 工具路径校验豁免，否则 cron 无法执行它们。
+- **方案**：
+  - `tools/cronjob_tools.py`：`_get_owner_scripts_allowlist()` — 扫描 `owner/scripts/` 下脚本（**CR-002 后改为 mtime-based re-scan**，运行时新增脚本自动生效）
+  - 豁免 cron symlink
+  - `cron/scheduler.py`、`cron/jobs.py`：接线
+  - 新增脚本：`owner/scripts/check_hermes_upstream.py`、`owner/scripts/cron-health-check.py`、`owner/scripts/todo-scan.py`
+- **侵入类型**：inline（cronjob_tools.py 的 allowlist 逻辑）+ 薄胶水
+- **Commit**：`8a8f42455`（§12.1）、`01f158e59`（§17.12.1 narrow to startup allowlist WR-03）、`890869693`（CR-002 mtime-based）
+
+### 11.2 Cron job script args 参数支持
+
+- **背景**：cron job 的 script 需要支持 CLI flags 参数。
+- **方案**：`cron/jobs.py`（`# [owner-patch] cron job args support: normalize`）+ `cron/scheduler.py`（`# [owner-patch] map stored job args to CLI flags`）+ `tools/cronjob_tools.py`（`# [owner-patch] validate and normalize/store`）。
+- **侵入类型**：薄胶水（`[owner-patch]` 标记的三处参数处理）
+- **Commit**：`3163d17e8`（§12.3）
+
+### 11.3 运维脚本迁移
+
+- **背景**：owner 的运维脚本（备份、健康检查、todo 扫描、汇率更新）需要迁入 owner/scripts/。
+- **方案**：纯新增脚本到 `owner/scripts/`：
+  - `backup-hermes-config.py`（§12.5 SQLite-safe 备份）：`4ed22fa00`
+  - `hermes-backup.sh` + mac 备份脚本（§17.4）：`dfccdf06e`
+  - `update_newapi_exchange_rate.py`（§17.4 NewAPI 汇率更新 cron）：`003ed849e`
+  - `todo-scan.py` / `todo-scan.sh`（§12.4 todo 扫描，含 timeout-safe 版本）：`0bed11194`、`56679f899`、`d7a06ca47`（drop 被上游覆盖的版本）
+- **侵入类型**：纯新增（脚本文件）
+- **Commit**：上述四个
+
+---
+
+## 十二、代码治理与杂项
+
+### 12.1 二次开发规范文档 + model_switch.py 标记
+
+- **背景**：需要把 fork 的二次开发规范文档搬入 owner/docs/，并给 model_switch.py 补 `[owner]` 标记。
+- **方案**：`owner/docs/二次开发规范.md` + `hermes_cli/model_switch.py` 标记。
+- **Commit**：`e535ed29e`（docs(owner)）
+
+### 12.2 i18n 补全 + tips 中文化 + TUI async fix + .gitignore
+
+- **背景**：补全多个 locale 文件、tips 中文化、TUI async 修复、.gitignore 备份文件。
+- **方案**：locales 全套补全 + `owner/tips_zh.py` + TUI fix + .gitignore。
+- **Commit**：`e93f3148e`（§17.10/§17.14/§17.22）
+
+### 12.3 background review actions 多行 bullet 格式
+
+- **背景**：background review 的 actions 需要多行 bullet 格式。
+- **方案**：`agent/background_review.py` 一处格式调整。
+- **Commit**：`f806b7aaa`（§17.24）
+
+---
+
+## 附录 A：owner/ 目录模块索引
+
+| 路径 | 职责 | 侵入官方文件 |
+|------|------|--------------|
+| `owner/__init__.py` | 空包 | — |
+| `owner/patch_config.py` | patch.yaml 统一 fail-open 加载器（mtime+60s TTL） | tools/approval.py 等 import 调用 |
+| `owner/attribution.py` | per-turn 归因（owner_provider_name 盖戳） | run_agent.py 等 10+ 文件透传 |
+| `owner/utils.py` | 工具函数（normalize_bare_domain_base_url 等） | — |
+| `owner/extra_body_injection.py` | 模型级 extra_body 注入 | agent/transports/chat_completions.py |
+| `owner/api_error_hints.py` | API 错误提示增强 | conversation_loop.py / run.py |
+| `owner/display_overrides.py` | per-chat 显示覆盖 | gateway/run.py 等 6+ 处 |
+| `owner/file_tool_timeout.py` | read_file/search_files 超时守卫 | agent/tool_executor.py |
+| `owner/tips_zh.py` | 中文 tips 数据源 | hermes_cli/tips.py |
+| `owner/approval/skill_script_approval.py` | skill 脚本自动审批 + 安全门 | tools/approval.py / skills_tool.py |
+| `owner/checkpoint_predictor/` | terminal 预测式 checkpoint（静态+LLM） | agent/tool_executor.py |
+| `owner/clarify/` | clarify choice 归一化 + gateway helpers | tools/clarify_tool.py / clarify_gateway.py |
+| `owner/cli/yolo.py` | YOLO on/off/status 命令 | — |
+| `owner/commands/providers.py` | /providers 斜杠命令实现 | gateway/run.py |
+| `owner/cron/` | cron session 隔离 + restart scrub + run_job hook + approval helper | cron/* + gateway/run.py |
+| `owner/diff_card/` | diff 卡片平台分发（飞书/QQ） | feishu/adapter.py |
+| `owner/feishu/` | 飞书深度定制（16 模块） | feishu/adapter.py（64 处标记） |
+| `owner/gateway/` | inbound_context + hygiene_compression_notice | gateway/run.py |
+| `owner/patches/` | runtime patch（OpenViking recall + memory synthetic guard + pool base_url override） | gateway/run.py / hermes_cli/runtime_provider.py |
+| `owner/providers/credential_helpers.py` | GitHub token 校验等 credential helper | hermes_cli/model_switch.py |
+| `owner/scripts/` | 运维脚本（备份/健康检查/汇率/todo 扫描） | — |
+| `owner/skins/` | ruolin 系列皮肤 YAML | — |
+| `owner/tools/schema_patches.py` | 运行时 schema patch（send_message card + image_generate model） | gateway/run.py（import） |
+
+## 附录 B：官方文件侵入点速查（按侵入深度排序）
+
+### 重度侵入（inline 逻辑为主，sync 冲突大，hook/plugin 化首选）
+
+| 文件 | 侵入内容 | owner/ 对应模块 | 相关 commit |
+|------|----------|-----------------|-------------|
+| `gateway/run.py` | cron env scrub ×3、OpenViking recall patch、memory synthetic guard、schema patch import、executor-shutdown、/providers、inbound context、hygiene notice、auto-card、per-chat display、chained quick command | owner/cron/、owner/patches/、owner/tools/、owner/commands/、owner/gateway/、owner/feishu/、owner/display_overrides.py | 几乎所有 §11/§17 commit |
+| `plugins/platforms/feishu/adapter.py` | 64 处 `[owner]` 标记：approval/auto_card/bot_menu/clarify/diff_card/model_picker/profile_routing/resume_card/sender_name/early-typing 委托 | owner/feishu/*（16 模块） | §4.2/§5.3-5.7/§17.1 |
+| `agent/conversation_loop.py` | MoA 注入（CR-005 已改为独立 message）、content-filter fallback、adaptive backoff、thinking-timeout、attribution 重建、tool_call_id 胶水 | owner/attribution.py、owner/api_error_hints.py | a6dcd6ed8、9a05e50b4、362304bc8 |
+| `tools/approval.py` | home-prefix fold（CR-001 修复）、skill script 自动审批（3 处委托）、patch.yaml allowlist 合并、cron active helper | owner/approval/、owner/patch_config.py、owner/cron/approval_helper.py | 82fe8c962、5dd9580b4、99a374f64 |
+| `gateway/platforms/base.py` | per-profile cache roots、SendResult rotate/retry_after、chained quick command（`[owner-patch]`）、progress dedup code-fence 守卫 | — | 1d908072a、2be0af638 |
+| `tools/cronjob_tools.py` | owner/scripts allowlist（mtime-based）、cron job args 三处 `[owner-patch]` | — | 8a8f42455、3163d17e8、890869693 |
+| `cron/jobs.py` / `cron/scheduler.py` | cron job args `[owner-patch]` 参数 normalize + map | — | 3163d17e8 |
+
+### 中度侵入（薄胶水 + 列扩展，sync 冲突中）
+
+| 文件 | 侵入内容 | 侵入类型 |
+|------|----------|----------|
+| `run_agent.py` | owner_provider_name 参数+属性+透传、attribution 重建（`[owner-patch]`）、acp_args None 修复、schema patch import | 薄胶水 + 列扩展 |
+| `agent/agent_init.py` | owner_provider_name 透传、acp_args 空列表→None（`[owner-patch]`）、owner_provider_name 保留（`[owner-patch]`）、`_auth_pool_refresh_counts` 初始化（CR-003） | 薄胶水 |
+| `hermes_state.py` | sessions/messages 表加 owner_provider_name 列（INSERT/UPDATE/SELECT 全串联） | inline schema 扩展 |
+| `agent/chat_completion_helpers.py` | owner_provider_name 剥离 + extra_body 注入点 | 薄胶水 |
+| `agent/transports/chat_completions.py` | extra_body 注入 | 薄胶水 |
+| `hermes_cli/runtime_provider.py` | pool base_url override ×2（`[owner-patch]`）、env-var template P29 防泄露（`[owner-patch]`） | 薄胶水 |
+| `hermes_cli/model_switch.py` | credential_helpers 薄调用（GitHub token 校验） | 薄胶水 |
+| `agent/model_metadata.py` | env-var template P29 防泄露（`[owner-patch]`） | 薄胶水 |
+| `tui_gateway/server.py` | env-var template P29（`[owner-patch]`）、Cmd+C fallback、skin 数据传递 | 薄胶水 |
+| `agent/tool_executor.py` | checkpoint predictor 触发、file tool timeout 接线 | 薄胶水 |
+| `agent/tool_guardrails.py` | warn/block/halt 消息增强（计数器/阈值/路径） | inline（字符串） |
+| `tools/clarify_tool.py` / `clarify_gateway.py` | normalize_choices 薄调用 + stop sentinel | 薄胶水 |
+| `tools/skills_tool.py` | track_session_skill_view 薄调用 | 薄胶水 |
+| `gateway/platforms/qqbot/adapter.py` + `constants.py` | WS 重连链（heartbeat/timeout/stop_retry/rebuild） | inline |
+
+### 轻度侵入（import 编排 / 单行，sync 冲突小）
+
+| 文件 | 侵入内容 | 侵入类型 |
+|------|----------|----------|
+| `agent/anthropic_adapter.py` | MiniMax thinking-block 解析 | inline |
+| `agent/credential_pool.py` | base_url override 钩子 | 薄胶水 |
+| `agent/agent_runtime_helpers.py` | `_auth_pool_refresh_counts` defensive getter + file timeout | 薄胶水 |
+| `agent/codex_runtime.py` | owner_provider_name 透传 | 薄胶水 |
+| `gateway/display_config.py` / `gateway/slash_commands.py` | per-chat display source 透传 + i18n | 薄胶水 |
+| `gateway/session_context.py` | cron session 隔离接线 | 薄胶水 |
+| `gateway/platforms/api_server.py` | `_owner_import` helper + 多 profile 路由端点 + send_only config | 薄胶水 + try-import |
+| `plugins/platforms/discord/adapter.py` | clarify button `get_choice_display` | 薄胶水 |
+| `plugins/platforms/telegram/adapter.py` | （sender 签名相关） | 薄胶水 |
+| `cli.py` | owner_provider_name 透传 + chained quick command | 薄胶水 |
+| `hermes_cli/oneshot.py` | extra_body 透传 | 薄胶水 |
+| `agent/usage_pricing.py` | attribution helper for billing | 薄胶水 |
+| `agent/background_review.py` | 多行 bullet 格式 | inline（字符串） |
+| `tools/code_execution_tool.py` / `tools/delegate_tool.py` | extra_body 透传 | 薄胶水 |
+
+---
+
+## 附录 C：迁移与治理建议（面向未来 hook/plugin 化）
+
+本附录是给后续工作的路线图参考，**非**当前分支承诺。
+
+1. **owner_provider_name 归因链** — 当前贯穿 10+ 官方文件。候选：通过 `on_session_start` / `pre_llm_call` hook + 一个 owner/ 维护的 ContextVar，减少官方文件的属性透传链。`hermes_state.py` 的 DB 列扩展是不可避免的持久层改动。
+2. **gateway/run.py** — 侵入最重（~20 处）。建议按功能拆分到独立 hook：cron env scrub（`on_session_start`）、OpenViking recall（`post_llm_call`/message-receive hook）、memory synthetic guard（message-receive hook）、per-chat display（display hook）。
+3. **plugins/platforms/feishu/adapter.py** — 64 处标记但大多是 1-3 行 `_owner_import` 委托，已是规范的薄胶水模式。保持现状即可；sync 冲突可通过 `_owner_import` 的 try-import 容错吸收。
+4. **tools/approval.py** — home-prefix fold + skill script 自动审批是安全核心逻辑，建议保留在 owner/ 并继续薄胶水委托，不建议改成 hook（hook 时机不可靠）。
+5. **patch.yaml 配置系统** — 已是干净的 owner/ 集中加载，官方文件只 import。无需迁移。
+6. **runtime schema patches**（`owner/tools/schema_patches.py`）— 已是规范的 post-registration patch，官方源码字面不变。保持现状。
+7. **cron job args / owner/scripts allowlist** — inline `[owner-patch]`，建议未来在 cron 工具暴露扩展点后改为插件。
+8. **chained quick command（;;）** — 4 处 Python + 3 处 TS inline，是全平台语法增强，不适合 hook 化，建议保持。
+
+---
+
+## 附录 D：与旧清单（owner-v16/v17）的主要差异
+
+本分支是从 owner-v17（500+ commit）清洗迁移而来，与旧清单（`/Users/yangtb/.hermes/hermes-agent/owner/docs/owner改动清单.md`）的主要差异：
+
+- **已退役**：Mixture-of-Agents 去 OpenRouter 硬绑定（旧 §18.2，随上游迁移）、Qdrant 记忆召回（旧 §9.2/§17.21，被 OpenViking 取代）、Session Archiver 插件（旧 §13.2）、`hermes_mon` 性能监控（旧 §13.1）、memory_propose 批量提案（旧 §4.5/§17.5）、Copilot PAT 拒绝（旧 §4.1）、频道级系统提示 channel_prompts（旧 §5.1）。
+- **已合并/重构**：飞书审批卡片（旧 §4.2 大段内联 → 现薄胶水 + owner/feishu/approval.py）、归因系统（旧 §3.8 分散 → 现 Layer 1/2/3 集中 + owner/attribution.py）、credential 逻辑（旧 §3.4 分散 → 现 owner/providers/credential_helpers.py）。
+- **新增**：飞书多 profile 路由（§17.1，全新）、Checkpoint Mutation Predictor（§17.11，从旧 §8.2 精简迁移）、patch.yaml 统一加载器（§2.2，旧版散落）、skill 脚本自动审批（§4.6/§17.9，含 CR-001/CR-006 安全门）、CR-001~CR-006 代码审查修复（2026-07-02）。
+- **保留并精简**：OpenViking（旧 §11.6/§11.7 → 现精简为 recall + advisory + recall-card）、auto-card / diff card / clarify card / bot menu / early-typing（旧 §5.3-5.7 → 现 owner/feishu/ 独立模块）。
+
+_本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请在对应章节追加并更新元数据表的「最后更新」日期。_
