@@ -1763,9 +1763,9 @@ class FeishuAdapter(BasePlatformAdapter):
         if not self._app_id or not self._app_secret:
             logger.error("[Feishu] FEISHU_APP_ID or FEISHU_APP_SECRET not set")
             return False
-        if self._connection_mode not in {"websocket", "webhook"}:
+        if self._connection_mode not in {"websocket", "webhook", "send_only"}:
             logger.error(
-                "[Feishu] Unsupported FEISHU_CONNECTION_MODE=%s. Supported modes: websocket, webhook.",
+                "[Feishu] Unsupported FEISHU_CONNECTION_MODE=%s. Supported modes: websocket, webhook, send_only.",
                 self._connection_mode,
             )
             return False
@@ -1776,6 +1776,19 @@ class FeishuAdapter(BasePlatformAdapter):
             return False
 
         try:
+            # [owner] send_only mode: only create lark client for sending, no websocket.
+            # Must return before acquire_scoped_lock — a send_only container shares
+            # the same app_id as the main gateway and must NOT steal its WebSocket lock.
+            if self._connection_mode == "send_only":
+                self._loop = asyncio.get_running_loop()
+                domain = FEISHU_DOMAIN if self._domain_name != "lark" else LARK_DOMAIN
+                self._client = self._build_lark_client(domain)
+                self._user_store.bind_client(self._client)
+                await self._hydrate_bot_identity()
+                self._mark_connected()
+                logger.info("[Feishu] Connected in send_only mode (no websocket, send-only)")
+                return True
+
             self._app_lock_identity = self._app_id
             acquired, existing = acquire_scoped_lock(
                 _FEISHU_APP_LOCK_SCOPE,
@@ -2649,13 +2662,11 @@ class FeishuAdapter(BasePlatformAdapter):
         self._submit_on_loop(loop, self._handle_reaction_event(event_type, data))
 
     def _on_card_action_trigger(self, data: Any) -> Any:
-        """Handle card-action callback from the Feishu SDK (synchronous).
+        """Handle a card-action callback from the Feishu SDK (synchronous).
 
-        For approval actions: parses the event once, returns the resolved card
-        inline (the only reliable way to sync all clients), and schedules a
-        lightweight async method to actually unblock the agent.
-
-        For other card actions: delegates to ``_handle_card_action_event``.
+        Thin entry point: validates the adapter loop, parses the event once, then
+        delegates to the shared ``_dispatch_card_action`` (also reused by the
+        sub-profile's ``/v1/feishu/card-actions`` HTTP handler).
         """
         loop = self._loop
         if not self._loop_accepts_callbacks(loop):
@@ -2665,11 +2676,53 @@ class FeishuAdapter(BasePlatformAdapter):
         event = getattr(data, "event", None)
         action = getattr(event, "action", None)
         action_value = getattr(action, "value", {}) or {}
+        # For form submissions, form_value is on the action object, not in action.value
+        form_value = getattr(action, "form_value", None)
+        if form_value and isinstance(action_value, dict):
+            action_value["form_value"] = form_value
+        return self._dispatch_card_action(
+            event, action_value, loop, data=data, allow_profile_routing=True
+        )
+
+    def _dispatch_card_action(
+        self,
+        event: Any,
+        action_value: Dict[str, Any],
+        loop: Any,
+        *,
+        data: Any = None,
+        allow_profile_routing: bool = True,
+    ) -> Any:
+        """Dispatch a parsed card action to the right per-type handler.
+
+        Shared by two callers:
+          * the WebSocket SDK callback ``_on_card_action_trigger``
+            (``allow_profile_routing=True``, ``data`` = raw lark event);
+          * the sub-profile container's ``/v1/feishu/card-actions`` HTTP handler
+            (``allow_profile_routing=False`` — the click was already routed here
+            and the ``hermes_profile`` tag stripped).
+
+        For approval/clarify/picker/diff/update_prompt it returns a
+        ``P2CardActionTriggerResponse`` whose ``card`` inline-updates the message.
+        The HTTP caller serialises ``response.card.data`` back to the main
+        gateway, which relays that update over the WebSocket it owns.
+        """
         hermes_action = action_value.get("hermes_action") if isinstance(action_value, dict) else None
         update_prompt_action = (
             action_value.get("hermes_update_prompt_action")
             if isinstance(action_value, dict) else None
         )
+
+        # [owner] multi-profile routing: forward to the sub-profile that sent the card.
+        # Only the WebSocket path routes (``allow_profile_routing=True``); the
+        # sub-profile's own HTTP replay path skips this (``allow_profile_routing=False``)
+        # so the click is handled locally instead of bouncing back to itself.
+        if allow_profile_routing:
+            _try_card_route = _owner_import("owner.feishu.profile_routing", "try_route_card_action")
+            if _try_card_route is not None:
+                _route_response = _try_card_route(event, action_value)
+                if _route_response is not None:
+                    return _route_response
 
         # [owner] model picker: dispatch picker card callbacks (see owner/feishu/model_picker.py)
         model_picker = action_value.get("hermes_model_picker") if isinstance(action_value, dict) else None
@@ -3399,6 +3452,24 @@ class FeishuAdapter(BasePlatformAdapter):
                     open_id,
                 )
 
+        # [owner] multi-profile routing: forward to external container if configured.
+        # Routed users must NEVER be served locally — a hit returns immediately so we
+        # skip the sender-name pre-warm and the rest of the native inbound pipeline.
+        _try_msg_route = _owner_import(
+            "owner.feishu.profile_routing", "try_route_inbound_message"
+        )
+        if _try_msg_route is not None:
+            _routed = await _try_msg_route(
+                self,
+                chat_id=chat_id,
+                open_id=str(getattr(sender_id, "open_id", "") or "").strip(),
+                chat_type=chat_type,
+                text=text,
+                message_id=message_id,
+            )
+            if _routed:
+                return
+
         # [owner] approval: pre-warm name cache before resolve (see owner/feishu/sender_name_helpers.py)
         if not is_bot:
             _warm_id = str(getattr(sender_id, "open_id", "") or "").strip()
@@ -3434,6 +3505,92 @@ class FeishuAdapter(BasePlatformAdapter):
             timestamp=datetime.now(),
         )
         await self._dispatch_inbound_event(normalized)
+
+    # [owner] multi-profile routing: process a message forwarded from the main
+    # gateway as if it had arrived on this container's own WebSocket.
+    async def inject_inbound(
+        self,
+        *,
+        text: str,
+        open_id: str,
+        chat_id: str = "",
+        chat_type: str = "p2p",
+        message_id: Optional[str] = None,
+    ) -> None:
+        """Run a forwarded message through the normal inbound pipeline.
+
+        The main gateway holds the only Feishu WebSocket and forwards routed
+        messages to this ``send_only`` container over HTTP (see
+        ``owner/feishu/profile_routing.py`` and the ``/v1/feishu/inbound``
+        endpoint in ``gateway/platforms/api_server.py``). This container has no
+        WebSocket of its own, so it reconstructs the inbound ``MessageEvent``
+        and dispatches it through the *same* path a native message would take
+        (``_dispatch_inbound_event`` → ``_handle_message`` → agent:end
+        auto-card + runtime footer). A routed conversation then behaves exactly
+        like a native one — only the transport differs.
+
+        ``chat_id`` is the p2p chat id (``oc_…``) for a DM or the group id for
+        a group; ``open_id`` is always the sender. Both are forwarded so the
+        reply path can use whichever id Feishu needs: the auto-card path reads
+        the open_id from metadata (injected by run.py for Feishu DMs), while
+        the plain-text path sends to ``source.chat_id``.
+        """
+        if not text or not text.strip():
+            return
+
+        is_dm = (chat_type or "").strip().lower() in ("p2p", "dm")
+        src_chat_type = "dm" if is_dm else "group"
+        # Prefer the p2p chat id for DMs (matches the native flow); fall back to
+        # the open_id so send() still has a deliverable target when no p2p id
+        # was forwarded (e.g. bot-menu synthetic commands).
+        src_chat_id = chat_id or (open_id if is_dm else "")
+        if not src_chat_id:
+            logger.warning(
+                "[Feishu] inject_inbound: no chat_id/open_id available; dropping"
+            )
+            return
+
+        chat_name = "Feishu DM" if is_dm else src_chat_id
+        if not is_dm:
+            try:
+                info = await self.get_chat_info(src_chat_id)
+                chat_name = info.get("name") or src_chat_id
+            except Exception:
+                pass
+
+        source = self.build_source(
+            chat_id=src_chat_id,
+            chat_name=chat_name,
+            chat_type=src_chat_type,
+            user_id=open_id or None,
+        )
+
+        # Per-channel ephemeral prompt is resolved HERE in the container — the
+        # main gateway only forwards the message. For DMs prefer an open_id-keyed
+        # prompt (per-user) and fall back to the p2p chat id.
+        from gateway.platforms.base import resolve_channel_prompt
+
+        if is_dm:
+            _channel_prompt = resolve_channel_prompt(
+                self.config.extra, open_id, parent_id=src_chat_id
+            )
+        else:
+            _channel_prompt = resolve_channel_prompt(self.config.extra, src_chat_id)
+
+        event = MessageEvent(
+            text=text,
+            message_type=MessageType.TEXT,
+            source=source,
+            message_id=message_id,
+            channel_prompt=_channel_prompt,
+            timestamp=datetime.now(),
+        )
+        logger.info(
+            "[Feishu] inject_inbound: dispatching routed message (chat_type=%s, "
+            "chat_id=%s, open_id=%s, has_msg_id=%s)",
+            src_chat_type, src_chat_id, open_id, bool(message_id),
+        )
+        await self._dispatch_inbound_event(event)
 
     async def _dispatch_inbound_event(self, event: MessageEvent) -> None:
         """Apply Feishu-specific burst protection before entering the base adapter."""

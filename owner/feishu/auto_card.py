@@ -23,7 +23,8 @@ from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
 from owner.patch_config import _load_patch_owner_config
 
 if TYPE_CHECKING:
-    from gateway.platforms.feishu import FeishuAdapter
+    # [owner] 目标分支飞书适配器已重构为插件（源码为单体 gateway/platforms/feishu.py）。
+    from plugins.platforms.feishu.adapter import FeishuAdapter
 
 try:
     from gateway.platforms.base import SendResult
