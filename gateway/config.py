@@ -1655,12 +1655,21 @@ def _apply_env_overrides(config: GatewayConfig) -> None:
     if feishu_app_id and feishu_app_secret:
         if Platform.FEISHU not in config.platforms:
             config.platforms[Platform.FEISHU] = PlatformConfig()
-        config.platforms[Platform.FEISHU].enabled = True
-        config.platforms[Platform.FEISHU].extra.update({
+        feishu_cfg = config.platforms[Platform.FEISHU]
+        # Respect explicit disable in config.yaml: a send_only sub-container writes
+        # ``feishu.enabled: false`` + ``_enabled_explicit`` so the env-detect pass
+        # below does NOT force it back on (and thus does not steal the main
+        # gateway's WebSocket). Same pattern as telegram/matrix/slack above.
+        enabled_was_explicit = bool(feishu_cfg.extra.get("_enabled_explicit", False))
+        if not feishu_cfg.enabled and not enabled_was_explicit:
+            feishu_cfg.enabled = True
+        # [owner] send_only mode: don't overwrite a connection_mode the container
+        # set explicitly in config.yaml — only default from env when unset.
+        feishu_cfg.extra.setdefault("connection_mode", os.getenv("FEISHU_CONNECTION_MODE", "websocket"))
+        feishu_cfg.extra.update({
             "app_id": feishu_app_id,
             "app_secret": feishu_app_secret,
             "domain": os.getenv("FEISHU_DOMAIN", "feishu"),
-            "connection_mode": os.getenv("FEISHU_CONNECTION_MODE", "websocket"),
         })
         feishu_encrypt_key = os.getenv("FEISHU_ENCRYPT_KEY", "")
         if feishu_encrypt_key:

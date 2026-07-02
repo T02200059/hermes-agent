@@ -62,6 +62,22 @@ from agent.redact import redact_sensitive_text
 
 logger = logging.getLogger(__name__)
 
+# [owner] lazy owner imports — api_server.py stays importable without owner/
+# (graceful degradation: returns None when owner/ is absent, e.g. upstream sync).
+_owner_lazy: Dict[str, Any] = {}
+
+
+def _owner_import(module: str, name: str) -> Any:
+    key = f"{module}.{name}"
+    if key not in _owner_lazy:
+        import importlib
+
+        try:
+            _owner_lazy[key] = getattr(importlib.import_module(module), name)
+        except (ImportError, AttributeError):
+            _owner_lazy[key] = None  # graceful degradation when owner/ removed
+    return _owner_lazy[key]
+
 
 def _hermes_version() -> str:
     """Return the hermes-agent version string, or "dev" if it can't be resolved.
@@ -4398,6 +4414,99 @@ class APIServerAdapter(BasePlatformAdapter):
 
         return web.json_response({"run_id": run_id, "status": "stopping"})
 
+    async def _handle_feishu_inbound(self, request: "web.Request") -> "web.Response":
+        """POST /v1/feishu/inbound — [owner] multi-profile routing transport.
+
+        The main gateway holds the only Feishu WebSocket and forwards routed
+        messages here. This handler is a pure transport doorway: it does NOT
+        run the agent loop (unlike /v1/runs). Instead it hands the message to
+        this container's ``send_only`` Feishu adapter via ``inject_inbound``,
+        so the conversation runs through the full native Feishu pipeline
+        (channel_prompt → hooks → agent:end auto-card → runtime footer) and the
+        reply is sent by the same adapter. Fire-and-forget: the main gateway
+        only needs an accepted ack.
+        """
+        auth_err = self._check_auth(request)
+        if auth_err:
+            return auth_err
+        body, err = await self._read_json_body(request)
+        if err:
+            return err
+
+        text = body.get("text") or body.get("input") or ""
+        open_id = str(body.get("open_id") or "").strip()
+        chat_id = str(body.get("chat_id") or "").strip()
+        chat_type = str(body.get("chat_type") or "p2p").strip()
+        message_id = body.get("message_id") or None
+
+        if not text or not str(text).strip():
+            return web.json_response(_openai_error("text is required", code="invalid_request"), status=400)
+        if not open_id and not chat_id:
+            return web.json_response(
+                _openai_error("open_id or chat_id is required", code="invalid_request"),
+                status=400,
+            )
+
+        _get_adapter = _owner_import(
+            "owner.feishu.profile_routing", "_get_inprocess_feishu_adapter"
+        )
+        adapter = _get_adapter() if _get_adapter is not None else None
+        if adapter is None or not hasattr(adapter, "inject_inbound"):
+            logger.warning("[api_server] /v1/feishu/inbound: no Feishu adapter in this container")
+            return web.json_response(
+                _openai_error("Feishu adapter unavailable", code="feishu_unavailable"),
+                status=503,
+            )
+
+        # Run the full pipeline on the gateway loop without blocking the ack.
+        asyncio.ensure_future(
+            adapter.inject_inbound(
+                text=str(text),
+                open_id=open_id,
+                chat_id=chat_id,
+                chat_type=chat_type,
+                message_id=str(message_id) if message_id else None,
+            )
+        )
+        return web.json_response({"accepted": True}, status=202)
+
+    async def _handle_feishu_card_action(self, request: "web.Request") -> "web.Response":
+        """POST /v1/feishu/card-actions — [owner] multi-profile card-action transport.
+
+        Thin glue: auth + body parse + adapter lookup, then delegate the replay /
+        re-tag / card extraction to ``owner.feishu.profile_routing``. Returns
+        ``{"card": <json|null>}`` for the main gateway to relay inline.
+        """
+        auth_err = self._check_auth(request)
+        if auth_err:
+            return auth_err
+        body, err = await self._read_json_body(request)
+        if err:
+            return err
+
+        _get_adapter = _owner_import(
+            "owner.feishu.profile_routing", "_get_inprocess_feishu_adapter"
+        )
+        adapter = _get_adapter() if _get_adapter is not None else None
+        if adapter is None or not hasattr(adapter, "_dispatch_card_action"):
+            logger.warning(
+                "[api_server] /v1/feishu/card-actions: no Feishu adapter in this container"
+            )
+            return web.json_response(
+                _openai_error("Feishu adapter unavailable", code="feishu_unavailable"),
+                status=503,
+            )
+
+        _handle = _owner_import("owner.feishu.profile_routing", "handle_card_action_request")
+        try:
+            card = _handle(adapter, body) if _handle is not None else None
+        except Exception:
+            logger.warning(
+                "[api_server] /v1/feishu/card-actions dispatch failed", exc_info=True
+            )
+            return web.json_response({"card": None}, status=200)
+        return web.json_response({"card": card}, status=200)
+
     async def _sweep_orphaned_runs(self) -> None:
         """Periodically clean up run streams that were never consumed."""
         while True:
@@ -4488,6 +4597,10 @@ class APIServerAdapter(BasePlatformAdapter):
             self._app.router.add_get("/v1/runs/{run_id}/events", self._handle_run_events)
             self._app.router.add_post("/v1/runs/{run_id}/approval", self._handle_run_approval)
             self._app.router.add_post("/v1/runs/{run_id}/stop", self._handle_stop_run)
+            # [owner] Feishu multi-profile routing transport — main gateway forwards
+            # routed messages/card-actions to these endpoints on the send_only container.
+            self._app.router.add_post("/v1/feishu/inbound", self._handle_feishu_inbound)
+            self._app.router.add_post("/v1/feishu/card-actions", self._handle_feishu_card_action)
             # Store the adapter after native routes are registered. Local Hermes-Relay
             # bootstrap shims use this key as a feature-detection hook; registering
             # native routes first lets those shims no-op instead of shadowing the
