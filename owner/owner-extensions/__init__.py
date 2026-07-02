@@ -24,6 +24,16 @@ def register(ctx) -> None:
     except Exception:
         logger.warning("owner: memory_synthetic_guard_patch failed", exc_info=True)
 
+    # §2.3 runtime schema patches
+    # Mutate built-in tool schema dicts after tool registration so owner-only
+    # parameters (image_generate.model, legacy send_message.card) are visible
+    # without editing upstream tool modules.
+    try:
+        import owner.tools.schema_patches  # noqa: F401
+        logger.debug("owner: schema_patches applied via plugin register")
+    except Exception:
+        logger.warning("owner: schema_patches failed", exc_info=True)
+
     # §7.3 OpenViking recall owner extensions
     # Advisory wording, peer-mirror dedup, recall card (Feishu/QQ).
     # See owner/patches/openviking_owner_recall_patch.py

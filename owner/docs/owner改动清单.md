@@ -105,14 +105,14 @@
 
 - **背景**：`send_message` 卡片和 `image_generate` 的 model 参数需要扩展 schema，但不能改官方 toolsets 的字面定义（sync 冲突）。同时 credential pool 的 base_url 需要能被 model.base_url 覆盖（NewAPI 多 endpoint 场景）。
 - **方案**：
-  - `owner/tools/schema_patches.py`：模块加载后，在已注册的 tool schema 上 post-registration patch（运行时修改）。gateway/run.py 在 schema patch 阶段 `import owner.tools.schema_patches`。
+  - `owner/tools/schema_patches.py`：模块加载后，在已注册的 tool schema 上 post-registration patch（运行时修改）。当前由 `owner-extensions` plugin 的 `register(ctx)` 统一 import/apply，不再占用 `gateway/run.py` 侵入点。
   - `owner/patches/pool_base_url_override.py`：`config_base_url_override()` — 当 model 配置了 base_url 时，覆盖 credential pool 的 base_url。`hermes_cli/runtime_provider.py` 两处薄胶水调用。
   - **env-var template 泄露防护**（§11.2）：`hermes_cli/runtime_provider.py` + `agent/model_metadata.py` + `tui_gateway/server.py` 三处 `[owner-patch] P29` 防止 `${VAR}` 模板字符串泄露到运行时。
 - **涉及文件**：
   - 纯新增：`owner/tools/schema_patches.py`、`owner/patches/pool_base_url_override.py`
-  - 侵入：`agent/credential_pool.py`、`hermes_cli/runtime_provider.py`（两处 `[owner-patch] P29` + base_url override 薄胶水）、`run_agent.py`、`agent/model_metadata.py`（`[owner-patch] P29`）、`tui_gateway/server.py`（`[owner-patch] P29`）、`gateway/run.py`（`import owner.tools.schema_patches`）
+  - 侵入：`agent/credential_pool.py`、`hermes_cli/runtime_provider.py`（两处 `[owner-patch] P29` + base_url override 薄胶水）、`run_agent.py`、`agent/model_metadata.py`（`[owner-patch] P29`）、`tui_gateway/server.py`（`[owner-patch] P29`）
 - **侵入类型**：import 编排（schema_patches 是 runtime patch）、薄胶水（P29 三处 + base_url override）
-- **Commit**：`7f1a80ddb`（§3.10+§3.11）、`e78e53a71`（§11.2 P29 三处防泄露）、`de2295c0c`（补 schema_patches import 让 send_message card + image_generate model 参数生效）
+- **Commit**：`7f1a80ddb`（§3.10+§3.11）、`e78e53a71`（§11.2 P29 三处防泄露）、`de2295c0c`（补 schema_patches import 让 send_message card + image_generate model 参数生效）、`2c592b7ad`（upstream-native 检测）、当前未提交改动（迁入 `owner-extensions` plugin）
 
 ### 2.4 reasoning 显示转义 + MiniMax thinking-block + i18n 硬编码翻译
 
@@ -353,10 +353,10 @@
 - **方案**：
   - `owner/patches/openviking_owner_recall_patch.py`：`apply_patch()` — advisory 提示词、peer dedup、recall card 注入
   - `owner/patches/openviking_recall_config.py`：从 patch.yaml 读配置（`owner.openviking_sync_recall.*` / `owner.openviking_recall_card.*`）
-  - `gateway/run.py`：`# [owner] OpenViking recall owner extensions` + 薄胶水
+  - `owner/owner-extensions/__init__.py`：plugin `register(ctx)` 中统一 apply（已从 `gateway/run.py` 顶层 try-import 迁出）
   - **WR-04**：`684de6981` — bound recall-card thread pool + per-chat debounce
 - **侵入类型**：import 编排（runtime patch）+ 薄胶水
-- **Commit**：`76fa75f36`（§11.6 精简迁移）、`684de6981`（§11.6 WR-04 bound thread pool + debounce）
+- **Commit**：`76fa75f36`（§11.6 精简迁移）、`684de6981`（§11.6 WR-04 bound thread pool + debounce）、`6a9e28b92`（迁入 `owner-extensions` plugin）
 
 ### 7.4 Cron env 隔离（ContextVar + restart scrub）
 
@@ -532,11 +532,11 @@
 | `owner/diff_card/` | diff 卡片平台分发（飞书/QQ） | feishu/adapter.py |
 | `owner/feishu/` | 飞书深度定制（16 模块） | feishu/adapter.py（64 处标记） |
 | `owner/gateway/` | inbound_context + hygiene_compression_notice | gateway/run.py |
-| `owner/patches/` | runtime patch（OpenViking recall + memory synthetic guard + pool base_url override） | gateway/run.py / hermes_cli/runtime_provider.py |
+| `owner/patches/` | runtime patch（OpenViking recall + memory synthetic guard + pool base_url override） | owner-extensions plugin / hermes_cli/runtime_provider.py |
 | `owner/providers/credential_helpers.py` | GitHub token 校验等 credential helper | hermes_cli/model_switch.py |
 | `owner/scripts/` | 运维脚本（备份/健康检查/汇率/todo 扫描） | — |
 | `owner/skins/` | ruolin 系列皮肤 YAML | — |
-| `owner/tools/schema_patches.py` | 运行时 schema patch（send_message card + image_generate model） | gateway/run.py（import） |
+| `owner/tools/schema_patches.py` | 运行时 schema patch（legacy send_message card + image_generate model） | owner-extensions plugin（import/apply） |
 
 ## 附录 B：官方文件侵入点速查（按侵入深度排序）
 
@@ -544,7 +544,7 @@
 
 | 文件 | 侵入内容 | owner/ 对应模块 | 相关 commit |
 |------|----------|-----------------|-------------|
-| `gateway/run.py` | cron env scrub ×3、OpenViking recall patch、memory synthetic guard、schema patch import、executor-shutdown、/providers、inbound context、hygiene notice、auto-card、per-chat display、chained quick command | owner/cron/、owner/patches/、owner/tools/、owner/commands/、owner/gateway/、owner/feishu/、owner/display_overrides.py | 几乎所有 §11/§17 commit |
+| `gateway/run.py` | cron env scrub ×3、executor-shutdown、/providers、inbound context、hygiene notice、auto-card、per-chat display、chained quick command | owner/cron/、owner/commands/、owner/gateway/、owner/feishu/、owner/display_overrides.py | 几乎所有 §11/§17 commit |
 | `plugins/platforms/feishu/adapter.py` | 64 处 `[owner]` 标记：approval/auto_card/bot_menu/clarify/diff_card/model_picker/profile_routing/resume_card/sender_name/early-typing 委托 | owner/feishu/*（16 模块） | §4.2/§5.3-5.7/§17.1 |
 | `agent/conversation_loop.py` | MoA 注入（CR-005 已改为独立 message）、content-filter fallback、adaptive backoff、thinking-timeout、attribution 重建、tool_call_id 胶水 | owner/attribution.py、owner/api_error_hints.py | a6dcd6ed8、9a05e50b4、362304bc8 |
 | `tools/approval.py` | home-prefix fold（CR-001 修复）、skill script 自动审批（3 处委托）、patch.yaml allowlist 合并、cron active helper | owner/approval/、owner/patch_config.py、owner/cron/approval_helper.py | 82fe8c962、5dd9580b4、99a374f64 |
@@ -599,13 +599,15 @@
 **治理原则**：所有迁移和 hook 化工作在 owner fork 内闭环完成，不考虑给 Hermes 官方提 PR。如果 Hermes core 缺少我们需要的扩展点（hook、ABC 方法等），在我们自己的 fork 里加，不等官方接受。上游同步时这些扩展点作为 owner diff 维护。
 
 1. **owner_provider_name 归因链** — 当前贯穿 10+ 官方文件。候选：通过 `on_session_start` / `pre_llm_call` hook + 一个 owner/ 维护的 ContextVar，减少官方文件的属性透传链。`hermes_state.py` 的 DB 列扩展是不可避免的持久层改动。
-2. **gateway/run.py** — 侵入最重（~20 处）。建议按功能拆分到独立 hook：cron env scrub（`on_session_start`）、OpenViking recall（`post_llm_call`/message-receive hook）、memory synthetic guard（message-receive hook）、per-chat display（display hook）。
+2. **gateway/run.py** — 侵入最重（~20 处，已移出 memory synthetic guard / OpenViking recall / runtime schema patches 三类顶层 runtime patch）。剩余建议继续按功能拆分：cron env scrub（已评估不能迁 plugin）、inbound context、hygiene notice、auto-card、chained quick command。
 3. **plugins/platforms/feishu/adapter.py** — 64 处标记但大多是 1-3 行 `_owner_import` 委托，已是规范的薄胶水模式。保持现状即可；sync 冲突可通过 `_owner_import` 的 try-import 容错吸收。
 4. **tools/approval.py** — home-prefix fold + skill script 自动审批是安全核心逻辑，建议保留在 owner/ 并继续薄胶水委托，不建议改成 hook（hook 时机不可靠）。
 5. **patch.yaml 配置系统** — 已是干净的 owner/ 集中加载，官方文件只 import。无需迁移。
-6. **runtime schema patches**（`owner/tools/schema_patches.py`）— 已是规范的 post-registration patch，官方源码字面不变。保持现状。
-7. **cron job args / owner/scripts allowlist** — inline `[owner-patch]`，建议未来在 cron 工具暴露扩展点后改为插件。
-8. **chained quick command（;;）** — 4 处 Python + 3 处 TS inline，是全平台语法增强，不适合 hook 化，建议保持。
+6. **runtime schema patches**（`owner/tools/schema_patches.py`）— 已迁入 `owner-extensions` plugin；验证依据：`model_tools.py` 先 `discover_builtin_tools()` 注册 schema dict 引用，再 `discover_plugins()`，plugin `register(ctx)` import 后可修改同一 dict；smoke test 已看到 `image_generate.model` 出现在工具 schema。
+7. **per-chat display overrides**（`owner/display_overrides.py`）— 不迁 plugin。原因：它不是独立启动期 patch，而是各个 display 决策点必须传入当前 `source/chat_id` 后同步解析；已通过 `gateway.display_config.resolve_display_setting_for_source()` 集中 chat_id 提取，`gateway/run.py` 只保留必要调用点。进一步迁 plugin 需要新增 display hook 并改所有调用路径，收益低于现状。
+8. **`/providers` command**（`owner/commands/providers.py`）— 已最小化，不再作为下一步迁移项。`gateway/run.py` 只剩 slash 分发一行，`gateway/slash_commands.py` 的 `_handle_providers_command()` 只做 try-import 委托和 ImportError fallback；实际实现全在 owner/。
+9. **cron job args / owner/scripts allowlist** — inline `[owner-patch]`，建议未来在 cron 工具暴露扩展点后改为插件。
+10. **chained quick command（;;）** — 4 处 Python + 3 处 TS inline，是全平台语法增强，不适合 hook 化，建议保持。
 
 ---
 
@@ -633,6 +635,14 @@ _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请在�
 - **验证**：25/25 测试全绿 + PluginManager 发现链路验证通过
 - **治理原则确立**：所有 hook/plugin 工作在 owner fork 闭环，不考虑给官方提 PR
 
+### 2026-07-02：OpenViking recall + runtime schema patches → owner-extensions plugin
+
+- **类型**：第二/第三个 runtime patch plugin 化迁移
+- **commit**：`6a9e28b92`（OpenViking recall），当前未提交改动（schema patches）
+- **变动**：`gateway/run.py` 删 OpenViking 顶层 try-import + schema patch import；`owner/owner-extensions/__init__.py` 统一 apply `memory_synthetic_guard_patch` / `schema_patches` / `openviking_owner_recall_patch`
+- **机制**：`model_tools.py` 先 `discover_builtin_tools()` 注册 tool schema dict 引用，再 `discover_plugins()`；schema patch 在 plugin register 阶段修改同一 dict，仍早于 `get_tool_definitions()` 暴露给模型
+- **验证**：smoke test 看到 `image_generate` schema 包含 `model` 参数；`gateway/run.py` 不再含 `owner.tools.schema_patches` / `openviking_owner_recall_patch` 顶层 import
+
 ### 2026-07-02：附录 C 路线图审查 — §7.4 Cron env scrub 评估为不可迁移 plugin
 
 - **类型**：plugin 迁移可行性评估
@@ -641,4 +651,4 @@ _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请在�
   - L1270 是模块级代码，在 `discover_plugins()`（L6157）之前 ~4000 行执行，plugin register 时机太晚
   - L5604/L5653 操作 `schedule_restart()` 函数局部变量 `watcher_env`，plugin register 无法访问
 - **风险评估**：低。3 处均为 `try-except` 包裹的薄胶水（~12 行），sync 冲突风险可控
-- **下一步**：OpenViking recall patch + schema patches 迁移评估中
+- **下一步**：继续评估 `gateway/run.py` 剩余薄胶水：inbound context / hygiene notice / auto-card / chained quick command
