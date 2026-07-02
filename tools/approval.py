@@ -609,11 +609,18 @@ def _normalize_command_for_detection(command: str) -> str:
     return command
 
 
-# Shell metacharacters, quotes, and whitespace that terminate a filesystem
-# path token on a command line. Used to bound the path tail we normalize.
+# Shell metacharacters, quotes, whitespace, and NEWLINES that terminate a
+# filesystem path token on a command line. Used to bound the path tail we
+# normalize. Newlines MUST be in the stop set: a shell happily accepts a
+# literal newline as command separator, so without \n/\r a path tail could
+# be terminated by a line break and a benign-looking command like
+# ``cat /foo\n/Users/alice/.hermes/.env`` would still fold the second line
+# into the home prefix. CR-001.
 _PATH_TOKEN_STOP = r"""\s'"`;|&<>()"""
+# Newlines added explicitly so the tail cannot terminate on a line break.
+_PATH_TOKEN_STOP_TAIL = _PATH_TOKEN_STOP + r"\n\r"
 # One path segment (no separators, no terminators) preceded by a separator.
-_PATH_TAIL = r"(?P<tail>(?:[/\\][^/\\" + _PATH_TOKEN_STOP + r"]*)+)"
+_PATH_TAIL = r"(?P<tail>(?:[/\\][^/\\" + _PATH_TOKEN_STOP_TAIL + r"]*)+)"
 
 
 @functools.lru_cache(maxsize=64)
