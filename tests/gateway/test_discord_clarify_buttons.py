@@ -450,9 +450,12 @@ class TestDiscordSendClarify:
 
     @pytest.mark.asyncio
     async def test_unwraps_dict_choices_to_description(self):
-        # LLMs sometimes emit [{"description": "..."}] instead of bare strings
-        # — the renderer must unwrap common dict shapes, not str() the whole
-        # dict into a Python repr on the button label.
+        # [owner] clarify: choices now arrive pre-normalized as
+        # ``{"display", "key"}`` dicts (owner.clarify.choice_normalizer runs
+        # in clarify_tool before the adapter sees them). The adapter renders
+        # ``c["display"]`` directly via get_choice_display — no on-the-fly
+        # dict unwrapping at the adapter layer anymore. The contract test
+        # feeds the normalized shape and asserts no Python dict repr leaks.
         adapter = _make_adapter()
         channel = MagicMock()
         sent_msg = MagicMock()
@@ -460,16 +463,16 @@ class TestDiscordSendClarify:
         channel.send = AsyncMock(return_value=sent_msg)
         adapter._client.get_channel = MagicMock(return_value=channel)
 
-        malformed = [
-            {"description": "Tight, well-illustrated"},
-            {"label": "Use label key"},
-            {"text": "Use text key"},
-            "normal-string",  # strings still pass through
+        normalized = [
+            {"display": "Tight, well-illustrated", "key": None},
+            {"display": "Use label key", "key": "Use label key"},
+            {"display": "Use text key", "key": None},
+            {"display": "normal-string", "key": "normal-string"},
         ]
         await adapter.send_clarify(
             chat_id="9001",
             question="?",
-            choices=malformed,
+            choices=normalized,
             clarify_id="cidU",
             session_key="sk-U",
         )
@@ -480,7 +483,7 @@ class TestDiscordSendClarify:
         for label in labels:
             assert "{'" not in label
             assert "':" not in label
-        # Each dict unwrapped to its inner string.
+        # Each display label rendered cleanly.
         assert any("Tight, well-illustrated" in lbl for lbl in labels)
         assert any("Use label key" in lbl for lbl in labels)
         assert any("Use text key" in lbl for lbl in labels)
@@ -488,10 +491,12 @@ class TestDiscordSendClarify:
 
     @pytest.mark.asyncio
     async def test_unwrap_prefers_description_over_name_in_multi_key_dict(self):
-        # When the LLM emits both 'name' (often a short identifier in
-        # OpenAI-style tool calls) and 'description' (the user-facing text),
-        # the renderer must surface 'description'. The user should never see
-        # a 4-char model identifier on a button label.
+        # [owner] clarify: dict unwrapping priority (description over name)
+        # now lives in owner.clarify.choice_normalizer.normalize_choice, not
+        # the adapter. The adapter just renders the pre-normalized display.
+        # Here we feed the already-normalized result of
+        # ``{"name": "tight", "description": "Tight, well-illustrated"}``
+        # which normalizes to display="Tight, well-illustrated", key=None.
         adapter = _make_adapter()
         channel = MagicMock()
         sent_msg = MagicMock()
@@ -502,7 +507,7 @@ class TestDiscordSendClarify:
         await adapter.send_clarify(
             chat_id="9001",
             question="?",
-            choices=[{"name": "tight", "description": "Tight, well-illustrated"}],
+            choices=[{"display": "Tight, well-illustrated", "key": None}],
             clarify_id="cidN",
             session_key="sk-N",
         )
@@ -516,9 +521,10 @@ class TestDiscordSendClarify:
 
     @pytest.mark.asyncio
     async def test_unwrap_prefers_label_over_description(self):
-        # When both 'label' and 'description' are present, 'label' wins.
-        # 'label' is the canonical short user-facing text in most LLM tool
-        # conventions; 'description' is the longer explanation.
+        # [owner] clarify: the label-wins-over-description priority now lives
+        # in owner.clarify.choice_normalizer (identifier 'label' becomes the
+        # ``key``, body 'description' becomes ``display`` prefixed as
+        # ``"label — description"``). The adapter just renders display.
         adapter = _make_adapter()
         channel = MagicMock()
         sent_msg = MagicMock()
@@ -529,7 +535,7 @@ class TestDiscordSendClarify:
         await adapter.send_clarify(
             chat_id="9001",
             question="?",
-            choices=[{"label": "Short", "description": "Long verbose explanation"}],
+            choices=[{"display": "Short — Long verbose explanation", "key": "Short"}],
             clarify_id="cidL",
             session_key="sk-L",
         )
@@ -537,18 +543,16 @@ class TestDiscordSendClarify:
         view = kwargs["view"]
         choice_label = view.children[0].label
         assert "Short" in choice_label
-        # The longer description must NOT have leaked.
-        assert "Long verbose" not in choice_label, (
-            f"'description' leaked over 'label': {choice_label!r}"
-        )
 
     @pytest.mark.asyncio
     async def test_unwrap_does_not_pick_value_or_name_alone(self):
-        # 'name' and 'value' are Discord-component-shaped fields that could
-        # accidentally appear in dicts not intended as choices (e.g., a
-        # developer-error in the gateway wiring). The renderer should not
-        # surface them as button labels — only the well-known LLM tool-call
-        # keys (label, description, text, title) should win.
+        # [owner] clarify: filtering of name-only / value-only dicts now
+        # lives in owner.clarify.choice_normalizer. A dict like
+        # ``{"name": "only_name_here"}`` has no body/id field the normalizer
+        # recognizes, so it drops to None upstream and never reaches the
+        # adapter. The adapter-level test now just verifies that a blank
+        # display string ("") is filtered out by the ``if s`` guard while a
+        # real normalized entry renders cleanly.
         adapter = _make_adapter()
         channel = MagicMock()
         sent_msg = MagicMock()
@@ -560,9 +564,8 @@ class TestDiscordSendClarify:
             chat_id="9001",
             question="?",
             choices=[
-                {"name": "only_name_here"},   # should be filtered out
-                {"value": "only_value_here"},  # should be filtered out
-                {"description": "real choice"},
+                "",                                     # blank → filtered by adapter
+                {"display": "real choice", "key": None},
             ],
             clarify_id="cidNV",
             session_key="sk-NV",
@@ -570,11 +573,8 @@ class TestDiscordSendClarify:
         kwargs = channel.send.call_args.kwargs
         view = kwargs["view"]
         choice_labels = [b.label for b in view.children[:-1]]  # exclude Other
-        # Only the well-formed dict survives.
+        # Only the well-formed normalized entry survives.
         assert len(choice_labels) == 1, (
             f"Expected 1 choice, got {len(choice_labels)}: {choice_labels!r}"
         )
         assert "real choice" in choice_labels[0]
-        for label in choice_labels:
-            assert "only_name_here" not in label, f"name leaked: {label!r}"
-            assert "only_value_here" not in label, f"value leaked: {label!r}"

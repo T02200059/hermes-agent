@@ -2616,7 +2616,13 @@ class TestAdapterBehavior(unittest.TestCase):
             "后续说明仍应保留。"
         )
 
-        with patch("plugins.platforms.feishu.adapter.asyncio.to_thread", side_effect=_direct):
+        # [owner] This test exercises the post-payload fence-splitting path.
+        # With send_card() now wired in, try_auto_card() would otherwise fire
+        # here (streaming off by default + content > 57-char threshold) and
+        # short-circuit send() to an interactive card. Disable auto_card for
+        # this case so the post path is exercised deterministically.
+        with patch("plugins.platforms.feishu.adapter.asyncio.to_thread", side_effect=_direct), \
+             patch("owner.feishu.auto_card.is_feishu_streaming_disabled", return_value=False):
             result = asyncio.run(
                 adapter.send(
                     chat_id="oc_chat",

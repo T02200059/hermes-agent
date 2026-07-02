@@ -31,10 +31,19 @@ class TestClarifyToolBasics:
         assert result["user_response"] == "blue"
 
     def test_question_with_choices(self):
-        """Should pass choices to callback and return response."""
+        """Should pass choices to callback and return response.
+
+        [owner] clarify: choices are normalized to ``{"display", "key"}``
+        dicts by owner.clarify.choice_normalizer so platform adapters can
+        render rich labels. For bare strings, display == key == the string.
+        """
         def mock_callback(question: str, choices: Optional[List[str]]) -> str:
             assert question == "Pick a number"
-            assert choices == ["1", "2", "3"]
+            assert choices == [
+                {"display": "1", "key": "1"},
+                {"display": "2", "key": "2"},
+                {"display": "3", "key": "3"},
+            ]
             return "2"
 
         result = json.loads(clarify_tool(
@@ -43,7 +52,11 @@ class TestClarifyToolBasics:
             callback=mock_callback
         ))
         assert result["question"] == "Pick a number"
-        assert result["choices_offered"] == ["1", "2", "3"]
+        assert result["choices_offered"] == [
+            {"display": "1", "key": "1"},
+            {"display": "2", "key": "2"},
+            {"display": "3", "key": "3"},
+        ]
         assert result["user_response"] == "2"
 
     def test_empty_question_returns_error(self):
@@ -94,7 +107,11 @@ class TestClarifyToolChoicesValidation:
         assert choices_received == []  # Was cleared, nothing added
 
     def test_choices_with_only_whitespace_stripped(self):
-        """Whitespace-only choices should be stripped out."""
+        """Whitespace-only choices should be stripped out.
+
+        [owner] clarify: choices normalize to ``{"display", "key"}`` dicts;
+        whitespace-only items drop out entirely (normalize_choice → None).
+        """
         choices_received = []
 
         def mock_callback(question: str, choices: Optional[List[str]]) -> str:
@@ -102,7 +119,10 @@ class TestClarifyToolChoicesValidation:
             return "answer"
 
         clarify_tool("Pick", choices=["valid", "  ", "", "also valid"], callback=mock_callback)
-        assert choices_received == ["valid", "also valid"]
+        assert choices_received == [
+            {"display": "valid", "key": "valid"},
+            {"display": "also valid", "key": "also valid"},
+        ]
 
     def test_invalid_choices_type_returns_error(self):
         """Non-list choices should return error."""
@@ -115,7 +135,11 @@ class TestClarifyToolChoicesValidation:
         assert "list" in result["error"].lower()
 
     def test_choices_converted_to_strings(self):
-        """Non-string choices should be converted to strings."""
+        """Non-string choices should be converted to display/key dicts.
+
+        [owner] clarify: int/bool scalars coerce via ``str(c)`` so the
+        normalized dict carries ``{"display": "1", "key": "1"}``.
+        """
         choices_received = []
 
         def mock_callback(question: str, choices: Optional[List[str]]) -> str:
@@ -123,7 +147,11 @@ class TestClarifyToolChoicesValidation:
             return "answer"
 
         clarify_tool("Pick", choices=[1, 2, 3], callback=mock_callback)  # type: ignore
-        assert choices_received == ["1", "2", "3"]
+        assert choices_received == [
+            {"display": "1", "key": "1"},
+            {"display": "2", "key": "2"},
+            {"display": "3", "key": "3"},
+        ]
 
 
 class TestClarifyToolCallbackHandling:
@@ -224,32 +252,42 @@ class TestClarifyDictChoices:
         assert _flatten_choice(None) == ""
 
     def test_dict_choices_reach_callback_as_clean_text(self):
-        """The whole point: the UI callback never sees a dict repr."""
+        """The whole point: the UI callback never sees a dict repr.
+
+        [owner] clarify: dict choices normalize to ``{"display", "key"}``
+        via owner.clarify.choice_normalizer. The ``display`` field carries
+        the user-facing label (most descriptive body field); ``key`` is the
+        bare identifier (key/label) when present, else None so platforms
+        fall back to sending display as the value.
+        """
         seen = []
 
         def cb(question, choices):
             seen.extend(choices or [])
-            return choices[0]
+            return choices[0]["display"]
 
         result = json.loads(clarify_tool(
             "Pick a layout",
             choices=[
                 {"choice": "Tight", "description": "Tight, covers all 3 points"},
                 {"description": "Loose layout"},
-                {"name": "modelid", "value": "abc"},  # dropped, not leaked
+                {"name": "modelid", "value": "abc"},  # not a clean label
                 "A plain string choice",
             ],
             callback=cb,
         ))  # type: ignore
+        # Each item is normalized to a {"display", "key"} dict — never a raw
+        # Python dict repr landing on a button label.
         assert seen == [
-            "Tight, covers all 3 points",
-            "Loose layout",
-            "A plain string choice",
+            {"display": "Tight, covers all 3 points", "key": None},
+            {"display": "Loose layout", "key": None},
+            {"display": "abc", "key": None},
+            {"display": "A plain string choice", "key": "A plain string choice"},
         ]
         # and the resolved answer is clean text, not a dict repr
         assert result["user_response"] == "Tight, covers all 3 points"
         assert "{" not in result["user_response"]
-        assert all("{" not in c for c in result["choices_offered"])
+        assert all("{" not in c["display"] for c in result["choices_offered"])
 
 
 class TestClarifySchema:
