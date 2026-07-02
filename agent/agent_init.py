@@ -319,6 +319,9 @@ def init_agent(
     agent.load_soul_identity = load_soul_identity
     agent.pass_session_id = pass_session_id
     agent._credential_pool = credential_pool
+    # CR-003: must be set in __init__ so 401 handlers never AttributeError
+    # on paths that bypass run_conversation()'s per-turn reset.
+    agent._auth_pool_refresh_counts = {}
     agent.log_prefix_chars = log_prefix_chars
     agent.log_prefix = f"{log_prefix} " if log_prefix else ""
     # Store effective base URL for feature detection (prompt caching, reasoning, etc.)
