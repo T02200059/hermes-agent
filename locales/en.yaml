@@ -253,6 +253,17 @@ gateway:
     usage_switch_provider:  "`/model <name> --provider <slug>` — switch provider"
     usage_persist:          "`/model <name> --global` — persist"
 
+    # Content-policy refusal messages (finish_reason=content_filter / provider moderation)
+    content_policy_recovery_hint:     "Try rephrasing the request, narrowing the context, or adding a fallback provider with `hermes fallback add`."
+    content_policy_trying_fallback:   "Model declined to respond (safety refusal) — trying fallback..."
+    content_policy_refusal_status:    "The model declined to respond to this request (safety refusal)."
+    content_policy_refusal_response:  "The model declined to respond to this request (safety refusal — not a Hermes/gateway failure)."
+    content_policy_explanation:       "Model's explanation: {explanation}"
+    content_policy_no_explanation:    "The model returned no explanation."
+    content_policy_provider_blocked:  "The model provider's safety filter blocked this request (not a Hermes/gateway failure)."
+    content_policy_provider_message:  "Provider message: {message}"
+    content_policy_provider_trying_fallback: "Provider safety filter blocked this request — trying fallback..."
+
   agents:
     header:                "🤖 **Active Agents & Tasks**"
     active_agents:         "**Active agents:** {count}"

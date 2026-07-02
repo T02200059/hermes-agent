@@ -432,6 +432,17 @@ gateway:
     usage_switch_provider:  "`/model <name> --provider <slug>` — 切换提供方"
     usage_persist:          "`/model <name> --global` — 永久保存"
 
+    # 内容策略拒绝消息（finish_reason=content_filter / 提供方审核）
+    content_policy_recovery_hint:     "尝试换一种表述、缩小上下文范围，或使用 `hermes fallback add` 添加备用提供方。"
+    content_policy_trying_fallback:   "模型拒绝响应（安全拒绝）— 正在尝试备用模型…"
+    content_policy_refusal_status:    "模型拒绝响应此请求（安全拒绝）。"
+    content_policy_refusal_response:  "模型拒绝响应此请求（安全拒绝 — 非 Hermes/网关故障）。"
+    content_policy_explanation:       "模型解释：{explanation}"
+    content_policy_no_explanation:    "模型未提供解释。"
+    content_policy_provider_blocked:  "模型提供方的安全过滤器拦截了此请求（非 Hermes/网关故障）。"
+    content_policy_provider_message:  "提供方消息：{message}"
+    content_policy_provider_trying_fallback: "提供方安全过滤器拦截了此请求 — 正在尝试备用模型…"
+
   agents:
     header:                "🤖 **活跃代理与任务**"
     active_agents:         "**活跃代理：** {count}"

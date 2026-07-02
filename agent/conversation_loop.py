@@ -28,6 +28,7 @@ import uuid
 from typing import Any, Dict, List, Optional
 
 from agent.codex_responses_adapter import _summarize_user_message_for_log
+from agent.i18n import t
 from agent.conversation_compression import conversation_history_after_compression
 from agent.display import KawaiiSpinner
 from agent.error_classifier import FailoverReason, classify_api_error
@@ -460,6 +461,11 @@ _CONTENT_POLICY_RECOVERY_HINT = (
     "Try rephrasing the request, narrowing the context, or "
     "adding a fallback provider with `hermes fallback add`."
 )
+
+
+def _content_policy_recovery_hint() -> str:
+    """Localized recovery hint shared by both content-policy refusal paths."""
+    return t("gateway.model.content_policy_recovery_hint")
 
 
 def _content_policy_blocked_result(
@@ -1591,7 +1597,7 @@ def run_conversation(
                     # refuse); otherwise surface the refusal terminally.
                     if agent._has_pending_fallback():
                         agent._buffer_status(
-                            "⚠️ Model declined to respond (safety refusal) — trying fallback..."
+                            "⚠️ " + t("gateway.model.content_policy_trying_fallback")
                         )
                     if agent._try_activate_fallback():
                         active_system_prompt = _sync_failover_system_message(
@@ -1614,19 +1620,20 @@ def run_conversation(
                         _refusal_log or "(no text)",
                     )
                     agent._emit_status(
-                        "⚠️ The model declined to respond to this request (safety refusal)."
+                        "⚠️ " + t("gateway.model.content_policy_refusal_status")
                     )
 
                     _refusal_detail = (
-                        f"Model's explanation: {_refusal_text}"
+                        t("gateway.model.content_policy_explanation",
+                          explanation=_refusal_text)
                         if _refusal_text
-                        else "The model returned no explanation."
+                        else t("gateway.model.content_policy_no_explanation")
                     )
                     _refusal_response = (
-                        "⚠️  The model declined to respond to this request "
-                        "(safety refusal — not a Hermes/gateway failure).\n\n"
-                        f"{_refusal_detail}\n\n"
-                        f"{_CONTENT_POLICY_RECOVERY_HINT}"
+                        "⚠️  "
+                        + t("gateway.model.content_policy_refusal_response")
+                        + f"\n\n{_refusal_detail}\n\n"
+                        + _content_policy_recovery_hint()
                     )
 
                     agent._cleanup_task_resources(effective_task_id)
@@ -3441,7 +3448,7 @@ def run_conversation(
                     # abort silently (#35314, #17446).
                     if agent._has_pending_fallback():
                         if classified.reason == FailoverReason.content_policy_blocked:
-                            agent._buffer_status("⚠️ Provider safety filter blocked this request — trying fallback...")
+                            agent._buffer_status("⚠️ " + t("gateway.model.content_policy_provider_trying_fallback"))
                         else:
                             agent._buffer_status(f"⚠️ Non-retryable error (HTTP {status_code}) — trying fallback...")
                     if agent._try_activate_fallback():
@@ -3566,10 +3573,13 @@ def run_conversation(
                         agent._persist_session(messages, conversation_history)
                     if classified.reason == FailoverReason.content_policy_blocked:
                         _policy_response = (
-                            "⚠️  The model provider's safety filter blocked this request "
-                            "(not a Hermes/gateway failure).\n\n"
-                            f"Provider message: {_nonretryable_summary}\n\n"
-                            f"{_CONTENT_POLICY_RECOVERY_HINT}"
+                            "⚠️  "
+                            + t("gateway.model.content_policy_provider_blocked")
+                            + "\n\n"
+                            + t("gateway.model.content_policy_provider_message",
+                                message=_nonretryable_summary)
+                            + "\n\n"
+                            + _content_policy_recovery_hint()
                         )
                         return _content_policy_blocked_result(
                             messages,
