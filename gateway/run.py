@@ -1712,6 +1712,8 @@ from gateway.platforms.base import (
     # imported locally inside the quick-commands alias block to minimize
     # top-level coupling. The shared implementation lives in base.py.
 )
+# [owner] apply schema patches early (see owner/tools/schema_patches.py)
+import owner.tools.schema_patches  # noqa: F401
 from gateway.restart import (
     DEFAULT_GATEWAY_RESTART_DRAIN_TIMEOUT,
     GATEWAY_FATAL_CONFIG_EXIT_CODE,
