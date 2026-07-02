@@ -619,3 +619,16 @@
 - **保留并精简**：OpenViking（旧 §11.6/§11.7 → 现精简为 recall + advisory + recall-card）、auto-card / diff card / clarify card / bot menu / early-typing（旧 §5.3-5.7 → 现 owner/feishu/ 独立模块）。
 
 _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请在对应章节追加并更新元数据表的「最后更新」日期。_
+
+---
+
+## 变更日志
+
+### 2026-07-02：§9.3 Memory Synthetic Guard → owner-extensions plugin 迁移
+
+- **类型**：首个 hook/plugin 化迁移试点（方案 C）
+- **commit**：`63133c3f5`
+- **变动**：`gateway/run.py` 删 8 行 try-import → `owner/owner-extensions/__init__.py` +29 行（plugin 骨架）
+- **机制**：patch 通过 PluginManager `register(ctx)` 在 `discover_plugins()` 时 apply，早于任何 agent turn，无需挂 hook
+- **验证**：25/25 测试全绿 + PluginManager 发现链路验证通过
+- **治理原则确立**：所有 hook/plugin 工作在 owner fork 闭环，不考虑给官方提 PR
