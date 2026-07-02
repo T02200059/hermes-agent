@@ -49,6 +49,11 @@ def apply_image_generate_schema_patch() -> None:
                 " The agent may pass 'model' to override the active preset's model or switch presets via alias."
             )
         logger.debug("Applied owner image_generate schema patch (model param)")
+    else:
+        logger.warning(
+            "schema_patches: image_generate already has 'model' — "
+            "upstream may have added it natively. Consider removing this patch."
+        )
 
 
 def apply_send_message_schema_patch() -> None:
@@ -69,6 +74,11 @@ def apply_send_message_schema_patch() -> None:
             ),
         }
         logger.debug("Applied owner send_message schema patch (card param)")
+    else:
+        logger.warning(
+            "schema_patches: send_message already has 'card' — "
+            "upstream may have added it natively. Consider removing this patch."
+        )
 
 
 # Auto-apply on import (early enough if this module is imported before agent run)
