@@ -505,6 +505,20 @@
 - **侵入类型**：薄胶水（改用 helper）
 - **Commit**：`ad8ea7fed`（§14.1）
 
+### 10.2 逐消息 API token 明细落盘（per-message input/output/cache breakdown）
+
+- **背景**：messages 表已有 `model`/`provider` 列（per-message），但 API 返回的 input/output/cache_read/cache_write token 明细只在 sessions 表做会话级累加（`update_token_counts`），不落盘到单条消息。无法做"第 N 次 API 调用花了多少 input token、命中多少 cache"粒度的分析。
+- **方案**：参考 model/provider 的成功模式，4 步 additive patch：
+  1. `hermes_state.py` SCHEMA_SQL messages 表加 4 列（`input_tokens`/`output_tokens`/`cache_read_tokens`/`cache_write_tokens`，均 `INTEGER DEFAULT 0`）— `_reconcile_columns` 启动时自动 `ALTER TABLE ADD COLUMN`
+  2. `hermes_state.py` `append_message()` 签名加 4 个 `Optional[int]` 参数 + INSERT 语句同步
+  3. `hermes_state.py` `_insert_message_rows()`（compact 重写路径）INSERT 同步加列
+  4. `run_agent.py` `_flush_messages_to_session_db()` 从 `msg.get("input_tokens")` 等取值传入（仅 `role == "assistant"`）
+  5. `agent/conversation_loop.py` 在 `update_token_counts` 调用后，将 `canonical_usage` 的 4 个字段 stamp 到最后一条 assistant message dict 上
+- **侵入类型**：additive（SCHEMA_SQL 加列 + 签名尾部加参数 + INSERT 尾部加字段 + 1 处 stamp 赋值）
+- **文件**：`hermes_state.py`、`run_agent.py`、`agent/conversation_loop.py`
+- **兼容性**：旧消息新列默认 0；`append_message` 另两个调用方（`gateway/session.py`、`gateway/mirror.py`）不传新参数默认 None→0
+- **Commit**：待提交
+
 ---
 
 ## 十一、Cron / 脚本 / 运维

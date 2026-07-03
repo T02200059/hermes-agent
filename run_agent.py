@@ -1880,6 +1880,11 @@ class AIAgent:
                     codex_reasoning_items=msg.get("codex_reasoning_items") if role == "assistant" else None,
                     codex_message_items=msg.get("codex_message_items") if role == "assistant" else None,
                     timestamp=_row_timestamp,
+                    # [owner-patch] per-message API token breakdown
+                    input_tokens=msg.get("input_tokens") if role == "assistant" else None,
+                    output_tokens=msg.get("output_tokens") if role == "assistant" else None,
+                    cache_read_tokens=msg.get("cache_read_tokens") if role == "assistant" else None,
+                    cache_write_tokens=msg.get("cache_write_tokens") if role == "assistant" else None,
                 )
                 msg[_DB_PERSISTED_MARKER] = True
             # The intrinsic markers are now the sole source of truth. Reset the

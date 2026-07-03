@@ -2161,6 +2161,14 @@ def run_conversation(
                                 model=agent.model,
                                 api_call_count=1,
                             )
+                            # [owner-patch] stamp per-message token breakdown
+                            # onto the last assistant message dict so
+                            # _flush_messages_to_session_db persists it.
+                            if messages and messages[-1].get("role") == "assistant":
+                                messages[-1]["input_tokens"] = canonical_usage.input_tokens
+                                messages[-1]["output_tokens"] = canonical_usage.output_tokens
+                                messages[-1]["cache_read_tokens"] = canonical_usage.cache_read_tokens
+                                messages[-1]["cache_write_tokens"] = canonical_usage.cache_write_tokens
                         except Exception as e:
                             # Log token persistence failures so they're
                             # visible in agent.log — silent loss here is

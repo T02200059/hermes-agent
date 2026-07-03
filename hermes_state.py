@@ -765,7 +765,12 @@ CREATE TABLE IF NOT EXISTS messages (
     platform_message_id TEXT,
     observed INTEGER DEFAULT 0,
     active INTEGER NOT NULL DEFAULT 1,
-    compacted INTEGER NOT NULL DEFAULT 0
+    compacted INTEGER NOT NULL DEFAULT 0,
+    -- [owner-patch] per-message API token breakdown (input/output/cache)
+    input_tokens INTEGER DEFAULT 0,
+    output_tokens INTEGER DEFAULT 0,
+    cache_read_tokens INTEGER DEFAULT 0,
+    cache_write_tokens INTEGER DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS state_meta (
@@ -3124,6 +3129,11 @@ class SessionDB:
         platform_message_id: str = None,
         observed: bool = False,
         timestamp: Any = None,
+        # [owner-patch] per-message API token breakdown
+        input_tokens: Optional[int] = None,
+        output_tokens: Optional[int] = None,
+        cache_read_tokens: Optional[int] = None,
+        cache_write_tokens: Optional[int] = None,
     ) -> int:
         """
         Append a message to a session. Returns the message row ID.
@@ -3175,8 +3185,10 @@ class SessionDB:
                 """INSERT INTO messages (session_id, role, content, tool_call_id,
                    tool_calls, tool_name, timestamp, token_count, finish_reason,
                    owner_provider_name, model, provider, reasoning, reasoning_content, reasoning_details,
-                   codex_reasoning_items, codex_message_items, platform_message_id, observed)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   codex_reasoning_items, codex_message_items, platform_message_id, observed,
+                   -- [owner-patch] per-message API token breakdown
+                   input_tokens, output_tokens, cache_read_tokens, cache_write_tokens)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     session_id,
                     role,
@@ -3197,6 +3209,11 @@ class SessionDB:
                     codex_message_items_json,
                     platform_message_id,
                     1 if observed else 0,
+                    # [owner-patch] per-message API token breakdown
+                    input_tokens or 0,
+                    output_tokens or 0,
+                    cache_read_tokens or 0,
+                    cache_write_tokens or 0,
                 ),
             )
             msg_id = cursor.lastrowid
@@ -3269,8 +3286,10 @@ class SessionDB:
                 """INSERT INTO messages (session_id, role, content, tool_call_id,
                    tool_calls, tool_name, timestamp, token_count, finish_reason,
                    owner_provider_name, model, provider, reasoning, reasoning_content, reasoning_details,
-                   codex_reasoning_items, codex_message_items, platform_message_id, observed)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   codex_reasoning_items, codex_message_items, platform_message_id, observed,
+                   -- [owner-patch] per-message API token breakdown
+                   input_tokens, output_tokens, cache_read_tokens, cache_write_tokens)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     session_id,
                     role,
@@ -3291,6 +3310,11 @@ class SessionDB:
                     codex_message_items_json,
                     platform_msg_id,
                     1 if msg.get("observed") else 0,
+                    # [owner-patch] per-message API token breakdown
+                    msg.get("input_tokens") or 0,
+                    msg.get("output_tokens") or 0,
+                    msg.get("cache_read_tokens") or 0,
+                    msg.get("cache_write_tokens") or 0,
                 ),
             )
             inserted += 1
