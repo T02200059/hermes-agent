@@ -19376,7 +19376,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                         event=pending_event,
                         source=next_source,
                         history=updated_history,
-                        session_id=session_entry.session_id,
+                        session_id=session_id,
                     )
                     if next_message is None:
                         return result
