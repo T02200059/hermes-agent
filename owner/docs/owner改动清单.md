@@ -15,7 +15,7 @@
 | owner/ 纯新增 | ~75 个文件 |
 | 官方文件侵入 | ~70 个文件（含 ~20 个测试文件） |
 | 范围 | 模型归因 / patch.yaml 配置 / 审批安全 / 飞书深度定制 / TUI 皮肤 / Cron 运维 / Gateway 稳定性 / Checkpoint 预测 |
-| 最后更新 | 2026-07-02 |
+| 最后更新 | 2026-07-03 |
 | 来源 | 从 `owner-v17`（500+ commit）清洗迁移而来；本分支是重新整理后的最小叠加版本 |
 
 ### 侵入类型图例
@@ -618,15 +618,15 @@
 
 **治理原则**：所有迁移和 hook 化工作在 owner fork 内闭环完成，不考虑给 Hermes 官方提 PR。如果 Hermes core 缺少我们需要的扩展点（hook、ABC 方法等），在我们自己的 fork 里加，不等官方接受。上游同步时这些扩展点作为 owner diff 维护。
 
-1. **owner_provider_name 归因链** — 当前贯穿 10+ 官方文件。候选：通过 `on_session_start` / `pre_llm_call` hook + 一个 owner/ 维护的 ContextVar，减少官方文件的属性透传链。`hermes_state.py` 的 DB 列扩展是不可避免的持久层改动。
-2. **gateway/run.py** — 侵入最重（~20 处，已移出 memory synthetic guard / OpenViking recall / runtime schema patches / `/providers` 四类 owner 入口）。剩余建议继续按功能拆分：cron env scrub（已评估不能迁 plugin）、inbound context、hygiene notice、auto-card、chained quick command。
+1. **owner_provider_name 归因链** — **已评估（2026-07-03）：不可迁移，保持现状。** 当前贯穿 10+ 官方文件的属性透传链是正确实现：(1) hook 时机无法覆盖所有消费点（传输层注入、billing 归因、recall 召回等多处需同步消费）；(2) `hermes_state.py` 的 DB 列扩展不可避免（`messages` 表无 JSON sponge 列，`sessions` 表可挪进 `model_config` JSON 但需改 6 个 row mapper，收益微薄）；(3) `inject_attribution_into_message` 在官方代码中只被调用 1 次（`chat_completion_helpers.py:1087`），已高度集中；(4) 归因链目前 0 直接测试覆盖，任何重构无回归网。发现的清理项：`run_agent.py:1731` 死代码（unused import）、`codex_runtime.py:209` vs `conversation_loop.py:2049` billing 归因口径不一致。评估报告：`/tmp/zcode-attribution-eval-result.md`（343 行，每条结论附行号引用）。
+2. **gateway/run.py 剩余薄胶水** — **已评估（2026-07-03）：保持现状。** inbound context（`L9661-L9667`）、hygiene notice（`L10249-L10269`）、auto-card（`L10705-L10719`）、chained quick command（`L8660-L8692`）四项均位于 `discover_plugins()`（`L6142`）之后，但均需要访问函数局部状态或双向修改输入/输出；现有 plugin hook（`agent:start`、`agent:end`、`command:*`、`pre_llm_call` 等）均无法在不新增 hook 的情况下覆盖这些点。继续作为薄胶水委托给 `owner/` 模块，sync 冲突风险可控。评估报告：`/tmp/kimi-owner-eval-result.md`。
 3. **plugins/platforms/feishu/adapter.py** — 64 处标记但大多是 1-3 行 `_owner_import` 委托，已是规范的薄胶水模式。保持现状即可；sync 冲突可通过 `_owner_import` 的 try-import 容错吸收。
 4. **tools/approval.py** — home-prefix fold + skill script 自动审批是安全核心逻辑，建议保留在 owner/ 并继续薄胶水委托，不建议改成 hook（hook 时机不可靠）。
 5. **patch.yaml 配置系统** — 已是干净的 owner/ 集中加载，官方文件只 import。无需迁移。
 6. **runtime schema patches**（`owner/tools/schema_patches.py`）— 已迁入 `owner-extensions` plugin；验证依据：`model_tools.py` 先 `discover_builtin_tools()` 注册 schema dict 引用，再 `discover_plugins()`，plugin `register(ctx)` import 后可修改同一 dict；smoke test 已看到 `image_generate.model` 出现在工具 schema。
 7. **per-chat display overrides**（`owner/display_overrides.py`）— 不迁 plugin。原因：它不是独立启动期 patch，而是各个 display 决策点必须传入当前 `source/chat_id` 后同步解析；已通过 `gateway.display_config.resolve_display_setting_for_source()` 集中 chat_id 提取，`gateway/run.py` 只保留必要调用点。进一步迁 plugin 需要新增 display hook 并改所有调用路径，收益低于现状。
 8. **`/providers` command**（`owner/commands/providers.py`）— 已迁入 `owner-extensions` plugin command。Hermes plugin slash command API 已扩展 opt-in `hermes_ctx`（event/adapters/runner/platform），保留 Feishu interactive provider picker；`gateway/run.py` 的 `canonical == "providers"` 分支和 `gateway/slash_commands.py::_handle_providers_command()` shim 已删除。
-9. **cron job args / owner/scripts allowlist** — inline `[owner-patch]`，建议未来在 cron 工具暴露扩展点后改为插件。
+9. **cron job args / owner/scripts allowlist** — **已评估（2026-07-03）：部分可迁移，人工决定维持现状。** args 链（4 处 `[owner-patch]`）可迁移但收益低（需 monkey-patch 3 个 core 函数：`cronjob`、`create_job`、`_run_job_script`，跨 tool 期/存储期/执行期 3 个生命周期；且 args 是通用功能更应提 upstream）；allowlist（2 处副本）不可迁移（cron 运行时零 hook——`invoke_hook` 在 scheduler/jobs 出现 0 次——加上安全边界 WR-03）。评估发现 CR-002 修复遗漏了 scheduler 副本 2（`scheduler.py:1556`，process-lifetime cache 永不刷新），已修复为 mtime re-scan 与副本 1 一致。评估报告：`/tmp/zcode-cron-args-eval-result.md`（291 行，每条结论附行号引用）。
 10. **chained quick command（;;）** — 4 处 Python + 3 处 TS inline，是全平台语法增强，不适合 hook 化，建议保持。
 
 ---
@@ -680,3 +680,43 @@ _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请在�
 - **变动**：`hermes_cli/plugins.py` 增加 plugin command `accepts_ctx` 检测与 `make_plugin_command_context()`；`gateway/run.py` / `cli.py` 在 handler opt-in 时传 `hermes_ctx`；`owner-extensions` 注册 `/providers`；删除 `gateway/run.py` 内置 providers 分支与 `gateway/slash_commands.py` shim
 - **机制**：旧插件 `fn(raw_args)` 调用形状不变；声明 `*, hermes_ctx` 或 `**kwargs` 的 plugin command 可拿到 gateway event/adapters/runner，保留 Feishu card 能力
 - **验证**：`python3 -m pytest tests/hermes_cli/test_plugins.py tests/gateway/test_unknown_command.py tests/owner/test_providers_command.py -q -o 'addopts='` → 109 passed
+
+### 2026-07-03：附录 C #1 owner_provider_name 归因链插件化可行性评估
+
+- **类型**：plugin 迁移可行性评估（zcode 委托评估）
+- **结论**：**不可迁移，保持现状**
+- **核心发现**：
+  1. **hook 时机无法覆盖所有消费点**：归因需在传输层注入（`chat_completions.py`）、billing 归因（`usage_pricing.py`）、recall 召回等多处同步消费，现有 hook（`on_session_start`/`pre_llm_call`）无法全部覆盖
+  2. **当前属性透传链是正确的实现**：覆盖全部 3 条路径（gateway/subagent/cron）、cache-safe（`conversation_loop.py:838` 有 `pop()` 剥离，不进 LLM 请求体）、`inject_attribution_into_message` 在官方代码中只被调用 1 次（`chat_completion_helpers.py:1087`）已高度集中
+  3. **DB 列不可避免**：`messages` 表无 JSON sponge 列；`sessions` 表可挪进 `model_config` JSON 但要改 6 个 row mapper，收益微薄
+  4. **零测试覆盖**：归因链目前 0 直接测试，任何重构无回归网
+- **发现的清理项**（不是迁移，是修 bug）：
+  1. `run_agent.py:1731` 死代码（`from owner.attribution import get_current_attribution  # noqa: F401`，unused import）
+  2. `codex_runtime.py:209`（静态 `getattr`）vs `conversation_loop.py:2049`（动态 `_get_current_attribution(agent)` wrapper）billing 归因口径不一致
+- **评估报告**：`/tmp/zcode-attribution-eval-result.md`（343 行，每条结论附行号引用）
+
+### 2026-07-03：附录 C #9 cron job args / owner/scripts allowlist 插件化可行性评估
+
+- **类型**：plugin 迁移可行性评估（zcode 委托评估）
+- **结论**：**部分可迁移，人工决定维持现状**
+- **评估范围**：4 处 `[owner-patch]` args 链 + 2 处 allowlist 副本
+- **核心发现**：
+  1. **args 链（A1-A4）可迁移但收益低**：需 monkey-patch 3 个 core 函数（`cronjob`、`create_job`、`_run_job_script`），跨 tool 期/存储期/执行期 3 个生命周期；args 是通用功能更应提 upstream
+  2. **allowlist 不可迁移**：cron 运行时零 hook（`invoke_hook` 在 scheduler/jobs 出现 0 次）+ 安全边界（WR-03）+ 两副本行为不一致
+  3. **CR-002 遗漏**：副本 1（`cronjob_tools.py:540`）已改为 mtime re-scan，副本 2（`scheduler.py:1556`）仍是 process-lifetime cache 永不刷新——**已修复**
+- **修复**：`cron/scheduler.py:1548-1576` 副本 2 改为 mtime re-scan，与副本 1 一致
+- **评估报告**：`/tmp/zcode-cron-args-eval-result.md`（291 行，每条结论附行号引用）
+
+### 2026-07-03：gateway/run.py 剩余薄胶水 plugin 迁移可行性评估
+
+- **类型**：plugin 迁移可行性评估（kimi 委托评估）
+- **结论**：**均不可迁移，保持现状**
+- **评估范围**：
+  - inbound context：`gateway/run.py:L9661-L9667`（`_prepare_inbound_message_text` 内，需修改入站文本）
+  - hygiene notice：`gateway/run.py:L10249-L10269`（context compression 后，需压缩统计量）
+  - auto-card：`gateway/run.py:L10705-L10719`（响应发送前，需双向修改 response/footer）
+  - chained quick command：`gateway/run.py:L8660-L8692`（命令解析阶段，需递归分派）
+- **核心原因**：四项均位于 `discover_plugins()`（`L6142`）之后（timing 可行），但均依赖函数局部状态或需要双向变形，现有 plugin hook（`agent:start`、`agent:end`、`command:*`、`pre_llm_call` 等）无法覆盖；迁入 plugin 需要在 `gateway/run.py` 新增 hook，侵入量不减反增
+- **风险评估**：中（inbound context / hygiene notice / auto-card），低但改动风险高（chained quick command）
+- **plugin 聚合评估**：已迁 plugin 的 4 项（memory synthetic guard、OpenViking recall、schema patches、`/providers`）暂不值得做统一抽象。只有 2 个是真 monkey-patch，`pool_base_url_override` 是 helper，`schema_patches` 是 import 自执行；为 2 个样本引入 `OwnerPatch` Protocol/registry 属于过早抽象，建议等 runtime patch ≥5 个再统一
+- **评估报告**：`/tmp/kimi-owner-eval-result.md`（219 行）
