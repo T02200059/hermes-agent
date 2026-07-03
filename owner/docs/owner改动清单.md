@@ -153,6 +153,19 @@
 - **侵入类型**：薄胶水（gateway/run.py 一处调用）
 - **Commit**：`2f913a40d`（§4.4）
 
+### 3.2a inbound context + cron prompt 注入 session_id
+
+- **背景**：模型在每个 turn 需要看到当前 session 标识，用于 session_search 召回定位、跨平台会话追踪。gateway 飞书路径和 cron 路径各自独立注入，不碰 system prompt（避免破坏 prompt caching）。
+- **方案**（两条路径独立实现）：
+  - **Gateway 飞书**（参数透传）：`_prepare_inbound_message_text` 加 `session_id` 参数 → 透传 `append_inbound_context` → `build_feishu_inbound_context_block`，在现有 `[Inbound context]` 块尾部加 `session_id:` 行。两个调用点（主消息 + queued follow-up）都传 `session_entry.session_id`。
+  - **Cron job**（prompt 追加）：在 `_cron_session_id` 生成后、`run_conversation` 调用前，往 prompt 追加 `[Cron context]` 块。
+  - session_id 为运行时值，不写入 `SessionSource` dataclass，作为可选参数透传。
+- **涉及文件**：
+  - 侵入：`gateway/run.py`（签名 + 2 调用点 + 透传）、`cron/scheduler.py`（prompt 追加）
+  - owner/：`owner/gateway/inbound_context.py`（3 函数加参数）、`owner/feishu/inbound_context.py`（输出 session_id 行）
+- **侵入类型**：薄胶水（参数透传链 + prompt 追加）
+- **Commit**：待提交
+
 ### 3.3 多平台审批签名统一
 
 - **背景**：不同平台（QQ、飞书、Discord）审批时传的 sender 身份字段不一致，导致审批记录无法关联到真实用户。

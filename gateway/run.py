@@ -9367,6 +9367,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         event: MessageEvent,
         source: SessionSource,
         history: List[Dict[str, Any]],
+        session_id: Optional[str] = None,
     ) -> Optional[str]:
         """Prepare inbound event text for the agent.
 
@@ -9661,7 +9662,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         try:
             from owner.gateway.inbound_context import append_inbound_context as _append_inbound_context
 
-            message_text = _append_inbound_context(message_text, source)
+            message_text = _append_inbound_context(message_text, source, session_id=session_id)
         except Exception:
             logger.debug("Inbound context append failed (non-fatal)", exc_info=True)
 
@@ -10431,6 +10432,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             event=event,
             source=source,
             history=history,
+            session_id=session_entry.session_id,
         )
         if message_text is None:
             return
@@ -18123,6 +18125,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                         event=pending_event,
                         source=next_source,
                         history=updated_history,
+                        session_id=session_entry.session_id,
                     )
                     if next_message is None:
                         return result

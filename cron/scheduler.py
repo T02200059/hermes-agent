@@ -2212,6 +2212,11 @@ def run_job(job: dict) -> tuple[bool, str, str, Optional[str]]:
     origin = _resolve_origin(job)
     _cron_session_id = f"cron_{job_id}_{_hermes_now().strftime('%Y%m%d_%H%M%S')}"
 
+    # [owner] cron session_id context block — appended to the user prompt so the
+    # model can see the current cron session id each turn. Stays on the user
+    # prompt layer (never the system prompt) to preserve prompt caching.
+    prompt = f"{prompt}\n\n---\n[Cron context]\nsession_id: {_cron_session_id}\n---"
+
     logger.info("Running job '%s' (ID: %s)", job_name, job_id)
     logger.info("Prompt: %s", prompt[:100])
 

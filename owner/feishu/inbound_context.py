@@ -43,12 +43,15 @@ def _sanitize_user_name(raw: str) -> str:
     return cleaned
 
 
-def build_feishu_inbound_context_block(source: Any) -> Optional[str]:
+def build_feishu_inbound_context_block(
+    source: Any, session_id: Optional[str] = None
+) -> Optional[str]:
     """Return an append-only context block for a Feishu ``SessionSource``, or None."""
     open_id = str(getattr(source, "user_id", "") or "").strip()
     chat_id = str(getattr(source, "chat_id", "") or "").strip()
     user_name = _sanitize_user_name(str(getattr(source, "user_name", "") or ""))
     chat_type = str(getattr(source, "chat_type", "") or "").strip()
+    _session_id = str(session_id or "").strip()
 
     if not open_id and not chat_id and not user_name:
         return None
@@ -68,5 +71,7 @@ def build_feishu_inbound_context_block(source: Any) -> Optional[str]:
         lines.append(f"chat_id: {chat_id}")
     if chat_type:
         lines.append(f"chat_type: {chat_type}")
+    if _session_id:
+        lines.append(f"session_id: {_session_id}")
     lines.append("---")
     return "\n".join(lines)

@@ -15,18 +15,22 @@ def _platform_name(source: Any) -> str:
     return str(getattr(platform, "value", platform) or "").lower().strip()
 
 
-def build_inbound_context_block(source: Any) -> Optional[str]:
+def build_inbound_context_block(
+    source: Any, session_id: Optional[str] = None
+) -> Optional[str]:
     """Build a platform-specific inbound context block, or None when not applicable."""
     if _platform_name(source) != "feishu":
         return None
     from owner.feishu.inbound_context import build_feishu_inbound_context_block
 
-    return build_feishu_inbound_context_block(source)
+    return build_feishu_inbound_context_block(source, session_id=session_id)
 
 
-def append_inbound_context(message_text: str, source: Any) -> str:
+def append_inbound_context(
+    message_text: str, source: Any, session_id: Optional[str] = None
+) -> str:
     """Append inbound context to the prepared user message when the platform supports it."""
-    block = build_inbound_context_block(source)
+    block = build_inbound_context_block(source, session_id=session_id)
     if not block:
         return message_text
     text = (message_text or "").rstrip()
