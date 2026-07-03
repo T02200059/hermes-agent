@@ -1911,9 +1911,10 @@ def list_authenticated_providers(
             if isinstance(discover, str):
                 discover = discover.lower() not in {"false", "no", "0"}
             has_explicit_models = bool(models_list)
-            should_probe = bool(api_url) and discover and (
-                bool(api_key) or not has_explicit_models
-            )
+            # [owner] Layer 1 is config-first: if the user explicitly listed
+            # models in config.yaml, trust that and skip live /models probing.
+            # Only probe when no models are configured (discovery fallback).
+            should_probe = bool(api_url) and discover and not has_explicit_models
             if should_probe:
                 try:
                     from hermes_cli.models import fetch_api_models
@@ -2021,7 +2022,12 @@ def list_authenticated_providers(
 
         # Anthropic has external credential files (Claude Code / Hermes OAuth)
         # read outside the auth store — always probe it.
-        _cred_signal_slugs.add("anthropic")
+        # [owner] Disabled unconditional probe: anthropic should only appear
+        # when the user actually configured it (env var, auth store, or
+        # config.yaml provider). The Keychain/file probe below in
+        # _has_auth_creds still runs if anthropic reaches Layer 3 via a
+        # legitimate signal.
+        # _cred_signal_slugs.add("anthropic")
 
         def _has_cred_signal(slug: str, *, is_aws: bool = False) -> bool:
             """Fast pre-filter for Layer 2/3 candidate iteration."""
@@ -2087,8 +2093,9 @@ def list_authenticated_providers(
             if not _has_cred_signal(hermes_id):
                 continue
 
-            pinfo = _mdev_pinfo(mdev_id)
-            display_name = pinfo.name if pinfo else mdev_id
+            # [owner] Use get_label so _LABEL_OVERRIDES can distinguish slugs
+            # that share a models.dev ID (e.g. kimi-coding vs kimi-coding-cn).
+            display_name = get_label(hermes_id)
             _l2_candidates.append(_Layer2Candidate(
                 slug=hermes_id,
                 mdev_id=mdev_id,
@@ -2225,8 +2232,9 @@ def list_authenticated_providers(
             # seed. Skipping avoids the slow per-slug credential-pool disk read.
             if not _has_cred_signal(hermes_id):
                 continue
-            pinfo = _mdev_pinfo(mdev_id)
-            display_name = pinfo.name if pinfo else mdev_id
+            # [owner] Use get_label so _LABEL_OVERRIDES can distinguish slugs
+            # that share a models.dev ID (e.g. kimi-coding vs kimi-coding-cn).
+            display_name = get_label(hermes_id)
             candidates.append(Layer3Candidate(
                 slug=hermes_id,
                 mdev_id=mdev_id,

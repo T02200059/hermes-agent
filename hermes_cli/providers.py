@@ -374,6 +374,8 @@ _LABEL_OVERRIDES: Dict[str, str] = {
     "bedrock": "AWS Bedrock",
     "ollama-cloud": "Ollama Cloud",
     "xai-oauth": "xAI Grok OAuth (SuperGrok / Premium+)",
+    "kimi-coding": "Kimi / Kimi Coding Plan",
+    "kimi-coding-cn": "Kimi / Moonshot (China)",
 }
 
 
@@ -471,9 +473,13 @@ def get_provider(name: str) -> Optional[ProviderDef]:
 
 def get_label(provider_id: str) -> str:
     """Get a human-readable display name for a provider."""
-    canonical = normalize_provider(provider_id)
+    # Check label overrides first — before normalize, so distinct slugs that
+    # alias to the same models.dev ID (e.g. kimi-coding / kimi-coding-cn both
+    # → kimi-for-coding) can have distinct display names.
+    if provider_id in _LABEL_OVERRIDES:
+        return _LABEL_OVERRIDES[provider_id]
 
-    # Check label overrides first
+    canonical = normalize_provider(provider_id)
     if canonical in _LABEL_OVERRIDES:
         return _LABEL_OVERRIDES[canonical]
 
