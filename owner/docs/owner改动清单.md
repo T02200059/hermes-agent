@@ -120,6 +120,26 @@
 > **涉及文件**：`hermes_cli/auth.py`、`agent/credential_pool.py`、`hermes_cli/model_switch.py`、`owner/providers/credential_helpers.py`
 > **参考**：`skills/hermes/hermes-source-patching-pattern/references/credential-pool-seed-path-asymmetry.md`
 
+> **⚠️ 注意要点（2026-07-03）：anthropic 无条件强制探测 + Layer 1 串行网络请求 + 共享 models.dev ID 的显示名退化**
+>
+> **问题 1 — anthropic 无条件探测**：
+> `list_authenticated_providers()` 中有硬编码 `_cred_signal_slugs.add("anthropic")`，使 anthropic 绕过所有预筛，始终进入 Layer 2/3 候选。`_has_auth_creds` 会对 anthropic 专门调用 `read_claude_code_credentials()`，后者读 macOS Keychain `"Claude Code-credentials"` 条目——只要用户装过 Claude Code CLI 且 Keychain 里有 OAuth token，anthropic 就会被判定为有凭证，触发 `_fetch_anthropic_models()` 发 HTTPS 请求到 `api.anthropic.com/v1/models`（5s timeout），拖慢 `/providers` 命令。
+>
+> **修复**：注释掉该行。anthropic 仍可通过正常信号（env var、auth store、config.yaml provider）进入发现流程，只是不再被无条件强制探测。
+>
+> **问题 2 — Layer 1 串行 fetch_api_models**：
+> Layer 1（config.yaml `providers:` 段）对每个 `should_probe=True` 的条目同步调用 `fetch_api_models()` 发 `/models` 请求。9 个 provider 串行跑，每个最多 5s timeout = 最坏 45s。
+>
+> **修复**：`should_probe` 改为 `not has_explicit_models`——config 里已列 `models:` 的 provider 直接信任配置，不再发网络请求。Layer 1 是 config-first 设计，本就应以配置为准。
+>
+> **问题 3 — 共享 models.dev ID 的显示名退化**：
+> `kimi-coding` 和 `kimi-coding-cn` 在 `ALIASES` 中都映射到同一个 models.dev ID `kimi-for-coding`。Layer 2/3 用 `_mdev_pinfo(mdev_id).name` 取显示名，两个 slug 返回同一个 "Kimi For Coding"，无法区分。`get_label()` 虽有 `_LABEL_OVERRIDES` 但在 `normalize_provider()` 之后才查，override key `kimi-coding` 被 normalize 成 `kimi-for-coding` 后查不到。
+>
+> **修复**：(1) `_LABEL_OVERRIDES` 加 `kimi-coding` 和 `kimi-coding-cn` 条目；(2) `get_label()` 改为先查原始 slug 的 override，再 normalize；(3) Layer 2/3 的 `display_name` 从 `_mdev_pinfo(mdev_id).name` 改为 `get_label(hermes_id)`。
+>
+> **涉及文件**：`hermes_cli/model_switch.py`、`hermes_cli/providers.py`
+> **Commit**：`47ff21f04`
+
 ### 2.3 运行时 schema patches + credential pool base_url override
 
 - **背景**：`send_message` 卡片和 `image_generate` 的 model 参数需要扩展 schema，但不能改官方 toolsets 的字面定义（sync 冲突）。同时 credential pool 的 base_url 需要能被 model.base_url 覆盖（NewAPI 多 endpoint 场景）。
