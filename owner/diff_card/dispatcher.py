@@ -230,19 +230,39 @@ class DiffCardContext:
         return _wrapped
 
 
+def get_or_create_diff_card_context(agent: Any) -> DiffCardContext:
+    """Get or create a per-agent DiffCardContext.
+
+    The context (including sent_ids) persists across turns within the same
+    session/agent, preventing diff cards from being re-sent when a new turn's
+    step_callback encounters previous-turn tool calls still in the message
+    history.
+    """
+    ctx = getattr(agent, "_diff_card_ctx", None)
+    if ctx is None:
+        ctx = DiffCardContext()
+        agent._diff_card_ctx = ctx
+    return ctx
+
+
 def install_diff_card_support(
     runner: Any,
     source: Any,
     original_tool_start: Optional[_ToolStartCallback],
     original_step: Optional[Callable[[int, list], None]],
     loop: Any,
+    agent: Any = None,
 ) -> tuple[_ToolStartCallback, Callable[[int, list], None]]:
     """Return (wrapped_tool_start, wrapped_step) for diff cards support.
 
-    All internal state is hidden inside the returned wrappers.
-    To be used from gateway session setup (P1 thin glue).
+    When agent is provided, the DiffCardContext (including sent_ids) is
+    persisted on the agent object across turns. When agent is None (fallback),
+    a fresh context is created each call (legacy behavior).
     """
-    ctx = DiffCardContext()
+    if agent is not None:
+        ctx = get_or_create_diff_card_context(agent)
+    else:
+        ctx = DiffCardContext()
     wrapped_start = ctx.make_tool_start_snapshot_callback(original_tool_start)
     wrapped_step = ctx.make_step_callback(original_step, runner, source, loop)
     return wrapped_start, wrapped_step

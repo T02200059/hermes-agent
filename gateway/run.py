@@ -15883,6 +15883,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             else {"thread_id": _progress_thread_id}
         ) if _progress_thread_id else None
         _progress_metadata = _non_conversational_metadata(_progress_metadata, platform=source.platform)
+        # [owner] auto-card: tag progress bubble metadata so try_auto_card skips it
+        if _progress_metadata is None:
+            _progress_metadata = {}
+        _progress_metadata["__hermes_progress_bubble"] = True
         _progress_reply_to = (
             event_message_id
             if source.platform in (Platform.FEISHU, Platform.MATTERMOST) and source.thread_id and event_message_id
@@ -16687,7 +16691,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             if source.platform in (Platform.FEISHU, Platform.QQBOT):
                 from owner.diff_card.dispatcher import install_diff_card_support
                 agent.tool_start_callback, agent.step_callback = install_diff_card_support(
-                    self, source, agent.tool_start_callback, agent.step_callback, _loop_for_step
+                    self, source, agent.tool_start_callback, agent.step_callback, _loop_for_step, agent=agent
                 )
             agent.stream_delta_callback = _stream_delta_cb
             agent.interim_assistant_callback = _interim_assistant_cb if _want_interim_messages else None
