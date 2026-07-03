@@ -520,6 +520,7 @@ gateway:
     not_enough:            "对话内容不足，无法压缩（至少需要 4 条消息）。"
     no_provider:           "未配置提供方 — 无法压缩。"
     nothing_to_do:         "暂无可压缩内容（对话记录仍全部为受保护上下文）。"
+    aggressive_unsupported: "不支持 --aggressive；请使用 '/compress here [N]' 只保留最近的对话，或使用 /undo 删除回合。"
     focus_line:            "聚焦：\"{topic}\""
     summary_failed:        "⚠️ 摘要生成失败（{error}）。{count} 条历史消息已被移除并替换为占位符；之前的上下文已无法恢复。建议检查 auxiliary.compression 模型配置。"
     aborted:               "⚠️ 压缩已中止 ({error})。未删除任何消息 — 对话保持不变。运行 /compress 重试，运行 /reset 开始新会话，或检查你的 auxiliary.compression 模型配置。"
@@ -586,6 +587,15 @@ gateway:
     subscribed_suffix:     "（已订阅 — 当 {task_id} 完成或被阻塞时将通知您）"
     truncated_suffix:      "…（已截断；如需完整输出请在终端运行 `hermes kanban …`）"
     no_output:             "（无输出）"
+    wake:
+      completed:           "已完成"
+      gave_up:             "已放弃（重试次数耗尽）"
+      crashed:             "崩溃（worker 异常退出），dispatcher 将重试"
+      timed_out:           "超时，dispatcher 将重试"
+      blocked:             "被阻塞，需要处理"
+      status_default:      "状态变化"
+      status_joiner:       "，"
+      message:             "[kanban] 任务 {task_id} {status}。\n标题: {title}\n执行者: @{assignee}\n看板: {board}\n\n请检查结果或决定下一步动作。"
 
   personality:
     none_configured:       "`{path}/config.yaml` 中未配置人格设定"
@@ -656,6 +666,12 @@ gateway:
 
   resume:
     db_unavailable:        "会话数据库不可用。"
+    parse_error:           "⚠️ 无法解析 `/resume` 参数：{error}。\n如果标题包含空格，请使用引号，例如：`/resume \"项目 A 计划\"`。"
+    matrix_no_named_sessions: "当前 Matrix 房间没有已命名的会话。\n使用 `/title 我的会话` 为当前房间会话命名，使用 `/resume --all` 列出所有 Matrix 会话，或使用 `/resume --cross-room <会话名称>` 显式跨房间边界。"
+    matrix_blocked_no_origin: "⚠️ Matrix /resume 被阻止：该命名会话没有记录房间来源，默认情况下 Hermes 不会在当前房间恢复它。如果你确实想要跨房间边界，请使用 `/resume --cross-room {name}`。"
+    matrix_blocked_other_room: "⚠️ Matrix /resume 被阻止：该会话属于另一个 Matrix 房间（{room}）。如果你确实想要在此恢复它，请使用 `/resume --cross-room {name}`。"
+    matrix_cross_room_success: "⚠️ 跨房间恢复：已在 Matrix 房间 **{room}** 中恢复 **{title}**。\n此房间中的后续消息将使用该对话记录，直到 `/reset` 或再次 `/resume`。{msg_part}"
+    blocked_not_owner:     "⚠️ /resume 被阻止：'**{name}**' 属于其他用户或聊天。你只能恢复当前聊天的会话。"
     no_named_sessions:     "未找到已命名的会话。\n使用 `/title 我的会话` 为当前会话命名，然后用 `/resume 我的会话` 返回。"
     list_header:           "📋 **已命名会话**\n"
     list_item:             "• **{title}**{preview_part}"
@@ -672,11 +688,6 @@ gateway:
     resumed_one:           "↻ 已恢复会话 **{title}**（{count} 条消息）。对话已还原。"
     resumed_many:          "↻ 已恢复会话 **{title}**（{count} 条消息）。对话已还原。"
     resumed_no_count:      "↻ 已恢复会话 **{title}**。对话已还原。"
-    parse_error:           "无法解析恢复命令：{error}"
-    matrix_no_named_sessions: "本房间内未找到已命名的会话。\n用 `/title 我的会话` 命名当前会话，之后再用 `/resume 我的会话` 返回。"
-    matrix_blocked_no_origin: "无法恢复 **{name}** — 它未关联到任何 Matrix 房间，且跨房间恢复已禁用。可用 `/resume --all` 覆盖。"
-    matrix_blocked_other_room: "无法恢复 **{name}** — 它属于另一个房间（**{room}**）。跨房间恢复已禁用。可用 `/resume --all` 覆盖。"
-    matrix_cross_room_success: "↻ 已将会话 **{title}**{msg_part} 恢复到 **{room}**。对话已还原。"
 
   retry:
     no_previous:           "没有可重试的上一条消息。"
@@ -769,6 +780,16 @@ gateway:
     label_cost_included:      "费用：已包含"
     label_context:            "上下文：{used} / {total}（{pct}%）"
     label_compressions:       "压缩次数：{count}"
+    breakdown_header: "🧩 **上下文明细** _(估算)_"
+    breakdown_line: "• {label}：约 {count} ({pct}%)"
+    breakdown_cat_system_prompt: "系统提示词"
+    breakdown_cat_tool_definitions: "工具定义"
+    breakdown_cat_rules: "规则"
+    breakdown_cat_skills: "技能"
+    breakdown_cat_mcp: "MCP"
+    breakdown_cat_subagent_definitions: "子代理定义"
+    breakdown_cat_memory: "记忆"
+    breakdown_cat_conversation: "对话"
     header_session_info:      "📊 **会话信息**"
     label_messages:           "消息数：{count}"
     label_estimated_context:  "估计上下文：~{count} 个令牌"
@@ -781,6 +802,7 @@ gateway:
     mode_new:              "⚙️ 工具进度：**NEW** — 工具变化时显示（预览长度：`display.tool_preview_length`，默认 40）。"
     mode_all:              "⚙️ 工具进度：**ALL** — 显示每次工具调用（预览长度：`display.tool_preview_length`，默认 40）。"
     mode_verbose:          "⚙️ 工具进度：**VERBOSE** — 显示每次工具调用及完整参数。"
+    mode_log:              "⚙️ 工具进度：**LOG** — 聊天中保持静默；工具调用写入 ~/.hermes/logs/tool_calls.log。"
     saved_suffix:          "_（已为 **{platform}** 保存 — 下一条消息生效）_"
     save_failed:           "_（无法保存到配置：{error}）_"
 
