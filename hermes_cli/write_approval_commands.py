@@ -123,16 +123,21 @@ def _approve(subsystem: str, rest: List[str], memory_store) -> str:
             return _t("memory_proposal.response_no_match", id=target)
         targets = [rec]
 
-    applied, failed = 0, []
+    applied, failed, first_id = 0, [], None
     for rec in targets:
         ok, msg = _apply_one(subsystem, rec, memory_store)
         if ok:
             wa.discard_pending(subsystem, rec["id"])
+            if first_id is None:
+                first_id = rec["id"]
             applied += 1
         else:
             failed.append(f"{rec['id']}: {msg}")
 
-    out = [_t("memory_proposal.response_approved", count=applied)]
+    if applied == 1 and first_id:
+        out = [_t("memory_proposal.response_approved_one", id=first_id)]
+    else:
+        out = [_t("memory_proposal.response_approved_all", count=applied)]
     if failed:
         out.append("Failed:")
         out.extend(f"  {f}" for f in failed)
