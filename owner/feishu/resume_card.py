@@ -340,7 +340,7 @@ def handle_resume_card_action(
                 message_type=MessageType.COMMAND,
                 source=source,
                 raw_message=None,
-                message_id="resume_card_" + str(_uuid.uuid4())[:8],
+                message_id="",  # no reply_to — synthetic, not a real Feishu message
                 timestamp=datetime.now(),
             )
             await adapter._handle_message_with_guards(synthetic_event)

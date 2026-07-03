@@ -335,7 +335,7 @@ def _route_command(adapter: Any, loop: Any, *, command: str, chat_id: str,
                 message_type=MessageType.COMMAND,
                 source=source,
                 raw_message=None,
-                message_id="memory_approval_" + uuid.uuid4().hex[:8],
+                message_id="",  # no reply_to — synthetic, not a real Feishu message
                 timestamp=datetime.now(),
             )
             await adapter._handle_message_with_guards(synthetic_event)
