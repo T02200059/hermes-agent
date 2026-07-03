@@ -151,6 +151,7 @@ def _emit_terminal_post_tool_call(
             error_type=error_type,
             error_message=error_message,
             middleware_trace=list(middleware_trace or []),
+            gateway_session_key=getattr(agent, "_gateway_session_key", "") or "",  # [owner] expose per-chat key
         )
     except Exception:
         pass
@@ -1452,6 +1453,7 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
                     enabled_toolsets=getattr(agent, "enabled_toolsets", None),
                     disabled_toolsets=getattr(agent, "disabled_toolsets", None),
                     tool_request_middleware_trace=list(middleware_trace),
+                    gateway_session_key=getattr(agent, "_gateway_session_key", "") or "",  # [owner] propagate
                 )
                 _spinner_result = function_result
             except KeyboardInterrupt:
@@ -1494,6 +1496,7 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
                     enabled_toolsets=getattr(agent, "enabled_toolsets", None),
                     disabled_toolsets=getattr(agent, "disabled_toolsets", None),
                     tool_request_middleware_trace=list(middleware_trace),
+                    gateway_session_key=getattr(agent, "_gateway_session_key", "") or "",  # [owner] propagate
                 )
             except KeyboardInterrupt:
                 _emit_cancelled_terminal_post_tool_call(

@@ -865,6 +865,7 @@ def _emit_post_tool_call_hook(
     error_type: Optional[str] = None,
     error_message: Optional[str] = None,
     middleware_trace: Optional[List[Dict[str, Any]]] = None,
+    gateway_session_key: Optional[str] = None,  # [owner] stable per-chat key for hook plugins
 ) -> None:
     """Emit the ``post_tool_call`` observer hook.
 
@@ -896,6 +897,7 @@ def _emit_post_tool_call_hook(
             error_type=error_type,
             error_message=error_message,
             middleware_trace=list(middleware_trace or []),
+            gateway_session_key=gateway_session_key or "",  # [owner] expose per-chat key to plugins
         )
     except Exception as _hook_err:
         logger.debug("post_tool_call hook error: %s", _hook_err)
@@ -916,6 +918,7 @@ def handle_function_call(
     tool_request_middleware_trace: Optional[List[Dict[str, Any]]] = None,
     enabled_toolsets: Optional[List[str]] = None,
     disabled_toolsets: Optional[List[str]] = None,
+    gateway_session_key: Optional[str] = None,  # [owner] forwarded to post_tool_call hook
 ) -> str:
     """
     Main function call dispatcher that routes calls to the tool registry.
@@ -1020,6 +1023,7 @@ def handle_function_call(
                 tool_request_middleware_trace=list(_tool_middleware_trace),
                 enabled_toolsets=enabled_toolsets,
                 disabled_toolsets=disabled_toolsets,
+                gateway_session_key=gateway_session_key,  # [owner] propagate to hooks
             )
 
     _tool_original_args = dict(function_args)
@@ -1088,6 +1092,7 @@ def handle_function_call(
                     error_type="plugin_block",
                     error_message=block_message,
                     middleware_trace=list(_tool_middleware_trace),
+                    gateway_session_key=gateway_session_key,  # [owner] propagate
                 )
                 return result
 
@@ -1186,6 +1191,7 @@ def handle_function_call(
             api_request_id=api_request_id,
             duration_ms=duration_ms,
             middleware_trace=list(_tool_middleware_trace),
+            gateway_session_key=gateway_session_key,  # [owner] propagate
         )
 
         # Generic tool-result canonicalization seam: plugins receive the

@@ -73,6 +73,7 @@ def _on_post_tool_call(**kwargs: Any) -> None:
         return
 
     session_id = str(kwargs.get("session_id") or "")
+    gateway_session_key = str(kwargs.get("gateway_session_key") or "")  # [owner] preferred: stable per-chat key
     args = kwargs.get("args") or {}
 
     with _REF_LOCK:
@@ -88,7 +89,12 @@ def _on_post_tool_call(**kwargs: Any) -> None:
         logger.debug("[memory-feishu-bridge] owner.feishu.memory_approval unavailable: %s", exc)
         return
 
-    chat_id = extract_feishu_chat_id(session_id)
+    # Prefer gateway_session_key (agent:main:feishu:dm:<chat_id>) — it is the
+    # stable per-chat identifier. Fall back to session_id (agent.session_id,
+    # a timestamp id) for backward compat with older hook callers.
+    chat_id = extract_feishu_chat_id(gateway_session_key)
+    if not chat_id:
+        chat_id = extract_feishu_chat_id(session_id)
     if not chat_id:
         return
 
@@ -114,7 +120,9 @@ def _on_post_tool_call(**kwargs: Any) -> None:
                 pending_id=str(pending_id),
                 summary=summary,
                 content_preview=content_preview,
-                session_id=session_id,
+                # [owner] prefer gateway_session_key: it has the stable
+                # agent:main:feishu:dm:<chat_id> shape the card expects.
+                session_id=gateway_session_key or session_id,
             )
 
         try:

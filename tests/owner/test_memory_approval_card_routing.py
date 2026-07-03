@@ -1,6 +1,9 @@
 """Tests for owner.feishu.memory_approval card + plugin bridge."""
 
+import importlib.util
 import json
+import sys
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -14,6 +17,37 @@ from owner.feishu.memory_approval import (
     extract_feishu_chat_id,
     handle_card_click,
 )
+
+# ---------------------------------------------------------------------------
+# Load owner-extensions/memory_feishu_bridge as hermes_plugins.owner_extensions.memory_feishu_bridge
+# (mirrors PluginManager._load_directory_module) so the bridge module is
+# importable in tests without running full plugin discovery.
+# ---------------------------------------------------------------------------
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_BRIDGE_DIR = _REPO_ROOT / "owner" / "owner-extensions" / "memory_feishu_bridge"
+_BRIDGE_MODNAME = "hermes_plugins.owner_extensions.memory_feishu_bridge"
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _bridge_module():
+    if _BRIDGE_MODNAME in sys.modules:
+        return sys.modules[_BRIDGE_MODNAME]
+    # Ensure the parent namespace package exists
+    import types as _types
+    if "hermes_plugins" not in sys.modules:
+        ns = _types.ModuleType("hermes_plugins")
+        ns.__path__ = []  # type: ignore[attr-defined]
+        sys.modules["hermes_plugins"] = ns
+    spec = importlib.util.spec_from_file_location(
+        _BRIDGE_MODNAME,
+        _BRIDGE_DIR / "__init__.py",
+        submodule_search_locations=[str(_BRIDGE_DIR)],
+    )
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[_BRIDGE_MODNAME] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 # ---------------------------------------------------------------------------
@@ -247,24 +281,29 @@ def test_handle_card_click_bad_choice():
 
 
 # ---------------------------------------------------------------------------
-# Plugin bridge tests — importable after sys.path fix above
+# Plugin bridge tests — bridge loaded as hermes_plugins.owner_extensions.memory_feishu_bridge
 # ---------------------------------------------------------------------------
 
+def _get_bridge():
+    """Return the bridge module (loaded by the module fixture)."""
+    return sys.modules[_BRIDGE_MODNAME]
+
+
 def test_plugin_post_tool_non_memory_tool():
-    from plugins.owner_memory_feishu_bridge import _on_post_tool_call
+    bridge = _get_bridge()
+    _on_post_tool_call = bridge._on_post_tool_call
 
     adapter = MagicMock()
-    import plugins.owner_memory_feishu_bridge as bridge
     with patch.object(bridge, "_FEISHU_ADAPTER", adapter):
         _on_post_tool_call(tool_name="write_file", result="some text")
     adapter._submit_on_loop.assert_not_called()
 
 
 def test_plugin_post_tool_non_staged_result():
-    from plugins.owner_memory_feishu_bridge import _on_post_tool_call
+    bridge = _get_bridge()
+    _on_post_tool_call = bridge._on_post_tool_call
 
     adapter = MagicMock()
-    import plugins.owner_memory_feishu_bridge as bridge
     with patch.object(bridge, "_FEISHU_ADAPTER", adapter):
         _on_post_tool_call(
             tool_name="memory",
@@ -276,9 +315,9 @@ def test_plugin_post_tool_non_staged_result():
 
 
 def test_plugin_post_tool_invalid_json():
-    from plugins.owner_memory_feishu_bridge import _on_post_tool_call
+    bridge = _get_bridge()
+    _on_post_tool_call = bridge._on_post_tool_call
 
-    import plugins.owner_memory_feishu_bridge as bridge
     with patch.object(bridge, "_FEISHU_ADAPTER", MagicMock()):
         _on_post_tool_call(
             tool_name="memory",
@@ -289,9 +328,9 @@ def test_plugin_post_tool_invalid_json():
 
 
 def test_plugin_post_tool_no_feishu_adapter():
-    from plugins.owner_memory_feishu_bridge import _on_post_tool_call
+    bridge = _get_bridge()
+    _on_post_tool_call = bridge._on_post_tool_call
 
-    import plugins.owner_memory_feishu_bridge as bridge
     with patch.object(bridge, "_FEISHU_ADAPTER", None):
         _on_post_tool_call(
             tool_name="memory",
@@ -302,10 +341,10 @@ def test_plugin_post_tool_no_feishu_adapter():
 
 
 def test_plugin_post_tool_non_feishu_session():
-    from plugins.owner_memory_feishu_bridge import _on_post_tool_call
+    bridge = _get_bridge()
+    _on_post_tool_call = bridge._on_post_tool_call
 
     adapter = MagicMock()
-    import plugins.owner_memory_feishu_bridge as bridge
     with patch.object(bridge, "_FEISHU_ADAPTER", adapter):
         _on_post_tool_call(
             tool_name="memory",
@@ -317,15 +356,13 @@ def test_plugin_post_tool_non_feishu_session():
 
 
 def test_plugin_pre_gateway_dispatch():
-    from plugins.owner_memory_feishu_bridge import (
-        _on_pre_gateway_dispatch,
-    )
+    bridge = _get_bridge()
+    _on_pre_gateway_dispatch = bridge._on_pre_gateway_dispatch
     from gateway.config import Platform
 
     adapter = MagicMock()
     gateway = SimpleNamespace(adapters={Platform.FEISHU: adapter})
 
-    import plugins.owner_memory_feishu_bridge as bridge
     bridge._FEISHU_ADAPTER = None  # clean state
 
     _on_pre_gateway_dispatch(gateway=gateway)
@@ -400,3 +437,174 @@ def test_build_preview_long_batch():
 
 def _simple_memory_args():
     return {"action": "add", "target": "memory", "content": "test content"}
+
+
+# ---------------------------------------------------------------------------
+# gateway_session_key plumbing — direction A fix
+# ---------------------------------------------------------------------------
+
+class _CapturingSubmit:
+    def __init__(self):
+        self.calls = []
+
+    def __call__(self, loop, coro):
+        self.calls.append((loop, coro))
+        # Close the unawaited coroutine to avoid RuntimeWarning
+        coro.close()
+
+
+def _make_live_loop():
+    """A fake loop object that reports as not-closed."""
+    return SimpleNamespace(is_closed=lambda: False)
+
+
+def test_gateway_session_key_preferred_over_session_id():
+    """When both are present, gateway_session_key decides the chat_id.
+
+    The bridge should ignore the bare timestamp-shaped agent.session_id and
+    pull chat_id from the gateway session_key (agent:main:feishu:dm:<chat_id>).
+    """
+    bridge = _get_bridge()
+    adapter = SimpleNamespace(
+        _loop=_make_live_loop(),
+        _submit_on_loop=_CapturingSubmit(),
+    )
+    with patch.object(bridge, "_FEISHU_ADAPTER", adapter):
+        bridge._on_post_tool_call(
+            tool_name="memory",
+            args=_simple_memory_args(),
+            result=json.dumps({"staged": True, "pending_id": "abc123"}),
+            # session_id is a bare timestamp id — extract_feishu_chat_id("") returns ""
+            session_id="20260703_191525_0fce5a47",
+            gateway_session_key="agent:main:feishu:dm:oc_correct_chat",
+        )
+    assert len(adapter._submit_on_loop.calls) == 1
+
+
+def test_gateway_session_key_empty_falls_back_to_session_id():
+    """When gateway_session_key is missing, fall back to session_id (legacy path)."""
+    bridge = _get_bridge()
+    adapter = SimpleNamespace(
+        _loop=_make_live_loop(),
+        _submit_on_loop=_CapturingSubmit(),
+    )
+    with patch.object(bridge, "_FEISHU_ADAPTER", adapter):
+        bridge._on_post_tool_call(
+            tool_name="memory",
+            args=_simple_memory_args(),
+            result=json.dumps({"staged": True, "pending_id": "abc123"}),
+            # No gateway_session_key — session_id carries the gateway shape.
+            session_id="agent:main:feishu:dm:oc_legacy_chat",
+        )
+    assert len(adapter._submit_on_loop.calls) == 1
+
+
+def test_gateway_session_key_with_wrong_platform_falls_back():
+    """If gateway_session_key is non-feishu (e.g. telegram), the bridge should
+    try session_id next rather than aborting."""
+    bridge = _get_bridge()
+    adapter = SimpleNamespace(
+        _loop=_make_live_loop(),
+        _submit_on_loop=_CapturingSubmit(),
+    )
+    with patch.object(bridge, "_FEISHU_ADAPTER", adapter):
+        bridge._on_post_tool_call(
+            tool_name="memory",
+            args=_simple_memory_args(),
+            result=json.dumps({"staged": True, "pending_id": "abc123"}),
+            session_id="agent:main:feishu:dm:oc_via_session_id",
+            gateway_session_key="agent:main:telegram:dm:12345",
+        )
+    # session_id has feishu shape → falls back successfully → card scheduled.
+    assert len(adapter._submit_on_loop.calls) == 1
+
+
+def test_both_keys_unparseable_skips_card():
+    """When neither key parses to a feishu chat, the card is skipped."""
+    bridge = _get_bridge()
+    adapter = SimpleNamespace(
+        _loop=_make_live_loop(),
+        _submit_on_loop=_CapturingSubmit(),
+    )
+    with patch.object(bridge, "_FEISHU_ADAPTER", adapter):
+        bridge._on_post_tool_call(
+            tool_name="memory",
+            args=_simple_memory_args(),
+            result=json.dumps({"staged": True, "pending_id": "abc123"}),
+            session_id="20260703_191525_0fce5a47",
+            gateway_session_key="agent:main:telegram:dm:12345",
+        )
+    assert len(adapter._submit_on_loop.calls) == 0
+
+
+# ---------------------------------------------------------------------------
+# _emit_post_tool_call_hook forwards gateway_session_key to the hook kwargs
+# ---------------------------------------------------------------------------
+
+def test_emit_post_tool_call_hook_forwards_gateway_session_key():
+    """model_tools._emit_post_tool_call_hook must pass gateway_session_key
+    through to invoke_hook so plugin callbacks see it in their kwargs."""
+    from model_tools import _emit_post_tool_call_hook
+
+    captured: dict = {}
+
+    def _capture(hook_name, **kwargs):
+        captured.update(kwargs)
+
+    with patch("hermes_cli.plugins.has_hook", lambda name: True), \
+         patch("hermes_cli.plugins.invoke_hook", _capture):
+        _emit_post_tool_call_hook(
+            function_name="memory",
+            function_args={"action": "add"},
+            result=json.dumps({"staged": True}),
+            session_id="20260703_191525_0fce5a47",
+            gateway_session_key="agent:main:feishu:dm:oc_forwarded",
+        )
+
+    assert captured.get("gateway_session_key") == "agent:main:feishu:dm:oc_forwarded"
+    # session_id is still forwarded unchanged.
+    assert captured.get("session_id") == "20260703_191525_0fce5a47"
+
+
+def test_emit_post_tool_call_hook_default_gateway_session_key_blank():
+    """When gateway_session_key is not supplied, it defaults to '' (back-compat)."""
+    from model_tools import _emit_post_tool_call_hook
+
+    captured: dict = {}
+
+    def _capture(hook_name, **kwargs):
+        captured.update(kwargs)
+
+    with patch("hermes_cli.plugins.has_hook", lambda name: True), \
+         patch("hermes_cli.plugins.invoke_hook", _capture):
+        _emit_post_tool_call_hook(
+            function_name="memory",
+            function_args={},
+            result="{}",
+        )
+
+    assert captured.get("gateway_session_key") == ""
+
+
+def test_handle_function_call_accepts_gateway_session_key():
+    """handle_function_call must accept the new keyword without breaking
+    the existing call shape (backward-compat signature)."""
+    import inspect
+    from model_tools import handle_function_call
+
+    sig = inspect.signature(handle_function_call)
+    assert "gateway_session_key" in sig.parameters
+    param = sig.parameters["gateway_session_key"]
+    # Must have a default so existing callers don't break.
+    assert param.default is None
+
+
+def test_emit_post_tool_call_hook_accepts_gateway_session_key():
+    """_emit_post_tool_call_hook must accept the new keyword arg."""
+    import inspect
+    from model_tools import _emit_post_tool_call_hook
+
+    sig = inspect.signature(_emit_post_tool_call_hook)
+    assert "gateway_session_key" in sig.parameters
+    param = sig.parameters["gateway_session_key"]
+    assert param.default is None

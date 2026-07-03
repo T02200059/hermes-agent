@@ -2073,6 +2073,7 @@ def invoke_tool(agent, function_name: str, function_args: dict, effective_task_i
                 error_type="plugin_block",
                 error_message=block_message,
                 middleware_trace=list(_tool_middleware_trace),
+                gateway_session_key=getattr(agent, "_gateway_session_key", "") or "",  # [owner] expose per-chat key
             )
         except Exception:
             pass
@@ -2095,6 +2096,7 @@ def invoke_tool(agent, function_name: str, function_args: dict, effective_task_i
                 api_request_id=getattr(agent, "_current_api_request_id", "") or "",
                 duration_ms=int((time.monotonic() - tool_start_time) * 1000),
                 middleware_trace=list(_tool_middleware_trace),
+                gateway_session_key=getattr(agent, "_gateway_session_key", "") or "",  # [owner] expose per-chat key
             )
         except Exception:
             pass
@@ -2200,6 +2202,7 @@ def invoke_tool(agent, function_name: str, function_args: dict, effective_task_i
                 enabled_toolsets=getattr(agent, "enabled_toolsets", None),
                 disabled_toolsets=getattr(agent, "disabled_toolsets", None),
                 tool_request_middleware_trace=list(_tool_middleware_trace),
+                gateway_session_key=getattr(agent, "_gateway_session_key", "") or "",  # [owner] propagate
             )
 
     from hermes_cli.middleware import run_tool_execution_middleware

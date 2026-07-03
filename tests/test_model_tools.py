@@ -81,6 +81,7 @@ class TestHandleFunctionCall:
                 error_type=None,
                 error_message=None,
                 middleware_trace=[],
+                gateway_session_key="",
             ),
             call(
                 "transform_tool_result",
