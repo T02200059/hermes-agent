@@ -281,12 +281,16 @@ def _build_source_from_event(event: Any, chat_id: str) -> Any:
     if not resolved_chat_id:
         return None
 
+    # Extract operator open_id so the synthetic command passes auth checks.
+    operator = getattr(event, "operator", None)
+    open_id = str(getattr(operator, "open_id", "") or "") if operator else ""
+
     return SessionSource(
         platform=Platform.FEISHU,
         chat_id=resolved_chat_id,
         chat_type="dm",  # default; /memory approve|reject is id-keyed so chat
                           # type doesn't gate the pending store action.
-        user_id="",
+        user_id=open_id,
         user_id_alt="",
         thread_id="",
     )
