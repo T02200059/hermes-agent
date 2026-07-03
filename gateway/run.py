@@ -9222,6 +9222,14 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 if _cmd_def_inner.name == "version":
                     return await self._handle_version_command(event)
 
+            # /memory approve|reject must run mid-turn (card click triggers
+            # a synthetic command while the agent is busy).
+            if _cmd_def_inner and _cmd_def_inner.name == "memory":
+                return await self._handle_memory_command(event)
+            # /skills approve|reject — same pattern as /memory.
+            if _cmd_def_inner and _cmd_def_inner.name == "skills":
+                return await self._handle_skills_command(event)
+
             # Catch-all: any other recognized slash command reached the
             # running-agent guard. Reject gracefully rather than falling
             # through to interrupt + discard. Without this, commands
