@@ -114,11 +114,12 @@ def _format_proposal_md(*, summary: str, content_preview: str,
     summary header + preview block) but adapted for the stock memory_tool
     payload shape (single add/replace/remove op or batch).
     """
-    summary_line = (summary or "").strip() or "Memory write"
+    from agent.i18n import t as _t
+    summary_line = (summary or "").strip() or _t("memory_proposal.summary_add", target="memory")
     preview = _truncate(content_preview, _CONTENT_PREVIEW_LIMIT)
     return (
-        f"**ID**: `{pending_id}`\n"
-        f"**Summary**: {summary_line}\n\n"
+        f"**{_t('memory_proposal.pending_id_label')}**: `{pending_id}`\n"
+        f"**{_t('memory_proposal.card_summary_label')}**: {summary_line}\n\n"
         f"```\n{preview}\n```"
     )
 
@@ -139,10 +140,12 @@ def build_approval_card(
     owner-v17's ``memory_proposal`` card, which embeds ``proposal_md`` in the
     button value to preserve content across the click round-trip.
     """
+    from agent.i18n import t as _t
+
     proposal_md = _format_proposal_md(
         summary=summary, content_preview=content_preview, pending_id=pending_id,
     )
-    title = "💾 Memory approval"
+    title = _t("memory_proposal.card_title")
 
     def _btn(label: str, choice: str, btn_type: str) -> Dict[str, Any]:
         return {
@@ -170,8 +173,8 @@ def build_approval_card(
             {
                 "tag": "action",
                 "actions": [
-                    _btn("✅ Approve", _APPROVE_VALUE, "primary"),
-                    _btn("🟥 Deny", _DENY_VALUE, "danger"),
+                    _btn(_t("memory_proposal.btn_approve"), _APPROVE_VALUE, "primary"),
+                    _btn(_t("memory_proposal.btn_deny"), _DENY_VALUE, "danger"),
                 ],
             },
         ],
@@ -186,10 +189,12 @@ def build_resolved_card(*, choice: str, proposal_md: str = "") -> Dict[str, Any]
     user can still read what was approved/denied. The buttons are removed —
     the card is frozen in its resolved state.
     """
+    from agent.i18n import t as _t
+
     if choice == _APPROVE_VALUE:
-        icon, label, template = "✅", "已批准", "green"
+        icon, label, template = "✅", _t("memory_proposal.approved"), "green"
     else:
-        icon, label, template = "🟥", "已拒绝", "red"
+        icon, label, template = "🟥", _t("memory_proposal.denied"), "red"
 
     elements: list[dict] = []
     if proposal_md:
@@ -435,6 +440,8 @@ def build_preview(args: Dict[str, Any]) -> tuple[str, str]:
     unknown action shapes so the caller can still decide to skip / show a
     generic card.
     """
+    from agent.i18n import t as _t
+
     if not isinstance(args, dict):
         return ("", "")
     action = str(args.get("action", "") or "").strip()
@@ -443,7 +450,7 @@ def build_preview(args: Dict[str, Any]) -> tuple[str, str]:
     old_text = str(args.get("old_text", "") or "")
     operations = args.get("operations") or []
 
-    label = "user profile" if target == "user" else "memory"
+    label = _t("memory_proposal.card_target").lower() if target == "user" else "memory"
 
     if action == "batch" and isinstance(operations, list) and operations:
         n = len(operations)
@@ -464,19 +471,19 @@ def build_preview(args: Dict[str, Any]) -> tuple[str, str]:
         if len(operations) > 6:
             op_lines.append(f"... {len(operations) - 6} more")
         return (
-            f"apply {n} op(s) to {label}",
+            _t("memory_proposal.summary_batch", count=n, target=label),
             "\n".join(op_lines),
         )
 
     if action == "add":
-        return (f"add to {label}", content)
+        return (_t("memory_proposal.summary_add", target=label), content)
     if action == "replace":
         return (
-            f"replace in {label}",
+            _t("memory_proposal.summary_replace", target=label),
             f"old:\n{old_text}\n---\nnew:\n{content}",
         )
     if action == "remove":
-        return (f"remove from {label}", old_text or "(empty)")
+        return (_t("memory_proposal.summary_remove", target=label), old_text or "(empty)")
     if action:
-        return (f"{action} on {label}", content or old_text or "(empty)")
+        return (_t("memory_proposal.summary_action", action=action, target=label), content or old_text or "(empty)")
     return ("", "")
