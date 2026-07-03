@@ -18,12 +18,13 @@ from __future__ import annotations
 import json
 from typing import List, Optional
 
+from agent.i18n import t as _t
 from tools import write_approval as wa
 
 
 def _fmt_state(subsystem: str) -> str:
     on = wa.write_approval_enabled(subsystem)
-    return f"{subsystem}.write_approval = {'on' if on else 'off'}"
+    return _t("memory_proposal.response_approval_state", state="on" if on else "off")
 
 
 # ---------------------------------------------------------------------------
@@ -33,8 +34,8 @@ def _fmt_state(subsystem: str) -> str:
 def _fmt_pending_list(subsystem: str) -> str:
     records = wa.list_pending(subsystem)
     if not records:
-        return f"No pending {subsystem} writes."
-    lines = [f"Pending {subsystem} writes ({len(records)}):"]
+        return _t("memory_proposal.response_no_pending")
+    lines = [_t("memory_proposal.response_pending_header", count=len(records))]
     for r in records:
         origin = r.get("origin", "foreground")
         tag = " [auto]" if origin == "background_review" else ""
@@ -101,25 +102,25 @@ def handle_pending_subcommand(
 
 def _resolve_one(subsystem: str, rest: List[str]):
     if not rest:
-        return None, f"Usage: /{subsystem} approve|reject <id>  (or 'all')"
+        return None, _t("memory_proposal.response_usage_approve")
     return rest[0], None
 
 
 def _approve(subsystem: str, rest: List[str], memory_store) -> str:
     target, err = _resolve_one(subsystem, rest)
     if err or target is None:
-        return err or f"Usage: /{subsystem} approve <id>"
+        return err or _t("memory_proposal.response_usage_approve")
 
     records = wa.list_pending(subsystem)
     if not records:
-        return f"No pending {subsystem} writes."
+        return _t("memory_proposal.response_no_pending")
 
     if target.lower() == "all":
         targets = list(records)
     else:
         rec = wa.get_pending(subsystem, target)
         if not rec:
-            return f"No pending {subsystem} write with id '{target}'."
+            return _t("memory_proposal.response_no_match", id=target)
         targets = [rec]
 
     applied, failed = 0, []
@@ -131,7 +132,7 @@ def _approve(subsystem: str, rest: List[str], memory_store) -> str:
         else:
             failed.append(f"{rec['id']}: {msg}")
 
-    out = [f"Approved {applied} {subsystem} write(s)."]
+    out = [_t("memory_proposal.response_approved", count=applied)]
     if failed:
         out.append("Failed:")
         out.extend(f"  {f}" for f in failed)
@@ -158,16 +159,16 @@ def _apply_one(subsystem: str, rec, memory_store):
 def _reject(subsystem: str, rest: List[str]) -> str:
     target, err = _resolve_one(subsystem, rest)
     if err or target is None:
-        return err or f"Usage: /{subsystem} reject <id>"
+        return err or _t("memory_proposal.response_usage_reject")
     if target.lower() == "all":
         n = 0
         for rec in wa.list_pending(subsystem):
             if wa.discard_pending(subsystem, rec["id"]):
                 n += 1
-        return f"Rejected {n} pending {subsystem} write(s)."
+        return _t("memory_proposal.response_rejected_all", count=n)
     if wa.discard_pending(subsystem, target):
-        return f"Rejected pending {subsystem} write '{target}'."
-    return f"No pending {subsystem} write with id '{target}'."
+        return _t("memory_proposal.response_rejected_one", id=target)
+    return _t("memory_proposal.response_no_match", id=target)
 
 
 def _diff(rest: List[str]) -> str:

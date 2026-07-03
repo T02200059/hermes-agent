@@ -118,7 +118,7 @@ def _format_proposal_md(*, summary: str, content_preview: str,
     summary_line = (summary or "").strip() or _t("memory_proposal.summary_add", target="memory")
     preview = _truncate(content_preview, _CONTENT_PREVIEW_LIMIT)
     return (
-        f"**{_t('memory_proposal.pending_id_label')}**: `{pending_id}`\n"
+        f"**{_t('memory_proposal.pending_id_label')}**: {pending_id}\n"
         f"**{_t('memory_proposal.card_summary_label')}**: {summary_line}\n\n"
         f"```\n{preview}\n```"
     )
