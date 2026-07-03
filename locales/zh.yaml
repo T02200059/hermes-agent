@@ -833,6 +833,10 @@ gateway:
     session_not_found:           "数据库中未找到该会话。"
     warn_passthrough:            "⚠️ {error}"
 
+toolguard:
+  halt_status: "⚠️ 工具护栏已暂停 {tool_name}：{code}"
+  halt_response: "我已停止重试 {tool_name}，因为它在 {count} 次重复无进展的尝试后触发了工具调用护栏（{code}）。最后一次工具结果已说明阻塞原因；下一步应改变策略，而不是重复相同的调用。"
+
 memory_proposal:
   action_add: "添加"
   action_replace: "替换"

@@ -477,3 +477,7 @@ Future messages in this room will use that transcript until `/reset` or another 
     session_db_unavailable_prefix: "A munkamenet-adatbázis nem érhető el"
     session_not_found:           "A munkamenet nem található az adatbázisban."
     warn_passthrough:            "⚠️ {error}"
+
+toolguard:
+  halt_status: "⚠️ Az eszközvédő leállította a(z) {tool_name} eszközt: {code}"
+  halt_response: "Abbahagytam a(z) {tool_name} újrapróbálkozását, mert {count} ismétlődő, előrehaladás nélküli kísérlet után elérte az eszközhívás-védőt ({code}). Az utolsó eszközeredmény magyarázza az akadályt; a következő lépés a stratégia megváltoztatása a hívás ismétlése helyett."

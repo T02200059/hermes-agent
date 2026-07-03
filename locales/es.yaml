@@ -474,3 +474,7 @@ gateway:
     session_db_unavailable_prefix: "Base de datos de sesiones no disponible"
     session_not_found:           "Sesión no encontrada en la base de datos."
     warn_passthrough:            "⚠️ {error}"
+
+toolguard:
+  halt_status: "⚠️ El guardarrail de herramientas detuvo {tool_name}: {code}"
+  halt_response: "Dejé de reintentar {tool_name} porque alcanzó el guardarrail de llamadas a herramientas ({code}) tras {count} intentos repetidos sin progreso. El último resultado de la herramienta explica el bloqueo; el siguiente paso es cambiar de estrategia en lugar de repetir la misma llamada."

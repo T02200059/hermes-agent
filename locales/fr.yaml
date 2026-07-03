@@ -477,3 +477,7 @@ Future messages in this room will use that transcript until `/reset` or another 
     session_db_unavailable_prefix: "Base de données de sessions indisponible"
     session_not_found:           "Session introuvable dans la base de données."
     warn_passthrough:            "⚠️ {error}"
+
+toolguard:
+  halt_status: "⚠️ Le garde-fou outil a interrompu {tool_name} : {code}"
+  halt_response: "J'ai arrêté de réessayer {tool_name} car il a heurté le garde-fou d'appel d'outil ({code}) après {count} tentatives répétées sans progrès. Le dernier résultat de l'outil explique le blocage ; la prochaine étape est de changer de stratégie au lieu de répéter le même appel."

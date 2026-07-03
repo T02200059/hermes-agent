@@ -477,3 +477,7 @@ Future messages in this room will use that transcript until `/reset` or another 
     session_db_unavailable_prefix: "Session-Datenbank nicht verfügbar"
     session_not_found:           "Session nicht in der Datenbank gefunden."
     warn_passthrough:            "⚠️ {error}"
+
+toolguard:
+  halt_status: "⚠️ Tool-Guardrail hat {tool_name} gestoppt: {code}"
+  halt_response: "Ich habe die Wiederholung von {tool_name} beendet, da es nach {count} wiederholten fortschrittslosen Versuchen die Tool-Call-Guardrail ({code}) ausgelöst hat. Das letzte Tool-Ergebnis erklärt den Blocker; der nächste Schritt ist eine Strategieänderung statt der Wiederholung desselben Aufrufs."

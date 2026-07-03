@@ -4598,7 +4598,7 @@ def run_conversation(
                     _turn_exit_reason = "guardrail_halt"
                     final_response = agent._toolguard_controlled_halt_response(decision)
                     agent._emit_status(
-                        f"⚠️ Tool guardrail halted {decision.tool_name}: {decision.code}"
+                        t("toolguard.halt_status", tool_name=decision.tool_name, code=decision.code)
                     )
                     messages.append({"role": "assistant", "content": final_response})
                     # Emit the halt message to the client so it's not

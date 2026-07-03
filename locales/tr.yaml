@@ -477,3 +477,7 @@ Future messages in this room will use that transcript until `/reset` or another 
     session_db_unavailable_prefix: "Oturum veritabanı kullanılamıyor"
     session_not_found:           "Oturum veritabanında bulunamadı."
     warn_passthrough:            "⚠️ {error}"
+
+toolguard:
+  halt_status: "⚠️ Araç güvenlik şeridi {tool_name} durduruldu: {code}"
+  halt_response: "{tool_name} için tekrar denemeyi bıraktım çünkü {count} kez tekrarlanan ilerleme kaydedilmeyen denemeden sonra araç çağrısı güvenlik şeridine ({code}) takıldı. Son araç sonucu engelleyiciyi açıklıyor; sonraki adım aynı çağrıyı tekrarlamak yerine stratejiyi değiştirmek olmalı."

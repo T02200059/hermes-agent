@@ -477,3 +477,7 @@ Future messages in this room will use that transcript until `/reset` or another 
     session_db_unavailable_prefix: "工作階段資料庫無法使用"
     session_not_found:           "資料庫中找不到此工作階段。"
     warn_passthrough:            "⚠️ {error}"
+
+toolguard:
+  halt_status: "⚠️ 工具護欄已暫停 {tool_name}：{code}"
+  halt_response: "我已停止重試 {tool_name}，因為它在 {count} 次重複無進展的嘗試後觸發了工具呼叫護欄（{code}）。最後一次工具結果已說明阻塞原因；下一步應改變策略，而不是重複相同的呼叫。"

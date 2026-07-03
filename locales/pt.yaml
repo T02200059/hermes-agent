@@ -477,3 +477,7 @@ Future messages in this room will use that transcript until `/reset` or another 
     session_db_unavailable_prefix: "Base de dados de sessões indisponível"
     session_not_found:           "Sessão não encontrada na base de dados."
     warn_passthrough:            "⚠️ {error}"
+
+toolguard:
+  halt_status: "⚠️ O guarda-ferro de ferramentas parou {tool_name}: {code}"
+  halt_response: "Parei de tentar novamente {tool_name} porque atingiu o guarda-ferro de chamadas de ferramenta ({code}) após {count} tentativas repetidas sem progresso. O último resultado da ferramenta explica o bloqueio; o próximo passo é mudar de estratégia em vez de repetir a mesma chamada."

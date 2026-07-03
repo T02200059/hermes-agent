@@ -654,6 +654,10 @@ gateway:
     session_not_found:           "Session not found in database."
     warn_passthrough:            "⚠️ {error}"
 
+toolguard:
+  halt_status: "⚠️ Tool guardrail halted {tool_name}: {code}"
+  halt_response: "I stopped retrying {tool_name} because it hit the tool-call guardrail ({code}) after {count} repeated non-progressing attempts. The last tool result explains the blocker; the next step is to change strategy instead of repeating the same call."
+
 memory_proposal:
   action_add: "Add"
   action_replace: "Replace"

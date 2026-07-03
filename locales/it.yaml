@@ -477,3 +477,7 @@ Future messages in this room will use that transcript until `/reset` or another 
     session_db_unavailable_prefix: "Database delle sessioni non disponibile"
     session_not_found:           "Sessione non trovata nel database."
     warn_passthrough:            "⚠️ {error}"
+
+toolguard:
+  halt_status: "⚠️ Il guardrail degli strumenti ha fermato {tool_name}: {code}"
+  halt_response: "Ho smesso di riprovare {tool_name} perché ha colpito il guardrail delle chiamate agli strumenti ({code}) dopo {count} tentativi ripetuti senza progressi. L'ultimo risultato dello strumento spiega il blocco; il passaggio successivo è cambiare strategia invece di ripetere la stessa chiamata."

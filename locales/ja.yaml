@@ -477,3 +477,7 @@ Future messages in this room will use that transcript until `/reset` or another 
     session_db_unavailable_prefix: "セッションデータベースが利用できません"
     session_not_found:           "データベースにセッションが見つかりません。"
     warn_passthrough:            "⚠️ {error}"
+
+toolguard:
+  halt_status: "⚠️ ツールガードレールが {tool_name} を停止しました: {code}"
+  halt_response: "{tool_name} の再試行を停止しました。{count} 回の反復的な進捗なしの試行後、ツール呼び出しガードレール（{code}）にヒットしました。最後のツール結果にブロッカーの説明があります。次のステップは、同じ呼び出しを繰り返すのではなく戦略を変更することです。"

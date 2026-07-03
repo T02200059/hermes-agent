@@ -477,3 +477,7 @@ Future messages in this room will use that transcript until `/reset` or another 
     session_db_unavailable_prefix: "База даних сеансів недоступна"
     session_not_found:           "Сеанс не знайдено в базі даних."
     warn_passthrough:            "⚠️ {error}"
+
+toolguard:
+  halt_status: "⚠️ Інструментальний обмежувач зупинив {tool_name}: {code}"
+  halt_response: "Я припинив повторні спроби {tool_name}, оскільки після {count} повторних безуспішних спроб воно вдарилося об обмежувач виклику інструменту ({code}). Останній результат інструмента пояснює блокувальник; наступним кроком буде зміна стратегії замість повторення того самого виклику."

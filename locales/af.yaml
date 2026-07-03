@@ -477,3 +477,7 @@ Future messages in this room will use that transcript until `/reset` or another 
     session_db_unavailable_prefix: "Sessie-databasis is nie beskikbaar"
     session_not_found:           "Sessie nie in databasis gevind nie."
     warn_passthrough:            "⚠️ {error}"
+
+toolguard:
+  halt_status: "⚠️ Hulpmiddel-guardrail het {tool_name} gestop: {code}"
+  halt_response: "Ek het opgehou om {tool_name} te herprobeer omdat dit die hulpmiddel-oproep-guardrail ({code}) getref het na {count} herhaalde pogings sonder vordering. Die laaste hulpmiddel-resultaat verduidelik die blokker; die volgende stap is om strategie te verander in plaas van dieselfde oproep te herhaal."
