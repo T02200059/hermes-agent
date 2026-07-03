@@ -4039,10 +4039,13 @@ def run_conversation(
                     elif _backoff_policy == "zai_coding_overload_short":
                         _policy_note = " (Z.AI Coding overload short retry)"
                     _rate_limit_status = f"⏱️ Rate limited. Waiting {wait_time:.1f}s (attempt {retry_count + 1}/{max_retries}){_policy_note}..."
-                    # Normal retries are buffered to avoid noisy transient chatter. Long
-                    # Z.AI Coding waits are different: they can last minutes, so surface
+                    # Normal retries are buffered to avoid noisy transient chatter.
+                    # Long waits are different: they can last minutes, so surface
                     # progress immediately instead of making the TUI look frozen.
-                    if _backoff_policy == "zai_coding_overload_long":
+                    # [owner] Also emit immediately when wait >= 60s (e.g. quota
+                    # exhaustion with large Retry-After) so the user sees feedback
+                    # instead of a silent 600s freeze.  See owner/docs/owner改动清单.md §7.9.
+                    if _backoff_policy == "zai_coding_overload_long" or wait_time >= 60:
                         agent._emit_status(_rate_limit_status)
                     else:
                         agent._buffer_status(_rate_limit_status)

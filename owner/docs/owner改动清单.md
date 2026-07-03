@@ -477,6 +477,16 @@
 - **侵入类型**：薄胶水
 - **Commit**：`9a05e50b4`
 
+### 7.9 429 配额耗尽静默重试修复 + 长等待状态立即显示
+
+- **背景**：部分 provider（如 opencode-go）对硬配额耗尽返回 HTTP 429（`GoUsageLimitError: Weekly usage limit reached. Resets in 2 days.`），但 `error_classifier.py` 的 429 处理路径不做 billing 检测，一律归类为 `rate_limit`（retryable=True）。同时 `conversation_loop.py` 对非 Z.AI 的 rate limit 重试用 `_buffer_status`（缓冲），用户在 600s × 3 次重试（30 分钟）内完全看不到任何提示。
+- **方案**：
+  - `agent/error_classifier.py`：429 handler 入口处加 billing/quota 检测（`[owner]` 标记）— 当 error_msg 含 "usage limit" 但无短时间窗口信号（minute/second/hour）且非 "rate limit" 时，归类为 `billing`（retryable=False），立即中止重试并显示错误
+  - `agent/conversation_loop.py`：rate limit 状态显示逻辑加 `wait_time >= 60` 条件（`[owner]` 标记）— 长等待（≥60s）时用 `_emit_status` 立即显示，而非 `_buffer_status` 缓冲
+- **侵入类型**：inline（两处各 ~10 行，`[owner]` 标记 + 委托已有分类逻辑）
+- **文件**：`agent/error_classifier.py`、`agent/conversation_loop.py`
+- **Commit**：`9af95e44b`
+
 ---
 
 ## 八、Diff / Patch 工具链
@@ -592,7 +602,7 @@
 
 - **背景**：background review 的 actions 需要多行 bullet 格式。
 - **方案**：`agent/background_review.py` 一处格式调整。
-- **Commit**：`f806b7aaa`（§17.24）
+- **Commit**：`3c71db710`（§17.24）
 
 ---
 
@@ -773,7 +783,7 @@ _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请在�
 ### 2026-07-03：`/providers` → plugin slash command（带 hermes_ctx）
 
 - **类型**：plugin command API 扩展 + owner command 迁移
-- **commit**：`623cee607`（`/providers` → plugin slash command）
+- **commit**：`6dbaf6a74`（`/providers` → plugin slash command）
 - **变动**：`hermes_cli/plugins.py` 增加 plugin command `accepts_ctx` 检测与 `make_plugin_command_context()`；`gateway/run.py` / `cli.py` 在 handler opt-in 时传 `hermes_ctx`；`owner-extensions` 注册 `/providers`；删除 `gateway/run.py` 内置 providers 分支与 `gateway/slash_commands.py` shim
 - **机制**：旧插件 `fn(raw_args)` 调用形状不变；声明 `*, hermes_ctx` 或 `**kwargs` 的 plugin command 可拿到 gateway event/adapters/runner，保留 Feishu card 能力
 - **验证**：`python3 -m pytest tests/hermes_cli/test_plugins.py tests/gateway/test_unknown_command.py tests/owner/test_providers_command.py -q -o 'addopts='` → 109 passed

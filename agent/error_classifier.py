@@ -900,6 +900,29 @@ def _classify_by_status(
         )
 
     if status_code == 429:
+        # [owner] 429 billing/quota exhaustion: some providers (e.g.
+        # opencode-go) return 429 for hard quota exhaustion ("Weekly usage
+        # limit reached. Resets in 2 days.") rather than transient rate
+        # limits.  Detect "usage limit" without a short-term reset signal
+        # (minutes/hours) and classify as non-retryable billing so the
+        # retry loop surfaces the error immediately instead of silently
+        # waiting 600s × 3 retries.  See owner/docs/owner改动清单.md §7.9.
+        _has_usage_limit = any(p in error_msg for p in _USAGE_LIMIT_PATTERNS)
+        _has_transient = any(p in error_msg for p in _USAGE_LIMIT_TRANSIENT_SIGNALS)
+        _has_short_window = any(
+            t in error_msg for t in ("minute", "second", "hour", "in 5 ", "in 10 ", "in 15 ", "in 30 ")
+        )
+        # Exclude genuine rate-limit messages ("Rate limit exceeded") which
+        # also match "limit exceeded" in _USAGE_LIMIT_PATTERNS.
+        _is_genuine_rate_limit = "rate limit" in error_msg or "rate_limit" in error_msg
+        if _has_usage_limit and not _is_genuine_rate_limit and (not _has_transient or not _has_short_window):
+            return result_fn(
+                FailoverReason.billing,
+                retryable=False,
+                should_rotate_credential=True,
+                should_fallback=True,
+            )
+
         # Already checked long_context_tier above. Some providers (notably
         # Z.AI / Zhipu) reuse HTTP 429 for server-wide overload — same status
         # code as a true per-credential rate limit, but the credential is
