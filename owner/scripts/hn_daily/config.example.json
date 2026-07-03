@@ -1,0 +1,28 @@
+{
+  "hn": {
+    "top_n": 20,
+    "base_url": "https://hacker-news.firebaseio.com/v0"
+  },
+  "http": {
+    "top_stories_timeout": 15,
+    "item_timeout": 8,
+    "max_workers": 8,
+    "retries": 3,
+    "backoff_base": 2.0
+  },
+  "card": {
+    "template": "blue",
+    "timezone": "CST"
+  },
+  "output": {
+    "save_dir": "~/.hermes/hn_daily/archive"
+  },
+  "feishu": {
+    "app_id": "cli_xxxxxxxxxxxxxxxx",
+    "app_secret": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "chat_id": "oc_xxxxxxxxxxxxxxxx",
+    "token_url": "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal",
+    "message_url": "https://open.feishu.cn/open-apis/im/v1/messages",
+    "token_refresh_codes": [99991663, 99991661]
+  }
+}

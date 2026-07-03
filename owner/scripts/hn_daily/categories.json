@@ -1,0 +1,301 @@
+{
+  "rules": [
+    {
+      "name": "security_malware",
+      "mode": "any",
+      "keywords": ["trojan", "malware", "distributing", "backdoor", "ransomware"],
+      "template": "安全研究者揭露大量恶意软件仓库分发事件，提醒开发者警惕供应链攻击。"
+    },
+    {
+      "name": "security_vulnerability",
+      "mode": "all",
+      "keywords": ["security", "vulnerability"],
+      "template": "披露关键安全漏洞详情，影响范围及修复建议。"
+    },
+    {
+      "name": "security_exploit",
+      "mode": "any",
+      "keywords": ["exploit", "cve", "0-day", "zeroday"],
+      "template": "分析最新漏洞利用技术或零日安全事件。"
+    },
+    {
+      "name": "ai_ml",
+      "mode": "any",
+      "keywords": ["machine learning", "llm", "gpt", "generative ai", "neural", "deep learning"],
+      "template": "探讨机器学习或 AI 领域的研究方法、实践反思与行业观察。"
+    },
+    {
+      "name": "ai_model_ops",
+      "mode": "all",
+      "keywords": ["model"],
+      "also_any": ["train", "fine-tune", "inference", "deployment"],
+      "template": "介绍 AI 模型训练、推理或部署方面的技术实践。"
+    },
+    {
+      "name": "ai_general",
+      "mode": "any",
+      "keywords": ["ai", "artificial intelligence"],
+      "template": "围绕人工智能技术应用、伦理或产业影响的讨论。"
+    },
+    {
+      "name": "database_duckdb",
+      "mode": "any",
+      "keywords": ["duckdb"],
+      "template": "深入解析 DuckDB 的向量化执行引擎与压缩存储机制，揭示其高性能分析查询的秘密。"
+    },
+    {
+      "name": "database_general",
+      "mode": "any",
+      "keywords": ["postgres", "postgresql", "database", "sql", "transaction"],
+      "template": "探讨数据库架构设计、事务处理或性能优化方案。"
+    },
+    {
+      "name": "performance",
+      "mode": "any",
+      "keywords": ["performance", "fast", "speed", "optimize", "latency"],
+      "template": "从工程实践角度剖析性能优化策略与测量方法。"
+    },
+    {
+      "name": "java_jvm",
+      "mode": "any",
+      "keywords": ["jdk", "jvm", "java", "valhalla", "graalvm"],
+      "template": "跟踪 Java 平台与 JVM 生态的最新演进与语言特性。"
+    },
+    {
+      "name": "compiler_pl",
+      "mode": "any",
+      "keywords": ["compiler", "llvm", "ssa", "wasm", "interpreter", "rustc"],
+      "template": "编译器、程序语言或 WebAssembly 相关技术实现与研究。"
+    },
+    {
+      "name": "os_hardware",
+      "mode": "any",
+      "keywords": ["operating system", "kernel", "linux", "syscall", "chip", "cpu", "riscv", "hardware"],
+      "template": "操作系统内核、底层硬件或芯片架构方面的技术探索。"
+    },
+    {
+      "name": "encryption",
+      "mode": "any",
+      "keywords": ["luks", "encryption"],
+      "template": "分析磁盘加密、密钥管理或 Linux 安全子系统相关技术。"
+    },
+    {
+      "name": "auth",
+      "mode": "any",
+      "keywords": ["oauth", "auth"],
+      "template": "OAuth 认证协议或身份验证方案的设计与实现。"
+    },
+    {
+      "name": "mcp",
+      "mode": "any",
+      "keywords": ["mcp", "model context protocol"],
+      "template": "Model Context Protocol 生态的新工具或协议扩展。"
+    },
+    {
+      "name": "web_protocol",
+      "mode": "any",
+      "keywords": ["http", "uri", "protocol", "web standard", "rest", "api"],
+      "template": "Web 标准、网络协议或 API 设计实践。"
+    },
+    {
+      "name": "git_advanced",
+      "mode": "all",
+      "keywords": ["git"],
+      "also_any": ["ignore", "sparse", "checkout"],
+      "template": "Git 版本控制中文件忽略与仓库管理的进阶技巧。"
+    },
+    {
+      "name": "git_general",
+      "mode": "any",
+      "keywords": ["git"],
+      "template": "Git 版本控制工作流或底层实现原理。"
+    },
+    {
+      "name": "containers",
+      "mode": "any",
+      "keywords": ["docker", "kubernetes", "container", "podman"],
+      "template": "容器化平台与云原生基础设施的最新动态。"
+    },
+    {
+      "name": "cicd",
+      "mode": "any",
+      "keywords": ["ci/cd", "pipeline", "github action"],
+      "template": "持续集成与自动化交付工程实践。"
+    },
+    {
+      "name": "apple",
+      "mode": "any",
+      "keywords": ["airpods", "iphone", "ios", "macos", "apple", "carplay"],
+      "template": "Apple 生态产品、操作系统或消费电子设备的技术分析。"
+    },
+    {
+      "name": "robotics",
+      "mode": "any",
+      "keywords": ["robot", "robotics", "drone", "cyborg", "exoskeleton"],
+      "template": "机器人技术、嵌入式系统或自动化硬件平台。"
+    },
+    {
+      "name": "storage",
+      "mode": "any",
+      "keywords": ["nas", "zfs", "storage", "backup", "raid"],
+      "template": "企业级存储系统、NAS 或 ZFS 文件系统的设计与运维。"
+    },
+    {
+      "name": "fintech",
+      "mode": "any",
+      "keywords": ["payment", "fintech", "bank", "cell-based", "resilient payment"],
+      "template": "支付系统架构、金融科技或高可用金融基础设施设计。"
+    },
+    {
+      "name": "display",
+      "mode": "any",
+      "keywords": ["e-paper", "e-ink", "display", "monitor", "screen", "oled"],
+      "template": "显示技术、电子墨水或屏幕硬件的新进展。"
+    },
+    {
+      "name": "privacy_regulation",
+      "mode": "any",
+      "keywords": ["gdpr", "privacy", "consent", "data protection", "regulation"],
+      "template": "数据隐私保护、GDPR 合规或监管政策的案例与影响分析。"
+    },
+    {
+      "name": "darpa",
+      "mode": "any",
+      "keywords": ["darpa"],
+      "template": "DARPA 发起的前沿技术挑战或研究计划。"
+    },
+    {
+      "name": "legal",
+      "mode": "any",
+      "keywords": ["law", "legal", "unlawful"],
+      "template": "技术法律、合规或知识产权相关案例。"
+    },
+    {
+      "name": "policy",
+      "mode": "any",
+      "keywords": ["ban", "bans", "regulation", "policy"],
+      "template": "政府或监管机构出台的技术政策与禁令解读。"
+    },
+    {
+      "name": "infrastructure_transport",
+      "mode": "any",
+      "keywords": ["railway", "train", "subway", "metro", "infrastructure"],
+      "template": "交通基础设施、铁路系统或城市规划的工程与管理。"
+    },
+    {
+      "name": "medical",
+      "mode": "any",
+      "keywords": ["hospital", "drug", "medical", "drowning", "patient", "dna", "health"],
+      "template": "医学研究、临床试验或健康科技领域的最新发现。"
+    },
+    {
+      "name": "biology",
+      "mode": "any",
+      "keywords": ["crispr", "gene"],
+      "template": "基因编辑或生物技术的研究进展。"
+    },
+    {
+      "name": "visualization",
+      "mode": "any",
+      "keywords": ["typst", "grammar of graphics", "graphics", "visualization", "chart", "plot"],
+      "template": "数据可视化、图形渲染或图表技术工具。"
+    },
+    {
+      "name": "data_search",
+      "mode": "any",
+      "keywords": ["dataset", "datasette", "embedding", "vector search", "semantic search"],
+      "template": "向量嵌入、语义搜索或推荐系统的技术优化。"
+    },
+    {
+      "name": "networking",
+      "mode": "any",
+      "keywords": ["internet", "broadband", "bandwidth", "gbit", "fiber", "isp", "network"],
+      "template": "互联网基础设施、宽带网络或 ISP 政策的技术与社会分析。"
+    },
+    {
+      "name": "career",
+      "mode": "any",
+      "keywords": ["hiring", "is hiring", "career", "job", "interview", "salary"],
+      "template": "科技公司招聘动态或职业发展相关讨论。"
+    },
+    {
+      "name": "work_culture",
+      "mode": "any",
+      "keywords": ["remote", "work", "culture", "burnout", "productivity"],
+      "template": "远程工作、生产力或技术团队文化探讨。"
+    },
+    {
+      "name": "product_design",
+      "mode": "any",
+      "keywords": ["product", "great", "good", "design", "ux", "user experience"],
+      "template": "产品设计哲学、用户体验或创业方法论。"
+    },
+    {
+      "name": "philosophy",
+      "mode": "any",
+      "keywords": ["zen", "philosophy", "art of"],
+      "template": "技术哲学、研究方法论或工程思维的反思。"
+    },
+    {
+      "name": "digital_sovereignty",
+      "mode": "any",
+      "keywords": ["sovereignty", "digital sovereignty"],
+      "template": "数字主权、欧盟技术政策或公共机构的数字化治理。"
+    },
+    {
+      "name": "education",
+      "mode": "any",
+      "keywords": ["course", "self-guided", "tutorial", "learn"],
+      "template": "计算机科学在线课程、自学资源或教育项目。"
+    },
+    {
+      "name": "gaming",
+      "mode": "any",
+      "keywords": ["game", "gaming", "exapunk", "zachtronics"],
+      "template": "独立游戏、编程解谜或创意技术作品。"
+    },
+    {
+      "name": "self_hosted",
+      "mode": "any",
+      "keywords": ["immich", "self-hosted", "peertube"],
+      "template": "自托管开源项目、去中心化平台或隐私友好的替代工具。"
+    },
+    {
+      "name": "open_source",
+      "mode": "any",
+      "keywords": ["open source", "github"],
+      "template": "开源项目发布、社区动态或代码托管平台。"
+    },
+    {
+      "name": "hn_community",
+      "mode": "any",
+      "keywords": ["show hn", "launch hn", "ask hn"],
+      "template": "Hacker News 社区 Show/Launch 项目或 Ask 讨论。"
+    },
+    {
+      "name": "manufacturing",
+      "mode": "any",
+      "keywords": ["3d", "printing", "laser"],
+      "template": "3D 打印、激光切割或制造技术工具。"
+    },
+    {
+      "name": "energy",
+      "mode": "any",
+      "keywords": ["climate", "energy", "solar", "battery"],
+      "template": "新能源、气候技术或能源系统研究。"
+    },
+    {
+      "name": "crypto",
+      "mode": "any",
+      "keywords": ["cryptography", "crypto", "encryption"],
+      "template": "密码学、加密算法或安全通信技术。"
+    },
+    {
+      "name": "history",
+      "mode": "any",
+      "keywords": ["history", "evolution", "timeline"],
+      "template": "技术历史演变、产业变迁或计算机考古。"
+    }
+  ],
+  "default": "Hacker News 社区讨论的技术话题或工具分享。"
+}
