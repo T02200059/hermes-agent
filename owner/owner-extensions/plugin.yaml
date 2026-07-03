@@ -1,3 +1,10 @@
 name: owner-extensions
 version: 0.1.0
-description: Owner-branch runtime patches (memory synthetic guard, etc.)
+description: >-
+  Owner-branch runtime patches (memory synthetic guard, /providers command,
+  schema patches, OpenViking recall) plus Feishu memory write-approval
+  interactive card auto-popup.
+author: "owner"
+hooks:
+  - pre_gateway_dispatch   # capture gateway → adapter reference (memory card)
+  - post_tool_call         # detect staged memory writes → approval card
