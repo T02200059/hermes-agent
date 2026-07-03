@@ -22,6 +22,11 @@ import time
 from types import SimpleNamespace
 from typing import Any, Dict, List
 
+try:
+    from agent.conversation_loop import _get_current_attribution
+except Exception:
+    _get_current_attribution = lambda agent: getattr(agent, "owner_provider_name", None)
+
 logger = logging.getLogger(__name__)
 
 
@@ -206,7 +211,7 @@ def _record_codex_app_server_usage(agent, turn) -> dict[str, Any]:
                 cost_status=cost_result.status,
                 cost_source=cost_result.source,
                 billing_provider=agent.provider,
-                owner_provider_name=getattr(agent, "owner_provider_name", None),
+                owner_provider_name=_get_current_attribution(agent),
                 billing_base_url=agent.base_url,
                 billing_mode="subscription_included"
                 if cost_result.status == "included" else None,

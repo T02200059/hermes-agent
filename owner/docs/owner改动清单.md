@@ -610,6 +610,37 @@
 | `agent/background_review.py` | 多行 bullet 格式 | inline（字符串） |
 | `tools/code_execution_tool.py` / `tools/delegate_tool.py` | extra_body 透传 | 薄胶水 |
 
+### 附录 B 与附录 C 交叉覆盖标注
+
+下表列出附录 B 中**未被附录 C 单独评估**的侵入文件，标注其是否被间接覆盖及迁移评估状态：
+
+| 文件 | 侵入深度 | 附录 C 覆盖 | 迁移评估状态 |
+|------|----------|-------------|-------------|
+| `gateway/run.py` | 重度 | ✅ C#2（剩余薄胶水）+ C#7（per-chat display）| 已评估：保持现状 |
+| `plugins/platforms/feishu/adapter.py` | 重度 | ✅ C#3 | 已评估：保持现状（薄胶水已规范）|
+| `agent/conversation_loop.py` | 重度 | ❌ 未单项评估 | 间接覆盖：归因链归 C#1（保持现状）；MoA/content-filter/backoff 属 agent 内部逻辑，无独立 hook 可迁 |
+| `tools/approval.py` | 重度 | ✅ C#4 | 已评估：保持现状（安全核心）|
+| `gateway/platforms/base.py` | 重度 | 部分 C#2（chained quick command）| 间接覆盖：chained quick command 归 C#10（保持）；per-profile cache roots / progress dedup 是 1-3 行薄胶水，无迁移价值 |
+| `tools/cronjob_tools.py` | 重度 | ✅ C#9 | 已评估：部分可迁移，维持现状 |
+| `cron/jobs.py` / `cron/scheduler.py` | 重度 | ✅ C#9 | 已评估：同上 |
+| `run_agent.py` | 中度 | 部分 C#1（归因链透传）| 间接覆盖：归因链归 C#1（保持）；acp_args None 修复是 1 行 bugfix；schema patch import 归 C#6（已迁 plugin）|
+| `agent/agent_init.py` | 中度 | 部分 C#1（归因链）| 间接覆盖：归因链归 C#1；CR-003 修复是 1 行初始化；无迁移价值 |
+| `hermes_state.py` | 中度 | 部分 C#1（DB 列）| 间接覆盖：C#1 已明确 DB 列不可避免 |
+| `agent/chat_completion_helpers.py` | 中度 | ❌ 未单项评估 | 间接覆盖：归因剥离归 C#1；extra_body 注入归 §1.3（1 行薄胶水，无迁移价值）|
+| `agent/transports/chat_completions.py` | 中度 | ❌ 未单项评估 | 间接覆盖：extra_body 注入归 §1.3（1 行薄胶水，无迁移价值）|
+| `hermes_cli/runtime_provider.py` | 中度 | ❌ 未单项评估 | 未评估：P29 防泄露 ×3 + pool base_url override ×2 均为薄胶水；pool base_url override 已迁入 owner-extensions plugin（C#6 旁注），P29 防泄露是安全逻辑不宜 hook 化 |
+| `hermes_cli/model_switch.py` | 中度 | ❌ 未单项评估 | 间接覆盖：credential 薄调用归 §2.2（1 行委托，无迁移价值）|
+| `agent/model_metadata.py` | 中度 | ❌ 未单项评估 | 未评估：P29 防泄露 1 行薄胶水，同 runtime_provider.py，无迁移价值 |
+| `tui_gateway/server.py` | 中度 | ❌ 未单项评估 | 未评估：P29 + Cmd+C + skin 数据传递均为 1-3 行薄胶水；TUI 侧无 plugin 体系，无法迁移 |
+| `agent/tool_executor.py` | 中度 | ❌ 未单项评估 | 间接覆盖：checkpoint predictor 归 §8.1（1 行触发委托）；file tool timeout 归 §8.2（薄胶水）；均无迁移价值 |
+| `agent/tool_guardrails.py` | 中度 | ❌ 未单项评估 | 未评估：warn/block/halt 消息增强是 inline 字符串，非逻辑变更，无迁移价值 |
+| `tools/clarify_tool.py` / `clarify_gateway.py` | 中度 | ❌ 未单项评估 | 间接覆盖：归 §4.5 clarify 交互卡片（薄胶水 + try-import 已规范）|
+| `tools/skills_tool.py` | 中度 | ❌ 未单项评估 | 间接覆盖：归 §3.5 skill 脚本自动审批（1 行 track 调用，无迁移价值）|
+| `gateway/platforms/qqbot/adapter.py` | 中度 | ❌ 未单项评估 | 未评估：WS 重连链是 inline 逻辑，但属平台适配器内部实现，无 plugin hook 可迁；保持现状 |
+| 轻度侵入全部（13 文件）| 轻度 | ❌ 未单项评估 | 无需评估：均为 1-3 行 import / 透传 / 字符串，迁移收益为零 |
+
+**结论**：附录 B 列出的 ~35 个侵入文件中，附录 C 单独评估了 10 项主线；剩余文件要么被间接覆盖（归因链、extra_body、clarify 等已归入对应章节），要么是 1-3 行薄胶水 / 字符串 / 平台适配器内部逻辑，迁移收益为零，无需单独评估。**附录 B 无遗留未决项。**
+
 ---
 
 ## 附录 C：迁移与治理建议（面向未来 hook/plugin 化）

@@ -1727,8 +1727,6 @@ class AIAgent:
                     codex_message_items=msg.get("codex_message_items") if role == "assistant" else None,
                     timestamp=msg.get("timestamp"),
                 )
-                # [owner-patch] attribution reconstruction
-                from owner.attribution import get_current_attribution  # noqa: F401
                 flushed_ids.add(msg_id)
             self._last_flushed_db_idx = len(messages)
         except Exception as e:
