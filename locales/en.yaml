@@ -253,6 +253,17 @@ gateway:
     usage_switch_provider:  "`/model <name> --provider <slug>` — switch provider"
     usage_persist:          "`/model <name> --global` — persist"
 
+    # /new and /reset session info card ("◆ Model: …" block shown on every
+    # new session; /info reuses this too). Labels/prose only — model IDs,
+    # provider slugs, token counts are passed as parameters, NOT translated.
+    info_model:             "◆ Model: `{model}`"
+    info_provider:          "◆ Provider: {provider}"
+    info_context:           "◆ Context: {ctx} tokens ({source})"
+    info_endpoint:          "◆ Endpoint: {base_url}"
+    ctx_source_config:      "config"
+    ctx_source_default:     "default — set model.context_length in config to override"
+    ctx_source_detected:    "detected"
+
     # Content-policy refusal messages (finish_reason=content_filter / provider moderation)
     content_policy_recovery_hint:     "Try rephrasing the request, narrowing the context, or adding a fallback provider with `hermes fallback add`."
     content_policy_trying_fallback:   "Model declined to respond (safety refusal) — trying fallback..."

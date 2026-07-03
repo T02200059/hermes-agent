@@ -432,6 +432,16 @@ gateway:
     usage_switch_provider:  "`/model <name> --provider <slug>` — 切换提供方"
     usage_persist:          "`/model <name> --global` — 永久保存"
 
+    # /new 和 /reset 会话信息卡片（"◆ Model: …" 块，每次新会话显示；/info 也复用）。
+    # 仅翻译标签/文字 — 模型 ID、provider slug、token 数都作为参数传入，不翻译。
+    info_model:             "◆ 模型：`{model}`"
+    info_provider:          "◆ 提供方：{provider}"
+    info_context:           "◆ 上下文：{ctx} tokens（{source}）"
+    info_endpoint:          "◆ 端点：{base_url}"
+    ctx_source_config:      "配置"
+    ctx_source_default:     "默认 — 在 config 中设置 model.context_length 可覆盖"
+    ctx_source_detected:    "检测"
+
     # 内容策略拒绝消息（finish_reason=content_filter / 提供方审核）
     content_policy_recovery_hint:     "尝试换一种表述、缩小上下文范围，或使用 `hermes fallback add` 添加备用提供方。"
     content_policy_trying_fallback:   "模型拒绝响应（安全拒绝）— 正在尝试备用模型…"
