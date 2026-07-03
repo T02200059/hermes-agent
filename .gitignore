@@ -145,3 +145,8 @@ apps/desktop/demo/
 state.db
 owner/feishu_profile/hermesxiyun/.env
 .bak-20260619
+
+# Serena MCP cache (machine-specific)
+.serena/
+.planning/
+.install_method
