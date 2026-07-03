@@ -892,6 +892,19 @@ def compress_context(
         # rewrite on the same id) when compaction happened in place. See #38763.
         agent._last_compaction_in_place = compacted_in_place
 
+        # Keep the post-compression rough estimate for diagnostics, but do not
+        # treat it as provider-reported prompt usage. Schema-heavy rough estimates
+        # can remain above threshold even after the next real API request fits.
+        _compressed_est = estimate_request_tokens_rough(
+            compressed,
+            system_prompt=new_system_prompt or "",
+            tools=agent.tools or None,
+        )
+        agent.context_compressor.last_compression_rough_tokens = _compressed_est
+        agent.context_compressor.last_prompt_tokens = -1
+        agent.context_compressor.last_completion_tokens = 0
+        agent.context_compressor.awaiting_real_usage_after_compression = True
+
         # [owner] Feishu compression summary: emit a short Chinese recap to Feishu
         # users after successful compression.  The owner module gates on platform
         # and fails open so this never interrupts compression.
@@ -909,19 +922,6 @@ def compress_context(
             )
         except Exception:
             pass
-
-        # Keep the post-compression rough estimate for diagnostics, but do not
-        # treat it as provider-reported prompt usage. Schema-heavy rough estimates
-        # can remain above threshold even after the next real API request fits.
-        _compressed_est = estimate_request_tokens_rough(
-            compressed,
-            system_prompt=new_system_prompt or "",
-            tools=agent.tools or None,
-        )
-        agent.context_compressor.last_compression_rough_tokens = _compressed_est
-        agent.context_compressor.last_prompt_tokens = -1
-        agent.context_compressor.last_completion_tokens = 0
-        agent.context_compressor.awaiting_real_usage_after_compression = True
 
         # Clear the file-read dedup cache.  After compression the original
         # read content is summarised away — if the model re-reads the same
