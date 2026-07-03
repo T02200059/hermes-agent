@@ -15,6 +15,17 @@ approval:
   cancelled:       "      ✗ 已取消"
   blocklist_message: "此命令位于无条件拦截列表中，无法被批准。"
 
+  # CLI 审批面板标签（prompt_toolkit UI）。
+  dangerous_title: "⚠️  危险命令"
+  choice_once: "允许一次"
+  choice_session: "允许本次会话"
+  choice_always: "添加到永久允许列表"
+  choice_deny: "拒绝"
+  choice_view: "显示完整命令"
+  hint_choose_view: "…（选择“显示完整命令”）"
+  hint_command_truncated: "…（命令已截断 — 使用 /logs 或 /debug 查看完整文本）"
+  hint_description_truncated: "…（描述已截断）"
+
   # 拦截/硬拦截/拒绝消息 — 命令被阻止时返回给 agent。
   hardline_blocked: "已拦截（硬拦截）：{description}。此命令位于无条件拦截列表中，无法通过 agent 执行 — 即使使用 --yolo、/yolo、approvals.mode=off 或 cron 批准模式也不行。如果你确实需要运行它，请在 agent 外的终端中手动运行。"
   sudo_stdin_blocked: "已拦截：{description}。请勿通过管道向 'sudo -S' 传递密码 — 这是一个暴力破解攻击路径。如果 agent 需要免密 sudo，请在 .env 文件中设置 SUDO_PASSWORD，或者在你自己的终端中手动运行 sudo 命令。"
@@ -24,8 +35,13 @@ approval:
   user_denied: "已拦截：用户拒绝了此具有潜在危险的命令（匹配 '{description}' 模式）。请勿重试此命令 — 用户已明确拒绝。"
   smart_denied: "智能审批拦截：{description}。此命令被评估为确实危险。请勿重试。"
   gateway_notify_failed: "已拦截：无法向用户发送审批请求。请勿重试。"
-  gateway_timeout_denied: "已拦截：命令{reason}。请勿重试此命令。"
-  cli_denied: "已拦截：用户已拒绝。请勿重试。"
+  gateway_timeout_denied: "已拦截：命令{reason}。用户未同意此操作。请勿重试此命令，请勿改写它，也请勿通过其他命令尝试实现相同结果。停止当前工作流，并在采取任何进一步破坏性或不可逆操作之前等待用户回应。{timeout_addendum}"
+  cli_denied: "已拦截：用户拒绝了此命令。用户未同意此操作。请勿重试此命令，请勿改写它，也请勿通过其他命令尝试实现相同结果。停止当前工作流，并在采取任何进一步破坏性或不可逆操作之前等待用户回应。"
+  execute_code_smart_denied: "智能审批拦截：execute_code 脚本执行被评估为确实危险。请勿重试。"
+  execute_code_gateway_asking: "⚠️ {description}。正在请求用户批准。\n\n**代码：**\n```python\n{code}\n```"
+  execute_code_notify_failed: "已拦截：无法向用户发送 execute_code 审批请求。请勿重试。"
+  execute_code_timeout_denied: "已拦截：execute_code 脚本因用户未响应而超时。用户未同意运行此代码。请勿重试，请勿改写脚本，也请勿通过其他工具尝试实现相同结果。沉默不等于同意。"
+  execute_code_user_denied: "已拦截：execute_code 脚本已被用户拒绝。用户未同意运行此代码。请勿重试，请勿改写脚本，也请勿通过其他工具尝试实现相同结果。"
 
   # 飞书审批卡片 — 交互式卡片 UI 文案。
   feishu_card_title: "⚠️ 命令需要审批"
@@ -385,6 +401,7 @@ gateway:
   # 命令用法提示
   queue_usage:             "用法：/queue <提示>"
   queue_queued:            "已排队到下一轮。"
+  queue_queued_with_depth: "已排队到下一轮。（{depth} 条排队中）"
   steer_usage:             "用法：/steer <提示>"
   steer_usage_no_agent:    "用法：/steer <提示>（当前没有运行中的 Agent；将作为普通消息发送）"
   learn_failed:            "无法启动 /learn — 请重试。"

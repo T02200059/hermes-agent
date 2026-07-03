@@ -55,6 +55,8 @@ from hermes_cli.fallback_config import get_fallback_chain
 from hermes_cli.cli_agent_setup_mixin import CLIAgentSetupMixin
 from hermes_cli.cli_commands_mixin import CLICommandsMixin
 
+from agent.i18n import t
+
 # prompt_toolkit for fixed input area TUI
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.styles import Style as PTStyle
@@ -11415,14 +11417,14 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
         selected = state.get("selected", 0)
         show_full = state.get("show_full", False)
 
-        title = "⚠️  Dangerous Command"
+        title = t("approval.dangerous_title")
         cmd_display = command
         choice_labels = {
-            "once": "Allow once",
-            "session": "Allow for this session",
-            "always": "Add to permanent allowlist",
-            "deny": "Deny",
-            "view": "Show full command",
+            "once": t("approval.choice_once"),
+            "session": t("approval.choice_session"),
+            "always": t("approval.choice_always"),
+            "deny": t("approval.choice_deny"),
+            "view": t("approval.choice_view"),
         }
 
         preview_lines = _wrap_panel_text(description, 60)
@@ -11442,7 +11444,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
         cmd_wrapped = _wrap_panel_text(cmd_display, inner_text_width)
         if not show_full and "view" in choices and len(cmd_wrapped) > 4:
             cmd_wrapped = cmd_wrapped[:3] + _wrap_panel_text(
-                "… (choose Show full command)",
+                t("approval.hint_choose_view"),
                 inner_text_width,
             )
 
@@ -11495,7 +11497,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
         if len(cmd_wrapped) > max_cmd_rows:
             keep = max(1, max_cmd_rows - 1) if max_cmd_rows > 1 else 1
             cmd_wrapped = cmd_wrapped[:keep] + _wrap_panel_text(
-                "… (command truncated — use /logs or /debug for full text)",
+                t("approval.hint_command_truncated"),
                 inner_text_width,
             )
 
@@ -11512,7 +11514,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
             desc_wrapped = []
         elif len(desc_wrapped) > available_for_desc:
             keep = max(1, available_for_desc - 1)
-            desc_wrapped = desc_wrapped[:keep] + ["… (description truncated)"]
+            desc_wrapped = desc_wrapped[:keep] + [t("approval.hint_description_truncated")]
 
         # Render: title → command → choices → description (description last so
         # any remaining overflow clips from the bottom of the least-critical

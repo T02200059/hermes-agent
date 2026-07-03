@@ -14,6 +14,45 @@ approval:
   denied:          "      ✗ Negato"
   cancelled:       "      ✗ Annullato"
   blocklist_message: "Questo comando è nella lista di blocco incondizionata e non può essere approvato."
+  hardline_blocked: "BLOCKED (hardline): {description}. This command is on the unconditional blocklist and cannot be executed via the agent — not even with --yolo, /yolo, approvals.mode=off, or cron approve mode. If you genuinely need to run it, run it yourself in a terminal outside the agent."
+  sudo_stdin_blocked: "BLOCKED: {description}. Do not pipe passwords to 'sudo -S' — this is a brute-force attack vector. Set SUDO_PASSWORD in your .env file if the agent needs passwordless sudo, or run the sudo command manually in your own terminal."
+  cron_blocked: "BLOCKED: Command flagged as dangerous ({description}) but cron jobs run without a user present to approve it. Find an alternative approach that avoids this command. To allow dangerous commands in cron jobs, set approvals.cron_mode: approve in config.yaml."
+  gateway_asking: "⚠️ This command is potentially dangerous ({description}). Asking the user for approval.
+
+**Command:**
+```
+{command}
+```"
+  gateway_asking_combined: "⚠️ {description}. Asking the user for approval.
+
+**Command:**
+```
+{command}
+```"
+  user_denied: "BLOCKED: User denied this potentially dangerous command (matched '{description}' pattern). Do NOT retry this command — the user has explicitly rejected it."
+  smart_denied: "BLOCKED by smart approval: {description}. The command was assessed as genuinely dangerous. Do NOT retry."
+  gateway_notify_failed: "BLOCKED: Failed to send approval request to user. Do NOT retry."
+  gateway_timeout_denied: "BLOCKED: Command {reason}. The user has NOT consented to this action. Do NOT retry this command, do NOT rephrase it, and do NOT attempt the same outcome via a different command. Stop the current workflow and wait for the user to respond before taking any further destructive or irreversible action.{timeout_addendum}"
+  cli_denied: "BLOCKED: User denied this command. The user has NOT consented to this action. Do NOT retry this command, do NOT rephrase it, and do NOT attempt the same outcome via a different command. Stop the current workflow and wait for the user to respond before taking any further destructive or irreversible action."
+  dangerous_title: "⚠️  Dangerous Command"
+  choice_once: "Allow once"
+  choice_session: "Allow for this session"
+  choice_always: "Add to permanent allowlist"
+  choice_deny: "Deny"
+  choice_view: "Show full command"
+  hint_choose_view: "… (choose Show full command)"
+  hint_command_truncated: "… (command truncated — use /logs or /debug for full text)"
+  hint_description_truncated: "… (description truncated)"
+  execute_code_smart_denied: "BLOCKED by smart approval: execute_code script execution was assessed as genuinely dangerous. Do NOT retry."
+  execute_code_gateway_asking: "⚠️ {description}. Asking the user for approval.
+
+**Code:**
+```python
+{code}
+```"
+  execute_code_notify_failed: "BLOCKED: Failed to send execute_code approval request to user. Do NOT retry."
+  execute_code_timeout_denied: "BLOCKED: execute_code script timed out without user response. The user has NOT consented to running this code. Do NOT retry, do NOT rephrase the script, and do NOT attempt the same outcome via a different tool. Silence is not consent."
+  execute_code_user_denied: "BLOCKED: execute_code script denied by user. The user has NOT consented to running this code. Do NOT retry, do NOT rephrase the script, and do NOT attempt the same outcome via a different tool."
 
 gateway:
   approval_expired: "⚠️ Approvazione scaduta (l'agente non è più in attesa). Chiedi all'agente di riprovare."
@@ -34,6 +73,7 @@ gateway:
   # Command usage hints
   queue_usage:             "Usage: /queue <prompt>"
   queue_queued:            "Queued for the next turn."
+  queue_queued_with_depth: "Queued for the next turn. ({depth} queued)"
   steer_usage:             "Usage: /steer <prompt>"
   steer_usage_no_agent:    "Usage: /steer <prompt>  (no agent is running; sending as a normal message)"
   learn_failed:            "Could not start /learn — please try again."

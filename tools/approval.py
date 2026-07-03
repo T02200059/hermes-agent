@@ -19,6 +19,7 @@ import threading
 import time
 import unicodedata
 from typing import Optional
+from agent.i18n import t
 from hermes_cli.config import cfg_get
 
 from tools.interrupt import is_interrupted
@@ -355,14 +356,7 @@ def _hardline_block_result(description: str) -> dict:
     return {
         "approved": False,
         "hardline": True,
-        "message": (
-            f"BLOCKED (hardline): {description}. "
-            "This command is on the unconditional blocklist and cannot "
-            "be executed via the agent — not even with --yolo, /yolo, "
-            "approvals.mode=off, or cron approve mode. If you genuinely "
-            "need to run it, run it yourself in a terminal outside the "
-            "agent."
-        ),
+        "message": t("approval.hardline_blocked", description=description),
     }
 
 
@@ -370,13 +364,7 @@ def _sudo_stdin_block_result(description: str) -> dict:
     """Build the standard block result for sudo stdin guard."""
     return {
         "approved": False,
-        "message": (
-            f"BLOCKED: {description}. "
-            "Do not pipe passwords to 'sudo -S' — this is a brute-force "
-            "attack vector. Set SUDO_PASSWORD in your .env file if the "
-            "agent needs passwordless sudo, or run the sudo command "
-            "manually in your own terminal."
-        ),
+        "message": t("approval.sudo_stdin_blocked", description=description),
     }
 
 
@@ -1068,7 +1056,6 @@ def prompt_dangerous_approval(command: str, description: str,
     try:
         # Resolve the active UI language once per prompt so we don't re-read
         # config/YAML inside the retry loop below.
-        from agent.i18n import t
         while True:
             print()
             print(f"  {t('approval.dangerous_header', description=description)}")
@@ -1400,13 +1387,7 @@ def check_dangerous_command(command: str, env_type: str,
             if _get_cron_approval_mode() == "deny":
                 return {
                     "approved": False,
-                    "message": (
-                        f"BLOCKED: Command flagged as dangerous ({description}) "
-                        "but cron jobs run without a user present to approve it. "
-                        "Find an alternative approach that avoids this command. "
-                        "To allow dangerous commands in cron jobs, set "
-                        "approvals.cron_mode: approve in config.yaml."
-                    ),
+                    "message": t("approval.cron_blocked", description=description),
                 }
         logger.warning(
             "AUTO-APPROVED dangerous command in non-interactive non-gateway context "
@@ -1427,9 +1408,10 @@ def check_dangerous_command(command: str, env_type: str,
             "status": "approval_required",
             "command": command,
             "description": description,
-            "message": (
-                f"⚠️ This command is potentially dangerous ({description}). "
-                f"Asking the user for approval.\n\n**Command:**\n```\n{command}\n```"
+            "message": t(
+                "approval.gateway_asking",
+                description=description,
+                command=command,
             ),
         }
 
@@ -1439,7 +1421,7 @@ def check_dangerous_command(command: str, env_type: str,
     if choice == "deny":
         return {
             "approved": False,
-            "message": f"BLOCKED: User denied this potentially dangerous command (matched '{description}' pattern). Do NOT retry this command - the user has explicitly rejected it.",
+            "message": t("approval.user_denied", description=description),
             "pattern_key": pattern_key,
             "description": description,
         }
@@ -1783,8 +1765,7 @@ def check_all_command_guards(command: str, env_type: str,
             combined_desc_for_llm = "; ".join(desc for _, desc, _ in warnings)
             return {
                 "approved": False,
-                "message": f"BLOCKED by smart approval: {combined_desc_for_llm}. "
-                           "The command was assessed as genuinely dangerous. Do NOT retry.",
+                "message": t("approval.smart_denied", description=combined_desc_for_llm),
                 "smart_denied": True,
             }
         # verdict == "escalate" → fall through to manual prompt
@@ -1826,7 +1807,7 @@ def check_all_command_guards(command: str, env_type: str,
             if decision.get("notify_failed"):
                 return {
                     "approved": False,
-                    "message": "BLOCKED: Failed to send approval request to user. Do NOT retry.",
+                    "message": t("approval.gateway_notify_failed"),
                     "pattern_key": primary_key,
                     "description": combined_desc,
                 }
@@ -1849,14 +1830,10 @@ def check_all_command_guards(command: str, env_type: str,
                     outcome = "denied"
                 return {
                     "approved": False,
-                    "message": (
-                        f"BLOCKED: Command {reason}. The user has NOT consented "
-                        f"to this action. Do NOT retry this command, do NOT "
-                        f"rephrase it, and do NOT attempt the same outcome via "
-                        f"a different command. Stop the current workflow and "
-                        f"wait for the user to respond before taking any "
-                        f"further destructive or irreversible action."
-                        f"{timeout_addendum}"
+                    "message": t(
+                        "approval.gateway_timeout_denied",
+                        reason=reason,
+                        timeout_addendum=timeout_addendum,
                     ),
                     "pattern_key": primary_key,
                     "description": combined_desc,
@@ -1926,14 +1903,7 @@ def check_all_command_guards(command: str, env_type: str,
     if choice == "deny":
         return {
             "approved": False,
-            "message": (
-                "BLOCKED: User denied this command. The user has NOT consented "
-                "to this action. Do NOT retry this command, do NOT rephrase "
-                "it, and do NOT attempt the same outcome via a different "
-                "command. Stop the current workflow and wait for the user "
-                "to respond before taking any further destructive or "
-                "irreversible action."
-            ),
+            "message": t("approval.cli_denied"),
             "pattern_key": primary_key,
             "description": combined_desc,
             "outcome": "denied",
@@ -2050,9 +2020,7 @@ def check_execute_code_guard(code: str, env_type: str,
         if verdict == "deny":
             return {
                 "approved": False,
-                "message": ("BLOCKED by smart approval: execute_code script "
-                            "execution was assessed as genuinely dangerous. "
-                            "Do NOT retry."),
+                "message": t("approval.execute_code_smart_denied"),
                 "smart_denied": True,
                 "pattern_key": pattern_key,
                 "description": description,
@@ -2081,9 +2049,10 @@ def check_execute_code_guard(code: str, env_type: str,
             "approval_pending": True,
             "command": command,
             "description": description,
-            "message": (
-                f"⚠️ {description}. Asking the user for approval.\n\n"
-                f"**Code:**\n```python\n{code}\n```"
+            "message": t(
+                "approval.execute_code_gateway_asking",
+                description=description,
+                code=code,
             ),
         }
 
@@ -2099,8 +2068,7 @@ def check_execute_code_guard(code: str, env_type: str,
     if decision.get("notify_failed"):
         return {
             "approved": False,
-            "message": ("BLOCKED: Failed to send execute_code approval request "
-                        "to user. Do NOT retry."),
+            "message": t("approval.execute_code_notify_failed"),
             "pattern_key": pattern_key,
             "description": description,
             "outcome": "notify_failed",
@@ -2111,15 +2079,12 @@ def check_execute_code_guard(code: str, env_type: str,
     choice = decision["choice"]
 
     if not resolved or choice is None or choice == "deny":
-        reason = "timed out without user response" if not resolved else "denied by user"
-        addendum = " Silence is not consent." if not resolved else ""
         return {
             "approved": False,
-            "message": (
-                f"BLOCKED: execute_code script {reason}. The user has NOT "
-                f"consented to running this code. Do NOT retry, do NOT rephrase "
-                f"the script, and do NOT attempt the same outcome via a "
-                f"different tool.{addendum}"
+            "message": t(
+                "approval.execute_code_timeout_denied"
+                if not resolved
+                else "approval.execute_code_user_denied"
             ),
             "pattern_key": pattern_key,
             "description": description,
