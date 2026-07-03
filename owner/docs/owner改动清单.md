@@ -485,7 +485,7 @@
   - `agent/conversation_loop.py`：rate limit 状态显示逻辑加 `wait_time >= 60` 条件（`[owner]` 标记）— 长等待（≥60s）时用 `_emit_status` 立即显示，而非 `_buffer_status` 缓冲
 - **侵入类型**：inline（两处各 ~10 行，`[owner]` 标记 + 委托已有分类逻辑）
 - **文件**：`agent/error_classifier.py`、`agent/conversation_loop.py`
-- **Commit**：`9af95e44b`
+- **Commit**：`e81221af6`
 
 ---
 
