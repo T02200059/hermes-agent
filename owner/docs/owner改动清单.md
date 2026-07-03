@@ -125,6 +125,13 @@
 - **侵入类型**：inline（anthropic_adapter thinking-block）+ 薄胶水（i18n 调用 + tips_zh）
 - **Commit**：`8d4eb626d`
 
+### 2.5 damodel prompt cache 白名单
+
+- **背景**：`anthropic_prompt_cache_policy()` 按白名单决定是否注入 `cache_control` 标记。damodel（genai.damodel.com）走 OpenAI-wire 但不在任何分支里 → 返回 `(False, False)`，qwen3.6-27b 等 0% 缓存命中，每轮重算全量 prompt。
+- **方案**：新增 damodel 分支：`provider=='damodel'` 或 base_url host 匹配 `genai.damodel.com` → `(True, False)` envelope layout（同 opencode/alibaba qwen 路径）。
+- **侵入类型**：narrow if-else（agent_runtime_helpers.py，11 行新增）
+- **Commit**：`f07fcb736`
+
 ---
 
 ## 三、审批、安全与风控
