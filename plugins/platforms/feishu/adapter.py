@@ -2800,6 +2800,14 @@ class FeishuAdapter(BasePlatformAdapter):
                 loop=loop,
             )
 
+        # [owner] memory_approval_gate: route approval-card button clicks
+        # (see owner/feishu/memory_approval.py).
+        if hermes_action == "memory_approval_gate":
+            from owner.feishu.memory_approval import handle_card_click
+            return handle_card_click(
+                adapter=self, event=event, action_value=action_value, loop=loop,
+            )
+
         if hermes_action:
             return self._handle_approval_card_action(event=event, action_value=action_value, loop=loop)
         if update_prompt_action:

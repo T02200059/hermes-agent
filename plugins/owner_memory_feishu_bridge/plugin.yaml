@@ -1,0 +1,7 @@
+name: owner-memory-feishu-bridge
+version: 1.0.0
+description: "Auto-popup Feishu interactive approval card when memory_tool._apply_write_gate stages a write on Feishu gateway sessions. Click ✅ to fire /memory approve <id>; click 🟥 to fire /memory reject <id>. Card freezes inline (green/red header, buttons removed, title change) after click. Owner-side companion to owner/feishu/memory_approval.py."
+author: "owner"
+hooks:
+  - pre_gateway_dispatch   # capture gateway → adapter reference
+  - post_tool_call         # detect staged memory writes and trigger the card
