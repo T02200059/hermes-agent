@@ -8979,6 +8979,34 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             if event.get_command() == "status":
                 return await self._handle_status_command(event)
 
+            # [owner] /providers is a read-only plugin slash command; safe to
+            # run mid-turn (same rationale as /status above).
+            if event.get_command() == "providers":
+                from hermes_cli.plugins import (
+                    get_plugin_command_entry,
+                    make_plugin_command_context,
+                )
+                _prov_entry = get_plugin_command_entry("providers")
+                if _prov_entry:
+                    _prov_handler = _prov_entry.get("handler")
+                    if _prov_handler:
+                        import asyncio as _asyncio
+                        if _prov_entry.get("accepts_ctx"):
+                            _prov_result = _prov_handler(
+                                event.get_command_args().strip(),
+                                hermes_ctx=make_plugin_command_context(
+                                    platform=source.platform.value if source and source.platform else None,
+                                    event=event,
+                                    adapters=self.adapters,
+                                    runner=self,
+                                ),
+                            )
+                        else:
+                            _prov_result = _prov_handler(event.get_command_args().strip())
+                        if _asyncio.iscoroutine(_prov_result):
+                            _prov_result = await _prov_result
+                        return str(_prov_result) if _prov_result else None
+
             # Resolve the command once for all early-intercept checks below.
             from hermes_cli.commands import (
                 ACTIVE_SESSION_BYPASS_COMMANDS as _DEDICATED_HANDLERS,
@@ -9239,11 +9267,26 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             # slash commands) would interrupt the agent AND get
             # silently discarded by the slash-command safety net,
             # producing a zero-char response. See #5057, #6252, #10370.
+            #
+            # [owner] Plugin-registered slash commands (e.g. /providers)
+            # are not in _COMMAND_LOOKUP so _cmd_def_inner is None for
+            # them. Without this check they fall through to busy-input
+            # and get injected as user text into the running agent turn.
             if _cmd_def_inner:
                 return (
                     f"⏳ Agent is running — `/{_cmd_def_inner.name}` can't run "
                     f"mid-turn. Wait for the current response or `/stop` first."
                 )
+            if _evt_cmd:
+                try:
+                    from hermes_cli.commands import is_gateway_known_command
+                    if is_gateway_known_command(_evt_cmd):
+                        return (
+                            f"⏳ Agent is running — `/{_evt_cmd}` can't run "
+                            f"mid-turn. Wait for the current response or `/stop` first."
+                        )
+                except Exception:
+                    pass
 
             if event.message_type == MessageType.PHOTO:
                 logger.debug("PRIORITY photo follow-up for session %s — queueing without interrupt", _quick_key)
