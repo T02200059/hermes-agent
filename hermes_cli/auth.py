@@ -166,6 +166,12 @@ class ProviderConfig:
     api_key_env_vars: tuple = ()
     # Optional env var for base URL override
     base_url_env_var: str = ""
+    # [owner-patch] api_key_prefixes: when non-empty, only env-sourced keys
+    # matching one of these prefixes are accepted into the credential pool.
+    # Prevents cross-provider key contamination (e.g. a classic ghp_ GITHUB_TOKEN
+    # used for git operations being seeded as a Copilot credential, or a
+    # standard sk- DASHSCOPE_API_KEY being seeded as a coding-plan key).
+    api_key_prefixes: tuple = ()
 
 
 PROVIDER_REGISTRY: Dict[str, ProviderConfig] = {
@@ -219,6 +225,10 @@ PROVIDER_REGISTRY: Dict[str, ProviderConfig] = {
         inference_base_url=DEFAULT_GITHUB_MODELS_BASE_URL,
         api_key_env_vars=("COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"),
         base_url_env_var="COPILOT_API_BASE_URL",
+        # [owner-patch] Only accept Copilot-compatible token prefixes.
+        # ghp_ (classic PAT) is NOT supported by the Copilot API — it's
+        # typically a git-operations token that should not be seeded here.
+        api_key_prefixes=("gho_", "github_pat_", "ghu_"),
     ),
     "copilot-acp": ProviderConfig(
         id="copilot-acp",
@@ -327,6 +337,10 @@ PROVIDER_REGISTRY: Dict[str, ProviderConfig] = {
         inference_base_url="https://coding-intl.dashscope.aliyuncs.com/v1",
         api_key_env_vars=("ALIBABA_CODING_PLAN_API_KEY", "DASHSCOPE_API_KEY"),
         base_url_env_var="ALIBABA_CODING_PLAN_BASE_URL",
+        # [owner-patch] Coding Plan keys use sk-sp prefix, distinct from
+        # standard DashScope keys (sk-). Prevents a standard DASHSCOPE_API_KEY
+        # from being seeded as a coding-plan credential.
+        api_key_prefixes=("sk-sp",),
     ),
     "minimax-cn": ProviderConfig(
         id="minimax-cn",

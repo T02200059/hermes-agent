@@ -38,6 +38,39 @@ def has_valid_github_token(env_vars: Union[tuple, list]) -> bool:
     return False
 
 
+# [owner-patch] Generic prefix-based credential validation.
+# Used by /providers listing to skip providers whose env-sourced key
+# doesn't match the provider's expected key format.
+_PROVIDER_PREFIX_MAP: dict[str, tuple] = {
+    "copilot": ("gho_", "github_pat_", "ghu_"),
+    "alibaba-coding-plan": ("sk-sp",),
+}
+
+
+def has_valid_env_credential(env_vars: Union[tuple, list], provider: str = "") -> bool:
+    """Check if any env var holds a key matching the provider's expected format.
+
+    When the provider has a known prefix requirement (see _PROVIDER_PREFIX_MAP),
+    only keys matching one of those prefixes are accepted. For providers without
+    a prefix requirement, falls back to any non-empty value (original behaviour).
+    """
+    import os as _os
+
+    _prefixes = _PROVIDER_PREFIX_MAP.get(provider, ())
+    for ev in env_vars:
+        val = _os.environ.get(ev, "")
+        if not val:
+            continue
+        if _prefixes and not val.startswith(_prefixes):
+            logger.debug(
+                "Skipping %s=%s... (prefix does not match %s for provider %s)",
+                ev, val[:8], _prefixes, provider,
+            )
+            continue
+        return True
+    return False
+
+
 def is_token_expired(expires_at: str | None) -> bool:
     """Check if a token's expires_at timestamp is in the past.
 

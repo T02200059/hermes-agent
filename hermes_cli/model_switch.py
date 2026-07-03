@@ -1425,11 +1425,11 @@ def prewarm_picker_cache_async() -> Optional["_threading.Thread"]:
 # patterns so list_authenticated_providers stays readable without 9 separate
 # injection blocks.
 
-def _owner_check_env_creds(env_vars) -> bool:
+def _owner_check_env_creds(env_vars, provider: str = "") -> bool:
     """Check env vars with owner-specific filtering, fall back to any()."""
     try:
-        from owner.providers.credential_helpers import has_valid_github_token
-        return has_valid_github_token(env_vars)
+        from owner.providers.credential_helpers import has_valid_env_credential
+        return has_valid_env_credential(env_vars, provider)
     except Exception:
         return any(os.environ.get(ev) for ev in env_vars)
 
@@ -1789,7 +1789,7 @@ def list_authenticated_providers(
                         env_vars_list.append(_env)
 
         for env_vars in env_vars_list:
-            if _owner_check_env_creds(env_vars):
+            if _owner_check_env_creds(env_vars, slug):
                 return True
         return False
 

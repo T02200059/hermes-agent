@@ -2192,6 +2192,13 @@ def _seed_from_env(provider: str, entries: List[PooledCredential]) -> Tuple[bool
         source = f"env:{env_var}"
         if _is_source_suppressed(provider, source):
             continue
+        # [owner-patch] api_key_prefixes gate: reject keys that don't match the
+        # provider's expected prefix. Prevents cross-provider contamination
+        # (e.g. ghp_ GITHUB_TOKEN seeded as Copilot credential, or sk- standard
+        # DASHSCOPE_API_KEY seeded as coding-plan key). See credential-pool-seed-path-asymmetry.md.
+        _prefixes = getattr(pconfig, "api_key_prefixes", ())
+        if _prefixes and not token.startswith(_prefixes):
+            continue
         active_sources.add(source)
         # Claude Code OAuth tokens are the only Anthropic credentials that should flow into the OAuth refresh path.
         auth_type = (

@@ -101,6 +101,25 @@
 - **侵入类型**：薄胶水 + try-import
 - **Commit**：`e0230f90a`（§3.4+§3.9）
 
+> **⚠️ BUG 强调（2026-07-03）：credential pool env seeding 不校验 key 格式 — 跨 provider 污染**
+>
+> **根因**：`_seed_from_env()` 只检查 env var 存不存在（`has_usable_secret` = 长度≥4 + 非占位符），不看 key 格式。导致：
+> - `GITHUB_TOKEN=ghp_*`（git 操作用的 classic PAT）被误采集到 copilot credential pool → `/providers` 显示 copilot 可用，但实际调 API 返回 403
+> - `DASHSCOPE_API_KEY=sk-*`（百炼按量计费 key）被误采集到 alibaba-coding-plan pool → `/providers` 显示 coding-plan 可用，但 key 格式不对
+>
+> **修复**：
+> 1. `ProviderConfig` 新增 `api_key_prefixes: tuple = ()` 字段（`hermes_cli/auth.py`）
+> 2. `copilot` 配置 `api_key_prefixes=("gho_", "github_pat_", "ghu_")` — 排除 `ghp_` classic PAT
+> 3. `alibaba-coding-plan` 配置 `api_key_prefixes=("sk-sp",)` — coding plan 专用前缀，排除标准 `sk-` 百炼 key
+> 4. `_seed_from_env()` 在 suppress 检查后、upsert 前加前缀门控（`agent/credential_pool.py`）
+> 5. `has_valid_env_credential()` 泛化旧 `has_valid_github_token`，支持按 provider 检查前缀（`owner/providers/credential_helpers.py`）
+> 6. `_owner_check_env_creds()` 加 `provider` 参数透传（`hermes_cli/model_switch.py`）
+>
+> **设计原则**：`_seed_from_singletons` 已有 copilot token 校验（`validate_copilot_token` 拒绝 `ghp_`），但 `_seed_from_env` 没有 — 两个 seed path 的校验不对称是 bug 根源。`api_key_prefixes` 是通用机制，不只针对 copilot，任何 provider 都可以声明期望的 key 前缀。
+>
+> **涉及文件**：`hermes_cli/auth.py`、`agent/credential_pool.py`、`hermes_cli/model_switch.py`、`owner/providers/credential_helpers.py`
+> **参考**：`skills/hermes/hermes-source-patching-pattern/references/credential-pool-seed-path-asymmetry.md`
+
 ### 2.3 运行时 schema patches + credential pool base_url override
 
 - **背景**：`send_message` 卡片和 `image_generate` 的 model 参数需要扩展 schema，但不能改官方 toolsets 的字面定义（sync 冲突）。同时 credential pool 的 base_url 需要能被 model.base_url 覆盖（NewAPI 多 endpoint 场景）。
