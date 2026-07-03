@@ -312,6 +312,19 @@
 - **侵入类型**：薄胶水（run.py 一处命令分发）
 - **Commit**：`ed20e193d`（§9.1）
 
+### 4.10 Memory write-approval 飞书交互卡片
+
+- **背景**：memory 工具的  功能默认只返回 staged 文本提示，用户需要手动执行 `/memory approve` 或 `/memory reject`。在飞书上需要交互卡片（按钮点击）来提升体验。
+- **方案**：
+  - `owner/feishu/memory_approval.py`：卡片构建（紫色头部、✅ Approve / 🟥 Deny 按钮）+ 点击路由（合成 `/memory approve|reject <id>` 命令）+ card inline 更新（绿/红头部、按钮移除）+ `extract_feishu_chat_id` + `build_preview`
+  - `owner/owner-extensions/memory_feishu_bridge/__init__.py`：plugin hook 注册（`pre_gateway_dispatch` 缓存 gateway/adapter + `post_tool_call` 检测 staged 结果 + 异步发送卡片）
+  - `plugins/platforms/feishu/adapter.py`：4 行 `_dispatch_card_action` 分支（匹配 clarify/model_picker/resume 卡片模式）
+  - `tests/owner/test_memory_approval_card_routing.py`：31 个测试
+- **侵入类型**：薄胶水（adapter.py 4 行 card action 分支）+ plugin hook（零 upstream surface）
+- **架构**：发送路径完全 out-of-tree（plugin hook + `card_sender.send_card_via_rest`）；点击路径 adapter 分支 → `handle_card_click` → 合成命令
+- **合并说明**：原独立插件已合并入 `owner-extensions`，代码拆至 `memory_feishu_bridge/` 子目录
+- **Commit**：`54dbc6320`（feat）、`9044b57d8`（merge into owner-extensions）、`49f52568f`（extract subdirectory）
+
 ---
 
 ## 五、快捷命令与交互语法
@@ -751,16 +764,3 @@ _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请在�
 - **风险评估**：中（inbound context / hygiene notice / auto-card），低但改动风险高（chained quick command）
 - **plugin 聚合评估**：已迁 plugin 的 4 项（memory synthetic guard、OpenViking recall、schema patches、`/providers`）暂不值得做统一抽象。只有 2 个是真 monkey-patch，`pool_base_url_override` 是 helper，`schema_patches` 是 import 自执行；为 2 个样本引入 `OwnerPatch` Protocol/registry 属于过早抽象，建议等 runtime patch ≥5 个再统一
 - **评估报告**：`/tmp/kimi-owner-eval-result.md`（219 行）
-
-### 2026-07-03：memory write-approval 飞书交互卡片
-
-- **类型**：owner 飞书深度定制 + plugin hook 扩展
-- **commit**：`54dbc6320`（feat: memory write-approval interactive card）、`9044b57d8`（merge into owner-extensions）、`49f52568f`（extract into subdirectory）
-- **功能**：当 `memory.write_approval` 开启且 memory tool 返回 `staged=True + pending_id` 时，自动弹出飞书交互卡片（紫色头部、✅ Approve / 🟥 Deny 按钮）。点击后卡片内联更新（绿/红头部、按钮移除、标题变更），原始提案 markdown 保留。
-- **涉及文件**：
-  - 纯新增：`owner/feishu/memory_approval.py`（卡片构建 + 点击路由 + chat_id 提取）、`owner/owner-extensions/memory_feishu_bridge/__init__.py`（hook 注册 + gateway/adapter 缓存 + staged 检测 + 异步发送）
-  - 侵入：`plugins/platforms/feishu/adapter.py`（4 行 `_dispatch_card_action` 分支，匹配 clarify/model_picker/resume 卡片模式）
-  - 测试：`tests/owner/test_memory_approval_card_routing.py`（31 个测试覆盖卡片构建、session-id 解析、点击路由、plugin hook、preview 提取）
-- **侵入类型**：薄胶水（adapter.py 4 行 card action 分支）+ plugin hook（`pre_gateway_dispatch` + `post_tool_call`，零 upstream surface）
-- **架构**：发送路径完全 out-of-tree（plugin hook + `owner.feishu.card_sender.send_card_via_rest`）；点击路径通过 adapter 的 `_dispatch_card_action` 分支 → `memory_approval.handle_card_click` → 合成 `/memory approve|reject <id>` 命令
-- **合并说明**：原独立插件 `owner-memory-feishu-bridge` 已合并入 `owner-extensions`，代码拆至 `owner/owner-extensions/memory_feishu_bridge/` 子目录
