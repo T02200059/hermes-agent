@@ -2161,14 +2161,20 @@ def run_conversation(
                                 model=agent.model,
                                 api_call_count=1,
                             )
-                            # [owner-patch] stamp per-message token breakdown
-                            # onto the last assistant message dict so
-                            # _flush_messages_to_session_db persists it.
-                            if messages and messages[-1].get("role") == "assistant":
-                                messages[-1]["input_tokens"] = canonical_usage.input_tokens
-                                messages[-1]["output_tokens"] = canonical_usage.output_tokens
-                                messages[-1]["cache_read_tokens"] = canonical_usage.cache_read_tokens
-                                messages[-1]["cache_write_tokens"] = canonical_usage.cache_write_tokens
+                            # [owner-patch] stash per-message token breakdown
+                            # onto the agent instance. build_assistant_message
+                            # picks it up when constructing the NEW assistant
+                            # message dict (which happens later, after this
+                            # point). The previous code stamped onto
+                            # messages[-1], but at this point messages[-1] is
+                            # still the prior user/tool message — the assistant
+                            # dict hasn't been appended yet.
+                            agent._pending_token_breakdown = {
+                                "input_tokens": canonical_usage.input_tokens,
+                                "output_tokens": canonical_usage.output_tokens,
+                                "cache_read_tokens": canonical_usage.cache_read_tokens,
+                                "cache_write_tokens": canonical_usage.cache_write_tokens,
+                            }
                         except Exception as e:
                             # Log token persistence failures so they're
                             # visible in agent.log — silent loss here is

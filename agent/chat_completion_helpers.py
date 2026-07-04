@@ -955,6 +955,19 @@ def build_assistant_message(agent, assistant_message, finish_reason: str) -> dic
         "finish_reason": finish_reason,
     }
 
+    # [owner-patch] pick up per-message token breakdown stashed by
+    # conversation_loop after the API call. The stamp previously targeted
+    # messages[-1] (wrong object — assistant dict not appended yet); now
+    # it's stored on the agent instance and consumed here when the real
+    # assistant dict is built.
+    _token_bd = getattr(agent, "_pending_token_breakdown", None)
+    if _token_bd:
+        msg["input_tokens"] = _token_bd.get("input_tokens", 0)
+        msg["output_tokens"] = _token_bd.get("output_tokens", 0)
+        msg["cache_read_tokens"] = _token_bd.get("cache_read_tokens", 0)
+        msg["cache_write_tokens"] = _token_bd.get("cache_write_tokens", 0)
+        agent._pending_token_breakdown = None
+
     raw_reasoning_content = getattr(assistant_message, "reasoning_content", None)
     if raw_reasoning_content is None and hasattr(assistant_message, "model_extra"):
         model_extra = getattr(assistant_message, "model_extra", None) or {}
