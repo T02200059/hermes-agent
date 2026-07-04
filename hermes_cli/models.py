@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any, NamedTuple, Optional
 
 from hermes_cli import __version__ as _HERMES_VERSION
+from agent.i18n import t
 
 # Identify ourselves so endpoints fronted by Cloudflare's Browser Integrity
 # Check (error 1010) don't reject the default ``Python-urllib/*`` signature.
@@ -3721,7 +3722,7 @@ def validate_requested_model(
             "accepted": False,
             "persist": False,
             "recognized": False,
-            "message": "Model name cannot be empty.",
+            "message": t("gateway.model.validation_empty"),
         }
 
     if normalized == "moa":
@@ -3734,12 +3735,12 @@ def validate_requested_model(
                 return {"accepted": True, "persist": True, "recognized": True, "message": None}
             return {
                 "accepted": False, "persist": False, "recognized": False,
-                "message": f"MoA preset `{requested}` was not found. Run `hermes moa list`.",
+                "message": t("gateway.model.validation_moa_not_found", requested=requested),
             }
         except Exception as exc:
             return {
                 "accepted": False, "persist": False, "recognized": False,
-                "message": f"Could not read MoA presets: {exc}",
+                "message": t("gateway.model.validation_moa_read_error", error=exc),
             }
 
     if any(ch.isspace() for ch in requested):
@@ -3747,7 +3748,7 @@ def validate_requested_model(
             "accepted": False,
             "persist": False,
             "recognized": False,
-            "message": "Model names cannot contain spaces.",
+            "message": t("gateway.model.validation_no_spaces"),
         }
 
     if normalized == "lmstudio":
@@ -3761,27 +3762,27 @@ def validate_requested_model(
             return {
                 "accepted": False, "persist": False, "recognized": False,
                 "message": (
-                    f"{exc} Set `LM_API_KEY` (or update it) to match the server's bearer token."
+                    f"{exc} " + t("gateway.model.validation_lmstudio_auth")
                 ),
             }
         if models is None:
             return {
                 "accepted": False, "persist": False, "recognized": False,
-                "message": f"Could not reach LM Studio's `/api/v1/models` to validate `{requested}`.",
+                "message": t("gateway.model.validation_lmstudio_unreachable", requested=requested),
             }
         if not models:
             return {
                 "accepted": False, "persist": False, "recognized": False,
                 "message": (
-                    f"LM Studio is reachable but no chat-capable models are loaded. "
-                    f"Load `{requested}` in LM Studio (Developer tab → Load Model) and try again."
+                    t("gateway.model.validation_lmstudio_no_models_1")
+                    + t("gateway.model.validation_lmstudio_no_models_2", requested=requested)
                 ),
             }
         if requested_for_lookup in set(models):
             return {"accepted": True, "persist": True, "recognized": True, "message": None}
         return {
             "accepted": False, "persist": False, "recognized": False,
-            "message": f"Model `{requested}` was not found in LM Studio's model listing.",
+            "message": t("gateway.model.validation_lmstudio_not_found", requested=requested),
         }
 
     if normalized == "custom" or normalized.startswith("custom:"):
@@ -3808,7 +3809,7 @@ def validate_requested_model(
                     "persist": True,
                     "recognized": True,
                     "corrected_model": auto[0],
-                    "message": f"Auto-corrected `{requested}` → `{auto[0]}`",
+                    "message": t("gateway.model.validation_auto_corrected", requested=requested, corrected=auto[0]),
                 }
 
             suggestions = get_close_matches(requested, api_models, n=3, cutoff=0.5)
@@ -3817,14 +3818,13 @@ def validate_requested_model(
                 suggestion_text = "\n  Similar models: " + ", ".join(f"`{s}`" for s in suggestions)
 
             message = (
-                f"Note: `{requested}` was not found in this custom endpoint's model listing "
-                f"({probe.get('probed_url')}). It may still work if the server supports hidden or aliased models."
-                f"{suggestion_text}"
+                t("gateway.model.validation_custom_not_found_1", requested=requested, url=probe.get('probed_url'))
+                + t("gateway.model.validation_custom_not_found_2")
+                + suggestion_text
             )
             if probe.get("used_fallback"):
                 message += (
-                    f"\n  Endpoint verification succeeded after trying `{probe.get('resolved_base_url')}`. "
-                    f"Consider saving that as your base URL."
+                    t("gateway.model.validation_custom_fallback", url=probe.get('resolved_base_url'))
                 )
 
             return {
@@ -3835,16 +3835,13 @@ def validate_requested_model(
             }
 
         message = (
-            f"Note: could not reach this custom endpoint's model listing at `{probe.get('probed_url')}`. "
-            f"Hermes will still save `{requested}`, but the endpoint should expose `/models` for verification."
+            t("gateway.model.validation_custom_unreachable", url=probe.get('probed_url'))
+            + t("gateway.model.validation_custom_unreachable_2", requested=requested)
         )
         if api_mode == "anthropic_messages":
-            message += (
-                "\n  Many Anthropic-compatible proxies do not implement the Models API "
-                "(GET /v1/models).  The model name has been accepted without verification."
-            )
+            message += t("gateway.model.validation_custom_anthropic_note")
         if probe.get("suggested_base_url"):
-            message += f"\n  If this server expects `/v1`, try base URL: `{probe.get('suggested_base_url')}`"
+            message += t("gateway.model.validation_custom_suggested_url", url=probe.get('suggested_base_url'))
 
         return {
             "accepted": api_mode == "anthropic_messages",
@@ -3875,7 +3872,7 @@ def validate_requested_model(
                     "persist": True,
                     "recognized": True,
                     "corrected_model": auto[0],
-                    "message": f"Auto-corrected `{requested}` → `{auto[0]}`",
+                    "message": t("gateway.model.validation_auto_corrected", requested=requested, corrected=auto[0]),
                 }
             suggestions = get_close_matches(requested_for_lookup, catalog_models, n=3, cutoff=0.5)
             suggestion_text = ""
@@ -3904,23 +3901,16 @@ def validate_requested_model(
                     "accepted": False,
                     "persist": False,
                     "recognized": False,
-                    "message": (
-                        f"`{requested}` doesn't look like a {provider_label} model "
-                        f"and isn't in its listing, so it was not accepted. If it "
-                        f"belongs to another configured provider, switch with "
-                        f"`--provider <slug>` (or select it from the `/model` "
-                        f"picker)."
-                        f"{suggestion_text}"
-                    ),
+                    "message": t("gateway.model.validation_codex_not_plausible", requested=requested, provider_label=provider_label) + suggestion_text,
                 }
             return {
                 "accepted": True,
                 "persist": True,
                 "recognized": False,
                 "message": (
-                    f"Note: `{requested}` was not found in the {provider_label} model listing. "
-                    "It may still work if your account has access to a newer or hidden model ID."
-                    f"{suggestion_text}"
+                    t("gateway.model.validation_catalog_not_found", requested=requested, provider_label=provider_label)
+                    + t("gateway.model.validation_catalog_not_found_2")
+                    + suggestion_text
                 ),
             }
 
@@ -3951,7 +3941,7 @@ def validate_requested_model(
                     "persist": True,
                     "recognized": True,
                     "corrected_model": corrected,
-                    "message": f"Auto-corrected `{requested}` → `{corrected}`",
+                    "message": t("gateway.model.validation_auto_corrected", requested=requested, corrected=corrected),
                 }
             suggestions = get_close_matches(requested_for_lookup.lower(), catalog_lower_list, n=3, cutoff=0.5)
             suggestion_text = ""
@@ -3962,10 +3952,10 @@ def validate_requested_model(
                 "persist": True,
                 "recognized": False,
                 "message": (
-                    f"Note: `{requested}` was not found in the MiniMax catalog."
-                    f"{suggestion_text}"
-                    "\n  MiniMax does not expose a /models endpoint, so Hermes cannot verify the model name."
-                    "\n  The model may still work if it exists on the server."
+                    t("gateway.model.validation_minimax_not_found", requested=requested)
+                    + suggestion_text
+                    + t("gateway.model.validation_minimax_no_models_endpoint")
+                    + t("gateway.model.validation_minimax_may_still_work")
                 ),
             }
 
@@ -3995,7 +3985,7 @@ def validate_requested_model(
                     "persist": True,
                     "recognized": True,
                     "corrected_model": auto[0],
-                    "message": f"Auto-corrected `{requested}` → `{auto[0]}`",
+                    "message": t("gateway.model.validation_auto_corrected", requested=requested, corrected=auto[0]),
                 }
             suggestions = get_close_matches(requested, anthropic_models, n=3, cutoff=0.5)
             suggestion_text = ""
@@ -4009,9 +3999,9 @@ def validate_requested_model(
                 "persist": True,
                 "recognized": False,
                 "message": (
-                    f"Note: `{requested}` was not found in Anthropic's /v1/models listing. "
-                    f"It may still work if you have early-access or snapshot IDs."
-                    f"{suggestion_text}"
+                    t("gateway.model.validation_anthropic_not_found", requested=requested)
+                    + t("gateway.model.validation_anthropic_not_found_2")
+                    + suggestion_text
                 ),
             }
         # _fetch_anthropic_models returned None — no token resolvable or
@@ -4036,7 +4026,7 @@ def validate_requested_model(
                     "persist": True,
                     "recognized": True,
                     "corrected_model": auto[0],
-                    "message": f"Auto-corrected `{requested}` → `{auto[0]}`",
+                    "message": t("gateway.model.validation_auto_corrected", requested=requested, corrected=auto[0]),
                 }
         # Probe failed or model not found — accept anyway (proxy likely
         # doesn't implement the Anthropic Models API).
@@ -4044,12 +4034,7 @@ def validate_requested_model(
             "accepted": True,
             "persist": True,
             "recognized": False,
-            "message": (
-                f"Note: could not verify `{requested}` against this endpoint's "
-                f"model listing.  Many Anthropic-compatible proxies do not "
-                f"implement GET /v1/models.  The model name has been accepted "
-                f"without verification."
-            ),
+            "message": t("gateway.model.validation_anthropic_messages_unverified", requested=requested),
         }
 
     # Probe the live API to check if the model actually exists
@@ -4088,7 +4073,7 @@ def validate_requested_model(
                     "persist": True,
                     "recognized": True,
                     "corrected_model": auto[0],
-                    "message": f"Auto-corrected `{requested}` → `{auto[0]}`",
+                    "message": t("gateway.model.validation_auto_corrected", requested=requested, corrected=auto[0]),
                 }
 
             suggestions = get_close_matches(requested, api_models, n=3, cutoff=0.5)
@@ -4109,8 +4094,7 @@ def validate_requested_model(
                     "persist": True,
                     "recognized": True,
                     "message": (
-                        f"Note: `{requested}` was not found in the live /v1/models listing "
-                        f"but exists in the curated catalog — accepted."
+                        t("gateway.model.validation_live_not_found_catalog", requested=requested)
                     ),
                 }
 
@@ -4119,8 +4103,8 @@ def validate_requested_model(
             "persist": False,
             "recognized": False,
             "message": (
-                f"Model `{requested}` was not found in this provider's model listing."
-                f"{suggestion_text}"
+                t("gateway.model.validation_not_found_in_provider", requested=requested)
+                + suggestion_text
             ),
         }
 
@@ -4154,9 +4138,9 @@ def validate_requested_model(
                 "persist": True,
                 "recognized": False,
                 "message": (
-                    f"Note: `{requested}` was not found in Bedrock model discovery for {region}. "
-                    f"It may still work with custom inference profiles or cross-account access."
-                    f"{suggestion_text}"
+                    t("gateway.model.validation_bedrock_not_found", requested=requested, region=region)
+                    + t("gateway.model.validation_bedrock_not_found_2")
+                    + suggestion_text
                 ),
             }
         except Exception:
@@ -4196,7 +4180,7 @@ def validate_requested_model(
                 "persist": True,
                 "recognized": True,
                 "corrected_model": corrected,
-                "message": f"Auto-corrected `{requested}` → `{corrected}`",
+                "message": t("gateway.model.validation_auto_corrected", requested=requested, corrected=corrected),
             }
         suggestions = get_close_matches(
             requested_for_lookup.lower(), catalog_lower_list, n=3, cutoff=0.5
@@ -4211,9 +4195,9 @@ def validate_requested_model(
             "persist": True,
             "recognized": False,
             "message": (
-                f"Note: `{requested}` was not found in the {provider_label} curated catalog "
-                f"and the /models endpoint was unreachable.{suggestion_text}"
-                f"\n  The model may still work if it exists on the provider."
+                t("gateway.model.validation_catalog_fallback_not_found", requested=requested, provider_label=provider_label)
+                + suggestion_text
+                + t("gateway.model.validation_catalog_fallback_may_work")
             ),
         }
 
@@ -4224,7 +4208,6 @@ def validate_requested_model(
         "persist": True,
         "recognized": False,
         "message": (
-            f"Note: could not reach the {provider_label} API to validate `{requested}`. "
-            f"If the service isn't down, this model may not be valid."
+            t("gateway.model.validation_api_unreachable", requested=requested, provider_label=provider_label)
         ),
     }

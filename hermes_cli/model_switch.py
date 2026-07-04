@@ -38,6 +38,7 @@ from hermes_cli.providers import (
 from hermes_cli.model_normalize import (
     normalize_model_for_provider,
 )
+from agent.i18n import t
 from agent.models_dev import (
     ModelCapabilities,
     ModelInfo,
@@ -84,6 +85,9 @@ _HERMES_MODEL_WARNING = (
     "(Claude, GPT, Gemini, DeepSeek, etc.)."
 )
 
+def _hermes_model_warning_i18n() -> str:
+    return t("gateway.model.validation_hermes_non_agentic")
+
 # Match only the real Nous Research Hermes 3 / Hermes 4 chat families.
 # The previous substring check (`"hermes" in name.lower()`) false-positived on
 # unrelated local Modelfiles like ``hermes-brain:qwen3-14b-ctx16k`` that just
@@ -114,7 +118,7 @@ def is_nous_hermes_non_agentic(model_name: str) -> bool:
 def _check_hermes_model_warning(model_name: str) -> str:
     """Return a warning string if *model_name* is a Nous Hermes 3/4 chat model."""
     if is_nous_hermes_non_agentic(model_name):
-        return _HERMES_MODEL_WARNING
+        return _hermes_model_warning_i18n()
     return ""
 
 
@@ -832,16 +836,14 @@ def switch_model(
             pdef = _bare_custom_provider_def(current_base_url)
         if pdef is None:
             _switch_err = (
-                f"Unknown provider '{explicit_provider}'. "
-                f"Check 'hermes model' for available providers, or define it "
-                f"in config.yaml under 'providers:'."
+                t("gateway.model.switch_unknown_provider", provider=explicit_provider)
             )
             # Check for common config issues that cause provider resolution failures
             try:
                 from hermes_cli.config import validate_config_structure
                 _cfg_issues = validate_config_structure()
                 if _cfg_issues:
-                    _switch_err += "\n\nRun 'hermes doctor' — config issues detected:"
+                    _switch_err += t("gateway.model.switch_config_issues")
                     for _ci in _cfg_issues[:3]:
                         _switch_err += f"\n  • {_ci.message}"
             except Exception:
@@ -897,10 +899,11 @@ def switch_model(
                     target_provider=target_provider,
                     provider_label=pdef.name,
                     is_global=is_global,
-                    error_message=(
-                        f"Provider '{_explicit_norm}' is an alias that routes "
-                        f"through {get_label(target_provider)}, which "
-                        f"has no credentials configured.{_hint}"
+                    error_message=t(
+                        "gateway.model.switch_alias_no_credentials",
+                        alias=_explicit_norm,
+                        provider=get_label(target_provider),
+                        hint=_hint,
                     ),
                 )
 
@@ -917,9 +920,11 @@ def switch_model(
                         target_provider=target_provider,
                         provider_label=pdef.name,
                         is_global=is_global,
-                        error_message=(
-                            f"No model detected on {pdef.name} ({pdef.base_url}). "
-                            f"Specify the model explicitly: /model <model-name> --provider {explicit_provider}"
+                        error_message=t(
+                            "gateway.model.switch_no_model_detected",
+                            provider=pdef.name,
+                            base_url=pdef.base_url,
+                            provider_slug=explicit_provider,
                         ),
                     )
             else:
@@ -928,9 +933,10 @@ def switch_model(
                     target_provider=target_provider,
                     provider_label=pdef.name,
                     is_global=is_global,
-                    error_message=(
-                        f"Provider '{pdef.name}' has no base URL configured. "
-                        f"Specify a model: /model <model-name> --provider {explicit_provider}"
+                    error_message=t(
+                        "gateway.model.switch_no_base_url",
+                        provider=pdef.name,
+                        provider_slug=explicit_provider,
                     ),
                 )
 
@@ -991,10 +997,11 @@ def switch_model(
                     return ModelSwitchResult(
                         success=False,
                         is_global=is_global,
-                        error_message=(
-                            f"Alias '{key}' maps to {identity.vendor}/{identity.family} "
-                            f"but no matching model was found in any provider catalog. "
-                            f"Try specifying the full model name."
+                        error_message=t(
+                            "gateway.model.switch_alias_not_found",
+                            alias=key,
+                            vendor=identity.vendor,
+                            family=identity.family,
                         ),
                     )
             elif not resolved_moa_preset:
@@ -1068,10 +1075,10 @@ def switch_model(
                         return ModelSwitchResult(
                             success=False,
                             is_global=is_global,
-                            error_message=(
-                                f"'{new_model}' is declared by multiple configured "
-                                f"providers ({', '.join(match_slugs)}). Re-run with "
-                                f"--provider <slug> to choose which one to use."
+                            error_message=t(
+                                "gateway.model.switch_multiple_providers",
+                                model=new_model,
+                                providers=", ".join(match_slugs),
                             ),
                         )
                     target_provider = match_slugs[0]
@@ -1188,9 +1195,10 @@ def switch_model(
                     target_provider=target_provider,
                     provider_label=provider_label,
                     is_global=is_global,
-                    error_message=(
-                        f"Could not resolve credentials for provider "
-                        f"'{provider_label}': {e}"
+                    error_message=t(
+                        "gateway.model.switch_credential_error",
+                        provider=provider_label,
+                        error=e,
                     ),
                 )
     else:
@@ -1236,7 +1244,7 @@ def switch_model(
             "accepted": False,
             "persist": False,
             "recognized": False,
-            "message": f"Could not validate `{new_model}`: {e}",
+            "message": t("gateway.model.validation_could_not_validate", model=new_model, error=e),
         }
 
     # Override rejection if model is in the user's saved provider config.
@@ -1280,7 +1288,7 @@ def switch_model(
         if override:
             validation = {"accepted": True, "persist": True, "recognized": False, "message": validation.get("message", "")}
         else:
-            msg = validation.get("message", "Invalid model")
+            msg = validation.get("message", t("gateway.model.validation_invalid_model"))
             return ModelSwitchResult(
                 success=False,
                 new_model=new_model,
