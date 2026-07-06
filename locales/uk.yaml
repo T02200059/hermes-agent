@@ -69,6 +69,13 @@ gateway:
   busy_codex_runtime_blocked: "Agent is running — wait or /stop first, then change runtime."
   busy_goal_blocked:       "Agent is running — use /goal status / pause / clear / wait mid-run, or /stop before setting a new goal."
   busy_cmd_blocked:        "⏳ Agent is running — `/{cmd}` can't run mid-turn. Wait for the current response or `/stop` first."
+  unknown_command: "Невідома команда `/{command}`. Введіть /commands, щоб переглянути доступні команди, або надішліть повторно без початкової косої риски як звичайне повідомлення."
+  skill_disabled: "Навичка **{skill}** встановлена, але вимкнена.
+Увімкніть її за допомогою: `hermes skills config`"
+  skill_disabled_for_platform: "Навичка **{skill}** вимкнена для {platform}.
+Увімкніть її за допомогою: `hermes skills config`"
+  skill_not_installed: "Навичка **{skill}** доступна, але не встановлена.
+Встановіть її за допомогою: `hermes skills install {path}`"
 
   # Command usage hints
   queue_usage:             "Usage: /queue <prompt>"

@@ -69,6 +69,13 @@ gateway:
   busy_codex_runtime_blocked: "Agent is running — wait or /stop first, then change runtime."
   busy_goal_blocked:       "Agent is running — use /goal status / pause / clear / wait mid-run, or /stop before setting a new goal."
   busy_cmd_blocked:        "⏳ Agent is running — `/{cmd}` can't run mid-turn. Wait for the current response or `/stop` first."
+  unknown_command: "Unbekannter Befehl `/{command}`. Gib /commands ein, um die verfügbaren Befehle zu sehen, oder sende ohne führenden Schrägstrich als normale Nachricht erneut."
+  skill_disabled: "Der **{skill}**-Skill ist installiert, aber deaktiviert.
+Aktiviere ihn mit: `hermes skills config`"
+  skill_disabled_for_platform: "Der **{skill}**-Skill ist für {platform} deaktiviert.
+Aktiviere ihn mit: `hermes skills config`"
+  skill_not_installed: "Der **{skill}**-Skill ist verfügbar, aber nicht installiert.
+Installiere ihn mit: `hermes skills install {path}`"
 
   # Command usage hints
   queue_usage:             "Usage: /queue <prompt>"

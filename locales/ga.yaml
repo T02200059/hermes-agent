@@ -73,6 +73,13 @@ gateway:
   busy_codex_runtime_blocked: "Agent is running — wait or /stop first, then change runtime."
   busy_goal_blocked:       "Agent is running — use /goal status / pause / clear / wait mid-run, or /stop before setting a new goal."
   busy_cmd_blocked:        "⏳ Agent is running — `/{cmd}` can't run mid-turn. Wait for the current response or `/stop` first."
+  unknown_command: "Ordú anaithnid `/{command}`. Clóscríobh /commands chun na horduithe atá ar fáil a fheiceáil, nó seol arís gan an sleas tosaigh chun é a sheoladh mar theachtaireacht ghnáth."
+  skill_disabled: "Tá an scil **{skill}** suiteáilte ach díchumasaithe.
+Cumasaigh le: `hermes skills config`"
+  skill_disabled_for_platform: "Tá an scil **{skill}** díchumasaithe do {platform}.
+Cumasaigh le: `hermes skills config`"
+  skill_not_installed: "Tá an scil **{skill}** ar fáil ach níl sé suiteáilte.
+Suiteáil le: `hermes skills install {path}`"
 
   # Command usage hints
   queue_usage:             "Usage: /queue <prompt>"
