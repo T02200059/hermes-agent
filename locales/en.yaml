@@ -230,6 +230,16 @@ Install it with: `hermes skills install {path}`"
   steer_usage_no_agent:    "Usage: /steer <prompt>  (no agent is running; sending as a normal message)"
   learn_failed:            "Could not start /learn — please try again."
   quick_command_timeout:   "Quick command timed out (30s)."
+  quick_command_no_output: "Command returned no output."
+  quick_command_error: "Quick command error: {error}"
+  quick_command_no_command: "Quick command '/{command}' has no command defined."
+  quick_command_no_target: "Quick command '/{command}' has no target defined."
+  quick_command_unsupported_type: "Quick command '/{command}' has unsupported type (supported: 'exec', 'alias')."
+  hook_blocked: "Command `/{command}` was blocked by a hook."
+  processing_stopped: "⚠️ Processing stopped: {error}. Try again."
+  suggestions_failed: "Suggestions command failed: {error}"
+  moa_prepare_failed: "Failed to prepare MoA turn."
+  chained_commands_executed: "Commands executed."
 
   # Goal/subgoal usage.
   goal_usage_wait:  "Usage: /goal wait <pid> [reason]"
@@ -241,8 +251,11 @@ Install it with: `hermes skills install {path}`"
 
   # Telegram topic messages.
   chat_id_unknown:       "Could not determine chat ID."
+  session_not_found: "Session not found: {name}"
   default_chat_name:     "Hermes Chat"
   topic_mode_disabled:   "Multi-session topic mode is not currently enabled for this chat."
+  topic_disabled: "Multi-session topic mode is now OFF for this chat.\n\nExisting topics in Telegram aren't removed — they'll just stop being gated as independent sessions. The root DM works as a normal Hermes chat again. Run /topic to re-enable later."
+  topic_disable_failed: "Failed to disable topic mode: {error}"
   topic_not_telegram_session: "That session is not a Telegram session and cannot be restored into this topic."
   topic_wrong_user:      "That session does not belong to this Telegram user."
   topic_already_linked:  "That session is already linked to another Telegram topic."
@@ -253,6 +266,10 @@ Install it with: `hermes skills install {path}`"
   voice_not_in_channel:    "You need to be in a voice channel first."
   voice_join_failed:       "Failed to join voice channel. Check bot permissions (Connect + Speak)."
   voice_left:              "Left voice channel."
+  voice_joined: "Joined voice channel **{channel}**.\nI'll speak my replies and listen to you. Use /voice leave to disconnect."
+  voice_deps_missing: "Voice dependencies are missing (PyNaCl / davey). Install with: `{command}`"
+  voice_not_connected: "Not in a voice channel."
+  voice_join_failed_with_error: "Failed to join voice channel: {error}"
 
   # /model command output -- shown after a model switch or when listing models.
   # Provider names, model IDs, capability strings, and cost figures are NOT
@@ -260,6 +277,7 @@ Install it with: `hermes skills install {path}`"
   # ("Provider:", "Context:", etc.) and the help/footer lines are localized.
   model:
     error_prefix:           "Error: {error}"
+    rate_limited: "⏱️ The model provider is rate-limiting requests. Please wait a moment and try again."
     switched:               "Model switched to `{model}`"
     provider_label:         "Provider: {provider}"
     context_label:          "Context: {tokens} tokens"
@@ -415,6 +433,8 @@ Install it with: `hermes skills install {path}`"
     cancelled: "🟡 /{command} cancelled. Conversation unchanged."
     always_note: "\n\nℹ️ Future /clear, /new, /reset, and /undo will run without confirmation. Re-enable via `approvals.destructive_slash_confirm: true` in config.yaml."
 
+
+  admin_only: "⛔ /{command} is admin-only here. {detail}"
   deny:
     stale:                 "❌ Command denied (approval was stale)."
     no_pending:            "No pending command to deny."
@@ -616,6 +636,8 @@ Install it with: `hermes skills install {path}`"
     current_with_title:    "📌 Session: `{session_id}`\nTitle: **{title}**"
     current_no_title:      "📌 Session: `{session_id}`\nNo title set. Usage: `/title My Session Name`"
 
+  clarify_undelivered: "[clarify prompt could not be delivered]"
+  clarify_timeout: "[user did not respond within {minutes}m]"
   topic:
     not_telegram_dm:         "The /topic command is only available in Telegram private chats."
     no_session_db:           "Session database not available."
@@ -640,6 +662,8 @@ Install it with: `hermes skills install {path}`"
     start_failed:            "✗ Failed to start update: {error}"
     starting:                "⚕ Starting Hermes update… I'll stream progress here."
 
+  update_send_failed: "✗ Failed to send response to update process: {error}"
+  update_sent: "✓ Sent `{label}` to the update process."
   usage:
     rate_limits:              "⏱️ **Rate Limits:** {state}"
     header_session:           "📊 **Session Token Usage**"

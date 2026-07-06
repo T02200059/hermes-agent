@@ -85,6 +85,16 @@ Instale-a com: `hermes skills install {path}`"
   steer_usage_no_agent:    "Usage: /steer <prompt>  (no agent is running; sending as a normal message)"
   learn_failed:            "Could not start /learn — please try again."
   quick_command_timeout:   "Quick command timed out (30s)."
+  quick_command_no_output: "O comando não retornou saída."
+  quick_command_error: "Erro do comando rápido: {error}"
+  quick_command_no_command: "O comando rápido '/{command}' não tem um comando definido."
+  quick_command_no_target: "O comando rápido '/{command}' não tem um alvo definido."
+  quick_command_unsupported_type: "O comando rápido '/{command}' tem um tipo não suportado (suportados: 'exec', 'alias')."
+  hook_blocked: "O comando `/{command}` foi bloqueado por um hook."
+  processing_stopped: "⚠️ Processamento interrompido: {error}. Tente novamente."
+  suggestions_failed: "O comando de sugestões falhou: {error}"
+  moa_prepare_failed: "Falha ao preparar o turno MoA."
+  chained_commands_executed: "Comandos executados."
 
   # Goal/subgoal usage
   goal_usage_wait:  "Usage: /goal wait <pid> [reason]"
@@ -96,8 +106,11 @@ Instale-a com: `hermes skills install {path}`"
 
   # Telegram topic messages
   chat_id_unknown:       "Could not determine chat ID."
+  session_not_found: "Sessão não encontrada: {name}"
   default_chat_name:     "Hermes Chat"
   topic_mode_disabled:   "Multi-session topic mode is not currently enabled for this chat."
+  topic_disabled: "O modo de tópicos multi-sessão está DESLIGADO para este chat.\n\nOs tópicos existentes no Telegram não são removidos — eles apenas deixarão de ser isolados como sessões independentes. O DM raiz funciona como um chat Hermes normal novamente. Execute /topic para reativar mais tarde."
+  topic_disable_failed: "Falha ao desativar o modo de tópicos: {error}"
   topic_not_telegram_session: "That session is not a Telegram session and cannot be restored into this topic."
   topic_wrong_user:      "That session does not belong to this Telegram user."
   topic_already_linked:  "That session is already linked to another Telegram topic."
@@ -108,9 +121,14 @@ Instale-a com: `hermes skills install {path}`"
   voice_not_in_channel:    "You need to be in a voice channel first."
   voice_join_failed:       "Failed to join voice channel. Check bot permissions (Connect + Speak)."
   voice_left:              "Left voice channel."
+  voice_joined: "Entrou no canal de voz **{channel}**.\nFalarei minhas respostas e ouvirei você. Use /voice leave para desconectar."
+  voice_deps_missing: "Dependências de voz estão ausentes (PyNaCl / davey). Instale com: `{command}`"
+  voice_not_connected: "Não estou em um canal de voz."
+  voice_join_failed_with_error: "Falha ao entrar no canal de voz: {error}"
 
   model:
     error_prefix:           "Erro: {error}"
+    rate_limited: "⏱️ O provedor do modelo está limitando as requisições. Aguarde um momento e tente novamente."
     switched:               "Modelo alterado para `{model}`"
     provider_label:         "Fornecedor: {provider}"
     context_label:          "Contexto: {tokens} tokens"
@@ -188,6 +206,8 @@ Instale-a com: `hermes skills install {path}`"
     full_logs_hint:        "Para enviar logs completos, usa `hermes debug share` a partir da CLI."
     share_hint:            "Partilha estes links com a equipa do Hermes para obter suporte."
 
+
+  admin_only: "⛔ /{command} é apenas para administradores aqui. {detail}"
   deny:
     stale:                 "❌ Comando negado (a aprovação tinha expirado)."
     no_pending:            "Não há nenhum comando pendente para negar."
@@ -391,6 +411,8 @@ Future messages in this room will use that transcript until `/reset` or another 
     current_with_title:    "📌 Sessão: `{session_id}`\nTítulo: **{title}**"
     current_no_title:      "📌 Sessão: `{session_id}`\nSem título. Uso: `/title O meu nome de sessão`"
 
+  clarify_undelivered: "[o prompt de esclarecimento não pôde ser entregue]"
+  clarify_timeout: "[o usuário não respondeu em {minutes} min]"
   topic:
     not_telegram_dm:         "O comando /topic só está disponível em chats privados do Telegram."
     no_session_db:           "Base de dados de sessões indisponível."
@@ -415,6 +437,8 @@ Future messages in this room will use that transcript until `/reset` or another 
     start_failed:            "✗ Falha ao iniciar a atualização: {error}"
     starting:                "⚕ A iniciar a atualização do Hermes… Vou transmitir o progresso aqui."
 
+  update_send_failed: "✗ Falha ao enviar resposta para o processo de atualização: {error}"
+  update_sent: "✓ Enviado `{label}` para o processo de atualização."
   usage:
     rate_limits:              "⏱️ **Limites de taxa:** {state}"
     header_session:           "📊 **Utilização de tokens da sessão**"

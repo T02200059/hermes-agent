@@ -89,6 +89,16 @@ Suiteáil le: `hermes skills install {path}`"
   steer_usage_no_agent:    "Usage: /steer <prompt>  (no agent is running; sending as a normal message)"
   learn_failed:            "Could not start /learn — please try again."
   quick_command_timeout:   "Quick command timed out (30s)."
+  quick_command_no_output: "Níor tháinig aon aschur ón ordú."
+  quick_command_error: "Earráid ordaithe thapa: {error}"
+  quick_command_no_command: "Níl ordú sainithe ag an ordú tapa '/{command}'."
+  quick_command_no_target: "Níl sprioc sainithe ag an ordú tapa '/{command}'."
+  quick_command_unsupported_type: "Tá cineál nach dtacaítear leis ag an ordú tapa '/{command}' (tacaítear: 'exec', 'alias')."
+  hook_blocked: "Cuireadh cosc ar an ordú `/{command}` ag crochadh."
+  processing_stopped: "⚠️ Stopadh an próiseáil: {error}. Bain triail eile as."
+  suggestions_failed: "Theip ar an ordú moltaí: {error}"
+  moa_prepare_failed: "Theip ar ullmhú seal MoA."
+  chained_commands_executed: "Ordaithe curtha i gcrích."
 
   # Goal/subgoal usage
   goal_usage_wait:  "Usage: /goal wait <pid> [reason]"
@@ -100,8 +110,11 @@ Suiteáil le: `hermes skills install {path}`"
 
   # Telegram topic messages
   chat_id_unknown:       "Could not determine chat ID."
+  session_not_found: "Seisiún gan aimsiú: {name}"
   default_chat_name:     "Hermes Chat"
   topic_mode_disabled:   "Multi-session topic mode is not currently enabled for this chat."
+  topic_disabled: "Tá mód topaic ilsheisiúin as ANOIS don chomhrá seo.\n\nNí bhaintear na topaicí atá ann cheana i Telegram díobh — ní bheidh siad a thuilleadh scoite mar sheisiúin neamhspleácha. Oibríonn an DM fréamhach mar chomhrá Hermes gnách arís. Rith /topic chun é a chur ar ais ar bun ar ball."
+  topic_disable_failed: "Theip ar mhód topaic a dhíchumasú: {error}"
   topic_not_telegram_session: "That session is not a Telegram session and cannot be restored into this topic."
   topic_wrong_user:      "That session does not belong to this Telegram user."
   topic_already_linked:  "That session is already linked to another Telegram topic."
@@ -112,9 +125,14 @@ Suiteáil le: `hermes skills install {path}`"
   voice_not_in_channel:    "You need to be in a voice channel first."
   voice_join_failed:       "Failed to join voice channel. Check bot permissions (Connect + Speak)."
   voice_left:              "Left voice channel."
+  voice_joined: "Táim tar éis dul isteach sa chainéal guth **{channel}**.\nLabhróidh mé mo fhreagraí agus éisteacht leat. Úsáid /voice leave chun dul i dteagmháil."
+  voice_deps_missing: "Tá brathaidh gutha in easnamh (PyNaCl / davey). Suiteáil le: `{command}`"
+  voice_not_connected: "Níl i gcanéal guth."
+  voice_join_failed_with_error: "Theip ar dul isteach sa chainéal guth: {error}"
 
   model:
     error_prefix:           "Earráid: {error}"
+    rate_limited: "⏱️ Tá soláthraí an mhúnla ag srianadh iarratas. Fan nóiméad agus bain triail eile as."
     switched:               "Athraíodh an tsamhail go `{model}`"
     provider_label:         "Soláthraí: {provider}"
     context_label:          "Comhthéacs: {tokens} comhartha"
@@ -192,6 +210,8 @@ Suiteáil le: `hermes skills install {path}`"
     full_logs_hint:        "Le haghaidh uaslódálacha logála iomlána, úsáid `hermes debug share` ón CLI."
     share_hint:            "Roinn na naisc seo le foireann Hermes le haghaidh tacaíochta."
 
+
+  admin_only: "⛔ Is don riarthóir amháin /{command} anseo. {detail}"
   deny:
     stale:                 "❌ Ordú diúltaithe (bhí an cead imithe i léig)."
     no_pending:            "Níl aon ordú ag fanacht le diúltú."
@@ -395,6 +415,8 @@ Future messages in this room will use that transcript until `/reset` or another 
     current_with_title:    "📌 Seisiún: `{session_id}`\nTeideal: **{title}**"
     current_no_title:      "📌 Seisiún: `{session_id}`\nGan teideal socraithe. Úsáid: `/title M'Ainm Seisiúin`"
 
+  clarify_undelivered: "[níorbh fhéidir an leid mhínithe a sheachadadh]"
+  clarify_timeout: "[níor fhreagair an t-úsáideoir laistigh de {minutes} nóim.]"
   topic:
     not_telegram_dm:         "Tá an t-ordú /topic ar fáil amháin i gcomhráite príobháideacha Telegram."
     no_session_db:           "Níl bunachar sonraí na seisiún ar fáil."
@@ -419,6 +441,8 @@ Future messages in this room will use that transcript until `/reset` or another 
     start_failed:            "✗ Theip ar nuashonrú a thosú: {error}"
     starting:                "⚕ Ag tosú nuashonrú Hermes… Cuirfidh mé an dul chun cinn ar shruth anseo."
 
+  update_send_failed: "✗ Theip ar fhreagra a sheoladh chuig an bpróiseas nuashonraithe: {error}"
+  update_sent: "✓ Seoladh `{label}` chuig an bpróseas nuashonraithe."
   usage:
     rate_limits:              "⏱️ **Teorainneacha Ráta:** {state}"
     header_session:           "📊 **Úsáid Comharthaí Seisiúin**"

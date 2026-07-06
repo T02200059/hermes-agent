@@ -85,6 +85,16 @@ gateway:
   steer_usage_no_agent:    "Usage: /steer <prompt>  (no agent is running; sending as a normal message)"
   learn_failed:            "Could not start /learn — please try again."
   quick_command_timeout:   "Quick command timed out (30s)."
+  quick_command_no_output: "命令沒有輸出。"
+  quick_command_error: "快捷命令錯誤：{error}"
+  quick_command_no_command: "快捷命令 '/{command}' 未定義 command。"
+  quick_command_no_target: "快捷命令 '/{command}' 未定義 target。"
+  quick_command_unsupported_type: "快捷命令 '/{command}' 類型不受支援（支援：'exec'、'alias'）。"
+  hook_blocked: "命令 `/{command}` 被 hook 攔截。"
+  processing_stopped: "⚠️ 處理已停止：{error}。請再試一次。"
+  suggestions_failed: "建議命令失敗：{error}"
+  moa_prepare_failed: "準備 MoA 回合失敗。"
+  chained_commands_executed: "命令已執行。"
 
   # Goal/subgoal usage
   goal_usage_wait:  "Usage: /goal wait <pid> [reason]"
@@ -96,8 +106,11 @@ gateway:
 
   # Telegram topic messages
   chat_id_unknown:       "Could not determine chat ID."
+  session_not_found: "找不到工作階段：{name}"
   default_chat_name:     "Hermes Chat"
   topic_mode_disabled:   "Multi-session topic mode is not currently enabled for this chat."
+  topic_disabled: "此聊天的多會話 topic 模式已關閉。\n\nTelegram 中現有的 topic 不會被移除——只是不再作為獨立會話進行隔離。根私訊恢復為普通 Hermes 聊天。如需重新啟用，請發送 /topic。"
+  topic_disable_failed: "關閉 topic 模式失敗：{error}"
   topic_not_telegram_session: "That session is not a Telegram session and cannot be restored into this topic."
   topic_wrong_user:      "That session does not belong to this Telegram user."
   topic_already_linked:  "That session is already linked to another Telegram topic."
@@ -108,9 +121,14 @@ gateway:
   voice_not_in_channel:    "You need to be in a voice channel first."
   voice_join_failed:       "Failed to join voice channel. Check bot permissions (Connect + Speak)."
   voice_left:              "Left voice channel."
+  voice_joined: "已加入語音頻道 **{channel}**。\n我會用語音回覆並聆聽你。使用 /voice leave 離開。"
+  voice_deps_missing: "缺少語音依賴（PyNaCl / davey）。請使用以下命令安裝：`{command}`"
+  voice_not_connected: "目前不在語音頻道中。"
+  voice_join_failed_with_error: "加入語音頻道失敗：{error}"
 
   model:
     error_prefix:           "錯誤：{error}"
+    rate_limited: "⏱️ 模型提供者正在限制請求速率。請稍後再試。"
     switched:               "已切換模型為 `{model}`"
     provider_label:         "提供方：{provider}"
     context_label:          "上下文：{tokens} tokens"
@@ -188,6 +206,8 @@ gateway:
     full_logs_hint:        "如需上傳完整紀錄，請在 CLI 中使用 `hermes debug share`。"
     share_hint:            "請將這些連結分享給 Hermes 團隊以取得支援。"
 
+
+  admin_only: "⛔ 此處 /{command} 僅管理員可使用。{detail}"
   deny:
     stale:                 "❌ 指令已拒絕（批准已過期）。"
     no_pending:            "沒有待拒絕的指令。"
@@ -391,6 +411,8 @@ Future messages in this room will use that transcript until `/reset` or another 
     current_with_title:    "📌 工作階段：`{session_id}`\n標題：**{title}**"
     current_no_title:      "📌 工作階段：`{session_id}`\n尚未設定標題。用法：`/title 我的工作階段名稱`"
 
+  clarify_undelivered: "[澄清提示未能送達]"
+  clarify_timeout: "[使用者未在 {minutes} 分鐘內回應]"
   topic:
     not_telegram_dm:         "/topic 指令僅在 Telegram 私人聊天中可用。"
     no_session_db:           "工作階段資料庫無法使用。"
@@ -415,6 +437,8 @@ Future messages in this room will use that transcript until `/reset` or another 
     start_failed:            "✗ 啟動更新失敗：{error}"
     starting:                "⚕ 正在啟動 Hermes 更新…… 進度將在此處顯示。"
 
+  update_send_failed: "✗ 傳送回應到更新程序失敗：{error}"
+  update_sent: "✓ 已將 `{label}` 傳送到更新程序。"
   usage:
     rate_limits:              "⏱️ **速率限制：** {state}"
     header_session:           "📊 **工作階段 token 使用情況**"

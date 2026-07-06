@@ -85,6 +85,16 @@ Installeer dit met: `hermes skills install {path}`"
   steer_usage_no_agent:    "Usage: /steer <prompt>  (no agent is running; sending as a normal message)"
   learn_failed:            "Could not start /learn — please try again."
   quick_command_timeout:   "Quick command timed out (30s)."
+  quick_command_no_output: "Opdrag het geen uitvoer teruggegee nie."
+  quick_command_error: "Vinnige opdrag-fout: {error}"
+  quick_command_no_command: "Vinnige opdrag '/{command}' het geen opdrag gedefinieer nie."
+  quick_command_no_target: "Vinnige opdrag '/{command}' het geen teiken gedefinieer nie."
+  quick_command_unsupported_type: "Vinnige opdrag '/{command}' het 'n nie-ondersteunde tipe (ondersteun: 'exec', 'alias')."
+  hook_blocked: "Opdrag `/{command}` is deur 'n haak geblokkeer."
+  processing_stopped: "⚠️ Verwerking gestop: {error}. Probeer weer."
+  suggestions_failed: "Voorstelle-opdrag het misluk: {error}"
+  moa_prepare_failed: "Kon nie MoA-beurt voorberei nie."
+  chained_commands_executed: "Opdragte uitgevoer."
 
   # Goal/subgoal usage
   goal_usage_wait:  "Usage: /goal wait <pid> [reason]"
@@ -96,8 +106,11 @@ Installeer dit met: `hermes skills install {path}`"
 
   # Telegram topic messages
   chat_id_unknown:       "Could not determine chat ID."
+  session_not_found: "Sessie nie gevind nie: {name}"
   default_chat_name:     "Hermes Chat"
   topic_mode_disabled:   "Multi-session topic mode is not currently enabled for this chat."
+  topic_disabled: "Multi-sessie topic-modus is nou AF vir hierdie gesprek.\n\nBestaande topics in Telegram word nie verwyder nie — hulle sal net nie meer as onafhanklike sessies geskei word nie. Die wortel-DM werk weer as 'n normale Hermes-gesprek. Voer /topic uit om later weer te aktiveer."
+  topic_disable_failed: "Kon nie topic-modus deaktiveer nie: {error}"
   topic_not_telegram_session: "That session is not a Telegram session and cannot be restored into this topic."
   topic_wrong_user:      "That session does not belong to this Telegram user."
   topic_already_linked:  "That session is already linked to another Telegram topic."
@@ -108,9 +121,14 @@ Installeer dit met: `hermes skills install {path}`"
   voice_not_in_channel:    "You need to be in a voice channel first."
   voice_join_failed:       "Failed to join voice channel. Check bot permissions (Connect + Speak)."
   voice_left:              "Left voice channel."
+  voice_joined: "Het by stemkanaal **{channel}** aangesluit.\nEk sal my antwoorde uitspreek en na jou luister. Gebruik /voice leave om te ontkoppel."
+  voice_deps_missing: "Stem-afhanklikhede ontbreek (PyNaCl / davey). Installeer met: `{command}`"
+  voice_not_connected: "Nie in 'n stemkanaal nie."
+  voice_join_failed_with_error: "Kon nie by stemkanaal aansluit nie: {error}"
 
   model:
     error_prefix:           "Fout: {error}"
+    rate_limited: "⏱️ Die modelverskaffer beperk tans versoeke. Wag asseblief 'n oomblik en probeer weer."
     switched:               "Model verander na `{model}`"
     provider_label:         "Verskaffer: {provider}"
     context_label:          "Konteks: {tokens} tokens"
@@ -188,6 +206,8 @@ Installeer dit met: `hermes skills install {path}`"
     full_logs_hint:        "Vir volledige loglae, gebruik `hermes debug share` vanaf die CLI."
     share_hint:            "Deel hierdie skakels met die Hermes-span vir ondersteuning."
 
+
+  admin_only: "⛔ /{command} is hier slegs vir admins. {detail}"
   deny:
     stale:                 "❌ Opdrag geweier (goedkeuring was verouderd)."
     no_pending:            "Geen hangende opdrag om te weier nie."
@@ -391,6 +411,8 @@ Future messages in this room will use that transcript until `/reset` or another 
     current_with_title:    "📌 Sessie: `{session_id}`\nTitel: **{title}**"
     current_no_title:      "📌 Sessie: `{session_id}`\nGeen titel gestel nie. Gebruik: `/title My Sessie Naam`"
 
+  clarify_undelivered: "[verhelderingsaanwysing kon nie afgelewer word nie]"
+  clarify_timeout: "[gebruiker het nie binne {minutes} min. geantwoord nie]"
   topic:
     not_telegram_dm:         "Die /topic-opdrag is slegs beskikbaar in Telegram-privaatgesprekke."
     no_session_db:           "Sessie-databasis is nie beskikbaar nie."
@@ -415,6 +437,8 @@ Future messages in this room will use that transcript until `/reset` or another 
     start_failed:            "✗ Kon nie opdatering begin nie: {error}"
     starting:                "⚕ Begin Hermes-opdatering… Ek sal vordering hier stroom."
 
+  update_send_failed: "✗ Kon nie antwoord aan opdateringsproses stuur nie: {error}"
+  update_sent: "✓ `{label}` aan opdateringsproses gestuur."
   usage:
     rate_limits:              "⏱️ **Tariefperke:** {state}"
     header_session:           "📊 **Sessie-tokengebruik**"

@@ -85,6 +85,16 @@ gateway:
   steer_usage_no_agent:    "Usage: /steer <prompt>  (no agent is running; sending as a normal message)"
   learn_failed:            "Could not start /learn — please try again."
   quick_command_timeout:   "Quick command timed out (30s)."
+  quick_command_no_output: "명령어가 출력을 반환하지 않았습니다."
+  quick_command_error: "빠른 명령어 오류: {error}"
+  quick_command_no_command: "빠른 명령어 '/{command}'에 정의된 명령이 없습니다."
+  quick_command_no_target: "빠른 명령어 '/{command}'에 정의된 대상이 없습니다."
+  quick_command_unsupported_type: "빠른 명령어 '/{command}'는 지원되지 않는 유형입니다(지원: 'exec', 'alias')."
+  hook_blocked: "`/{command}` 명령어가 hook에 의해 차단되었습니다."
+  processing_stopped: "⚠️ 처리가 중지되었습니다: {error}. 다시 시도해 주세요."
+  suggestions_failed: "제안 명령어 실패: {error}"
+  moa_prepare_failed: "MoA 턴 준비에 실패했습니다."
+  chained_commands_executed: "명령어를 실행했습니다."
 
   # Goal/subgoal usage
   goal_usage_wait:  "Usage: /goal wait <pid> [reason]"
@@ -96,8 +106,11 @@ gateway:
 
   # Telegram topic messages
   chat_id_unknown:       "Could not determine chat ID."
+  session_not_found: "세션을 찾을 수 없습니다: {name}"
   default_chat_name:     "Hermes Chat"
   topic_mode_disabled:   "Multi-session topic mode is not currently enabled for this chat."
+  topic_disabled: "이 채팅의 다중 세션 topic 모드가 꺼졌습니다.\n\nTelegram의 기존 topic은 제거되지 않으며 — 단지 독립적인 세션으로 분리되지 않을 뿐입니다. 루트 DM은 일반 Hermes 채팅으로 다시 작동합니다. 나중에 다시 켜려면 /topic을 실행하세요."
+  topic_disable_failed: "topic 모드를 끄지 못했습니다: {error}"
   topic_not_telegram_session: "That session is not a Telegram session and cannot be restored into this topic."
   topic_wrong_user:      "That session does not belong to this Telegram user."
   topic_already_linked:  "That session is already linked to another Telegram topic."
@@ -108,9 +121,14 @@ gateway:
   voice_not_in_channel:    "You need to be in a voice channel first."
   voice_join_failed:       "Failed to join voice channel. Check bot permissions (Connect + Speak)."
   voice_left:              "Left voice channel."
+  voice_joined: "**{channel}** 음성 채널에 참여했습니다.\n답변을 음성으로 말하고 당신의 목소리를 듣겠습니다. /voice leave로 연결을 끊으세요."
+  voice_deps_missing: "음성 의존성(PyNaCl / davey)이 없습니다. 다음으로 설치하세요: `{command}`"
+  voice_not_connected: "음성 채널에 없습니다."
+  voice_join_failed_with_error: "음성 채널 참여에 실패했습니다: {error}"
 
   model:
     error_prefix:           "오류: {error}"
+    rate_limited: "⏱️ 모델 제공자가 요청 속도를 제한하고 있습니다. 잠시 후 다시 시도해 주세요."
     switched:               "모델이 `{model}`(으)로 전환되었습니다"
     provider_label:         "제공자: {provider}"
     context_label:          "컨텍스트: {tokens} 토큰"
@@ -188,6 +206,8 @@ gateway:
     full_logs_hint:        "전체 로그 업로드는 CLI에서 `hermes debug share`를 사용하세요."
     share_hint:            "지원을 받으려면 이 링크를 Hermes 팀과 공유하세요."
 
+
+  admin_only: "⛔ 여기서는 /{command}를 관리자만 사용할 수 있습니다. {detail}"
   deny:
     stale:                 "❌ 명령이 거부되었습니다 (승인이 만료됨)."
     no_pending:            "거부 대기 중인 명령이 없습니다."
@@ -391,6 +411,8 @@ Future messages in this room will use that transcript until `/reset` or another 
     current_with_title:    "📌 세션: `{session_id}`\n제목: **{title}**"
     current_no_title:      "📌 세션: `{session_id}`\n제목이 설정되지 않았습니다. 사용법: `/title 내 세션 이름`"
 
+  clarify_undelivered: "[확인 메시지를 전달할 수 없습니다]"
+  clarify_timeout: "[사용자가 {minutes}분 내에 응답하지 않았습니다]"
   topic:
     not_telegram_dm:         "/topic 명령은 Telegram 비공개 채팅에서만 사용할 수 있습니다."
     no_session_db:           "세션 데이터베이스를 사용할 수 없습니다."
@@ -415,6 +437,8 @@ Future messages in this room will use that transcript until `/reset` or another 
     start_failed:            "✗ 업데이트 시작 실패: {error}"
     starting:                "⚕ Hermes 업데이트를 시작합니다… 진행 상황을 여기에 스트리밍하겠습니다."
 
+  update_send_failed: "✗ 업데이트 프로세스에 응답을 보내지 못했습니다: {error}"
+  update_sent: "✓ 업데이트 프로세스에 `{label}`을(를) 보냈습니다."
   usage:
     rate_limits:              "⏱️ **요청 제한:** {state}"
     header_session:           "📊 **세션 토큰 사용량**"

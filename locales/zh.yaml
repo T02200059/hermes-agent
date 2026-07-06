@@ -413,6 +413,16 @@ gateway:
   steer_usage_no_agent:    "用法：/steer <提示>（当前没有运行中的 Agent；将作为普通消息发送）"
   learn_failed:            "无法启动 /learn — 请重试。"
   quick_command_timeout:   "快捷命令已超时（30 秒）。"
+  quick_command_no_output: "命令没有输出。"
+  quick_command_error: "快捷命令出错：{error}"
+  quick_command_no_command: "快捷命令 '/{command}' 未定义 command。"
+  quick_command_no_target: "快捷命令 '/{command}' 未定义 target。"
+  quick_command_unsupported_type: "快捷命令 '/{command}' 类型不受支持（支持：'exec'、'alias'）。"
+  hook_blocked: "命令 `/{command}` 被 hook 拦截。"
+  processing_stopped: "⚠️ 处理已停止：{error}。请重试。"
+  suggestions_failed: "建议命令失败：{error}"
+  moa_prepare_failed: "准备 MoA 回合失败。"
+  chained_commands_executed: "命令已执行。"
 
   # Goal/subgoal 用法
   goal_usage_wait:  "用法：/goal wait <pid> [reason]"
@@ -424,8 +434,11 @@ gateway:
 
   # Telegram topic 消息
   chat_id_unknown:       "无法确定聊天 ID。"
+  session_not_found: "未找到会话：{name}"
   default_chat_name:     "Hermes Chat"
   topic_mode_disabled:   "此聊天当前未启用多会话 topic 模式。"
+  topic_disabled: "此聊天的多会话 topic 模式已关闭。\n\nTelegram 中现有的 topic 不会被移除——只是不再作为独立会话进行隔离。根私信恢复为普通 Hermes 聊天。如需重新启用，请发送 /topic。"
+  topic_disable_failed: "关闭 topic 模式失败：{error}"
   topic_not_telegram_session: "该会话不是 Telegram 会话，无法恢复到当前 topic。"
   topic_wrong_user:      "该会话不属于此 Telegram 用户。"
   topic_already_linked:  "该会话已关联到另一个 Telegram topic。"
@@ -436,9 +449,14 @@ gateway:
   voice_not_in_channel:    "你需要先加入一个语音频道。"
   voice_join_failed:       "加入语音频道失败。请检查机器人权限（连接 + 说话）。"
   voice_left:              "已离开语音频道。"
+  voice_joined: "已加入语音频道 **{channel}**。\n我会用语音回复并聆听你。使用 /voice leave 断开连接。"
+  voice_deps_missing: "缺少语音依赖（PyNaCl / davey）。请使用以下命令安装：`{command}`"
+  voice_not_connected: "当前不在语音频道中。"
+  voice_join_failed_with_error: "加入语音频道失败：{error}"
 
   model:
     error_prefix:           "错误：{error}"
+    rate_limited: "⏱️ 模型提供方正在限制请求速率。请稍后再试。"
     switched:               "已切换模型为 `{model}`"
     provider_label:         "提供方：{provider}"
     context_label:          "上下文：{tokens} tokens"
@@ -593,6 +611,8 @@ gateway:
     cancelled: "🟡 /{command} 已取消。会话不变。"
     always_note: "\n\nℹ️ 今后 /clear、/new、/reset 和 /undo 将直接执行，不再询问。如需重新启用，请在 config.yaml 中设置 `approvals.destructive_slash_confirm: true`。"
 
+
+  admin_only: "⛔ 此处 /{command} 仅管理员可用。{detail}"
   deny:
     stale:                 "❌ 命令已拒绝（批准已过期）。"
     no_pending:            "没有待拒绝的命令。"
@@ -794,6 +814,8 @@ gateway:
     current_with_title:    "📌 会话：`{session_id}`\n标题：**{title}**"
     current_no_title:      "📌 会话：`{session_id}`\n尚未设置标题。用法：`/title 我的会话名称`"
 
+  clarify_undelivered: "[澄清提示未能送达]"
+  clarify_timeout: "[用户未在 {minutes} 分钟内响应]"
   topic:
     not_telegram_dm:         "/topic 命令仅在 Telegram 私聊中可用。"
     no_session_db:           "会话数据库不可用。"
@@ -818,6 +840,8 @@ gateway:
     start_failed:            "✗ 启动更新失败：{error}"
     starting:                "⚕ 正在启动 Hermes 更新…… 进度将在此处显示。"
 
+  update_send_failed: "✗ 发送响应到更新进程失败：{error}"
+  update_sent: "✓ 已将 `{label}` 发送到更新进程。"
   usage:
     rate_limits:              "⏱️ **速率限制：** {state}"
     header_session:           "📊 **会话令牌使用情况**"

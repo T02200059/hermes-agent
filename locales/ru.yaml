@@ -85,6 +85,16 @@ gateway:
   steer_usage_no_agent:    "Usage: /steer <prompt>  (no agent is running; sending as a normal message)"
   learn_failed:            "Could not start /learn — please try again."
   quick_command_timeout:   "Quick command timed out (30s)."
+  quick_command_no_output: "Команда не вернула вывод."
+  quick_command_error: "Ошибка быстрой команды: {error}"
+  quick_command_no_command: "У быстрой команды '/{command}' не задана команда."
+  quick_command_no_target: "У быстрой команды '/{command}' не задана цель."
+  quick_command_unsupported_type: "Быстрая команда '/{command}' имеет неподдерживаемый тип (поддерживаемые: 'exec', 'alias')."
+  hook_blocked: "Команда `/{command}` была заблокирована хуком."
+  processing_stopped: "⚠️ Обработка остановлена: {error}. Попробуйте ещё раз."
+  suggestions_failed: "Команда предложений не выполнена: {error}"
+  moa_prepare_failed: "Не удалось подготовить ход MoA."
+  chained_commands_executed: "Команды выполнены."
 
   # Goal/subgoal usage
   goal_usage_wait:  "Usage: /goal wait <pid> [reason]"
@@ -96,8 +106,11 @@ gateway:
 
   # Telegram topic messages
   chat_id_unknown:       "Could not determine chat ID."
+  session_not_found: "Сеанс не найден: {name}"
   default_chat_name:     "Hermes Chat"
   topic_mode_disabled:   "Multi-session topic mode is not currently enabled for this chat."
+  topic_disabled: "Многосеансовый режим topic для этого чата теперь ВЫКЛЮЧЕН.\n\nСуществующие topic в Telegram не удаляются — они просто перестанут быть изолированными как независимые сеансы. Корневой DM снова работает как обычный чат Hermes. Чтобы включить позже, выполните /topic."
+  topic_disable_failed: "Не удалось отключить режим topic: {error}"
   topic_not_telegram_session: "That session is not a Telegram session and cannot be restored into this topic."
   topic_wrong_user:      "That session does not belong to this Telegram user."
   topic_already_linked:  "That session is already linked to another Telegram topic."
@@ -108,9 +121,14 @@ gateway:
   voice_not_in_channel:    "You need to be in a voice channel first."
   voice_join_failed:       "Failed to join voice channel. Check bot permissions (Connect + Speak)."
   voice_left:              "Left voice channel."
+  voice_joined: "Присоединился к голосовому каналу **{channel}**.\nЯ буду произносить свои ответы и слушать вас. Используйте /voice leave, чтобы отключиться."
+  voice_deps_missing: "Отсутствуют голосовые зависимости (PyNaCl / davey). Установите командой: `{command}`"
+  voice_not_connected: "Не в голосовом канале."
+  voice_join_failed_with_error: "Не удалось присоединиться к голосовому каналу: {error}"
 
   model:
     error_prefix:           "Ошибка: {error}"
+    rate_limited: "⏱️ Провайдер модели ограничивает количество запросов. Пожалуйста, подождите немного и попробуйте снова."
     switched:               "Модель изменена на `{model}`"
     provider_label:         "Провайдер: {provider}"
     context_label:          "Контекст: {tokens} токенов"
@@ -188,6 +206,8 @@ gateway:
     full_logs_hint:        "Для загрузки полных журналов используйте `hermes debug share` из CLI."
     share_hint:            "Поделитесь этими ссылками с командой Hermes для получения поддержки."
 
+
+  admin_only: "⛔ Здесь /{command} доступна только администраторам. {detail}"
   deny:
     stale:                 "❌ Команда отклонена (одобрение устарело)."
     no_pending:            "Нет команды для отклонения."
@@ -391,6 +411,8 @@ Future messages in this room will use that transcript until `/reset` or another 
     current_with_title:    "📌 Сеанс: `{session_id}`\nНазвание: **{title}**"
     current_no_title:      "📌 Сеанс: `{session_id}`\nНазвание не задано. Использование: `/title Название моего сеанса`"
 
+  clarify_undelivered: "[запрос на уточнение не удалось доставить]"
+  clarify_timeout: "[пользователь не ответил в течение {minutes} мин.]"
   topic:
     not_telegram_dm:         "Команда /topic доступна только в личных чатах Telegram."
     no_session_db:           "База данных сеансов недоступна."
@@ -415,6 +437,8 @@ Future messages in this room will use that transcript until `/reset` or another 
     start_failed:            "✗ Не удалось запустить обновление: {error}"
     starting:                "⚕ Запуск обновления Hermes… Я буду транслировать прогресс сюда."
 
+  update_send_failed: "✗ Не удалось отправить ответ процессу обновления: {error}"
+  update_sent: "✓ `{label}` отправлено процессу обновления."
   usage:
     rate_limits:              "⏱️ **Ограничения скорости:** {state}"
     header_session:           "📊 **Использование токенов сеанса**"

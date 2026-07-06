@@ -85,6 +85,16 @@ gateway:
   steer_usage_no_agent:    "Usage: /steer <prompt>  (no agent is running; sending as a normal message)"
   learn_failed:            "Could not start /learn — please try again."
   quick_command_timeout:   "Quick command timed out (30s)."
+  quick_command_no_output: "コマンドは出力がありませんでした。"
+  quick_command_error: "クイックコマンドエラー：{error}"
+  quick_command_no_command: "クイックコマンド '/{command}' には command が定義されていません。"
+  quick_command_no_target: "クイックコマンド '/{command}' には target が定義されていません。"
+  quick_command_unsupported_type: "クイックコマンド '/{command}' は未対応のタイプです（対応：'exec'、'alias'）。"
+  hook_blocked: "コマンド `/{command}` はフックによってブロックされました。"
+  processing_stopped: "⚠️ 処理が停止しました：{error}。もう一度お試しください。"
+  suggestions_failed: "提案コマンドが失敗しました：{error}"
+  moa_prepare_failed: "MoA ターンの準備に失敗しました。"
+  chained_commands_executed: "コマンドを実行しました。"
 
   # Goal/subgoal usage
   goal_usage_wait:  "Usage: /goal wait <pid> [reason]"
@@ -96,8 +106,11 @@ gateway:
 
   # Telegram topic messages
   chat_id_unknown:       "Could not determine chat ID."
+  session_not_found: "セッションが見つかりません：{name}"
   default_chat_name:     "Hermes Chat"
   topic_mode_disabled:   "Multi-session topic mode is not currently enabled for this chat."
+  topic_disabled: "このチャットのマルチセッション topic モードを OFF にしました。\n\nTelegram の既存 topic は削除されません——独立したセッションとして分離されなくなるだけです。ルート DM は通常の Hermes チャットとして動作します。後で /topic を実行して再有効化できます。"
+  topic_disable_failed: "topic モードの無効化に失敗しました：{error}"
   topic_not_telegram_session: "That session is not a Telegram session and cannot be restored into this topic."
   topic_wrong_user:      "That session does not belong to this Telegram user."
   topic_already_linked:  "That session is already linked to another Telegram topic."
@@ -108,9 +121,14 @@ gateway:
   voice_not_in_channel:    "You need to be in a voice channel first."
   voice_join_failed:       "Failed to join voice channel. Check bot permissions (Connect + Speak)."
   voice_left:              "Left voice channel."
+  voice_joined: "ボイスチャンネル **{channel}** に参加しました。\n返信を音声で読み上げ、あなたの声を聞きます。/voice leave で切断します。"
+  voice_deps_missing: "ボイス依存関係（PyNaCl / davey）がありません。以下でインストール：`{command}`"
+  voice_not_connected: "ボイスチャンネルに参加していません。"
+  voice_join_failed_with_error: "ボイスチャンネルへの参加に失敗しました：{error}"
 
   model:
     error_prefix:           "エラー: {error}"
+    rate_limited: "⏱️ モデルプロバイダーがレート制限中です。しばらくしてからもう一度お試しください。"
     switched:               "モデルを `{model}` に切り替えました"
     provider_label:         "プロバイダー: {provider}"
     context_label:          "コンテキスト: {tokens} トークン"
@@ -188,6 +206,8 @@ gateway:
     full_logs_hint:        "完全なログのアップロードには、CLI から `hermes debug share` を使用してください。"
     share_hint:            "サポートを受けるには、このリンクを Hermes チームに共有してください。"
 
+
+  admin_only: "⛔ ここでは /{command} は管理者のみ使用できます。{detail}"
   deny:
     stale:                 "❌ コマンドを拒否しました (承認は期限切れでした)。"
     no_pending:            "拒否待ちのコマンドはありません。"
@@ -391,6 +411,8 @@ Future messages in this room will use that transcript until `/reset` or another 
     current_with_title:    "📌 セッション: `{session_id}`\nタイトル: **{title}**"
     current_no_title:      "📌 セッション: `{session_id}`\nタイトル未設定。使い方: `/title セッション名`"
 
+  clarify_undelivered: "[確認プロンプトを配信できませんでした]"
+  clarify_timeout: "[ユーザーが {minutes} 分以内に応答しませんでした]"
   topic:
     not_telegram_dm:         "/topic コマンドは Telegram のプライベートチャットでのみ利用できます。"
     no_session_db:           "セッションデータベースを利用できません。"
@@ -415,6 +437,8 @@ Future messages in this room will use that transcript until `/reset` or another 
     start_failed:            "✗ 更新の開始に失敗しました: {error}"
     starting:                "⚕ Hermes の更新を開始しています… 進捗をここにストリーミングします。"
 
+  update_send_failed: "✗ 更新プロセスへの応答送信に失敗しました：{error}"
+  update_sent: "✓ 更新プロセスに `{label}` を送信しました。"
   usage:
     rate_limits:              "⏱️ **レート制限:** {state}"
     header_session:           "📊 **セッショントークン使用状況**"

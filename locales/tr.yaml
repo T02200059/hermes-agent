@@ -85,6 +85,16 @@ gateway:
   steer_usage_no_agent:    "Usage: /steer <prompt>  (no agent is running; sending as a normal message)"
   learn_failed:            "Could not start /learn — please try again."
   quick_command_timeout:   "Quick command timed out (30s)."
+  quick_command_no_output: "Komut çıktı üretmedi."
+  quick_command_error: "Hızlı komut hatası: {error}"
+  quick_command_no_command: "'/{command}' hızlı komutunun tanımlı komutu yok."
+  quick_command_no_target: "'/{command}' hızlı komutunun tanımlı hedefi yok."
+  quick_command_unsupported_type: "'/{command}' hızlı komutu desteklenmeyen türe sahip (desteklenenler: 'exec', 'alias')."
+  hook_blocked: "`/{command}` komutu bir hook tarafından engellendi."
+  processing_stopped: "⚠️ İşlem durduruldu: {error}. Tekrar deneyin."
+  suggestions_failed: "Öneri komutu başarısız oldu: {error}"
+  moa_prepare_failed: "MoA turu hazırlanamadı."
+  chained_commands_executed: "Komutlar çalıştırıldı."
 
   # Goal/subgoal usage
   goal_usage_wait:  "Usage: /goal wait <pid> [reason]"
@@ -96,8 +106,11 @@ gateway:
 
   # Telegram topic messages
   chat_id_unknown:       "Could not determine chat ID."
+  session_not_found: "Oturum bulunamadı: {name}"
   default_chat_name:     "Hermes Chat"
   topic_mode_disabled:   "Multi-session topic mode is not currently enabled for this chat."
+  topic_disabled: "Bu sohbette çoklu oturum topic modu şimdi KAPALI.\n\nTelegram'daki mevcut topic'ler kaldırılmaz — yalnızca bağımsız oturumlar olarak ayrılmaya devam etmez. Kök DM normal bir Hermes sohbeti olarak çalışır. Daha sonra yeniden etkinleştirmek için /topic komutunu çalıştırın."
+  topic_disable_failed: "Topic modu kapatılamadı: {error}"
   topic_not_telegram_session: "That session is not a Telegram session and cannot be restored into this topic."
   topic_wrong_user:      "That session does not belong to this Telegram user."
   topic_already_linked:  "That session is already linked to another Telegram topic."
@@ -108,9 +121,14 @@ gateway:
   voice_not_in_channel:    "You need to be in a voice channel first."
   voice_join_failed:       "Failed to join voice channel. Check bot permissions (Connect + Speak)."
   voice_left:              "Left voice channel."
+  voice_joined: "**{channel}** ses kanalına katıldım.\nYanıtlarımı sesli söyleyecek ve sizi dinleyeceğim. Bağlantıyı kesmek için /voice leave kullanın."
+  voice_deps_missing: "Ses bağımlılıkları eksik (PyNaCl / davey). Şununla kurun: `{command}`"
+  voice_not_connected: "Bir ses kanalında değilim."
+  voice_join_failed_with_error: "Ses kanalına katılınamadı: {error}"
 
   model:
     error_prefix:           "Hata: {error}"
+    rate_limited: "⏱️ Model sağlayıcı istekleri hız sınırlamasına tabi tutuyor. Lütfen biraz bekleyin ve tekrar deneyin."
     switched:               "Model `{model}` olarak değiştirildi"
     provider_label:         "Sağlayıcı: {provider}"
     context_label:          "Bağlam: {tokens} token"
@@ -188,6 +206,8 @@ gateway:
     full_logs_hint:        "Tam günlük yüklemeleri için CLI'dan `hermes debug share` kullanın."
     share_hint:            "Destek için bu bağlantıları Hermes ekibiyle paylaşın."
 
+
+  admin_only: "⛔ Burada /{command} yalnızca yöneticilere özel. {detail}"
   deny:
     stale:                 "❌ Komut reddedildi (onay geçersizdi)."
     no_pending:            "Reddedilecek bekleyen komut yok."
@@ -391,6 +411,8 @@ Future messages in this room will use that transcript until `/reset` or another 
     current_with_title:    "📌 Oturum: `{session_id}`\nBaşlık: **{title}**"
     current_no_title:      "📌 Oturum: `{session_id}`\nBaşlık ayarlanmamış. Kullanım: `/title Oturum Adım`"
 
+  clarify_undelivered: "[açıklama istemi teslim edilemedi]"
+  clarify_timeout: "[kullanıcı {minutes} dakika içinde yanıt vermedi]"
   topic:
     not_telegram_dm:         "/topic komutu yalnızca Telegram özel sohbetlerinde kullanılabilir."
     no_session_db:           "Oturum veritabanı kullanılamıyor."
@@ -415,6 +437,8 @@ Future messages in this room will use that transcript until `/reset` or another 
     start_failed:            "✗ Güncelleme başlatılamadı: {error}"
     starting:                "⚕ Hermes güncellemesi başlatılıyor… İlerlemeyi buraya akıtacağım."
 
+  update_send_failed: "✗ Güncelleme işlemine yanıt gönderilemedi: {error}"
+  update_sent: "✓ Güncelleme işlemine `{label}` gönderildi."
   usage:
     rate_limits:              "⏱️ **Hız Sınırları:** {state}"
     header_session:           "📊 **Oturum Token Kullanımı**"
