@@ -542,6 +542,20 @@ gateway:
     switch_multiple_providers:       "'{model}' 被多个已配置的提供方声明（{providers}）。请使用 --provider <slug> 重新运行以选择使用哪个。"
     switch_credential_error:         "无法为提供方 '{provider}' 解析凭据：{error}"
 
+    # 网关提供方错误回复（来自 _gateway_provider_error_reply 及 gateway/run.py
+    # 中相关的 agent-result 错误路径）。这些是模型提供方失败时显示的简短
+    # 用户安全消息 — 原始错误详情保留在网关日志中，不回显到聊天。
+    provider_auth_failed:              "⚠️ 提供方认证失败。请检查配置的凭据；原始提供方详情见网关日志。"
+    provider_policy_rejected:          "⚠️ 模型提供方拒绝了请求。原始提供方错误已保留在网关日志中，未回显到聊天 — 请查看日志了解详情或尝试重新表述。"
+    provider_failed_after_retries:     "⚠️ 模型提供方在重试后仍然失败。原始提供方详情已保留在网关日志中，未回显到聊天 — 请查看日志进行诊断。"
+    context_too_large:                 "⚠️ 会话超出模型的上下文窗口。\n使用 /compact 压缩对话，或 /reset 重新开始。"
+    request_failed:                    "请求失败：{error}\n请重试或使用 /reset 开始新的会话。"
+    no_response_generated:             "⚠️ 处理已完成但未生成回复。这可能是暂时性错误 — 请重新发送你的消息。"
+    not_processed_prev_turn:           "⚠️ 你的消息未被处理（上一轮仍在清理中）。请重新发送。"
+    empty_tool_response:               "⚠️ 模型在处理工具结果后未返回响应。某些模型可能会出现这种情况 — 请重试或重新表述你的问题。"
+    gateway_restarting:                "⚠️ 网关正在重启，因此你的消息未被完整处理。\n请几秒后重新发送。"
+    compression_aborted:               "⚠️ 上下文压缩已中止（{error}）。没有消息被丢弃 — 对话保持不变。运行 /compress 重试，/reset 开始新会话，或检查 auxiliary.compression 模型配置。"
+
   agents:
     header:                "🤖 **活跃代理与任务**"
     active_agents:         "**活跃代理：** {count}"

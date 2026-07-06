@@ -351,21 +351,12 @@ def _redact_approval_command(cmd: "str | None") -> str:
 def _gateway_provider_error_reply(text: str) -> str:
     """Map raw provider/API errors to a short user-safe Telegram reply."""
     if _GATEWAY_AUTH_ERROR_RE.search(text):
-        return (
-            "⚠️ Provider authentication failed. Check the configured credentials; "
-            "raw provider details are in the gateway logs."
-        )
+        return t("gateway.model.provider_auth_failed")
     if _GATEWAY_PROVIDER_POLICY_RE.search(text):
-        return (
-            "⚠️ The model provider rejected the request. I kept the raw provider "
-            "error out of chat; check gateway logs for details or try rephrasing."
-        )
+        return t("gateway.model.provider_policy_rejected")
     if _GATEWAY_RATE_LIMIT_RE.search(text):
         return t("gateway.model.rate_limited")
-    return (
-        "⚠️ The model provider failed after retries. I kept raw provider details "
-        "out of chat; check gateway logs for diagnostics."
-    )
+    return t("gateway.model.provider_failed_after_retries")
 
 
 _GATEWAY_PROVIDER_ERROR_SHAPE_RE = re.compile(
@@ -2521,25 +2512,15 @@ def _normalize_empty_agent_response(
             for p in ("context", "token", "too large", "too long", "exceed", "payload")
         ) or ("400" in error_str and history_len > 50)
         if is_context_failure:
-            return (
-                "⚠️ Session too large for the model's context window.\n"
-                "Use /compact to compress the conversation, or "
-                "/reset to start fresh."
-            )
-        return (
-            f"The request failed: {str(error_detail)[:300]}\n"
-            "Try again or use /reset to start a fresh session."
-        )
+            return t("gateway.model.context_too_large")
+        return t("gateway.model.request_failed", error=str(error_detail)[:300])
 
     api_calls = int(agent_result.get("api_calls", 0) or 0)
     if api_calls > 0 and not agent_result.get("interrupted"):
         if agent_result.get("partial"):
             err = agent_result.get("error", "processing incomplete")
             return t("gateway.processing_stopped", error=str(err)[:200])
-        return (
-            "⚠️ Processing completed but no response was generated. "
-            "This may be a transient error — try sending your message again."
-        )
+        return t("gateway.model.no_response_generated")
 
     # api_calls == 0, not failed, not interrupted: the agent never ran for
     # this turn. This is the post-/stop generation-race pattern where the
@@ -2552,10 +2533,7 @@ def _normalize_empty_agent_response(
         and not agent_result.get("failed")
         and not agent_result.get("partial")
     ):
-        return (
-            "⚠️ Your message wasn't processed (the previous turn was still "
-            "being cleaned up). Please send it again."
-        )
+        return t("gateway.model.not_processed_prev_turn")
 
     return response
 
@@ -11029,14 +11007,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                                     _comp = getattr(_hyg_agent, "context_compressor", None)
                                     if _comp is not None and getattr(_comp, "_last_compress_aborted", False):
                                         _err = getattr(_comp, "_last_summary_error", None) or "unknown error"
-                                        _warn_msg = (
-                                            "⚠️ Context compression aborted "
-                                            f"({_err}). No messages were dropped — "
-                                            "conversation is unchanged. Run /compress "
-                                            "to retry, /reset for a clean session, or "
-                                            "check your auxiliary.compression model "
-                                            "configuration."
-                                        )
+                                        _warn_msg = t("gateway.model.compression_aborted", error=_err)
                                         try:
                                             _adapter = self.adapters.get(source.platform)
                                             if _adapter and source.chat_id:
@@ -11296,11 +11267,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             # prefill, empty-retry, fallback).  Sending the raw sentinel
             # looks like a bug; a short explanation is more helpful.
             if response == "(empty)" and not _intentional_silence:
-                response = (
-                    "⚠️ The model returned no response after processing tool "
-                    "results. This can happen with some models — try again or "
-                    "rephrase your question."
-                )
+                response = t("gateway.model.empty_tool_response")
             agent_messages = agent_result.get("messages", [])
             _response_time = time.time() - _msg_start_time
             _api_calls = agent_result.get("api_calls", 0)
@@ -11887,10 +11854,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             # running. Not a real failure — tell the user to resend instead of
             # dumping a RuntimeError.
             if _is_executor_shutdown_error(e):
-                return (
-                    "⚠️ The gateway is restarting, so your message wasn't fully "
-                    "processed.\nPlease send it again in a few seconds."
-                )
+                return t("gateway.model.gateway_restarting")
             status_hint = ""
             status_code = getattr(e, "status_code", None)
             _hist_len = len(history) if 'history' in locals() else 0

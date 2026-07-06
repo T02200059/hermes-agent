@@ -364,6 +364,21 @@ Install it with: `hermes skills install {path}`"
     switch_multiple_providers:       "'{model}' is declared by multiple configured providers ({providers}). Re-run with --provider <slug> to choose which one to use."
     switch_credential_error:         "Could not resolve credentials for provider '{provider}': {error}"
 
+    # Gateway provider error replies (from _gateway_provider_error_reply and
+    # related agent-result error paths in gateway/run.py). These are the short
+    # user-safe messages shown when the model provider fails — raw error detail
+    # is kept in gateway logs, not echoed to chat.
+    provider_auth_failed:              "⚠️ Provider authentication failed. Check the configured credentials; raw provider details are in the gateway logs."
+    provider_policy_rejected:          "⚠️ The model provider rejected the request. I kept the raw provider error out of chat; check gateway logs for details or try rephrasing."
+    provider_failed_after_retries:     "⚠️ The model provider failed after retries. I kept raw provider details out of chat; check gateway logs for diagnostics."
+    context_too_large:                 "⚠️ Session too large for the model's context window.\nUse /compact to compress the conversation, or /reset to start fresh."
+    request_failed:                    "The request failed: {error}\nTry again or use /reset to start a fresh session."
+    no_response_generated:             "⚠️ Processing completed but no response was generated. This may be a transient error — try sending your message again."
+    not_processed_prev_turn:           "⚠️ Your message wasn't processed (the previous turn was still being cleaned up). Please send it again."
+    empty_tool_response:               "⚠️ The model returned no response after processing tool results. This can happen with some models — try again or rephrase your question."
+    gateway_restarting:                "⚠️ The gateway is restarting, so your message wasn't fully processed.\nPlease send it again in a few seconds."
+    compression_aborted:               "⚠️ Context compression aborted ({error}). No messages were dropped — conversation is unchanged. Run /compress to retry, /reset for a clean session, or check your auxiliary.compression model configuration."
+
   agents:
     header:                "🤖 **Active Agents & Tasks**"
     active_agents:         "**Active agents:** {count}"
