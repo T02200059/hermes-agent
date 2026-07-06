@@ -75,6 +75,41 @@ approval:
   # Security scan prefix (tirith findings)
   scan_prefix: "Security scan"
 
+  # Slash-command confirmation prompts (prompt_toolkit UI).
+  # Used by _confirm_destructive_slash (/clear /new /reset /undo) and
+  # _confirm_and_reload_mcp (/reload-mcp).
+  slash_confirm:
+    destructive_title: "⚠️  /{command} — destroys conversation state"
+    destructive_detail_default: "This will discard the current conversation history. This cannot be undone."
+    mcp_title: "⚠️  /reload-mcp — Prompt cache invalidation warning"
+    mcp_detail: >-
+      Reloading MCP servers rebuilds the tool set for this session and
+      invalidates the provider prompt cache. The next message will
+      re-send full input tokens (can be expensive on long-context or
+      high-reasoning models).
+    choice_once: "Approve Once"
+    choice_always: "Always Approve"
+    choice_cancel: "Cancel"
+    hint_destructive_once: "proceed this time only"
+    hint_destructive_always: "proceed and silence this prompt permanently"
+    hint_destructive_cancel: "keep current conversation"
+    hint_mcp_once: "reload now"
+    hint_mcp_always: "reload now and silence this prompt permanently"
+    hint_mcp_cancel: "leave MCP tools unchanged"
+    cancelled_no_input: "🟡 /{command} cancelled (no input)."
+    cancelled_unrecognized: "🟡 Unrecognized choice '{raw}'. /{command} cancelled."
+    cancelled_explicit_destructive: "🟡 /{command} cancelled. Conversation unchanged."
+    cancelled_explicit_mcp: "🟡 /reload-mcp cancelled. MCP tools unchanged."
+    optout_saved_destructive: "🔒 Future /clear, /new, /reset, and /undo will run without confirmation."
+    optout_saved_mcp: "🔒 Future /reload-mcp calls will run without confirmation."
+    optout_hint_destructive: "   Re-enable via `approvals.destructive_slash_confirm: true` in config.yaml."
+    optout_hint_mcp: "   Re-enable via `approvals.mcp_reload_confirm: true` in config.yaml."
+    optout_failed_destructive: "⚠️  Couldn't persist opt-out — proceeding once."
+    optout_failed_mcp: "⚠️  Couldn't persist opt-out — reloading once."
+    reloading_mcp: "🔄 Reloading MCP servers..."
+    mcp_config_changed: "🔄 MCP server config changed — reloading connections..."
+    reloading_skills: "🔄 Reloading skills..."
+
   # Dangerous pattern descriptions — translated from DANGEROUS_PATTERNS keys.
   dangerous_desc:
     delete_in_root_path: "delete in root path"

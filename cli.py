@@ -10415,7 +10415,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
         # timeout so a hung MCP server cannot block the process_loop
         # indefinitely (which would freeze the entire TUI).
         print()
-        print("🔄 MCP server config changed — reloading connections...")
+        print(t("approval.slash_confirm.mcp_config_changed"))
         _reload_thread = threading.Thread(
             target=self._reload_mcp, daemon=True
         )
@@ -10521,33 +10521,33 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
         # labels visible above the composer and avoids raw input()/EOF races with
         # the running TUI.
         choices = [
-            ("once", "Approve Once", "proceed this time only"),
-            ("always", "Always Approve", "proceed and silence this prompt permanently"),
-            ("cancel", "Cancel", "keep current conversation"),
+            ("once", t("approval.slash_confirm.choice_once"), t("approval.slash_confirm.hint_destructive_once")),
+            ("always", t("approval.slash_confirm.choice_always"), t("approval.slash_confirm.hint_destructive_always")),
+            ("cancel", t("approval.slash_confirm.choice_cancel"), t("approval.slash_confirm.hint_destructive_cancel")),
         ]
         raw = self._prompt_text_input_modal(
-            title=f"⚠️  /{command} — destroys conversation state",
-            detail=detail,
+            title=t("approval.slash_confirm.destructive_title", command=command),
+            detail=detail or t("approval.slash_confirm.destructive_detail_default"),
             choices=choices,
         )
         if raw is None:
-            print(f"🟡 /{command} cancelled (no input).")
+            print(t("approval.slash_confirm.cancelled_no_input", command=command))
             return None
         choice = self._normalize_slash_confirm_choice(raw, choices)
         if choice is None:
-            print(f"🟡 Unrecognized choice '{raw}'. /{command} cancelled.")
+            print(t("approval.slash_confirm.cancelled_unrecognized", command=command, raw=raw))
             return None
 
         if choice == "cancel":
-            print(f"🟡 /{command} cancelled. Conversation unchanged.")
+            print(t("approval.slash_confirm.cancelled_explicit_destructive", command=command))
             return None
 
         if choice == "always":
             if save_config_value("approvals.destructive_slash_confirm", False):
-                print("🔒 Future /clear, /new, /reset, and /undo will run without confirmation.")
-                print("   Re-enable via `approvals.destructive_slash_confirm: true` in config.yaml.")
+                print(t("approval.slash_confirm.optout_saved_destructive"))
+                print(t("approval.slash_confirm.optout_hint_destructive"))
             else:
-                print("⚠️  Couldn't persist opt-out — proceeding once.")
+                print(t("approval.slash_confirm.optout_failed_destructive"))
 
         return choice
 
@@ -10582,38 +10582,33 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
         # Render warning + prompt.  Use the same prompt_toolkit-native composer
         # modal as destructive slash confirmations so choices stay visible.
         choices = [
-            ("once", "Approve Once", "reload now"),
-            ("always", "Always Approve", "reload now and silence this prompt permanently"),
-            ("cancel", "Cancel", "leave MCP tools unchanged"),
+            ("once", t("approval.slash_confirm.choice_once"), t("approval.slash_confirm.hint_mcp_once")),
+            ("always", t("approval.slash_confirm.choice_always"), t("approval.slash_confirm.hint_mcp_always")),
+            ("cancel", t("approval.slash_confirm.choice_cancel"), t("approval.slash_confirm.hint_mcp_cancel")),
         ]
         raw = self._prompt_text_input_modal(
-            title="⚠️  /reload-mcp — Prompt cache invalidation warning",
-            detail=(
-                "Reloading MCP servers rebuilds the tool set for this session and\n"
-                "invalidates the provider prompt cache. The next message will\n"
-                "re-send full input tokens (can be expensive on long-context or\n"
-                "high-reasoning models)."
-            ),
+            title=t("approval.slash_confirm.mcp_title"),
+            detail=t("approval.slash_confirm.mcp_detail"),
             choices=choices,
         )
         if raw is None:
-            print("🟡 /reload-mcp cancelled (no input).")
+            print(t("approval.slash_confirm.cancelled_no_input", command="reload-mcp"))
             return
         choice = self._normalize_slash_confirm_choice(raw, choices)
         if choice is None:
-            print(f"🟡 Unrecognized choice '{raw}'. /reload-mcp cancelled.")
+            print(t("approval.slash_confirm.cancelled_unrecognized", command="reload-mcp", raw=raw))
             return
 
         if choice == "cancel":
-            print("🟡 /reload-mcp cancelled. MCP tools unchanged.")
+            print(t("approval.slash_confirm.cancelled_explicit_mcp"))
             return
 
         if choice == "always":
             if save_config_value("approvals.mcp_reload_confirm", False):
-                print("🔒 Future /reload-mcp calls will run without confirmation.")
-                print("   Re-enable via `approvals.mcp_reload_confirm: true` in config.yaml.")
+                print(t("approval.slash_confirm.optout_saved_mcp"))
+                print(t("approval.slash_confirm.optout_hint_mcp"))
             else:
-                print("⚠️  Couldn't persist opt-out — reloading once.")
+                print(t("approval.slash_confirm.optout_failed_mcp"))
 
         with self._busy_command(self._slow_command_status(cmd_original)):
             self._reload_mcp()
@@ -10632,7 +10627,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
                 old_servers = set(_servers.keys())
 
             if not self._command_running:
-                print("🔄 Reloading MCP servers...")
+                print(t("approval.slash_confirm.reloading_mcp"))
 
             # Shutdown existing connections
             shutdown_mcp_servers()
@@ -10739,7 +10734,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
             from agent.skill_commands import reload_skills, get_skill_commands
 
             if not self._command_running:
-                print("🔄 Reloading skills...")
+                print(t("approval.slash_confirm.reloading_skills"))
 
             result = reload_skills()
 
