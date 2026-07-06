@@ -878,7 +878,7 @@ gateway:
 
   undo:
     nothing:               "没有可撤销的内容。"
-    removed:               "↩️ 已撤销 {count} 条消息。\n已移除：「{preview}」"
+    removed: "↩️ 已撤销 {turns} 轮 / {count} 条消息。\n已移除：「{preview}」"
     invalid_count:         "无效的轮数 '{arg}'。用法：`/undo` 或 `/undo <n>`（例如 `/undo 3`）。"
 
   update:

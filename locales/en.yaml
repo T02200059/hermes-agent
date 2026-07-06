@@ -197,6 +197,180 @@ approval:
       title: "Punycode domain detected"
     lookalike_tld:
       title: "Lookalike TLD detected"
+    ansi_escapes:
+      title: "ANSI escape sequences in pasted content"
+    archive_extract:
+      title: "Archive extraction to sensitive path"
+    base64_decode_execute:
+      title: "Base64 decode and execute"
+    bidi_controls:
+      title: "Unicode bidirectional override characters"
+    clipboard_hidden:
+      title: "Hidden content in clipboard paste"
+    code_injection_env:
+      title: "Code injection via environment variable"
+    command_network_deny:
+      title: "Policy network deny list match"
+    config_injection:
+      title: "Prompt injection in AI config file"
+    config_invisible_unicode:
+      title: "Invisible Unicode in config file"
+    config_malformed:
+      title: "Malformed configuration file"
+    config_non_ascii:
+      title: "Non-ASCII characters in ASCII config file"
+    config_suspicious_indicator:
+      title: "Suspicious indicator in config file"
+    confusable_domain:
+      title: "Confusable domain name"
+    confusable_text:
+      title: "Unicode confusable text"
+    control_chars:
+      title: "Display-overwriting control characters"
+    credential_file_sweep:
+      title: "Multiple credential file access"
+    credential_in_text:
+      title: "Known credential pattern detected"
+    custom_rule_match:
+      title: "Custom rule match"
+    data_exfiltration:
+      title: "Data exfiltration via upload"
+    docker_remote_priv_esc:
+      title: "Docker remote daemon privilege escalation"
+    docker_untrusted_registry:
+      title: "Docker image from untrusted registry"
+    dotfile_overwrite:
+      title: "Dotfile overwrite via redirect"
+    double_encoding:
+      title: "Double percent-encoding in URL"
+    dynamic_code_execution:
+      title: "Dynamic code execution with encoded payload"
+    git_typosquat:
+      title: "Git repository typosquatting"
+    hangul_filler:
+      title: "Hangul filler characters"
+    hidden_color_content:
+      title: "Same-color hidden text"
+    hidden_css_content:
+      title: "CSS-hidden content"
+    hidden_html_attribute:
+      title: "Hidden HTML attribute"
+    hidden_multiline:
+      title: "Hidden commands in multiline paste"
+    high_entropy_secret:
+      title: "High-entropy secret detected"
+    homoglyph_in_path:
+      title: "Homoglyph in URL path"
+    html_comment:
+      title: "HTML comment"
+    httpie_pipe_shell:
+      title: "HTTPie piped to shell"
+    insecure_tls_flags:
+      title: "Insecure TLS flags"
+    interpreter_hijack_env:
+      title: "Interpreter module path hijack"
+    invalid_host_chars:
+      title: "Invalid characters in hostname"
+    invisible_math_operator:
+      title: "Invisible mathematical operators"
+    invisible_whitespace:
+      title: "Unusual invisible whitespace"
+    license_required:
+      title: "License required"
+    markdown_comment:
+      title: "HTML comment in Markdown"
+    mcp_duplicate_server_name:
+      title: "Duplicate MCP server name"
+    mcp_insecure_server:
+      title: "MCP server using insecure transport"
+    mcp_overly_permissive:
+      title: "Overly permissive MCP server"
+    mcp_suspicious_args:
+      title: "Shell metacharacters in MCP server args"
+    mcp_untrusted_server:
+      title: "MCP server from untrusted source"
+    metadata_endpoint:
+      title: "Cloud metadata endpoint access"
+    mixed_script_in_label:
+      title: "Mixed Unicode scripts in hostname label"
+    non_ascii_path:
+      title: "Non-ASCII characters in URL path"
+    non_standard_port:
+      title: "Non-standard port on known domain"
+    npm_url_install:
+      title: "npm install from non-registry URL"
+    obfuscated_payload:
+      title: "Obfuscated code payload"
+    pdf_hidden_text:
+      title: "Hidden text in PDF"
+    pip_url_install:
+      title: "pip install from non-PyPI URL"
+    pipe_to_interpreter:
+      title: "Pipe to shell interpreter"
+    policy_blocklisted:
+      title: "Policy blocklist match"
+    private_key_exposed:
+      title: "Private key exposed"
+    proc_mem_access:
+      title: "Process memory access via /proc"
+    proxy_env_set:
+      title: "Proxy environment variable set"
+    schemeless_to_sink:
+      title: "Schemeless URL in download command"
+    sensitive_env_export:
+      title: "Sensitive credential exported to environment"
+    server_cloaking:
+      title: "Server-side content cloaking"
+    shell_injection_env:
+      title: "Shell injection via startup variable"
+    shortened_url:
+      title: "URL shortener detected"
+    suspicious_code_exfiltration:
+      title: "Suspicious network request in code file"
+    threat_cisa_kev:
+      title: "CISA Known Exploited Vulnerability"
+    threat_malicious_ip:
+      title: "Known malicious IP address"
+    threat_malicious_package:
+      title: "Known malicious package"
+    threat_malicious_url:
+      title: "Known malicious URL"
+    threat_osv_vulnerable:
+      title: "OSV vulnerability detected"
+    threat_package_similar_name:
+      title: "Package name similar to popular package"
+    threat_package_typosquat:
+      title: "Confirmed package typosquat"
+    threat_phishing_url:
+      title: "Known phishing URL"
+    threat_safe_browsing:
+      title: "Google Safe Browsing hit"
+    threat_suspicious_package:
+      title: "Suspicious package metadata"
+    threat_threat_fox_ioc:
+      title: "ThreatFox IOC match"
+    threat_tor_exit_node:
+      title: "Tor exit node IP"
+    trailing_dot_whitespace:
+      title: "Trailing dot or whitespace in hostname"
+    unicode_tags:
+      title: "Unicode Tag characters"
+    userinfo_trick:
+      title: "Userinfo domain impersonation"
+    variation_selector:
+      title: "Unicode variation selectors"
+    vet_not_configured:
+      title: "cargo-vet not configured"
+    web3_address_in_url:
+      title: "Ethereum address in URL"
+    web3_rpc_endpoint:
+      title: "Web3 RPC endpoint"
+    wget_pipe_shell:
+      title: "wget piped to shell"
+    xh_pipe_shell:
+      title: "xh piped to shell"
+    zero_width_chars:
+      title: "Zero-width characters"
   # Update prompt card
   feishu_update_card_title: "⚕ Update Needs Your Input"
   feishu_update_default_hint: "Default: `{default}`"
@@ -702,7 +876,7 @@ Install it with: `hermes skills install {path}`"
 
   undo:
     nothing:               "Nothing to undo."
-    removed:               "↩️ Undid {count} message(s).\nRemoved: \"{preview}\""
+    removed: "↩️ Undid {turns} turn(s) / {count} message(s).\nRemoved: \"{preview}\""
     invalid_count:         "Invalid turn count '{arg}'. Usage: `/undo` or `/undo <n>` (e.g. `/undo 3`)."
 
   update:
