@@ -10,12 +10,12 @@
 |------|-----|
 | 分支 | `owner` |
 | 基点 | `upstream/main` @ `f53ba9bb5`（`fix(s6): dot-prefix gateway staging dir`，2026-06-29） |
-| Commit 数 | 82（全部为 owner 个人定制，无 merge commit） |
+| Commit 数 | 30（基点后 owner 个人定制，无 merge commit） |
 | 改动文件总数 | 172（去重后） |
 | owner/ 纯新增 | ~75 个文件 |
 | 官方文件侵入 | ~70 个文件（含 ~20 个测试文件） |
 | 范围 | 模型归因 / patch.yaml 配置 / 审批安全 / 飞书深度定制 / TUI 皮肤 / Cron 运维 / Gateway 稳定性 / Checkpoint 预测 |
-| 最后更新 | 2026-07-03 |
+| 最后更新 | 2026-07-06 |
 | 来源 | 从 `owner-v17`（500+ commit）清洗迁移而来；本分支是重新整理后的最小叠加版本 |
 
 ### 侵入类型图例
@@ -210,6 +210,7 @@
   - 侵入：`gateway/run.py`（签名 + 2 调用点 + 透传）、`cron/scheduler.py`（prompt 追加）
   - owner/：`owner/gateway/inbound_context.py`（3 函数加参数）、`owner/feishu/inbound_context.py`（输出 session_id 行）
 - **侵入类型**：薄胶水（参数透传链 + prompt 追加）
+- **Commit**：已合入（无独立 commit，散在 `2f913a40d`、`f9f3c39e5` 及 cron/scheduler 多提交中）
 - **Commit**：待提交
 
 ### 3.3 多平台审批签名统一
@@ -342,7 +343,7 @@
 - **背景**：上下文压缩时飞书需要显示中文摘要反馈。
 - **方案**：`owner/feishu/compression_summary.py` + `owner/gateway/hygiene_compression_notice.py`（hygiene 压缩通知）+ gateway/run.py 薄胶水。
 - **侵入类型**：薄胶水
-- **Commit**：`d80705074`（§17.16）
+- **Commit**：`d80705074`（§17.16）、`ed6667dd4`（fix: move Feishu summary after `_compressed_est` is assigned）
 
 ### 4.9 /providers 斜杠命令
 
@@ -362,7 +363,8 @@
 - **侵入类型**：薄胶水（adapter.py 4 行 card action 分支）+ plugin hook（零 upstream surface）
 - **架构**：发送路径完全 out-of-tree（plugin hook + `card_sender.send_card_via_rest`）；点击路径 adapter 分支 → `handle_card_click` → 合成命令
 - **合并说明**：原独立插件已合并入 `owner-extensions`，代码拆至 `memory_feishu_bridge/` 子目录
-- **Commit**：`54dbc6320`（feat）、`9044b57d8`（merge into owner-extensions）、`49f52568f`（extract subdirectory）
+- **Commit**：`54dbc6320`（feat）、`9044b57d8`（merge into owner-extensions）、`49f52568f`（extract subdirectory）、`c8af97fe6`（move under `owner/` with symlink）
+- **后续修复**：`5c2d2f092`（fix: forward `gateway_session_key` through hook chain，卡片不弹出）、`48fda1203`（fix: extract `operator.open_id` for auth）、`57c950e21`（fix: synthetic commands use empty `message_id` to avoid `reply_to`）、`8b76be146`（fix: remove backtick from card + i18n approve/reject responses）、`17072f048`（test: update assertions for i18n-driven labels）
 
 ---
 
@@ -407,6 +409,7 @@
 - **背景**：QQ Bot 的 WebSocket 连接断线后重连不稳定（无 heartbeat/receive_timeout/stop_retry 机制）。
 - **方案**：`gateway/platforms/qqbot/adapter.py` + `constants.py` 增加 heartbeat、receive_timeout、stop_retry、rebuild_http_client 重连链。
 - **侵入类型**：inline（adapter 重连逻辑）
+- **Commit**：`135c5a147`（§11.1）、`37f8a02f1`（fix: accept `is_reconnect` kwarg in `QQAdapter.connect()`）
 - **Commit**：`135c5a147`（§11.1）
 
 ### 7.2 Memory synthetic guard（跳过合成系统消息的 recall/sync）
@@ -487,6 +490,22 @@
 - **文件**：`agent/error_classifier.py`、`agent/conversation_loop.py`
 - **Commit**：`e81221af6`
 
+### 7.10 Gateway 运行中 Agent 的插件命令隔离
+
+- **背景**：当 agent 正在处理某条消息时，用户发送的斜杠命令会被当成普通文本注入 agent turn（busy-input 路径）。plugin 注册的命令（如 `/providers`）也不例外，导致命令被当作用户提示词的一部分而不是被网关分派执行。
+- **方案**：`gateway/run.py` 的 catch-all running-agent guard 增加 `is_gateway_known_command()` 检查 —— 凡是 plugin 注册且被网关识别的命令，不再走 busy-input 注入路径，而是继续分派到命令 handler 执行。同时 `/providers` 加入 bypass whitelist（与 `/status` 同级），作为只读命令可安全 mid-turn 执行。
+- **侵入类型**：inline（`gateway/run.py` 43 行，`[owner] §17.x` 标记）
+- **Commit**：`71b5c9046`
+
+### 7.11 允许 /memory 和 /skills mid-turn 执行
+
+- **背景**：`/memory` 和 `/skills` 是只读/管理型斜杠命令，不应被 running-agent guard 拦截，但之前不在白名单中，导致 agent 运行时无法查看记忆或技能列表。
+- **方案**：将 `/memory`、`/skills` 加入 `GATEWAY_KNOWN_COMMANDS`（`hermes_cli/commands.py`）并在 `gateway/run.py` 的 running-agent guard 中豁免。
+- **侵入类型**：inline（commands.py 2 行 + run.py 8 行）
+- **Commit**：`d1325fc7e`
+
+---
+
 ---
 
 ## 八、Diff / Patch 工具链
@@ -547,7 +566,7 @@
 - **侵入类型**：additive（SCHEMA_SQL 加列 + 签名尾部加参数 + INSERT 尾部加字段 + 1 处 stamp 赋值）
 - **文件**：`hermes_state.py`、`run_agent.py`、`agent/conversation_loop.py`
 - **兼容性**：旧消息新列默认 0；`append_message` 另两个调用方（`gateway/session.py`、`gateway/mirror.py`）不传新参数默认 None→0
-- **Commit**：待提交
+- **Commit**：`43fddb615`（feat）、`e2a39ac68`（fix: stamp onto agent instance, not wrong message）
 
 ---
 
@@ -581,6 +600,25 @@
   - `todo-scan.py` / `todo-scan.sh`（§12.4 todo 扫描，含 timeout-safe 版本）：`0bed11194`、`56679f899`、`d7a06ca47`（drop 被上游覆盖的版本）
 - **侵入类型**：纯新增（脚本文件）
 - **Commit**：上述四个
+
+### 11.4 HN Daily 新闻摘要脚本
+
+- **背景**：每日抓取 Hacker News Top 20，生成中文一句话摘要，推送飞书群。原脚本硬编码，需要参数化以便复用。
+- **方案**：纯新增 `owner/scripts/hn_daily.py`（438 行，含抓取、摘要、飞书卡片推送）。
+- **重构**：`6ce327432` — 参数化 config（`config.json`）、分类模板（`categories.json`）、重试策略、输出格式（stdout / file / Feishu webhook）。
+- **文件**：`owner/scripts/hn_daily.py`、`owner/scripts/hn_daily/README.md`、`owner/scripts/hn_daily/categories.json`、`owner/scripts/hn_daily/config.example.json`
+- **侵入类型**：纯新增（脚本文件）
+- **Commit**：`7d9cf95aa`（feat）、`6ce327432`（refactor: parameterize）
+
+### 11.5 Skill 同步脚本
+
+- **背景**：owner 的 skill 在 `westskill` 仓库维护，需要一套可移植、可测试的 diff/apply 脚本同步到各节点（如 `node010`）。
+- **方案**：纯新增 `owner/scripts/skill_sync_*.py` + `tests/owner/test_skill_sync.py`：
+  - `skill_sync_diff.py`：对比本地 skill 与远程仓库差异
+  - `skill_sync_apply.py`：将差异应用到本地
+  - `skill_sync_lib.py`：共享库（路径解析、过滤、备份）
+- **侵入类型**：纯新增（脚本 + 测试）
+- **Commit**：`f3a1b1fa4`
 
 ---
 
@@ -630,7 +668,7 @@
 | `owner/gateway/` | inbound_context + hygiene_compression_notice | gateway/run.py |
 | `owner/patches/` | runtime patch（OpenViking recall + memory synthetic guard + pool base_url override） | owner-extensions plugin / hermes_cli/runtime_provider.py |
 | `owner/providers/credential_helpers.py` | GitHub token 校验等 credential helper | hermes_cli/model_switch.py |
-| `owner/scripts/` | 运维脚本（备份/健康检查/汇率/todo 扫描） | — |
+| `owner/scripts/` | 运维脚本（备份/健康检查/汇率/todo 扫描/**HN Daily 新闻摘要/skill 同步**） | — |
 | `owner/skins/` | ruolin 系列皮肤 YAML | — |
 | `owner/tools/schema_patches.py` | 运行时 schema patch（legacy send_message card + image_generate model） | owner-extensions plugin（import/apply） |
 
