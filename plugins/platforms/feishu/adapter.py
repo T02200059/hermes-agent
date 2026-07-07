@@ -2279,6 +2279,13 @@ class FeishuAdapter(BasePlatformAdapter):
         if not os.path.exists(image_path):
             return SendResult(success=False, error=f"Image file not found: {image_path}")
 
+        # [owner] media guard: 飞书 image.create 上限 10MB，超限时不调 API 直接返回提示。
+        _media_guard_img = _owner_import("owner.feishu.media_guard", "check_image_size")
+        if _media_guard_img is not None:
+            _oversize_img = _media_guard_img(image_path)
+            if _oversize_img is not None:
+                await self._send_media_guard_hint(chat_id, _oversize_img.error, reply_to, metadata)
+                return _oversize_img
         try:
             import io as _io
             with open(image_path, "rb") as f:
@@ -2323,6 +2330,12 @@ class FeishuAdapter(BasePlatformAdapter):
             return self._finalize_send_result(message_response, "image send failed")
         except Exception as exc:
             logger.error("[Feishu] Failed to send image %s: %s", image_path, exc, exc_info=True)
+            # [owner] media guard: 图片上传异常翻译成用户可见提示并发到 DM。
+            _guard_img_exc = _owner_import("owner.feishu.media_guard", "check_image_upload_exception")
+            if _guard_img_exc is not None:
+                _warn_img_result = _guard_img_exc(exc, image_path=image_path)
+                await self._send_media_guard_hint(chat_id, _warn_img_result.error, reply_to, metadata)
+                return _warn_img_result
             return SendResult(success=False, error=str(exc))
 
     async def send_typing(self, chat_id: str, metadata=None) -> None:
@@ -4888,6 +4901,15 @@ class FeishuAdapter(BasePlatformAdapter):
             file_path=display_name,
             requested_message_type=outbound_message_type,
         )
+        # [owner] media guard: 飞书 file.create 上限 30MB，超限时不调 API 直接返回提示；
+        # 同时把 SDK 崩溃（空响应体 → JSONDecodeError）翻译成用户可见的中文提示，
+        # 不再静默吞掉。逻辑在 owner.feishu.media_guard，本处只做薄委托。
+        _media_guard = _owner_import("owner.feishu.media_guard", "check_file_size")
+        if _media_guard is not None:
+            _oversize = _media_guard(file_path, display_name=display_name)
+            if _oversize is not None:
+                await self._send_media_guard_hint(chat_id, _oversize.error, reply_to, metadata)
+                return _oversize
         try:
             with open(file_path, "rb") as file_obj:
                 body = self._build_file_upload_body(
@@ -4929,6 +4951,13 @@ class FeishuAdapter(BasePlatformAdapter):
             return self._finalize_send_result(message_response, "file send failed")
         except Exception as exc:
             logger.error("[Feishu] Failed to send file %s: %s", file_path, exc, exc_info=True)
+            # [owner] media guard: SDK 崩溃（空响应体/JSONDecodeError 等）翻译成
+            # 用户可见的中文提示并发到 DM，避免静默失败。
+            _guard_exc = _owner_import("owner.feishu.media_guard", "check_upload_exception")
+            if _guard_exc is not None:
+                _warn_result = _guard_exc(exc, file_path=file_path, display_name=display_name)
+                await self._send_media_guard_hint(chat_id, _warn_result.error, reply_to, metadata)
+                return _warn_result
             return SendResult(success=False, error=str(exc))
 
     async def _send_raw_message(
@@ -5362,6 +5391,36 @@ class FeishuAdapter(BasePlatformAdapter):
             return _FEISHU_FILE_UPLOAD_TYPE, "file"
 
         return _FEISHU_FILE_UPLOAD_TYPE, "file"
+
+    async def _send_media_guard_hint(
+        self,
+        chat_id: str,
+        hint_text: Optional[str],
+        reply_to: Optional[str],
+        metadata: Optional[Dict[str, Any]],
+    ) -> None:
+        """[owner] media guard: 把超限/上传失败的中文提示发到飞书 DM。
+
+        之前超限或 SDK 崩溃时只记日志、返回 ``SendResult(success=False)``，
+        上层投递链不会再发任何消息 → 用户侧静默失败。这里补一道用户可见的
+        提示投递，与 ``base.py`` 的 ``⚠️ Couldn't deliver the ...`` 降级
+        语义一致（不泄漏 host 路径，只发提示文本）。
+
+        best-effort：发送本身的异常不再向上抛，避免遮蔽原始上传失败结果。
+        """
+        if not hint_text:
+            return
+        try:
+            await self.send(
+                chat_id=chat_id,
+                content=hint_text,
+                reply_to=reply_to,
+                metadata=metadata,
+            )
+        except Exception as hint_exc:
+            logger.warning(
+                "[Feishu] media_guard: failed to surface hint to user: %s", hint_exc
+            )
 
 
 # =============================================================================
