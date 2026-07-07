@@ -331,6 +331,10 @@ find "$STAGING_DIR" -maxdepth 1 \
 REMAINING=$(ssh -o BatchMode=yes "${BACKUP_REMOTE_HOST}" \
     "ls -1 '${BACKUP_REMOTE_DIR}'/hermes-*.tar.gz 2>/dev/null | wc -l" \
     2>/dev/null)
-log "done. local copy: ${LOCAL_TMP} (clears in ${LOCAL_TTL_MIN}m); remote retains ${REMAINING:-?} archive(s)"
+if [ "${BACKUP_QUIET:-0}" = "1" ]; then
+    : # success — stay silent, only stderr on failure gets delivered
+else
+    log "done. local copy: ${LOCAL_TMP} (clears in ${LOCAL_TTL_MIN}m); remote retains ${REMAINING:-?} archive(s)"
+fi
 
 exit 0
