@@ -393,12 +393,12 @@ def should_bypass_active_session(command_name: str | None) -> bool:
     Rationale: every gateway-registered slash command either has a
     specific Level-2 handler in gateway/run.py (/stop, /new, /model,
     /approve, etc.) or reaches the running-agent catch-all that returns
-    a "busy — wait or /stop first" response. In both paths the command
+    a "busy - wait or /stop first" response. In both paths the command
     is dispatched, not queued.
 
     Queueing is always wrong for a recognized slash command because the
     safety net in gateway.run discards any command text that reaches
-    the pending queue — which meant a mid-run /model (or /reasoning,
+    the pending queue - which meant a mid-run /model (or /reasoning,
     /voice, /insights, /title, /resume, /retry, /undo, /compress,
     /usage, /reload-mcp, /sethome, /reset) would silently
     interrupt the agent AND get discarded, producing a zero-char
@@ -406,8 +406,20 @@ def should_bypass_active_session(command_name: str | None) -> bool:
 
     ACTIVE_SESSION_BYPASS_COMMANDS remains the subset of commands with
     explicit Level-2 handlers; the rest fall through to the catch-all.
+
+    Plugin-registered slash commands (e.g. /feishu-guide, /providers)
+    are not in _COMMAND_LOOKUP, so resolve_command() returns None for
+    them.  Without also checking is_gateway_known_command() they fall
+    through to the busy-input path and get injected as user text into
+    the running agent turn - the same class of bug as #5057, but for
+    plugin commands.  is_gateway_known_command() already covers plugin
+    commands via _iter_plugin_command_entries(), so we reuse it.
     """
-    return resolve_command(command_name) is not None if command_name else False
+    if not command_name:
+        return False
+    if resolve_command(command_name) is not None:
+        return True
+    return is_gateway_known_command(command_name)
 
 
 def _resolve_config_gates() -> set[str]:
