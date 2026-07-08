@@ -2304,75 +2304,18 @@ def check_dangerous_command(command: str, env_type: str,
         return {"approved": True, "message": None}
 
 
-    session_key = get_current_session_key()
-    if is_approved(session_key, pattern_key):
-        return {"approved": True, "message": None}
-
-    is_cli = _is_interactive_cli()
-    is_gateway = _is_gateway_approval_context()
-
-    if not is_cli and not is_gateway:
-        # Cron sessions: respect cron_mode config
-        if _is_cron_session():
-            if _get_cron_approval_mode() == "deny":
-                return {
-                    "approved": False,
-                    "message": t("approval.cron_blocked", description=description),
-                }
-        logger.warning(
-            "AUTO-APPROVED dangerous command in non-interactive non-gateway context "
-            "(pattern: %s): %s — set HERMES_INTERACTIVE or HERMES_GATEWAY_SESSION to require approval.",
-            description, command[:200],
-        )
-        return {"approved": True, "message": None}
-
-    if is_gateway or env_var_enabled("HERMES_EXEC_ASK"):
-        submit_pending(session_key, {
-            "command": command,
-            "pattern_key": pattern_key,
-            "description": description,
-        })
-        return {
-            "approved": False,
-            "pattern_key": pattern_key,
-            "status": "approval_required",
-            "command": command,
-            "description": description,
-            "message": t(
-                "approval.gateway_asking",
-                description=description,
-                command=command,
-            ),
-        }
-
-
+    # [owner] i18n: pass t() to _run_approval_gate's cron_deny_message
+    # instead of the upstream hardcoded English string.
     return _run_approval_gate(
         pattern_key=pattern_key,
         description=description,
         display_target=command,
         approval_callback=approval_callback,
-        cron_deny_message=(
-            f"BLOCKED: Command flagged as dangerous ({description}) "
-            "but cron jobs run without a user present to approve it. "
-            "Find an alternative approach that avoids this command. "
-            "To allow dangerous commands in cron jobs, set "
-            "approvals.cron_mode: approve in config.yaml."
-        ),
+        cron_deny_message=t("approval.cron_blocked", description=description),
         autoapprove_log_prefix=(
             "AUTO-APPROVED dangerous command in non-interactive non-gateway context"
         ),
     )
-
-
-
-    if choice == "deny":
-        return {
-            "approved": False,
-            "message": t("approval.user_denied", description=description),
-            "pattern_key": pattern_key,
-            "description": description,
-        }
-
 
 def request_tool_approval(
     tool_name: str,

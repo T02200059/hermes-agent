@@ -5502,11 +5502,12 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 steer_ack_enabled = steer_ack_env.strip().lower() in {"1", "true", "yes", "on"}
             else:
                 steer_ack_enabled = bool(
-                    resolve_display_setting(
+                    resolve_display_setting_for_source(
                         _load_gateway_config(),
                         platform_key,
                         "busy_steer_ack_enabled",
                         True,
+                        source=source,  # [owner] per-chat display override
                     )
                 )
             if not steer_ack_enabled:
@@ -10695,7 +10696,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         try:
             from owner.gateway.inbound_context import append_inbound_context as _append_inbound_context
 
-            message_text = _append_inbound_context(message_text, source, session_id=session_id)
+            message_text = _append_inbound_context(message_text, source, session_id=session_key)
         except Exception:
             logger.debug("Inbound context append failed (non-fatal)", exc_info=True)
 
@@ -17037,7 +17038,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         # Apply friendly tool labels config (default on) — per-platform aware
         try:
             from agent.display import set_friendly_tool_labels
-            _ftl = resolve_display_setting(user_config, platform_key, "friendly_tool_labels", True)
+            _ftl = resolve_display_setting_for_source(
+                user_config, platform_key, "friendly_tool_labels", True,
+                source=source,  # [owner] per-chat display override
+            )
             set_friendly_tool_labels(bool(_ftl))
         except Exception:
             pass
