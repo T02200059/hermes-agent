@@ -10,7 +10,7 @@
 |------|-----|
 | 分支 | `owner` |
 | 基点 | `upstream/main` @ `f53ba9bb5`（`fix(s6): dot-prefix gateway staging dir`，2026-06-29） |
-| Commit 数 | 30（基点后 owner 个人定制，无 merge commit） |
+| Commit 数 | 31（基点后 owner 个人定制，无 merge commit） |
 | 改动文件总数 | 172（去重后） |
 | owner/ 纯新增 | ~75 个文件 |
 | 官方文件侵入 | ~70 个文件（含 ~20 个测试文件） |
@@ -399,6 +399,17 @@
   - YAML 皮肤：`owner/skins/ruolin.yaml`、`owner/skins/ruolin-light.yaml`、`owner/skins/README.md`
 - **侵入类型**：inline（TS pipeline 扩展）+ 纯新增（owner TS 模块 + skin YAML）
 - **Commit**：`4a7be0eef`（§7）、`e93f3148e`（§17.22 TUI async fix）
+
+### 6.2 ruolin 皮肤更新 + redaction warning 移除
+
+- **背景**：(1) `skin_engine.py` 自 2026-05-07 后新增了 6 个 color key（`selection_bg`、`voice_status_bg`、`completion_menu_bg/current_bg/meta_bg/meta_current_bg`），ruolin 系列皮肤缺失这些字段，补全菜单/选中/语音状态栏在樱花粉主题下的配色；(2) `ruolin-light.yaml` 丢失，从 skill reference `light-mode-skin-design.md` 恢复；(3) `security.redact_secrets: false` 时 CLI 和 Gateway 每次启动都打印 `⚠ Secret redaction is DISABLED` 警告，对有意关闭 redaction 的 owner 场景是噪音。
+- **方案**：
+  - `owner/skins/ruolin.yaml`：补 6 个新 color key（暗色配色：`selection_bg: #4A2845`、`completion_menu_bg: #1A0F1A` 等）
+  - `owner/skins/ruolin-light.yaml`：从 reference 恢复完整亮色配色 + 补 6 个新 color key（亮色配色：`selection_bg: #FFD6E0`、`completion_menu_bg: #F8F0F5` 等）
+  - `cli.py:13052`：删除 17 行 redaction disabled console 打印
+  - `gateway/run.py:6535`：删除 22 行 redaction disabled logger.warning
+- **侵入类型**：inline（删除启动警告代码）+ 纯新增（skin YAML 字段补全）
+- **Commit**：`1731193cb`
 
 ---
 
@@ -883,3 +894,13 @@ _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请在�
 - **测试**：44 test passed, 0 failed（19 新增 + 5 feishu_tools + 20 feishu_comment）；`test_feishu.py` 8 failed 确认 pre-existing
 - **E2E 验证**：DM 上下文读取真实飞书 wiki 电子表格（`https://skycloudsys.feishu.cn/wiki/CjhO...`），成功解析 wiki node -> sheet -> 5737 行数据
 - **zcode 委托**：初始修复由 zcode-cli 完成（fallback client + wiki/bitable），sheet 读取由琳姐手动补充（API URI 修正：v3 `/sheets/query` 而非 `/spreadsheets/:token`）
+
+### 2026-07-08：ruolin 皮肤更新 + redaction warning 移除
+
+- **类型**：皮肤字段补全 + 启动噪音清除
+- **Commit**：`1731193cb`
+- **变动**：
+  - `owner/skins/ruolin.yaml` + `owner/skins/ruolin-light.yaml`：补全 skin_engine 新增的 6 个 color key（`selection_bg`、`voice_status_bg`、`completion_menu_*`），ruolin-light 从 skill reference 恢复
+  - `cli.py`：删除 17 行 `Secret redaction is DISABLED` console 打印
+  - `gateway/run.py`：删除 22 行 `Secret redaction: DISABLED` logger.warning
+- **验证**：`python -m py_compile` 两文件通过；`pytest -k "redact or secret"` 450 passed / 1 pre-existing failure（`test_empty_body_fallback_redacts_secrets`，stash 验证确认与本次改动无关）；`load_skin('ruolin')` / `load_skin('ruolin-light')` Python 加载验证 29 colors 全部就位
