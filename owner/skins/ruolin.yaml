@@ -1,13 +1,13 @@
 # =============================================================================
-# Hermes Skin — ruolin
-# 樱花粉 · Sakura Pink — 温温柔柔的若琳主题 🌸
+# Hermes Skin - ruolin
+# 樱花粉 · Sakura Pink - 温温柔柔的若琳主题 🌸
 # =============================================================================
 # All fields are optional. Missing values inherit from default.
 # Activate with: /skin ruolin  (in CLI)
 # Or set: display.skin: ruolin  (in config.yaml)
 
 name: ruolin
-description: "樱花粉 · Sakura Pink — 温温柔柔的若琳主题 🌸"
+description: "樱花粉 · Sakura Pink - 温温柔柔的若琳主题 🌸"
 
 # ── Colors ──────────────────────────────────────────────────────────────────
 colors:
@@ -43,6 +43,14 @@ colors:
   # Session
   session_label: "#FF69B4"
   session_border: "#A0527A"
+
+  # Selection & Completion (skin engine 新增字段)
+  selection_bg: "#4A2845"
+  voice_status_bg: "#2E1B2E"
+  completion_menu_bg: "#1A0F1A"
+  completion_menu_current_bg: "#4A2845"
+  completion_menu_meta_bg: "#251425"
+  completion_menu_meta_current_bg: "#4A2845"
 
 # ── Spinner ─────────────────────────────────────────────────────────────────
 spinner:
