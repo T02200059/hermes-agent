@@ -15,7 +15,7 @@
 | owner/ 纯新增 | ~75 个文件 |
 | 官方文件侵入 | ~70 个文件（含 ~20 个测试文件） |
 | 范围 | 模型归因 / patch.yaml 配置 / 审批安全 / 飞书深度定制 / TUI 皮肤 / Cron 运维 / Gateway 稳定性 / Checkpoint 预测 |
-| 最后更新 | 2026-07-06 |
+| 最后更新 | 2026-07-08 |
 | 来源 | 从 `owner-v17`（500+ commit）清洗迁移而来；本分支是重新整理后的最小叠加版本 |
 
 ### 侵入类型图例
@@ -865,3 +865,21 @@ _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请在�
 - **风险评估**：中（inbound context / hygiene notice / auto-card），低但改动风险高（chained quick command）
 - **plugin 聚合评估**：已迁 plugin 的 4 项（memory synthetic guard、OpenViking recall、schema patches、`/providers`）暂不值得做统一抽象。只有 2 个是真 monkey-patch，`pool_base_url_override` 是 helper，`schema_patches` 是 import 自执行；为 2 个样本引入 `OwnerPatch` Protocol/registry 属于过早抽象，建议等 runtime patch ≥5 个再统一
 - **评估报告**：`/tmp/kimi-owner-eval-result.md`（219 行）
+
+### 2026-07-08：feishu_doc_read/drive tools 支持 DM 上下文 + wiki token 解析 + sheet/bitable 读取
+
+- **类型**：bug fix + 功能增强
+- **Commit**：`9246a191e`
+- **背景**：`feishu_doc_read` 工具只在飞书文档评论事件触发时可用（`feishu_comment.py` 通过 `set_client()` 注入 lark client）。在 DM/群聊对话中 client 为 None，工具直接报错 `"Feishu client not available (not in a Feishu comment context)"`。此外只支持 docx `document_id`，无法解析 wiki node token，也不能读电子表格（sheet）和多维表格（bitable）。
+- **方案**：
+  - 新建 `tools/feishu_client_utils.py` 共享模块：fallback client（用 `FEISHU_APP_ID` + `FEISHU_APP_SECRET` 创建 tenant client，进程级缓存 + double-checked locking）、`do_request`、`extract_token`（从裸 token/URL 提取）、`resolve_wiki_node`（`/wiki/v2/spaces/get_node` 解析 obj_token + obj_type）、`read_bitable_as_text`（列 表 -> 分页读记录 -> 格式化纯文本，上限 50 表/500 记录）、`read_sheet_as_text`（v3 `/sheets/query` 列工作表 + v2 `/values/:range` 读数据，上限 500 行/50 列）
+  - `tools/feishu_doc_tool.py`：`get_client()` 返回 None 时 fallback 到环境变量 client；handler 入口加 token 提取 + wiki 解析分支（docx -> raw_content；bitable -> read_bitable_as_text；sheet -> read_sheet_as_text）
+  - `tools/feishu_drive_tool.py`：4 处 handler 同样加 fallback client；`_do_request` 移至共享模块（去重 ~45 行）
+  - 评论上下文注入逻辑（`set_client`）完全不动，注入 client 优先于 fallback
+- **涉及文件**：
+  - 纯新增：`tools/feishu_client_utils.py`（350+ 行）、`tests/tools/test_feishu_client_utils.py`（19 个测试）
+  - 侵入：`tools/feishu_doc_tool.py`、`tools/feishu_drive_tool.py`
+- **侵入类型**：inline 逻辑修改（handler 内加 fallback 分支 + wiki/sheet/bitable 分支）
+- **测试**：44 test passed, 0 failed（19 新增 + 5 feishu_tools + 20 feishu_comment）；`test_feishu.py` 8 failed 确认 pre-existing
+- **E2E 验证**：DM 上下文读取真实飞书 wiki 电子表格（`https://skycloudsys.feishu.cn/wiki/CjhO...`），成功解析 wiki node -> sheet -> 5737 行数据
+- **zcode 委托**：初始修复由 zcode-cli 完成（fallback client + wiki/bitable），sheet 读取由琳姐手动补充（API URI 修正：v3 `/sheets/query` 而非 `/spreadsheets/:token`）
