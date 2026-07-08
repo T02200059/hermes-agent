@@ -2,12 +2,24 @@
 
 Provides ``feishu_doc_read`` for reading document content as plain text.
 Uses the same lazy-import + BaseRequest pattern as feishu_comment.py.
+
+When a comment-event handler injects a lark client via ``set_client`` we use
+it; otherwise we build a tenant client from ``FEISHU_APP_ID`` /
+``FEISHU_APP_SECRET`` so the tool also works in plain DM/group-chat contexts.
+Shared helpers live in :mod:`tools.feishu_client_utils`.
 """
 
-import json
 import logging
 import threading
 
+from tools.feishu_client_utils import (
+    do_request,
+    extract_token,
+    read_bitable_as_text,
+    read_sheet_as_text,
+    resolve_client,
+    resolve_wiki_node,
+)
 from tools.registry import registry, tool_error, tool_result
 
 logger = logging.getLogger(__name__)
@@ -36,14 +48,21 @@ FEISHU_DOC_READ_SCHEMA = {
     "name": "feishu_doc_read",
     "description": (
         "Read the full content of a Feishu/Lark document as plain text. "
-        "Useful when you need more context beyond the quoted text in a comment."
+        "Useful when you need more context beyond the quoted text in a comment. "
+        "Accepts a docx token, a wiki node token, or a full Feishu/Lark URL; "
+        "docx documents and bitable (多维表格) bases are supported."
     ),
     "parameters": {
         "type": "object",
         "properties": {
             "doc_token": {
                 "type": "string",
-                "description": "The document token (from the document URL or comment context).",
+                "description": (
+                    "The document token or URL. May be a docx doc_token, a "
+                    "wiki node token, or a full URL like "
+                    "https://xxx.feishu.cn/wiki/<node_token> or "
+                    "https://xxx.feishu.cn/docx/<doc_token>."
+                ),
             },
         },
         "required": ["doc_token"],
@@ -66,59 +85,76 @@ def _check_feishu():
         return False
 
 
+def _read_docx_raw(client, doc_token):
+    """Call the docx ``raw_content`` API. Returns ``(content_or_None, error_or_None)``."""
+    code, msg, data = do_request(
+        client, "GET", _RAW_CONTENT_URI,
+        paths={"document_id": doc_token},
+    )
+    if code != 0:
+        return None, f"Failed to read document: code={code} msg={msg}"
+
+    content = ""
+    if isinstance(data, dict):
+        content = data.get("content", "") or ""
+    if not content and hasattr(data, "content"):
+        content = getattr(data, "content", "") or ""
+    if not content:
+        return None, "No content returned from document API"
+    return content, None
+
+
 def _handle_feishu_doc_read(args: dict, **kwargs) -> str:
-    doc_token = args.get("doc_token", "").strip()
-    if not doc_token:
+    raw_token = args.get("doc_token", "").strip()
+    if not raw_token:
         return tool_error("doc_token is required")
 
-    client = get_client()
+    # Prefer an injected (comment-context) client; fall back to a tenant
+    # client built from FEISHU_APP_ID / FEISHU_APP_SECRET.
+    client = resolve_client(get_client())
     if client is None:
-        return tool_error("Feishu client not available (not in a Feishu comment context)")
+        return tool_error(
+            "Feishu client not available (set FEISHU_APP_ID and "
+            "FEISHU_APP_SECRET, or run from a Feishu comment context)"
+        )
+
+    # Extract the token and decide whether it needs wiki node resolution.
+    token, is_wiki = extract_token(raw_token)
+    if not token:
+        return tool_error("Could not extract a document token from the input")
+
+    obj_token, obj_type = token, "docx"
+    if is_wiki:
+        obj_token, obj_type = resolve_wiki_node(client, token)
+        if not obj_token:
+            return tool_error(
+                f"Could not resolve wiki node token '{token}' "
+                "(check the token is correct and the app has wiki access)"
+            )
 
     try:
-        from lark_oapi import AccessTokenType
-        from lark_oapi.core.enum import HttpMethod
-        from lark_oapi.core.model.base_request import BaseRequest
+        if obj_type == "docx":
+            content, err = _read_docx_raw(client, obj_token)
+            if err:
+                return tool_error(err)
+            return tool_result(success=True, content=content)
+
+        if obj_type == "bitable":
+            text = read_bitable_as_text(client, obj_token)
+            return tool_result(success=True, content=text)
+
+        if obj_type == "sheet":
+            text = read_sheet_as_text(client, obj_token)
+            return tool_result(success=True, content=text)
+
+        return tool_error(
+            f"暂不支持读取 {obj_type} 类型文档 (当前支持 docx、bitable、sheet)"
+        )
     except ImportError:
         return tool_error("lark_oapi not installed")
-
-    request = (
-        BaseRequest.builder()
-        .http_method(HttpMethod.GET)
-        .uri(_RAW_CONTENT_URI)
-        .token_types({AccessTokenType.TENANT})
-        .paths({"document_id": doc_token})
-        .build()
-    )
-
-    # Tool handlers run synchronously in a worker thread (no running event
-    # loop), so call the blocking lark client directly.
-    response = client.request(request)
-
-    code = getattr(response, "code", None)
-    if code != 0:
-        msg = getattr(response, "msg", "unknown error")
-        return tool_error(f"Failed to read document: code={code} msg={msg}")
-
-    raw = getattr(response, "raw", None)
-    if raw and hasattr(raw, "content"):
-        try:
-            body = json.loads(raw.content)
-            content = body.get("data", {}).get("content", "")
-            return tool_result(success=True, content=content)
-        except (json.JSONDecodeError, AttributeError):
-            pass
-
-    # Fallback: try response.data
-    data = getattr(response, "data", None)
-    if data:
-        if isinstance(data, dict):
-            content = data.get("content", "")
-        else:
-            content = getattr(data, "content", str(data))
-        return tool_result(success=True, content=content)
-
-    return tool_error("No content returned from document API")
+    except Exception as e:
+        logger.exception("feishu_doc_read: unexpected error")
+        return tool_error(f"Failed to read document: {e}")
 
 
 # ---------------------------------------------------------------------------

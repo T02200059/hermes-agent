@@ -2,13 +2,17 @@
 
 Provides tools for listing, replying to, and adding document comments.
 Uses the same lazy-import + BaseRequest pattern as feishu_comment.py.
-The lark client is injected per-thread by the comment event handler.
+
+The lark client is injected per-thread by the comment event handler when one
+is active; otherwise we build a tenant client from ``FEISHU_APP_ID`` /
+``FEISHU_APP_SECRET`` so the tools also work in plain DM/group-chat contexts.
+Shared helpers (``do_request``) live in :mod:`tools.feishu_client_utils`.
 """
 
-import json
 import logging
 import threading
 
+from tools.feishu_client_utils import do_request, resolve_client
 from tools.registry import registry, tool_error, tool_result
 
 logger = logging.getLogger(__name__)
@@ -35,55 +39,6 @@ def _check_feishu():
         return importlib.util.find_spec("lark_oapi") is not None
     except (ImportError, ValueError):
         return False
-
-
-def _do_request(client, method, uri, paths=None, queries=None, body=None):
-    """Build and execute a BaseRequest, return (code, msg, data_dict)."""
-    from lark_oapi import AccessTokenType
-    from lark_oapi.core.enum import HttpMethod
-    from lark_oapi.core.model.base_request import BaseRequest
-
-    http_method = HttpMethod.GET if method == "GET" else HttpMethod.POST
-
-    builder = (
-        BaseRequest.builder()
-        .http_method(http_method)
-        .uri(uri)
-        .token_types({AccessTokenType.TENANT})
-    )
-    if paths:
-        builder = builder.paths(paths)
-    if queries:
-        builder = builder.queries(queries)
-    if body is not None:
-        builder = builder.body(body)
-
-    request = builder.build()
-
-    # Tool handlers run synchronously in a worker thread (no running event
-    # loop), so call the blocking lark client directly.
-    response = client.request(request)
-
-    code = getattr(response, "code", None)
-    msg = getattr(response, "msg", "")
-
-    # Parse response data
-    data = {}
-    raw = getattr(response, "raw", None)
-    if raw and hasattr(raw, "content"):
-        try:
-            body_json = json.loads(raw.content)
-            data = body_json.get("data", {})
-        except (json.JSONDecodeError, AttributeError):
-            pass
-    if not data:
-        resp_data = getattr(response, "data", None)
-        if isinstance(resp_data, dict):
-            data = resp_data
-        elif resp_data and hasattr(resp_data, "__dict__"):
-            data = vars(resp_data)
-
-    return code, msg, data
 
 
 # ---------------------------------------------------------------------------
@@ -131,9 +86,12 @@ FEISHU_DRIVE_LIST_COMMENTS_SCHEMA = {
 
 
 def _handle_list_comments(args: dict, **kwargs) -> str:
-    client = get_client()
+    client = resolve_client(get_client())
     if client is None:
-        return tool_error("Feishu client not available")
+        return tool_error(
+            "Feishu client not available (set FEISHU_APP_ID and "
+            "FEISHU_APP_SECRET, or run from a Feishu comment context)"
+        )
 
     file_token = args.get("file_token", "").strip()
     if not file_token:
@@ -154,7 +112,7 @@ def _handle_list_comments(args: dict, **kwargs) -> str:
     if page_token:
         queries.append(("page_token", page_token))
 
-    code, msg, data = _do_request(
+    code, msg, data = do_request(
         client, "GET", _LIST_COMMENTS_URI,
         paths={"file_token": file_token},
         queries=queries,
@@ -206,9 +164,12 @@ FEISHU_DRIVE_LIST_REPLIES_SCHEMA = {
 
 
 def _handle_list_replies(args: dict, **kwargs) -> str:
-    client = get_client()
+    client = resolve_client(get_client())
     if client is None:
-        return tool_error("Feishu client not available")
+        return tool_error(
+            "Feishu client not available (set FEISHU_APP_ID and "
+            "FEISHU_APP_SECRET, or run from a Feishu comment context)"
+        )
 
     file_token = args.get("file_token", "").strip()
     comment_id = args.get("comment_id", "").strip()
@@ -227,7 +188,7 @@ def _handle_list_replies(args: dict, **kwargs) -> str:
     if page_token:
         queries.append(("page_token", page_token))
 
-    code, msg, data = _do_request(
+    code, msg, data = do_request(
         client, "GET", _LIST_REPLIES_URI,
         paths={"file_token": file_token, "comment_id": comment_id},
         queries=queries,
@@ -278,9 +239,12 @@ FEISHU_DRIVE_REPLY_SCHEMA = {
 
 
 def _handle_reply_comment(args: dict, **kwargs) -> str:
-    client = get_client()
+    client = resolve_client(get_client())
     if client is None:
-        return tool_error("Feishu client not available")
+        return tool_error(
+            "Feishu client not available (set FEISHU_APP_ID and "
+            "FEISHU_APP_SECRET, or run from a Feishu comment context)"
+        )
 
     file_token = args.get("file_token", "").strip()
     comment_id = args.get("comment_id", "").strip()
@@ -301,7 +265,7 @@ def _handle_reply_comment(args: dict, **kwargs) -> str:
         }
     }
 
-    code, msg, data = _do_request(
+    code, msg, data = do_request(
         client, "POST", _REPLY_COMMENT_URI,
         paths={"file_token": file_token, "comment_id": comment_id},
         queries=[("file_type", file_type)],
@@ -349,9 +313,12 @@ FEISHU_DRIVE_ADD_COMMENT_SCHEMA = {
 
 
 def _handle_add_comment(args: dict, **kwargs) -> str:
-    client = get_client()
+    client = resolve_client(get_client())
     if client is None:
-        return tool_error("Feishu client not available")
+        return tool_error(
+            "Feishu client not available (set FEISHU_APP_ID and "
+            "FEISHU_APP_SECRET, or run from a Feishu comment context)"
+        )
 
     file_token = args.get("file_token", "").strip()
     content = args.get("content", "").strip()
@@ -367,7 +334,7 @@ def _handle_add_comment(args: dict, **kwargs) -> str:
         ],
     }
 
-    code, msg, data = _do_request(
+    code, msg, data = do_request(
         client, "POST", _ADD_COMMENT_URI,
         paths={"file_token": file_token},
         body=body,
