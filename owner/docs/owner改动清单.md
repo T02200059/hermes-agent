@@ -440,11 +440,12 @@
 
 - **背景**：memory provider 的 recall/sync 不应该处理合成系统消息（如 MoA 注入的、压缩摘要等），否则会污染记忆。
 - **方案**：
-  - `owner/patches/memory_synthetic_guard_patch.py`：`apply_patch()` — 在 gateway/run.py 的 message-receive hook 处注入守卫，跳过合成系统消息
+  - `owner/patches/memory_synthetic_guard_patch.py`：`apply_patch()` - 在 gateway/run.py 的 message-receive hook 处注入守卫，跳过合成系统消息
   - `gateway/run.py`：`# [owner] memory: skip recall/sync for synthetic system messages` + 薄胶水
   - `tests/owner/patches/test_memory_synthetic_guard_patch.py`
 - **侵入类型**：import 编排（runtime patch）+ 薄胶水
 - **Commit**：`a91689b08`（§9.3）
+- **后续扩展**：`8a46ddea0` - 增加 `_is_non_recallable_command()` 拦截斜杠命令的 recall。所有 `/` 开头的消息默认跳过 `prefetch_all` / `queue_prefetch_all`，白名单 5 个对话引导命令（queue/steer/goal/subgoal/background）例外，因为它们携带用户输入的 prompt 值得召回。其余命令（status/model/providers/new/stop 等）是控制操作，无召回价值。
 
 ### 7.3 OpenViking 同步召回 + advisory + recall-card
 
