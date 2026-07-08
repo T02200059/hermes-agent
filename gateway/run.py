@@ -8958,6 +8958,34 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                             _prov_result = await _prov_result
                         return str(_prov_result) if _prov_result else None
 
+            # [owner] /feishu_guide is a read-only plugin slash command that
+            # sends an interactive card; safe to run mid-turn.
+            if event.get_command() in ("feishu_guide", "feishu-guide"):
+                from hermes_cli.plugins import (
+                    get_plugin_command_entry,
+                    make_plugin_command_context,
+                )
+                _fg_entry = get_plugin_command_entry("feishu-guide")
+                if _fg_entry:
+                    _fg_handler = _fg_entry.get("handler")
+                    if _fg_handler:
+                        import asyncio as _asyncio
+                        if _fg_entry.get("accepts_ctx"):
+                            _fg_result = _fg_handler(
+                                event.get_command_args().strip(),
+                                hermes_ctx=make_plugin_command_context(
+                                    platform=source.platform.value if source and source.platform else None,
+                                    event=event,
+                                    adapters=self.adapters,
+                                    runner=self,
+                                ),
+                            )
+                        else:
+                            _fg_result = _fg_handler(event.get_command_args().strip())
+                        if _asyncio.iscoroutine(_fg_result):
+                            _fg_result = await _fg_result
+                        return str(_fg_result) if _fg_result else None
+
             # Resolve the command once for all early-intercept checks below.
             from hermes_cli.commands import (
                 ACTIVE_SESSION_BYPASS_COMMANDS as _DEDICATED_HANDLERS,

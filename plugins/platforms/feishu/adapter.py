@@ -1555,8 +1555,10 @@ class FeishuAdapter(BasePlatformAdapter):
         self._update_prompt_counter = itertools.count(1)
         # [owner] model picker state: picker_id → {providers, source}
         self._model_picker_state: Dict[str, Dict[str, Any]] = {}
-        # [owner] clarify state: clarify_id → {session_key, choices, question, message_id}
+        # [owner] clarify state: clarify_id -> {session_key, choices, question, message_id}
         self._clarify_state: Dict[str, Dict[str, Any]] = {}
+        # [owner] guide card state: guide_id -> {source}
+        self._guide_card_state: Dict[str, Dict[str, Any]] = {}
         # Feishu reaction deletion requires the opaque reaction_id returned
         # by create, so we cache it per message_id.
         self._pending_processing_reactions: "OrderedDict[str, str]" = OrderedDict()
@@ -2793,6 +2795,12 @@ class FeishuAdapter(BasePlatformAdapter):
         if clarify_id:
             return self._handle_clarify_card_action(event=event, action_value=action_value, loop=loop)
 
+        # [owner] feishu guide: route guide card button clicks (see owner/feishu/steer_card.py)
+        feishu_guide = action_value.get("hermes_feishu_guide") if isinstance(action_value, dict) else None
+        if feishu_guide:
+            logger.info("[Feishu] Dispatching guide card action: %s", action_value)
+            return self._handle_guide_card_action(event=event, action_value=action_value, loop=loop)
+
         # [owner] diff cards: route expand/collapse/full actions (see owner/diff_card/feishu.py)
         diff_action = (
             (isinstance(action_value, dict) and action_value.get("expand_diff"))
@@ -3062,6 +3070,40 @@ class FeishuAdapter(BasePlatformAdapter):
         from owner.feishu.model_picker import handle_picker_action
 
         return handle_picker_action(
+            adapter=self,
+            action_value=action_value,
+            event=event,
+        )
+
+    # ── [owner] Feishu guide card ──────────────────────────────────────────
+
+    async def send_guide_card(
+        self,
+        chat_id: str,
+        source: Any,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Send an interactive guide card for queue/steer/goal/subgoal/background.
+
+        Thin glue - card building lives in ``owner/feishu/steer_card.py``.
+        """
+        import uuid as _uuid
+        from owner.feishu.steer_card import build_guide_card
+
+        guide_id = str(_uuid.uuid4())
+        self._guide_card_state[guide_id] = {"source": source}
+        await self.send_card(chat_id=chat_id, card=build_guide_card(guide_id), metadata=metadata)
+
+    def _handle_guide_card_action(
+        self, *, event: Any, action_value: Dict[str, Any], loop: Any
+    ) -> Any:
+        """Handle guide card callbacks.
+
+        Thin glue - callback logic lives in ``owner/feishu/steer_card.py``.
+        """
+        from owner.feishu.steer_card import handle_guide_card_action
+
+        return handle_guide_card_action(
             adapter=self,
             action_value=action_value,
             event=event,

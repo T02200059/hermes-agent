@@ -21,6 +21,16 @@ def _wrap_providers_command(handler):
     return _providers_command
 
 
+def _wrap_feishu_guide_command(handler):
+    async def _feishu_guide_command(_raw_args: str, *, hermes_ctx):
+        return await handler(
+            adapters=getattr(hermes_ctx, "adapters", {}) or {},
+            event=getattr(hermes_ctx, "event", None),
+        )
+
+    return _feishu_guide_command
+
+
 def register(ctx) -> None:
     """Apply all owner runtime patches. Idempotent per-patch."""
     # §2.5 /providers plugin slash command
@@ -36,6 +46,20 @@ def register(ctx) -> None:
         logger.debug("owner: /providers registered via plugin command")
     except Exception:
         logger.warning("owner: /providers registration failed", exc_info=True)
+
+    # §2.6 /feishu_guide plugin slash command
+    # Feishu-only interactive card for /queue, /steer, /goal, /subgoal, /background.
+    # See owner/feishu/steer_card.py for card building + callback handling.
+    try:
+        from owner.commands.feishu_guide import handle_feishu_guide_command
+        ctx.register_command(
+            "feishu-guide",
+            _wrap_feishu_guide_command(handle_feishu_guide_command),
+            description="Feishu interactive guide card (queue/steer/goal/subgoal/background)",
+        )
+        logger.debug("owner: /feishu_guide registered via plugin command")
+    except Exception:
+        logger.warning("owner: /feishu_guide registration failed", exc_info=True)
 
     # §9.3 memory synthetic guard
     # Skip MemoryManager prefetch/sync/on_turn_start for synthetic system

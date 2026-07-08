@@ -165,10 +165,11 @@ owner:
       reasoning_medium: "/reasoning medium --global"
       reasoning_high: "/reasoning xhigh --global"
       model_max: "/model qwen3.7-max --provider damodel"
-      model_pro: "/model deepseek-v4-pro --provider damodel"
-      model_flash: "/model deepseek-v4-flash --provider damodel"
+      model_pro: "/model mimo-v2.5-pro --provider xiaomi"
+      model_flash: "/model mimo-v2.5 --provider xiaomi"
       model_mimo: "/model mimo-v2.5-pro --provider xiaomi --global"
       list_models: "/providers"
+      feishu_guide: "/feishu-guide"
       yolo_on: "/yolo on"
       yolo_off: "/yolo off"
       inspect_gpu_cluster: "帮我根据 sre-king 启动 GPU 集群巡检流程，先问我 IP 范围，等我确认后再执行"
@@ -212,6 +213,8 @@ owner:
           ack: "📋 恢复会话中…"
         list_models:
           ack: "📋 读取模型列表…"
+        feishu_guide:
+          ack: "🎛 弹出对话引导卡片…"
         yolo_on:
           ack: "🔓 开启 YOLO 模式…"
         yolo_off:
