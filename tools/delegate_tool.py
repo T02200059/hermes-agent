@@ -2508,7 +2508,6 @@ def delegate_task(
                 override_api_key=creds["api_key"],
                 override_api_mode=creds["api_mode"],
                 override_acp_command=t.get("acp_command")
-                or acp_command
                 or creds.get("command"),
                 override_acp_args=(
                     task_acp_args
