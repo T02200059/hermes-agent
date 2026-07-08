@@ -378,6 +378,7 @@
   - `owner/config/patch.yaml`：`bot_menu.feishu_guide: "/feishu-guide"` + `bot_menu_dedup.per_key.feishu_guide.ack`
 - **侵入类型**：薄胶水（adapter.py card action 路由 1 行 if + 2 个薄胶水方法）+ plugin 命令注册（零核心源码改动）
 - **Commit**：`46ac4fe73`
+- **后续修复**：`0dbae9a40` — agent running 时点击 bot menu 触发 `/feishu-guide`，`should_bypass_active_session()` 只查 `resolve_command()`（仅含 `COMMAND_REGISTRY` 内置命令），plugin 命令不在其中，导致落入 busy-input 路径被当普通消息注入 agent。修复为同时检查 `is_gateway_known_command()`（覆盖 plugin 命令）。同 bug 影响 `/providers` 等所有 plugin 命令。
 
 ---
 
