@@ -140,6 +140,15 @@
 > **涉及文件**：`hermes_cli/model_switch.py`、`hermes_cli/providers.py`
 > **Commit**：`47ff21f04`
 
+> **⚠️ 注意要点（2026-07-04）：env-only providers 纳入显示列表**
+>
+> **问题**：仅有环境变量凭证的 provider（无 config.yaml `providers:` 段配置）不出现在 `/providers` 显示列表中，用户不知道这些 provider 可用。
+>
+> **修复**：`hermes_cli/model_switch.py` 在构建 provider 显示列表时，将 env-only providers 与 configured rows 合并。
+>
+> **涉及文件**：`hermes_cli/model_switch.py`
+> **Commit**：`83576b22c`
+
 ### 2.3 运行时 schema patches + credential pool base_url override
 
 - **背景**：`send_message` 卡片和 `image_generate` 的 model 参数需要扩展 schema，但不能改官方 toolsets 的字面定义（sync 冲突）。同时 credential pool 的 base_url 需要能被 model.base_url 覆盖（NewAPI 多 endpoint 场景）。
@@ -290,6 +299,7 @@
   - 配置：`owner.feishu_card.{auto_card_threshold, split_enabled, split_max_chars}`
 - **侵入类型**：薄胶水 + try-import
 - **Commit**：`aa70fd675`（§5.3）
+- **后续修复**：`ff42d3601` - auto-card 全链路修复：send_card 响应校验 + 表格原子切分 + 降级路径 + 并发锁
 
 ### 4.3 输入中反应（early-typing）
 
@@ -306,6 +316,7 @@
   - adapter 通过 `_owner_import("owner.diff_card.feishu", "handle_feishu_diff_action")` 等委托
 - **侵入类型**：薄胶水 + try-import
 - **Commit**：`e927a6adf`（§5.5）
+- **后续修复**：`21004e4c3` - diff card 重复弹出 + terminal progress 被错误包装成 auto card
 
 ### 4.5 Clarify 交互卡片
 
@@ -379,6 +390,13 @@
 - **侵入类型**：薄胶水（adapter.py card action 路由 1 行 if + 2 个薄胶水方法）+ plugin 命令注册（零核心源码改动）
 - **Commit**：`46ac4fe73`
 - **后续修复**：`0dbae9a40` — agent running 时点击 bot menu 触发 `/feishu-guide`，`should_bypass_active_session()` 只查 `resolve_command()`（仅含 `COMMAND_REGISTRY` 内置命令），plugin 命令不在其中，导致落入 busy-input 路径被当普通消息注入 agent。修复为同时检查 `is_gateway_known_command()`（覆盖 plugin 命令）。同 bug 影响 `/providers` 等所有 plugin 命令。
+
+### 4.12 飞书文件上传大小守卫
+
+- **背景**：飞书文件上传超限时默认静默失败，用户不知道发生了什么。需要在超限时给出明确的错误提示。
+- **方案**：`owner/feishu/` 模块中增加文件上传大小守卫，超限时向用户发送错误提示消息而非静默失败。
+- **侵入类型**：薄胶水 + try-import
+- **Commit**：`3ae4c4bbf`
 
 ---
 
@@ -666,7 +684,7 @@
 
 - **背景**：background review 的 actions 需要多行 bullet 格式。
 - **方案**：`agent/background_review.py` 一处格式调整。
-- **Commit**：`3c71db710`（§17.24）
+- **Commit**：`f806b7aaa`（§17.24）
 
 ---
 
@@ -847,7 +865,7 @@ _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请在�
 ### 2026-07-03：`/providers` → plugin slash command（带 hermes_ctx）
 
 - **类型**：plugin command API 扩展 + owner command 迁移
-- **commit**：`6dbaf6a74`（`/providers` → plugin slash command）
+- **commit**：`fedc96b56`（`/providers` -> plugin slash command）
 - **变动**：`hermes_cli/plugins.py` 增加 plugin command `accepts_ctx` 检测与 `make_plugin_command_context()`；`gateway/run.py` / `cli.py` 在 handler opt-in 时传 `hermes_ctx`；`owner-extensions` 注册 `/providers`；删除 `gateway/run.py` 内置 providers 分支与 `gateway/slash_commands.py` shim
 - **机制**：旧插件 `fn(raw_args)` 调用形状不变；声明 `*, hermes_ctx` 或 `**kwargs` 的 plugin command 可拿到 gateway event/adapters/runner，保留 Feishu card 能力
 - **验证**：`python3 -m pytest tests/hermes_cli/test_plugins.py tests/gateway/test_unknown_command.py tests/owner/test_providers_command.py -q -o 'addopts='` → 109 passed
