@@ -361,10 +361,23 @@
   - `plugins/platforms/feishu/adapter.py`：4 行 `_dispatch_card_action` 分支（匹配 clarify/model_picker/resume 卡片模式）
   - `tests/owner/test_memory_approval_card_routing.py`：31 个测试
 - **侵入类型**：薄胶水（adapter.py 4 行 card action 分支）+ plugin hook（零 upstream surface）
-- **架构**：发送路径完全 out-of-tree（plugin hook + `card_sender.send_card_via_rest`）；点击路径 adapter 分支 → `handle_card_click` → 合成命令
+- **架构**：发送路径完全 out-of-tree（plugin hook + `card_sender.send_card_via_rest`）；点击路径 adapter 分支 -> `handle_card_click` -> 合成命令
 - **合并说明**：原独立插件已合并入 `owner-extensions`，代码拆至 `memory_feishu_bridge/` 子目录
 - **Commit**：`54dbc6320`（feat）、`9044b57d8`（merge into owner-extensions）、`49f52568f`（extract subdirectory）、`c8af97fe6`（move under `owner/` with symlink）
 - **后续修复**：`5c2d2f092`（fix: forward `gateway_session_key` through hook chain，卡片不弹出）、`48fda1203`（fix: extract `operator.open_id` for auth）、`57c950e21`（fix: synthetic commands use empty `message_id` to avoid `reply_to`）、`8b76be146`（fix: remove backtick from card + i18n approve/reject responses）、`17072f048`（test: update assertions for i18n-driven labels）
+
+### 4.11 /feishu-guide 对话引导交互卡片
+
+- **背景**：飞书 bot menu 需要一个入口，让用户通过卡片选择并输入对话引导操作（`/queue`、`/steer`、`/goal`、`/subgoal`、`/background`），而不必记忆命令格式。
+- **方案**：参照 `/providers`（plugin 命令注册 + 飞书卡片）+ clarify（form + input 输入框）+ model_picker（多步卡片 + 合成命令）三种现有机制组合：
+  - `owner/feishu/steer_card.py`：两步交互卡片构建（5 按钮选择 -> form input 输入框 -> 提交/返回）+ 回调处理（`handle_guide_card_action` 按 `hermes_feishu_guide` step 分发：select/back/submit）+ 合成斜杠命令注入（`_route_guide_command` -> `MessageEvent(COMMAND)` -> `_handle_message_with_guards`）
+  - `owner/commands/feishu_guide.py`：斜杠命令 handler（检测飞书平台 -> `adapter.send_guide_card()`；非飞书回退纯文本）
+  - `owner/owner-extensions/__init__.py`：通过 `ctx.register_command("feishu-guide", ...)` 注册 plugin 斜杠命令
+  - `plugins/platforms/feishu/adapter.py`：`_dispatch_card_action` 加 `hermes_feishu_guide` 路由（1 行 if）+ `send_guide_card` / `_handle_guide_card_action` 薄胶水方法 + `_guide_card_state` 字典
+  - `gateway/run.py`：busy session 路径加 `/feishu-guide` plugin 命令拦截（与 `/providers` 同模式）
+  - `owner/config/patch.yaml`：`bot_menu.feishu_guide: "/feishu-guide"` + `bot_menu_dedup.per_key.feishu_guide.ack`
+- **侵入类型**：薄胶水（adapter.py card action 路由 1 行 if + 2 个薄胶水方法）+ plugin 命令注册（零核心源码改动）
+- **Commit**：`46ac4fe73`
 
 ---
 
