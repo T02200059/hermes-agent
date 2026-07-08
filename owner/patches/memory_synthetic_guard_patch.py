@@ -50,11 +50,23 @@ _applied: bool = False
 # These are stable, intentional markers -- if a new synthetic re-injection
 # type is added, append its prefix here.
 _SYNTHETIC_PREFIXES = (
-    "[ASYNC DELEGATION BATCH COMPLETE — ",
-    "[ASYNC DELEGATION COMPLETE — ",
+    "[ASYNC DELEGATION BATCH COMPLETE - ",
+    "[ASYNC DELEGATION COMPLETE - ",
     "[IMPORTANT: Background process ",
     "[Session was just handed off from CLI",
 )
+
+# Slash commands that carry a user-authored prompt worth recalling.
+# Everything else starting with "/" is a control command (status, model,
+# providers, new, stop, etc.) that should not trigger memory recall.
+# These 5 are the /feishu-guide dialog operations (see owner/feishu/steer_card.py).
+_RECALLABLE_COMMANDS = frozenset({
+    "queue",
+    "steer",
+    "goal",
+    "subgoal",
+    "background",
+})
 
 
 def _is_synthetic(query: Any) -> bool:
@@ -69,12 +81,32 @@ def _is_synthetic(query: Any) -> bool:
     return query.lstrip().startswith(_SYNTHETIC_PREFIXES)
 
 
+def _is_non_recallable_command(query: Any) -> bool:
+    """Return True if ``query`` is a slash command that should skip recall.
+
+    All ``/``-prefixed messages are treated as commands. Commands in
+    ``_RECALLABLE_COMMANDS`` (queue, steer, goal, subgoal, background)
+    carry a user prompt and are allowed through; everything else (status,
+    model, providers, new, stop, yolo, etc.) is a control operation with
+    no recall value.
+    """
+    if not isinstance(query, str) or not query:
+        return False
+    stripped = query.lstrip()
+    if not stripped.startswith("/"):
+        return False
+    # Extract the command name (first token after /, before any @bot suffix).
+    cmd = stripped[1:].split(None, 1)[0] if len(stripped) > 1 else ""
+    cmd = cmd.lower().split("@", 1)[0].replace("_", "-")
+    return cmd not in _RECALLABLE_COMMANDS
+
+
 # ---------------------------------------------------------------------------
 # Replacement implementations -- guard then delegate to the original.
 # ---------------------------------------------------------------------------
 
 def _prefetch_all(self, query: str, *, session_id: str = "") -> str:
-    """Recall guard: skip prefetch for synthetic system messages."""
+    """Recall guard: skip prefetch for synthetic system messages and non-recallable commands."""
     if _is_synthetic(query):
         logger.debug(
             "memory_synthetic_guard: skipped prefetch_all (synthetic msg, "
@@ -82,14 +114,26 @@ def _prefetch_all(self, query: str, *, session_id: str = "") -> str:
             query[:40],
         )
         return ""
+    if _is_non_recallable_command(query):
+        logger.debug(
+            "memory_synthetic_guard: skipped prefetch_all (command: %s)",
+            query.lstrip()[:40],
+        )
+        return ""
     return _originals["prefetch_all"](self, query, session_id=session_id)
 
 
 def _queue_prefetch_all(self, query: str, *, session_id: str = "") -> None:
-    """Next-turn warmup guard: skip for synthetic system messages."""
+    """Next-turn warmup guard: skip for synthetic messages and non-recallable commands."""
     if _is_synthetic(query):
         logger.debug(
             "memory_synthetic_guard: skipped queue_prefetch_all (synthetic)"
+        )
+        return
+    if _is_non_recallable_command(query):
+        logger.debug(
+            "memory_synthetic_guard: skipped queue_prefetch_all (command: %s)",
+            query.lstrip()[:40],
         )
         return
     _originals["queue_prefetch_all"](self, query, session_id=session_id)
