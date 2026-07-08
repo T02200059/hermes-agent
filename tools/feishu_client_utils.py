@@ -104,7 +104,10 @@ def do_request(client, method, uri, paths=None, queries=None, body=None):
     from lark_oapi.core.enum import HttpMethod
     from lark_oapi.core.model.base_request import BaseRequest
 
-    http_method = HttpMethod.GET if method == "GET" else HttpMethod.POST
+    _METHOD_MAP = {"GET": HttpMethod.GET, "POST": HttpMethod.POST}
+    http_method = _METHOD_MAP.get(method)
+    if http_method is None:
+        raise ValueError(f"Unsupported HTTP method: {method}")
 
     builder = (
         BaseRequest.builder()
@@ -135,7 +138,7 @@ def do_request(client, method, uri, paths=None, queries=None, body=None):
             body_json = json.loads(raw.content)
             data = body_json.get("data", {}) or {}
         except (json.JSONDecodeError, AttributeError, ValueError):
-            pass
+            logger.debug("feishu_client_utils: failed to parse raw.content, falling back to response.data")
     if not data:
         resp_data = getattr(response, "data", None)
         if isinstance(resp_data, dict):
@@ -304,9 +307,12 @@ def _read_table_records(client, app_token, table_id, max_records):
 def read_bitable_as_text(client, app_token):
     """Flatten a bitable app into readable plain text.
 
-    Lists each table, then each record as ``字段: 值`` lines. Capped at
+    Lists each table, then each record as ``field: value`` lines. Capped at
     ``_BITABLE_MAX_TABLES`` tables and ``_BITABLE_MAX_RECORDS_PER_TABLE``
     records per table so the result stays usable as agent context.
+
+    Note: the tables listing fetches one page of up to 100 tables. Bitables
+    with more than 100 tables will have the excess silently omitted.
     """
     code, msg, data = do_request(
         client, "GET", _BITABLE_TABLES_URI,
@@ -314,11 +320,11 @@ def read_bitable_as_text(client, app_token):
         queries=[("page_size", "100")],
     )
     if code != 0:
-        return f"读取多维表格失败: code={code} msg={msg}"
+        return f"Failed to read bitable: code={code} msg={msg}"
 
     tables = data.get("items") or []
     if not tables:
-        return f"多维表格 {app_token} 中没有表"
+        return f"Bitable {app_token} has no tables"
 
     lines = [f"=== 多维表格: {app_token} ==="]
     for idx, table in enumerate(tables[:_BITABLE_MAX_TABLES]):
@@ -331,7 +337,7 @@ def read_bitable_as_text(client, app_token):
             client, app_token, table_id, _BITABLE_MAX_RECORDS_PER_TABLE,
         )
         if not records:
-            lines.append("(无记录)")
+            lines.append("(no records)")
             continue
         for r_idx, fields in enumerate(records, 1):
             lines.append(f"记录 {r_idx}:")
@@ -339,13 +345,13 @@ def read_bitable_as_text(client, app_token):
                 for fname, fval in fields.items():
                     lines.append(f"  {fname}: {_stringify_field(fval)}")
             else:
-                lines.append("  (空记录)")
+                lines.append("  (empty record)")
         if len(records) >= _BITABLE_MAX_RECORDS_PER_TABLE:
-            lines.append(f"  ...(已达到单表 {_BITABLE_MAX_RECORDS_PER_TABLE} 条上限)")
+            lines.append(f"  ...(reached per-table limit of {_BITABLE_MAX_RECORDS_PER_TABLE})")
 
     if len(tables) > _BITABLE_MAX_TABLES:
         lines.append("")
-        lines.append(f"...(共 {len(tables)} 张表，仅展示前 {_BITABLE_MAX_TABLES} 张)")
+        lines.append(f"...(total {len(tables)} tables, showing first {_BITABLE_MAX_TABLES})")
 
     return "\n".join(lines)
 
@@ -355,6 +361,15 @@ def read_bitable_as_text(client, app_token):
 # ---------------------------------------------------------------------------
 
 # Spreadsheet API: list sheets -> read each sheet's used range as values.
+def _col_letter(n):
+    """Convert 1-based column number to A1-style letter (1→A, 26→Z, 27→AA)."""
+    s = ""
+    while n > 0:
+        n, r = divmod(n - 1, 26)
+        s = chr(65 + r) + s
+    return s
+
+
 _SHEET_META_URI = "/open-apis/sheets/v3/spreadsheets/:spreadsheet_token/sheets/query"
 _SHEET_VALUES_URI = (
     "/open-apis/sheets/v2/spreadsheets/:spreadsheet_token/values/:range"
@@ -375,7 +390,7 @@ def read_sheet_as_text(client, sheet_token):
         paths={"spreadsheet_token": sheet_token},
     )
     if code != 0:
-        return f"读取电子表格失败: code={code} msg={msg}"
+        return f"Failed to read spreadsheet: code={code} msg={msg}"
 
     sheets = []
     if isinstance(data, dict):
@@ -388,7 +403,7 @@ def read_sheet_as_text(client, sheet_token):
         if not sheets:
             sheets = data.get("sheets") or []
     if not sheets:
-        return f"电子表格 {sheet_token} 中没有工作表"
+        return f"Spreadsheet {sheet_token} has no sheets"
 
     lines = [f"=== 电子表格: {sheet_token} ==="]
     for idx, sheet in enumerate(sheets):
@@ -404,7 +419,7 @@ def read_sheet_as_text(client, sheet_token):
         )
 
         if row_count == 0 or col_count == 0:
-            lines.append("(空工作表)")
+            lines.append("(empty sheet)")
             continue
 
         # Cap dimensions.
@@ -412,14 +427,6 @@ def read_sheet_as_text(client, sheet_token):
         cols_to_read = min(col_count, _SHEET_MAX_COLS)
 
         # Build A1-style range: A1:<last_col><last_row>.
-        # Column index -> letter: 1->A, 26->Z, 27->AA ...
-        def _col_letter(n):
-            s = ""
-            while n > 0:
-                n, r = divmod(n - 1, 26)
-                s = chr(65 + r) + s
-            return s
-
         last_col = _col_letter(cols_to_read)
         range_str = f"{sheet_id}!A1:{last_col}{rows_to_read}"
 
@@ -428,7 +435,7 @@ def read_sheet_as_text(client, sheet_token):
             paths={"spreadsheet_token": sheet_token, "range": range_str},
         )
         if v_code != 0:
-            lines.append(f"(读取数据失败: code={v_code} msg={v_msg})")
+            lines.append(f"(read data failed: code={v_code} msg={v_msg})")
             continue
 
         value_ranges = v_data.get("valueRange") if isinstance(v_data, dict) else None
@@ -436,7 +443,7 @@ def read_sheet_as_text(client, sheet_token):
         if isinstance(value_ranges, dict):
             rows_data = value_ranges.get("values") or []
         if not rows_data:
-            lines.append("(无数据)")
+            lines.append("(no data)")
             continue
 
         for r_idx, row in enumerate(rows_data, 1):

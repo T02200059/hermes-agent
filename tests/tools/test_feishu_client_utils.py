@@ -241,12 +241,12 @@ class TestReadBitableAsText(unittest.TestCase):
         self.assertIn("任务: 写文档", text)
         self.assertIn("状态: done", text)
         self.assertIn("发邮件", text)
-        self.assertIn("(无记录)", text)  # empty table B
+        self.assertIn("(no records)", text)
 
     def test_reports_api_error(self):
         client = _StubClient(_make_response(code=1254000, msg="app not found"))
         text = fcu.read_bitable_as_text(client, "appBad")
-        self.assertIn("读取多维表格失败", text)
+        self.assertIn("Failed to read bitable", text)
         self.assertIn("1254000", text)
 
     def test_handles_list_field_values(self):
@@ -281,6 +281,150 @@ class TestDoRequest(unittest.TestCase):
         client = _StubClient(_make_response(data={"k": "v"}))
         code, msg, data = fcu.do_request(client, "POST", "/x", body={"a": 1})
         self.assertEqual(data, {"k": "v"})
+
+    def test_unsupported_method_raises(self):
+        client = _StubClient(_make_response())
+        with self.assertRaises(ValueError):
+            fcu.do_request(client, "DELETE", "/x")
+
+
+class TestExtractTokenBitable(unittest.TestCase):
+    def test_bitable_url(self):
+        tok, is_wiki = fcu.extract_token("https://xxx.feishu.cn/base/AppToken123")
+        self.assertEqual(tok, "AppToken123")
+        self.assertFalse(is_wiki)
+
+    def test_bitable_url_variant(self):
+        tok, is_wiki = fcu.extract_token("https://xxx.feishu.cn/bitable/AppToken456")
+        self.assertEqual(tok, "AppToken456")
+        self.assertFalse(is_wiki)
+
+
+class TestReadTableRecordsPagination(unittest.TestCase):
+    def test_multi_page_records(self):
+        """Records continue across pages until has_more is False."""
+        page1 = _make_response(data={
+            "items": [
+                {"fields": {"name": "Alice"}},
+                {"fields": {"name": "Bob"}},
+            ],
+            "has_more": True,
+            "page_token": "page2tok",
+        })
+        page2 = _make_response(data={
+            "items": [
+                {"fields": {"name": "Charlie"}},
+            ],
+            "has_more": False,
+        })
+        client = _StubClient([page1, page2])
+        records = fcu._read_table_records(client, "app1", "tbl1", max_records=100)
+        self.assertEqual(len(records), 3)
+        self.assertEqual(records[0]["name"], "Alice")
+        self.assertEqual(records[2]["name"], "Charlie")
+        self.assertEqual(len(client.calls), 2)
+
+    def test_max_records_truncates_mid_page(self):
+        """Reading stops when max_records is reached."""
+        page1 = _make_response(data={
+            "items": [
+                {"fields": {"v": "1"}},
+                {"fields": {"v": "2"}},
+                {"fields": {"v": "3"}},
+            ],
+            "has_more": True,
+            "page_token": "next",
+        })
+        client = _StubClient(page1)
+        records = fcu._read_table_records(client, "app1", "tbl1", max_records=2)
+        self.assertEqual(len(records), 2)
+
+    def test_api_error_breaks_loop(self):
+        client = _StubClient(_make_response(code=1254000, msg="err"))
+        records = fcu._read_table_records(client, "app1", "tbl1", max_records=100)
+        self.assertEqual(records, [])
+
+
+class TestReadSheetAsText(unittest.TestCase):
+    def test_reads_single_sheet(self):
+        meta_resp = _make_response(data={
+            "sheets": [
+                {
+                    "sheet_id": "s1",
+                    "title": "Sheet1",
+                    "grid_properties": {"row_count": 2, "column_count": 2},
+                }
+            ]
+        })
+        values_resp = _make_response(data={
+            "valueRange": {
+                "values": [
+                    ["Name", "Age"],
+                    ["Alice", 30],
+                ]
+            }
+        })
+        client = _StubClient([meta_resp, values_resp])
+        text = fcu.read_sheet_as_text(client, "spreadsheet123")
+        self.assertIn("Sheet1", text)
+        self.assertIn("Name\tAge", text)
+        self.assertIn("Alice\t30", text)
+
+    def test_handles_empty_sheet(self):
+        meta_resp = _make_response(data={
+            "sheets": [
+                {"sheet_id": "s1", "title": "Empty", "grid_properties": {"row_count": 0, "column_count": 0}}
+            ]
+        })
+        client = _StubClient(meta_resp)
+        text = fcu.read_sheet_as_text(client, "ss1")
+        self.assertIn("Empty", text)
+        self.assertIn("(empty sheet)", text)
+
+    def test_handles_api_error(self):
+        client = _StubClient(_make_response(code=1254000, msg="not found"))
+        text = fcu.read_sheet_as_text(client, "bad")
+        self.assertIn("Failed to read spreadsheet", text)
+        self.assertIn("1254000", text)
+
+    def test_handles_no_sheets(self):
+        client = _StubClient(_make_response(data={"sheets": []}))
+        text = fcu.read_sheet_as_text(client, "ss1")
+        self.assertIn("has no sheets", text)
+
+    def test_multi_sheet_with_nested_data(self):
+        """Data wrapped under data.spreadsheet.sheets is also handled."""
+        meta_resp = _make_response(data={
+            "spreadsheet": {
+                "sheets": [
+                    {
+                        "sheet_id": "a",
+                        "title": "Tab A",
+                        "grid_properties": {"row_count": 1, "column_count": 1},
+                    },
+                    {
+                        "sheet_id": "b",
+                        "title": "Tab B",
+                        "grid_properties": {"row_count": 1, "column_count": 1},
+                    },
+                ]
+            }
+        })
+        val_a = _make_response(data={"valueRange": {"values": [["hello"]]}})
+        val_b = _make_response(data={"valueRange": {"values": [["world"]]}})
+        client = _StubClient([meta_resp, val_a, val_b])
+        text = fcu.read_sheet_as_text(client, "ss1")
+        self.assertIn("Tab A", text)
+        self.assertIn("Tab B", text)
+        self.assertIn("hello", text)
+        self.assertIn("world", text)
+
+    def test_column_letter_generation(self):
+        """Verify _col_letter produces correct A1-style column names."""
+        self.assertEqual(fcu._col_letter(1), "A")
+        self.assertEqual(fcu._col_letter(26), "Z")
+        self.assertEqual(fcu._col_letter(27), "AA")
+        self.assertEqual(fcu._col_letter(52), "AZ")
 
 
 if __name__ == "__main__":

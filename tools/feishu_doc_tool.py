@@ -50,7 +50,7 @@ FEISHU_DOC_READ_SCHEMA = {
         "Read the full content of a Feishu/Lark document as plain text. "
         "Useful when you need more context beyond the quoted text in a comment. "
         "Accepts a docx token, a wiki node token, or a full Feishu/Lark URL; "
-        "docx documents and bitable (多维表格) bases are supported."
+        "docx documents, bitable (多维表格) bases, and sheets (电子表格) are supported."
     ),
     "parameters": {
         "type": "object",
@@ -148,7 +148,7 @@ def _handle_feishu_doc_read(args: dict, **kwargs) -> str:
             return tool_result(success=True, content=text)
 
         return tool_error(
-            f"暂不支持读取 {obj_type} 类型文档 (当前支持 docx、bitable、sheet)"
+            f"Reading {obj_type} documents is not yet supported (supported: docx, bitable, sheet)"
         )
     except ImportError:
         return tool_error("lark_oapi not installed")
