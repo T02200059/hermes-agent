@@ -869,3 +869,37 @@ class TestLongRunningNotificationOwnership:
         assert runner._should_emit_long_running_notification(
             "sess", agent, executor_task=live_task
         ) is True
+
+
+class TestBusySessionSteerAck:
+    """Steer-mode busy ack must resolve display settings without crashing.
+
+    Regression for the upstream merge: the steer-ack branch referenced
+    ``resolve_display_setting_for_source`` before it was imported and used an
+    undefined ``source`` variable instead of ``event.source``.
+    """
+
+    @pytest.mark.asyncio
+    async def test_steer_ack_resolves_display_setting_without_error(self):
+        from gateway.run import GatewayRunner
+
+        runner, _sentinel = _make_runner()
+        adapter = _make_adapter()
+
+        event = _make_event(text="keep going")
+        sk = build_session_key(event.source)
+
+        running_agent = MagicMock()
+        running_agent.steer.return_value = True
+        runner._busy_input_mode = "steer"
+        runner._busy_text_mode = "interrupt"
+        runner._running_agents[sk] = running_agent
+        runner._running_agents_ts[sk] = 0  # older than cooldown
+        runner.adapters[event.source.platform] = adapter
+
+        result = await runner._handle_active_session_busy_message(event, sk)
+
+        assert result is True
+        running_agent.steer.assert_called_once_with("keep going")
+        # Steer ack defaults to enabled, so the adapter should send the bubble.
+        assert adapter._send_with_retry.call_count == 1

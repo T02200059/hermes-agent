@@ -29,6 +29,7 @@ from hermes_cli.timeouts import get_provider_request_timeout, get_provider_stale
 from hermes_constants import PARTIAL_STREAM_STUB_ID, FINISH_REASON_LENGTH
 from agent.error_classifier import FailoverReason
 from agent.gemini_native_adapter import is_native_gemini_base_url
+from agent.i18n import t as _t
 from agent.model_metadata import is_local_endpoint
 from agent.message_sanitization import (
     _sanitize_surrogates,
@@ -938,6 +939,57 @@ def build_api_kwargs(agent, api_messages: list) -> dict:
 
 
 
+def _clean_leading_thinking_debris(content: str) -> str:
+    """Remove stray markdown left-overs that thinking models emit at the
+    boundary between a reasoning block and the visible answer.
+
+    Some Anthropic-messages-compatible endpoints (notably Qwen on OpenCode
+    Go) return visible text whose first character is a lone backtick, or a
+    backtick immediately followed by CJK punctuation/whitespace, after the
+    thinking block.  If left in storage, the leading backtick breaks
+    markdown rendering in messaging surfaces when reasoning is prepended as
+    a code block, producing the 'truncated thinking' appearance users see in
+    Feishu/Telegram/Slack.
+
+    Triple-backtick code fences and normal inline code spans such as
+    `` `foo` `` are intentionally preserved.
+    """
+    if not isinstance(content, str) or not content:
+        return content
+
+    _CJK_PUNCT = "。，、；：！？"
+    _WESTERN_PUNCT = ".,;:!?"
+    _DEBRIS_PUNCT = _CJK_PUNCT + _WESTERN_PUNCT
+
+    changed = True
+    while changed:
+        changed = False
+        text = content.lstrip()
+        if not text:
+            return ""
+        # Intentional code blocks start with three backticks.
+        if text.startswith("```"):
+            break
+        # A lone leading backtick is debris when it does not begin a normal
+        # inline-code span.  Normal inline code starts with a non-space,
+        # non-punctuation character (e.g. `foo`).
+        if text.startswith("`"):
+            rest = text[1:]
+            first = rest[:1]
+            if not first or first.isspace() or first in _DEBRIS_PUNCT:
+                content = rest.lstrip()
+                changed = True
+                continue
+        # A CJK full-stop at the very start is almost always the boundary
+        # artifact left after the stray backtick was stripped, not intended
+        # content.
+        if text.startswith("。"):
+            content = text[1:].lstrip()
+            changed = True
+
+    return content
+
+
 def build_assistant_message(agent, assistant_message, finish_reason: str) -> dict:
     """Build a normalized assistant message dict from an API response message.
 
@@ -996,6 +1048,7 @@ def build_assistant_message(agent, assistant_message, finish_reason: str) -> dic
     # compression, title generation.
     if isinstance(_san_content, str) and _san_content:
         _san_content = agent._strip_think_blocks(_san_content).strip()
+        _san_content = _clean_leading_thinking_debris(_san_content)
 
     # Defence-in-depth: redact credentials (PATs, API keys, Bearer tokens)
     # from assistant content BEFORE the message enters conversation history.
@@ -1584,12 +1637,22 @@ def try_activate_fallback(agent, reason: "FailoverReason | None" = None) -> bool
 
 def handle_max_iterations(agent, messages: list, api_call_count: int) -> str:
     """Request a summary when max iterations are reached. Returns the final response text."""
-    print(f"⚠️  Reached maximum iterations ({agent.max_iterations}). Requesting summary...")
+    _budget_msg = _t(
+        "iteration.budget_exhausted_summary",
+        used=api_call_count,
+        max_total=agent.max_iterations,
+    )
+    print(f"⚠️  {_budget_msg}")
 
     summary_request = (
-        "You've reached the maximum number of tool-calling iterations allowed. "
-        "Please provide a final response summarizing what you've found and accomplished so far, "
-        "without calling any more tools."
+        "You have reached the maximum iteration limit for this conversation. "
+        "Your task is NOT complete.\n\n"
+        "Please provide a clear status report to the user in the same language they are using:\n"
+        "1. State clearly that the iteration budget has been exhausted and the task is incomplete\n"
+        "2. List what you have completed so far (use bullet points)\n"
+        "3. List what still needs to be done (use bullet points)\n"
+        "4. Instruct the user to send '继续' (or 'continue' if they speak English) to resume the work\n\n"
+        "Do NOT say the task is finished or complete. Be explicit that work remains."
     )
     messages.append({"role": "user", "content": summary_request})
 
