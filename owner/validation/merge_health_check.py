@@ -382,6 +382,21 @@ def check_patch_targets() -> CheckResult:
 # ---------------------------------------------------------------------------
 
 _OWNER_MARKER_RE = re.compile(r"\[owner(?:-patch)?\]")
+_DIFF_HUNK_RE = re.compile(r"@@ -(\d+)(?:,\d+)? \+\d+(?:,\d+)? @@")
+
+_OWNER_MARKER_TOKEN_STOPWORDS = {
+    "and",
+    "are",
+    "but",
+    "for",
+    "from",
+    "into",
+    "see",
+    "the",
+    "this",
+    "via",
+    "with",
+}
 
 _UPSTREAM_SYMBOLS = {
     "resolve_display_setting_for_source": "gateway/display_config.py",
@@ -468,8 +483,94 @@ def check_owner_markers() -> CheckResult:
 # Check 5: Merge diff dead-marker detection
 # ---------------------------------------------------------------------------
 
+def _normalize_owner_marker_line(line: str) -> str:
+    """Return a stable, comparable representation of an owner marker line."""
+    if line.startswith(("+", "-")):
+        line = line[1:]
+    line = line.strip()
+    if line.startswith("#"):
+        line = line[1:].strip()
+    return re.sub(r"\s+", " ", line).lower()
+
+
+def _owner_marker_tokens(line: str) -> Set[str]:
+    """Extract significant tokens from a marker line for fuzzy survival checks."""
+    text = _normalize_owner_marker_line(line).replace("[owner-patch]", " ").replace("[owner]", " ")
+    tokens = set(re.findall(r"[a-zA-Z_][a-zA-Z0-9_]{2,}", text))
+    return {tok for tok in tokens if tok not in _OWNER_MARKER_TOKEN_STOPWORDS}
+
+
+def _iter_deleted_owner_marker_lines(diff_text: str) -> List[Tuple[Optional[int], str]]:
+    """Return deleted diff lines that carried an owner marker, with old line numbers."""
+    result: List[Tuple[Optional[int], str]] = []
+    old_lineno: Optional[int] = None
+
+    for diff_line in diff_text.splitlines():
+        hunk_match = _DIFF_HUNK_RE.match(diff_line)
+        if hunk_match:
+            old_lineno = int(hunk_match.group(1))
+            continue
+
+        if diff_line.startswith("-") and not diff_line.startswith("---"):
+            if _OWNER_MARKER_RE.search(diff_line):
+                result.append((old_lineno, diff_line[1:]))
+            if old_lineno is not None:
+                old_lineno += 1
+            continue
+
+        if diff_line.startswith("+") and not diff_line.startswith("+++"):
+            continue
+
+        if old_lineno is not None:
+            old_lineno += 1
+
+    return result
+
+
+def _deleted_owner_marker_has_surviving_glue(deleted_line: str, current_source: str) -> bool:
+    """Return True when a deleted marker appears to have been moved/refactored.
+
+    This suppresses false positives where an upstream merge reshuffled a block
+    but the owner glue still exists in the same file.  It is intentionally
+    conservative: exact marker-line survival wins; otherwise require either a
+    surviving owner module reference from the deleted line, or a strong token
+    overlap with another current owner marker line.
+    """
+    if not current_source:
+        return False
+
+    deleted_norm = _normalize_owner_marker_line(deleted_line)
+    current_marker_norms = [
+        _normalize_owner_marker_line(line)
+        for line in current_source.splitlines()
+        if _OWNER_MARKER_RE.search(line)
+    ]
+
+    if deleted_norm in current_marker_norms:
+        return True
+
+    owner_modules = set(re.findall(r"owner(?:\.[A-Za-z_][A-Za-z0-9_]*)+", deleted_line))
+    if owner_modules and all(module in current_source for module in owner_modules):
+        return True
+
+    deleted_tokens = _owner_marker_tokens(deleted_line)
+    if len(deleted_tokens) < 4:
+        return False
+
+    for current_norm in current_marker_norms:
+        current_tokens = _owner_marker_tokens(current_norm)
+        if len(deleted_tokens & current_tokens) >= min(4, len(deleted_tokens)):
+            return True
+
+    return False
+
+
+def _preview_deleted_marker(line: str) -> str:
+    text = _normalize_owner_marker_line(line)
+    return text if len(text) <= 140 else text[:137] + "..."
+
 def check_merge_diff() -> CheckResult:
-    """Check if [owner] markers were deleted by the last merge."""
+    """Check if [owner] markers deleted by the last merge lost live glue."""
     issues: List[str] = []
 
     try:
@@ -500,7 +601,7 @@ def check_merge_diff() -> CheckResult:
 
     try:
         result = subprocess.run(
-            ["git", "diff", f"{merge_hash}^1...{merge_hash}", "--diff-filter=M", "--name-only"],
+            ["git", "diff", f"{merge_hash}^1...{merge_hash}", "--diff-filter=MD", "--name-only"],
             cwd=REPO_ROOT,
             capture_output=True,
             text=True,
@@ -513,20 +614,9 @@ def check_merge_diff() -> CheckResult:
     except subprocess.TimeoutExpired:
         return "Check 5: Merge diff dead-marker detection", ["git diff timed out — skipped"], 0, 0
 
-    owner_files: Set[str] = set()
-    for fpath in _iter_py_files(REPO_ROOT):
-        try:
-            source = fpath.read_text(encoding="utf-8", errors="replace")
-            if _OWNER_MARKER_RE.search(source):
-                owner_files.add(str(fpath.relative_to(REPO_ROOT)))
-        except OSError:
-            pass
-
-    removed_markers = 0
+    removed_candidates = 0
+    resolved_candidates = 0
     for cf in changed_files:
-        if cf not in owner_files:
-            continue
-
         try:
             result = subprocess.run(
                 ["git", "diff", f"{merge_hash}^1...{merge_hash}", "--", cf],
@@ -538,18 +628,30 @@ def check_merge_diff() -> CheckResult:
             if result.returncode != 0:
                 continue
 
-            for diff_line in result.stdout.splitlines():
-                if diff_line.startswith("-") and not diff_line.startswith("---"):
-                    if _OWNER_MARKER_RE.search(diff_line):
-                        removed_markers += 1
-                        issues.append(
-                            f"{cf} — [owner] marker deleted by merge {merge_hash[:9]} "
-                            f"— may indicate dead glue"
-                        )
+            current_path = REPO_ROOT / cf
+            try:
+                current_source = (
+                    current_path.read_text(encoding="utf-8", errors="replace")
+                    if current_path.is_file()
+                    else ""
+                )
+            except OSError:
+                current_source = ""
+
+            for old_lineno, deleted_line in _iter_deleted_owner_marker_lines(result.stdout):
+                removed_candidates += 1
+                if _deleted_owner_marker_has_surviving_glue(deleted_line, current_source):
+                    resolved_candidates += 1
+                    continue
+                location = f"{cf}:{old_lineno}" if old_lineno is not None else cf
+                issues.append(
+                    f"{location} — [owner] marker deleted by merge {merge_hash[:9]} "
+                    f"without equivalent current glue: {_preview_deleted_marker(deleted_line)!r}"
+                )
         except subprocess.TimeoutExpired:
             continue
 
-    return "Check 5: Merge diff dead-marker detection", issues, removed_markers, 0
+    return "Check 5: Merge diff dead-marker detection", issues, removed_candidates, resolved_candidates
 
 
 # ---------------------------------------------------------------------------
@@ -794,9 +896,9 @@ def main() -> int:
             markers, mfiles = counts
             print(f"  Found {markers} markers across {mfiles} files")
         elif check_fn == check_merge_diff:
-            removed, _ = counts
+            removed, resolved = counts
             if removed:
-                print(f"  Found {removed} removed markers")
+                print(f"  Found {removed} removed marker candidates, {resolved} resolved by current glue")
         elif check_fn == check_critical_owner_anchors:
             checked, total = counts
             print(f"  Checked {checked}/{total} critical owner anchors")
