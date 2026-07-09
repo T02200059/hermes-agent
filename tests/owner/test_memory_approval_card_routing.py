@@ -540,6 +540,79 @@ def test_both_keys_unparseable_skips_card():
 # _emit_post_tool_call_hook forwards gateway_session_key to the hook kwargs
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# transform_tool_result - message rewrite on Feishu
+# ---------------------------------------------------------------------------
+
+def test_transform_non_memory_tool_returns_none():
+    bridge = _get_bridge()
+    result = json.dumps({"staged": True, "pending_id": "xyz"})
+    out = bridge._on_transform_tool_result(tool_name="terminal", result=result)
+    assert out is None
+
+
+def test_transform_non_staged_result_returns_none():
+    bridge = _get_bridge()
+    result = json.dumps({"success": True})
+    out = bridge._on_transform_tool_result(tool_name="memory", result=result)
+    assert out is None
+
+
+def test_transform_no_matching_pending_id_returns_none():
+    """Non-Feishu sessions never populate _SENT_CARD_IDS, so transform is a no-op."""
+    bridge = _get_bridge()
+    bridge._SENT_CARD_IDS.clear()
+    result = json.dumps({"staged": True, "pending_id": "never_sent", "message": "orig"})
+    out = bridge._on_transform_tool_result(tool_name="memory", result=result)
+    assert out is None
+
+
+def test_transform_matching_pending_id_rewrites_message():
+    """When a card was dispatched (pending_id in _SENT_CARD_IDS), the message
+    is rewritten to mention the approval card."""
+    bridge = _get_bridge()
+    bridge._SENT_CARD_IDS.clear()
+    bridge._SENT_CARD_IDS.add("pid_feishu_1")
+
+    result = json.dumps({
+        "success": True, "staged": True,
+        "pending_id": "pid_feishu_1",
+        "message": "Staged for approval (memory.write_approval is on). Not yet saved - review with /memory pending.",
+    })
+    out = bridge._on_transform_tool_result(tool_name="memory", result=result)
+    assert out is not None
+    parsed = json.loads(out)
+    assert "Approval card sent to chat" in parsed["message"]
+    assert "/memory pending" not in parsed["message"]
+    # one-shot: pending_id consumed
+    assert "pid_feishu_1" not in bridge._SENT_CARD_IDS
+
+
+def test_transform_preserves_other_fields():
+    """success / staged / pending_id must be preserved; only message changes."""
+    bridge = _get_bridge()
+    bridge._SENT_CARD_IDS.clear()
+    bridge._SENT_CARD_IDS.add("pid_42")
+
+    result = json.dumps({
+        "success": True, "staged": True,
+        "pending_id": "pid_42",
+        "message": "old",
+    })
+    out = bridge._on_transform_tool_result(tool_name="memory", result=result)
+    parsed = json.loads(out)
+    assert parsed["success"] is True
+    assert parsed["staged"] is True
+    assert parsed["pending_id"] == "pid_42"
+    assert parsed["message"] != "old"
+
+
+def test_transform_invalid_json_returns_none():
+    bridge = _get_bridge()
+    out = bridge._on_transform_tool_result(tool_name="memory", result="not json")
+    assert out is None
+
+
 def test_emit_post_tool_call_hook_forwards_gateway_session_key():
     """model_tools._emit_post_tool_call_hook must pass gateway_session_key
     through to invoke_hook so plugin callbacks see it in their kwargs."""

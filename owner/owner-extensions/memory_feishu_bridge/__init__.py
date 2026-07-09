@@ -3,6 +3,10 @@
 Auto-popup approval card when memory tool stages a write on Feishu.
 Uses pre_gateway_dispatch + post_tool_call hooks (zero upstream surface).
 See owner/feishu/memory_approval.py for card construction + click routing.
+
+Also transforms the memory tool result message on Feishu to indicate the
+approval card has been sent (via transform_tool_result hook). On non-Feishu
+platforms the original upstream message is preserved unchanged.
 """
 
 from __future__ import annotations
@@ -10,7 +14,7 @@ from __future__ import annotations
 import json
 import logging
 import threading
-from typing import Any
+from typing import Any, Set
 
 logger = logging.getLogger(__name__)
 
@@ -20,11 +24,17 @@ _GATEWAY_REF: Any = None
 _FEISHU_ADAPTER: Any = None
 _REF_LOCK = threading.Lock()
 
+# Pending IDs for which an approval card was successfully sent on Feishu.
+# Populated by post_tool_call, consumed by transform_tool_result (runs after).
+_SENT_CARD_IDS: Set[str] = set()
+_SENT_CARD_LOCK = threading.Lock()
+
 
 def register_hooks(ctx: Any) -> None:
-    """Register the two hooks needed for memory approval cards."""
+    """Register hooks for memory approval cards + result message transform."""
     ctx.register_hook("pre_gateway_dispatch", _on_pre_gateway_dispatch)
     ctx.register_hook("post_tool_call", _on_post_tool_call)
+    ctx.register_hook("transform_tool_result", _on_transform_tool_result)
 
 
 def _on_pre_gateway_dispatch(**kwargs: Any) -> None:
@@ -133,5 +143,59 @@ def _on_post_tool_call(**kwargs: Any) -> None:
                 asyncio.run_coroutine_threadsafe(_send(), loop)
         except Exception as exc:
             logger.warning("[memory-feishu-bridge] schedule send failed for pending %s: %s", pending_id, exc)
+            return  # card not sent — don't mark
+
+        # Mark that a card was dispatched for this pending_id so
+        # transform_tool_result can update the agent-facing message.
+        with _SENT_CARD_LOCK:
+            _SENT_CARD_IDS.add(str(pending_id))
     except Exception as exc:
         logger.warning("[memory-feishu-bridge] post_tool_call send failed for pending %s: %s", pending_id, exc)
+
+
+def _on_transform_tool_result(**kwargs: Any) -> str | None:
+    """On Feishu, rewrite a staged memory result to mention the approval card.
+
+    The upstream message says "Not yet saved - review with /memory pending",
+    which is a CLI-only affordance. On Feishu an interactive card was already
+    dispatched, so the agent is told the card has been sent instead.
+
+    Returns ``None`` (no transformation) for:
+      * non-memory tools
+      * non-staged results
+      * results whose pending_id has no matching dispatched card (non-Feishu
+        sessions, or card dispatch that failed before marking)
+    """
+    tool_name = kwargs.get("tool_name") or ""
+    if tool_name != "memory":
+        return None
+
+    result_raw = kwargs.get("result")
+    if not isinstance(result_raw, str):
+        return None
+
+    try:
+        parsed = json.loads(result_raw) if result_raw else {}
+    except Exception:
+        return None
+    if not isinstance(parsed, dict) or not parsed.get("staged"):
+        return None
+
+    pending_id = str(parsed.get("pending_id") or "")
+    if not pending_id:
+        return None
+
+    # Only transform when a card was actually dispatched on Feishu.
+    with _SENT_CARD_LOCK:
+        hit = pending_id in _SENT_CARD_IDS
+        if hit:
+            _SENT_CARD_IDS.discard(pending_id)  # one-shot
+
+    if not hit:
+        return None
+
+    parsed["message"] = (
+        "Staged for approval (memory.write_approval is on). "
+        "Approval card sent to chat — click ✅ to save or 🟥 to discard."
+    )
+    return json.dumps(parsed, ensure_ascii=False)
