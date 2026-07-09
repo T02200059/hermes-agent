@@ -33,6 +33,9 @@ tmp/
 temp_vision_images/
 hermes-*/*
 examples/
+# Keep owner-maintained templates tracked (ignored by the blanket rule above).
+!owner/examples/
+!owner/examples/**
 tests/quick_test_dataset.jsonl
 tests/sample_dataset.jsonl
 run_datagen_kimik2-thinking.sh
