@@ -138,3 +138,237 @@ items:
         symbol: register_hooks
       - type: file_exists
         path: tests/owner/test_memory_approval_card_routing.py
+
+  - id: owner-provider-attribution-chain
+    title: "owner change list 1.1 owner_provider_name attribution chain"
+    category: foundation
+    source: owner/docs/owner改动清单.md#11-owner-provider-name
+    static_checks:
+      - type: module_symbol
+        module: owner.attribution
+        symbol: get_current_attribution
+      - type: module_symbol
+        module: owner.attribution
+        symbol: inject_attribution_into_message
+      - type: file_contains
+        file: run_agent.py
+        contains:
+          - 'owner_provider_name: str = None'
+          - 'owner_provider_name=self.owner_provider_name'
+      - type: file_contains
+        file: agent/agent_init.py
+        contains:
+          - 'owner_provider_name: str = None'
+          - 'agent.owner_provider_name'
+      - type: file_contains
+        file: agent/chat_completion_helpers.py
+        contains:
+          - 'owner.attribution'
+          - 'inject_attribution_into_message'
+      - type: file_contains
+        file: hermes_state.py
+        contains:
+          - 'owner_provider_name TEXT'
+          - 'owner_provider_name, model, provider'
+
+  - id: runtime-schema-patches
+    title: "owner change list 2.3 runtime tool schema patches"
+    category: tools
+    source: owner/docs/owner改动清单.md#23-schema-patches
+    static_checks:
+      - type: module_symbol
+        module: owner.tools.schema_patches
+        symbol: apply_image_generate_schema_patch
+      - type: module_symbol
+        module: owner.tools.schema_patches
+        symbol: apply_send_message_schema_patch
+      - type: file_contains
+        file: owner/owner-extensions/__init__.py
+        contains:
+          - 'import owner.tools.schema_patches'
+          - 'schema_patches applied via plugin register'
+
+  - id: memory-synthetic-guard
+    title: "owner change list 7.2 memory synthetic recall guard"
+    category: memory
+    source: owner/docs/owner改动清单.md#72-memory-synthetic-guard
+    static_checks:
+      - type: module_symbol
+        module: owner.patches.memory_synthetic_guard_patch
+        symbol: apply_patch
+      - type: module_symbol
+        module: owner.patches.memory_synthetic_guard_patch
+        symbol: revert_patch
+      - type: module_symbol
+        module: owner.patches.memory_synthetic_guard_patch
+        symbol: _is_synthetic
+      - type: file_contains
+        file: owner/owner-extensions/__init__.py
+        contains:
+          - 'memory_synthetic_guard_patch'
+          - 'apply_patch()'
+      - type: file_exists
+        path: tests/owner/patches/test_memory_synthetic_guard_patch.py
+      - type: file_exists
+        path: owner/docs/memory-synthetic-recall-guard.md
+
+  - id: openviking-owner-recall
+    title: "owner change list 7.3 OpenViking recall owner extensions"
+    category: memory
+    source: owner/docs/owner改动清单.md#73-openviking-recall
+    static_checks:
+      - type: module_symbol
+        module: owner.patches.openviking_owner_recall_patch
+        symbol: apply_patch
+      - type: module_symbol
+        module: owner.patches.openviking_owner_recall_patch
+        symbol: revert_patch
+      - type: module_symbol
+        module: owner.patches.openviking_owner_recall_patch
+        symbol: build_viking_recall_card
+      - type: module_symbol
+        module: owner.patches.openviking_owner_recall_patch
+        symbol: build_viking_recall_text
+      - type: module_symbol
+        module: owner.patches.openviking_recall_config
+        symbol: load_sync_recall_config
+      - type: module_symbol
+        module: owner.patches.openviking_recall_config
+        symbol: load_recall_card_config
+      - type: file_contains
+        file: owner/owner-extensions/__init__.py
+        contains:
+          - 'openviking_owner_recall_patch'
+          - 'openviking_owner_recall_patch applied via plugin register'
+      - type: file_exists
+        path: tests/owner/patches/test_openviking_owner_recall_patch.py
+
+  - id: feishu-profile-routing
+    title: "owner change list 4.1 Feishu multi-profile routing"
+    category: feishu
+    source: owner/docs/owner改动清单.md#41-feishu-profile-routing
+    static_checks:
+      - type: module_symbol
+        module: owner.feishu.profile_routing
+        symbol: resolve_profile_route
+      - type: module_symbol
+        module: owner.feishu.profile_routing
+        symbol: resolve_profile_route_by_name
+      - type: module_symbol
+        module: owner.feishu.profile_routing
+        symbol: try_route_inbound_message
+      - type: module_symbol
+        module: owner.feishu.profile_routing
+        symbol: try_route_card_action
+      - type: module_symbol
+        module: owner.feishu.profile_routing
+        symbol: handle_card_action_request
+      - type: file_contains
+        file: plugins/platforms/feishu/adapter.py
+        contains:
+          - 'owner.feishu.profile_routing'
+          - 'try_route_card_action'
+          - 'try_route_inbound_message'
+          - 'allow_profile_routing'
+      - type: file_exists
+        path: tests/owner/test_feishu_profile_routing.py
+
+  - id: feishu-clarify-card
+    title: "owner change list 4.5 Feishu clarify interactive card"
+    category: feishu
+    source: owner/docs/owner改动清单.md#45-feishu-clarify-card
+    static_checks:
+      - type: module_symbol
+        module: owner.feishu.clarify_card
+        symbol: build_clarify_card
+      - type: module_symbol
+        module: owner.feishu.clarify_card
+        symbol: build_input_clarify_card
+      - type: module_symbol
+        module: owner.feishu.clarify_card
+        symbol: build_expired_clarify_card
+      - type: module_symbol
+        module: owner.feishu.clarify_card
+        symbol: send_clarify
+      - type: module_symbol
+        module: owner.feishu.clarify_card
+        symbol: expire_clarify
+      - type: module_symbol
+        module: owner.feishu.clarify_card
+        symbol: handle_clarify_card_action
+      - type: module_symbol
+        module: owner.clarify.choice_normalizer
+        symbol: normalize_choices
+      - type: module_symbol
+        module: owner.clarify.gateway_helpers
+        symbol: get_choice_display
+      - type: file_contains
+        file: plugins/platforms/feishu/adapter.py
+        contains:
+          - 'owner.feishu.clarify_card'
+          - 'send_clarify as _owner_send_clarify'
+          - 'expire_clarify as _owner_expire_clarify'
+          - 'handle_clarify_card_action'
+      - type: file_contains
+        file: tools/clarify_tool.py
+        contains:
+          - 'owner.clarify.choice_normalizer'
+          - 'normalize_choices'
+
+  - id: cron-env-isolation
+    title: "owner change list cron env ContextVar isolation"
+    category: cron
+    source: owner/docs/owner改动清单.md#cron-env-isolation
+    static_checks:
+      - type: module_symbol
+        module: owner.cron.run_job_hook
+        symbol: owner_cron_session_enter
+      - type: module_symbol
+        module: owner.cron.run_job_hook
+        symbol: owner_cron_session_exit
+      - type: file_contains
+        file: cron/scheduler.py
+        contains:
+          - 'owner.cron.run_job_hook'
+          - 'owner_cron_session_enter'
+          - 'owner_cron_session_exit'
+      - type: file_contains
+        file: owner/cron/run_job_hook.py
+        contains:
+          - 'HERMES_CRON_SESSION'
+          - 'os.environ.pop("HERMES_CRON_SESSION", None)'
+      - type: file_contains
+        file: owner/cron/session_context.py
+        contains:
+          - 'ContextVar("HERMES_CRON_SESSION"'
+          - '_VAR_MAP["HERMES_CRON_SESSION"]'
+      - type: file_exists
+        path: tests/tools/test_cron_session_contextvar_isolation.py
+
+  - id: per-chat-display-overrides
+    title: "owner change list 9.1 per-chat display overrides"
+    category: gateway
+    source: owner/docs/owner改动清单.md#91-per-chat-display-overrides
+    static_checks:
+      - type: module_symbol
+        module: owner.display_overrides
+        symbol: merge_owner_display_config
+      - type: module_symbol
+        module: owner.display_overrides
+        symbol: resolve_per_chat_override
+      - type: module_symbol
+        module: owner.display_overrides
+        symbol: invalidate_per_chat_display_cache
+      - type: file_contains
+        file: gateway/display_config.py
+        contains:
+          - 'owner.display_overrides'
+          - 'resolve_display_setting_for_source'
+          - 'resolve_per_chat_override'
+      - type: file_contains
+        file: gateway/run.py
+        contains:
+          - 'resolve_display_setting_for_source'
+          - 'source=source'
+      - type: file_exists
+        path: tests/gateway/test_display_config.py
