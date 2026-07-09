@@ -1,0 +1,140 @@
+items:
+  - id: patch-config-loader
+    title: "owner change list 1.2 patch.yaml loader"
+    category: foundation
+    source: owner/docs/owner改动清单.md#12-patchyaml
+    static_checks:
+      - type: module_symbol
+        module: owner.patch_config
+        symbol: load_patch_config
+      - type: module_symbol
+        module: owner.patch_config
+        symbol: get_model_extra_body
+      - type: file_exists
+        path: owner/config/patch.yaml
+      - type: file_exists
+        path: owner/config/patch_feishu_profile.yaml
+
+  - id: model-extra-body-injection
+    title: "owner change list 1.3 model extra_body injection"
+    category: provider
+    source: owner/docs/owner改动清单.md#13-extra_body
+    static_checks:
+      - type: module_symbol
+        module: owner.extra_body_injection
+        symbol: inject_model_extra_body
+      - type: file_exists
+        path: tests/owner/test_extra_body_injection.py
+
+  - id: skill-script-auto-approval
+    title: "owner change list 3.5 skill script approval"
+    category: approval
+    source: owner/docs/owner改动清单.md#35-skill-script
+    static_checks:
+      - type: module_symbol
+        module: owner.approval.skill_script_approval
+        symbol: is_skill_script_allowed
+      - type: module_symbol
+        module: owner.approval.skill_script_approval
+        symbol: track_session_skill_view
+      - type: module_symbol
+        module: owner.approval.skill_script_approval
+        symbol: reset_session_skills_viewed
+      - type: file_exists
+        path: tests/owner/test_skill_script_approval.py
+
+  - id: feishu-inbound-context
+    title: "owner change list 3.2 Feishu inbound context"
+    category: gateway
+    source: owner/docs/owner改动清单.md#32-inbound-context
+    static_checks:
+      - type: module_symbol
+        module: owner.gateway.inbound_context
+        symbol: append_inbound_context
+      - type: module_symbol
+        module: owner.feishu.inbound_context
+        symbol: build_feishu_inbound_context_block
+      - type: file_exists
+        path: tests/owner/test_feishu_inbound_context.py
+
+  - id: checkpoint-mutation-predictor
+    title: "owner change list 8.1 checkpoint mutation predictor"
+    category: tools
+    source: owner/docs/owner改动清单.md#81-checkpoint
+    static_checks:
+      - type: module_symbol
+        module: owner.checkpoint_predictor
+        symbol: predict_and_checkpoint
+      - type: file_exists
+        path: tests/owner/test_checkpoint_predictor.py
+      - type: file_exists
+        path: owner/docs/checkpoint-mutation-predictor.md
+
+  - id: file-tool-timeout
+    title: "owner change list 8.2 read_file/search_files timeout"
+    category: tools
+    source: owner/docs/owner改动清单.md#82-file-tool-timeout
+    static_checks:
+      - type: module_symbol
+        module: owner.file_tool_timeout
+        symbol: guard_file_tool_call
+      - type: module_symbol
+        module: owner.file_tool_timeout
+        symbol: resolve_file_tool_timeout
+      - type: file_exists
+        path: tests/owner/test_file_tool_timeout.py
+
+  - id: providers-plugin-command
+    title: "owner change list 4.9 /providers plugin command"
+    category: commands
+    source: owner/docs/owner改动清单.md#49-providers
+    static_checks:
+      - type: module_symbol
+        module: owner.commands.providers
+        symbol: handle_providers_command
+      - type: file_contains
+        file: owner/owner-extensions/__init__.py
+        contains:
+          - 'ctx.register_command('
+          - '"providers"'
+      - type: file_exists
+        path: tests/owner/test_providers_command.py
+
+  - id: feishu-media-guard
+    title: "owner change list 4.12 Feishu upload media guard"
+    category: feishu
+    source: owner/docs/owner改动清单.md#412-media-guard
+    static_checks:
+      - type: module_symbol
+        module: owner.feishu.media_guard
+        symbol: check_file_size
+      - type: module_symbol
+        module: owner.feishu.media_guard
+        symbol: check_image_size
+      - type: file_exists
+        path: tests/owner/test_feishu_media_guard.py
+
+  - id: hygiene-compression-notice
+    title: "owner change list 4.8 hygiene compression notice"
+    category: gateway
+    source: owner/docs/owner改动清单.md#48-compression-summary
+    static_checks:
+      - type: module_symbol
+        module: owner.gateway.hygiene_compression_notice
+        symbol: send_hygiene_compression_notice
+      - type: file_exists
+        path: tests/owner/test_hygiene_compression_notice.py
+
+  - id: memory-approval-card
+    title: "owner change list 4.10 memory approval Feishu card"
+    category: feishu
+    source: owner/docs/owner改动清单.md#410-memory-approval
+    static_checks:
+      - type: module_symbol
+        module: owner.feishu.memory_approval
+        symbol: handle_card_click
+      - type: module_symbol
+        module: owner.owner-extensions.memory_feishu_bridge
+        symbol: register_hooks
+      - type: file_exists
+        path: tests/owner/test_memory_approval_card_routing.py

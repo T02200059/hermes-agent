@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """Post-merge health check: detect dead owner code caused by upstream refactoring.
 
-Runs 6 checks:
+Runs 7 checks:
   1. _owner_import chain validation (P0)
   2. Direct from owner.* import validation (P0)
   3. owner/patches/*.py target validation (P0)
   4. [owner] marker inventory & context validation (P1)
   5. Merge diff dead-marker detection (P2)
   6. Critical owner anchor validation (P0)
+  7. Owner inventory static validation (P0)
 
 Exit code 0 = all pass (warnings OK), 1 = any FAIL.
 """
@@ -33,6 +34,7 @@ CheckResult = Tuple[str, List[str], int, int]
 SCRIPT_DIR = Path(__file__).resolve().parent          # owner/validation/
 REPO_ROOT = SCRIPT_DIR.parent.parent                  # 2 levels up
 ANCHORS_PATH = SCRIPT_DIR / "anchors.yaml"
+INVENTORY_PATH = SCRIPT_DIR / "inventory.yaml"
 
 # Directories to exclude from scanning
 EXCLUDE_DIRS = {"owner", "tests", ".git", "__pycache__", "node_modules", ".venv", "venv"}
@@ -624,6 +626,126 @@ def check_critical_owner_anchors() -> CheckResult:
 
 
 # ---------------------------------------------------------------------------
+# Check 7: Owner inventory static validation
+# ---------------------------------------------------------------------------
+
+def _load_inventory_items() -> Tuple[List[Dict[str, Any]], List[str]]:
+    """Load lightweight validation items from owner/validation/inventory.yaml."""
+    if not INVENTORY_PATH.is_file():
+        return [], [f"{INVENTORY_PATH.relative_to(REPO_ROOT)} not found"]
+
+    try:
+        import yaml
+    except Exception as exc:
+        return [], [f"cannot import PyYAML to read {INVENTORY_PATH.relative_to(REPO_ROOT)}: {exc}"]
+
+    try:
+        data = yaml.safe_load(INVENTORY_PATH.read_text(encoding="utf-8")) or {}
+    except Exception as exc:
+        return [], [f"cannot parse {INVENTORY_PATH.relative_to(REPO_ROOT)}: {exc}"]
+
+    items = data.get("items") if isinstance(data, dict) else None
+    if not isinstance(items, list):
+        return [], [f"{INVENTORY_PATH.relative_to(REPO_ROOT)} must contain a top-level 'items' list"]
+
+    issues: List[str] = []
+    normalized: List[Dict[str, Any]] = []
+    for idx, item in enumerate(items, start=1):
+        if not isinstance(item, dict):
+            issues.append(f"items[{idx}] must be a mapping")
+            continue
+        item_id = str(item.get("id") or "").strip()
+        checks = item.get("static_checks")
+        if not item_id:
+            issues.append(f"items[{idx}] missing id")
+        if not isinstance(checks, list) or not checks:
+            issues.append(f"items[{idx}] ({item_id or '?'}) must have non-empty static_checks")
+        elif not all(isinstance(check, dict) for check in checks):
+            issues.append(f"items[{idx}] ({item_id or '?'}) static_checks must be mappings")
+        if item_id and isinstance(checks, list):
+            normalized.append(item)
+
+    return normalized, issues
+
+
+def _check_inventory_file_exists(item_id: str, check: Dict[str, Any]) -> List[str]:
+    rel_path = str(check.get("path") or "").strip()
+    if not rel_path:
+        return [f"{item_id}: file_exists check missing path"]
+    if not (REPO_ROOT / rel_path).is_file():
+        return [f"{item_id}: expected file {rel_path} to exist"]
+    return []
+
+
+def _check_inventory_file_contains(item_id: str, check: Dict[str, Any]) -> List[str]:
+    rel_path = str(check.get("file") or "").strip()
+    contains = check.get("contains")
+    if isinstance(contains, str):
+        needles = [contains]
+    elif isinstance(contains, list) and all(isinstance(s, str) and s for s in contains):
+        needles = contains
+    else:
+        return [f"{item_id}: file_contains check must provide string or string list 'contains'"]
+    if not rel_path:
+        return [f"{item_id}: file_contains check missing file"]
+
+    path = REPO_ROOT / rel_path
+    if not path.is_file():
+        return [f"{item_id}: expected file {rel_path} to exist"]
+    try:
+        source = path.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        return [f"{item_id}: cannot read {rel_path}: {exc}"]
+
+    return [f"{item_id}: {rel_path} missing {needle!r}" for needle in needles if needle not in source]
+
+
+def _check_inventory_module_symbol(item_id: str, check: Dict[str, Any]) -> List[str]:
+    module = str(check.get("module") or "").strip()
+    symbol = str(check.get("symbol") or "").strip()
+    if not module or not symbol:
+        return [f"{item_id}: module_symbol check missing module or symbol"]
+
+    target_file = _resolve_module_file(module)
+    if target_file is None:
+        return [f"{item_id}: module {module} not found"]
+
+    tree = _parse_ast(target_file)
+    if tree is None:
+        return [f"{item_id}: cannot parse {target_file.relative_to(REPO_ROOT)}"]
+
+    names = _get_top_level_names(tree)
+    if symbol not in names:
+        return [f"{item_id}: symbol {symbol!r} not found in {target_file.relative_to(REPO_ROOT)}"]
+    return []
+
+
+def _run_inventory_static_check(item_id: str, check: Dict[str, Any]) -> List[str]:
+    check_type = str(check.get("type") or "").strip()
+    if check_type == "file_exists":
+        return _check_inventory_file_exists(item_id, check)
+    if check_type == "file_contains":
+        return _check_inventory_file_contains(item_id, check)
+    if check_type == "module_symbol":
+        return _check_inventory_module_symbol(item_id, check)
+    return [f"{item_id}: unknown static check type {check_type!r}"]
+
+
+def check_validation_inventory() -> CheckResult:
+    """Run simple static checks from the owner change inventory."""
+    items, issues = _load_inventory_items()
+    checks_run = 0
+
+    for item in items:
+        item_id = str(item.get("id") or "").strip()
+        for check in item.get("static_checks", []):
+            checks_run += 1
+            issues.extend(_run_inventory_static_check(item_id, check))
+
+    return "Check 7: Owner inventory static validation", issues, checks_run, len(items)
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -645,6 +767,7 @@ def main() -> int:
         check_owner_markers,
         check_merge_diff,
         check_critical_owner_anchors,
+        check_validation_inventory,
     ]
 
     total_pass = 0
@@ -677,6 +800,9 @@ def main() -> int:
         elif check_fn == check_critical_owner_anchors:
             checked, total = counts
             print(f"  Checked {checked}/{total} critical owner anchors")
+        elif check_fn == check_validation_inventory:
+            checks_run, item_count = counts
+            print(f"  Ran {checks_run} static checks across {item_count} inventory items")
 
         if not issues:
             if is_warn:
