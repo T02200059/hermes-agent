@@ -191,6 +191,30 @@ async def handle_bot_menu_event(adapter: Any, data: Any) -> None:
                 "[Feishu] Failed to send bot menu ack to %s: %s", chat_id, exc
             )
 
+    # [owner] feishu_guide: send the interactive card directly after ack,
+    # bypassing the message pipeline.  The card is a read-only UI element
+    # (queue/steer/goal/subgoal/background picker) — it does not need agent
+    # processing, and routing through _handle_message_with_guards would block
+    # behind the per-chat lock until the current turn finishes, causing a
+    # multi-second delay between the ack and the card appearing.
+    if event_key == "feishu_guide":
+        try:
+            from gateway.config import Platform
+            from types import SimpleNamespace as _SN
+            _source = _SN(
+                platform=Platform.FEISHU,
+                chat_id=chat_id,
+                user_id=open_id,
+                user_name="",
+                chat_type="p2p",
+                thread_id=None,
+            )
+            await adapter.send_guide_card(chat_id=chat_id, source=_source)
+            logger.info("[Feishu] Guide card sent directly for %s", open_id)
+        except Exception as exc:
+            logger.warning("[Feishu] Failed to send guide card directly: %s", exc)
+        return
+
     command = resolve_bot_menu_command(event_key)
     if command:
         synthetic_text = command
