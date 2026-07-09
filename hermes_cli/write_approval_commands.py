@@ -102,14 +102,14 @@ def handle_pending_subcommand(
 
 def _resolve_one(subsystem: str, rest: List[str]):
     if not rest:
-        return None, _t("memory_proposal.response_usage_approve")
+        return None, _t("memory_proposal.response_usage_approve", subsystem=subsystem)
     return rest[0], None
 
 
 def _approve(subsystem: str, rest: List[str], memory_store) -> str:
     target, err = _resolve_one(subsystem, rest)
     if err or target is None:
-        return err or _t("memory_proposal.response_usage_approve")
+        return err or _t("memory_proposal.response_usage_approve", subsystem=subsystem)
 
     records = wa.list_pending(subsystem)
     if not records:
@@ -164,7 +164,7 @@ def _apply_one(subsystem: str, rec, memory_store):
 def _reject(subsystem: str, rest: List[str]) -> str:
     target, err = _resolve_one(subsystem, rest)
     if err or target is None:
-        return err or _t("memory_proposal.response_usage_reject")
+        return err or _t("memory_proposal.response_usage_reject", subsystem=subsystem)
     if target.lower() == "all":
         n = 0
         for rec in wa.list_pending(subsystem):

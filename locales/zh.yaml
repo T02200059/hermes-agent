@@ -71,7 +71,7 @@ approval:
   slash_confirm:
     destructive_title: "⚠️  /{command} — 将销毁会话状态"
     destructive_detail_default: "这将丢弃当前对话历史，无法撤销。"
-    mcp_title: "⚠️  /reload-mcp — 提示词缓存失效警告"
+    mcp_title: "⚠️  /{command} - 提示词缓存失效警告"
     mcp_detail: >-
       重新加载 MCP 服务器会重建本会话的工具集，并使提供方提示词缓存失效。
       下一条消息将重新发送全部输入 token（对于长上下文或高推理模型可能
@@ -88,9 +88,9 @@ approval:
     cancelled_no_input: "🟡 /{command} 已取消（无输入）。"
     cancelled_unrecognized: "🟡 无法识别的选择 '{raw}'。/{command} 已取消。"
     cancelled_explicit_destructive: "🟡 /{command} 已取消。会话不变。"
-    cancelled_explicit_mcp: "🟡 /reload-mcp 已取消。MCP 工具不变。"
+    cancelled_explicit_mcp: "🟡 /{command} 已取消。MCP 工具不变。"
     optout_saved_destructive: "🔒 以后的 /clear、/new、/reset 和 /undo 将不再需要确认。"
-    optout_saved_mcp: "🔒 以后的 /reload-mcp 调用将不再需要确认。"
+    optout_saved_mcp: "🔒 以后的 /{command} 调用将不再需要确认。"
     optout_hint_destructive: "   在 config.yaml 中设置 `approvals.destructive_slash_confirm: true` 可重新启用。"
     optout_hint_mcp: "   在 config.yaml 中设置 `approvals.mcp_reload_confirm: true` 可重新启用。"
     optout_failed_destructive: "⚠️  无法保存免确认设置 — 本次继续执行。"
@@ -1001,8 +1001,8 @@ memory_proposal:
   response_rejected_all: "已拒绝 {count} 条待处理的 memory 写入。"
   response_no_pending: "没有待处理的 memory 写入。"
   response_no_match: "没有 ID 为 '{id}' 的待处理 memory 写入。"
-  response_usage_approve: "用法: /memory approve <id>（或 'all'）"
-  response_usage_reject: "用法: /memory reject <id>"
+  response_usage_approve: "用法: /{subsystem} approve <id>（或 'all'）"
+  response_usage_reject: "用法: /{subsystem} reject <id>"
   response_pending_header: "待处理的 memory 写入 ({count})："
   response_approval_state: "memory.write_approval = {state}"
 

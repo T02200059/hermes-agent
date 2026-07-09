@@ -10652,7 +10652,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
             ("cancel", t("approval.slash_confirm.choice_cancel"), t("approval.slash_confirm.hint_mcp_cancel")),
         ]
         raw = self._prompt_text_input_modal(
-            title=t("approval.slash_confirm.mcp_title"),
+            title=t("approval.slash_confirm.mcp_title", command="reload-mcp"),
             detail=t("approval.slash_confirm.mcp_detail"),
             choices=choices,
         )
@@ -10665,12 +10665,12 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
             return
 
         if choice == "cancel":
-            print(t("approval.slash_confirm.cancelled_explicit_mcp"))
+            print(t("approval.slash_confirm.cancelled_explicit_mcp", command="reload-mcp"))
             return
 
         if choice == "always":
             if save_config_value("approvals.mcp_reload_confirm", False):
-                print(t("approval.slash_confirm.optout_saved_mcp"))
+                print(t("approval.slash_confirm.optout_saved_mcp", command="reload-mcp"))
                 print(t("approval.slash_confirm.optout_hint_mcp"))
             else:
                 print(t("approval.slash_confirm.optout_failed_mcp"))

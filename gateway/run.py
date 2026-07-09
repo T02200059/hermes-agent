@@ -9490,18 +9490,12 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             # them. Without this check they fall through to busy-input
             # and get injected as user text into the running agent turn.
             if _cmd_def_inner:
-                return (
-                    f"⏳ Agent is running — `/{_cmd_def_inner.name}` can't run "
-                    f"mid-turn. Wait for the current response or `/stop` first."
-                )
+                return t("gateway.busy_cmd_blocked", cmd=_cmd_def_inner.name)
             if _evt_cmd:
                 try:
                     from hermes_cli.commands import is_gateway_known_command
                     if is_gateway_known_command(_evt_cmd):
-                        return (
-                            f"⏳ Agent is running — `/{_evt_cmd}` can't run "
-                            f"mid-turn. Wait for the current response or `/stop` first."
-                        )
+                        return t("gateway.busy_cmd_blocked", cmd=_evt_cmd)
                 except Exception:
                     pass
 

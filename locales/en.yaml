@@ -81,7 +81,7 @@ approval:
   slash_confirm:
     destructive_title: "⚠️  /{command} — destroys conversation state"
     destructive_detail_default: "This will discard the current conversation history. This cannot be undone."
-    mcp_title: "⚠️  /reload-mcp — Prompt cache invalidation warning"
+    mcp_title: "⚠️  /{command} - Prompt cache invalidation warning"
     mcp_detail: >-
       Reloading MCP servers rebuilds the tool set for this session and
       invalidates the provider prompt cache. The next message will
@@ -99,9 +99,9 @@ approval:
     cancelled_no_input: "🟡 /{command} cancelled (no input)."
     cancelled_unrecognized: "🟡 Unrecognized choice '{raw}'. /{command} cancelled."
     cancelled_explicit_destructive: "🟡 /{command} cancelled. Conversation unchanged."
-    cancelled_explicit_mcp: "🟡 /reload-mcp cancelled. MCP tools unchanged."
+    cancelled_explicit_mcp: "🟡 /{command} cancelled. MCP tools unchanged."
     optout_saved_destructive: "🔒 Future /clear, /new, /reset, and /undo will run without confirmation."
-    optout_saved_mcp: "🔒 Future /reload-mcp calls will run without confirmation."
+    optout_saved_mcp: "🔒 Future /{command} calls will run without confirmation."
     optout_hint_destructive: "   Re-enable via `approvals.destructive_slash_confirm: true` in config.yaml."
     optout_hint_mcp: "   Re-enable via `approvals.mcp_reload_confirm: true` in config.yaml."
     optout_failed_destructive: "⚠️  Couldn't persist opt-out — proceeding once."
@@ -998,8 +998,8 @@ memory_proposal:
   response_rejected_all: "Rejected {count} pending memory write(s)."
   response_no_pending: "No pending memory writes."
   response_no_match: "No pending memory write with id '{id}'."
-  response_usage_approve: "Usage: /memory approve <id>  (or 'all')"
-  response_usage_reject: "Usage: /memory reject <id>"
+  response_usage_approve: "Usage: /{subsystem} approve <id>  (or 'all')"
+  response_usage_reject: "Usage: /{subsystem} reject <id>"
   response_pending_header: "Pending memory writes ({count}):"
   response_approval_state: "memory.write_approval = {state}"
 
