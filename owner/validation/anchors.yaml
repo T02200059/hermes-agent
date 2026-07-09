@@ -1,0 +1,196 @@
+anchors:
+  - id: owner-extensions-plugin-runtime-patches
+    file: owner/owner-extensions/__init__.py
+    contains:
+      - 'ctx.register_command('
+      - 'owner.commands.providers'
+      - 'owner.commands.feishu_guide'
+      - 'memory_synthetic_guard_patch'
+      - 'owner.tools.schema_patches'
+      - 'openviking_owner_recall_patch'
+      - 'memory_feishu_bridge'
+
+  - id: post-tool-call-gateway-session-key
+    file: model_tools.py
+    contains:
+      - 'def _emit_post_tool_call_hook('
+      - 'gateway_session_key: Optional[str] = None'
+      - 'gateway_session_key=gateway_session_key or ""'
+
+  - id: model-extra-body-injection
+    file: agent/transports/chat_completions.py
+    contains:
+      - 'owner.extra_body_injection'
+      - 'inject_model_extra_body'
+      - 'params.get("owner_provider_name")'
+
+  - id: assistant-message-attribution
+    file: agent/chat_completion_helpers.py
+    contains:
+      - 'owner.attribution'
+      - 'inject_attribution_into_message'
+
+  - id: owner-provider-name-agent-init
+    file: agent/agent_init.py
+    contains:
+      - 'owner_provider_name: str = None'
+      - 'agent.owner_provider_name'
+      - 'getattr(agent, "owner_provider_name", agent.provider)'
+
+  - id: owner-provider-name-run-agent
+    file: run_agent.py
+    contains:
+      - 'owner_provider_name: str = None'
+      - 'owner_provider_name=self.owner_provider_name'
+      - 'owner_provider_name=msg.get("owner_provider_name")'
+
+  - id: message-token-breakdown-db
+    file: hermes_state.py
+    contains:
+      - 'owner_provider_name TEXT'
+      - 'input_tokens INTEGER DEFAULT 0'
+      - 'cache_read_tokens INTEGER DEFAULT 0'
+      - 'cache_write_tokens'
+
+  - id: pool-base-url-override
+    file: hermes_cli/runtime_provider.py
+    contains:
+      - 'owner.patches.pool_base_url_override'
+      - 'config_base_url_override'
+
+  - id: credential-pool-prefix-gate
+    file: agent/credential_pool.py
+    contains:
+      - 'api_key_prefixes'
+      - 'config_base_url_override'
+
+  - id: skill-script-auto-approval
+    file: tools/approval.py
+    contains:
+      - 'owner.approval.skill_script_approval'
+      - 'is_skill_script_allowed'
+      - '_load_patch_owner_config'
+
+  - id: skill-view-tracking
+    file: tools/skills_tool.py
+    contains:
+      - 'track_session_skill_view'
+      - 'owner.approval.skill_script_approval'
+
+  - id: checkpoint-predictor-trigger
+    file: agent/tool_executor.py
+    contains:
+      - 'owner.checkpoint_predictor'
+      - 'predict_and_checkpoint'
+
+  - id: file-tool-timeout-guard
+    file: agent/tool_executor.py
+    contains:
+      - 'owner.file_tool_timeout'
+      - 'guard_file_tool_call'
+
+  - id: file-tool-timeout-runtime-helper
+    file: agent/agent_runtime_helpers.py
+    contains:
+      - 'owner.file_tool_timeout'
+      - 'guard_file_tool_call'
+
+  - id: clarify-choice-normalization
+    file: tools/clarify_tool.py
+    contains:
+      - 'owner.clarify.choice_normalizer'
+      - 'normalize_choices'
+
+  - id: inbound-context-gateway-glue
+    file: gateway/run.py
+    contains:
+      - 'owner.gateway.inbound_context'
+      - 'append_inbound_context'
+      - '_append_inbound_context(message_text, source, session_id=session_key)'
+
+  - id: hygiene-compression-notice-gateway-glue
+    file: gateway/run.py
+    contains:
+      - 'owner.gateway.hygiene_compression_notice'
+      - 'send_hygiene_compression_notice'
+
+  - id: auto-card-agent-end-glue
+    file: gateway/run.py
+    contains:
+      - 'owner.feishu.agent_end'
+      - 'try_auto_card_on_end'
+
+  - id: diff-card-callback-glue
+    file: gateway/run.py
+    contains:
+      - 'owner.diff_card.dispatcher'
+      - 'install_diff_card_support'
+
+  - id: per-chat-display-overrides
+    file: gateway/display_config.py
+    contains:
+      - 'owner.display_overrides'
+      - 'resolve_display_setting_for_source'
+
+  - id: feishu-adapter-card-routes
+    file: plugins/platforms/feishu/adapter.py
+    contains:
+      - 'owner.feishu.profile_routing'
+      - 'try_route_card_action'
+      - 'owner.feishu.clarify_card'
+      - 'handle_clarify_card_action'
+      - 'owner.feishu.model_picker'
+      - 'handle_picker_action'
+      - 'owner.feishu.steer_card'
+      - 'handle_guide_card_action'
+      - 'owner.diff_card.feishu'
+      - 'handle_feishu_diff_action'
+      - 'owner.feishu.memory_approval'
+      - 'handle_card_click'
+
+  - id: feishu-adapter-send-helpers
+    file: plugins/platforms/feishu/adapter.py
+    contains:
+      - 'owner.feishu.auto_card'
+      - 'try_auto_card'
+      - 'owner.feishu.approval'
+      - 'FeishuApprovalContext'
+      - 'owner.feishu.user_store'
+      - 'FeishuUserStore'
+      - 'owner.feishu.bot_menu'
+      - 'handle_bot_menu_event'
+      - 'owner.feishu.media_guard'
+      - 'check_file_size'
+
+  - id: cron-owner-script-allowlist
+    file: tools/cronjob_tools.py
+    contains:
+      - '_get_owner_scripts_allowlist'
+      - 'owner/scripts'
+
+  - id: cron-runtime-session-context
+    file: cron/scheduler.py
+    contains:
+      - '[Cron context]'
+      - 'owner.cron.run_job_hook'
+      - 'owner_cron_session_enter'
+      - '_get_owner_scripts_allowlist'
+
+  - id: env-template-runtime-provider-guard
+    file: hermes_cli/runtime_provider.py
+    contains:
+      - 'P29'
+      - 'base_url'
+      - '"${" not in cfg_base_url'
+
+  - id: env-template-model-metadata-guard
+    file: agent/model_metadata.py
+    contains:
+      - 'P29'
+      - '_expand_env_vars'
+
+  - id: tui-env-template-guard
+    file: tui_gateway/server.py
+    contains:
+      - 'P29'
+      - 'switch_model'
