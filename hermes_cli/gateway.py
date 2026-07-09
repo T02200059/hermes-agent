@@ -801,6 +801,20 @@ def _spawn_gateway_restart_watcher(old_pid: int, run_argv: list[str]) -> bool:
                 break
             time.sleep(0.2)
 
+        # Clear stale .pyc bytecode cache before respawning the gateway.
+        # Stale bytecode can cause ImportError when updated source references
+        # names that no longer exist in the cached .pyc files.
+        import shutil as _shutil
+        _project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        for _dirpath, _dirnames, _ in os.walk(_project_root):
+            _dirnames[:] = [d for d in _dirnames if d not in {{'venv', '.venv', 'node_modules', '.git', '.worktrees'}}]
+            if os.path.basename(_dirpath) == '__pycache__':
+                try:
+                    _shutil.rmtree(_dirpath)
+                except OSError:
+                    pass
+                _dirnames.clear()
+
         # Platform-appropriate detach for the respawned gateway.  On POSIX
         # start_new_session=True maps to os.setsid; on Windows we need
         # explicit creationflags because start_new_session is a no-op there.

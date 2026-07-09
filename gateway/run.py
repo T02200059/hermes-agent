@@ -5489,7 +5489,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         if now - last_ack < _BUSY_ACK_COOLDOWN:
             return True  # interrupt sent (if not queue), ack already delivered recently
 
-        from gateway.display_config import resolve_display_setting
+        from gateway.display_config import (
+            resolve_display_setting,
+            resolve_display_setting_for_source,
+        )
         platform_key = _platform_config_key(event.source.platform)
 
         # In steer mode the user's text has already been injected into the
@@ -5507,7 +5510,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                         platform_key,
                         "busy_steer_ack_enabled",
                         True,
-                        source=source,  # [owner] per-chat display override
+                        source=event.source,  # [owner] per-chat display override
                     )
                 )
             if not steer_ack_enabled:
@@ -5519,7 +5522,6 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         # Build a status-rich acknowledgment. Mobile chat defaults keep this
         # terse; detailed iteration/tool state is still available in logs and
         # can be opted in per platform via display.platforms.<platform>.busy_ack_detail.
-        from gateway.display_config import resolve_display_setting_for_source
         status_parts = []
         busy_ack_detail_enabled = bool(
             resolve_display_setting_for_source(
@@ -6247,9 +6249,11 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             return
 
         cmd = " ".join(shlex.quote(part) for part in hermes_cmd)
+        project_root_escaped = shlex.quote(str(Path(__file__).resolve().parent.parent))
         shell_cmd = (
             f"deadline=$(( $(date +%s) + {int(restart_after_s)} )); "
             f"while kill -0 {current_pid} 2>/dev/null && [ $(date +%s) -lt $deadline ]; do sleep 0.2; done; "
+            f"find {project_root_escaped} -type d -name __pycache__ -not -path '*/venv/*' -not -path '*/node_modules/*' -not -path '*/.git/*' -exec rm -rf {{}} + 2>/dev/null; "
             f"{cmd} gateway restart"
         )
         # Same marker scrub as the Windows watcher above: this watcher runs
