@@ -160,6 +160,8 @@ owner:
     bot_menu:
       new: "/new"
       status: "/status"
+      usage: "/usage"
+      insights: "/insights"
       stop: "/stop"
       reasoning_off: "/reasoning off --global"
       reasoning_medium: "/reasoning medium --global"
@@ -192,6 +194,10 @@ owner:
         stop:
           ack: "⏹️ 停止当前任务…"
         status:
+          ack: null
+        usage:
+          ack: null
+        insights:
           ack: null
         reasoning_off:
           ack: "⚙️ 切换推理模式…"
