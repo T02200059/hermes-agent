@@ -372,3 +372,285 @@ items:
           - 'source=source'
       - type: file_exists
         path: tests/gateway/test_display_config.py
+
+  - id: owner-entrypoint-contract-tests
+    title: "owner P1 contract tests for official entrypoint glue"
+    category: validation
+    source: tests/owner/test_contract_entrypoints.py
+    static_checks:
+      - type: file_exists
+        path: tests/owner/test_contract_entrypoints.py
+      - type: file_contains
+        file: tests/owner/test_contract_entrypoints.py
+        contains:
+          - 'test_gateway_prepare_inbound_message_uses_resolved_session_key'
+          - 'test_display_source_resolver_uses_per_chat_owner_override'
+          - 'test_build_api_kwargs_forwards_owner_provider_name_to_transport'
+          - 'test_cron_run_job_sets_cron_contextvar_on_real_agent_path'
+          - 'test_owner_extension_register_applies_memory_synthetic_guard'
+
+  - id: pool-base-url-override
+    title: "owner change list 2.3 credential pool base_url override"
+    category: provider
+    source: owner/docs/owner改动清单.md#23-schema-patches
+    static_checks:
+      - type: module_symbol
+        module: owner.patches.pool_base_url_override
+        symbol: config_base_url_override
+      - type: file_contains
+        file: hermes_cli/runtime_provider.py
+        contains:
+          - 'owner.patches.pool_base_url_override'
+          - 'config_base_url_override'
+      - type: file_contains
+        file: agent/credential_pool.py
+        contains:
+          - 'pool-base-url-override'
+          - 'config_base_url_override'
+      - type: file_contains
+        file: run_agent.py
+        contains:
+          - 'pool-base-url-override'
+          - 'config_base_url_override'
+
+  - id: credential-prefix-gate
+    title: "owner change list 2.2 credential pool/env prefix gate"
+    category: provider
+    source: owner/docs/owner改动清单.md#221-credential-pool-env-seeding
+    static_checks:
+      - type: module_symbol
+        module: owner.providers.credential_helpers
+        symbol: has_valid_env_credential
+      - type: file_contains
+        file: hermes_cli/auth.py
+        contains:
+          - 'api_key_prefixes: tuple = ()'
+          - 'api_key_prefixes=("gho_", "github_pat_", "ghu_")'
+          - 'api_key_prefixes=("sk-sp",)'
+      - type: file_contains
+        file: agent/credential_pool.py
+        contains:
+          - '[owner-patch] api_key_prefixes gate'
+          - '_prefixes = getattr(pconfig, "api_key_prefixes", ())'
+      - type: file_contains
+        file: hermes_cli/model_switch.py
+        contains:
+          - 'has_valid_env_credential'
+          - '_owner_check_env_creds'
+
+  - id: feishu-auto-card-agent-end
+    title: "owner change list 4.2 Feishu auto-card agent:end glue"
+    category: feishu
+    source: owner/docs/owner改动清单.md#42-auto-card
+    static_checks:
+      - type: module_symbol
+        module: owner.feishu.auto_card
+        symbol: try_auto_card
+      - type: module_symbol
+        module: owner.feishu.auto_card
+        symbol: make_auto_card
+      - type: module_symbol
+        module: owner.feishu.agent_end
+        symbol: try_auto_card_on_end
+      - type: file_contains
+        file: gateway/run.py
+        contains:
+          - 'owner.feishu.agent_end'
+          - 'try_auto_card_on_end'
+      - type: file_contains
+        file: plugins/platforms/feishu/adapter.py
+        contains:
+          - 'owner.feishu.auto_card'
+          - 'try_auto_card'
+      - type: file_exists
+        path: tests/owner/test_feishu_agent_end_media.py
+
+  - id: feishu-diff-card-dispatch
+    title: "owner change list 4.4 diff card platform dispatch"
+    category: feishu
+    source: owner/docs/owner改动清单.md#44-diff-card
+    static_checks:
+      - type: module_symbol
+        module: owner.diff_card.dispatcher
+        symbol: install_diff_card_support
+      - type: module_symbol
+        module: owner.diff_card.dispatcher
+        symbol: maybe_send_diff_cards
+      - type: module_symbol
+        module: owner.diff_card.feishu
+        symbol: send_feishu_diff_card
+      - type: module_symbol
+        module: owner.diff_card.feishu
+        symbol: handle_feishu_diff_action
+      - type: module_symbol
+        module: owner.diff_card.qqbot
+        symbol: send_qqbot_diff_markdown
+      - type: file_contains
+        file: gateway/run.py
+        contains:
+          - 'owner.diff_card.dispatcher'
+          - 'install_diff_card_support'
+      - type: file_contains
+        file: plugins/platforms/feishu/adapter.py
+        contains:
+          - 'owner.diff_card.feishu'
+          - 'handle_feishu_diff_action'
+
+  - id: feishu-approval-card
+    title: "owner change list 3.1 Feishu approval card context"
+    category: approval
+    source: owner/docs/owner改动清单.md#31-feishu-approval-card
+    static_checks:
+      - type: module_symbol
+        module: owner.feishu.approval
+        symbol: FeishuApprovalContext
+      - type: module_symbol
+        module: owner.feishu.approval
+        symbol: build_approval_card
+      - type: module_symbol
+        module: owner.feishu.approval
+        symbol: handle_approval_card_action
+      - type: file_contains
+        file: plugins/platforms/feishu/adapter.py
+        contains:
+          - 'owner.feishu.approval'
+          - 'FeishuApprovalContext'
+          - 'handle_approval_card_action'
+      - type: file_exists
+        path: tests/gateway/test_feishu_approval_buttons.py
+
+  - id: feishu-guide-command
+    title: "owner change list 4.11 /feishu-guide interactive guide card"
+    category: commands
+    source: owner/docs/owner改动清单.md#411-feishu-guide
+    static_checks:
+      - type: module_symbol
+        module: owner.commands.feishu_guide
+        symbol: handle_feishu_guide_command
+      - type: module_symbol
+        module: owner.feishu.steer_card
+        symbol: build_guide_card
+      - type: module_symbol
+        module: owner.feishu.steer_card
+        symbol: handle_guide_card_action
+      - type: file_contains
+        file: owner/owner-extensions/__init__.py
+        contains:
+          - 'owner.commands.feishu_guide'
+          - '"feishu-guide"'
+      - type: file_contains
+        file: plugins/platforms/feishu/adapter.py
+        contains:
+          - 'owner.feishu.steer_card'
+          - 'handle_guide_card_action'
+
+  - id: cron-job-args-owner-scripts
+    title: "owner change list 11.1/11.2 cron args and owner scripts allowlist"
+    category: cron
+    source: owner/docs/owner改动清单.md#111-owner-scripts-cron
+    static_checks:
+      - type: file_contains
+        file: tools/cronjob_tools.py
+        contains:
+          - '_get_owner_scripts_allowlist'
+          - '[owner-patch] cron job args support: validate and normalize'
+          - '[owner-patch] cron job args support: validate and store updates'
+      - type: file_contains
+        file: cron/jobs.py
+        contains:
+          - '[owner-patch] cron job args support: normalize optional script CLI flags'
+      - type: file_contains
+        file: cron/scheduler.py
+        contains:
+          - '_get_owner_scripts_allowlist'
+          - '[owner-patch] cron job args support: map stored job args to CLI flags'
+      - type: file_exists
+        path: owner/scripts/check_hermes_upstream.py
+      - type: file_exists
+        path: owner/scripts/cron-health-check.py
+
+  - id: message-token-breakdown
+    title: "owner change list 10.2 per-message token breakdown"
+    category: billing
+    source: owner/docs/owner改动清单.md#102-token-breakdown
+    static_checks:
+      - type: file_contains
+        file: hermes_state.py
+        contains:
+          - 'input_tokens INTEGER DEFAULT 0'
+          - 'output_tokens INTEGER DEFAULT 0'
+          - 'cache_read_tokens INTEGER DEFAULT 0'
+          - 'cache_write_tokens INTEGER DEFAULT 0'
+          - 'input_tokens, output_tokens, cache_read_tokens, cache_write_tokens'
+      - type: file_contains
+        file: run_agent.py
+        contains:
+          - 'input_tokens=msg.get("input_tokens")'
+          - 'cache_write_tokens=msg.get("cache_write_tokens")'
+      - type: file_contains
+        file: agent/chat_completion_helpers.py
+        contains:
+          - 'msg["input_tokens"]'
+          - 'msg["cache_write_tokens"]'
+
+  - id: qwen-thinking-debris-cleanup
+    title: "owner change list 2.6 Qwen thinking debris cleanup"
+    category: provider
+    source: owner/docs/owner改动清单.md#26-qwen-thinking-debris
+    static_checks:
+      - type: module_symbol
+        module: agent.chat_completion_helpers
+        symbol: _clean_leading_thinking_debris
+      - type: file_contains
+        file: agent/chat_completion_helpers.py
+        contains:
+          - '_clean_leading_thinking_debris(_san_content)'
+      - type: file_exists
+        path: tests/run_agent/test_qwen_thinking_debris.py
+
+  - id: damodel-prompt-cache-policy
+    title: "owner change list 2.7 damodel prompt cache allowlist"
+    category: provider
+    source: owner/docs/owner改动清单.md#27-damodel-prompt-cache
+    static_checks:
+      - type: file_contains
+        file: agent/agent_runtime_helpers.py
+        contains:
+          - '[owner-patch] damodel (genai.damodel.com)'
+          - 'provider_lower == "damodel"'
+          - 'base_url_host_matches(eff_base_url, "genai.damodel.com")'
+      - type: file_exists
+        path: tests/run_agent/test_anthropic_prompt_cache_policy.py
+
+  - id: rate-limit-quota-classification
+    title: "owner change list 7.9 quota 429 classification and long wait status"
+    category: gateway
+    source: owner/docs/owner改动清单.md#79-quota-429
+    static_checks:
+      - type: file_contains
+        file: agent/error_classifier.py
+        contains:
+          - 'status_code == 429'
+          - 'usage limit'
+          - 'FailoverReason.billing'
+      - type: file_contains
+        file: agent/conversation_loop.py
+        contains:
+          - 'wait_time >= 60'
+          - '_emit_status'
+
+  - id: gateway-restart-pycache-cleanup
+    title: "owner change list 7.12 gateway restart pycache cleanup"
+    category: gateway
+    source: owner/docs/owner改动清单.md#712-pycache-cleanup
+    static_checks:
+      - type: file_contains
+        file: gateway/run.py
+        contains:
+          - '__pycache__'
+          - 'find'
+      - type: file_contains
+        file: hermes_cli/gateway.py
+        contains:
+          - '__pycache__'
+          - 'os.walk'
