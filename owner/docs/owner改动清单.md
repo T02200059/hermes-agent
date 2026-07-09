@@ -10,12 +10,12 @@
 |------|-----|
 | 分支 | `owner` |
 | 基点 | `upstream/main` @ `f53ba9bb5`（`fix(s6): dot-prefix gateway staging dir`，2026-06-29） |
-| Commit 数 | 31（基点后 owner 个人定制，无 merge commit） |
+| Commit 数 | 1539（基点后累计，含上游 merge 1373 commits + owner 166 commits） |
 | 改动文件总数 | 172（去重后） |
 | owner/ 纯新增 | ~75 个文件 |
 | 官方文件侵入 | ~70 个文件（含 ~20 个测试文件） |
 | 范围 | 模型归因 / patch.yaml 配置 / 审批安全 / 飞书深度定制 / TUI 皮肤 / Cron 运维 / Gateway 稳定性 / Checkpoint 预测 |
-| 最后更新 | 2026-07-08 |
+| 最后更新 | 2026-07-09 |
 | 来源 | 从 `owner-v17`（500+ commit）清洗迁移而来；本分支是重新整理后的最小叠加版本 |
 
 ### 侵入类型图例
@@ -173,7 +173,21 @@
 - **侵入类型**：inline（anthropic_adapter thinking-block）+ 薄胶水（i18n 调用 + tips_zh）
 - **Commit**：`8d4eb626d`
 
-### 2.5 damodel prompt cache 白名单
+### 2.5 iteration budget 耗尽提示 i18n
+
+- **背景**：`agent/conversation_loop.py` 和 `agent/turn_finalizer.py` 中 iteration budget 耗尽提示是硬编码英文，需要中文化并支持多 locale。
+- **方案**：硬编码字符串改走 `_t("iteration.budget_exhausted")` / `_t("iteration.budget_exhausted_summary")`；`locales/en.yaml`、`locales/zh.yaml` 新增对应 key。代码默认 `max_turns` 保持 90；用户若需 120 在 `~/.hermes/config.yaml` 的 `agent.max_turns` 覆盖。
+- **侵入类型**：inline（字符串替换为 i18n 调用）
+- **Commit**：`45598ce6a`
+
+### 2.6 Qwen thinking debris 清理
+
+- **背景**：上游 merge 后 OpenCode Go 上所有 `qwen*` 模型走 `anthropic_messages` 模式，`qwen3.7-plus` 启用 thinking 后 visible content 开头经常残留孤立反引号（有时后接 CJK 标点/空白）。`_strip_think_blocks` 只剥 `<think>` 标签，残留反引号进入 state.db 后，gateway 把 reasoning 用 code block 拼到响应前面，导致飞书等消息平台 markdown 渲染错位，出现“截断 thinking”外观。
+- **方案**：`agent/chat_completion_helpers.py` 新增 `_clean_leading_thinking_debris()`，在 `_strip_think_blocks(...).strip()` 后调用，清理开头孤立反引号及紧随的 CJK/西文标点、空白，同时保留合法 inline code 和 code fence。新增回归测试 `tests/run_agent/test_qwen_thinking_debris.py`。
+- **侵入类型**：inline（builder 内增加一次清理调用）+ 纯新增测试
+- **Commit**：`a8808d65e`
+
+### 2.7 damodel prompt cache 白名单
 
 - **背景**：`anthropic_prompt_cache_policy()` 按白名单决定是否注入 `cache_control` 标记。damodel（genai.damodel.com）走 OpenAI-wire 但不在任何分支里 → 返回 `(False, False)`，qwen3.6-27b 等 0% 缓存命中，每轮重算全量 prompt。
 - **方案**：新增 damodel 分支：`provider=='damodel'` 或 base_url host 匹配 `genai.damodel.com` → `(True, False)` envelope layout（同 opencode/alibaba qwen 路径）。
@@ -287,6 +301,7 @@
   - 配置：`owner/config/patch_feishu_profile.yaml`（`feishu.bots.<bot_id>.user_routing.{whitelist,chat_profile_routes,user_profile_routes,default_profile,profile_endpoints}`）
 - **侵入类型**：薄胶水 + try-import（adapter）、import 编排（profile_routing 全在 owner/）
 - **涉及文件**：`a0636e1ef`（T1）、`4839cd605`（T2）、`c06de158c`（T3）、`f9a38e9f0`（§5.9 `_standalone_send` 支持 extra_metadata 保留 chat_type/open_id）
+- **后续修复**：`fc6f2fbc4` — merge 冲突解决时同时保留了 owner 的 `setdefault(connection_mode)` 和上游 `.update()` 中的 `connection_mode`，`.update()` 无条件覆盖 `setdefault`，导致 `config.yaml` 中 `connection_mode: send_only` 的子 profile 容器被改写为 `websocket`。修复：从 `.update()` 中移除 `connection_mode`，仅靠 `setdefault` 维持 config.yaml > env 优先级。
 
 ### 4.2 长文本自动卡片（auto-card）
 
@@ -389,7 +404,9 @@
   - `owner/config/patch.yaml`：`bot_menu.feishu_guide: "/feishu-guide"` + `bot_menu_dedup.per_key.feishu_guide.ack`
 - **侵入类型**：薄胶水（adapter.py card action 路由 1 行 if + 2 个薄胶水方法）+ plugin 命令注册（零核心源码改动）
 - **Commit**：`46ac4fe73`
-- **后续修复**：`0dbae9a40` — agent running 时点击 bot menu 触发 `/feishu-guide`，`should_bypass_active_session()` 只查 `resolve_command()`（仅含 `COMMAND_REGISTRY` 内置命令），plugin 命令不在其中，导致落入 busy-input 路径被当普通消息注入 agent。修复为同时检查 `is_gateway_known_command()`（覆盖 plugin 命令）。同 bug 影响 `/providers` 等所有 plugin 命令。
+- **后续修复**：
+  - `0dbae9a40` — agent running 时点击 bot menu 触发 `/feishu-guide`，`should_bypass_active_session()` 只查 `resolve_command()`（仅含 `COMMAND_REGISTRY` 内置命令），plugin 命令不在其中，导致落入 busy-input 路径被当普通消息注入 agent。修复为同时检查 `is_gateway_known_command()`（覆盖 plugin 命令）。同 bug 影响 `/providers` 等所有 plugin 命令。
+  - `8c4c902e1` — `feishu_guide` bot menu 事件绕过普通命令管线直接发卡片。原路径经过 `_handle_message_with_guards` 会被 per-chat lock 阻塞，导致 ack 到卡片出现之间延迟数秒；现在 ack 后直接调用 `adapter.send_guide_card()` 并 return，提升响应速度。
 
 ### 4.12 飞书文件上传大小守卫
 
@@ -548,6 +565,25 @@
 - **侵入类型**：inline（commands.py 2 行 + run.py 8 行）
 - **Commit**：`d1325fc7e`
 
+### 7.12 Gateway restart 前清理 `__pycache__`
+
+- **背景**：gateway 通过 detached watcher 进程重启时，旧 `.pyc` 字节码可能引用已不存在的名字，导致 `ImportError`。之前只有 `hermes update` 会清理字节码缓存。
+- **方案**：
+  - `gateway/run.py`：在 `schedule_restart()` 生成的 shell watcher 命令中加入 `find ... -name __pycache__ -exec rm -rf {} +`，排除 `venv`/`node_modules`/`.git`。
+  - `hermes_cli/gateway.py`：`_spawn_gateway_restart_watcher()` 中 Python 侧同样遍历项目根目录清理 `__pycache__`。
+- **侵入类型**：inline（两处 watcher 清理逻辑）
+- **Commit**：`207fbde65`（同时顺手修复 `tests/gateway/test_restart_notification.py` 中过时 emoji ♻️ → 🏙）
+
+### 7.13 上游 merge 后死代码/变量引用修复
+
+- **背景**：上游重构后 merge 带入的死代码和未定义变量引用。
+- **方案**：
+  1. `tools/approval.py`：`check_dangerous_command` 删除与上游 `_run_approval_gate` 重复的 owner 内联 gateway/cron 分支；`_run_approval_gate` return 后的死代码删除；cron deny message 改走 `t("approval.cron_blocked", ...)` 而非硬编码英文。
+  2. `gateway/run.py`：`_append_inbound_context` 调用参数从 `session_id=session_id` 改为 `session_id=session_key`（上游参数重命名）。
+  3. `gateway/run.py`：两处 `resolve_display_setting()` 改为 `resolve_display_setting_for_source(..., source=source)`，恢复 per-chat display override。
+- **侵入类型**：inline（死代码删除 + 变量修复）
+- **Commit**：`dd0b8aa5d`
+
 ---
 
 ---
@@ -573,6 +609,13 @@
   - `agent/tool_executor.py` + `agent/agent_runtime_helpers.py`：薄胶水接线
 - **侵入类型**：薄胶水
 - **Commit**：`8459eca7a`（§17.12）
+
+### 8.3 delegate_task batch 模式 ACP 变量引用修复
+
+- **背景**：上游 commit `e4dbb67bf` 删除了 delegate_task 的 `acp_command`/`acp_args` 函数参数以消除模型可控 ACP 传输风险，但 batch task 构造子 `_build_child_agent_for_task()` 中仍引用已不在作用域的 `acp_command`、`acp_args`、`task_acp_args`，导致 batch 模式下构造子 agent 时 `NameError`。
+- **方案**：`tools/delegate_tool.py` 中 fallback chain 仅使用 `t.get("acp_command")` / `t.get("acp_args")`（task dict）和 `creds.get("command")` / `creds.get("args")`（delegation config），删除未定义局部变量引用。
+- **侵入类型**：inline（batch task 调用点 4 行修复）
+- **Commit**：`ff88f6063`（先删 `acp_command`）、`2f455b63a`（再删 `task_acp_args`/`acp_args`）
 
 ---
 
@@ -937,3 +980,16 @@ _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请在�
   - `cli.py`：删除 17 行 `Secret redaction is DISABLED` console 打印
   - `gateway/run.py`：删除 22 行 `Secret redaction: DISABLED` logger.warning
 - **验证**：`python -m py_compile` 两文件通过；`pytest -k "redact or secret"` 450 passed / 1 pre-existing failure（`test_empty_body_fallback_redacts_secrets`，stash 验证确认与本次改动无关）；`load_skin('ruolin')` / `load_skin('ruolin-light')` Python 加载验证 29 colors 全部就位
+
+### 2026-07-09：上游 merge 后修复集（8 commits）
+
+- **类型**：merge 后续 bug fix + i18n + 性能/稳定性优化
+- **Commits**：`dd0b8aa5d`、`fc6f2fbc4`、`ff88f6063`、`2f455b63a`、`207fbde65`、`a8808d65e`、`45598ce6a`、`8c4c902e1`
+- **概要**：
+  1. 修复 `tools/approval.py` 重复 gateway/cron 分支死代码 + `gateway/run.py` `session_id` 变量名与 `resolve_display_setting_for_source` 修复（`dd0b8aa5d`）。
+  2. 修复 `gateway/config.py` 中 `connection_mode` 被 `.update()` 覆盖，恢复 `send_only` 子容器配置生效（`fc6f2fbc4`）。
+  3. 修复 `tools/delegate_tool.py` batch task 中未定义 `acp_command`/`acp_args` 引用（`ff88f6063`、`2f455b63a`）。
+  4. gateway restart watcher 清理 `__pycache__`，避免陈旧字节码导致 `ImportError`；同时修复 steer-ack 分支 `source` 未定义与 import 顺序（`207fbde65`）。
+  5. 清理 Qwen 在 `anthropic_messages` 模式下产生的 thinking debris（开头孤立反引号 + CJK 标点），加回归测试（`a8808d65e`）。
+  6. iteration budget 耗尽提示 i18n 化（`45598ce6a`）。
+  7. 飞书 bot menu `feishu_guide` 事件直接发送引导卡片，绕过命令管线 lock 延迟（`8c4c902e1`）。
