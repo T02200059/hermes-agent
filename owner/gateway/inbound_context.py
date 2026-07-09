@@ -27,10 +27,26 @@ def build_inbound_context_block(
 
 
 def append_inbound_context(
-    message_text: str, source: Any, session_id: Optional[str] = None
+    message_text: str,
+    source: Any,
+    session_id: Optional[str] = None,
+    session_key: Optional[str] = None,
 ) -> str:
-    """Append inbound context to the prepared user message when the platform supports it."""
-    block = build_inbound_context_block(source, session_id=session_id)
+    """Append inbound context to the prepared user message when the platform supports it.
+
+    Args:
+        message_text: The user message to append context to.
+        source: The SessionSource object containing platform/user info.
+        session_id: Optional UUID-style session ID (from upstream code).
+        session_key: Optional platform-encoded session key (e.g., "telegram:123:456").
+            When provided, takes precedence over session_id for richer context.
+
+    Returns:
+        The message text with inbound context appended (if applicable).
+    """
+    # Prefer session_key over session_id for richer platform context
+    effective_session_id = session_key or session_id
+    block = build_inbound_context_block(source, session_id=effective_session_id)
     if not block:
         return message_text
     text = (message_text or "").rstrip()
