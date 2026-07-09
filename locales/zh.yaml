@@ -1005,3 +1005,7 @@ memory_proposal:
   response_usage_reject: "用法: /memory reject <id>"
   response_pending_header: "待处理的 memory 写入 ({count})："
   response_approval_state: "memory.write_approval = {state}"
+
+  iteration:
+    budget_exhausted: "⚠️ 单次对话迭代轮数耗尽（已用 {used}/{max_total} 轮）"
+    budget_exhausted_summary: "⚠️ 迭代预算耗尽（{used}/{max_total}），正在生成进度摘要..."

@@ -1002,3 +1002,7 @@ memory_proposal:
   response_usage_reject: "Usage: /memory reject <id>"
   response_pending_header: "Pending memory writes ({count}):"
   response_approval_state: "memory.write_approval = {state}"
+
+  iteration:
+    budget_exhausted: "⚠️ Single-conversation iteration budget exhausted ({used}/{max_total} turns used)"
+    budget_exhausted_summary: "⚠️ Iteration budget exhausted ({used}/{max_total}) — requesting summary..."

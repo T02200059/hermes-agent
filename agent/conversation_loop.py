@@ -684,7 +684,12 @@ def run_conversation(
         elif not agent.iteration_budget.consume():
             _turn_exit_reason = "budget_exhausted"
             if not agent.quiet_mode:
-                agent._safe_print(f"\n⚠️  Iteration budget exhausted ({agent.iteration_budget.used}/{agent.iteration_budget.max_total} iterations used)")
+                _budget_msg = _t(
+                    "iteration.budget_exhausted",
+                    used=agent.iteration_budget.used,
+                    max_total=agent.iteration_budget.max_total,
+                )
+                agent._safe_print(f"\n{_budget_msg}")
             break
 
         # Fire step_callback for gateway hooks (agent:step event)
