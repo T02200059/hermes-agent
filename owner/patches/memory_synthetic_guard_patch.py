@@ -6,7 +6,7 @@ messages (text beginning with well-known protocol prefixes). They are NOT
 genuine user input, so they must not:
 
   - trigger ``prefetch_all`` (recall) -- a query keyed on
-    ``[ASYNC DELEGATION COMPLETE -- ...]`` pollutes recall relevance and
+    ``[ASYNC DELEGATION COMPLETE ...]`` pollutes recall relevance and
     wastes a provider round-trip;
   - be mirrored into external memory stores via ``sync_all`` /
     ``queue_prefetch_all`` -- the synthetic block is not durable
@@ -50,6 +50,8 @@ _applied: bool = False
 # These are stable, intentional markers -- if a new synthetic re-injection
 # type is added, append its prefix here.
 _SYNTHETIC_PREFIXES = (
+    "[ASYNC DELEGATION BATCH COMPLETE \u2014 ",
+    "[ASYNC DELEGATION COMPLETE \u2014 ",
     "[ASYNC DELEGATION BATCH COMPLETE - ",
     "[ASYNC DELEGATION COMPLETE - ",
     "[IMPORTANT: Background process ",
