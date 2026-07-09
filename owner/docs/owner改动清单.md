@@ -1,10 +1,19 @@
 # Owner 分支改动清单
 
-> 本文档是对 `owner` 分支 82 个 commit 的完整梳理，按功能模块组织，
+> 本文档是对 `owner` 分支改动的完整梳理，按功能模块组织，
 > 区分「owner/ 纯新增模块」与「官方文件薄胶水侵入」，标注每个侵入点的类型，
 > 作为后续上游同步、回滚定位、以及 hook/plugin 化迁移的参考地图。
 
-## 元数据
+## 零、文档导航与元数据
+
+这份文档按“先定位，再深挖”的方式维护：
+
+1. **功能正文**（§1-§12）说明 owner 分支改了什么、为什么改、侵入了哪些官方文件。
+2. **附录 A/B** 是 merge 后排查入口：先看 owner 模块索引，再看官方文件侵入点。
+3. **附录 C** 记录 hook/plugin 化判断，避免每次 merge 后重复争论同一个迁移问题。
+4. **附录 E** 只记录阶段性变更日志；新功能仍应先归入正文对应章节。
+
+### 0.1 元数据
 
 | 项目 | 值 |
 |------|-----|
@@ -18,7 +27,28 @@
 | 最后更新 | 2026-07-09 |
 | 来源 | 从 `owner-v17`（500+ commit）清洗迁移而来；本分支是重新整理后的最小叠加版本 |
 
-### 侵入类型图例
+### 0.2 章节索引
+
+| 阅读目标 | 对应章节 |
+|----------|----------|
+| 先判断某个 owner 能力属于哪里 | §1-§12 功能正文 |
+| 看模型/provider/API 调用链 | §1、§2、§10 |
+| 看审批、安全、自动审批、cron 上下文 | §3、§7.4、§11 |
+| 看飞书平台定制 | §4 |
+| 看 Gateway merge 后最容易丢的胶水 | §7、附录 B、附录 C |
+| 看脚本、cron、运维能力 | §11 |
+| 看 owner/ 模块到官方侵入点的映射 | 附录 A、附录 B |
+| 看后续是否值得 hook/plugin 化 | 附录 C |
+| 看最近阶段性变化 | 附录 E |
+
+### 0.3 维护规则
+
+- 新增 owner 能力：先放入 §1-§12 的功能正文，再补附录 A 的模块索引。
+- 修改官方文件：同步更新正文的“涉及文件/侵入类型”，并补附录 B 的侵入点速查。
+- 迁移到 hook/plugin：正文保留能力描述，附录 C 记录迁移结论，附录 E 追加阶段日志。
+- merge 后验证项：能静态检查的放入 `owner/validation/`，再在正文或附录中标出对应 owner 能力。
+
+### 0.4 侵入类型图例
 
 - **try-import / lazy import** — 官方文件用 `try: from owner.x import y` 或 `_owner_import(...)` 延迟加载，owner/ 缺失时降级。最干净、sync 冲突最小。
 - **import 编排**（runtime patch）— 官方模块加载后，由 `owner/patches/*` 或 `owner/tools/schema_patches.py` 动态修改已注册对象（schema、常量、方法）。官方源码字面定义不变。
@@ -27,7 +57,7 @@
 
 ---
 
-## 一、基础设施：patch.yaml 配置系统与 owner_provider_name 归因
+## 一、核心基础设施：patch.yaml 配置系统与归因链
 
 这一组是整个 owner 分支的地基，几乎所有其他模块都依赖它们。迁移顺序为：先建包 → 引入归因 → 引入配置加载器 → 模型级 extra_body → 审批白名单。
 
@@ -76,7 +106,7 @@
 
 ---
 
-## 二、模型 Provider 与 API 适配
+## 二、模型 Provider / API / 请求适配
 
 ### 2.1 per-turn 归因 + credential 合并 + Layer 1/2/3 重构
 
@@ -101,53 +131,39 @@
 - **侵入类型**：薄胶水 + try-import
 - **Commit**：`e0230f90a`（§3.4+§3.9）
 
-> **⚠️ BUG 强调（2026-07-03）：credential pool env seeding 不校验 key 格式 — 跨 provider 污染**
->
-> **根因**：`_seed_from_env()` 只检查 env var 存不存在（`has_usable_secret` = 长度≥4 + 非占位符），不看 key 格式。导致：
-> - `GITHUB_TOKEN=ghp_*`（git 操作用的 classic PAT）被误采集到 copilot credential pool → `/providers` 显示 copilot 可用，但实际调 API 返回 403
-> - `DASHSCOPE_API_KEY=sk-*`（百炼按量计费 key）被误采集到 alibaba-coding-plan pool → `/providers` 显示 coding-plan 可用，但 key 格式不对
->
-> **修复**：
-> 1. `ProviderConfig` 新增 `api_key_prefixes: tuple = ()` 字段（`hermes_cli/auth.py`）
-> 2. `copilot` 配置 `api_key_prefixes=("gho_", "github_pat_", "ghu_")` — 排除 `ghp_` classic PAT
-> 3. `alibaba-coding-plan` 配置 `api_key_prefixes=("sk-sp",)` — coding plan 专用前缀，排除标准 `sk-` 百炼 key
-> 4. `_seed_from_env()` 在 suppress 检查后、upsert 前加前缀门控（`agent/credential_pool.py`）
-> 5. `has_valid_env_credential()` 泛化旧 `has_valid_github_token`，支持按 provider 检查前缀（`owner/providers/credential_helpers.py`）
-> 6. `_owner_check_env_creds()` 加 `provider` 参数透传（`hermes_cli/model_switch.py`）
->
-> **设计原则**：`_seed_from_singletons` 已有 copilot token 校验（`validate_copilot_token` 拒绝 `ghp_`），但 `_seed_from_env` 没有 — 两个 seed path 的校验不对称是 bug 根源。`api_key_prefixes` 是通用机制，不只针对 copilot，任何 provider 都可以声明期望的 key 前缀。
->
-> **涉及文件**：`hermes_cli/auth.py`、`agent/credential_pool.py`、`hermes_cli/model_switch.py`、`owner/providers/credential_helpers.py`
-> **参考**：`skills/hermes/hermes-source-patching-pattern/references/credential-pool-seed-path-asymmetry.md`
+#### 2.2.1 已修复：credential pool env seeding 不校验 key 格式
 
-> **⚠️ 注意要点（2026-07-03）：anthropic 无条件强制探测 + Layer 1 串行网络请求 + 共享 models.dev ID 的显示名退化**
->
-> **问题 1 — anthropic 无条件探测**：
-> `list_authenticated_providers()` 中有硬编码 `_cred_signal_slugs.add("anthropic")`，使 anthropic 绕过所有预筛，始终进入 Layer 2/3 候选。`_has_auth_creds` 会对 anthropic 专门调用 `read_claude_code_credentials()`，后者读 macOS Keychain `"Claude Code-credentials"` 条目——只要用户装过 Claude Code CLI 且 Keychain 里有 OAuth token，anthropic 就会被判定为有凭证，触发 `_fetch_anthropic_models()` 发 HTTPS 请求到 `api.anthropic.com/v1/models`（5s timeout），拖慢 `/providers` 命令。
->
-> **修复**：注释掉该行。anthropic 仍可通过正常信号（env var、auth store、config.yaml provider）进入发现流程，只是不再被无条件强制探测。
->
-> **问题 2 — Layer 1 串行 fetch_api_models**：
-> Layer 1（config.yaml `providers:` 段）对每个 `should_probe=True` 的条目同步调用 `fetch_api_models()` 发 `/models` 请求。9 个 provider 串行跑，每个最多 5s timeout = 最坏 45s。
->
-> **修复**：`should_probe` 改为 `not has_explicit_models`——config 里已列 `models:` 的 provider 直接信任配置，不再发网络请求。Layer 1 是 config-first 设计，本就应以配置为准。
->
-> **问题 3 — 共享 models.dev ID 的显示名退化**：
-> `kimi-coding` 和 `kimi-coding-cn` 在 `ALIASES` 中都映射到同一个 models.dev ID `kimi-for-coding`。Layer 2/3 用 `_mdev_pinfo(mdev_id).name` 取显示名，两个 slug 返回同一个 "Kimi For Coding"，无法区分。`get_label()` 虽有 `_LABEL_OVERRIDES` 但在 `normalize_provider()` 之后才查，override key `kimi-coding` 被 normalize 成 `kimi-for-coding` 后查不到。
->
-> **修复**：(1) `_LABEL_OVERRIDES` 加 `kimi-coding` 和 `kimi-coding-cn` 条目；(2) `get_label()` 改为先查原始 slug 的 override，再 normalize；(3) Layer 2/3 的 `display_name` 从 `_mdev_pinfo(mdev_id).name` 改为 `get_label(hermes_id)`。
->
-> **涉及文件**：`hermes_cli/model_switch.py`、`hermes_cli/providers.py`
-> **Commit**：`47ff21f04`
+- **问题**：`_seed_from_env()` 只检查 env var 存不存在（`has_usable_secret` = 长度≥4 + 非占位符），不看 key 格式。导致：
+  - `GITHUB_TOKEN=ghp_*`（git 操作用的 classic PAT）被误采集到 copilot credential pool → `/providers` 显示 copilot 可用，但实际调 API 返回 403
+  - `DASHSCOPE_API_KEY=sk-*`（百炼按量计费 key）被误采集到 alibaba-coding-plan pool → `/providers` 显示 coding-plan 可用，但 key 格式不对
+- **修复**：
+  1. `ProviderConfig` 新增 `api_key_prefixes: tuple = ()` 字段（`hermes_cli/auth.py`）
+  2. `copilot` 配置 `api_key_prefixes=("gho_", "github_pat_", "ghu_")` — 排除 `ghp_` classic PAT
+  3. `alibaba-coding-plan` 配置 `api_key_prefixes=("sk-sp",)` — coding plan 专用前缀，排除标准 `sk-` 百炼 key
+  4. `_seed_from_env()` 在 suppress 检查后、upsert 前加前缀门控（`agent/credential_pool.py`）
+  5. `has_valid_env_credential()` 泛化旧 `has_valid_github_token`，支持按 provider 检查前缀（`owner/providers/credential_helpers.py`）
+  6. `_owner_check_env_creds()` 加 `provider` 参数透传（`hermes_cli/model_switch.py`）
+- **设计原则**：`_seed_from_singletons` 已有 copilot token 校验（`validate_copilot_token` 拒绝 `ghp_`），但 `_seed_from_env` 没有 — 两个 seed path 的校验不对称是 bug 根源。`api_key_prefixes` 是通用机制，不只针对 copilot，任何 provider 都可以声明期望的 key 前缀。
+- **涉及文件**：`hermes_cli/auth.py`、`agent/credential_pool.py`、`hermes_cli/model_switch.py`、`owner/providers/credential_helpers.py`
+- **参考**：`skills/hermes/hermes-source-patching-pattern/references/credential-pool-seed-path-asymmetry.md`
 
-> **⚠️ 注意要点（2026-07-04）：env-only providers 纳入显示列表**
->
-> **问题**：仅有环境变量凭证的 provider（无 config.yaml `providers:` 段配置）不出现在 `/providers` 显示列表中，用户不知道这些 provider 可用。
->
-> **修复**：`hermes_cli/model_switch.py` 在构建 provider 显示列表时，将 env-only providers 与 configured rows 合并。
->
-> **涉及文件**：`hermes_cli/model_switch.py`
-> **Commit**：`83576b22c`
+#### 2.2.2 已修复：provider discovery 慢探测与显示名退化
+
+- **问题 1 — anthropic 无条件探测**：`list_authenticated_providers()` 中有硬编码 `_cred_signal_slugs.add("anthropic")`，使 anthropic 绕过所有预筛，始终进入 Layer 2/3 候选。`_has_auth_creds` 会对 anthropic 专门调用 `read_claude_code_credentials()`，后者读 macOS Keychain `"Claude Code-credentials"` 条目；只要用户装过 Claude Code CLI 且 Keychain 里有 OAuth token，anthropic 就会被判定为有凭证，触发 `_fetch_anthropic_models()` 发 HTTPS 请求到 `api.anthropic.com/v1/models`（5s timeout），拖慢 `/providers` 命令。
+- **修复 1**：注释掉该行。anthropic 仍可通过正常信号（env var、auth store、config.yaml provider）进入发现流程，只是不再被无条件强制探测。
+- **问题 2 — Layer 1 串行 fetch_api_models**：Layer 1（config.yaml `providers:` 段）对每个 `should_probe=True` 的条目同步调用 `fetch_api_models()` 发 `/models` 请求。9 个 provider 串行跑，每个最多 5s timeout = 最坏 45s。
+- **修复 2**：`should_probe` 改为 `not has_explicit_models`；config 里已列 `models:` 的 provider 直接信任配置，不再发网络请求。Layer 1 是 config-first 设计，本就应以配置为准。
+- **问题 3 — 共享 models.dev ID 的显示名退化**：`kimi-coding` 和 `kimi-coding-cn` 在 `ALIASES` 中都映射到同一个 models.dev ID `kimi-for-coding`。Layer 2/3 用 `_mdev_pinfo(mdev_id).name` 取显示名，两个 slug 返回同一个 "Kimi For Coding"，无法区分。`get_label()` 虽有 `_LABEL_OVERRIDES` 但在 `normalize_provider()` 之后才查，override key `kimi-coding` 被 normalize 成 `kimi-for-coding` 后查不到。
+- **修复 3**：`_LABEL_OVERRIDES` 加 `kimi-coding` 和 `kimi-coding-cn` 条目；`get_label()` 改为先查原始 slug 的 override，再 normalize；Layer 2/3 的 `display_name` 从 `_mdev_pinfo(mdev_id).name` 改为 `get_label(hermes_id)`。
+- **涉及文件**：`hermes_cli/model_switch.py`、`hermes_cli/providers.py`
+- **Commit**：`47ff21f04`
+
+#### 2.2.3 已修复：env-only providers 纳入显示列表
+
+- **问题**：仅有环境变量凭证的 provider（无 config.yaml `providers:` 段配置）不出现在 `/providers` 显示列表中，用户不知道这些 provider 可用。
+- **修复**：`hermes_cli/model_switch.py` 在构建 provider 显示列表时，将 env-only providers 与 configured rows 合并。
+- **涉及文件**：`hermes_cli/model_switch.py`
+- **Commit**：`83576b22c`
 
 ### 2.3 运行时 schema patches + credential pool base_url override
 
@@ -196,7 +212,7 @@
 
 ---
 
-## 三、审批、安全与风控
+## 三、安全边界：审批、Guardrail 与自动审批
 
 这是侵入最深的区域之一（`00-REVIEW.md` 标注多个 P0/P1 blocker，后续 CR-001~CR-006 已修）。
 
@@ -222,7 +238,7 @@
 - **侵入类型**：薄胶水（gateway/run.py 一处调用）
 - **Commit**：`2f913a40d`（§4.4）
 
-### 3.2a inbound context + cron prompt 注入 session_id
+### 3.3 inbound context + cron prompt 注入 session_id
 
 - **背景**：模型在每个 turn 需要看到当前 session 标识，用于 session_search 召回定位、跨平台会话追踪。gateway 飞书路径和 cron 路径各自独立注入，不碰 system prompt（避免破坏 prompt caching）。
 - **方案**（两条路径独立实现）：
@@ -234,23 +250,22 @@
   - owner/：`owner/gateway/inbound_context.py`（3 函数加参数）、`owner/feishu/inbound_context.py`（输出 session_id 行）
 - **侵入类型**：薄胶水（参数透传链 + prompt 追加）
 - **Commit**：已合入（无独立 commit，散在 `2f913a40d`、`f9f3c39e5` 及 cron/scheduler 多提交中）
-- **Commit**：待提交
 
-### 3.3 多平台审批签名统一
+### 3.4 多平台审批签名统一
 
 - **背景**：不同平台（QQ、飞书、Discord）审批时传的 sender 身份字段不一致，导致审批记录无法关联到真实用户。
 - **方案**：`gateway/run.py` 统一传 `sender_open_id`/`sender_is_bot`；QQ adapter 用 `**kwargs` 吸收额外字段；Discord adapter 用 `get_choice_display` 渲染 clarify 按钮。
 - **侵入类型**：薄胶水（run.py 一处传参 + adapter **kwargs 吸收）
 - **Commit**：`72e6b4be9`（§4.3 QQ 审批签名统一）
 
-### 3.4 Guardrail 提示信息增强
+### 3.5 Guardrail 提示信息增强
 
 - **背景**：tool guardrail（连续失败次数超阈值时 block/halt/warn）的消息太简略，用户不知道是哪个计数器、阈值多少、在哪改。
 - **方案**：`agent/tool_guardrails.py` 的 warn/block/halt 消息增加计数器名、阈值、config.yaml 路径；warn 消息换 emoji（🐍→🛠️）。
 - **侵入类型**：inline（消息字符串增强，逻辑不变）
 - **Commit**：`2ad5aa2fb`（§4.7 block/halt）、`5e73d395f`（§4.8 warn + emoji）、`4661db389`（§4.8 验证 ChatIdCacheDebouncer 已存在，无代码变更）
 
-### 3.5 Skill 脚本自动审批 + YOLO 模式
+### 3.6 Skill 脚本自动审批 + YOLO 模式
 
 - **背景**：owner 的 xy-* 系列 skill 频繁执行脚本，每次都审批太烦；需要一个「当脚本来自本 session 已加载的 skill 时自动批准」的机制 + YOLO 开关。
 - **方案**：
@@ -265,7 +280,7 @@
 - **侵入类型**：薄胶水（tools/approval.py、tools/skills_tool.py 多处 import + 委托）+ 安全逻辑集中 owner/
 - **Commit**：`82fe8c962`（§4.6）、`0d7c08d59`（§17.9 集成测试）、`d4484aee4`（§17.9 per-session 隔离 CR-01）、`cb1d01678`（§17.9 fail-closed CR-02）、`a07cf733f`（§17.9 session boundary WR-05）、`01f158e59`（§17.12.1 narrow owner/scripts/ cron exemption WR-03）
 
-### 3.6 安全加固（CR 修复）
+### 3.7 安全加固（CR 修复）
 
 这是 `00-REVIEW.md` 发现的 6 个 critical blocker 的修复，全部在 2026-07-02 由 gsd-code-fixer 完成。
 
@@ -280,14 +295,14 @@
 
 - **报告**：`f4e82eba5`（docs(00): add code review fix report）、`f160dd359`（owner(§review): code review REPORT.md）
 
-### 3.7 其他安全修复
+### 3.8 其他安全修复
 
 - **SSRF 防护**（§17.8）：`1b0b3fce1` — `save_url_image` 拒绝非 http(s) scheme（WR-02）
 - **Feishu user_name sanitize**（§17.16）：`f28061959` — 注入 user turn 前清洗 Feishu user_name（CR-03）
 
 ---
 
-## 四、飞书平台深度定制
+## 四、飞书平台：深度定制与交互卡片
 
 这是 owner 分支体量最大的功能区（~16 个 owner/feishu/ 模块 + adapter.py 64 处 owner 标记）。
 
@@ -417,7 +432,7 @@
 
 ---
 
-## 五、快捷命令与交互语法
+## 五、交互语法：快捷命令与命令别名
 
 ### 5.1 链式快捷命令（;;分隔）
 
@@ -437,7 +452,7 @@
 
 ---
 
-## 六、TUI 与皮肤引擎
+## 六、终端体验：TUI 与皮肤引擎
 
 ### 6.1 TUI skin engine 扩展
 
@@ -462,7 +477,7 @@
 
 ---
 
-## 七、Gateway 稳定性修复
+## 七、运行稳定性：Gateway / Cron / Memory / Merge 修复
 
 ### 7.1 QQ Bot WebSocket 重连链
 
@@ -470,7 +485,6 @@
 - **方案**：`gateway/platforms/qqbot/adapter.py` + `constants.py` 增加 heartbeat、receive_timeout、stop_retry、rebuild_http_client 重连链。
 - **侵入类型**：inline（adapter 重连逻辑）
 - **Commit**：`135c5a147`（§11.1）、`37f8a02f1`（fix: accept `is_reconnect` kwarg in `QQAdapter.connect()`）
-- **Commit**：`135c5a147`（§11.1）
 
 ### 7.2 Memory synthetic guard（跳过合成系统消息的 recall/sync）
 
@@ -586,9 +600,7 @@
 
 ---
 
----
-
-## 八、Diff / Patch 工具链
+## 八、工具链：Diff / Patch / Checkpoint
 
 ### 8.1 Checkpoint Mutation Predictor（terminal 预测式快照）
 
@@ -619,7 +631,7 @@
 
 ---
 
-## 九、显示与个性化
+## 九、显示策略与个性化
 
 ### 9.1 每会话显示覆盖（per-chat display overrides）
 
@@ -632,7 +644,7 @@
 
 ---
 
-## 十、归因与计费
+## 十、归因、计费与用量落盘
 
 ### 10.1 集中式模型归因（billing records）
 
@@ -657,7 +669,7 @@
 
 ---
 
-## 十一、Cron / 脚本 / 运维
+## 十一、运维：Cron / owner/scripts / 同步脚本
 
 ### 11.1 owner/scripts 与 cron symlink 豁免
 
@@ -709,7 +721,7 @@
 
 ---
 
-## 十二、代码治理与杂项
+## 十二、治理与文档杂项
 
 ### 12.1 二次开发规范文档 + model_switch.py 标记
 
@@ -729,9 +741,17 @@
 - **方案**：`agent/background_review.py` 一处格式调整。
 - **Commit**：`f806b7aaa`（§17.24）
 
+### 12.4 merge 后 owner 验证入口
+
+- **背景**：上游 main 更新频繁，merge 后最常见风险是 owner 胶水变成死代码，或自动 merge 丢掉关键逻辑。需要一个专用入口把 owner 清单中的关键锚点、patch target、import 链、静态合约跑起来。
+- **方案**：`owner/validation/merge_health_check.py` + `anchors.yaml` + `inventory.yaml`，覆盖 `_owner_import`、direct `from owner.*`、runtime patch target、`[owner]` 标记、merge diff dead-marker、关键 anchors 与轻量 inventory static checks。
+- **运行方式**：`python3 owner/validation/merge_health_check.py`
+- **侵入类型**：纯新增（owner 专用验证目录，不放 `scripts/`）
+- **Commit**：`872ffe0ce`、`b5aa55c65`、`b50da840b`、`d6757b656`
+
 ---
 
-## 附录 A：owner/ 目录模块索引
+## 附录 A：owner/ 模块职责索引
 
 | 路径 | 职责 | 侵入官方文件 |
 |------|------|--------------|
@@ -758,10 +778,13 @@
 | `owner/scripts/` | 运维脚本（备份/健康检查/汇率/todo 扫描/**HN Daily 新闻摘要/skill 同步**） | — |
 | `owner/skins/` | ruolin 系列皮肤 YAML | — |
 | `owner/tools/schema_patches.py` | 运行时 schema patch（legacy send_message card + image_generate model） | owner-extensions plugin（import/apply） |
+| `owner/validation/` | merge 后健康检查（anchors + inventory + import/patch/marker checks） | — |
 
-## 附录 B：官方文件侵入点速查（按侵入深度排序）
+## 附录 B：官方文件侵入点速查
 
-### 重度侵入（inline 逻辑为主，sync 冲突大，hook/plugin 化首选）
+按侵入深度排序，优先用于 merge 冲突解决和上游重构后的死代码排查。
+
+### B.1 重度侵入（inline 逻辑为主，sync 冲突大，hook/plugin 化首选）
 
 | 文件 | 侵入内容 | owner/ 对应模块 | 相关 commit |
 |------|----------|-----------------|-------------|
@@ -773,7 +796,7 @@
 | `tools/cronjob_tools.py` | owner/scripts allowlist（mtime-based）、cron job args 三处 `[owner-patch]` | — | 8a8f42455、3163d17e8、890869693 |
 | `cron/jobs.py` / `cron/scheduler.py` | cron job args `[owner-patch]` 参数 normalize + map | — | 3163d17e8 |
 
-### 中度侵入（薄胶水 + 列扩展，sync 冲突中）
+### B.2 中度侵入（薄胶水 + 列扩展，sync 冲突中）
 
 | 文件 | 侵入内容 | 侵入类型 |
 |------|----------|----------|
@@ -792,7 +815,7 @@
 | `tools/skills_tool.py` | track_session_skill_view 薄调用 | 薄胶水 |
 | `gateway/platforms/qqbot/adapter.py` + `constants.py` | WS 重连链（heartbeat/timeout/stop_retry/rebuild） | inline |
 
-### 轻度侵入（import 编排 / 单行，sync 冲突小）
+### B.3 轻度侵入（import 编排 / 单行，sync 冲突小）
 
 | 文件 | 侵入内容 | 侵入类型 |
 |------|----------|----------|
@@ -811,7 +834,7 @@
 | `agent/background_review.py` | 多行 bullet 格式 | inline（字符串） |
 | `tools/code_execution_tool.py` / `tools/delegate_tool.py` | extra_body 透传 | 薄胶水 |
 
-### 附录 B 与附录 C 交叉覆盖标注
+### B.4 与附录 C 的交叉覆盖
 
 下表列出附录 B 中**未被附录 C 单独评估**的侵入文件，标注其是否被间接覆盖及迁移评估状态：
 
@@ -836,7 +859,7 @@
 | `agent/tool_executor.py` | 中度 | ❌ 未单项评估 | 间接覆盖：checkpoint predictor 归 §8.1（1 行触发委托）；file tool timeout 归 §8.2（薄胶水）；均无迁移价值 |
 | `agent/tool_guardrails.py` | 中度 | ❌ 未单项评估 | 未评估：warn/block/halt 消息增强是 inline 字符串，非逻辑变更，无迁移价值 |
 | `tools/clarify_tool.py` / `clarify_gateway.py` | 中度 | ❌ 未单项评估 | 间接覆盖：归 §4.5 clarify 交互卡片（薄胶水 + try-import 已规范）|
-| `tools/skills_tool.py` | 中度 | ❌ 未单项评估 | 间接覆盖：归 §3.5 skill 脚本自动审批（1 行 track 调用，无迁移价值）|
+| `tools/skills_tool.py` | 中度 | ❌ 未单项评估 | 间接覆盖：归 §3.6 skill 脚本自动审批（1 行 track 调用，无迁移价值）|
 | `gateway/platforms/qqbot/adapter.py` | 中度 | ❌ 未单项评估 | 未评估：WS 重连链是 inline 逻辑，但属平台适配器内部实现，无 plugin hook 可迁；保持现状 |
 | 轻度侵入全部（13 文件）| 轻度 | ❌ 未单项评估 | 无需评估：均为 1-3 行 import / 透传 / 字符串，迁移收益为零 |
 
@@ -844,7 +867,7 @@
 
 ---
 
-## 附录 C：迁移与治理建议（面向未来 hook/plugin 化）
+## 附录 C：迁移与治理路线图
 
 本附录是给后续工作的路线图参考，**非**当前分支承诺。
 
@@ -872,11 +895,11 @@
 - **新增**：飞书多 profile 路由（§17.1，全新）、Checkpoint Mutation Predictor（§17.11，从旧 §8.2 精简迁移）、patch.yaml 统一加载器（§2.2，旧版散落）、skill 脚本自动审批（§4.6/§17.9，含 CR-001/CR-006 安全门）、CR-001~CR-006 代码审查修复（2026-07-02）。
 - **保留并精简**：OpenViking（旧 §11.6/§11.7 → 现精简为 recall + advisory + recall-card）、auto-card / diff card / clarify card / bot menu / early-typing（旧 §5.3-5.7 → 现 owner/feishu/ 独立模块）。
 
-_本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请在对应章节追加并更新元数据表的「最后更新」日期。_
+_本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请先放入正文对应章节；如涉及 owner 模块、官方侵入点或迁移判断，再同步更新附录 A/B/C 与元数据表的「最后更新」日期。_
 
 ---
 
-## 变更日志
+## 附录 E：变更日志
 
 ### 2026-07-02：§9.3 Memory Synthetic Guard → owner-extensions plugin 迁移
 
