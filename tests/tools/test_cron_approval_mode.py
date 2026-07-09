@@ -152,6 +152,27 @@ class TestCronDenyMode:
             # Should contain the description of what was flagged
             assert "dangerous" in result["message"].lower() or "delete" in result["message"].lower()
 
+    def test_block_message_uses_i18n_format(self, monkeypatch):
+        """The block message should use i18n template with description parameter."""
+        monkeypatch.setenv("HERMES_CRON_SESSION", "1")
+        monkeypatch.delenv("HERMES_INTERACTIVE", raising=False)
+        monkeypatch.delenv("HERMES_GATEWAY_SESSION", raising=False)
+        monkeypatch.delenv("HERMES_YOLO_MODE", raising=False)
+
+        from unittest.mock import patch as mock_patch
+        with mock_patch("tools.approval._get_cron_approval_mode", return_value="deny"):
+            result = check_dangerous_command("rm -rf /tmp/stuff", "local")
+            assert not result["approved"]
+            # Verify i18n template is used correctly:
+            # 1. Contains "BLOCKED" (from i18n key)
+            # 2. Contains the description placeholder value
+            # 3. Contains "cron_mode" (from i18n key)
+            msg = result["message"]
+            assert "BLOCKED" in msg
+            assert "cron_mode" in msg
+            # The description should be interpolated (not raw placeholder)
+            assert "{description}" not in msg
+
 
 class TestCronApproveMode:
     """When HERMES_CRON_SESSION is set and cron_mode=approve, dangerous commands pass through."""
