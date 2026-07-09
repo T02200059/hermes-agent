@@ -2510,9 +2510,7 @@ def delegate_task(
                 override_acp_command=t.get("acp_command")
                 or creds.get("command"),
                 override_acp_args=(
-                    task_acp_args
-                    if task_acp_args is not None
-                    else (acp_args if acp_args is not None else creds.get("args"))
+                    t.get("acp_args") if t.get("acp_args") is not None else creds.get("args")
                 ),
                 override_owner_provider_name=creds.get("owner_provider_name"),
                 role=effective_role,
