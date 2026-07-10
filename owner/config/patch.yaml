@@ -196,9 +196,9 @@ owner:
         status:
           ack: null
         usage:
-          ack: null
+          ack: "📊 统计用量中…"
         insights:
-          ack: null
+          ack: "💡 生成洞察中…"
         reasoning_off:
           ack: "⚙️ 切换推理模式…"
         reasoning_medium:
@@ -238,26 +238,8 @@ owner:
   # overrides. It lets you turn on provider-specific features like thinking
   # mode for one model without touching the global config.
   model_extra_body:
-    xfyun:
-      astron-code-latest:
-        enable_thinking: true
-      # [owner] xfyun 直连端点也需要 enable_thinking
-      # 验证 2026-06-12: enable_thinking=true → reasoning_content 填充
-      xopglm51:
-        enable_thinking: true
-      xopglm5:
-        enable_thinking: true
-      xopkimik26:
-        enable_thinking: true
     # [owner] damodel 思考模式配置
-    # xopglm51=GLM-5.1 / xopglm5=GLM-5 / xopkimik26=Kimi-K2.6 (讯飞 Coding Plan)
     damodel:
-      xopglm51:
-        enable_thinking: true
-      xopglm5:
-        enable_thinking: true
-      xopkimik26:
-        enable_thinking: true
       # [owner] glm-5.1/glm-5: Coding Plan 端点，使用官方格式 + clear_thinking=false
       # 验证 2026-06-12: thinking.type=enabled → reasoning_content 填满
       glm-5.1:
