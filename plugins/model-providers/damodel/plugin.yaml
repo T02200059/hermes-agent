@@ -1,0 +1,5 @@
+name: damodel-provider
+kind: model-provider
+version: 1.0.0
+description: Damodel (genai.damodel.com) — NewAPI proxy with MiMo reasoning-effort clamping
+author: Nous Research
