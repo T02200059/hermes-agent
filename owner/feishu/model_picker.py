@@ -121,64 +121,98 @@ def handle_picker_action(
     - ``confirm`` → route /model command + build done card
 
     Returns a ``P2CardActionTriggerResponse`` with ``CallBackCard`` when the
-    card should be updated inline, or ``None`` on error / no-op.
+    card should be updated inline, or a toast-only response when state has
+    been lost (gateway restart, etc.) so the user sees a hint instead of a
+    stuck loading state.
+
+    **Never returns an empty response** (``P2CardActionTriggerResponse()``
+    with no card or toast) — that causes the Feishu client to keep the
+    loading spinner indefinitely.
     """
     # Lazy import to keep removability (delete owner/feishu/ → no crash).
     try:
         from lark_oapi.event.callback.model.p2_card_action_trigger import (
             CallBackCard,
+            CallBackToast,
             P2CardActionTriggerResponse,
         )
     except ImportError:
         return None
 
+    # Normalise: accept dict or JSON-string action_value (SDK version skew).
+    if isinstance(action_value, str) and action_value.strip():
+        import json as _json
+        try:
+            parsed = _json.loads(action_value)
+            if isinstance(parsed, dict):
+                action_value = parsed
+        except Exception:
+            pass
+
+    if not isinstance(action_value, dict):
+        return _toast_response(P2CardActionTriggerResponse, CallBackToast,
+                               "卡片数据异常，请重新执行 /providers")
+
     picker_id = action_value.get("picker_id", "")
     step = action_value.get("hermes_model_picker", "")
 
-    if step == "provider":
-        provider_slug = action_value.get("provider", "")
-        state = getattr(adapter, "_model_picker_state", {}).get(picker_id)
-        if not state or not provider_slug:
-            return _empty_response(P2CardActionTriggerResponse)
-        rows = state.get("providers", [])
-        provider_row = next((r for r in rows if r.get("slug") == provider_slug), None)
-        if not provider_row:
-            return _empty_response(P2CardActionTriggerResponse)
-        models = provider_row.get("models") or []
-        name = provider_row.get("name", provider_slug)
-        return _card_response(
-            P2CardActionTriggerResponse, CallBackCard,
-            build_model_card(picker_id, provider_slug, name, models),
-        )
+    try:
+        if step == "provider":
+            provider_slug = action_value.get("provider", "")
+            state = getattr(adapter, "_model_picker_state", {}).get(picker_id)
+            if not state or not provider_slug:
+                return _toast_response(P2CardActionTriggerResponse, CallBackToast,
+                                       "会话已过期，请重新执行 /providers")
+            rows = state.get("providers", [])
+            provider_row = next((r for r in rows if r.get("slug") == provider_slug), None)
+            if not provider_row:
+                return _toast_response(P2CardActionTriggerResponse, CallBackToast,
+                                       f"未找到 provider「{provider_slug}」，请重新执行 /providers")
+            models = provider_row.get("models") or []
+            name = provider_row.get("name", provider_slug)
+            return _card_response(
+                P2CardActionTriggerResponse, CallBackCard,
+                build_model_card(picker_id, provider_slug, name, models),
+            )
 
-    if step == "back":
-        state = getattr(adapter, "_model_picker_state", {}).get(picker_id)
-        if not state:
-            return _empty_response(P2CardActionTriggerResponse)
-        rows = state.get("providers", [])
-        return _card_response(
-            P2CardActionTriggerResponse, CallBackCard,
-            build_provider_card(picker_id, rows),
-        )
+        if step == "back":
+            state = getattr(adapter, "_model_picker_state", {}).get(picker_id)
+            if not state:
+                return _toast_response(P2CardActionTriggerResponse, CallBackToast,
+                                       "会话已过期，请重新执行 /providers")
+            rows = state.get("providers", [])
+            return _card_response(
+                P2CardActionTriggerResponse, CallBackCard,
+                build_provider_card(picker_id, rows),
+            )
 
-    if step == "confirm":
-        provider = action_value.get("provider", "")
-        model = action_value.get("model", "")
-        state = getattr(adapter, "_model_picker_state", {}).pop(picker_id, {})
-        operator = getattr(event, "operator", None)
-        open_id = str(getattr(operator, "open_id", "") or "")
-        user_name = operator_display_name(adapter, open_id)
-        command = f"/model {model} --provider {provider} --global"
+        if step == "confirm":
+            provider = action_value.get("provider", "")
+            model = action_value.get("model", "")
+            state = getattr(adapter, "_model_picker_state", {}).pop(picker_id, {})
+            if not state:
+                return _toast_response(P2CardActionTriggerResponse, CallBackToast,
+                                       "会话已过期，模型未切换。请重新执行 /providers")
+            operator = getattr(event, "operator", None)
+            open_id = str(getattr(operator, "open_id", "") or "")
+            user_name = operator_display_name(adapter, open_id)
+            command = f"/model {model} --provider {provider} --global"
 
-        # Route the synthetic command through the adapter.
-        _route_picker_command(adapter, command, open_id, state)
+            # Route the synthetic command through the adapter.
+            _route_picker_command(adapter, command, open_id, state)
 
-        return _card_response(
-            P2CardActionTriggerResponse, CallBackCard,
-            build_done_card(provider, model, user_name),
-        )
+            return _card_response(
+                P2CardActionTriggerResponse, CallBackCard,
+                build_done_card(provider, model, user_name),
+            )
 
-    return _empty_response(P2CardActionTriggerResponse)
+        return _toast_response(P2CardActionTriggerResponse, CallBackToast,
+                               f"未知操作「{step}」，请重新执行 /providers")
+
+    except Exception as exc:
+        logger.warning("[Feishu] model picker action failed (step=%s): %s", step, exc, exc_info=True)
+        return _toast_response(P2CardActionTriggerResponse, CallBackToast,
+                               "操作失败，请重试")
 
 
 def _route_picker_command(
@@ -225,8 +259,30 @@ def _route_picker_command(
 
 
 def _empty_response(resp_cls: Any) -> Any:
-    """Return a bare P2CardActionTriggerResponse or None."""
+    """Return a bare P2CardActionTriggerResponse or None.
+
+    DEPRECATED for model_picker: prefer ``_toast_response`` so the Feishu
+    client shows a hint instead of a stuck loading spinner.  Kept for
+    external callers that may still import this symbol.
+    """
     return resp_cls() if resp_cls else None
+
+
+def _toast_response(resp_cls: Any, toast_cls: Any, text: str) -> Any:
+    """Return a P2CardActionTriggerResponse that shows a toast.
+
+    Unlike an empty response (which leaves the card stuck in a loading
+    state), a toast-only response dismisses the spinner and shows the
+    user a short message — they can then manually re-run the command.
+    """
+    if resp_cls is None or toast_cls is None:
+        return None
+    response = resp_cls()
+    toast = toast_cls()
+    toast.type = "info"
+    toast.content = text
+    response.toast = toast
+    return response
 
 
 def _card_response(resp_cls: Any, card_cls: Any, card_data: dict) -> Any:

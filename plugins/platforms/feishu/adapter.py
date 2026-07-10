@@ -2799,14 +2799,23 @@ class FeishuAdapter(BasePlatformAdapter):
 
         event = getattr(data, "event", None)
         action = getattr(event, "action", None)
-        action_value = getattr(action, "value", {}) or {}
+        action_value_raw = getattr(action, "value", {}) or {}
+        # [owner] Normalise: Feishu SDK may return action.value as a JSON string
+        # instead of a parsed dict (SDK version / callback-path dependent).
+        # Without this the isinstance(action_value, dict) guards below all skip
+        # and the card appears stuck.  Accept both shapes.
+        action_value = _normalise_card_action_value(action_value_raw)
         # For form submissions, form_value is on the action object, not in action.value
         form_value = getattr(action, "form_value", None)
         if form_value and isinstance(action_value, dict):
             action_value["form_value"] = form_value
-        return self._dispatch_card_action(
-            event, action_value, loop, data=data, allow_profile_routing=True
-        )
+        try:
+            return self._dispatch_card_action(
+                event, action_value, loop, data=data, allow_profile_routing=True
+            )
+        except Exception as exc:
+            logger.warning("[Feishu] Card action dispatch failed: %s", exc, exc_info=True)
+            return P2CardActionTriggerResponse() if P2CardActionTriggerResponse else None
 
     def _dispatch_card_action(
         self,
@@ -3305,6 +3314,28 @@ class FeishuAdapter(BasePlatformAdapter):
             return True
         self._card_action_tokens[token] = now
         return False
+
+    @staticmethod
+    def _normalise_card_action_value(raw: Any) -> Any:
+        """Accept action.value as either a dict or a JSON string.
+
+        Feishu SDK versions differ on whether ``action.value`` is returned
+        pre-parsed into a dict or left as a raw JSON string.  Without this
+        normalisation every ``isinstance(action_value, dict)`` guard in
+        ``_dispatch_card_action`` skips and the callback silently fails,
+        leaving the card stuck in a loading state.
+        """
+        if isinstance(raw, dict):
+            return raw
+        if isinstance(raw, str) and raw.strip():
+            import json as _json
+            try:
+                parsed = _json.loads(raw)
+                if isinstance(parsed, dict):
+                    return parsed
+            except Exception:
+                pass
+        return {}
 
     async def _handle_card_action_event(self, data: Any) -> None:
         """Route Feishu interactive card button clicks as synthetic COMMAND events."""
