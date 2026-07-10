@@ -241,6 +241,14 @@ def handle_guide_card_action(
         if isinstance(form_value, dict):
             user_input = (form_value.get("guide_input") or "").strip()
         if not user_input:
+            # Use adapter's module logger — owner.* loggers aren't wired to gateway log
+            _alog = logging.getLogger(adapter.__class__.__module__)
+            _alog.warning(
+                "[Feishu Guide] submit: empty user_input — form_value type=%s keys=%s action_value_keys=%s",
+                type(form_value).__name__,
+                list(form_value.keys()) if isinstance(form_value, dict) else "N/A",
+                list(action_value.keys()) if isinstance(action_value, dict) else "N/A",
+            )
             return _empty_response(P2CardActionTriggerResponse)
 
         # 查操作定义
@@ -271,27 +279,65 @@ def _route_guide_command(
 ) -> None:
     """Route a guide card submission as a synthetic slash command.
 
-    Submits the command through the adapter's event loop as a
-    ``MessageType.COMMAND`` event so it follows the same processing
-    path as a manually typed command.
+    Rebuilds a real inbound ``MessageSource`` and routes the command through
+    the adapter's standard inbound pipeline (``_handle_message_with_guards``)
+    so it lands in the gateway runner's running-agent fast path — the same
+    path a manually typed ``/steer`` (or ``/queue``/``/goal``/``/subgoal``/
+    ``/background``) takes.
+
+    The source stored on the guide card (built in the feishu_guide shortcut
+    in ``bot_menu.py``) carries ``chat_type="p2p"`` and a bare ``open_id``,
+    which produces a *different* session key from the running agent's
+    ``chat_type="dm"`` key. Reusing it verbatim made the fast-path guard
+    (``_quick_key in self._running_agents``) miss, so ``/steer`` fell through
+    to the cold path and was answered by the LLM instead of injected into
+    the running turn. We therefore resolve a fresh source the same way
+    ``bot_menu.py`` does for ordinary bot-menu commands.
     """
     from datetime import datetime
+    from types import SimpleNamespace
 
-    source = state.get("source") if isinstance(state, dict) else None
-    if source is None:
-        return
-    chat_id = getattr(source, "chat_id", "") or ""
+    # Use adapter's module logger — owner.* loggers aren't wired to gateway log
+    _alog = logging.getLogger(adapter.__class__.__module__)
+
+    stored_source = state.get("source") if isinstance(state, dict) else None
+    chat_id = getattr(stored_source, "chat_id", "") or ""
     if not chat_id:
+        _alog.warning("[Feishu Guide] _route_guide_command: chat_id empty — state was lost or never stored")
         return
 
     loop = getattr(adapter, "_loop", None)
     if loop is None:
+        _alog.warning("[Feishu Guide] _route_guide_command: adapter._loop is None")
         return
+
+    _alog.info("[Feishu Guide] _route_guide_command: scheduling dispatch command=%s chat_id=%s", command, chat_id)
 
     async def _dispatch():
         try:
+            from owner.feishu.sender_name_helpers import pre_warm_sender_name
             from gateway.platforms.base import MessageEvent, MessageType
 
+            # Rebuild a source whose session key matches the running agent's,
+            # mirroring the ordinary bot-menu command path (bot_menu.py). The
+            # feishu_guide shortcut stored a p2p/open_id-only source whose key
+            # differs from the live "dm" session, so the running-agent fast
+            # path never matched and /steer was processed as a fresh turn.
+            pre_warm_sender_name(adapter, open_id)
+            sender_id = SimpleNamespace(open_id=open_id, user_id=None, union_id=None)
+            sender_profile = await adapter._resolve_sender_profile(sender_id)
+            chat_info = await adapter.get_chat_info(chat_id)
+            source = adapter.build_source(
+                chat_id=chat_id,
+                chat_name=chat_info.get("name") or chat_id or "Feishu Chat",
+                chat_type=adapter._resolve_source_chat_type(
+                    chat_info=chat_info, event_chat_type="p2p"
+                ),
+                user_id=sender_profile["user_id"],
+                user_name=sender_profile["user_name"],
+                thread_id=None,
+                user_id_alt=sender_profile["user_id_alt"],
+            )
             synthetic_event = MessageEvent(
                 text=command,
                 message_type=MessageType.COMMAND,
@@ -300,11 +346,19 @@ def _route_guide_command(
                 message_id="",
                 timestamp=datetime.now(),
             )
+            _alog.info(
+                "[Feishu Guide] _dispatch: calling _handle_message_with_guards "
+                "for command=%s chat_type=%s chat_id=%s",
+                command, source.chat_type, chat_id,
+            )
             await adapter._handle_message_with_guards(synthetic_event)
+            _alog.info("[Feishu Guide] _dispatch: _handle_message_with_guards returned for command=%s", command)
         except Exception as exc:
-            logger.warning("[Feishu] guide card route failed: %s", exc)
+            _alog.warning("[Feishu Guide] guide card route failed: %s", exc, exc_info=True)
 
-    adapter._submit_on_loop(loop, _dispatch())
+    submitted = adapter._submit_on_loop(loop, _dispatch())
+    if not submitted:
+        _alog.warning("[Feishu Guide] _route_guide_command: _submit_on_loop returned False")
 
 
 # ── helpers ────────────────────────────────────────────────────────────────────

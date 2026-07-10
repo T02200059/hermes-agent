@@ -199,15 +199,11 @@ async def handle_bot_menu_event(adapter: Any, data: Any) -> None:
     # multi-second delay between the ack and the card appearing.
     if event_key == "feishu_guide":
         try:
-            from gateway.config import Platform
-            from types import SimpleNamespace as _SN
-            _source = _SN(
-                platform=Platform.FEISHU,
+            _source = adapter.build_source(
                 chat_id=chat_id,
                 user_id=open_id,
                 user_name="",
                 chat_type="p2p",
-                thread_id=None,
             )
             await adapter.send_guide_card(chat_id=chat_id, source=_source)
             logger.info("[Feishu] Guide card sent directly for %s", open_id)

@@ -2807,6 +2807,16 @@ class FeishuAdapter(BasePlatformAdapter):
         action_value = self._normalise_card_action_value(action_value_raw)
         # For form submissions, form_value is on the action object, not in action.value
         form_value = getattr(action, "form_value", None)
+        # [owner] Normalise form_value too — SDK may return a JSON string
+        # instead of a dict (same issue as action_value_raw above).
+        if isinstance(form_value, str) and form_value.strip():
+            try:
+                import json as _json
+                _parsed_fv = _json.loads(form_value)
+                if isinstance(_parsed_fv, dict):
+                    form_value = _parsed_fv
+            except Exception:
+                pass
         if form_value and isinstance(action_value, dict):
             action_value["form_value"] = form_value
         try:
@@ -3175,11 +3185,16 @@ class FeishuAdapter(BasePlatformAdapter):
         """
         from owner.feishu.steer_card import handle_guide_card_action
 
-        return handle_guide_card_action(
+        step = action_value.get("hermes_feishu_guide", "?") if isinstance(action_value, dict) else "?"
+        guide_id = action_value.get("guide_id", "?") if isinstance(action_value, dict) else "?"
+        logger.info("[Feishu Guide] _handle_guide_card_action: step=%s guide_id=%s", step, guide_id)
+        result = handle_guide_card_action(
             adapter=self,
             action_value=action_value,
             event=event,
         )
+        logger.info("[Feishu Guide] _handle_guide_card_action result: type=%s", type(result).__name__)
+        return result
 
     async def _resolve_approval(
         self,
