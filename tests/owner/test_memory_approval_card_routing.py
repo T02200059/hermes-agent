@@ -462,8 +462,13 @@ def test_gateway_session_key_preferred_over_session_id():
 
     The bridge should ignore the bare timestamp-shaped agent.session_id and
     pull chat_id from the gateway session_key (agent:main:feishu:dm:<chat_id>).
+
+    Also verifies the production path writes the pending_id to _SENT_CARD_IDS
+    once a dispatch is submitted (the transform no longer reads this set, but it
+    remains an observational dispatch log that P1 tests must cover).
     """
     bridge = _get_bridge()
+    bridge._SENT_CARD_IDS.clear()
     adapter = SimpleNamespace(
         _loop=_make_live_loop(),
         _submit_on_loop=_CapturingSubmit(),
@@ -478,6 +483,36 @@ def test_gateway_session_key_preferred_over_session_id():
             gateway_session_key="agent:main:feishu:dm:oc_correct_chat",
         )
     assert len(adapter._submit_on_loop.calls) == 1
+    # Production path populated the dispatch log.
+    assert "abc123" in bridge._SENT_CARD_IDS
+
+
+def test_dispatch_failure_does_not_mark_sent():
+    """When scheduling the card send raises, _SENT_CARD_IDS must NOT be
+    populated — the mark means \"a dispatch was submitted\", so a failed
+    submit must leave it empty (otherwise the observational log would lie
+    about a dispatch that never reached the loop)."""
+    bridge = _get_bridge()
+    bridge._SENT_CARD_IDS.clear()
+
+    class _BoomSubmit:
+        def __call__(self, loop, coro):
+            coro.close()  # avoid RuntimeWarning for unawaited coroutine
+            raise RuntimeError("loop gone away")
+
+    adapter = SimpleNamespace(
+        _loop=_make_live_loop(),
+        _submit_on_loop=_BoomSubmit(),
+    )
+    with patch.object(bridge, "_FEISHU_ADAPTER", adapter):
+        bridge._on_post_tool_call(
+            tool_name="memory",
+            args=_simple_memory_args(),
+            result=json.dumps({"staged": True, "pending_id": "fail_1"}),
+            session_id="agent:main:feishu:dm:oc_fail_chat",
+        )
+    # Dispatch raised before the mark → set stays empty.
+    assert "fail_1" not in bridge._SENT_CARD_IDS
 
 
 def test_gateway_session_key_empty_falls_back_to_session_id():
