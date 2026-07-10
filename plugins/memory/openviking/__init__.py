@@ -1156,27 +1156,10 @@ def _openviking_server_log_path() -> Path:
 
 
 def _start_local_openviking_server(endpoint: str) -> tuple[bool, str]:
-    server_cmd = shutil.which("openviking-server")
-    if not server_cmd:
-        return False, "openviking-server was not found on PATH. Start it manually, then retry."
-    try:
-        host, port = _local_openviking_bind(endpoint)
-    except ValueError as e:
-        return False, f"Could not parse local OpenViking URL: {e}"
-    log_path = _openviking_server_log_path()
-    try:
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        with log_path.open("ab") as log_file:
-            subprocess.Popen(
-                [server_cmd, "--host", host, "--port", str(port)],
-                stdout=log_file,
-                stderr=log_file,
-                stdin=subprocess.DEVNULL,
-                start_new_session=True,
-            )
-    except Exception as e:
-        return False, f"Could not start openviking-server: {e}"
-    return True, f"Started openviking-server on {host}:{port} in the background. Logs: {log_path}"
+    # Auto-start disabled: OpenViking server is managed externally via Docker.
+    # Prevents the bare-Python openviking-server (without hotfix patches) from
+    # racing the Docker container and hijacking port 1933 on gateway restart.
+    return False, "Local auto-start disabled - OpenViking server is managed externally via Docker."
 
 
 def _wait_for_openviking_health(endpoint: str, *, timeout_seconds: float = 15.0) -> bool:

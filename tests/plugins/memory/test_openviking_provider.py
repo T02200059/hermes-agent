@@ -631,48 +631,12 @@ def test_manual_root_key_flow_prints_validation_progress(monkeypatch, capsys):
     assert "Validating OpenViking API access..." in output
 
 
-def test_start_local_openviking_server_uses_endpoint_host_and_port(monkeypatch):
-    popen_calls = []
-
-    def fake_popen(args, **kwargs):
-        popen_calls.append((args, kwargs))
-        return object()
-
-    monkeypatch.setattr(openviking_module.shutil, "which", lambda name: "/usr/local/bin/openviking-server")
-    monkeypatch.setattr(openviking_module.subprocess, "Popen", fake_popen)
-
+def test_start_local_openviking_server_disabled_by_default():
+    """Auto-start is disabled - OpenViking server is managed externally via Docker."""
     started, message = openviking_module._start_local_openviking_server("http://127.0.0.1:1934")
 
-    assert started is True
-    assert "127.0.0.1:1934" in message
-    args, kwargs = popen_calls[0]
-    assert args == ["/usr/local/bin/openviking-server", "--host", "127.0.0.1", "--port", "1934"]
-    assert kwargs["start_new_session"] is True
-
-
-def test_start_local_openviking_server_writes_output_to_log(tmp_path, monkeypatch):
-    hermes_home = tmp_path / "hermes"
-    monkeypatch.setenv("HERMES_HOME", str(hermes_home))
-    popen_calls = []
-
-    class FakeProcess:
-        pass
-
-    def fake_popen(args, **kwargs):
-        popen_calls.append((args, kwargs))
-        assert kwargs["stdout"] is kwargs["stderr"]
-        assert kwargs["stdout"].name == str(hermes_home / "logs" / "openviking-server.log")
-        assert not kwargs["stdout"].closed
-        return FakeProcess()
-
-    monkeypatch.setattr(openviking_module.shutil, "which", lambda name: "/usr/local/bin/openviking-server")
-    monkeypatch.setattr(openviking_module.subprocess, "Popen", fake_popen)
-
-    started, message = openviking_module._start_local_openviking_server("http://127.0.0.1:1934")
-
-    assert started is True
-    assert str(hermes_home / "logs" / "openviking-server.log") in message
-    assert popen_calls
+    assert started is False
+    assert "disabled" in message.lower()
 
 
 def test_https_local_endpoint_is_not_runtime_autostart_eligible(monkeypatch):
