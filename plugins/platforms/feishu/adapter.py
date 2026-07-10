@@ -2804,7 +2804,7 @@ class FeishuAdapter(BasePlatformAdapter):
         # instead of a parsed dict (SDK version / callback-path dependent).
         # Without this the isinstance(action_value, dict) guards below all skip
         # and the card appears stuck.  Accept both shapes.
-        action_value = _normalise_card_action_value(action_value_raw)
+        action_value = self._normalise_card_action_value(action_value_raw)
         # For form submissions, form_value is on the action object, not in action.value
         form_value = getattr(action, "form_value", None)
         if form_value and isinstance(action_value, dict):
