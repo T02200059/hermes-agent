@@ -1866,11 +1866,12 @@ def _apply_env_overrides(config: GatewayConfig) -> None:
             feishu_cfg.enabled = True
         # [owner] send_only mode: don't overwrite a connection_mode the container
         # set explicitly in config.yaml - only default from env when unset.
-        # The setdefault above establishes the config.yaml > env precedence;
-        # the .update() below must NOT re-set connection_mode (upstream added
-        # it there, but that unconditionally overwrites, breaking send_only
-        # sub-containers that set connection_mode: send_only in config.yaml
-        # without also setting FEISHU_CONNECTION_MODE=send_only in .env).
+        # The setdefault on the next line establishes the config.yaml > env
+        # precedence; the .update() below it must NOT re-set connection_mode
+        # (upstream added it there, but that unconditionally overwrites,
+        # breaking send_only sub-containers that set connection_mode: send_only
+        # in config.yaml without also setting FEISHU_CONNECTION_MODE=send_only
+        # in .env).
         feishu_cfg.extra.setdefault("connection_mode", getenv("FEISHU_CONNECTION_MODE", "websocket"))
         feishu_cfg.extra.update({
             "app_id": feishu_app_id,

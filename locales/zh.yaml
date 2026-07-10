@@ -86,7 +86,7 @@ approval:
   slash_confirm:
     destructive_title: "⚠️  /{command} — 将销毁会话状态"
     destructive_detail_default: "这将丢弃当前对话历史，无法撤销。"
-    mcp_title: "⚠️  /{command} - 提示词缓存失效警告"
+    mcp_title: "⚠️  /{command} — 提示词缓存失效警告"
     mcp_detail: >-
       重新加载 MCP 服务器会重建本会话的工具集，并使提供方提示词缓存失效。
       下一条消息将重新发送全部输入 token（对于长上下文或高推理模型可能

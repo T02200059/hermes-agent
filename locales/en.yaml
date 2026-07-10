@@ -96,7 +96,7 @@ approval:
   slash_confirm:
     destructive_title: "⚠️  /{command} — destroys conversation state"
     destructive_detail_default: "This will discard the current conversation history. This cannot be undone."
-    mcp_title: "⚠️  /{command} - Prompt cache invalidation warning"
+    mcp_title: "⚠️  /{command} — Prompt cache invalidation warning"
     mcp_detail: >-
       Reloading MCP servers rebuilds the tool set for this session and
       invalidates the provider prompt cache. The next message will
