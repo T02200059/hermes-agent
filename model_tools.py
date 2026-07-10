@@ -1329,6 +1329,7 @@ def handle_function_call(
                     result=result,
                     task_id=task_id or "",
                     session_id=session_id or "",
+                    gateway_session_key=gateway_session_key or "",  # [owner] propagate for Feishu-session detection
                     tool_call_id=tool_call_id or "",
                     turn_id=turn_id or "",
                     api_request_id=api_request_id or "",

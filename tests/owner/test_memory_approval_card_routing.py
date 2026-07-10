@@ -547,59 +547,91 @@ def test_both_keys_unparseable_skips_card():
 def test_transform_non_memory_tool_returns_none():
     bridge = _get_bridge()
     result = json.dumps({"staged": True, "pending_id": "xyz"})
-    out = bridge._on_transform_tool_result(tool_name="terminal", result=result)
+    out = bridge._on_transform_tool_result(
+        tool_name="terminal", result=result,
+        gateway_session_key="agent:main:feishu:dm:oc_1",
+    )
     assert out is None
 
 
 def test_transform_non_staged_result_returns_none():
     bridge = _get_bridge()
     result = json.dumps({"success": True})
-    out = bridge._on_transform_tool_result(tool_name="memory", result=result)
+    out = bridge._on_transform_tool_result(
+        tool_name="memory", result=result,
+        gateway_session_key="agent:main:feishu:dm:oc_1",
+    )
     assert out is None
 
 
-def test_transform_no_matching_pending_id_returns_none():
-    """Non-Feishu sessions never populate _SENT_CARD_IDS, so transform is a no-op."""
+def test_transform_non_feishu_session_returns_none():
+    """A non-Feishu session (no derivable Feishu chat id) is not transformed —
+    the upstream CLI-oriented message is left untouched."""
     bridge = _get_bridge()
     bridge._SENT_CARD_IDS.clear()
     result = json.dumps({"staged": True, "pending_id": "never_sent", "message": "orig"})
-    out = bridge._on_transform_tool_result(tool_name="memory", result=result)
+    out = bridge._on_transform_tool_result(
+        tool_name="memory", result=result,
+        gateway_session_key="agent:main:telegram:dm:12345",
+    )
     assert out is None
 
 
-def test_transform_matching_pending_id_rewrites_message():
-    """When a card was dispatched (pending_id in _SENT_CARD_IDS), the message
-    is rewritten to mention the approval card."""
+def test_transform_feishu_session_rewrites_message():
+    """On a Feishu session, a staged memory write is rewritten to mention the
+    approval card being sent. Detection keys on the session, NOT on
+    _SENT_CARD_IDS (the async dispatch may fail in flight)."""
     bridge = _get_bridge()
-    bridge._SENT_CARD_IDS.clear()
-    bridge._SENT_CARD_IDS.add("pid_feishu_1")
+    bridge._SENT_CARD_IDS.clear()  # intentionally empty — transform must not depend on it
 
     result = json.dumps({
         "success": True, "staged": True,
         "pending_id": "pid_feishu_1",
         "message": "Staged for approval (memory.write_approval is on). Not yet saved - review with /memory pending.",
     })
-    out = bridge._on_transform_tool_result(tool_name="memory", result=result)
+    out = bridge._on_transform_tool_result(
+        tool_name="memory", result=result,
+        gateway_session_key="agent:main:feishu:dm:oc_chat_1",
+    )
     assert out is not None
     parsed = json.loads(out)
-    assert "Approval card sent to chat" in parsed["message"]
+    # Progressive tense — accurate whether or not the in-flight card delivers.
+    assert "Approval card being sent" in parsed["message"]
     assert "/memory pending" not in parsed["message"]
-    # one-shot: pending_id consumed
-    assert "pid_feishu_1" not in bridge._SENT_CARD_IDS
+
+
+def test_transform_feishu_session_via_session_id_fallback():
+    """When gateway_session_key is absent, session_id with the Feishu gateway
+    shape still triggers the rewrite (back-compat with older callers)."""
+    bridge = _get_bridge()
+    bridge._SENT_CARD_IDS.clear()
+    result = json.dumps({
+        "success": True, "staged": True,
+        "pending_id": "pid_feishu_2", "message": "old",
+    })
+    out = bridge._on_transform_tool_result(
+        tool_name="memory", result=result,
+        session_id="agent:main:feishu:dm:oc_chat_2",
+    )
+    assert out is not None
+    parsed = json.loads(out)
+    assert "Approval card being sent" in parsed["message"]
 
 
 def test_transform_preserves_other_fields():
     """success / staged / pending_id must be preserved; only message changes."""
     bridge = _get_bridge()
     bridge._SENT_CARD_IDS.clear()
-    bridge._SENT_CARD_IDS.add("pid_42")
 
     result = json.dumps({
         "success": True, "staged": True,
         "pending_id": "pid_42",
         "message": "old",
     })
-    out = bridge._on_transform_tool_result(tool_name="memory", result=result)
+    out = bridge._on_transform_tool_result(
+        tool_name="memory", result=result,
+        gateway_session_key="agent:main:feishu:dm:oc_42",
+    )
     parsed = json.loads(out)
     assert parsed["success"] is True
     assert parsed["staged"] is True
@@ -609,7 +641,10 @@ def test_transform_preserves_other_fields():
 
 def test_transform_invalid_json_returns_none():
     bridge = _get_bridge()
-    out = bridge._on_transform_tool_result(tool_name="memory", result="not json")
+    out = bridge._on_transform_tool_result(
+        tool_name="memory", result="not json",
+        gateway_session_key="agent:main:feishu:dm:oc_1",
+    )
     assert out is None
 
 
@@ -680,3 +715,48 @@ def test_emit_post_tool_call_hook_accepts_gateway_session_key():
     assert "gateway_session_key" in sig.parameters
     param = sig.parameters["gateway_session_key"]
     assert param.default is None
+
+
+def test_transform_tool_result_hook_receives_gateway_session_key():
+    """handle_function_call forwards gateway_session_key to the
+    transform_tool_result hook (parity with post_tool_call) so plugins can
+    detect the Feishu session when rewriting staged-memory results.
+
+    Uses a stubbed registry (pattern from tests/test_dispatch_session_id.py) so
+    the real tool dispatch is bypassed and the transform-hook seam is reached
+    without depending on a concrete tool implementation. Uses a generic tool
+    name (web_search) because agent-loop tools (memory/todo/etc.) are intercepted
+    before the registry dispatch — the transform seam is tool-agnostic."""
+    from unittest.mock import MagicMock
+    captured: dict = {}
+
+    registry = MagicMock()
+
+    def _dispatch(name, args, **kwargs):
+        return json.dumps({"ok": True})
+
+    registry.dispatch.side_effect = _dispatch
+
+    def _capture_invoke(hook_name, **kwargs):
+        if hook_name == "transform_tool_result":
+            captured.update(kwargs)
+        return []
+
+    with patch("model_tools.registry", registry), \
+         patch("hermes_cli.plugins.has_hook", lambda name: name == "transform_tool_result"), \
+         patch("hermes_cli.plugins.invoke_hook", _capture_invoke), \
+         patch("hermes_cli.middleware.run_tool_execution_middleware",
+               lambda fn, args, dispatch, **kw: dispatch(args)):
+        from model_tools import handle_function_call
+        handle_function_call(
+            "web_search",
+            {"query": "feishu"},
+            task_id="t1",
+            session_id="20260703_191525_0fce5a47",
+            gateway_session_key="agent:main:feishu:dm:oc_transformed",
+            skip_pre_tool_call_hook=True,
+        )
+
+    assert captured.get("gateway_session_key") == "agent:main:feishu:dm:oc_transformed"
+    assert captured.get("tool_name") == "web_search"
+    assert captured.get("session_id") == "20260703_191525_0fce5a47"
