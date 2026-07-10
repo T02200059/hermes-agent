@@ -90,6 +90,7 @@ class TestHandleFunctionCall:
                 result='{"ok":true}',
                 task_id="task-1",
                 session_id="session-1",
+                gateway_session_key="",
                 tool_call_id="call-1",
                 turn_id="",
                 api_request_id="",
