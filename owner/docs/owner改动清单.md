@@ -19,12 +19,12 @@
 |------|-----|
 | 分支 | `owner` |
 | 基点 | `upstream/main` @ `f53ba9bb5`（`fix(s6): dot-prefix gateway staging dir`，2026-06-29） |
-| Commit 数 | 1539（基点后累计，含上游 merge 1373 commits + owner 166 commits） |
+| Commit 数 | 1573（基点后累计，含上游 merge commits + owner commits） |
 | 改动文件总数 | 172（去重后） |
 | owner/ 纯新增 | ~75 个文件 |
 | 官方文件侵入 | ~70 个文件（含 ~20 个测试文件） |
 | 范围 | 模型归因 / patch.yaml 配置 / 审批安全 / 飞书深度定制 / TUI 皮肤 / Cron 运维 / Gateway 稳定性 / Checkpoint 预测 |
-| 最后更新 | 2026-07-09 |
+| 最后更新 | 2026-07-11 |
 | 来源 | 从 `owner-v17`（500+ commit）清洗迁移而来；本分支是重新整理后的最小叠加版本 |
 
 ### 0.2 章节索引
@@ -165,6 +165,14 @@
 - **涉及文件**：`hermes_cli/model_switch.py`
 - **Commit**：`83576b22c`
 
+#### 2.2.4 已修复：飞书 model_picker 卡片 stale session 卡 loading
+
+- **问题**：飞书 model_picker 卡片在 stale session / unknown step 下返回空响应，导致飞书客户端卡在 loading 态；同时 Feishu SDK 版本差异使 `action_value` 有 JSON-string 和 dict 两种形态，dispatch 路径未处理 string 形态，`isinstance(action_value, dict)` 全部跳过，表单提交表现为「卡住」。
+- **修复**：
+  - `440d5b023` — `owner/feishu/model_picker.py` 在 stale session / unknown step 下改为返回 `CallBackToast` 提示；归一化 `action_value` 的 JSON-string→dict 两种形态；dispatch 包 try/except 防止静默失败。涉及 `owner/feishu/model_picker.py`（+142/-47）+ `plugins/platforms/feishu/adapter.py`（+39）。
+  - `5251db809` — `adapter.py` card action handler 中 `_normalise_card_action_value` 调用漏传 `self`（调成了模块函数而非方法），导致 form 提交的 `action_value` 未被归一化、下游 `isinstance(action_value, dict)` 全部跳过、卡片表现为「卡住」。1 行修复：`_normalise_card_action_value(...)` → `self._normalise_card_action_value(...)`。
+- **涉及文件**：`owner/feishu/model_picker.py`、`plugins/platforms/feishu/adapter.py`
+
 ### 2.3 运行时 schema patches + credential pool base_url override
 
 - **背景**：`send_message` 卡片和 `image_generate` 的 model 参数需要扩展 schema，但不能改官方 toolsets 的字面定义（sync 冲突）。同时 credential pool 的 base_url 需要能被 model.base_url 覆盖（NewAPI 多 endpoint 场景）。
@@ -210,6 +218,21 @@
 - **侵入类型**：narrow if-else（agent_runtime_helpers.py，11 行新增）
 - **Commit**：`f07fcb736`
 
+### 2.8 damodel / yangtb NewAPI proxy providers + 共享 MiMo thinking wire format
+
+- **背景**：owner 需要一个多模型代理 provider（`genai.damodel.com` NewAPI）路由到 MiMo / GLM / DeepSeek / Qwen / MiniMax 等；以及一个自托管 yangtb provider 承载 `qwen3-coder:30b` 等非推理模型。MiMo 的 `thinking.type` 官方 wire 格式此前内联在 xiaomi provider 里，damodel 代理 MiMo 时需要复用同一协议，避免两处实现漂移。
+- **方案**（4 commit）：
+  - **共享 MiMo thinking wire**（`1edf4ad4d`）：抽取 `providers/mimo_thinking.py`（`build_mimo_thinking_extras`），把官方 `thinking.type=enabled` wire 格式做成共享模块；xiaomi provider 从普通 `ProviderProfile` 重构为 `XiaomiProfile` 子类，委托 thinking extras 给共享 builder。直连 xiaomi 与 damodel 代理的 MiMo 模型走同一上游协议。新增 `tests/providers/model_providers/test_mimo_thinking_wire.py`（204 行）。
+  - **damodel provider 插件**（`b17aac54b`）：`plugins/model-providers/damodel/`（`__init__.py` + `plugin.yaml`），多模型代理；MiMo 流量复用共享 mimo_thinking wire format，其余模型透传不做 extra_body 改写。
+  - **owner providers 优先于 custom fallback**（`ba51085f6`）：`hermes_cli/models.py` 的 `_PROVIDER_MODELS` 静态目录新增 damodel（glm-5.1 / glm-5.2 / mimo-v2.5）和 yangtb（qwen3-coder:30b）；新增 `_OWNER_PROVIDERS = frozenset({'damodel', 'yangtb'})`，让 `_is_custom_current` guard 跳过 owner providers。否则 `/model qwen3-coder:30b` 在 current provider 为 `custom` 时会绕过所有静态目录检查（含新增 yangtb 条目），停留在 custom。
+  - **yangtb 跳过非推理模型的 thinking 参数**（`4a2f7572c`）：`plugins/model-providers/yangtb/__init__.py` 新增 `_THINKING_MODELS` 白名单——`qwen3-coder:30b` 不支持 Ollama thinking API，发送 `think=True` / `reasoning_effort` 触发 HTTP 400；只有已知推理模型才注入 thinking 参数。
+- **涉及文件**：
+  - 纯新增：`providers/mimo_thinking.py`、`plugins/model-providers/damodel/__init__.py`、`plugins/model-providers/damodel/plugin.yaml`、`plugins/model-providers/yangtb/__init__.py`、`tests/providers/model_providers/test_mimo_thinking_wire.py`
+  - 侵入：`plugins/model-providers/xiaomi/__init__.py`（重构为 XiaomiProfile 子类）、`hermes_cli/models.py`（静态目录 + `_OWNER_PROVIDERS`）
+- **侵入类型**：纯新增（provider 插件 + 共享模块）+ inline（`hermes_cli/models.py` 14 行：静态目录扩展 + owner providers 豁免）
+- **配置迁移**（`912c7af85` 部分）：`owner/config/patch.yaml` 的 `owner.model_extra_body` 中 xfyun 相关条目迁到 damodel（上游模型相同），统一走 damodel 代理。
+- **Commit**：`1edf4ad4d`（共享 MiMo thinking + XiaomiProfile 重构）、`b17aac54b`（damodel provider）、`ba51085f6`（route owner providers over custom）、`4a2f7572c`（yangtb skip thinking params）
+
 ---
 
 ## 三、安全边界：审批、Guardrail 与自动审批
@@ -250,6 +273,7 @@
   - owner/：`owner/gateway/inbound_context.py`（3 函数加参数）、`owner/feishu/inbound_context.py`（输出 session_id 行）
 - **侵入类型**：薄胶水（参数透传链 + prompt 追加）
 - **Commit**：已合入（无独立 commit，散在 `2f913a40d`、`f9f3c39e5` 及 cron/scheduler 多提交中）
+- **后续修复**：`3dff78944` — `owner/gateway/inbound_context.py` 的 session_id 透传改为优先使用 session key（gateway 侧运行时 session 标识）。原 §3.3 描述的 session_id 透传链在多 session 并发场景下可能取到错误的 session 标识；改为 session-key-first 解析顺序后，session_search 召回定位与跨平台会话追踪更准确。
 
 ### 3.4 多平台审批签名统一
 
@@ -369,6 +393,9 @@
   - 配置：`owner.feishu.bot_menu.{key→command 映射}` + `owner.feishu.bot_menu_dedup.{enabled, default_ack, per_key}`
 - **侵入类型**：薄胶水 + try-import
 - **Commit**：`a8aab3b30`（§5.7）
+- **后续扩展**：
+  - `ec3e6bb78` — 在 `owner/config/patch.yaml` 的 `feishu.bot_menu` 命令映射新增 `usage` / `insights` 两个菜单项，并在 `bot_menu_dedup.per_key` 配置 ack（`ack: null` = 不显示 typing 指示器，因为这两个命令是异步汇总，typing 反而误导）。
+  - `912c7af85`（部分）— 补 `/usage` 和 `/insights` 的 ack 消息内容。
 
 ### 4.7 飞书编辑上限轮转 + 进度 dedup
 
@@ -406,6 +433,10 @@
 - **合并说明**：原独立插件已合并入 `owner-extensions`，代码拆至 `memory_feishu_bridge/` 子目录
 - **Commit**：`54dbc6320`（feat）、`9044b57d8`（merge into owner-extensions）、`49f52568f`（extract subdirectory）、`c8af97fe6`（move under `owner/` with symlink）
 - **后续修复**：`5c2d2f092`（fix: forward `gateway_session_key` through hook chain，卡片不弹出）、`48fda1203`（fix: extract `operator.open_id` for auth）、`57c950e21`（fix: synthetic commands use empty `message_id` to avoid `reply_to`）、`8b76be146`（fix: remove backtick from card + i18n approve/reject responses）、`17072f048`（test: update assertions for i18n-driven labels）
+  - `ff29bbc54` — 新增 `transform_tool_result` hook。`post_tool_call` 异步发送审批卡片后，agent 看到的 tool result 仍是上游 CLI 文案（"review with /memory pending"），但这个 affordance 在飞书不存在。新增 transform hook 在卡片实际派发时（通过 `_SENT_CARD_IDS` 一次性集合追踪）把 staged result 改写为 "Approval card sent to chat - click to save or discard"；非飞书 session 下 transform 是 no-op，保持上游行为。含 6 个单测。
+  - `e297792cd` — 修复 false-confirmation 竞态。`_on_post_tool_call` 异步派发卡片后立即写 `_SENT_CARD_IDS`，但异步派发可能在途失败（网络错误 / API 拒绝），此时 transform 会把消息改成「卡片已发送」——一个 agent 无法核实的虚假确认。改为 transform 不再依赖 `_SENT_CARD_IDS`，而是基于「这是带 staged memory write 的飞书 session」（从 gateway session key 推导飞书 chat id），并用进行时态 "Approval card being sent"（无论卡片是否最终送达都成立）。同时 `model_tools.py` 把 `gateway_session_key` 透传给 transform hook（与 post_tool_call 对齐）。
+  - `8a9273b25`（test）— 补 `_SENT_CARD_IDS` 生产路径写入 + 派发失败路径（失败时不得写入）。
+  - `e218fc7dd`（test）— `e297792cd` 的 follow-up：`tests/test_model_tools.py` 的 transform hook exact-match 断言加入新的 `gateway_session_key=''` 入参。
 
 ### 4.11 /feishu-guide 对话引导交互卡片
 
@@ -422,6 +453,7 @@
 - **后续修复**：
   - `0dbae9a40` — agent running 时点击 bot menu 触发 `/feishu-guide`，`should_bypass_active_session()` 只查 `resolve_command()`（仅含 `COMMAND_REGISTRY` 内置命令），plugin 命令不在其中，导致落入 busy-input 路径被当普通消息注入 agent。修复为同时检查 `is_gateway_known_command()`（覆盖 plugin 命令）。同 bug 影响 `/providers` 等所有 plugin 命令。
   - `8c4c902e1` — `feishu_guide` bot menu 事件绕过普通命令管线直接发卡片。原路径经过 `_handle_message_with_guards` 会被 per-chat lock 阻塞，导致 ack 到卡片出现之间延迟数秒；现在 ack 后直接调用 `adapter.send_guide_card()` 并 return，提升响应速度。
+  - `5b2f8ed74` — `feishu_guide` 引导卡片提交后，合成的 `/steer` `/queue` `/goal` 等命令没有注入到正在运行的 agent，而是被 LLM 当普通消息回复。根因：`bot_menu.py` 的 feishu_guide 快捷路径用 `SimpleNamespace` 构建 source，`chat_type` 字面量 `'p2p'` 未归一化为 `'dm'`，导致合成 event 的 session key 与运行中 agent 的不匹配，gateway runner 的 running-agent fast path 未命中。修复：`steer_card.py::_route_guide_command` 在 `_dispatch` 中重建 source、走 `_resolve_source_chat_type` 归一化路径（与普通 bot menu 命令一致）；`bot_menu.py` 的 `SimpleNamespace` 改用 `adapter.build_source()` 补全缺失字段；`adapter.py` 加 `form_value` JSON string 归一化（防御性）+ 诊断日志。端到端验证：steer 注入成功（chat_type=dm，session key 匹配）。
 
 ### 4.12 飞书文件上传大小守卫
 
@@ -496,6 +528,9 @@
 - **侵入类型**：import 编排（runtime patch）+ 薄胶水
 - **Commit**：`a91689b08`（§9.3）
 - **后续扩展**：`8a46ddea0` - 增加 `_is_non_recallable_command()` 拦截斜杠命令的 recall。所有 `/` 开头的消息默认跳过 `prefetch_all` / `queue_prefetch_all`，白名单 5 个对话引导命令（queue/steer/goal/subgoal/background）例外，因为它们携带用户输入的 prompt 值得召回。其余命令（status/model/providers/new/stop 等）是控制操作，无召回价值。
+- **后续修复**：
+  - `a0f37869e` — delegation framework 在部分 locale 下 emit `[ASYNC DELEGATION COMPLETE — ...]`（U+2014 em-dash），但 `_SYNTHETIC_PREFIXES` 只匹配 ASCII hyphen 变体 `[ASYNC DELEGATION COMPLETE - ...]`，合成消息未被 recall/sync 跳过。给 BATCH COMPLETE 和 single COMPLETE 两种前缀都补 em-dash 变体。
+  - `2d4d05252`（test）— 加 emitter↔guard 契约回归测试：调用真实的 `format_process_notification`，断言 `_is_synthetic` 能识别其输出（single + batch fan-out 两种形态）；第三个测试把 emitter 的分隔符 pin 到 U+2014，未来若改回 ASCII hyphen 会在这里大声失败，而不是让 guard 静默失效。
 
 ### 7.3 OpenViking 同步召回 + advisory + recall-card
 
@@ -507,6 +542,7 @@
   - **WR-04**：`684de6981` — bound recall-card thread pool + per-chat debounce
 - **侵入类型**：import 编排（runtime patch）+ 薄胶水
 - **Commit**：`76fa75f36`（§11.6 精简迁移）、`684de6981`（§11.6 WR-04 bound thread pool + debounce）、`6a9e28b92`（迁入 `owner-extensions` plugin）
+- **后续修复**：`6a9383d38` — 移除 `plugins/memory/openviking/__init__.py` 中基于 `subprocess.Popen` 的本地 server auto-start。裸 Python `openviking-server`（未带 hotfix patch）会在 gateway restart 时与 Docker 容器抢端口 1933 并劫持端口。改为由 Docker 外部管理 server。同时删除对应的 `test_start_local_openviking_server_uses_endpoint_host_and_port` 测试。
 
 ### 7.4 Cron env 隔离（ContextVar + restart scrub）
 
@@ -518,6 +554,7 @@
   - 多处接线：`cron/jobs.py`、`cron/scheduler.py`、`gateway/session_context.py` 等
 - **侵入类型**：薄胶水（多处 import + 委托）
 - **Commit**：`8eaf0cc10`（§17.4）、文档 `owner/docs/cron-session-env-leak-fix.md`
+- **后续修复**：`6e3a81897` — `tools/approval.py::_run_approval_gate` 仍用 `env_var_enabled("HERMES_CRON_SESSION")` 检测 cron session，但 §7.4 已把 cron 标记绑到 ContextVar（`owner/cron/run_job_hook.py::owner_cron_session_enter`），os.environ 的遗留写入早已因跨 scheduler worker 线程泄露而被移除。并发 gateway 中 ContextVar per-context 设置、os.environ 共享，`env_var_enabled()` 恒为 False → `_run_approval_gate` 的 cron 分支是死代码 → cron job 命中危险命令被静默 auto-approve（应为 `cron_mode=deny` 或走 cron policy）。改为 ContextVar-aware 的 `_is_cron_session()`，与同文件另三处调用点（238/2672/3055 行）对齐。新增回归测试，通过生产路径 `owner_cron_session_enter` 置位 cron flag、同时 os.environ 不设 `HERMES_CRON_SESSION`，覆盖 `check_dangerous_command` 与 `request_tool_approval` 两个入口。
 
 ### 7.5 executor-shutdown 友好提示
 
@@ -571,6 +608,7 @@
 - **方案**：`gateway/run.py` 的 catch-all running-agent guard 增加 `is_gateway_known_command()` 检查 —— 凡是 plugin 注册且被网关识别的命令，不再走 busy-input 注入路径，而是继续分派到命令 handler 执行。同时 `/providers` 加入 bypass whitelist（与 `/status` 同级），作为只读命令可安全 mid-turn 执行。
 - **侵入类型**：inline（`gateway/run.py` 43 行，`[owner] §17.x` 标记）
 - **Commit**：`71b5c9046`
+- **回归测试**：`740571e9f` — `test_should_bypass_returns_true_for_every_registered_command` 原本只覆盖 built-in 命令。plugin 注册的斜杠命令（`/feishu-guide`、`/providers`…）走 `_iter_plugin_command_entries()` 而非 `resolve_command()`，依赖 `should_bypass_active_session` 里的 `is_gateway_known_command()` fallback。新增 case monkeypatch `_iter_plugin_command_entries` 返回 fake plugin 命令，断言 bypass 为 True、genuinely unknown 命令为 False，防止 fallback 被误删后 plugin 命令被注入运行中 agent turn（同 #5057 bug class）而无测试失败。
 
 ### 7.11 允许 /memory 和 /skills mid-turn 执行
 
@@ -641,6 +679,7 @@
   - `gateway/run.py`、`gateway/display_config.py`、`gateway/slash_commands.py`：多处 `source=source` 透传 + `for_source` 薄调用（约 6+ 处）
 - **侵入类型**：薄胶水（多处 `source=source` 透传 + `for_source` 调用）
 - **Commit**：`eb96240a4`（§10）
+- **测试整改**：`a5a7fdc20` — `test_gateway_long_running_surface_keeps_source_aware_display_resolver` 原本读取 `GatewayRunner._run_agent_inner` 源码文本，断言精确子串切片（确切的 `_long_running_mode = _display_surface_mode(\n"long_running_notifications"` 行 + 220 字符固定窗口的 `allow_generic=True`），是典型的 change-detector——任何无关的空白/参数排版调整都会破坏测试而不改变行为。按 AGENTS.md 的 change-detector 指引，改为语义断言：验证 wiring 契约（helper closure 存在、引用 per-chat resolver、long-running 设置 key 流经其中），不冻结源码格式。per-chat 路由行为本身已由上方行为测试覆盖（真实 config 过 `resolve_display_setting_for_source`）。
 
 ---
 
@@ -747,7 +786,18 @@
 - **方案**：`owner/validation/merge_health_check.py` + `anchors.yaml` + `inventory.yaml`，覆盖 `_owner_import`、direct `from owner.*`、runtime patch target、`[owner]` 标记、merge diff dead-marker、关键 anchors 与轻量 inventory static checks。
 - **运行方式**：`python3 owner/validation/merge_health_check.py`
 - **侵入类型**：纯新增（owner 专用验证目录，不放 `scripts/`）
-- **Commit**：`872ffe0ce`、`b5aa55c65`、`b50da840b`、`d6757b656`
+- **Commit**：`872ffe0ce`、`b5aa55c65`、`b50da840b`、`d6757b656`、`ca80a4957`
+- **补充说明**（`ca80a4957`）：新增 `tests/owner/test_contract_entrypoints.py`（7 个 P1 contract test，验证 owner 逻辑确实接到 upstream entrypoint：gateway inbound session_key 透传、per-chat display override、long-running surface source-aware resolver、build_api_kwargs 透传 owner_provider_name、chat_completions transport extra_body、cron scheduler run_job 设置 HERMES_CRON_SESSION contextvar、owner-extensions plugin apply memory_synthetic_guard patch）；同时 `owner/validation/inventory.yaml` 扩充 11 项 inventory（pool base_url override、credential prefix gate、feishu auto-card、diff card dispatch、approval card、feishu-guide command、cron job args、message token breakdown、qwen thinking debris、damodel prompt cache policy、rate-limit quota classification、gateway restart pycache cleanup）。
+
+### 12.5 owner/examples 参考文档（base config + SOUL 模板）
+
+- **背景**：需要一个仓库内的参考点，记录脱敏后的 Hermes base config 和 depersonalized SOUL 模板，便于新节点初始化和对照排查。
+- **方案**：纯新增 `owner/examples/`：
+  - `owner/examples/config.base.example.yaml`（539 行，脱敏 base config）
+  - `owner/examples/SOUL.md`（286 行，depersonalized SOUL 模板）
+  - `.gitignore` 增加规则，把 `owner/examples` 从 repo-wide `examples/` ignore 中 allowlist 出来
+- **侵入类型**：纯新增（参考文档目录）
+- **Commit**：`c83fbf923`
 
 ---
 
@@ -993,6 +1043,7 @@ _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请先�
 - **测试**：44 test passed, 0 failed（19 新增 + 5 feishu_tools + 20 feishu_comment）；`test_feishu.py` 8 failed 确认 pre-existing
 - **E2E 验证**：DM 上下文读取真实飞书 wiki 电子表格（`https://skycloudsys.feishu.cn/wiki/CjhO...`），成功解析 wiki node -> sheet -> 5737 行数据
 - **zcode 委托**：初始修复由 zcode-cli 完成（fallback client + wiki/bitable），sheet 读取由琳姐手动补充（API URI 修正：v3 `/sheets/query` 而非 `/spreadsheets/:token`）
+- **后续修复**：`779b87265` — `feishu_client_utils.py` / `feishu_doc_tool.py` 的 code review 修复：W1 把 `_col_letter` 提为模块级 helper（原在循环内重复定义）；W3 `do_request` 解析 `raw.content` 失败时加 `logger.debug`；W4 `do_request` method 映射改为显式、不支持的方法抛 `ValueError`；W2 docstring 文档化 `read_bitable_as_text` 的 100 表上限；I7 tool description 补 sheet 支持；I9 错误消息统一英文；I6 新增 13 个测试覆盖 `read_sheet_as_text`、多页分页、`/bitable/` URL 提取、不支持方法校验、列字母生成。
 
 ### 2026-07-08：ruolin 皮肤更新 + redaction warning 移除
 
@@ -1016,3 +1067,23 @@ _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请先�
   5. 清理 Qwen 在 `anthropic_messages` 模式下产生的 thinking debris（开头孤立反引号 + CJK 标点），加回归测试（`a8808d65e`）。
   6. iteration budget 耗尽提示 i18n 化（`45598ce6a`）。
   7. 飞书 bot menu `feishu_guide` 事件直接发送引导卡片，绕过命令管线 lock 延迟（`8c4c902e1`）。
+
+### 2026-07-10：terminal timeout 从 180s 调整到 300s
+
+- **类型**：运维配置调整（chore）
+- **Commit**：`912c7af85`（部分）
+- **变动**：`cli-config.yaml.example` 的 terminal timeout 从 180s 提升到 300s，避免长耗时命令误触超时。
+
+### 2026-07-11：改动清单漏写补录（15 条）
+
+- **类型**：文档补录（无代码变更）
+- **背景**：对 `git log --since="3 days ago"` 的 45 个 commit 与改动清单逐条比对，发现 15 个功能/修复/chore commit 漏写（已排除纯 docs commit 与轻量 test 修复）。
+- **补录条目**：
+  - 新增子节 §2.8（damodel/yangtb NewAPI proxy providers + 共享 MiMo thinking wire，4 commit）、§12.5（owner/examples 参考文档，1 commit）
+  - §2.2 新增 §2.2.4（飞书 model_picker 卡片 stale session 修复，2 commit）
+  - §3.3 / §4.6 / §4.10 / §4.11 / §7.2 / §7.3 / §7.4 / §7.10 / §9.1 各追加后续修复/扩展/回归测试/测试整改
+  - §12.4 Commit 列表扩充 `ca80a4957`（P1 contract tests + inventory 扩充）
+  - 附录 E 的 feishu_doc_read 条目追加 `779b87265` code review follow-up；新增 terminal timeout 调整日志
+  - 混合 chore `912c7af85` 拆分归属 §4.6（ack）/ §2.8（xfyun→damodel 迁移）/ 附录 E（timeout）
+- **涉及 commit**：`1edf4ad4d`、`b17aac54b`、`ba51085f6`、`4a2f7572c`、`3dff78944`、`ec3e6bb78`、`440d5b023`、`5251db809`、`ff29bbc54`、`e297792cd`、`8a9273b25`、`e218fc7dd`、`5b2f8ed74`、`a0f37869e`、`2d4d05252`、`6a9383d38`、`6e3a81897`、`c83fbf923`、`ca80a4957`、`779b87265`、`912c7af85`、`740571e9f`、`a5a7fdc20`
+- **审计来源**：`/tmp/zcode-audit-result.md`
