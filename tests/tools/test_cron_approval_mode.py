@@ -8,6 +8,7 @@ from tools.approval import (
     check_all_command_guards,
     check_dangerous_command,
     detect_dangerous_command,
+    request_tool_approval,
 )
 
 
@@ -453,3 +454,73 @@ class TestCronWithGatewayOrigin:
                 assert result.get("status") != "approval_required"
         finally:
             clear_session_vars(tokens)
+
+
+class TestCronContextVarDetection:
+    """The cron flag is bound via ContextVar, not os.environ (see
+    owner/cron/run_job_hook.py). The approval gate must read the ContextVar
+    through _is_cron_session() — an env-var-only check misses the per-context
+    cron marker and silently auto-approves dangerous commands in concurrent
+    gateway workers where os.environ is shared but the ContextVar is isolated.
+    """
+
+    def test_dangerous_command_blocked_with_contextvar_only(self, monkeypatch):
+        """Cron set via ContextVar (no env var) + cron_mode=deny → BLOCKED."""
+        # Emulate the production path: owner_cron_session_enter() sets the
+        # ContextVar but never writes os.environ.
+        from owner.cron.run_job_hook import (
+            owner_cron_session_enter,
+            owner_cron_session_exit,
+        )
+        monkeypatch.delenv("HERMES_CRON_SESSION", raising=False)
+        monkeypatch.delenv("HERMES_INTERACTIVE", raising=False)
+        monkeypatch.delenv("HERMES_GATEWAY_SESSION", raising=False)
+        monkeypatch.delenv("HERMES_YOLO_MODE", raising=False)
+        monkeypatch.delenv("HERMES_EXEC_ASK", raising=False)
+
+        token = owner_cron_session_enter()
+        try:
+            from unittest.mock import patch as mock_patch
+            with mock_patch("tools.approval._get_cron_approval_mode", return_value="deny"):
+                result = check_dangerous_command("rm -rf /tmp/stuff", "local")
+                assert not result["approved"]
+                assert "BLOCKED" in result["message"]
+                assert "cron_mode" in result["message"]
+        finally:
+            owner_cron_session_exit(token)
+
+    def test_request_tool_approval_blocks_with_contextvar_only(self, monkeypatch):
+        """The plugin-escalation gate (_run_approval_gate) must also detect the
+        ContextVar-bound cron flag. Regression for the silent-auto-approve bug
+        where this gate read env_var_enabled() instead of _is_cron_session().
+
+        Distinguishes the cron path from the generic no-human fail-closed path:
+        the cron-specific block message mentions cron_mode / config.yaml, so we
+        assert that (not just a generic BLOCKED) to prove the cron branch ran."""
+        from owner.cron.run_job_hook import (
+            owner_cron_session_enter,
+            owner_cron_session_exit,
+        )
+        from tools.approval import request_tool_approval
+
+        monkeypatch.delenv("HERMES_CRON_SESSION", raising=False)
+        monkeypatch.delenv("HERMES_INTERACTIVE", raising=False)
+        monkeypatch.delenv("HERMES_GATEWAY_SESSION", raising=False)
+        monkeypatch.delenv("HERMES_YOLO_MODE", raising=False)
+        monkeypatch.delenv("HERMES_EXEC_ASK", raising=False)
+
+        token = owner_cron_session_enter()
+        try:
+            from unittest.mock import patch as mock_patch
+            with mock_patch("tools.approval._get_cron_approval_mode", return_value="deny"):
+                result = request_tool_approval(
+                    tool_name="example_tool",
+                    reason="plugin-flagged action",
+                )
+                assert not result["approved"]
+                assert "BLOCKED" in result["message"]
+                # Cron-specific message, NOT the generic no-human block:
+                # proves the cron branch (not the fail-closed fallback) ran.
+                assert "cron" in result["message"].lower()
+        finally:
+            owner_cron_session_exit(token)

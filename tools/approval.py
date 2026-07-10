@@ -2127,8 +2127,12 @@ def _run_approval_gate(
     is_gateway = _is_gateway_approval_context()
 
     if not is_cli and not is_gateway:
-        # Cron sessions: respect cron_mode config
-        if env_var_enabled("HERMES_CRON_SESSION"):
+        # Cron sessions: respect cron_mode config. Use the ContextVar-aware
+        # _is_cron_session() (owner's cron marker is bound via contextvars,
+        # not os.environ) so concurrent-gateway cron jobs are detected
+        # correctly — env_var_enabled() only reads os.environ and would miss
+        # the per-context cron flag, silently auto-approving dangerous cmds.
+        if _is_cron_session():
             if _get_cron_approval_mode() == "deny":
                 return {
                     "approved": False,
