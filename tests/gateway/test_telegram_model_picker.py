@@ -67,7 +67,8 @@ class TestTelegramModelPicker:
         )
 
         assert result.success is True
-        assert "MARKDOWN_V2" in repr(sent["parse_mode"])
+        # Works whether ParseMode.MARKDOWN_V2 is a mock or the real string
+        assert "MARKDOWN_V2" in repr(sent["parse_mode"]) or sent["parse_mode"] == "MarkdownV2"
         assert "provider\\_one" in sent["text"]
         assert "`model_1`" in sent["text"]
 
@@ -94,7 +95,7 @@ class TestTelegramModelPicker:
         await adapter._handle_model_picker_callback(query, "mb", "12345")
 
         edit_kwargs = query.edit_message_text.call_args[1]
-        assert "MARKDOWN_V2" in repr(edit_kwargs["parse_mode"])
+        assert "MARKDOWN_V2" in repr(edit_kwargs["parse_mode"]) or edit_kwargs["parse_mode"] == "MarkdownV2"
         assert "provider\\_one" in edit_kwargs["text"]
         assert "`model_1`" in edit_kwargs["text"]
 
@@ -132,7 +133,7 @@ class TestTelegramModelPicker:
         callback.assert_awaited_once()
         query.edit_message_text.assert_awaited()
         edit_kwargs = query.edit_message_text.call_args[1]
-        assert "MARKDOWN_V2" in repr(edit_kwargs["parse_mode"])
+        assert "MARKDOWN_V2" in repr(edit_kwargs["parse_mode"]) or edit_kwargs["parse_mode"] == "MarkdownV2"
         assert "`gpt-5`" in edit_kwargs["text"]
         assert "12345" not in adapter._model_picker_state
 
