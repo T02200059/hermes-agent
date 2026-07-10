@@ -183,6 +183,30 @@ approval:
     chmod_x_followed_by_immediate_execution: "chmod +x followed by immediate execution"
     sudo_with_privilege_flag_stdin_askpass_shell_list: "sudo with privilege flag (stdin/askpass/shell/list)"
     sudo_with_combined_flag_privilege_escalation: "sudo with combined-flag privilege escalation"
+    windows_cmd_destructive_delete: "Windows cmd destructive delete"
+    windows_powershell_destructive_delete: "Windows PowerShell destructive delete"
+    powershell_encoded_command_execution: "PowerShell encoded command execution"
+    execute_remote_content_via_command_substitution: "execute remote content via command substitution"
+    pipe_decoded_content_to_shell_possible_command_obfuscation: "pipe decoded content to shell (possible command obfuscation)"
+    pipe_xxd_decoded_content_to_shell_possible_command_obfuscation: "pipe xxd-decoded content to shell (possible command obfuscation)"
+    pipe_tr_transformed_output_to_shell_possible_command_obfuscation: "pipe tr-transformed output to shell (possible command obfuscation)"
+    pipe_openssl_decoded_content_to_shell_possible_command_obfuscation: "pipe openssl-decoded content to shell (possible command obfuscation)"
+    docker_compose_restart_stop_kill_down_container_lifecycle: "docker compose restart/stop/kill/down (container lifecycle)"
+    docker_restart_stop_kill_container_lifecycle: "docker restart/stop/kill (container lifecycle)"
+    start_gateway_outside_systemd_use_systemctl_user_restart_hermes_gateway: "start gateway outside systemd (use 'systemctl --user restart hermes-gateway')"
+    kill_process_via_pgrep_pidof_expansion_self_termination: "kill process via pgrep/pidof expansion (self-termination)"
+    kill_process_via_backtick_pgrep_pidof_expansion_self_termination: "kill process via backtick pgrep/pidof expansion (self-termination)"
+    stop_restart_hermes_launchd_service_kills_running_agents: "stop/restart hermes launchd service (kills running agents)"
+    copy_move_file_into_sensitive_credential_ssh_shell_rc_path: "copy/move file into sensitive credential/SSH/shell-rc path"
+    in_place_edit_of_sensitive_credential_ssh_shell_rc_path: "in-place edit of sensitive credential/SSH/shell-rc path"
+    in_place_edit_of_sensitive_credential_ssh_shell_rc_path_long_flag: "in-place edit of sensitive credential/SSH/shell-rc path (long flag)"
+    in_place_edit_of_sensitive_credential_ssh_shell_rc_path_perl_ruby: "in-place edit of sensitive credential/SSH/shell-rc path (perl/ruby)"
+    in_place_edit_of_hermes_config_env: "in-place edit of Hermes config/env"
+    in_place_edit_of_hermes_config_env_long_flag: "in-place edit of Hermes config/env (long flag)"
+    in_place_edit_of_hermes_config_env_perl_ruby: "in-place edit of Hermes config/env (perl/ruby)"
+    shell_execution_via_heredoc: "shell execution via heredoc"
+    git_branch_force_delete_long_flags: "git branch force delete (long flags)"
+    git_branch_force_delete_long_flags_force_first: "git branch force delete (long flags, force-first)"
 
   # Hardline pattern descriptions — translated from HARDLINE_PATTERNS keys.
   hardline_desc:
@@ -194,6 +218,10 @@ approval:
     redirect_to_raw_block_device: "redirect to raw block device"
     fork_bomb: "fork bomb"
     kill_all_processes: "kill all processes"
+    system_shutdown_reboot: "system shutdown/reboot"
+    init_0_6_shutdown_reboot: "init 0/6 (shutdown/reboot)"
+    systemctl_poweroff_reboot: "systemctl poweroff/reboot"
+    telinit_0_6_shutdown_reboot: "telinit 0/6 (shutdown/reboot)"
 
   # Tirith rule translations — keyed by rule_id from tirith JSON output.
   # title only; description contains dynamic content (IP addresses, URLs) and stays in original language.

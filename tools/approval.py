@@ -29,6 +29,44 @@ from utils import env_var_enabled, is_truthy_value
 
 logger = logging.getLogger(__name__)
 
+
+def _pattern_description_to_key(description: str) -> str:
+    """Convert an English pattern description to the locale key suffix used under
+    ``approval.dangerous_desc`` / ``approval.hardline_desc``.
+
+    Mirrors the naming convention in ``locales/*.yaml``: lowercase, spaces and
+    separator characters become underscores, punctuation is dropped, and runs of
+    underscores are collapsed.
+    """
+    key = description.lower()
+    for ch in " /-().,:'\"[]+|":
+        key = key.replace(ch, "_")
+    key = re.sub(r"_+", "_", key).strip("_")
+    return key
+
+
+def _translate_pattern_description(description: str, kind: str = "dangerous") -> str:
+    """Translate a DANGEROUS_PATTERNS/HARDLINE_PATTERNS description for display.
+
+    Looks up ``approval.<kind>_desc.<key>`` in the active catalog. If the key is
+    missing, falls back to the original English description so the approval
+    reason is never replaced by a bare key path.
+
+    The command/target itself is **not** part of the translation; callers format
+    it separately via placeholders so dynamic text never leaks into catalogs.
+    """
+    key = _pattern_description_to_key(description)
+    if not key:
+        return description
+    full_key = f"approval.{kind}_desc.{key}"
+    translated = t(full_key)
+    # Missing catalog entries fall back to the bare key path; preserve the
+    # original English description in that case.
+    if translated == full_key:
+        return description
+    return translated
+
+
 # Freeze YOLO mode at module import time. Reading os.environ on every call
 # would allow any skill running inside the process to set this variable and
 # instantly bypass all approval checks — a prompt-injection escalation path.
@@ -466,7 +504,7 @@ def detect_hardline_command(command: str) -> tuple:
         normalized = command_variant.lower()
         for pattern_re, description in HARDLINE_PATTERNS_COMPILED:
             if pattern_re.search(normalized):
-                return (True, description)
+                return (True, _translate_pattern_description(description, kind="hardline"))
     return (False, None)
 
 
@@ -1395,7 +1433,7 @@ def detect_dangerous_command(command: str) -> tuple:
         for pattern_re, description in DANGEROUS_PATTERNS_COMPILED:
             if pattern_re.search(command_lower):
                 pattern_key = description
-                return (True, pattern_key, description)
+                return (True, pattern_key, _translate_pattern_description(description))
     return (False, None, None)
 
 

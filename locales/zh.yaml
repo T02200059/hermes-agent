@@ -172,6 +172,30 @@ approval:
     chmod_x_followed_by_immediate_execution: "chmod +x 后立即执行"
     sudo_with_privilege_flag_stdin_askpass_shell_list: "sudo 带特权选项（stdin/askpass/shell/list）"
     sudo_with_combined_flag_privilege_escalation: "sudo 组合选项特权提升"
+    windows_cmd_destructive_delete: "Windows cmd 破坏性删除"
+    windows_powershell_destructive_delete: "Windows PowerShell 破坏性删除"
+    powershell_encoded_command_execution: "PowerShell 编码命令执行"
+    execute_remote_content_via_command_substitution: "通过命令替换执行远程内容"
+    pipe_decoded_content_to_shell_possible_command_obfuscation: "将解码后的内容管道至 shell（可能的命令混淆）"
+    pipe_xxd_decoded_content_to_shell_possible_command_obfuscation: "将 xxd 解码后的内容管道至 shell（可能的命令混淆）"
+    pipe_tr_transformed_output_to_shell_possible_command_obfuscation: "将 tr 转换后的输出管道至 shell（可能的命令混淆）"
+    pipe_openssl_decoded_content_to_shell_possible_command_obfuscation: "将 openssl 解码后的内容管道至 shell（可能的命令混淆）"
+    docker_compose_restart_stop_kill_down_container_lifecycle: "docker compose restart/stop/kill/down（容器生命周期）"
+    docker_restart_stop_kill_container_lifecycle: "docker restart/stop/kill（容器生命周期）"
+    start_gateway_outside_systemd_use_systemctl_user_restart_hermes_gateway: "在 systemd 外启动 gateway（请使用 'systemctl --user restart hermes-gateway'）"
+    kill_process_via_pgrep_pidof_expansion_self_termination: "通过 pgrep/pidof 展开杀死进程（自毁）"
+    kill_process_via_backtick_pgrep_pidof_expansion_self_termination: "通过反引号 pgrep/pidof 展开杀死进程（自毁）"
+    stop_restart_hermes_launchd_service_kills_running_agents: "停止/重启 hermes launchd 服务（会杀死运行中的 agent）"
+    copy_move_file_into_sensitive_credential_ssh_shell_rc_path: "复制/移动文件至敏感凭据/SSH/shell-rc 路径"
+    in_place_edit_of_sensitive_credential_ssh_shell_rc_path: "就地编辑敏感凭据/SSH/shell-rc 路径"
+    in_place_edit_of_sensitive_credential_ssh_shell_rc_path_long_flag: "就地编辑敏感凭据/SSH/shell-rc 路径（长选项）"
+    in_place_edit_of_sensitive_credential_ssh_shell_rc_path_perl_ruby: "就地编辑敏感凭据/SSH/shell-rc 路径（perl/ruby）"
+    in_place_edit_of_hermes_config_env: "就地编辑 Hermes config/env"
+    in_place_edit_of_hermes_config_env_long_flag: "就地编辑 Hermes config/env（长选项）"
+    in_place_edit_of_hermes_config_env_perl_ruby: "就地编辑 Hermes config/env（perl/ruby）"
+    shell_execution_via_heredoc: "通过 heredoc 执行 shell"
+    git_branch_force_delete_long_flags: "git branch 强制删除（长选项）"
+    git_branch_force_delete_long_flags_force_first: "git branch 强制删除（长选项，force 在前）"
 
   # 硬拦截模式描述 — 从 HARDLINE_PATTERNS key 翻译。
   hardline_desc:
@@ -183,6 +207,10 @@ approval:
     redirect_to_raw_block_device: "重定向至原始块设备"
     fork_bomb: "fork 炸弹"
     kill_all_processes: "杀死所有进程"
+    system_shutdown_reboot: "系统关机/重启"
+    init_0_6_shutdown_reboot: "init 0/6（关机/重启）"
+    systemctl_poweroff_reboot: "systemctl poweroff/reboot"
+    telinit_0_6_shutdown_reboot: "telinit 0/6（关机/重启）"
 
   # Tirith 规则翻译 — 按 tirith JSON 输出的 rule_id 索引。
   # 仅翻译 title；description 含动态内容（IP 地址、URL）保留原文。
