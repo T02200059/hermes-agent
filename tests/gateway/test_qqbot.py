@@ -1111,6 +1111,7 @@ class TestBuildUpdatePromptKeyboard:
 
 class TestBuildApprovalText:
     def test_exec_approval_includes_command_preview(self):
+        from agent.i18n import t
         from gateway.platforms.qqbot.keyboards import (
             ApprovalRequest, build_approval_text,
         )
@@ -1122,7 +1123,7 @@ class TestBuildApprovalText:
             timeout_sec=60,
         )
         text = build_approval_text(req)
-        assert "命令执行审批" in text
+        assert t("approval.qqbot_exec_title") in text
         assert "rm -rf /tmp/demo" in text
         assert "/home/user" in text
         assert "60" in text
@@ -1156,12 +1157,11 @@ class TestBuildApprovalText:
         text = build_approval_text(req)
         # Preview is truncated to 300 chars; 1000 "x"s would still push the
         # body past 300, but the inline preview specifically must be capped.
-        preview_line = [
-            line for line in text.split("\n") if line.startswith("```")
-        ]
-        # 2 backtick fences; the content line in between is separate.
-        xs_in_preview = sum(line.count("x") for line in text.split("\n") if line and "```" not in line)
-        assert xs_in_preview <= 301  # 300 xs + one-off tolerance
+        lines = text.split("\n")
+        fence_indices = [i for i, line in enumerate(lines) if line.startswith("```")]
+        assert len(fence_indices) == 2
+        preview_content = "\n".join(lines[fence_indices[0] + 1 : fence_indices[1]])
+        assert len(preview_content) == 300
 
 
 class TestInteractionEventParsing:

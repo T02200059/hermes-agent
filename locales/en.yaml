@@ -70,6 +70,21 @@ approval:
   qqbot_permanent_disabled: "💡 Permanent approval is disabled. Choose Allow Once or Session instead."
   yolo_auto_resolved: "🔄 YOLO mode enabled — {count} pending approval(s) auto-resolved."
 
+  # QQBot approval card — interactive card UI text.
+  qqbot_exec_title: "🔐 **Command Execution Approval**"
+  qqbot_exec_subtitle: "Execute this command?"
+  qqbot_plugin_title: "**Approval Request**"
+  qqbot_cwd_label: "📁 Directory: {cwd}"
+  qqbot_reason_label: "📝 {description}"
+  qqbot_tool_label: "🔧 Tool: {tool_name}"
+  qqbot_timeout_label: "⏱️ Timeout: {timeout} seconds"
+  qqbot_btn_once: "✅ Allow Once"
+  qqbot_btn_always: "⭐ Always Allow"
+  qqbot_btn_deny: "❌ Deny"
+  qqbot_visited_once: "Allowed"
+  qqbot_visited_always: "Always Allowed"
+  qqbot_visited_deny: "Denied"
+
   # Generic reason label — used by fallback, Telegram, Discord, Slack.
   reason_label: "Reason: {description}"
   # Security scan prefix (tirith findings)

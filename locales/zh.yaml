@@ -60,6 +60,21 @@ approval:
   qqbot_permanent_disabled: "💡 永久允许已禁用，请选择允许一次或本次会话"
   yolo_auto_resolved: "🔄 YOLO 模式已启用，{count} 条待审批命令已自动批准。"
 
+  # QQBot 审批卡片 — 交互式卡片 UI 文案。
+  qqbot_exec_title: "🔐 **命令执行审批**"
+  qqbot_exec_subtitle: "执行此命令？"
+  qqbot_plugin_title: "**审批请求**"
+  qqbot_cwd_label: "📁 目录：{cwd}"
+  qqbot_reason_label: "📝 {description}"
+  qqbot_tool_label: "🔧 工具：{tool_name}"
+  qqbot_timeout_label: "⏱️ 超时：{timeout} 秒"
+  qqbot_btn_once: "✅ 允许一次"
+  qqbot_btn_always: "⭐ 始终允许"
+  qqbot_btn_deny: "❌ 拒绝"
+  qqbot_visited_once: "已允许"
+  qqbot_visited_always: "已始终允许"
+  qqbot_visited_deny: "已拒绝"
+
   # 通用原因标签 — fallback/Telegram/Discord/Slack 使用。
   reason_label: "原因：{description}"
   # 安全扫描前缀（tirith 发现）

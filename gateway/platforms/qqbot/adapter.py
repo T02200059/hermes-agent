@@ -44,6 +44,8 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
+from agent.i18n import t
+
 try:
     import aiohttp
 
@@ -2760,7 +2762,7 @@ class QQAdapter(BasePlatformAdapter):
 
         req = ApprovalRequest(
             session_key=session_key,
-            title="Execute this command?",
+            title=t("approval.qqbot_exec_subtitle"),
             description=description,
             command_preview=command,
             timeout_sec=self._APPROVAL_TIMEOUT_SECONDS,

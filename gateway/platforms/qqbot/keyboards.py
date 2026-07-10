@@ -34,6 +34,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
+from agent.i18n import t
+
 logger = logging.getLogger(__name__)
 
 # ── button_data prefixes + patterns ──────────────────────────────────
@@ -204,7 +206,7 @@ def _make_callback_button(
 def build_approval_keyboard(session_key: str) -> InlineKeyboard:
     """Build the 3-button approval keyboard.
 
-    Layout: ``[✅ 允许一次] [⭐ 始终允许] [❌ 拒绝]`` — all three share
+    Layout: ``[Allow Once] [Always Allow] [Deny]`` — all three share
     ``group_id='approval'`` so clicking one greys out the rest.
 
     :param session_key: Embedded into ``button_data`` so the decision
@@ -216,24 +218,24 @@ def build_approval_keyboard(session_key: str) -> InlineKeyboard:
                 KeyboardRow(buttons=[
                     _make_callback_button(
                         btn_id="allow",
-                        label="✅ 允许一次",
-                        visited_label="已允许",
+                        label=t("approval.qqbot_btn_once"),
+                        visited_label=t("approval.qqbot_visited_once"),
                         data=f"{APPROVAL_BUTTON_PREFIX}{session_key}:allow-once",
                         style=1,
                         group_id="approval",
                     ),
                     _make_callback_button(
                         btn_id="always",
-                        label="⭐ 始终允许",
-                        visited_label="已始终允许",
+                        label=t("approval.qqbot_btn_always"),
+                        visited_label=t("approval.qqbot_visited_always"),
                         data=f"{APPROVAL_BUTTON_PREFIX}{session_key}:allow-always",
                         style=1,
                         group_id="approval",
                     ),
                     _make_callback_button(
                         btn_id="deny",
-                        label="❌ 拒绝",
-                        visited_label="已拒绝",
+                        label=t("approval.qqbot_btn_deny"),
+                        visited_label=t("approval.qqbot_visited_deny"),
                         data=f"{APPROVAL_BUTTON_PREFIX}{session_key}:deny",
                         style=0,
                         group_id="approval",
@@ -305,18 +307,18 @@ def build_approval_text(req: ApprovalRequest) -> str:
 
 
 def _build_exec_text(req: ApprovalRequest) -> str:
-    lines: List[str] = ["🔐 **命令执行审批**", ""]
+    lines: List[str] = [t("approval.qqbot_exec_title"), ""]
     if req.command_preview:
         preview = req.command_preview[:300]
         lines.append(f"```\n{preview}\n```")
     if req.cwd:
-        lines.append(f"📁 目录: {req.cwd}")
+        lines.append(t("approval.qqbot_cwd_label", cwd=req.cwd))
     if req.title and req.title != req.command_preview:
         lines.append(f"📋 {req.title}")
     if req.description:
-        lines.append(f"📝 {req.description}")
+        lines.append(t("approval.qqbot_reason_label", description=req.description))
     lines.append("")
-    lines.append(f"⏱️ 超时: {req.timeout_sec} 秒")
+    lines.append(t("approval.qqbot_timeout_label", timeout=req.timeout_sec))
     return "\n".join(lines)
 
 
@@ -326,14 +328,14 @@ def _build_plugin_text(req: ApprovalRequest) -> str:
         else "🔵" if req.severity == "info"
         else "🟡"
     )
-    lines: List[str] = [f"{icon} **审批请求**", ""]
+    lines: List[str] = [f"{icon} {t('approval.qqbot_plugin_title')}", ""]
     lines.append(f"📋 {req.title}")
     if req.description:
-        lines.append(f"📝 {req.description}")
+        lines.append(t("approval.qqbot_reason_label", description=req.description))
     if req.tool_name:
-        lines.append(f"🔧 工具: {req.tool_name}")
+        lines.append(t("approval.qqbot_tool_label", tool_name=req.tool_name))
     lines.append("")
-    lines.append(f"⏱️ 超时: {req.timeout_sec} 秒")
+    lines.append(t("approval.qqbot_timeout_label", timeout=req.timeout_sec))
     return "\n".join(lines)
 
 
