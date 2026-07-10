@@ -342,6 +342,27 @@ class TestAllResolvableCommandsBypassGuard:
         # A file path split on whitespace: '/path/to/file.py' -> 'path/to/file.py'
         assert should_bypass_active_session("path/to/file.py") is False
 
+    def test_should_bypass_returns_true_for_plugin_command(self):
+        """Plugin-registered slash commands (not in COMMAND_REGISTRY) bypass too.
+
+        Plugin commands resolve via _iter_plugin_command_entries() (lazily fed
+        by the PluginManager), not resolve_command(). Without the
+        is_gateway_known_command() fallback in should_bypass_active_session, a
+        mid-run plugin command (/feishu-guide, /providers, …) would be injected
+        as user text into the running agent turn — the same class of bug as
+        #5057. This covers the gap the built-in-only spot-checks above leave."""
+        from unittest.mock import patch
+        import hermes_cli.commands as cmds
+
+        fake_plugin_commands = [("my-plugin-cmd", "a plugin command", "[args]")]
+        with patch.object(cmds, "_iter_plugin_command_entries",
+                          return_value=fake_plugin_commands):
+            # The plugin command must bypass even though resolve_command() can't
+            # resolve it (it's not in COMMAND_REGISTRY).
+            assert cmds.should_bypass_active_session("my-plugin-cmd") is True
+            # A genuinely unknown command still does not bypass.
+            assert cmds.should_bypass_active_session("totally-unknown") is False
+
 
 # ---------------------------------------------------------------------------
 # Tests: non-bypass messages still get queued
