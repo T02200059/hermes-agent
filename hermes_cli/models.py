@@ -533,7 +533,20 @@ _PROVIDER_MODELS: dict[str, list[str]] = {
         "deepseek/deepseek-r1-0528",
         "qwen/qwen3-235b-a22b-fp8",
     ],
+    # Owner providers (config.yaml providers.*.models)
+    "damodel": [
+        "glm-5.1",
+        "glm-5.2",
+        "mimo-v2.5",
+    ],
+    "yangtb": [
+        "qwen3-coder:30b",
+    ],
 }
+
+# Owner-managed providers: bypass _is_custom_current guard so they can
+# win over "custom" when the user typed /model <name>.
+_OWNER_PROVIDERS = frozenset({"damodel", "yangtb"})
 
 # ---------------------------------------------------------------------------
 # Nous Portal free-model helper
@@ -1941,7 +1954,7 @@ def detect_static_provider_for_model(
             or pid in _BORROWED_MODEL_PROVIDERS
         ):
             continue
-        if _is_custom_current:
+        if _is_custom_current and pid not in _OWNER_PROVIDERS:
             continue
         if any(name_lower == m.lower() for m in models):
             return (pid, name)
