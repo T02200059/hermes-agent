@@ -221,3 +221,70 @@ def test_genuine_message_works_without_patch_applied():
     mgr = _make_manager()
     mgr.prefetch_all("hello")
     assert mgr._providers[0].prefetch_calls == ["hello"]
+
+
+# ---------------------------------------------------------------------------
+# Emitter ↔ guard contract
+#
+# The guard's _SYNTHETIC_PREFIXES must match what the real emitter actually
+# produces. The emitter (tools/process_registry.py::format_process_notification)
+# uses U+2014 (em-dash, "—") as the separator. An earlier guard revision only
+# carried the ASCII hyphen (" - "), so the guard never matched real output — a
+# silent no-op. These tests bind the two together: if either side drifts (em-dash
+# → en-dash, prefix reworded) the contract breaks loudly instead of silently.
+# ---------------------------------------------------------------------------
+
+def test_guard_matches_real_async_delegation_emitter():
+    """_is_synthetic must recognize the output of the real single-task emitter."""
+    from tools.process_registry import format_process_notification
+
+    emitted = format_process_notification({
+        "type": "async_delegation",
+        "delegation_id": "del-123",
+        "goal": "do the thing",
+        "status": "completed",
+        "summary": "done",
+    })
+    assert emitted is not None
+    # Contract: the real emitter's first line is recognized as synthetic.
+    assert _is_synthetic(emitted) is True
+
+
+def test_guard_matches_real_async_delegation_batch_emitter():
+    """_is_synthetic must recognize the output of the real batch emitter."""
+    from tools.process_registry import format_process_notification
+
+    emitted = format_process_notification({
+        "type": "async_delegation",
+        "is_batch": True,
+        "delegation_id": "del-batch-1",
+        "goals": ["task a", "task b"],
+        "results": [
+            {"goal": "task a", "status": "completed", "summary": "a done"},
+            {"goal": "task b", "status": "completed", "summary": "b done"},
+        ],
+    })
+    assert emitted is not None
+    assert _is_synthetic(emitted) is True
+
+
+def test_emitter_uses_em_dash_not_ascii_hyphen():
+    """The emitter separator is U+2014 (em-dash). Regression for the guard bug
+    where only the ASCII hyphen variant was listed, so the guard never matched
+    real output. Pin the emitter to em-dash so a future change to ASCII hyphen
+    is caught here (the guard would silently stop matching)."""
+    from tools.process_registry import format_process_notification
+
+    emitted = format_process_notification({
+        "type": "async_delegation",
+        "delegation_id": "del-1",
+        "goal": "g",
+        "status": "completed",
+        "summary": "s",
+    })
+    assert emitted is not None
+    first_line = emitted.splitlines()[0]
+    # Em-dash present, ASCII hyphen absent in the header — the exact shape the
+    # guard's em-dash prefixes must continue to match.
+    assert "\u2014" in first_line
+    assert " - " not in first_line
