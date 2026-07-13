@@ -942,3 +942,61 @@ class TestProbeApiModelsUserAgent:
         assert ua and ua.startswith("hermes-cli/")
         # No Authorization was set, but UA must still be present.
         assert req.get_header("Authorization") is None
+
+
+# -- probe_api_models — env-var placeholder handling ---------------------------
+
+def _make_mock_response(body: bytes):
+    from unittest.mock import MagicMock
+    mock_resp = MagicMock()
+    mock_resp.__enter__ = MagicMock(return_value=mock_resp)
+    mock_resp.__exit__ = MagicMock(return_value=False)
+    mock_resp.read = MagicMock(return_value=body)
+    return mock_resp
+
+
+class TestProbeApiModelsEnvPlaceholder:
+    """Unexpanded ${VAR} placeholders in base_url must not crash urllib."""
+
+    def test_unexpanded_env_var_is_unreachable(self):
+        result = probe_api_models("sk-test", "${DAMODEL_BASE_URL_NOT_SET}")
+        assert result["models"] is None
+        assert result["probed_url"] == "${DAMODEL_BASE_URL_NOT_SET}"
+        assert result["resolved_base_url"] == ""
+        assert result["suggested_base_url"] is None
+        assert result["used_fallback"] is False
+
+    def test_expands_env_var_before_probing(self, monkeypatch):
+        monkeypatch.setenv("DAMODEL_BASE_URL", "https://genai.damodel.com/v1")
+        body = b'{"data":[{"id":"mimo-v2.5-pro"}]}'
+        with patch(
+            "hermes_cli.models.urllib.request.urlopen",
+            return_value=_make_mock_response(body),
+        ) as mock_urlopen:
+            result = probe_api_models("sk-test", "${DAMODEL_BASE_URL}")
+
+        assert result["models"] == ["mimo-v2.5-pro"]
+        req = mock_urlopen.call_args[0][0]
+        assert req.full_url == "https://genai.damodel.com/v1/models"
+
+    def test_partially_unexpanded_env_var_is_unreachable(self):
+        """Multiple placeholders where at least one is unset must not reach urllib."""
+        result = probe_api_models("sk-test", "${SCHEME}://${HOST}:${PORT}/v1")
+        assert result["models"] is None
+        assert result["probed_url"] == "${SCHEME}://${HOST}:${PORT}/v1"
+        assert result["resolved_base_url"] == ""
+
+
+class TestValidateRequestedModelEnvPlaceholder:
+    """validate_requested_model must not crash on unexpanded base_url templates."""
+
+    def test_damodel_with_unexpanded_base_url_is_accepted(self):
+        """Unexpanded base_url must not crash validation; model is accepted with a warning."""
+        result = validate_requested_model(
+            "mimo-v2.5-pro",
+            "damodel",
+            base_url="${DAMODEL_BASE_URL}",
+        )
+        assert result["accepted"] is True
+        assert result["persist"] is True
+        assert result["message"] is not None

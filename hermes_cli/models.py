@@ -3584,6 +3584,28 @@ def probe_api_models(
     identical, so the same parser works for both.
     """
     normalized = (base_url or "").strip().rstrip("/")
+
+    # Expand ${VAR} placeholders that may have survived config loading if the
+    # env var was not yet present in os.environ. If expansion leaves a literal
+    # ${...} behind (variable unset), treat the endpoint as unreachable rather
+    # than letting urllib crash with "unknown url type". Mirrors the P29 patch
+    # in agent/model_metadata.py.
+    if normalized and "${" in normalized:
+        try:
+            from hermes_cli.config import _expand_env_vars
+
+            normalized = str(_expand_env_vars(normalized))
+        except Exception:
+            pass
+        if "${" in normalized:
+            return {
+                "models": None,
+                "probed_url": normalized,
+                "resolved_base_url": "",
+                "suggested_base_url": None,
+                "used_fallback": False,
+            }
+
     if not normalized:
         return {
             "models": None,
