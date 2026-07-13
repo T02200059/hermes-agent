@@ -442,10 +442,12 @@ gateway:
   busy_drain_queued:       "⏳ Gateway {action} — queued for the next turn after it comes back."
   busy_drain_not_accepting: "⏳ Gateway is {action} and is not accepting another turn right now."
   busy_drain_no_work:      "⏳ Gateway is {action} and is not accepting new work right now."
+  busy_drain_maintenance:  "⏳ This agent is draining for a maintenance action and isn't accepting new turns right now. It'll be back in a moment — please resend shortly."
   busy_steer_ack:          "⏩ Steered into current run{status_detail}. Your message arrives after the next tool call."
   busy_queue_ack:          "⏳ Queued for the next turn{status_detail}. I'll respond once the current task finishes."
   busy_interrupt_ack:      "⚡ Interrupting current task{status_detail}. I'll respond to your message shortly."
   busy_subagent_queued:    "⏳ Subagent working{status_detail} — your message is queued for when it finishes (use /stop to cancel everything)."
+  busy_compress_queued:    "⏳ Compressing context{status_detail} — your message is queued for when it finishes (use /stop to cancel everything)."
 
   # Steer command replies.
   steer_failed:            "⚠️ Steer failed: {error}"
@@ -456,8 +458,13 @@ gateway:
   force_stop_pending:      "⚡ Force-stopped. The agent was still starting — session unlocked."
 
   # Long-running / inactivity notifications.
-  still_working:           "⏳ Still working... ({elapsed} min elapsed{status_detail})"
+  still_working:           "⏳ Working — {elapsed} min{status_detail}"
   no_activity_warning:     "⚠️ No activity for {elapsed} min. If the agent does not respond soon, it will be timed out in {remaining} min. You can continue waiting or use /reset."
+
+  # Agent timeout diagnostic — shown when a turn is killed for inactivity.
+  agent_timeout:           "⏱️ Agent inactive for {timeout_mins} min — no tool calls or API responses.\n{detail}\nTo increase the limit, set agent.gateway_timeout in config.yaml (value in seconds, 0 = no limit) and restart the gateway.\nTry again, or use /reset to start fresh."
+  agent_timeout_detail_tool:     "The agent appears stuck on tool `{cur_tool}` ({secs_since}s since last activity, iteration {iter_n}/{iter_max})."
+  agent_timeout_detail_activity: "Last activity: {last_desc} ({secs_since}s ago, iteration {iter_n}/{iter_max}). The agent may have been waiting on an API response."
 
   # Agent-running guard messages — shown when a slash command is blocked while agent is active.
   busy_agent_starting:     "Agent still starting — /steer queued for the next turn."
@@ -907,6 +914,7 @@ Install it with: `hermes skills install {path}`"
 
   clarify_undelivered: "[clarify prompt could not be delivered]"
   clarify_timeout: "[user did not respond within {minutes}m]"
+  clarify_timeout_notice: "⏳ No response received within {minutes} minutes; the current operation has stopped. Send me a message if you need anything."
   topic:
     not_telegram_dm:         "The /topic command is only available in Telegram private chats."
     no_session_db:           "Session database not available."

@@ -450,10 +450,12 @@ gateway:
   busy_drain_queued:        "⏳ 网关正在{action} — 消息已排队，待网关恢复后进入下一轮。"
   busy_drain_not_accepting: "⏳ 网关正在{action}，目前无法接受新的轮次。"
   busy_drain_no_work:       "⏳ 网关正在{action}，目前无法接受新任务。"
+  busy_drain_maintenance:   "⏳ 当前代理正在为维护操作排空，暂时不接受新的轮次。稍后会恢复，请稍后重新发送消息。"
   busy_steer_ack:           "⏩ 已导向当前运行{status_detail}。你的消息将在下一次工具调用后送达。"
   busy_queue_ack:           "⏳ 已排队到下一轮{status_detail}。当前任务完成后我会回复你。"
   busy_interrupt_ack:       "⚡ 正在中断当前任务{status_detail}。稍后我会回复你的消息。"
   busy_subagent_queued:     "⏳ 子代理运行中{status_detail} — 你的消息已排队等待完成（使用 /stop 取消所有操作）。"
+  busy_compress_queued:     "⏳ 正在压缩上下文{status_detail} — 你的消息已排队，待压缩完成后进入下一轮（使用 /stop 取消所有操作）。"
 
   # /steer 命令回复
   steer_failed:            "⚠️ 导向失败：{error}"
@@ -464,8 +466,13 @@ gateway:
   force_stop_pending:      "⚡ 已强制停止。代理尚未启动完成 — 会话已解锁。"
 
   # 长时间运行/无活动通知
-  still_working:           "⏳ 仍在工作中...（已耗时 {elapsed} 分钟{status_detail}）"
+  still_working:           "⏳ 工作中 — {elapsed} 分钟{status_detail}"
   no_activity_warning:     "⚠️ 已 {elapsed} 分钟无活动。如果代理未在 {remaining} 分钟内响应，将会超时。可继续等待或使用 /reset。"
+
+  # Agent 超时诊断 —— 当一轮因无活动被终止时显示。
+  agent_timeout:           "⏱️ 代理已不活跃 {timeout_mins} 分钟 — 没有工具调用或 API 响应。\n{detail}\n如需提高限制，请在 config.yaml 中设置 agent.gateway_timeout（单位为秒，0 = 无限制）并重启网关。\n请重试，或使用 /reset 重新开始。"
+  agent_timeout_detail_tool:     "代理似乎卡在工具 `{cur_tool}` 上（距离上次活动 {secs_since} 秒，迭代 {iter_n}/{iter_max}）。"
+  agent_timeout_detail_activity: "上次活动：{last_desc}（{secs_since} 秒前，迭代 {iter_n}/{iter_max}）。代理可能一直在等待 API 响应。"
 
   # Agent 运行中拦截文案 —— 当 slash command 在 Agent 活跃时被阻塞显示。
   busy_agent_starting:     "Agent 正在启动 — /steer 已排队到下一轮。"
@@ -909,6 +916,7 @@ gateway:
 
   clarify_undelivered: "[澄清提示未能送达]"
   clarify_timeout: "[用户未在 {minutes} 分钟内响应]"
+  clarify_timeout_notice: "⏳ 未在 {minutes} 分钟内收到回复，已停止当前操作。需要的话再发消息给我。"
   topic:
     not_telegram_dm:         "/topic 命令仅在 Telegram 私聊中可用。"
     no_session_db:           "会话数据库不可用。"

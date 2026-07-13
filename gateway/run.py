@@ -5563,10 +5563,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 status_detail=status_detail,
             )
         elif is_queue_mode and demoted_for_compression:
-            message = (
-                f"⏳ Compressing context{status_detail} — your message is queued for "
-                f"when it finishes (use /stop to cancel everything)."
-            )
+            message = t("gateway.busy_compress_queued", status_detail=status_detail)
         elif is_queue_mode:
             message = t("gateway.busy_queue_ack", status_detail=status_detail)
         else:
@@ -9542,7 +9539,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     # Force-clean the sentinel so the session is unlocked.
                     self._release_running_agent_state(_quick_key)
                     logger.info("HARD STOP (pending) for session %s — sentinel cleared", _quick_key)
-                    return EphemeralReply("⚡ Force-stopped. The agent was still starting — session unlocked.")
+                    return EphemeralReply(t("gateway.force_stop_pending"))
                 # Queue the message so it will be picked up after the
                 # agent starts.
                 adapter = self._adapter_for_source(source)
@@ -10287,11 +10284,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 "Refusing new turn for session %s — external drain active.",
                 _quick_key,
             )
-            return (
-                "⏳ This agent is draining for a maintenance action and isn't "
-                "accepting new turns right now. It'll be back in a moment — "
-                "please resend shortly."
-            )
+            return t("gateway.busy_drain_maintenance")
 
         # ── Claim this session before any await ───────────────────────
         # Between here and _run_agent registering the real AIAgent, there
@@ -18541,7 +18534,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                             safe_schedule_threadsafe(
                                 _status_adapter.send(
                                     _status_chat_id,
-                                    f"⏳ 未在 {int(timeout / 60)} 分钟内收到回复，已停止当前操作。需要的话再发消息给我。",
+                                    t("gateway.clarify_timeout_notice", minutes=int(timeout / 60)),
                                     metadata=_status_thread_metadata,
                                 ),
                                 _loop_for_step,
@@ -19444,7 +19437,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 _heartbeat_text = (
                     _generic_status_phrase("status")
                     if _long_running_mode == "generic"
-                    else f"⏳ Working — {_elapsed_mins} min{_status_detail}"
+                    else t("gateway.still_working", elapsed=_elapsed_mins, status_detail=_status_detail)
                 )
                 try:
                     _notify_res = None
@@ -19578,10 +19571,11 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                             try:
                                 await _warn_adapter.send(
                                     source.chat_id,
-                                    f"⚠️ No activity for {_elapsed_warn} min. "
-                                    f"If the agent does not respond soon, it will "
-                                    f"be timed out in {_remaining_mins} min. "
-                                    f"You can continue waiting or use /reset.",
+                                    t(
+                                        "gateway.no_activity_warning",
+                                        elapsed=_elapsed_warn,
+                                        remaining=_remaining_mins,
+                                    ),
                                     metadata=_status_thread_metadata,
                                 )
                             except Exception as _warn_err:
@@ -19639,30 +19633,30 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 _timeout_mins = int(_agent_timeout // 60) or 1
 
                 # Construct a user-facing message with diagnostic context.
-                _diag_lines = [
-                    f"⏱️ Agent inactive for {_timeout_mins} min — no tool calls "
-                    f"or API responses."
-                ]
                 if _cur_tool:
-                    _diag_lines.append(
-                        f"The agent appears stuck on tool `{_cur_tool}` "
-                        f"({_secs_ago:.0f}s since last activity, "
-                        f"iteration {_iter_n}/{_iter_max})."
+                    _timeout_detail = t(
+                        "gateway.agent_timeout_detail_tool",
+                        cur_tool=_cur_tool,
+                        secs_since=round(_secs_ago),
+                        iter_n=_iter_n,
+                        iter_max=_iter_max,
                     )
                 else:
-                    _diag_lines.append(
-                        f"Last activity: {_last_desc} ({_secs_ago:.0f}s ago, "
-                        f"iteration {_iter_n}/{_iter_max}). "
-                        "The agent may have been waiting on an API response."
+                    _timeout_detail = t(
+                        "gateway.agent_timeout_detail_activity",
+                        last_desc=_last_desc,
+                        secs_since=round(_secs_ago),
+                        iter_n=_iter_n,
+                        iter_max=_iter_max,
                     )
-                _diag_lines.append(
-                    "To increase the limit, set agent.gateway_timeout in config.yaml "
-                    "(value in seconds, 0 = no limit) and restart the gateway.\n"
-                    "Try again, or use /reset to start fresh."
+                _timeout_diag = t(
+                    "gateway.agent_timeout",
+                    timeout_mins=_timeout_mins,
+                    detail=_timeout_detail,
                 )
 
                 response = {
-                    "final_response": "\n".join(_diag_lines),
+                    "final_response": _timeout_diag,
                     "messages": result_holder[0].get("messages", []) if result_holder[0] else [],
                     "api_calls": _iter_n,
                     "tools": tools_holder[0] or [],
