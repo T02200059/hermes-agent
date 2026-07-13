@@ -131,12 +131,11 @@ def test_list_authenticated_providers_enumerates_dict_format_models(monkeypatch)
     ]
 
 
-def test_list_authenticated_providers_uses_live_models_for_user_provider(monkeypatch):
-    """User-defined OpenAI-compatible providers should prefer live /models.
+def test_list_authenticated_providers_prefers_config_models_over_live(monkeypatch):
+    """Config-listed models win: no live /models probe when models: is set.
 
-    Regression: CRS-style providers with a stale config ``models:`` dict kept
-    showing only the configured subset in the /model picker, even though their
-    /v1/models endpoint exposed newly added models.
+    OpenRouter/Bifrost-style endpoints would otherwise replace a deliberate
+    2-model whitelist with hundreds of live IDs and block /providers.
     """
     monkeypatch.setattr("agent.models_dev.fetch_models_dev", lambda: {})
     monkeypatch.setattr("hermes_cli.providers.HERMES_OVERLAYS", {})
@@ -146,7 +145,7 @@ def test_list_authenticated_providers_uses_live_models_for_user_provider(monkeyp
 
     def fake_fetch_api_models(api_key, base_url, **kwargs):
         calls.append((api_key, base_url, kwargs))
-        return ["old-configured-model", "new-live-model"]
+        return ["old-configured-model", "new-live-model", "hundreds-more"]
 
     monkeypatch.setattr("hermes_cli.models.fetch_api_models", fake_fetch_api_models)
 
@@ -175,9 +174,45 @@ def test_list_authenticated_providers_uses_live_models_for_user_provider(monkeyp
     )
 
     assert user_prov is not None
+    assert calls == [], "live /models must not run when config lists models"
+    assert user_prov["models"] == ["old-configured-model"]
+    assert user_prov["total_models"] == 1
+
+
+def test_list_authenticated_providers_probes_when_no_config_models(monkeypatch):
+    """Without an explicit models list, live /models still fills the picker."""
+    monkeypatch.setattr("agent.models_dev.fetch_models_dev", lambda: {})
+    monkeypatch.setattr("hermes_cli.providers.HERMES_OVERLAYS", {})
+    monkeypatch.setenv("CRS_TEST_KEY", "sk-test")
+
+    calls = []
+
+    def fake_fetch_api_models(api_key, base_url, **kwargs):
+        calls.append((api_key, base_url, kwargs))
+        return ["live-a", "live-b"]
+
+    monkeypatch.setattr("hermes_cli.models.fetch_api_models", fake_fetch_api_models)
+
+    providers = list_authenticated_providers(
+        current_provider="crs-henkee",
+        user_providers={
+            "crs-henkee": {
+                "name": "CRS Henkee",
+                "base_url": "http://127.0.0.1:3000/api/v1",
+                "key_env": "CRS_TEST_KEY",
+            }
+        },
+        custom_providers=[],
+        max_models=50,
+    )
+
+    user_prov = next(
+        (p for p in providers if p.get("is_user_defined") and p["slug"] == "crs-henkee"),
+        None,
+    )
+    assert user_prov is not None
     assert calls == [("sk-test", "http://127.0.0.1:3000/api/v1", {"headers": None})]
-    assert user_prov["models"] == ["old-configured-model", "new-live-model"]
-    assert user_prov["total_models"] == 2
+    assert user_prov["models"] == ["live-a", "live-b"]
 
 
 def test_user_provider_live_model_probe_uses_extra_headers(monkeypatch):

@@ -1923,9 +1923,14 @@ def list_authenticated_providers(
             # Also include the full models list from config.
             # Hermes writes ``models:`` as a dict keyed by model id, but older
             # or hand-edited configs may use strings or ``[{id: ...}]`` rows.
-            for model_id in _declared_model_ids(ep_cfg.get("models", [])):
+            # Only the ``models:`` key is treated as an intentional whitelist;
+            # a lone ``model`` / ``default_model`` is just the active selection
+            # and must not suppress live discovery for the current endpoint.
+            declared_models = _declared_model_ids(ep_cfg.get("models", []))
+            for model_id in declared_models:
                 if model_id not in models_list:
                     models_list.append(model_id)
+            has_models_whitelist = bool(declared_models)
 
             # If no explicit models, try the cached provider model list for
             # known provider slugs; otherwise fall back to live endpoint
@@ -1952,7 +1957,7 @@ def list_authenticated_providers(
                     if fb:
                         models_list = list(fb)
 
-            # Live model discovery for custom endpoints without cached models.
+            # Live model discovery for custom endpoints without a models: whitelist.
             api_key = str(ep_cfg.get("api_key", "") or "").strip()
             if not api_key:
                 key_env = str(ep_cfg.get("key_env", "") or "").strip()
@@ -1960,11 +1965,11 @@ def list_authenticated_providers(
             discover = ep_cfg.get("discover_models", True)
             if isinstance(discover, str):
                 discover = discover.lower() not in {"false", "no", "0"}
-            has_explicit_models = bool(models_list)
-            # [owner] Layer 1 is config-first: if the user explicitly listed
-            # models in config.yaml, trust that and skip live /models probing.
-            # Upstream's _can_probe_custom_provider + api_key check subsumes
-            # our simpler `not has_explicit_models` gate.
+            # [owner] Layer 1 is config-first on ``models:`` only: when the user
+            # listed a whitelist in config.yaml, trust that subset and skip
+            # live /models. OpenRouter/Bifrost otherwise replace a 2-model
+            # whitelist with 300+ IDs and block /providers on serial HTTP.
+            # A lone default_model/model does NOT count as a whitelist.
             _ep_url_norm = str(api_url).strip().rstrip("/").lower()
             _ep_slug_norm = str(ep_name).strip().lower()
             _ep_custom_slug_norm = custom_provider_slug(display_name).lower()
@@ -1977,8 +1982,15 @@ def list_authenticated_providers(
                     and _ep_url_norm == _current_base_url_norm
                 )
             )
-            should_probe = _can_probe_custom_provider(row_is_current=_ep_is_current) and bool(api_url) and discover and (
-                bool(api_key) or not has_explicit_models
+            should_probe = (
+                _can_probe_custom_provider(row_is_current=_ep_is_current)
+                and bool(api_url)
+                and discover
+                and not has_models_whitelist
+                # Keep legacy bare-endpoint behaviour: without an api_key,
+                # a non-empty model list (e.g. multi-entry model: groups) is
+                # treated as the intended subset and is not replaced by live.
+                and (bool(api_key) or not models_list)
             )
             if should_probe:
                 try:
@@ -2548,6 +2560,7 @@ def list_authenticated_providers(
                     "api_url": api_url,
                     "api_key": api_key,
                     "models": [],
+                    "has_models_whitelist": False,
                     "discover_models": discover,
                     "extra_headers": entry_extra_headers,
                 }
@@ -2570,7 +2583,10 @@ def list_authenticated_providers(
             if default_model and default_model not in groups[group_key]["models"]:
                 groups[group_key]["models"].append(default_model)
 
-            for model_id in _declared_model_ids(entry.get("models", {})):
+            declared = _declared_model_ids(entry.get("models", {}))
+            if declared:
+                groups[group_key]["has_models_whitelist"] = True
+            for model_id in declared:
                 if model_id not in groups[group_key]["models"]:
                     groups[group_key]["models"].append(model_id)
 
@@ -2627,25 +2643,11 @@ def list_authenticated_providers(
             # Ollama servers) — the /models endpoint often works without
             # auth.  The CLI's _model_flow_named_custom always probes, so
             # the Telegram/Discord picker should do the same for parity.
-            # Live-discovery policy:
-            # - With an api_key, the user has explicitly opted into the
-            #   endpoint and live /models is the source of truth — replace
-            #   the (possibly partial) ``models:`` subset configured for
-            #   context-length overrides with the full live catalog.
-            #   This is the Bifrost / aggregator-gateway case.
-            # - Without an api_key but with an explicit ``models:`` list
-            #   (or top-level ``model:``), the user is narrowing a public
-            #   endpoint to a specific subset (e.g. ollama.com /v1/models
-            #   returns 35 models but the user only wants 4). Preserve the
-            #   explicit list and skip live discovery.
-            # - Without an api_key AND no explicit models, fall through to
-            #   live discovery so bare-endpoint custom providers (local
-            #   llama.cpp / Ollama servers) still appear populated.
-            # - When discover_models: false is set, skip live discovery and
-            #   keep the explicit ``models:`` list regardless of whether an
-            #   api_key is present. This supports endpoints that expose a
-            #   full aggregator catalog via /models but only serve a subset
-            #   (parity with section 3's user ``providers:`` behaviour).
+            # Live-discovery policy (config-first on ``models:``, same as Layer 1):
+            # - Explicit ``models:`` whitelist → trust config, no live probe.
+            # - Lone ``model:`` is only the active selection → may still probe.
+            # - Empty models → live-probe bare custom endpoints.
+            # - discover_models: false → never probe.
             _grp_is_current = slug.lower() == _current_provider_norm or (
                 _current_provider_norm == "custom"
                 and bool(_current_base_url_norm)
@@ -2655,8 +2657,12 @@ def list_authenticated_providers(
             should_probe = (
                 _can_probe_custom_provider(row_is_current=_grp_is_current)
                 and bool(api_url)
-                and (bool(api_key) or not grp["models"])
+                and not grp.get("has_models_whitelist")
                 and grp.get("discover_models", True)
+                # Without an api_key, a non-empty collected model list
+                # (multi-entry model: groups, public endpoint subsets) is
+                # authoritative; do not replace it with a live dump.
+                and (bool(api_key) or not grp["models"])
             )
             if should_probe:
                 try:

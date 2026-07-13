@@ -765,14 +765,11 @@ def test_lmstudio_picker_skips_probe_when_not_configured(monkeypatch):
     assert "base_url" not in captured
 
 
-def test_custom_providers_uses_live_models_for_multi_model_endpoint(monkeypatch):
-    """Custom providers with api_key + base_url should prefer live /models.
+def test_custom_providers_prefers_config_models_over_live(monkeypatch):
+    """Section 4: explicit models: wins over live /models (config-first).
 
-    Custom providers (section 4 of list_authenticated_providers) point at
-    gateways like Bifrost that expose hundreds of models.  Reading only the
-    static ``models:`` dict from config.yaml leaves the /model picker with
-    a stale subset.  Live discovery fills the picker with all available
-    models from the endpoint.
+    Gateways like OpenRouter/Bifrost expose hundreds of IDs; when the user
+    already listed a subset in config, that subset is authoritative.
     """
     monkeypatch.setattr("agent.models_dev.fetch_models_dev", lambda: {})
     monkeypatch.setattr("hermes_cli.providers.HERMES_OVERLAYS", {})
@@ -815,15 +812,57 @@ def test_custom_providers_uses_live_models_for_multi_model_endpoint(monkeypatch)
     )
 
     assert gateway_prov is not None, "Custom provider group not found in results"
+    assert calls == [], "live /models must not run when config lists models"
+    assert gateway_prov["models"] == [
+        "gateway-model-a",
+        "gateway-model-b",
+    ], "Config models must be kept verbatim"
+    assert gateway_prov["total_models"] == 2
+
+
+def test_custom_providers_probes_when_no_config_models(monkeypatch):
+    """Section 4 without models: still live-probes to fill the picker."""
+    monkeypatch.setattr("agent.models_dev.fetch_models_dev", lambda: {})
+    monkeypatch.setattr("hermes_cli.providers.HERMES_OVERLAYS", {})
+
+    calls = []
+
+    def fake_fetch_api_models(api_key, base_url, **kwargs):
+        calls.append((api_key, base_url, kwargs))
+        return ["gateway-model-a", "gateway-model-b", "gateway-model-c"]
+
+    monkeypatch.setattr("hermes_cli.models.fetch_api_models", fake_fetch_api_models)
+
+    providers = list_authenticated_providers(
+        current_provider="openrouter",
+        current_base_url="https://openrouter.ai/api/v1",
+        custom_providers=[
+            {
+                "name": "my-gateway",
+                "api_key": "sk-gateway-key",
+                "base_url": "https://gateway.example.com/v1",
+            }
+        ],
+        max_models=50,
+    )
+
+    gateway_prov = next(
+        (
+            p
+            for p in providers
+            if p.get("api_url") == "https://gateway.example.com/v1"
+        ),
+        None,
+    )
+    assert gateway_prov is not None
     assert calls == [
         ("sk-gateway-key", "https://gateway.example.com/v1", {"headers": None})
-    ], "fetch_api_models must be called with the custom provider's credentials"
+    ]
     assert gateway_prov["models"] == [
         "gateway-model-a",
         "gateway-model-b",
         "gateway-model-c",
-    ], "Live models must replace the static subset"
-    assert gateway_prov["total_models"] == 3
+    ]
 
 
 def test_custom_provider_live_model_probe_uses_extra_headers(monkeypatch):
