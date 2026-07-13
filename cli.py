@@ -9379,7 +9379,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
 
     def _on_reasoning(self, reasoning_text: str):
         """Callback for intermediate reasoning display during tool-call loops."""
-        if not reasoning_text:
+        if not reasoning_text or not str(reasoning_text).strip():
             return
         self._reasoning_preview_buf = getattr(self, "_reasoning_preview_buf", "") + reasoning_text
         self._flush_reasoning_preview(force=False)
@@ -12580,7 +12580,11 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
             # the reasoning box to re-render after the final response.
             _reasoning_already_shown = getattr(self, '_reasoning_shown_this_turn', False)
             if self.show_reasoning and result and not _reasoning_already_shown:
-                reasoning = result.get("last_reasoning")
+                try:
+                    from agent.agent_runtime_helpers import displayable_reasoning
+                    reasoning = displayable_reasoning(result.get("last_reasoning"))
+                except Exception:
+                    reasoning = (result.get("last_reasoning") or "").strip() or None
                 if reasoning:
                     w = self._scrollback_box_width()
                     r_label = " Reasoning "
@@ -12589,12 +12593,12 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin):
                     r_bot = f"{_DIM}└{'─' * (w - 2)}┘{_RST}"
                     # Collapse long reasoning to the first 10 lines unless the
                     # user opted into full display via /reasoning full.
-                    lines = reasoning.strip().splitlines()
+                    lines = reasoning.splitlines()
                     if len(lines) > 10 and not getattr(self, "reasoning_full", False):
                         display_reasoning = "\n".join(lines[:10])
                         display_reasoning += f"\n{_DIM}  ... ({len(lines) - 10} more lines — /reasoning full to show){_RST}"
                     else:
-                        display_reasoning = reasoning.strip()
+                        display_reasoning = reasoning
                     _cprint(f"\n{r_top}\n{_DIM}{display_reasoning}{_RST}\n{r_bot}")
 
             if response and not response_previewed:

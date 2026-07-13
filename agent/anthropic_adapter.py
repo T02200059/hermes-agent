@@ -461,16 +461,38 @@ _KIMI_FAMILY_MODEL_PREFIXES = (
 )
 
 
-def _model_name_is_kimi_family(model: str | None) -> bool:
+def _normalize_kimi_model_id(model: str | None) -> str:
+    """Bare model id lowercased (strip ``vendor/`` prefix if present)."""
     if not isinstance(model, str):
-        return False
+        return ""
     m = model.strip().lower()
     if not m:
-        return False
-    # Strip vendor prefix (e.g. ``moonshotai/kimi-k2.5`` → ``kimi-k2.5``)
+        return ""
     if "/" in m:
         m = m.rsplit("/", 1)[-1]
+    return m
+
+
+def _model_name_is_kimi_family(model: str | None) -> bool:
+    m = _normalize_kimi_model_id(model)
+    if not m:
+        return False
     return m.startswith(_KIMI_FAMILY_MODEL_PREFIXES)
+
+
+def _kimi_model_always_thinking(model: str | None) -> bool:
+    """True for models whose thinking + Preserved Thinking cannot be disabled.
+
+    Official docs (``kimi-k2.7-code`` / highspeed): thinking is always on,
+    ``thinking.keep`` is always ``"all"``, and passing ``type: disabled``
+    errors. Company proxies (damodel/custom) that front the same upstream
+    share this contract when the model id is the k2.7-code family.
+    """
+    m = _normalize_kimi_model_id(model)
+    if not m:
+        return False
+    # kimi-k2.7-code, kimi-k2.7-code-highspeed, future kimi-k2.7-*
+    return m.startswith("kimi-k2.7")
 
 
 def _is_kimi_family_endpoint(base_url: str | None, model: str | None = None) -> bool:
@@ -2621,25 +2643,36 @@ def build_anthropic_kwargs(
     # MiniMax Anthropic-compat endpoints support thinking (manual mode only,
     # not adaptive).  Haiku does NOT support extended thinking — skip entirely.
     #
-    # Kimi's /coding endpoint speaks the Anthropic Messages protocol but has
-    # its own thinking semantics: when ``thinking.enabled`` is sent, Kimi
-    # validates the message history and requires every prior assistant
-    # tool-call message to carry OpenAI-style ``reasoning_content``.  The
-    # Anthropic path never populates that field, and
-    # ``convert_messages_to_anthropic`` strips all Anthropic thinking blocks
-    # on third-party endpoints — so the request fails with HTTP 400
-    # "thinking is enabled but reasoning_content is missing in assistant
-    # tool call message at index N".  Kimi's reasoning is driven server-side
-    # on the /coding route, so skip Anthropic's thinking parameter entirely
-    # for that host.  (Kimi on chat_completions enables thinking via
-    # extra_body in the ChatCompletionsTransport — see #13503.)
+    # Kimi Coding Plan (``kimi-for-coding`` / ``api.kimi.com/coding``) is
+    # different: thinking is **built-in and on by default**.  Live probes
+    # show real ``thinking`` blocks even when no thinking param is sent.
+    # Sending Anthropic-style ``thinking: {type: enabled, budget_tokens}``
+    # is unnecessary and historically caused HTTP 400 once tool-call
+    # history lacked ``reasoning_content`` echo.  So for Kimi we:
+    #   - leave thinking params OFF when enabled/default (server default),
+    #   - only send ``thinking: {type: "disabled"}`` when the user
+    #     explicitly disables reasoning (``reasoning_effort: none`` /
+    #     ``enabled: false``).
+    # Chat-completions Kimi still uses ``extra_body.thinking`` via
+    # ``KimiProfile`` (#13503).
     #
     # On 4.7+ the `thinking.display` field defaults to "omitted", which
     # silently hides reasoning text that Hermes surfaces in its CLI. We
     # request "summarized" so the reasoning blocks stay populated — matching
     # 4.6 behavior and preserving the activity-feed UX during long tool runs.
     _is_kimi_coding = _is_kimi_family_endpoint(base_url, model)
-    if reasoning_config and isinstance(reasoning_config, dict) and not _is_kimi_coding:
+    if _is_kimi_coding:
+        # Builtin / server-default thinking for Kimi Coding + family models.
+        # Only wire an explicit disable — and never for k2.7-code, which
+        # rejects ``thinking.type=disabled`` (always-on Preserved Thinking).
+        if (
+            reasoning_config
+            and isinstance(reasoning_config, dict)
+            and reasoning_config.get("enabled") is False
+            and not _kimi_model_always_thinking(model)
+        ):
+            kwargs["thinking"] = {"type": "disabled"}
+    elif reasoning_config and isinstance(reasoning_config, dict):
         if reasoning_config.get("enabled") is not False and "haiku" not in model.lower():
             effort = str(reasoning_config.get("effort", "medium")).lower()
             budget = THINKING_BUDGET.get(effort, 8000)

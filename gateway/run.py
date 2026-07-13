@@ -11720,15 +11720,22 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     else getattr(self, "_show_reasoning", False)
                 )
             if _show_reasoning_effective and response and not _intentional_silence:
-                last_reasoning = agent_result.get("last_reasoning")
+                # Skip whitespace-only / single-space pad stubs (Kimi Coding
+                # Plan builtin thinking sometimes returns thinking:" "; Hermes
+                # also pads reasoning_content with " " for protocol replay).
+                # An empty fenced block on Feishu looked like a dirty "1-char"
+                # thinking card.
+                from agent.agent_runtime_helpers import displayable_reasoning as _disp_reasoning
+
+                last_reasoning = _disp_reasoning(agent_result.get("last_reasoning"))
                 if last_reasoning:
                     # Collapse long reasoning to keep messages readable
-                    lines = last_reasoning.strip().splitlines()
+                    lines = last_reasoning.splitlines()
                     if len(lines) > 15:
                         display_reasoning = "\n".join(lines[:15])
                         display_reasoning += f"\n_... ({len(lines) - 15} more lines)_"
                     else:
-                        display_reasoning = last_reasoning.strip()
+                        display_reasoning = last_reasoning
                     # Render style is per-platform: Discord defaults to "-# "
                     # subtext (native small grey metadata text); other
                     # platforms keep the fenced code block.
@@ -17276,6 +17283,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 if not _thinking_enabled:
                     return
                 thinking_text = preview if tool_name == "_thinking" else tool_name
+                # Drop whitespace-only / pad stubs (Kimi Coding single-space
+                # thinking blocks) so they never become progress bubbles.
+                if isinstance(thinking_text, str):
+                    thinking_text = thinking_text.strip() or None
                 msg = f"💬 {thinking_text}" if thinking_text else None
                 if msg:
                     progress_queue.put(msg)

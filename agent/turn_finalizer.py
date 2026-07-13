@@ -383,18 +383,15 @@ def finalize_turn(
     # but stop at the user message that started this turn — anything
     # earlier is from a prior turn and must not leak into the reasoning
     # box (confusing stale display; #17055).  Within the current turn
-    # we still want the *most recent* non-empty reasoning: many
-    # providers (Claude thinking, DeepSeek v4, Codex Responses) emit
-    # reasoning on the tool-call step and leave the final-answer step
-    # with reasoning=None, so picking only the last assistant would
-    # silently drop legitimate same-turn reasoning.
-    last_reasoning = None
-    for msg in reversed(messages):
-        if msg.get("role") == "user":
-            break  # turn boundary — don't cross into prior turns
-        if msg.get("role") == "assistant" and msg.get("reasoning"):
-            last_reasoning = msg["reasoning"]
-            break
+    # we still want the *most recent* displayable reasoning: many
+    # providers (Claude thinking, DeepSeek v4, Codex Responses, Kimi
+    # Coding Plan) emit reasoning on the tool-call step and leave the
+    # final-answer step with reasoning=None / a whitespace pad, so
+    # picking only the last assistant would silently drop legitimate
+    # same-turn reasoning or surface a dirty " " stub.
+    from agent.agent_runtime_helpers import extract_last_turn_reasoning
+
+    last_reasoning = extract_last_turn_reasoning(messages)
 
     # Build result with interrupt info if applicable
     result = {

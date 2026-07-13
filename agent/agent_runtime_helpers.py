@@ -1306,6 +1306,48 @@ _TRANSIENT_TRANSPORT_ERRORS = frozenset({
 })
 
 
+def displayable_reasoning(text: Any) -> Optional[str]:
+    """Return stripped reasoning suitable for UI, or None if empty/pad-only.
+
+    Several thinking-mode providers (Kimi Coding Plan, DeepSeek) require a
+    non-empty ``reasoning_content`` on replayed tool-call turns.  Hermes
+    satisfies that with a single-space pad (``" "``), and some endpoints
+    themselves emit whitespace-only thinking stubs with a signature.  Those
+    must never surface as a 💭 reasoning box on Feishu/CLI/TUI — they look
+    like empty/"1 char" junk to users.
+    """
+    if not isinstance(text, str):
+        return None
+    stripped = text.strip()
+    return stripped or None
+
+
+def extract_last_turn_reasoning(messages: List[Dict[str, Any]]) -> Optional[str]:
+    """Most recent *displayable* reasoning from the current turn only.
+
+    Walks backwards, stops at the user message that opened this turn
+    (so prior-turn reasoning cannot leak — #17055).  Within the turn,
+    skips whitespace-only / pad stubs and prefers the latest real
+    thought (often on a tool-call step when the final-answer step has
+    none).
+    """
+    if not messages:
+        return None
+    for msg in reversed(messages):
+        if not isinstance(msg, dict):
+            continue
+        if msg.get("role") == "user":
+            break
+        if msg.get("role") != "assistant":
+            continue
+        # Prefer the display field; fall back to provider echo field when
+        # older rows stored real text only under reasoning_content.
+        for key in ("reasoning", "reasoning_content"):
+            shown = displayable_reasoning(msg.get(key))
+            if shown:
+                return shown
+    return None
+
 
 def extract_reasoning(agent, assistant_message) -> Optional[str]:
     """
@@ -2828,56 +2870,42 @@ def copy_reasoning_content_for_api(agent, source_msg: dict, api_msg: dict) -> No
         elif existing == "":
             api_msg["reasoning_content"] = " "
         else:
+            # Preserve verbatim — including single-space pads written at
+            # creation time, AND full Kimi k2.7-code Preserved Thinking
+            # chains that must be echoed as-is (official Moonshot docs).
             api_msg["reasoning_content"] = existing
         return
 
-    # 2. Cross-provider poisoned history (#15748): on DeepSeek/Kimi,
-    # if the source turn has tool_calls AND a 'reasoning' field but no
-    # 'reasoning_content' key, the 'reasoning' text was written by a
-    # prior provider (e.g. MiniMax) — DeepSeek's own _build_assistant_message
-    # pins reasoning_content at creation time for tool-call turns, so the
-    # shape (reasoning set, reasoning_content absent, tool_calls present)
-    # is unreachable from same-provider DeepSeek history after this fix.
-    # Inject a single space to satisfy the API without leaking another
-    # provider's chain of thought to DeepSeek/Kimi. Space (not "")
-    # because DeepSeek V4 Pro rejects empty-string reasoning_content
-    # in thinking mode (refs #17341).
+    # 2. Promote the internal 'reasoning' display field to wire
+    # ``reasoning_content`` when the active provider enforces echo-back.
+    #
+    # Historically a special tool_calls branch (#15748) replaced any
+    # pre-existing ``reasoning`` text with a space pad to avoid leaking
+    # cross-provider CoT. That destroyed same-provider Kimi/DeepSeek
+    # history where only ``reasoning`` was populated (and violates
+    # Kimi k2.7-code "keep reasoning_content as-is"). Promote the real
+    # text whenever it is displayable; pad only when nothing usable
+    # exists (step 3). Whitespace-only stubs are treated as missing.
     normalized_reasoning = source_msg.get("reasoning")
-    if (
-        needs_thinking_pad
-        and source_msg.get("tool_calls")
-        and isinstance(normalized_reasoning, str)
-        and normalized_reasoning
-    ):
-        api_msg["reasoning_content"] = " "
-        return
-
-    # 3. Healthy session: promote 'reasoning' field to 'reasoning_content'
-    # for providers that use the internal 'reasoning' key.
-    # This must happen before the unconditional empty-string fallback so
-    # genuine reasoning content is not overwritten (#15812 regression in
-    # PR #15478). Only promote for providers that enforce echo-back —
-    # strict providers reject the field (refs #45655).
-    if isinstance(normalized_reasoning, str) and normalized_reasoning:
+    if isinstance(normalized_reasoning, str) and normalized_reasoning.strip():
         if needs_thinking_pad:
             api_msg["reasoning_content"] = normalized_reasoning
         else:
             api_msg.pop("reasoning_content", None)
         return
 
-    # 4. DeepSeek / Kimi thinking mode: all assistant messages need
+    # 3. DeepSeek / Kimi thinking mode: all assistant messages need
     # reasoning_content. Inject a single space to satisfy the provider's
-    # requirement when no explicit reasoning content is present. Covers
-    # both tool-call turns (already-poisoned history with no reasoning
-    # at all) and plain text turns. Space (not "") because DeepSeek V4
-    # Pro tightened validation and rejects empty string with HTTP 400
-    # ("The reasoning content in the thinking mode must be passed back
-    # to the API"). Refs #17341.
+    # non-empty check when no explicit reasoning content is present.
+    # Space (not "") because DeepSeek V4 Pro rejects empty string with
+    # HTTP 400. Refs #17341. Note: a space pad satisfies "field present"
+    # but is NOT a substitute for full Kimi k2.7-code preserved chains —
+    # those must be captured at write time (build_assistant_message).
     if needs_thinking_pad:
         api_msg["reasoning_content"] = " "
         return
 
-    # 5. reasoning_content was present but not a string (e.g. None after
+    # 4. reasoning_content was present but not a string (e.g. None after
     # context compaction).  Don't pass null to the API.
     api_msg.pop("reasoning_content", None)
 

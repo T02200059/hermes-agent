@@ -4718,7 +4718,13 @@ class AIAgent:
             self._record_streamed_assistant_text(text)
 
     def _fire_reasoning_delta(self, text: str) -> None:
-        """Fire reasoning callback if registered."""
+        """Fire reasoning callback if registered.
+
+        Whitespace-only chunks (Kimi Coding pad/stub thinking) are dropped
+        so display layers never open an empty reasoning box mid-stream.
+        """
+        if not isinstance(text, str) or not text.strip():
+            return
         cb = self.reasoning_callback
         if cb is not None:
             try:
@@ -5471,24 +5477,45 @@ class AIAgent:
         return result
 
     def _needs_kimi_tool_reasoning(self) -> bool:
-        """Return True when the current provider is Kimi / Moonshot thinking mode.
+        """Return True when the current route requires Kimi thinking echo-back.
 
-        Kimi ``/coding`` and Moonshot thinking mode both require
-        ``reasoning_content`` on every assistant tool-call message; omitting
-        it causes the next replay to fail with HTTP 400.
+        Kimi Coding Plan, Moonshot pay-as-you-go, and company proxies that
+        front the official Kimi API (damodel, custom, ark, …) all require
+        ``reasoning_content`` on replayed assistant (esp. tool-call) turns —
+        ``kimi-k2.7-code`` additionally requires **full as-is** history
+        (Preserved Thinking always on). Omitting the field → HTTP 400.
 
-        Detection is host-driven, not model-name-driven: aggregators like
-        OpenRouter that re-export Kimi/Moonshot models speak their own
-        protocol and reject ``reasoning_content`` echoes. We only enable the
-        kimi-reasoning replay when the request actually targets a
-        kimi/moonshot endpoint or the dedicated kimi-coding provider.
+        Detection layers (any one is enough):
+
+        1. Dedicated provider slug: ``kimi-coding`` / ``kimi-coding-cn``
+        2. Official hosts: ``api.kimi.com``, ``moonshot.ai``, ``moonshot.cn``
+        3. **Kimi-family model id** on any other host (damodel / custom / …)
+
+        Layer 3 is skipped for well-known aggregators (OpenRouter, …) that
+        re-export Kimi models under *their* protocol and reject
+        ``reasoning_content`` on input.
         """
-        return (
-            self.provider in {"kimi-coding", "kimi-coding-cn"}
-            or base_url_host_matches(self.base_url, "api.kimi.com")
+        if self.provider in {"kimi-coding", "kimi-coding-cn"}:
+            return True
+        if (
+            base_url_host_matches(self.base_url, "api.kimi.com")
             or base_url_host_matches(self.base_url, "moonshot.ai")
             or base_url_host_matches(self.base_url, "moonshot.cn")
-        )
+        ):
+            return True
+
+        from agent.anthropic_adapter import _model_name_is_kimi_family
+
+        if not _model_name_is_kimi_family(self.model):
+            return False
+
+        # Aggregators that re-export Kimi under a non-Moonshot wire format.
+        provider = (self.provider or "").lower()
+        if provider in {"openrouter", "nous"}:
+            return False
+        if base_url_host_matches(self.base_url, "openrouter.ai"):
+            return False
+        return True
 
     def _needs_deepseek_tool_reasoning(self) -> bool:
         """Return True when the current provider is DeepSeek thinking mode.

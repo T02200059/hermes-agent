@@ -58,11 +58,27 @@ class KimiProfile(ProviderProfile):
         'reasoning_effort'" (HTTP 400). This mirrors the kimi-k2 handling on the
         opencode-go relay: send effort when one is requested, otherwise fall
         back to ``extra_body.thinking`` — never both.
+
+        ``kimi-k2.7-code`` (and highspeed): thinking + Preserved Thinking are
+        always on. Official docs say do not pass the ``thinking`` parameter
+        (and ``type: disabled`` errors). For that family we omit the toggle
+        entirely and only optionally send ``reasoning_effort``.
         """
-        extra_body = {}
-        top_level = {}
+        extra_body: dict[str, Any] = {}
+        top_level: dict[str, Any] = {}
+
+        model = context.get("model")
+        try:
+            from agent.anthropic_adapter import _kimi_model_always_thinking
+
+            always_thinking = _kimi_model_always_thinking(model)
+        except Exception:
+            always_thinking = False
 
         if not reasoning_config or not isinstance(reasoning_config, dict):
+            if always_thinking:
+                # Server default is on; do not send thinking param.
+                return extra_body, top_level
             # No config → thinking enabled, let the server pick the depth.
             # (Previously also sent reasoning_effort="medium", which paired
             # thinking + effort on every default call.)
@@ -71,6 +87,9 @@ class KimiProfile(ProviderProfile):
 
         enabled = reasoning_config.get("enabled", True)
         if enabled is False:
+            if always_thinking:
+                # k2.7-code rejects disabled — omit rather than 400.
+                return extra_body, top_level
             extra_body["thinking"] = {"type": "disabled"}
             return extra_body, top_level
 
@@ -79,6 +98,9 @@ class KimiProfile(ProviderProfile):
         effort = (reasoning_config.get("effort") or "").strip().lower()
         if effort in {"low", "medium", "high"}:
             top_level["reasoning_effort"] = effort
+        elif always_thinking:
+            # k2.7-code: leave thinking param off (always-on server-side).
+            pass
         else:
             extra_body["thinking"] = {"type": "enabled"}
 

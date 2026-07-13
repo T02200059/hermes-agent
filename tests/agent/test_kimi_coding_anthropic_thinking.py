@@ -53,7 +53,12 @@ class TestKimiCodingSkipsAnthropicThinking:
         )
         assert "output_config" not in kwargs
 
-    def test_kimi_coding_with_explicit_disabled_also_omits(self) -> None:
+    def test_kimi_coding_with_explicit_disabled_sends_disabled(self) -> None:
+        """Builtin thinking is on by default; only explicit disable is wired.
+
+        Pre-k2.7 models (k2.5/k2.6) still accept ``thinking: {type: disabled}``
+        when the user sets ``reasoning_effort: none``.
+        """
         from agent.anthropic_adapter import build_anthropic_kwargs
 
         kwargs = build_anthropic_kwargs(
@@ -64,7 +69,40 @@ class TestKimiCodingSkipsAnthropicThinking:
             reasoning_config={"enabled": False},
             base_url="https://api.kimi.com/coding",
         )
-        assert "thinking" not in kwargs
+        assert kwargs.get("thinking") == {"type": "disabled"}
+        assert "output_config" not in kwargs
+
+    def test_kimi_k27_code_refuses_thinking_disabled(self) -> None:
+        """k2.7-code always-on thinking — never send type=disabled (API 400)."""
+        from agent.anthropic_adapter import build_anthropic_kwargs
+
+        for model in ("kimi-k2.7-code", "kimi-k2.7-code-highspeed"):
+            kwargs = build_anthropic_kwargs(
+                model=model,
+                messages=[{"role": "user", "content": "hello"}],
+                tools=None,
+                max_tokens=4096,
+                reasoning_config={"enabled": False},
+                base_url="https://api.moonshot.ai/v1",
+            )
+            assert "thinking" not in kwargs, model
+            assert "output_config" not in kwargs
+
+    def test_kimi_for_coding_model_default_omits_thinking_enable(self) -> None:
+        """Default/enabled configs must not send Anthropic thinking.enabled."""
+        from agent.anthropic_adapter import build_anthropic_kwargs
+
+        for cfg in (None, {"enabled": True, "effort": "high"}):
+            kwargs = build_anthropic_kwargs(
+                model="kimi-for-coding",
+                messages=[{"role": "user", "content": "hello"}],
+                tools=None,
+                max_tokens=4096,
+                reasoning_config=cfg,
+                base_url="https://api.kimi.com/coding",
+            )
+            assert "thinking" not in kwargs
+            assert "output_config" not in kwargs
 
     def test_non_kimi_third_party_still_gets_thinking(self) -> None:
         """MiniMax and other third-party Anthropic endpoints must retain thinking."""

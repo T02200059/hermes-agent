@@ -1013,7 +1013,23 @@ def build_assistant_message(agent, assistant_message, finish_reason: str) -> dic
     if reasoning_text and agent.verbose_logging:
         logging.debug(f"Captured reasoning ({len(reasoning_text)} chars): {reasoning_text}")
 
-    if reasoning_text and agent.reasoning_callback:
+    # Sanitize surrogates from API response — some models (e.g. Kimi/GLM via Ollama)
+    # can return invalid surrogate code points that crash json.dumps() on persist.
+    _raw_content = assistant_message.content or ""
+    _san_content = _sanitize_surrogates(_raw_content)
+    if reasoning_text:
+        reasoning_text = _sanitize_surrogates(reasoning_text)
+
+    # Display field vs protocol field:
+    # - ``reasoning`` is for CLI/gateway/TUI 💭 boxes — whitespace-only pads
+    #   and Kimi Coding stub thinking (" ") must not appear there.
+    # - ``reasoning_content`` (set below) remains the wire/replay field and
+    #   may still hold the single-space pad for Kimi/DeepSeek echo rules.
+    from agent.agent_runtime_helpers import displayable_reasoning
+
+    _display_reasoning = displayable_reasoning(reasoning_text)
+
+    if _display_reasoning and agent.reasoning_callback:
         # Skip callback when streaming is active — reasoning was already
         # displayed during the stream via one of two paths:
         #   (a) _fire_reasoning_delta (structured reasoning_content deltas)
@@ -1024,16 +1040,9 @@ def build_assistant_message(agent, assistant_message, finish_reason: str) -> dic
         # CLI post-response display fallback (cli.py _reasoning_shown_this_turn).
         if not agent.stream_delta_callback and not agent._stream_callback:
             try:
-                agent.reasoning_callback(reasoning_text)
+                agent.reasoning_callback(_display_reasoning)
             except Exception:
                 pass
-
-    # Sanitize surrogates from API response — some models (e.g. Kimi/GLM via Ollama)
-    # can return invalid surrogate code points that crash json.dumps() on persist.
-    _raw_content = assistant_message.content or ""
-    _san_content = _sanitize_surrogates(_raw_content)
-    if reasoning_text:
-        reasoning_text = _sanitize_surrogates(reasoning_text)
 
     # Strip inline reasoning tags (<think>…</think> etc.) from the stored
     # assistant content.  Reasoning was already captured into
@@ -1064,7 +1073,7 @@ def build_assistant_message(agent, assistant_message, finish_reason: str) -> dic
     msg = {
         "role": "assistant",
         "content": _san_content,
-        "reasoning": reasoning_text,
+        "reasoning": _display_reasoning,
         "finish_reason": finish_reason,
     }
 

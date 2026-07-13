@@ -192,14 +192,14 @@ class TestCopyReasoningContentForApi:
         agent._copy_reasoning_content_for_api(source, api_msg)
         assert api_msg["reasoning_content"] == "thought trace"
 
-    def test_deepseek_poisoned_cross_provider_history_padded(self) -> None:
-        """Cross-provider tool-call turn (#15748): MiniMax reasoning leaks
-        to DeepSeek/Kimi request.
+    def test_deepseek_tool_call_promotes_reasoning_when_content_missing(self) -> None:
+        """Promote real ``reasoning`` to wire ``reasoning_content``.
 
-        If the source turn has tool_calls AND a 'reasoning' field but NO
-        'reasoning_content' key, it's from a prior provider (the DeepSeek
-        build path pins reasoning_content at creation). Inject " " instead
-        of forwarding the prior provider's chain of thought.
+        Older #15748 behaviour forced a space pad on tool-call turns that
+        only had ``reasoning`` (to block cross-provider CoT leakage). That
+        destroyed same-provider preserved-thinking history required by
+        Kimi k2.7-code / DeepSeek. Promote the real text whenever it
+        exists; pad only when nothing usable is present.
         """
         agent = _make_agent(provider="deepseek", model="deepseek-v4-flash")
         source = {
@@ -210,10 +210,10 @@ class TestCopyReasoningContentForApi:
         }
         api_msg: dict = {}
         agent._copy_reasoning_content_for_api(source, api_msg)
-        assert api_msg["reasoning_content"] == " "
+        assert api_msg["reasoning_content"] == "MiniMax chain of thought from a prior turn"
 
-    def test_kimi_poisoned_cross_provider_history_padded(self) -> None:
-        """Kimi path of #15748 — same rule as DeepSeek."""
+    def test_kimi_tool_call_promotes_reasoning_when_content_missing(self) -> None:
+        """Kimi path — promote real reasoning text for full echo-back."""
         agent = _make_agent(provider="kimi-coding", model="kimi-k2.5")
         source = {
             "role": "assistant",
@@ -223,7 +223,43 @@ class TestCopyReasoningContentForApi:
         }
         api_msg: dict = {}
         agent._copy_reasoning_content_for_api(source, api_msg)
-        assert api_msg["reasoning_content"] == " "
+        assert api_msg["reasoning_content"] == "DeepSeek chain of thought from a prior turn"
+
+    def test_damodel_kimi_k27_preserves_full_reasoning_content(self) -> None:
+        """Company proxy (damodel) fronting official Kimi must echo full chains."""
+        agent = _make_agent(
+            provider="damodel",
+            model="kimi-k2.7-code",
+            base_url="https://genai.damodel.com/v1",
+        )
+        assert agent._needs_kimi_tool_reasoning() is True
+        source = {
+            "role": "assistant",
+            "content": "",
+            "reasoning_content": "full preserved thinking chain from prior tool step",
+            "tool_calls": [{"id": "c1", "function": {"name": "terminal"}}],
+        }
+        api_msg: dict = {}
+        agent._copy_reasoning_content_for_api(source, api_msg)
+        assert api_msg["reasoning_content"] == (
+            "full preserved thinking chain from prior tool step"
+        )
+
+    def test_custom_damodel_kimi_k27_pads_when_missing(self) -> None:
+        agent = _make_agent(
+            provider="custom",
+            model="kimi-k2.7-code",
+            base_url="https://genai.damodel.com/v1",
+        )
+        assert agent._needs_thinking_reasoning_pad() is True
+        source = {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [{"id": "c1", "function": {"name": "terminal"}}],
+        }
+        api_msg: dict = {}
+        agent._copy_reasoning_content_for_api(source, api_msg)
+        assert api_msg.get("reasoning_content") == " "
 
     def test_kimi_path_still_works(self) -> None:
         """Existing Kimi detection still pads reasoning_content."""
@@ -474,13 +510,39 @@ class TestNeedsKimiToolReasoning:
         agent = _make_agent(provider=provider, model="kimi-k2", base_url=base_url)
         assert agent._needs_kimi_tool_reasoning() is True
 
+    @pytest.mark.parametrize(
+        "provider,model,base_url",
+        [
+            ("damodel", "kimi-k2.7-code", "https://genai.damodel.com/v1"),
+            ("damodel", "kimi-k2.6", "https://genai.damodel.com/v1"),
+            ("custom", "kimi-k2.7-code", "https://genai.damodel.com/v1"),
+            ("custom", "kimi-k2.7-code-highspeed", "https://proxy.example.com/v1"),
+            ("volcengine-ark", "kimi-k2.7-code", "https://ark.cn-beijing.volces.com/api/coding/v3"),
+            ("custom", "moonshotai/kimi-k2.6", "https://llm.internal.example/v1"),
+        ],
+    )
+    def test_kimi_model_on_company_proxy(
+        self, provider: str, model: str, base_url: str
+    ) -> None:
+        """Model-id detection: company proxies fronting official Kimi."""
+        agent = _make_agent(provider=provider, model=model, base_url=base_url)
+        assert agent._needs_kimi_tool_reasoning() is True
+
     def test_non_kimi_provider(self) -> None:
         agent = _make_agent(
             provider="openrouter",
             model="moonshotai/kimi-k2",
             base_url="https://openrouter.ai/api/v1",
         )
-        # model name contains 'moonshot' but host is openrouter — should be False
+        # model name is Kimi family but host is openrouter — should be False
+        assert agent._needs_kimi_tool_reasoning() is False
+
+    def test_damodel_non_kimi_model_not_forced(self) -> None:
+        agent = _make_agent(
+            provider="damodel",
+            model="mimo-v2.5-pro",
+            base_url="https://genai.damodel.com/v1",
+        )
         assert agent._needs_kimi_tool_reasoning() is False
 
 

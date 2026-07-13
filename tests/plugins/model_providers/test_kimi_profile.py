@@ -72,16 +72,36 @@ class TestKimiReasoningWireShape:
 
     def test_disabled_sends_thinking_disabled_only(self, kimi_profile):
         extra_body, top_level = kimi_profile.build_api_kwargs_extras(
-            reasoning_config={"enabled": False}
+            reasoning_config={"enabled": False},
+            model="kimi-k2.5",
         )
         assert extra_body == {"thinking": {"type": "disabled"}}
         assert top_level == {}
 
     def test_disabled_ignores_effort(self, kimi_profile):
         extra_body, top_level = kimi_profile.build_api_kwargs_extras(
-            reasoning_config={"enabled": False, "effort": "high"}
+            reasoning_config={"enabled": False, "effort": "high"},
+            model="kimi-k2.6",
         )
         assert extra_body == {"thinking": {"type": "disabled"}}
+        assert top_level == {}
+
+    def test_k27_code_omits_thinking_param_by_default(self, kimi_profile):
+        """k2.7-code: do not send thinking (always on server-side)."""
+        extra_body, top_level = kimi_profile.build_api_kwargs_extras(
+            reasoning_config=None,
+            model="kimi-k2.7-code",
+        )
+        assert extra_body == {}
+        assert top_level == {}
+
+    def test_k27_code_disabled_is_noop(self, kimi_profile):
+        """k2.7-code rejects type=disabled — omit rather than 400."""
+        extra_body, top_level = kimi_profile.build_api_kwargs_extras(
+            reasoning_config={"enabled": False},
+            model="kimi-k2.7-code-highspeed",
+        )
+        assert extra_body == {}
         assert top_level == {}
 
     @pytest.mark.parametrize(
