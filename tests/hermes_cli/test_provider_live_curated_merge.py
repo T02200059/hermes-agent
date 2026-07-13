@@ -169,6 +169,35 @@ class TestKimiCodingPlanModelIds:
         assert "kimi-k2.6" not in result
         assert "kimi-k2-thinking" not in result
 
+    def test_sk_kimi_key_filters_extra_live_models(self):
+        """Live /v1/models must be filtered to the Coding Plan allow-list."""
+        profile = MagicMock()
+        profile.auth_type = "api_key"
+        profile.base_url = "https://api.moonshot.ai/v1"
+        profile.fetch_models.return_value = [
+            "kimi-for-coding",
+            "kimi-k2.7-code",
+            "kimi-for-coding-highspeed",
+            "kimi-k2.6",
+        ]
+        profile.fallback_models = None
+
+        with (
+            patch("providers.get_provider_profile", return_value=profile),
+            patch(
+                "hermes_cli.auth.resolve_api_key_provider_credentials",
+                return_value={
+                    "api_key": "sk-kimi-plan-key",
+                    "base_url": "https://api.kimi.com/coding",
+                },
+            ),
+        ):
+            result = provider_model_ids("kimi-coding")
+
+        assert result == ["kimi-for-coding", "kimi-for-coding-highspeed"]
+        assert "kimi-k2.7-code" not in result
+        assert "kimi-k2.6" not in result
+
     def test_sk_kimi_fallback_when_live_empty(self):
         profile = MagicMock()
         profile.auth_type = "api_key"

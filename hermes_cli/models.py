@@ -2488,10 +2488,11 @@ def provider_model_ids(provider: Optional[str], *, force_refresh: bool = False) 
             if normalized in {"kimi-coding", "kimi-coding-cn"} and _is_kimi_coding_plan_endpoint(
                 api_key, base_url
             ):
+                allowed = {m.lower() for m in _KIMI_CODING_PLAN_MODELS}
                 if api_key:
                     live = _p.fetch_models(api_key=api_key, base_url=base_url or None)
                     if live:
-                        return list(live)
+                        return [m for m in live if str(m).lower() in allowed]
                 return list(_KIMI_CODING_PLAN_MODELS)
             if api_key:
                 live = _p.fetch_models(api_key=api_key, base_url=base_url or None)
