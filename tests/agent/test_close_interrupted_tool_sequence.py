@@ -36,10 +36,11 @@ def _assert_no_tool_then_user(messages):
 
 
 def test_tool_tail_is_closed_with_placeholder():
+    from agent.i18n import t
     messages = _tool_tail()
     assert close_interrupted_tool_sequence(messages, None) is True
     assert messages[-1]["role"] == "assistant"
-    assert messages[-1]["content"] == "Operation interrupted."
+    assert messages[-1]["content"] == t("gateway.interrupt.placeholder")
 
 
 def test_tool_tail_keeps_interrupt_text_when_present():
@@ -50,9 +51,10 @@ def test_tool_tail_keeps_interrupt_text_when_present():
 
 
 def test_blank_interrupt_text_falls_back_to_placeholder():
+    from agent.i18n import t
     messages = _tool_tail()
     close_interrupted_tool_sequence(messages, "   ")
-    assert messages[-1]["content"] == "Operation interrupted."
+    assert messages[-1]["content"] == t("gateway.interrupt.placeholder")
 
 
 def test_closing_makes_next_user_message_alternation_safe():

@@ -1597,7 +1597,7 @@ def run_conversation(
                             agent._emit_status(f"💡 {_zh_hint}")
                         logger.error(f"{agent.log_prefix}Invalid API response after {max_retries} retries.")
                         agent._persist_session(messages, conversation_history)
-                        _final_response = f"Invalid API response after {max_retries} retries: {_failure_hint}"
+                        _final_response = t("gateway.error.invalid_api_response", max_retries=max_retries, failure_hint=_failure_hint)
                         return {
                             "final_response": _final_response,
                             "messages": messages,
@@ -1618,7 +1618,7 @@ def run_conversation(
                     while time.time() < sleep_end:
                         if agent._interrupt_requested:
                             agent._vprint(f"{agent.log_prefix}⚡ Interrupt detected during retry wait, aborting.", force=True)
-                            _interrupt_text = f"Operation interrupted during retry ({_failure_hint}, attempt {retry_count}/{max_retries})."
+                            _interrupt_text = t("gateway.interrupt_retry", reason=_failure_hint, attempt=retry_count, max=max_retries)
                             close_interrupted_tool_sequence(messages, _interrupt_text)
                             agent._persist_session(messages, conversation_history)
                             agent.clear_interrupt()
@@ -3065,7 +3065,7 @@ def run_conversation(
                 # Check for interrupt before deciding to retry
                 if agent._interrupt_requested:
                     agent._vprint(f"{agent.log_prefix}⚡ Interrupt detected during error handling, aborting retries.", force=True)
-                    _interrupt_text = f"Operation interrupted: handling API error ({error_type}: {agent._clean_error_message(str(api_error))})."
+                    _interrupt_text = t("gateway.interrupt_api_error", error_type=error_type, error_detail=agent._clean_error_message(str(api_error)))
                     close_interrupted_tool_sequence(messages, _interrupt_text)
                     agent._persist_session(messages, conversation_history)
                     agent.clear_interrupt()
@@ -3417,7 +3417,7 @@ def run_conversation(
                         agent._vprint(f"{agent.log_prefix}   💡 Try /new to start a fresh conversation, or /compress to retry compression.", force=True)
                         logger.error(f"{agent.log_prefix}413 compression failed after {max_compression_attempts} attempts.")
                         agent._persist_session(messages, conversation_history)
-                        _final_response = f"Request payload too large: max compression attempts ({max_compression_attempts}) reached."
+                        _final_response = t("gateway.error.payload_too_large_max_compression", max_compression_attempts=max_compression_attempts)
                         return {
                             "final_response": _final_response,
                             "messages": messages,
@@ -3473,7 +3473,7 @@ def run_conversation(
                         agent._vprint(f"{agent.log_prefix}   💡 Try /new to start a fresh conversation, or /compress to retry compression.", force=True)
                         logger.error(f"{agent.log_prefix}413 payload too large. Cannot compress further.")
                         agent._persist_session(messages, conversation_history)
-                        _final_response = "Request payload too large (413). Cannot compress further."
+                        _final_response = t("gateway.error.payload_too_large_413")
                         return {
                             "final_response": _final_response,
                             "messages": messages,
@@ -3528,7 +3528,7 @@ def run_conversation(
                             agent._vprint(f"{agent.log_prefix}   💡 Try /new to start a fresh conversation, or /compress to retry compression.", force=True)
                             logger.error(f"{agent.log_prefix}Context compression failed after {max_compression_attempts} attempts.")
                             agent._persist_session(messages, conversation_history)
-                            _final_response = f"Context length exceeded: max compression attempts ({max_compression_attempts}) reached."
+                            _final_response = t("gateway.error.context_exceeded_max_compression", max_compression_attempts=max_compression_attempts)
                             return {
                                 "final_response": _final_response,
                                 "messages": messages,
@@ -3640,7 +3640,7 @@ def run_conversation(
                         agent._vprint(f"{agent.log_prefix}   💡 Try /new to start a fresh conversation, or /compress to retry compression.", force=True)
                         logger.error(f"{agent.log_prefix}Context compression failed after {max_compression_attempts} attempts.")
                         agent._persist_session(messages, conversation_history)
-                        _final_response = f"Context length exceeded: max compression attempts ({max_compression_attempts}) reached."
+                        _final_response = t("gateway.error.context_exceeded_max_compression", max_compression_attempts=max_compression_attempts)
                         return {
                             "final_response": _final_response,
                             "messages": messages,
@@ -3685,7 +3685,7 @@ def run_conversation(
                         agent._vprint(f"{agent.log_prefix}   💡 The conversation has accumulated too much content. Try /new to start fresh, or /compress to manually trigger compression.", force=True)
                         logger.error(f"{agent.log_prefix}Context length exceeded: {new_tokens:,} tokens. Cannot compress further.")
                         agent._persist_session(messages, conversation_history)
-                        _final_response = f"Context length exceeded ({new_tokens:,} tokens). Cannot compress further."
+                        _final_response = t("gateway.error.context_exceeded_tokens", new_tokens=f"{new_tokens:,}")
                         return {
                             "final_response": _final_response,
                             "messages": messages,
@@ -4128,11 +4128,11 @@ def run_conversation(
                         )
                     agent._persist_session(messages, conversation_history)
                     if classified.reason == FailoverReason.billing:
-                        _final_response = f"Billing or credits exhausted: {_final_summary}"
+                        _final_response = t("gateway.error.billing_exhausted", final_summary=_final_summary)
                         if _billing_guidance:
                             _final_response += f"\n\n{_billing_guidance}"
                     else:
-                        _final_response = f"API call failed after {max_retries} retries: {_final_summary}"
+                        _final_response = t("gateway.error.api_failed_after_retries", max_retries=max_retries, final_summary=_final_summary)
                     if _is_thinking_timeout:
                         # Thinking-timeout guidance overrides the generic
                         # stream-drop guidance — the latter is wrong for
@@ -4234,7 +4234,7 @@ def run_conversation(
                 while time.time() < sleep_end:
                     if agent._interrupt_requested:
                         agent._vprint(f"{agent.log_prefix}⚡ Interrupt detected during retry wait, aborting.", force=True)
-                        _interrupt_text = f"Operation interrupted: retrying API call after error (retry {retry_count}/{max_retries})."
+                        _interrupt_text = t("gateway.interrupt_retry_after_error", attempt=retry_count, max=max_retries)
                         close_interrupted_tool_sequence(messages, _interrupt_text)
                         agent._persist_session(messages, conversation_history)
                         agent.clear_interrupt()
@@ -4536,7 +4536,7 @@ def run_conversation(
                         agent._vprint(f"{agent.log_prefix}❌ Max retries (3) for invalid tool calls exceeded. Stopping as partial.", force=True)
                         agent._invalid_tool_retries = 0
                         agent._persist_session(messages, conversation_history)
-                        _final_response = f"Model generated invalid tool call: {invalid_preview}"
+                        _final_response = t("gateway.error.invalid_tool_call", invalid_preview=invalid_preview)
                         return {
                             "final_response": _final_response,
                             "messages": messages,
@@ -5365,7 +5365,7 @@ def run_conversation(
             # If we're near the limit, break to avoid infinite loops
             if api_call_count >= agent.max_iterations - 1:
                 _turn_exit_reason = f"error_near_max_iterations({error_msg[:80]})"
-                final_response = f"I apologize, but I encountered repeated errors: {error_msg}"
+                final_response = t("gateway.error.repeated_errors", error_msg=error_msg)
                 # Append as assistant so the history stays valid for
                 # session resume (avoids consecutive user messages).
                 messages.append({"role": "assistant", "content": final_response})

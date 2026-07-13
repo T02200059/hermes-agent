@@ -500,6 +500,22 @@ Install it with: `hermes skills install {path}`"
   moa_prepare_failed: "Failed to prepare MoA turn."
   chained_commands_executed: "Commands executed."
 
+  # Operation interrupted placeholders -- shown when a turn is cut short
+  # (user /stop, API error retry, gateway restart, etc.) and no visible
+  # assistant text was produced. The default placeholder is a bare status
+  # line; the friendly variant adds actionable suggestions.
+  interrupt:
+    placeholder: "Operation interrupted."
+    friendly: >-
+      Operation interrupted. The model returned no visible response.
+      Try /new to start a fresh conversation, or switch models with /model.
+      If the issue persists, the current model may not support this workload.
+
+  # Interrupt with context -- retry/error-specific variants.
+  interrupt_retry: "Operation interrupted during retry ({reason}, attempt {attempt}/{max})."
+  interrupt_api_error: "Operation interrupted: handling API error ({error_type}: {error_detail}). Try again later or switch models with /model."
+  interrupt_retry_after_error: "Operation interrupted: retrying API call after error (retry {attempt}/{max})."
+
   # Goal/subgoal usage.
   goal_usage_wait:  "Usage: /goal wait <pid> [reason]"
   goal_no_wait_barrier: "No wait barrier set."
@@ -507,6 +523,35 @@ Install it with: `hermes skills install {path}`"
   goal_no_active:   "No active goal. Set one with /goal <text>."
   subgoal_usage_remove: "Usage: /subgoal remove <n>"
   subgoal_no_subgoals: "No subgoals to clear."
+
+  # Turn-completion explanations — appended to the assistant reply when a turn
+  # ends abnormally (empty after retries, partial stream, budget exhausted,
+  # pending tool result, etc.) so the user is never left with a silent turn.
+  turn_explainer:
+    prefix: "⚠️ No reply: "
+    empty_response_exhausted: "the model returned empty content after retries and any fallback providers. Try `continue`, switch model/provider, or inspect the tool output above."
+    all_retries_exhausted: "all API retries were exhausted before a response was produced (provider errors / rate limits). Try `continue` or switch provider."
+    partial_stream_recovery: "streaming stopped early and only a partial response was recovered. Send `continue` to resume from where it stopped."
+    fallback_prior_turn: "no new content was produced this turn; showing recovered prior context. Send `continue` to retry."
+    interrupted_during_api_call: "the request was interrupted mid-call before a reply was received. Send `continue` to retry."
+    budget_exhausted: "the per-turn iteration/cost budget was exhausted before a final answer. Send `continue` to keep going."
+    ollama_context_too_small: "the local model's context window was too small to finish. Increase the context size or use a larger model."
+    max_iterations: "the maximum tool-iteration limit was reached before a final answer. Send `continue` to keep going, or raise `max_iterations`."
+    error_near_max_iterations: "an error occurred near the iteration limit before a final answer. Check the tool output above, then send `continue`."
+    pending_tool_result: "the turn stopped while a tool result was still pending and the model produced no follow-up text. Send `continue` to let it summarize."
+
+  # User-facing error messages assigned to _final_response when a turn fails
+  # terminally (API errors, payload/context limits, billing exhaustion, etc.).
+  error:
+    invalid_api_response: "Invalid API response after {max_retries} retries: {failure_hint}"
+    payload_too_large_max_compression: "Request payload too large: max compression attempts ({max_compression_attempts}) reached."
+    payload_too_large_413: "Request payload too large (413). Cannot compress further."
+    context_exceeded_max_compression: "Context length exceeded: max compression attempts ({max_compression_attempts}) reached."
+    context_exceeded_tokens: "Context length exceeded ({new_tokens} tokens). Cannot compress further."
+    billing_exhausted: "Billing or credits exhausted: {final_summary}. Check your account balance or configure a fallback provider."
+    api_failed_after_retries: "API call failed after {max_retries} retries: {final_summary}"
+    invalid_tool_call: "Model generated invalid tool call: {invalid_preview}. Try switching models with /model or start fresh with /new."
+    repeated_errors: "I apologize, but I encountered repeated errors: {error_msg}"
 
   # Telegram topic messages.
   chat_id_unknown:       "Could not determine chat ID."

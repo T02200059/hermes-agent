@@ -146,6 +146,7 @@ def _assert_no_tool_then_user(messages):
 
 
 def test_interrupt_after_tool_closes_sequence_with_placeholder():
+    from agent.i18n import t
     agent = _StubAgent()
     messages = _interrupted_tool_tail()
     _finalize(agent, messages, interrupted=True, final_response=None)
@@ -154,7 +155,7 @@ def test_interrupt_after_tool_closes_sequence_with_placeholder():
     assert messages[-1]["role"] == "assistant"
     # Empty final_response falls back to the explicit placeholder rather
     # than persisting an empty-content assistant turn.
-    assert messages[-1]["content"] == "Operation interrupted."
+    assert messages[-1]["content"] == t("gateway.interrupt.placeholder")
 
     # The persisted snapshot is alternation-safe: appending a new user
     # message would follow an assistant, not an orphan tool.

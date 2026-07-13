@@ -19,6 +19,8 @@ import logging
 import re
 from typing import Any
 
+from agent.i18n import t
+
 logger = logging.getLogger(__name__)
 
 # Lone surrogate code points are invalid in UTF-8 and crash json.dumps
@@ -306,7 +308,7 @@ def close_interrupted_tool_sequence(messages: list, final_response: Any = None) 
     text = final_response if isinstance(final_response, str) else ""
     messages.append({
         "role": "assistant",
-        "content": text.strip() or "Operation interrupted.",
+        "content": text.strip() or t("gateway.interrupt.placeholder"),
     })
     return True
 

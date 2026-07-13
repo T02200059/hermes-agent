@@ -185,6 +185,19 @@ def finalize_turn(
             from agent.message_sanitization import close_interrupted_tool_sequence
             close_interrupted_tool_sequence(messages, final_response)
 
+            # Surface a friendly, actionable message to the user when the
+            # turn was interrupted with no visible assistant text.  The
+            # bare placeholder persisted above is correct for internal
+            # role-alternation safety, but reading "Operation interrupted."
+            # with no guidance is a poor user experience (#52807).
+            # ``final_response`` is what the gateway delivers; replacing it
+            # here (after ``close_interrupted_tool_sequence`` already wrote
+            # the placeholder to ``messages``) keeps the durable transcript
+            # stable while the user sees the friendly variant.  Mirrors the
+            # turn-completion explainer pattern below (line ~319).
+            if not (final_response or "").strip():
+                final_response = _t("gateway.interrupt.friendly")
+
         # Some recovery/fallback paths return a real final_response without
         # adding a closing assistant message to the transcript (e.g. the
         # partial-stream and prior-turn-content recovery ``break`` sites in

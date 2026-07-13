@@ -508,6 +508,21 @@ gateway:
   moa_prepare_failed: "准备 MoA 回合失败。"
   chained_commands_executed: "命令已执行。"
 
+  # 操作中断占位文案 -- 当轮次被截断（用户 /stop、API 错误重试、网关重启等）
+  # 且没有产生可见的助手回复时显示。默认占位是简短状态行；
+  # 友好版本会加上可操作的建议。
+  interrupt:
+    placeholder: "操作已中断。"
+    friendly: >-
+      操作已中断——模型未返回有效回复。
+      建议：使用 /new 开启新对话，或用 /model 切换模型后重试。
+      如果反复出现，当前模型可能不支持此类任务。
+
+  # 带上下文的中断 -- 重试/错误相关变体。
+  interrupt_retry: "操作在重试时中断（{reason}，第 {attempt}/{max} 次）。"
+  interrupt_api_error: "操作中断：正在处理 API 错误（{error_type}: {error_detail}）。建议稍后重试，或用 /model 切换模型。"
+  interrupt_retry_after_error: "操作中断：错误后重试 API 调用（第 {attempt}/{max} 次重试）。"
+
   # Goal/subgoal 用法
   goal_usage_wait:  "用法：/goal wait <pid> [reason]"
   goal_no_wait_barrier: "没有设置等待屏障。"
@@ -515,6 +530,34 @@ gateway:
   goal_no_active:   "当前没有活跃的目标。请先使用 /goal <文本> 设置一个。"
   subgoal_usage_remove: "用法：/subgoal remove <n>"
   subgoal_no_subgoals: "没有可清除的子目标。"
+
+  # 轮次完成解释 —— 当轮次异常结束时（重试后仍为空、流式截断、预算耗尽、
+  # 工具结果挂起等），追加到助手回复后，避免用户看到一轮静默的对话。
+  turn_explainer:
+    prefix: "⚠️ 无回复："
+    empty_response_exhausted: "模型在重试和所有 fallback 服务商后仍返回空内容。建议发送 `continue` 重试，或用 /model 切换模型/服务商，也可检查上方的工具输出。"
+    all_retries_exhausted: "所有 API 重试均已耗尽，仍未产生响应（服务商错误 / 限流）。建议稍后发送 `continue` 重试，或用 /model 切换服务商。"
+    partial_stream_recovery: "流式响应提前中断，仅恢复了部分内容。请发送 `continue` 从中断处继续。"
+    fallback_prior_turn: "本轮未产生新内容；正在显示恢复的先前上下文。请发送 `continue` 重试。"
+    interrupted_during_api_call: "请求在收到回复前被中断。请发送 `continue` 重试。"
+    budget_exhausted: "本轮的迭代/成本预算在得到最终答复前已耗尽。请发送 `continue` 继续。"
+    ollama_context_too_small: "本地模型的上下文窗口太小，无法完成。请增大上下文长度或换用更大的模型。"
+    max_iterations: "在得到最终答复前已达到最大工具迭代次数上限。请发送 `continue` 继续，或调高 `max_iterations`。"
+    error_near_max_iterations: "在接近迭代上限时发生错误，未能给出最终答复。请检查上方的工具输出，然后发送 `continue` 继续。"
+    pending_tool_result: "轮次在工具结果仍挂起时停止，且模型未产生后续文本。请发送 `continue` 让其总结。"
+
+  # 终端错误消息 —— 当轮次最终失败时赋值给 _final_response（API 错误、
+  # 负载/上下文超限、额度耗尽等）。
+  error:
+    invalid_api_response: "API 响应无效（已重试 {max_retries} 次）：{failure_hint}"
+    payload_too_large_max_compression: "请求负载过大：已达最大压缩尝试次数（{max_compression_attempts}）。建议使用 /new 开启新对话。"
+    payload_too_large_413: "请求负载过大 (413)。无法进一步压缩。建议使用 /new 开启新对话。"
+    context_exceeded_max_compression: "上下文长度超限：已达最大压缩尝试次数（{max_compression_attempts}）。建议使用 /new 开启新对话。"
+    context_exceeded_tokens: "上下文长度超限（{new_tokens} tokens）。无法进一步压缩。建议使用 /new 开启新对话。"
+    billing_exhausted: "额度或余额已耗尽：{final_summary}。建议检查账户余额或配置 fallback 提供商自动切换。"
+    api_failed_after_retries: "API 调用在重试 {max_retries} 次后失败：{final_summary}"
+    invalid_tool_call: "模型生成了无效的工具调用：{invalid_preview}。建议用 /model 切换模型或 /new 开启新对话。"
+    repeated_errors: "很抱歉，遇到了反复出现的错误：{error_msg}。如反复出现，建议用 /new 开启新对话或 /model 切换模型。"
 
   # Telegram topic 消息
   chat_id_unknown:       "无法确定聊天 ID。"

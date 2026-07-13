@@ -2972,71 +2972,27 @@ class AIAgent:
         if reason.startswith("text_response"):
             return ""
 
-        prefix = "⚠️ No reply: "
+        prefix = t("gateway.turn_explainer.prefix")
         if reason == "empty_response_exhausted":
-            return (
-                prefix
-                + "the model returned empty content after retries and any "
-                "fallback providers. Try `continue`, switch model/provider, "
-                "or inspect the tool output above."
-            )
+            return prefix + t("gateway.turn_explainer.empty_response_exhausted")
         if reason == "all_retries_exhausted_no_response":
-            return (
-                prefix
-                + "all API retries were exhausted before a response was "
-                "produced (provider errors / rate limits). Try `continue` "
-                "or switch provider."
-            )
+            return prefix + t("gateway.turn_explainer.all_retries_exhausted")
         if reason == "partial_stream_recovery":
-            return (
-                prefix
-                + "streaming stopped early and only a partial response was "
-                "recovered. Send `continue` to resume from where it stopped."
-            )
+            return prefix + t("gateway.turn_explainer.partial_stream_recovery")
         if reason == "fallback_prior_turn_content":
-            return (
-                prefix
-                + "no new content was produced this turn; showing recovered "
-                "prior context. Send `continue` to retry."
-            )
+            return prefix + t("gateway.turn_explainer.fallback_prior_turn")
         if reason == "interrupted_during_api_call":
-            return (
-                prefix
-                + "the request was interrupted mid-call before a reply was "
-                "received. Send `continue` to retry."
-            )
+            return prefix + t("gateway.turn_explainer.interrupted_during_api_call")
         if reason == "budget_exhausted":
-            return (
-                prefix
-                + "the per-turn iteration/cost budget was exhausted before a "
-                "final answer. Send `continue` to keep going."
-            )
+            return prefix + t("gateway.turn_explainer.budget_exhausted")
         if reason == "ollama_runtime_context_too_small":
-            return (
-                prefix
-                + "the local model's context window was too small to finish. "
-                "Increase the context size or use a larger model."
-            )
+            return prefix + t("gateway.turn_explainer.ollama_context_too_small")
         if reason.startswith("max_iterations_reached"):
-            return (
-                prefix
-                + "the maximum tool-iteration limit was reached before a "
-                "final answer. Send `continue` to keep going, or raise "
-                "`max_iterations`."
-            )
+            return prefix + t("gateway.turn_explainer.max_iterations")
         if reason.startswith("error_near_max_iterations"):
-            return (
-                prefix
-                + "an error occurred near the iteration limit before a final "
-                "answer. Check the tool output above, then send `continue`."
-            )
+            return prefix + t("gateway.turn_explainer.error_near_max_iterations")
         if reason == "pending_tool_result":
-            return (
-                prefix
-                + "the turn stopped while a tool result was still pending and "
-                "the model produced no follow-up text. Send `continue` to "
-                "let it summarize."
-            )
+            return prefix + t("gateway.turn_explainer.pending_tool_result")
         # Unknown/diagnostic-only reasons (e.g. "unknown", guardrail_halt
         # which already surfaces its own message) — don't second-guess.
         return ""
