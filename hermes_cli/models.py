@@ -1837,6 +1837,22 @@ _LIVE_FIRST_PICKER_PROVIDERS: frozenset[str] = frozenset(
     {"opencode-zen", "opencode-go"}
 )
 
+# Kimi Coding Plan (sk-kimi-* → api.kimi.com/coding) only serves these IDs.
+# Do NOT merge with the Moonshot open-API curated list for that endpoint.
+_KIMI_CODING_PLAN_MODELS: list[str] = [
+    "kimi-for-coding",
+    "kimi-for-coding-highspeed",
+]
+
+
+def _is_kimi_coding_plan_endpoint(api_key: str = "", base_url: str = "") -> bool:
+    """True when credentials target Kimi Coding Plan, not Moonshot open API."""
+    key = (api_key or "").strip()
+    if key.startswith("sk-kimi-"):
+        return True
+    url = (base_url or "").strip().lower()
+    return "api.kimi.com/coding" in url
+
 
 def _resolve_static_model_alias(
     name_lower: str,
@@ -2469,6 +2485,17 @@ def provider_model_ids(provider: Optional[str], *, force_refresh: bool = False) 
                 api_key, base_url = "", _p.base_url
             if not base_url:
                 base_url = _p.base_url
+            # Kimi Coding Plan (sk-kimi-* → api.kimi.com/coding) is a subscription
+            # with only kimi-for-coding [+ highspeed]. Never merge the Moonshot
+            # open-API curated catalog into that picker row.
+            if normalized in {"kimi-coding", "kimi-coding-cn"} and _is_kimi_coding_plan_endpoint(
+                api_key, base_url
+            ):
+                if api_key:
+                    live = _p.fetch_models(api_key=api_key, base_url=base_url or None)
+                    if live:
+                        return list(live)
+                return list(_KIMI_CODING_PLAN_MODELS)
             if api_key:
                 live = _p.fetch_models(api_key=api_key, base_url=base_url or None)
                 if live:
@@ -2660,7 +2687,29 @@ def cached_provider_model_ids(
         and entry["models"]
         and (now - float(entry.get("at", 0))) < ttl_seconds
     ):
-        return list(entry["models"])
+        cached_models = list(entry["models"])
+        # Drop pre-fix cache rows that mixed Moonshot open-API models into
+        # the Kimi Coding Plan picker (sk-kimi-* → api.kimi.com/coding).
+        if normalized in {"kimi-coding", "kimi-coding-cn"}:
+            try:
+                from hermes_cli.auth import resolve_api_key_provider_credentials
+
+                _creds = resolve_api_key_provider_credentials(normalized) or {}
+                if _is_kimi_coding_plan_endpoint(
+                    str(_creds.get("api_key") or ""),
+                    str(_creds.get("base_url") or ""),
+                ):
+                    allowed = {m.lower() for m in _KIMI_CODING_PLAN_MODELS}
+                    if any(str(m).lower() not in allowed for m in cached_models):
+                        force_refresh = True
+                    else:
+                        return cached_models
+                else:
+                    return cached_models
+            except Exception:
+                return cached_models
+        else:
+            return cached_models
 
     # Cache miss / stale / forced refresh — call the live path.
     live = provider_model_ids(normalized, force_refresh=force_refresh)

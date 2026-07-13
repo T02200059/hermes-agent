@@ -128,3 +128,48 @@ class TestKimiFullKwargsIntegration:
         kwargs = self._build(kimi_profile, None)
         assert "reasoning_effort" not in kwargs
         assert kwargs["extra_body"] == {"thinking": {"type": "enabled"}}
+
+
+class TestKimiCodingPlanFetchModels:
+    """Coding Plan base (no /v1) must catalog via .../coding/v1/models."""
+
+    def test_coding_base_probes_v1_catalog(self, kimi_profile, monkeypatch):
+        from unittest.mock import patch
+
+        calls = []
+
+        def fake_urlopen(req, timeout=8.0):
+            url = req.full_url if hasattr(req, "full_url") else req.get_full_url()
+            calls.append(url)
+
+            class _Resp:
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, *a):
+                    return False
+
+                def read(self):
+                    import json
+
+                    return json.dumps(
+                        {
+                            "data": [
+                                {"id": "kimi-for-coding"},
+                                {"id": "kimi-for-coding-highspeed"},
+                            ]
+                        }
+                    ).encode()
+
+            if url.rstrip("/").endswith("/coding/models"):
+                raise Exception("HTTP Error 404: Not Found")
+            return _Resp()
+
+        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+            result = kimi_profile.fetch_models(
+                api_key="sk-kimi-test",
+                base_url="https://api.kimi.com/coding",
+            )
+
+        assert result == ["kimi-for-coding", "kimi-for-coding-highspeed"]
+        assert any(u.endswith("/coding/v1/models") for u in calls)

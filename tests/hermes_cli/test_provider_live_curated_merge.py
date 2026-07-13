@@ -15,6 +15,7 @@ Guards two contracts:
 from unittest.mock import MagicMock, patch
 
 from hermes_cli.models import (
+    _KIMI_CODING_PLAN_MODELS,
     _LIVE_FIRST_PICKER_PROVIDERS,
     provider_model_ids,
 )
@@ -129,3 +130,91 @@ class TestGenericProviderLiveCuratedMerge:
 
         # zai is curated-first: curated casing wins for models present in both.
         assert result == ["glm-5.1", "GLM-5", "glm-4.5"]
+
+
+class TestKimiCodingPlanModelIds:
+    """sk-kimi-* / api.kimi.com/coding must not merge Moonshot curated catalog."""
+
+    def test_sk_kimi_key_returns_live_coding_plan_only(self):
+        live = ["kimi-for-coding", "kimi-for-coding-highspeed"]
+        profile = MagicMock()
+        profile.auth_type = "api_key"
+        profile.base_url = "https://api.moonshot.ai/v1"
+        profile.fetch_models.return_value = live
+        profile.fallback_models = None
+        moonshot_curated = [
+            "kimi-k2.7-code",
+            "kimi-k2.6",
+            "kimi-for-coding",
+            "kimi-k2-thinking",
+        ]
+
+        with (
+            patch("providers.get_provider_profile", return_value=profile),
+            patch(
+                "hermes_cli.auth.resolve_api_key_provider_credentials",
+                return_value={
+                    "api_key": "sk-kimi-plan-key",
+                    "base_url": "https://api.kimi.com/coding",
+                },
+            ),
+            patch.dict(
+                "hermes_cli.models._PROVIDER_MODELS",
+                {"kimi-coding": moonshot_curated},
+            ),
+        ):
+            result = provider_model_ids("kimi-coding")
+
+        assert result == live
+        assert "kimi-k2.6" not in result
+        assert "kimi-k2-thinking" not in result
+
+    def test_sk_kimi_fallback_when_live_empty(self):
+        profile = MagicMock()
+        profile.auth_type = "api_key"
+        profile.base_url = "https://api.moonshot.ai/v1"
+        profile.fetch_models.return_value = None
+        profile.fallback_models = None
+
+        with (
+            patch("providers.get_provider_profile", return_value=profile),
+            patch(
+                "hermes_cli.auth.resolve_api_key_provider_credentials",
+                return_value={
+                    "api_key": "sk-kimi-plan-key",
+                    "base_url": "https://api.kimi.com/coding",
+                },
+            ),
+        ):
+            result = provider_model_ids("kimi-coding")
+
+        assert result == list(_KIMI_CODING_PLAN_MODELS)
+
+    def test_legacy_moonshot_key_still_merges_curated(self):
+        """Non-sk-kimi keys on moonshot.ai keep curated-first merge."""
+        live = ["kimi-k2.6"]
+        profile = MagicMock()
+        profile.auth_type = "api_key"
+        profile.base_url = "https://api.moonshot.ai/v1"
+        profile.fetch_models.return_value = live
+        profile.fallback_models = None
+        curated = ["kimi-k2.7-code", "kimi-k2.6", "kimi-for-coding"]
+
+        with (
+            patch("providers.get_provider_profile", return_value=profile),
+            patch(
+                "hermes_cli.auth.resolve_api_key_provider_credentials",
+                return_value={
+                    "api_key": "sk-legacy-moonshot",
+                    "base_url": "https://api.moonshot.ai/v1",
+                },
+            ),
+            patch.dict(
+                "hermes_cli.models._PROVIDER_MODELS",
+                {"kimi-coding": curated},
+            ),
+        ):
+            result = provider_model_ids("kimi-coding")
+
+        assert result[: len(curated)] == curated
+        assert "kimi-for-coding" in result

@@ -16,6 +16,37 @@ from providers.base import OMIT_TEMPERATURE, ProviderProfile
 class KimiProfile(ProviderProfile):
     """Kimi/Moonshot — temperature omitted, thinking xor reasoning_effort."""
 
+    def fetch_models(
+        self,
+        *,
+        api_key: str | None = None,
+        base_url: str | None = None,
+        timeout: float = 8.0,
+    ) -> list[str] | None:
+        """Fetch live model IDs, with Coding Plan catalog path handling.
+
+        Inference base for ``sk-kimi-*`` is ``https://api.kimi.com/coding``
+        (no ``/v1`` — Anthropic Messages appends ``/v1/messages``). The
+        OpenAI-compat model list lives at ``.../coding/v1/models``, so a
+        naive ``base + /models`` probe 404s and the picker falls back to the
+        full Moonshot curated catalog. Try the ``/v1`` catalog base first
+        when the coding plan endpoint is in use.
+        """
+        effective = (base_url or self.base_url or "").rstrip("/")
+        if "api.kimi.com/coding" in effective.lower() and not effective.lower().endswith(
+            "/v1"
+        ):
+            coding_catalog = super().fetch_models(
+                api_key=api_key,
+                base_url=f"{effective}/v1",
+                timeout=timeout,
+            )
+            if coding_catalog:
+                return coding_catalog
+        return super().fetch_models(
+            api_key=api_key, base_url=base_url, timeout=timeout
+        )
+
     def build_api_kwargs_extras(
         self, *, reasoning_config: dict | None = None, **context
     ) -> tuple[dict[str, Any], dict[str, Any]]:
