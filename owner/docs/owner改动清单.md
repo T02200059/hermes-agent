@@ -24,7 +24,7 @@
 | owner/ 纯新增 | ~75 个文件 |
 | 官方文件侵入 | ~70 个文件（含 ~20 个测试文件） |
 | 范围 | 模型归因 / patch.yaml 配置 / 审批安全 / 飞书深度定制 / TUI 皮肤 / Cron 运维 / Gateway 稳定性 / Checkpoint 预测 |
-| 最后更新 | 2026-07-11 |
+| 最后更新 | 2026-07-13 |
 | 来源 | 从 `owner-v17`（500+ commit）清洗迁移而来；本分支是重新整理后的最小叠加版本 |
 
 ### 0.2 章节索引
@@ -218,20 +218,28 @@
 - **侵入类型**：narrow if-else（agent_runtime_helpers.py，11 行新增）
 - **Commit**：`f07fcb736`
 
-### 2.8 damodel / yangtb NewAPI proxy providers + 共享 MiMo thinking wire format
+### 2.8 damodel NewAPI proxy provider + 共享 MiMo thinking wire format
 
-- **背景**：owner 需要一个多模型代理 provider（`genai.damodel.com` NewAPI）路由到 MiMo / GLM / DeepSeek / Qwen / MiniMax 等；以及一个自托管 yangtb provider 承载 `qwen3-coder:30b` 等非推理模型。MiMo 的 `thinking.type` 官方 wire 格式此前内联在 xiaomi provider 里，damodel 代理 MiMo 时需要复用同一协议，避免两处实现漂移。
-- **方案**（4 commit）：
+- **背景**：owner 需要一个多模型代理 provider（`genai.damodel.com` NewAPI）路由到 MiMo / GLM / DeepSeek / Qwen / MiniMax 等。MiMo 的 `thinking.type` 官方 wire 格式此前内联在 xiaomi provider 里，damodel 代理 MiMo 时需要复用同一协议，避免两处实现漂移。
+- **方案**（3 commit）：
   - **共享 MiMo thinking wire**（`1edf4ad4d`）：抽取 `providers/mimo_thinking.py`（`build_mimo_thinking_extras`），把官方 `thinking.type=enabled` wire 格式做成共享模块；xiaomi provider 从普通 `ProviderProfile` 重构为 `XiaomiProfile` 子类，委托 thinking extras 给共享 builder。直连 xiaomi 与 damodel 代理的 MiMo 模型走同一上游协议。新增 `tests/providers/model_providers/test_mimo_thinking_wire.py`（204 行）。
   - **damodel provider 插件**（`b17aac54b`）：`plugins/model-providers/damodel/`（`__init__.py` + `plugin.yaml`），多模型代理；MiMo 流量复用共享 mimo_thinking wire format，其余模型透传不做 extra_body 改写。
-  - **owner providers 优先于 custom fallback**（`ba51085f6`）：`hermes_cli/models.py` 的 `_PROVIDER_MODELS` 静态目录新增 damodel（glm-5.1 / glm-5.2 / mimo-v2.5）和 yangtb（qwen3-coder:30b）；新增 `_OWNER_PROVIDERS = frozenset({'damodel', 'yangtb'})`，让 `_is_custom_current` guard 跳过 owner providers。否则 `/model qwen3-coder:30b` 在 current provider 为 `custom` 时会绕过所有静态目录检查（含新增 yangtb 条目），停留在 custom。
-  - **yangtb 跳过非推理模型的 thinking 参数**（`4a2f7572c`）：`plugins/model-providers/yangtb/__init__.py` 新增 `_THINKING_MODELS` 白名单——`qwen3-coder:30b` 不支持 Ollama thinking API，发送 `think=True` / `reasoning_effort` 触发 HTTP 400；只有已知推理模型才注入 thinking 参数。
+  - **owner providers 优先于 custom fallback**（`ba51085f6`）：`hermes_cli/models.py` 的 `_PROVIDER_MODELS` 静态目录新增 damodel（glm-5.1 / glm-5.2 / mimo-v2.5）；新增 `_OWNER_PROVIDERS = frozenset({'damodel'})`，让 `_is_custom_current` guard 跳过 owner providers。否则 `/model` 切换到 damodel 模型目录时，若 current provider 为 `custom` 会绕过静态目录检查，停留在 custom。
 - **涉及文件**：
-  - 纯新增：`providers/mimo_thinking.py`、`plugins/model-providers/damodel/__init__.py`、`plugins/model-providers/damodel/plugin.yaml`、`plugins/model-providers/yangtb/__init__.py`、`tests/providers/model_providers/test_mimo_thinking_wire.py`
+  - 纯新增：`providers/mimo_thinking.py`、`plugins/model-providers/damodel/__init__.py`、`plugins/model-providers/damodel/plugin.yaml`、`tests/providers/model_providers/test_mimo_thinking_wire.py`
   - 侵入：`plugins/model-providers/xiaomi/__init__.py`（重构为 XiaomiProfile 子类）、`hermes_cli/models.py`（静态目录 + `_OWNER_PROVIDERS`）
-- **侵入类型**：纯新增（provider 插件 + 共享模块）+ inline（`hermes_cli/models.py` 14 行：静态目录扩展 + owner providers 豁免）
+- **侵入类型**：纯新增（provider 插件 + 共享模块）+ inline（`hermes_cli/models.py`：静态目录扩展 + owner providers 豁免）
 - **配置迁移**（`912c7af85` 部分）：`owner/config/patch.yaml` 的 `owner.model_extra_body` 中 xfyun 相关条目迁到 damodel（上游模型相同），统一走 damodel 代理。
-- **Commit**：`1edf4ad4d`（共享 MiMo thinking + XiaomiProfile 重构）、`b17aac54b`（damodel provider）、`ba51085f6`（route owner providers over custom）、`4a2f7572c`（yangtb skip thinking params）
+- **Commit**：`1edf4ad4d`（共享 MiMo thinking + XiaomiProfile 重构）、`b17aac54b`（damodel provider）、`ba51085f6`（route owner providers over custom）
+
+### 2.8.1 已修复：damodel `/model` 校验时 env-var 模板未展开导致 crash
+
+- **问题**：`config.yaml` 中 `providers.damodel.base_url: ${DAMODEL_BASE_URL}`（或 `model.base_url: ${DAMODEL_BASE_URL}`）在 `DAMODEL_BASE_URL` 未加载到 `os.environ` 时，字面量 `${DAMODEL_BASE_URL}` 会保留到运行时。执行 `/model mimo-v2.5-pro --provider damodel` 时，`validate_requested_model()` → `fetch_api_models()` → `probe_api_models()` 把 `${DAMODEL_BASE_URL}/models` 直接传给 `urllib.request.urlopen()`，触发 `ValueError: unknown url type: '${DAMODEL_BASE_URL}/models'`，最终被 `model_switch.py` 格式化为 `无法验证 mimo-v2.5-pro：unknown url type: '${DAMODEL_BASE_URL}/models'`。
+- **修复**：在 `hermes_cli/models.py:probe_api_models()` 入口增加 `${VAR}` 占位符展开（与 `agent/model_metadata.py:1926` 的 P29 patch 对齐）；展开后若仍残留未解析的 `${...}`，直接返回 `models=None` 视为 unreachable，不再让 urllib 抛错。这样 `validate_requested_model()` 会自然 fallback 到静态 catalog/警告路径，模型切换不再 crash。
+- **涉及文件**：`hermes_cli/models.py`（`probe_api_models()` env-var 展开 + 占位符兜底）、`tests/hermes_cli/test_model_validation.py`（新增 `TestProbeApiModelsEnvPlaceholder`、`TestValidateRequestedModelEnvPlaceholder`）
+- **侵入类型**：inline 逻辑修改（约 14 行，在官方 `hermes_cli/models.py` 内）
+- **设计原则**：不硬编码 `mimo-v2.5-pro` 到 `_PROVIDER_MODELS["damodel"]`；只解决 env-var 模板泄露导致的 crash，模型识别仍由现有 catalog fallback 处理。
+- **测试**：`pytest tests/hermes_cli/test_model_validation.py tests/hermes_cli/test_models.py tests/hermes_cli/test_custom_provider_model_switch.py tests/hermes_cli/test_provider_config_validation.py tests/test_minimax_model_validation.py` → 224 passed。
 
 ---
 
@@ -1079,7 +1087,7 @@ _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请先�
 - **类型**：文档补录（无代码变更）
 - **背景**：对 `git log --since="3 days ago"` 的 45 个 commit 与改动清单逐条比对，发现 15 个功能/修复/chore commit 漏写（已排除纯 docs commit 与轻量 test 修复）。
 - **补录条目**：
-  - 新增子节 §2.8（damodel/yangtb NewAPI proxy providers + 共享 MiMo thinking wire，4 commit）、§12.5（owner/examples 参考文档，1 commit）
+  - 新增子节 §2.8（damodel NewAPI proxy provider + 共享 MiMo thinking wire，3 commit）、§12.5（owner/examples 参考文档，1 commit）
   - §2.2 新增 §2.2.4（飞书 model_picker 卡片 stale session 修复，2 commit）
   - §3.3 / §4.6 / §4.10 / §4.11 / §7.2 / §7.3 / §7.4 / §7.10 / §9.1 各追加后续修复/扩展/回归测试/测试整改
   - §12.4 Commit 列表扩充 `ca80a4957`（P1 contract tests + inventory 扩充）
@@ -1087,3 +1095,13 @@ _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请先�
   - 混合 chore `912c7af85` 拆分归属 §4.6（ack）/ §2.8（xfyun→damodel 迁移）/ 附录 E（timeout）
 - **涉及 commit**：`1edf4ad4d`、`b17aac54b`、`ba51085f6`、`4a2f7572c`、`3dff78944`、`ec3e6bb78`、`440d5b023`、`5251db809`、`ff29bbc54`、`e297792cd`、`8a9273b25`、`e218fc7dd`、`5b2f8ed74`、`a0f37869e`、`2d4d05252`、`6a9383d38`、`6e3a81897`、`c83fbf923`、`ca80a4957`、`779b87265`、`912c7af85`、`740571e9f`、`a5a7fdc20`
 - **审计来源**：`/tmp/zcode-audit-result.md`
+
+### 2026-07-13：damodel `/model` 校验时 env-var 模板未展开导致 crash
+
+- **类型**：bug fix
+- **Commit**：当前未提交改动
+- **背景**：`config.yaml` 中 `providers.damodel.base_url: ${DAMODEL_BASE_URL}` 在环境变量未加载时，字面量会传到 `probe_api_models()`，urllib 因 unknown url type 抛错，最终显示 `无法验证 mimo-v2.5-pro：unknown url type: '${DAMODEL_BASE_URL}/models'`。
+- **修复**：`hermes_cli/models.py:probe_api_models()` 入口增加 `${VAR}` 展开；展开后仍残留未解析占位符时返回 `models=None`，不再 crash。不硬编码 `mimo-v2.5-pro` 到 catalog。
+- **涉及文件**：`hermes_cli/models.py`、`tests/hermes_cli/test_model_validation.py`
+- **侵入类型**：inline（官方文件内约 14 行逻辑）
+- **测试**：`pytest tests/hermes_cli/test_model_validation.py tests/hermes_cli/test_models.py tests/hermes_cli/test_custom_provider_model_switch.py tests/hermes_cli/test_provider_config_validation.py tests/test_minimax_model_validation.py` → 224 passed
