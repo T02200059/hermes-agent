@@ -539,14 +539,11 @@ _PROVIDER_MODELS: dict[str, list[str]] = {
         "glm-5.2",
         "mimo-v2.5",
     ],
-    "yangtb": [
-        "qwen3-coder:30b",
-    ],
 }
 
 # Owner-managed providers: bypass _is_custom_current guard so they can
 # win over "custom" when the user typed /model <name>.
-_OWNER_PROVIDERS = frozenset({"damodel", "yangtb"})
+_OWNER_PROVIDERS = frozenset({"damodel"})
 
 # ---------------------------------------------------------------------------
 # Nous Portal free-model helper
