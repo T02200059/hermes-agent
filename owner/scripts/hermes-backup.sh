@@ -4,16 +4,24 @@
 # Schedule: 04:00 daily.  Retention: last 3 archives.
 # Cron: no_agent=true, deliver=qqbot on failure.
 #
-# SQLite 完整性策略:
-#   对 state.db / kanban.db / response_store.db 三个非空库用 `sqlite3 .backup` 落一致副本
-#   (hold read lock, page-by-page, 比 raw cp 安全),
-#   tar 排除原主 db 文件, 用 Python tarfile 把 snapshot 副本以原名追加到归档.
+# === 增量快照策略 (D 方案) ===
+# 旧版: 本地 tar 整个 ~/.hermes → scp 整个 .tar.gz 到 node010
+#       → 13k+ 文件 / 几百 MB,经常被 120s timeout 截断.
+# 新版: rsync 增量(只传差异)到 remote staging/
+#       → remote 上 cp -al 硬链到 snapshots/<STAMP>/(瞬时)
+#       → remote 上 tar -czf 压该目录到 archives/<STAMP>.tar.gz
+#     整个流程通常 <30s,即使首次全量也比旧版快(避免双倍压缩: 增量+gz 一次完成).
 #
-# 重试策略:
-#   pack+upload 阶段在 retry 包裹里跑 3 次, 指数退避 5s/15s/30s.
+# SQLite 完整性:
+#   state.db / kanban.db / response_store.db 三个非空库,本地用 sqlite3 .backup
+#   落一致副本到 staging, rsync 把副本传到 remote 覆盖在同层 .hermes/<db>.db.
+#   remote 上 cp -al 硬链副本(更省空间)+ 跳过原 db 文件以保持只读一致性.
+#
+# 重试:
+#   rsync + remote-snapshot 阶段在 retry 包裹里跑 3 次, 指数退避 5/15/30s.
 #
 # 本地保留:
-#   staging 目录里留 1 份, 60 分钟后自动清.
+#   本地不再留归档副本 (节省磁盘). staging 临时目录跑完清空.
 #
 # Exit codes:
 #   0 = success (silent)
@@ -24,128 +32,112 @@ set -o pipefail
 # --- Config ---
 BACKUP_REMOTE_DIR="/data/ai/hermes-backup/yangtb"
 BACKUP_REMOTE_HOST="node010"
-# Staging dirs MUST live outside ~/.hermes, otherwise BSD tar
-# (`-C ~ .hermes`) sees the in-progress archive and aborts with
-# "Can't add archive to itself".
-STAGING_DIR="${TMPDIR:-/tmp}/hermes-backup-staging"
-SQLITE_DUMP_DIR="${STAGING_DIR}/sqlite-snapshots"
+# Remote layout under BACKUP_REMOTE_DIR:
+#   staging/.hermes/    ←  rsync 目标,rsync 端用一个目录装 .hermes 树
+#   snapshots/<prev>/   ←  上一次成功的硬链快照
+#   snapshots/<stamp>/  ←  本次新硬链快照
+#   archives/<stamp>.tar.gz  ←  本次打包(基于 <stamp> 目录)
+REMOTE_STAGING="${BACKUP_REMOTE_DIR}/staging"
+REMOTE_SNAPSHOTS="${BACKUP_REMOTE_DIR}/snapshots"
+REMOTE_ARCHIVES="${BACKUP_REMOTE_DIR}/archives"
+
 STAMP="$(date +%Y%m%d-%H%M%S)"
-ARCHIVE_NAME="hermes-${STAMP}.tar.gz"
-LOCAL_TMP="${STAGING_DIR}/${ARCHIVE_NAME}"
+# 本地 staging 目录:只放 sqlite snapshot (几个 db 文件),用完清空.
+LOCAL_STAGING="${TMPDIR:-/tmp}/hermes-backup-staging"
+SQLITE_DUMP_DIR="${LOCAL_STAGING}/sqlite-snapshots"
+SQLITE_DBS=(state.db kanban.db response_store.db)
+
 REMOTE_KEEP=3
-LOCAL_TTL_MIN=60
 MAX_RETRIES=3
 RETRY_DELAYS=(5 15 30)
 SRC_DIR="${HOME}/.hermes"
 LOG_TAG="[hermes-backup]"
 
-log()  { echo "${LOG_TAG} $*"; }
+log()  {
+    if [ "${BACKUP_QUIET:-0}" != "1" ]; then
+        echo "${LOG_TAG} $*"
+    fi
+}
 fail() { echo "${LOG_TAG} FAIL: $*" >&2; exit 1; }
 
-# --- Build exclude list file ---
-# BSD tar --exclude-from: 模式按 *完整归档内路径* 匹配,
-# 'dir' 匹配目录本身的 entry, 'dir/*' 匹配目录内所有内容.
-# 二者都写才能彻底排除一个目录.
-EXCLUDE_FILE="${STAGING_DIR}/.excludes"
-write_exclude_file() {
-    cat > "$1" <<'EXCLUDES'
-.hermes/hermes-agent
-.hermes/hermes-agent/*
-.hermes/profiles
-.hermes/profiles/*
-.hermes/cache
-.hermes/cache/*
-.hermes/bootstrap-cache
-.hermes/bootstrap-cache/*
-.hermes/audio_cache
-.hermes/audio_cache/*
-.hermes/image_cache
-.hermes/image_cache/*
-.hermes/node
-.hermes/node/*
-.hermes/lsp
-.hermes/lsp/*
-.hermes/__pycache__
-.hermes/__pycache__/*
-.hermes/*/__pycache__
-.hermes/*/__pycache__/*
-.hermes/*/*/__pycache__
-.hermes/*/*/__pycache__/*
-*.pyc
-.hermes/*/*.pyc
-.hermes/*/*/*.pyc
-*.wasm
-*.map
-.hermes/models_dev_cache.json
-.hermes/provider_models_cache.json
-.hermes/ollama_cloud_models_cache.json
-.hermes/events-export.json
-.hermes/docs
-.hermes/docs/*
-.hermes/pastes
-.hermes/pastes/*
-.hermes/pets
-.hermes/pets/*
-.hermes/.backups
-.hermes/.backups/*
-.hermes/.qoder
-.hermes/.qoder/*
-.hermes/.claude
-.hermes/.claude/*
-.hermes/.hermes_history
-*.lock
-.hermes/*.lock
-.hermes/*/*.lock
-.hermes/*/*/*.lock
-*.pid
-.hermes/*.pid
-.hermes/*/*.pid
-.hermes/*/*/*.pid
-.hermes/.update_*
-.hermes/.restart_*
-.hermes/.scratch_*
-.hermes/.install_method
-.hermes/logs
-.hermes/logs/*
-.hermes/interrupt_debug.log
-.hermes/agent-hooks
-.hermes/agent-hooks/*
-.hermes/state.db
-.hermes/state.db-shm
-.hermes/state.db-wal
-.hermes/state.db.malformed-backup-*
-.hermes/kanban.db
-.hermes/kanban.db-shm
-.hermes/kanban.db-wal
-.hermes/kanban.db.dispatch.lock
-.hermes/kanban.db.init.lock
-.hermes/kanban.db.malformed-backup-*
-.hermes/response_store.db
-.hermes/response_store.db-shm
-.hermes/response_store.db-wal
-.hermes/response_store.db.malformed-backup-*
-EXCLUDES
-}
+# --- rsync exclude patterns ---
+# openrsync 兼容: 支持 --exclude=PATTERN (多次).
+# 排掉: 代码仓本身 (hermes-agent 7万+ 文件)、各 profile、cache、agent-hooks 等.
+# 注: SQLite 主 db 文件不直接 rsync (--exclude),改用本地 .backup 一致副本.
+EXCLUDES=(
+    # 排除大体积/临时内容.
+    # 重要: rsync 模式下 entry 路径是顶层目录名(不是 .hermes/xxx),
+    #       跟 BSD tar -C $HOME .hermes 的 .hermes/xxx 模式不同.
+    # 代码仓本身 (hermes-agent) ~3.4GB,有独立 git 跟踪,不进备份.
+    --exclude='hermes-agent/'
+    # Owner 临时 review 区,~148M,内容本机有 git 跟踪.
+    --exclude='agent-owner-review/'
+    # 各 profile、cache、agent-hooks 等.
+    --exclude='profiles/'
+    --exclude='cache/'
+    --exclude='bootstrap-cache/'
+    --exclude='audio_cache/'
+    --exclude='image_cache/'
+    --exclude='node/'
+    --exclude='lsp/'
+    --exclude='__pycache__/'
+    --exclude='*.pyc'
+    --exclude='*.wasm'
+    --exclude='*.map'
+    --exclude='models_dev_cache.json'
+    --exclude='provider_models_cache.json'
+    --exclude='ollama_cloud_models_cache.json'
+    --exclude='events-export.json'
+    --exclude='docs/'
+    --exclude='pastes/'
+    --exclude='pets/'
+    --exclude='.backups/'
+    --exclude='.qoder/'
+    --exclude='.claude/'
+    --exclude='.hermes_history'
+    --exclude='*.lock'
+    --exclude='*.pid'
+    --exclude='.update_*'
+    --exclude='.restart_*'
+    --exclude='.scratch_*'
+    --exclude='.install_method'
+    --exclude='logs/'
+    --exclude='interrupt_debug.log'
+    --exclude='agent-hooks/'
+    # SQLite 主 db + WAL/SHM (用 .backup 副本覆盖)
+    --exclude='state.db'
+    --exclude='state.db-shm'
+    --exclude='state.db-wal'
+    --exclude='state.db.malformed-backup-*'
+    --exclude='kanban.db'
+    --exclude='kanban.db-shm'
+    --exclude='kanban.db-wal'
+    --exclude='kanban.db.dispatch.lock'
+    --exclude='kanban.db.init.lock'
+    --exclude='kanban.db.malformed-backup-*'
+    --exclude='response_store.db'
+    --exclude='response_store.db-shm'
+    --exclude='response_store.db-wal'
+    --exclude='response_store.db.malformed-backup-*'
+)
 
 # --- Preflight ---
 [ -d "$SRC_DIR" ] || fail "source dir not found: $SRC_DIR"
-for cmd in ssh scp tar sqlite3 find python3; do
+for cmd in ssh scp rsync tar sqlite3 find python3; do
     command -v "$cmd" >/dev/null 2>&1 || fail "missing required command: $cmd"
 done
 
+# rsync 必须在 remote 也有 (用于 archive 阶段可能不用,但 hardlink 必须 cp -al)
 ssh -o BatchMode=yes -o ConnectTimeout=8 "${BACKUP_REMOTE_HOST}" \
-    "mkdir -p '${BACKUP_REMOTE_DIR}' && test -w '${BACKUP_REMOTE_DIR}'" \
+    "mkdir -p '${REMOTE_STAGING}' '${REMOTE_SNAPSHOTS}' '${REMOTE_ARCHIVES}' && \
+     test -w '${BACKUP_REMOTE_DIR}'" \
     >/dev/null 2>&1 \
     || fail "cannot write to ${BACKUP_REMOTE_HOST}:${BACKUP_REMOTE_DIR}"
 
-mkdir -p "$STAGING_DIR" "$SQLITE_DUMP_DIR" \
-    || fail "cannot create staging dirs under: $STAGING_DIR"
+mkdir -p "$SQLITE_DUMP_DIR" \
+    || fail "cannot create staging dir: $SQLITE_DUMP_DIR"
 
-write_exclude_file "$EXCLUDE_FILE"
-
-# --- SQLite consistent snapshots ---
-SQLITE_DBS=(state.db kanban.db response_store.db)
-
+# --- SQLite consistent snapshots (本地) ---
 snapshot_sqlite() {
     local dbname="$1"
     local src="${SRC_DIR}/${dbname}"
@@ -168,141 +160,109 @@ snapshot_sqlite() {
     fi
 }
 
-log "phase 1/3: sqlite consistent snapshots"
+log "phase 1/4: sqlite consistent snapshots"
 for db in "${SQLITE_DBS[@]}"; do
     snapshot_sqlite "$db"
 done
 
-# --- Pack + Upload, wrapped in retry loop ---
-pack_and_upload() {
+# --- Phase 2-4: rsync + hardlink snapshot + archive (retry-wrapped) ---
+sync_and_snapshot() {
     local attempt="$1"
-    local tar_path="${STAGING_DIR}/.work-${attempt}-${STAMP}.tar.gz"
-    local out_path="${STAGING_DIR}/${ARCHIVE_NAME}"
+    local remote_prev
+    local remote_new="${REMOTE_SNAPSHOTS}/${STAMP}"
 
-    log "attempt ${attempt}/${MAX_RETRIES}: packing -> ${out_path}"
+    # 找上一次成功的 snapshot (按文件名排序,取最大)
+    remote_prev=$(ssh -o BatchMode=yes "${BACKUP_REMOTE_HOST}" \
+        "ls -1d ${REMOTE_SNAPSHOTS}/hermes-*/ 2>/dev/null | sort | tail -1" \
+        2>/dev/null)
+    if [ -n "$remote_prev" ] && [ "${remote_prev%/}" = "${remote_new}" ]; then
+        # 极端情况: STAMP 跟上次重了 → 用秒级后缀
+        remote_prev=$(ssh -o BatchMode=yes "${BACKUP_REMOTE_HOST}" \
+            "ls -1d ${REMOTE_SNAPSHOTS}/hermes-*/ 2>/dev/null | sort | tail -2 | head -1" \
+            2>/dev/null)
+    fi
 
-    # Step A: 打无 sqlite 主文件的归档 (snapshot 会由 Python 步骤补上)
-    if ! tar -czf "$tar_path" \
-        -C "$HOME" \
-        --exclude-from="$EXCLUDE_FILE" \
-        .hermes
+    # Step A: 增量 rsync (本地 .hermes -> remote staging/.hermes/)
+    log "attempt ${attempt}: rsync -> ${BACKUP_REMOTE_HOST}:${REMOTE_STAGING}/.hermes/"
+    if [ -n "$remote_prev" ]; then
+        log "  link-dest reference: ${remote_prev}.hermes"
+    fi
+    if ! rsync -a --delete \
+        "${EXCLUDES[@]}" \
+        ${remote_prev:+"--link-dest=${remote_prev}.hermes"} \
+        -e 'ssh -o BatchMode=yes -o ConnectTimeout=15' \
+        "${SRC_DIR}/" \
+        "${BACKUP_REMOTE_HOST}:${REMOTE_STAGING}/.hermes/"
     then
-        log "attempt ${attempt}: tar A failed"
-        rm -f "$tar_path"
+        log "attempt ${attempt}: rsync failed"
         return 1
     fi
 
-    # Step B: Python 重建归档 - 把 snapshot 副本以原名 .hermes/<db>.db 写入
-    # (绕开 BSD tar 无 --transform 且 gz 不支持 append 的限制)
-    local has_snapshots=0
+    # Step B: 上传 sqlite snapshot 副本,直接覆盖到 remote staging/.hermes/<db>.db
+    # (rsync 单文件多次,简单可靠)
     for db in "${SQLITE_DBS[@]}"; do
-        [ -f "${SQLITE_DUMP_DIR}/${db}" ] && has_snapshots=1 && break
-    done
-
-    if [ "$has_snapshots" = "1" ]; then
-        local rebuild_out="${tar_path%.gz}.rebuild"
-        local ok
-        ok=$(python3 -c '
-import os, sys, tarfile, gzip, shutil
-src_gz, out_tar, dump_dir, src_root, *sqlite_dbs = sys.argv[1:]
-replaced_basenames = set(sqlite_dbs)
-
-tmp_tar = src_gz + ".untar"
-with gzip.open(src_gz, "rb") as gz, open(tmp_tar, "wb") as t:
-    shutil.copyfileobj(gz, t)
-
-with tarfile.open(tmp_tar, "r") as src_tar, \
-     tarfile.open(out_tar, "w") as dst_tar:
-    for ti in src_tar:
-        # 规范化 entry name: BSD tar -C $HOME .hermes 实际存的就是 .hermes/...
-        # 但少数 entry 可能是绝对路径 (如系统生成的). 全部裁到以 .hermes 开头.
-        name = ti.name
-        idx = name.find(".hermes")
-        if idx >= 0:
-            name = name[idx:]
-        else:
-            # 找 db 名字的 fallback
-            for db in sqlite_dbs:
-                idx = name.find("/" + db)
-                if idx >= 0:
-                    name = ".hermes/" + db
-                    break
-        ti.name = name
-
-        basename = os.path.basename(name)
-        if basename in replaced_basenames:
+        if [ ! -f "${SQLITE_DUMP_DIR}/${db}" ]; then
             continue
-        if ti.isfile():
-            data = src_tar.extractfile(ti)
-            dst_tar.addfile(ti, data)
-        else:
-            dst_tar.addfile(ti)
-
-    # 追加 snapshot 副本, 路径用 .hermes/<db>.db
-    for db in sqlite_dbs:
-        full = os.path.join(dump_dir, db)
-        if not os.path.isfile(full):
-            continue
-        ti = tarfile.TarInfo(name=f".hermes/{db}")
-        ti.size = os.path.getsize(full)
-        ti.mtime = int(os.path.getmtime(full))
-        ti.mode = 0o644
-        with open(full, "rb") as f:
-            dst_tar.addfile(ti, f)
-
-os.remove(tmp_tar)
-final_gz = out_tar + ".gz"
-with open(out_tar, "rb") as t, gzip.open(final_gz, "wb", compresslevel=6) as gz:
-    shutil.copyfileobj(t, gz)
-os.remove(out_tar)
-shutil.move(final_gz, src_gz)
-print("ok")
-' "$tar_path" "$rebuild_out" "$SQLITE_DUMP_DIR" "$HOME" "${SQLITE_DBS[@]}" 2>&1)
-        if [ "$ok" != "ok" ]; then
-            log "attempt ${attempt}: python rebuild failed: ${ok}"
-            rm -f "$tar_path" "${rebuild_out}" "${rebuild_out}.gz"
+        fi
+        log "attempt ${attempt}: scp sqlite ${db} -> remote"
+        if ! scp -o BatchMode=yes -o ConnectTimeout=15 \
+            "${SQLITE_DUMP_DIR}/${db}" \
+            "${BACKUP_REMOTE_HOST}:${REMOTE_STAGING}/.hermes/${db}" \
+            >/dev/null 2>&1
+        then
+            log "attempt ${attempt}: scp ${db} failed"
             return 1
         fi
-        log "attempt ${attempt}: rebuilt archive with ${#SQLITE_DBS[@]} sqlite snapshot(s)"
-    fi
+    done
 
-    mv -f "$tar_path" "$out_path" || { log "attempt ${attempt}: mv failed"; return 1; }
-
-    local asize
-    asize=$(stat -f '%z' "$out_path" 2>/dev/null || stat -c '%s' "$out_path")
-    log "attempt ${attempt}: archive ready (${asize} bytes)"
-
-    # Upload
-    log "attempt ${attempt}: scp -> ${BACKUP_REMOTE_HOST}"
-    if ! scp -o BatchMode=yes -o ConnectTimeout=15 \
-        "$out_path" \
-        "${BACKUP_REMOTE_HOST}:${BACKUP_REMOTE_DIR}/${ARCHIVE_NAME}" \
-        >/dev/null 2>&1
+    # Step C: 远端 hardlink snapshot (cp -al 把 staging 硬链到 snapshots/<stamp>/)
+    log "attempt ${attempt}: remote cp -al -> ${remote_new}"
+    if ! ssh -o BatchMode=yes "${BACKUP_REMOTE_HOST}" \
+        "rm -rf '${remote_new}' && \
+         cp -al '${REMOTE_STAGING}/.hermes' '${remote_new}.hermes' && \
+         chmod -R u+rwX '${remote_new}.hermes'"
     then
-        log "attempt ${attempt}: scp failed"
+        log "attempt ${attempt}: remote hardlink failed"
         return 1
     fi
 
+    # Step D: 远端 tar 出 archive. 用 pigz 多核加速 (server 端有 /usr/bin/pigz).
+    # 1.4GB 内容 gz 单核 ~2min,pigz -p 4 降到 ~30s.
+    local archive="${REMOTE_ARCHIVES}/hermes-${STAMP}.tar.gz"
+    log "attempt ${attempt}: remote tar (pigz -p 4) -> ${archive}"
+    if ! ssh -o BatchMode=yes "${BACKUP_REMOTE_HOST}" \
+        "cd '${remote_new}.hermes' && \
+         tar -cf - --use-compress-program='pigz -p 4' . > '${archive}' && \
+         test -s '${archive}'"
+    then
+        log "attempt ${attempt}: remote tar failed"
+        return 1
+    fi
+
+    # 验证 archive size 合理 (>1KB)
     local rsize
     rsize=$(ssh -o BatchMode=yes "${BACKUP_REMOTE_HOST}" \
-        "stat -c '%s' '${BACKUP_REMOTE_DIR}/${ARCHIVE_NAME}' 2>/dev/null" \
-        2>/dev/null)
-    if [ -z "$rsize" ] || [ "$rsize" != "$asize" ]; then
-        log "attempt ${attempt}: remote size mismatch (local=${asize} remote=${rsize:-MISSING})"
+        "stat -c '%s' '${archive}' 2>/dev/null" 2>/dev/null)
+    if [ -z "$rsize" ] || [ "$rsize" -lt 1024 ]; then
+        log "attempt ${attempt}: archive too small or missing (size=${rsize:-MISSING})"
         return 1
     fi
-    log "attempt ${attempt}: remote verified (${rsize} bytes)"
+    log "attempt ${attempt}: archive ready (${rsize} bytes)"
+
     return 0
 }
 
-log "phase 2/3: pack + upload (up to ${MAX_RETRIES} attempts)"
+log "phase 2-4: rsync + snapshot + archive (up to ${MAX_RETRIES} attempts)"
 attempt=1
+last_err=""
 while [ "$attempt" -le "$MAX_RETRIES" ]; do
-    if pack_and_upload "$attempt"; then
+    if sync_and_snapshot "$attempt"; then
+        last_err=""
         break
     fi
+    last_err="attempt ${attempt} failed"
     if [ "$attempt" -eq "$MAX_RETRIES" ]; then
-        fail "all ${MAX_RETRIES} attempts failed. last error above."
+        fail "${last_err}. all ${MAX_RETRIES} attempts exhausted."
     fi
     local_idx=$((attempt - 1))
     delay=${RETRY_DELAYS[$local_idx]:-30}
@@ -311,30 +271,33 @@ while [ "$attempt" -le "$MAX_RETRIES" ]; do
     attempt=$((attempt + 1))
 done
 
-# --- Phase 3: rotation + cleanup ---
-log "phase 3/3: rotation + cleanup"
-
+# --- Phase 5: rotation (remote archives) ---
+log "phase 5/5: remote rotation (keep last ${REMOTE_KEEP} archives)"
 ssh -o BatchMode=yes "${BACKUP_REMOTE_HOST}" \
-    "cd '${BACKUP_REMOTE_DIR}' && \
+    "cd '${REMOTE_ARCHIVES}' && \
      ls -1t hermes-*.tar.gz 2>/dev/null | \
      awk 'NR>\"${REMOTE_KEEP}\"' | \
      xargs -r rm -f" \
     >/dev/null 2>&1 \
-    || log "WARN: remote rotation had issues (non-fatal)"
+    || log "WARN: remote archive rotation had issues (non-fatal)"
 
-touch "$LOCAL_TMP"   # 保护本次包
-find "$STAGING_DIR" -maxdepth 1 \
-    -name 'hermes-*.tar.gz' \
-    -mmin "+${LOCAL_TTL_MIN}" \
-    -delete 2>/dev/null
+# 同步清旧 snapshot 目录 (保留最近 5 个,跟 archive keep 对齐)
+ssh -o BatchMode=yes "${BACKUP_REMOTE_HOST}" \
+    "cd '${REMOTE_SNAPSHOTS}' && \
+     ls -1dt hermes-*/ 2>/dev/null | \
+     awk 'NR>5' | \
+     xargs -r rm -rf" \
+    >/dev/null 2>&1 \
+    || log "WARN: remote snapshot rotation had issues (non-fatal)"
 
 REMAINING=$(ssh -o BatchMode=yes "${BACKUP_REMOTE_HOST}" \
-    "ls -1 '${BACKUP_REMOTE_DIR}'/hermes-*.tar.gz 2>/dev/null | wc -l" \
+    "ls -1 '${REMOTE_ARCHIVES}'/hermes-*.tar.gz 2>/dev/null | wc -l" \
     2>/dev/null)
+
 if [ "${BACKUP_QUIET:-0}" = "1" ]; then
-    : # success — stay silent, only stderr on failure gets delivered
+    : # success — stay silent
 else
-    log "done. local copy: ${LOCAL_TMP} (clears in ${LOCAL_TTL_MIN}m); remote retains ${REMAINING:-?} archive(s)"
+    log "done. remote retains ${REMAINING:-?} archive(s)"
 fi
 
 exit 0
