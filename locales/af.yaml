@@ -23,8 +23,28 @@ gateway:
   config_read_failed: "⚠️ Kon nie config.yaml lees nie: {error}"
   config_save_failed: "⚠️ Kon nie konfigurasie stoor nie: {error}"
 
+  # Platform adapter fallback messages — shown when a message cannot be delivered
+  # in its original format (rich formatting, attachments, clarify buttons, etc.).
+  formatting_failed_prefix: "(Response formatting failed, plain text:)"
+  delivery_failed_notice: "⚠️ Message delivery failed after multiple attempts. Please try again — your request was processed but the response could not be sent."
+  clarify_question: "❓ {question}"
+  clarify_choices: "❓ {question}\n\n{choices}\n\nReply with the number, the option text, or your own answer."
+  file_attachment_failed: "⚠️ Couldn't deliver the file attachment."
+  file_attachment_failed_with_name: "⚠️ Couldn't deliver the file attachment ({file_name})."
+
+  # Generic error shown to the user when message processing crashes unexpectedly.
+  handler_error: "Sorry, I encountered an error ({error_type}).\n{error_detail}\nTry again or use /reset to start a fresh session."
+
+  # Background task completion/failure notifications.
+  background_task_complete: "✅ Background task complete\nPrompt: \"{preview}\"\n\n{response}"
+  background_task_no_response: "(No response generated)"
+  background_task_error_prefix: "Error: {error}"
+  background_task_failed: "❌ Background task {task_id} failed: {error}"
+
+
   model:
     error_prefix:           "Fout: {error}"
+    code_skew_restart_required: "This gateway is running code from {boot_rev} but the checkout on disk is now {disk_rev}. Switching models would risk a stale-module crash — restart the gateway to load the new code: hermes gateway restart"
     switched:               "Model verander na `{model}`"
     provider_label:         "Verskaffer: {provider}"
     context_label:          "Konteks: {tokens} tokens"
@@ -400,3 +420,15 @@ Future messages in this room will use that transcript until `/reset` or another 
     session_db_unavailable_prefix: "Sessie-databasis is nie beskikbaar"
     session_not_found:           "Sessie nie in databasis gevind nie."
     warn_passthrough:            "⚠️ {error}"
+
+  # Discord native slash-command ephemeral acknowledgements.
+  discord_slash:
+    new_started: "New conversation started~"
+    reset_started: "Session reset~"
+    retrying: "Retrying~"
+    status_sent: "Status sent~"
+    stop_requested: "Stop requested~"
+    update_initiated: "Update initiated~"
+    restart_requested: "Restart requested~"
+    queued: "Queued for the next turn."
+    background_started: "Background task started~"

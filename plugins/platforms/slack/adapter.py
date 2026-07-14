@@ -36,6 +36,7 @@ from pathlib import Path as _Path
 
 sys.path.insert(0, str(_Path(__file__).resolve().parents[3]))
 
+from agent.i18n import t
 from gateway.config import Platform, PlatformConfig
 from gateway.platforms.helpers import MessageDeduplicator
 from gateway.platforms.base import (
@@ -2348,7 +2349,7 @@ class SlackAdapter(BasePlatformAdapter):
             # display_name comes from caller-supplied file_name (or basename
             # of the host path) and is the user-facing filename only — safe
             # to surface so the user knows which file failed.
-            text = f"⚠️ Couldn't deliver the file attachment ({display_name})."
+            text = t("gateway.file_attachment_failed_with_name", file_name=display_name)
             if caption:
                 text = f"{caption}\n{text}"
             return await self.send(chat_id, text, reply_to=reply_to, metadata=metadata)

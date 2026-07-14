@@ -440,6 +440,23 @@ gateway:
   config_save_failed: "⚠️ 无法保存配置：{error}"
   silent_api_disconnect: "⚠️ API 连接在收到任何响应前就断开了。这通常是临时的网络或服务商问题 — 请重试。"
 
+  # 平台适配器兜底消息 — 当消息无法以原始格式发送时显示（富文本、附件、澄清按钮等）。
+  formatting_failed_prefix: "（响应格式化失败，纯文本：）"
+  delivery_failed_notice: "⚠️ 消息多次尝试发送均失败。请重试 — 你的请求已处理，但响应无法送达。"
+  clarify_question: "❓ {question}"
+  clarify_choices: "❓ {question}\n\n{choices}\n\n回复数字、选项文本，或输入你自己的答案。"
+  file_attachment_failed: "⚠️ 无法发送文件附件。"
+  file_attachment_failed_with_name: "⚠️ 无法发送文件附件（{file_name}）。"
+
+  # 消息处理意外崩溃时向用户显示的通用错误。
+  handler_error: "抱歉，发生了错误（{error_type}）。\n{error_detail}\n请重试，或使用 /reset 开始新会话。"
+
+  # 后台任务完成/失败通知。
+  background_task_complete: "✅ 后台任务完成\n提示：\"{preview}\"\n\n{response}"
+  background_task_no_response: "（未生成响应）"
+  background_task_error_prefix: "错误：{error}"
+  background_task_failed: "❌ 后台任务 {task_id} 失败：{error}"
+
   # Gateway 生命周期消息 — 重启/关闭/排空时显示
   shutdown_notify_restart: "🌆 网关正在重启 — 当前任务将被中断。重启后发送任意消息，我会尝试从断点处继续。"
   shutdown_notify_stop:    "⏸️ 网关正在关闭 — 当前任务将被中断。"
@@ -583,6 +600,7 @@ gateway:
 
   model:
     error_prefix:           "错误：{error}"
+    code_skew_restart_required: "当前网关运行的代码版本为 {boot_rev}，但磁盘上的 checkout 已变为 {disk_rev}。此时切换模型可能导致模块过期崩溃 — 请重启网关以加载新代码：hermes gateway restart"
     rate_limited: "⏱️ 模型提供方正在限制请求速率。请稍后再试。"
     switched:               "已切换模型为 `{model}`"
     provider_label:         "提供方：{provider}"
@@ -1054,6 +1072,18 @@ gateway:
     session_db_unavailable_prefix: "会话数据库不可用"
     session_not_found:           "数据库中未找到该会话。"
     warn_passthrough:            "⚠️ {error}"
+
+  # Discord 原生斜杠命令的临时确认消息。
+  discord_slash:
+    new_started: "新会话已开始~"
+    reset_started: "会话已重置~"
+    retrying: "正在重试~"
+    status_sent: "状态已发送~"
+    stop_requested: "已请求停止~"
+    update_initiated: "已开始更新~"
+    restart_requested: "已请求重启~"
+    queued: "已加入下一轮队列。"
+    background_started: "后台任务已启动~"
 
 toolguard:
   halt_status: "⚠️ 工具护栏已暂停 {tool_name}：{code}"

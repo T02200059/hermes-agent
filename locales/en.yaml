@@ -432,6 +432,24 @@ gateway:
   config_save_failed: "⚠️ Could not save config: {error}"
   silent_api_disconnect: "⚠️ The API connection dropped before any response arrived. This is usually a transient network or provider issue — please try again."
 
+  # Platform adapter fallback messages — shown when a message cannot be delivered
+  # in its original format (rich formatting, attachments, clarify buttons, etc.).
+  formatting_failed_prefix: "(Response formatting failed, plain text:)"
+  delivery_failed_notice: "⚠️ Message delivery failed after multiple attempts. Please try again — your request was processed but the response could not be sent."
+  clarify_question: "❓ {question}"
+  clarify_choices: "❓ {question}\n\n{choices}\n\nReply with the number, the option text, or your own answer."
+  file_attachment_failed: "⚠️ Couldn't deliver the file attachment."
+  file_attachment_failed_with_name: "⚠️ Couldn't deliver the file attachment ({file_name})."
+
+  # Generic error shown to the user when message processing crashes unexpectedly.
+  handler_error: "Sorry, I encountered an error ({error_type}).\n{error_detail}\nTry again or use /reset to start a fresh session."
+
+  # Background task completion/failure notifications.
+  background_task_complete: "✅ Background task complete\nPrompt: \"{preview}\"\n\n{response}"
+  background_task_no_response: "(No response generated)"
+  background_task_error_prefix: "Error: {error}"
+  background_task_failed: "❌ Background task {task_id} failed: {error}"
+
   # Gateway lifecycle messages — shown during restart/shutdown/draining.
   shutdown_notify_restart: "🌆 Gateway restarting — Your current task will be interrupted. Send any message after restart and I'll try to resume where you left off."
   shutdown_notify_stop:    "⚠️ Gateway shutting down — Your current task will be interrupted."
@@ -581,6 +599,7 @@ Install it with: `hermes skills install {path}`"
   # ("Provider:", "Context:", etc.) and the help/footer lines are localized.
   model:
     error_prefix:           "Error: {error}"
+    code_skew_restart_required: "This gateway is running code from {boot_rev} but the checkout on disk is now {disk_rev}. Switching models would risk a stale-module crash — restart the gateway to load the new code: hermes gateway restart"
     rate_limited: "⏱️ The model provider is rate-limiting requests. Please wait a moment and try again."
     switched:               "Model switched to `{model}`"
     provider_label:         "Provider: {provider}"
@@ -1053,6 +1072,18 @@ Install it with: `hermes skills install {path}`"
     session_db_unavailable_prefix: "Session database not available"
     session_not_found:           "Session not found in database."
     warn_passthrough:            "⚠️ {error}"
+
+  # Discord native slash-command ephemeral acknowledgements.
+  discord_slash:
+    new_started: "New conversation started~"
+    reset_started: "Session reset~"
+    retrying: "Retrying~"
+    status_sent: "Status sent~"
+    stop_requested: "Stop requested~"
+    update_initiated: "Update initiated~"
+    restart_requested: "Restart requested~"
+    queued: "Queued for the next turn."
+    background_started: "Background task started~"
 
 toolguard:
   halt_status: "⚠️ Tool guardrail halted {tool_name}: {code}"

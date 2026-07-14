@@ -2826,6 +2826,25 @@ def _is_executor_shutdown_error(exc: BaseException) -> bool:
     )
 
 
+_ESCAPE_FENCE_RE = re.compile(r'^([ \t]*)(`{3,})(.*)$', re.MULTILINE)
+
+
+def _escape_code_fences_for_inline_block(text: str) -> str:
+    """Rewrite markdown code-fence lines so they can't break out of a wrapping
+    ```` ``` ```` block used to display reasoning on Feishu/Telegram.
+
+    Any line whose first non-space characters are a fence of 3+ backticks —
+    including indented/tab-prefixed fences, which a naive ``re.sub(r'^```')``
+    missed and thus leaked — is rewritten to the same number of single quotes.
+    Inline single backticks are left untouched. The info string after the fence
+    (e.g. the language tag) is preserved.
+    """
+    return _ESCAPE_FENCE_RE.sub(
+        lambda m: m.group(1) + "'" * len(m.group(2)) + m.group(3),
+        text,
+    )
+
+
 # [owner] §17.2 executor-shutdown RuntimeError → friendly restart message
 class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, GatewaySlashCommandsMixin):
     """
@@ -11765,11 +11784,14 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                         # Escape triple-backtick fences inside the reasoning so
                         # they don't terminate the wrapping code block early
                         # and leak the rest as plain markdown on platforms like
-                        # Feishu/Telegram. Only line-leading ``` is rewritten
-                        # (covers both opening and closing fences); inline
-                        # single backticks are left untouched.
-                        _safe_reasoning = re.sub(
-                            r'^```', "'''", display_reasoning, flags=re.MULTILINE
+                        # Feishu/Telegram. Rewrite any line whose first
+                        # non-space chars are a fence (3+ backticks) — including
+                        # indented/tab-prefixed fences, which the old ^``` form
+                        # missed (those leaked and broke the wrapping block) — to
+                        # the same number of single quotes. Inline single
+                        # backticks are left untouched.
+                        _safe_reasoning = _escape_code_fences_for_inline_block(
+                            display_reasoning
                         )
                         response = f"💭 **Reasoning:**\n```\n{_safe_reasoning}\n```\n\n{response}"
 
@@ -13340,7 +13362,11 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             if not runtime_kwargs.get("api_key"):
                 await adapter.send(
                     source.chat_id,
-                    f"❌ Background task {task_id} failed: no provider credentials configured.",
+                    t(
+                        "gateway.background_task_failed",
+                        task_id=task_id,
+                        error="no provider credentials configured",
+                    ),
                     metadata=_thread_metadata,
                 )
                 return
@@ -13418,7 +13444,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
 
             response = result.get("final_response", "") if result else ""
             if not response and result and result.get("error"):
-                response = f"Error: {result['error']}"
+                response = t(
+                    "gateway.background_task_error_prefix",
+                    error=result["error"],
+                )
 
             # Extract media files from the response
             if response:
@@ -13428,18 +13457,25 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 images, text_content = adapter.extract_images(response)
 
                 preview = prompt[:60] + ("..." if len(prompt) > 60 else "")
-                header = f'✅ Background task complete\nPrompt: "{preview}"\n\n'
 
                 if text_content:
                     await adapter.send(
                         chat_id=source.chat_id,
-                        content=header + text_content,
+                        content=t(
+                            "gateway.background_task_complete",
+                            preview=preview,
+                            response=text_content,
+                        ),
                         metadata=_thread_metadata,
                     )
                 elif not images and not media_files:
                     await adapter.send(
                         chat_id=source.chat_id,
-                        content=header + "(No response generated)",
+                        content=t(
+                            "gateway.background_task_complete",
+                            preview=preview,
+                            response=t("gateway.background_task_no_response"),
+                        ),
                         metadata=_thread_metadata,
                     )
 
@@ -13496,7 +13532,11 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 preview = prompt[:60] + ("..." if len(prompt) > 60 else "")
                 await adapter.send(
                     chat_id=source.chat_id,
-                    content=f'✅ Background task complete\nPrompt: "{preview}"\n\n(No response generated)',
+                    content=t(
+                        "gateway.background_task_complete",
+                        preview=preview,
+                        response=t("gateway.background_task_no_response"),
+                    ),
                     metadata=_thread_metadata,
                 )
 
@@ -13505,7 +13545,11 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             try:
                 await adapter.send(
                     chat_id=source.chat_id,
-                    content=f"❌ Background task {task_id} failed: {e}",
+                    content=t(
+                        "gateway.background_task_failed",
+                        task_id=task_id,
+                        error=e,
+                    ),
                     metadata=_thread_metadata,
                 )
             except Exception:

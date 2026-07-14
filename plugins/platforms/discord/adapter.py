@@ -25,6 +25,8 @@ from collections import defaultdict
 from contextlib import suppress
 from typing import Callable, Dict, List, Optional, Any, Tuple
 
+from agent.i18n import t
+
 logger = logging.getLogger(__name__)
 
 
@@ -4073,11 +4075,11 @@ class DiscordAdapter(BasePlatformAdapter):
 
         @tree.command(name="new", description="Start a new conversation")
         async def slash_new(interaction: discord.Interaction):
-            await self._run_simple_slash(interaction, "/reset", "New conversation started~")
+            await self._run_simple_slash(interaction, "/reset", t("gateway.discord_slash.new_started"))
 
         @tree.command(name="reset", description="Reset your Hermes session")
         async def slash_reset(interaction: discord.Interaction):
-            await self._run_simple_slash(interaction, "/reset", "Session reset~")
+            await self._run_simple_slash(interaction, "/reset", t("gateway.discord_slash.reset_started"))
 
         @tree.command(name="model", description="Show or change the model")
         @discord.app_commands.describe(name="Model name (e.g. anthropic/claude-sonnet-4). Leave empty to see current.")
@@ -4096,7 +4098,7 @@ class DiscordAdapter(BasePlatformAdapter):
 
         @tree.command(name="retry", description="Retry your last message")
         async def slash_retry(interaction: discord.Interaction):
-            await self._run_simple_slash(interaction, "/retry", "Retrying~")
+            await self._run_simple_slash(interaction, "/retry", t("gateway.discord_slash.retrying"))
 
         @tree.command(name="undo", description="Remove the last exchange")
         async def slash_undo(interaction: discord.Interaction):
@@ -4104,7 +4106,7 @@ class DiscordAdapter(BasePlatformAdapter):
 
         @tree.command(name="status", description="Show Hermes session status")
         async def slash_status(interaction: discord.Interaction):
-            await self._run_simple_slash(interaction, "/status", "Status sent~")
+            await self._run_simple_slash(interaction, "/status", t("gateway.discord_slash.status_sent"))
 
         @tree.command(name="sethome", description="Set this chat as the home channel")
         async def slash_sethome(interaction: discord.Interaction):
@@ -4112,7 +4114,7 @@ class DiscordAdapter(BasePlatformAdapter):
 
         @tree.command(name="stop", description="Stop the running Hermes agent")
         async def slash_stop(interaction: discord.Interaction):
-            await self._run_simple_slash(interaction, "/stop", "Stop requested~")
+            await self._run_simple_slash(interaction, "/stop", t("gateway.discord_slash.stop_requested"))
 
         @tree.command(name="steer", description="Inject a message after the next tool call (no interrupt)")
         @discord.app_commands.describe(prompt="Text to inject into the agent's next tool result")
@@ -4174,11 +4176,11 @@ class DiscordAdapter(BasePlatformAdapter):
 
         @tree.command(name="update", description="Update Hermes Agent to the latest version")
         async def slash_update(interaction: discord.Interaction):
-            await self._run_simple_slash(interaction, "/update", "Update initiated~")
+            await self._run_simple_slash(interaction, "/update", t("gateway.discord_slash.update_initiated"))
 
         @tree.command(name="restart", description="Gracefully restart the Hermes gateway")
         async def slash_restart(interaction: discord.Interaction):
-            await self._run_simple_slash(interaction, "/restart", "Restart requested~")
+            await self._run_simple_slash(interaction, "/restart", t("gateway.discord_slash.restart_requested"))
 
         @tree.command(name="approve", description="Approve a pending dangerous command")
         @discord.app_commands.describe(scope="Optional: 'all', 'session', 'always', 'all session', 'all always'")
@@ -4209,12 +4211,12 @@ class DiscordAdapter(BasePlatformAdapter):
         @tree.command(name="queue", description="Queue a prompt for the next turn (doesn't interrupt)")
         @discord.app_commands.describe(prompt="The prompt to queue")
         async def slash_queue(interaction: discord.Interaction, prompt: str):
-            await self._run_simple_slash(interaction, f"/queue {prompt}", "Queued for the next turn.")
+            await self._run_simple_slash(interaction, f"/queue {prompt}", t("gateway.discord_slash.queued"))
 
         @tree.command(name="background", description="Run a prompt in the background")
         @discord.app_commands.describe(prompt="The prompt to run in the background")
         async def slash_background(interaction: discord.Interaction, prompt: str):
-            await self._run_simple_slash(interaction, f"/background {prompt}", "Background task started~")
+            await self._run_simple_slash(interaction, f"/background {prompt}", t("gateway.discord_slash.background_started"))
 
         # ── Auto-register any gateway-available commands not yet on the tree ──
         # This ensures new commands added to COMMAND_REGISTRY in

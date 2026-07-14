@@ -21,6 +21,7 @@ from abc import ABC, abstractmethod
 from urllib.parse import urlsplit
 
 from utils import normalize_proxy_url
+from agent.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -3156,18 +3157,20 @@ class BasePlatformAdapter(ABC):
         override this for a richer UX.
         """
         if choices:
-            lines = [f"❓ {question}", ""]
-            for i, choice in enumerate(choices, start=1):
-                lines.append(f"  {i}. {choice}")
-            lines.append("")
-            lines.append("Reply with the number, the option text, or your own answer.")
-            text = "\n".join(lines)
+            choices_text = "\n".join(
+                f"  {i}. {choice}" for i, choice in enumerate(choices, start=1)
+            )
+            text = t(
+                "gateway.clarify_choices",
+                question=question,
+                choices=choices_text,
+            )
             # Text fallback: enable text-capture so the gateway intercept
             # picks up the user's typed reply (e.g. "2" or choice text).
             from tools.clarify_gateway import mark_awaiting_text
             mark_awaiting_text(clarify_id)
         else:
-            text = f"❓ {question}"
+            text = t("gateway.clarify_question", question=question)
         return await self.send(
             chat_id=chat_id,
             content=text,
@@ -3462,9 +3465,9 @@ class BasePlatformAdapter(ABC):
         # filename (already non-sensitive — it is what the agent named the
         # output). Only show it when the caller passed one explicitly.
         if file_name:
-            text = f"⚠️ Couldn't deliver the file attachment ({file_name})."
+            text = t("gateway.file_attachment_failed_with_name", file_name=file_name)
         else:
-            text = "⚠️ Couldn't deliver the file attachment."
+            text = t("gateway.file_attachment_failed")
         if caption:
             text = f"{caption}\n{text}"
         return await self.send(chat_id=chat_id, content=text, reply_to=reply_to, metadata=metadata)
@@ -4175,10 +4178,7 @@ class BasePlatformAdapter(ABC):
             else:
                 # All retries exhausted (loop completed without break) — notify user
                 logger.error("[%s] Failed to deliver response after %d retries: %s", self.name, max_retries, error_str)
-                notice = (
-                    "\u26a0\ufe0f Message delivery failed after multiple attempts. "
-                    "Please try again \u2014 your request was processed but the response could not be sent."
-                )
+                notice = t("gateway.delivery_failed_notice")
                 try:
                     await self.send(chat_id=chat_id, content=notice, reply_to=reply_to, metadata=metadata)
                 except Exception as notify_err:
@@ -4189,7 +4189,7 @@ class BasePlatformAdapter(ABC):
         logger.warning("[%s] Send failed: %s — trying plain-text fallback", self.name, error_str)
         fallback_result = await self.send(
             chat_id=chat_id,
-            content=f"(Response formatting failed, plain text:)\n\n{content[:3500]}",
+            content=f"{t('gateway.formatting_failed_prefix')}\n\n{content[:3500]}",
             reply_to=reply_to,
             metadata=metadata,
         )
@@ -5253,10 +5253,10 @@ class BasePlatformAdapter(ABC):
                 _thread_metadata = _thread_metadata_for_source(event.source, _reply_anchor_for_event(event))
                 await self.send(
                     chat_id=event.source.chat_id,
-                    content=(
-                        f"Sorry, I encountered an error ({error_type}).\n"
-                        f"{error_detail}\n"
-                        "Try again or use /reset to start a fresh session."
+                    content=t(
+                        "gateway.handler_error",
+                        error_type=error_type,
+                        error_detail=error_detail,
                     ),
                     metadata=_thread_metadata,
                 )
