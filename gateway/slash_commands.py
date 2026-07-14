@@ -74,12 +74,9 @@ def _model_switch_skew_guard() -> Optional[str]:
         return None
     boot_rev, disk_rev = skew
     return t(
-        "gateway.model.error_prefix",
-        error=(
-            f"This gateway is running code from {boot_rev} but the checkout on "
-            f"disk is now {disk_rev}. Switching models would risk a stale-module "
-            f"crash — restart the gateway to load the new code: hermes gateway restart"
-        ),
+        "gateway.model.code_skew_restart_required",
+        boot_rev=boot_rev,
+        disk_rev=disk_rev,
     )
 
 
