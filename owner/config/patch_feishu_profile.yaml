@@ -21,6 +21,7 @@ feishu:
         whitelist:
         # - 1 # 占位符
         - ou_2924a1f56adac3a07a0fef2cea2543c5  # 杨天宝
+        - ou_6cb6f4ab129937d7fbf01bd7bf5cfe8d  # 庭威总
         chat_profile_routes: {}
         user_profile_routes: {}
         default_profile: hermesxiyun
