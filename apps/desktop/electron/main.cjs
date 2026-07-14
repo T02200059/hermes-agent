@@ -103,6 +103,7 @@ const {
   computeWindowOptions,
   debounce
 } = require('./window-state.cjs')
+const { opacityForIntensity } = require('./translucency.cjs')
 const {
   authModeFromStatus,
   buildGatewayWsUrl,
@@ -502,10 +503,12 @@ function writePersistedTranslucency(intensity) {
 
 let translucencyIntensity = readPersistedTranslucency()
 
-// Map the 0–100 lever to a window opacity. Floor at 0.3 so the most see-through
-// setting is still usable rather than nearly invisible. 0 → fully opaque.
+// Map the 0–100 lever to a window opacity. The per-platform floor lives in
+// ./translucency.cjs (see opacityForIntensity): Windows gets a shallower curve
+// because it has no vibrancy/backdrop to soften `setOpacity`, so the macOS-tuned
+// slope reads far harsher there. 0 → fully opaque on both platforms.
 function windowOpacity() {
-  return 1 - (translucencyIntensity / 100) * 0.7
+  return opacityForIntensity(translucencyIntensity, IS_WINDOWS)
 }
 
 // Re-apply translucency to a live window (runtime toggle, no recreation).
