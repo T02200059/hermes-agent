@@ -174,7 +174,7 @@ owner:
       feishu_guide: "/feishu-guide"
       yolo_on: "/yolo on"
       yolo_off: "/yolo off"
-      inspect_gpu_cluster: "帮我根据 sre-king 启动 GPU 集群巡检流程，先问我 IP 范围，等我确认后再执行"
+      inspect_gpu_cluster: "帮我根据 xy-gpu skill 启动 GPU 集群巡检流程，先问我 IP 范围，等我确认后再执行"
       resume: "/resume"
       agents: "/agents"
       sync_git_hermes: "帮我同步 hermes-agent 代码：1) 检查 git status 确认无遗留；2) 按功能拆分成多个有意义的 commit；3) 确认全程在当前分支操作；4) push 到 github 和 gitlab。开始前先告诉我你的计划。"
