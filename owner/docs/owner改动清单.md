@@ -23,18 +23,19 @@
 | 改动文件总数 | 172（去重后） |
 | owner/ 纯新增 | ~75 个文件 |
 | 官方文件侵入 | ~70 个文件（含 ~20 个测试文件） |
-| 范围 | 模型归因 / patch.yaml 配置 / 审批安全 / 飞书深度定制 / TUI 皮肤 / Cron 运维 / Gateway 稳定性 / Checkpoint 预测 |
-| 最后更新 | 2026-07-13 |
+| 范围 | 模型归因 / patch.yaml 配置 / 审批安全 / 飞书深度定制 / TUI 皮肤 / Cron 运维 / Gateway 稳定性 / Checkpoint 预测 / Desktop 窗口透明度 |
+| 最后更新 | 2026-07-14 |
 | 来源 | 从 `owner-v17`（500+ commit）清洗迁移而来；本分支是重新整理后的最小叠加版本 |
 
 ### 0.2 章节索引
 
 | 阅读目标 | 对应章节 |
 |----------|----------|
-| 先判断某个 owner 能力属于哪里 | §1-§12 功能正文 |
+| 先判断某个 owner 能力属于哪里 | §1-§13 功能正文 |
 | 看模型/provider/API 调用链 | §1、§2、§10 |
 | 看审批、安全、自动审批、cron 上下文 | §3、§7.4、§11 |
 | 看飞书平台定制 | §4 |
+| 看 Desktop 桌面端改动 | §13 |
 | 看 Gateway merge 后最容易丢的胶水 | §7、附录 B、附录 C |
 | 看脚本、cron、运维能力 | §11 |
 | 看 owner/ 模块到官方侵入点的映射 | 附录 A、附录 B |
@@ -43,7 +44,7 @@
 
 ### 0.3 维护规则
 
-- 新增 owner 能力：先放入 §1-§12 的功能正文，再补附录 A 的模块索引。
+- 新增 owner 能力：先放入 §1-§13 的功能正文，再补附录 A 的模块索引。
 - 修改官方文件：同步更新正文的“涉及文件/侵入类型”，并补附录 B 的侵入点速查。
 - 迁移到 hook/plugin：正文保留能力描述，附录 C 记录迁移结论，附录 E 追加阶段日志。
 - merge 后验证项：能静态检查的放入 `owner/validation/`，再在正文或附录中标出对应 owner 能力。
@@ -809,6 +810,33 @@
 
 ---
 
+## 十三、Desktop 桌面端：窗口透明度曲线
+
+Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本分支在此区域的改动自此节起记录。
+
+### 13.1 Windows 透明度档位过激修复（平台感知曲线）
+
+- **背景**：Desktop 设置里的「窗口透明」滑块按 5% 档位（`step={5}`），0–100 映射到 `BrowserWindow.setOpacity`。`windowOpacity()` 对 macOS / Windows 用同一条线性曲线 `1 - (intensity/100) * 0.7`，但窗口选项只给 macOS 设了 `vibrancy: 'sidebar'`（磨砂玻璃 NSVisualEffectView），Windows 是 `undefined`（无 `backgroundMaterial`）。结果：macOS 上 vibrancy 柔化了 `setOpacity` 的衰减，5%（0.965）读起来「稍微透明」属正常；Windows 上 `setOpacity` 是裸的整窗 alpha 直接糊在不透明背景上、无模糊柔化，同样的 0.965 读起来「几乎半透明」。同一个数、两种渲染机制——`*0.7` 斜率是按 macOS 的 vibrancy 柔化调的，直接套到 Windows 过激。
+- **方案**：把 0–100 → opacity 的转换抽成纯函数 `opacityForIntensity(intensity, isWindows)`（新建 `apps/desktop/electron/translucency.cjs`，遵循仓库 `zoom.cjs` / `window-state.cjs`「主进程把纯计算抽到兄弟模块」的既有模式），Windows 走更缓的曲线：floor 0.75（原 0.30）+ `*0.25` 斜率（原 `*0.7`）。macOS 逐字节不变（同样的 `*0.7`、同样的 vibrancy）。
+
+  | 档位 | macOS（不变） | Windows（修复后） |
+  |---|---|---|
+  | 0%  | 1.000 | 1.000 |
+  | 5%  | 0.965 | 0.988（原 0.965）|
+  | 10% | 0.930 | 0.975 |
+  | 50% | 0.650 | 0.875 |
+  | 100%| 0.300 | 0.750 |
+
+  Windows 5% 只衰减 1.2%，与 macOS「稍微透明」视觉对齐；满档仍能透过看桌面但不影响阅读（opacity 0.75）。
+- **涉及文件**：
+  - 纯新增：`apps/desktop/electron/translucency.cjs`（`opacityForIntensity` + 两个 floor 常量）、`apps/desktop/electron/translucency.test.cjs`（9 个行为契约测试）
+  - 侵入：`apps/desktop/electron/main.cjs`（import `opacityForIntensity`；`windowOpacity()` 改为 `opacityForIntensity(translucencyIntensity, IS_WINDOWS)`）
+- **侵入类型**：薄胶水（main.cjs 一处 import + 一行委托；纯计算在兄弟模块）
+- **测试**：9 个行为契约测试（非快照）：0 必为不透明、单调递减、垃圾输入钳制、满档触达各平台 floor、每个共享档位 Windows 都比 macOS 更不透明（正是本次防回归核心）、低档位保持在 0.95 以上。`cd apps/desktop && node --test electron/translucency.test.cjs` → 9 pass。
+- **Commit**：`a8aa7e9a6`
+
+---
+
 ## 附录 A：owner/ 模块职责索引
 
 | 路径 | 职责 | 侵入官方文件 |
@@ -1105,3 +1133,12 @@ _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请先�
 - **涉及文件**：`hermes_cli/models.py`、`tests/hermes_cli/test_model_validation.py`
 - **侵入类型**：inline（官方文件内约 14 行逻辑）
 - **测试**：`pytest tests/hermes_cli/test_model_validation.py tests/hermes_cli/test_models.py tests/hermes_cli/test_custom_provider_model_switch.py tests/hermes_cli/test_provider_config_validation.py tests/test_minimax_model_validation.py` → 224 passed
+
+### 2026-07-14：Desktop Windows 透明度档位过激修复（平台感知曲线）
+
+- **类型**：bug fix
+- **Commit**：`a8aa7e9a6`
+- **背景**：Desktop「窗口透明」滑块（5% 档位）在 macOS 上 5% 看起来「稍微透明」属正常，但在 Windows 上 5% 已「几乎半透明」。根因：`windowOpacity()` 对两平台用同一条线性曲线 `1 - (intensity/100) * 0.7`，但窗口选项只给 macOS 设了 `vibrancy: 'sidebar'`（磨砂玻璃柔化衰减），Windows 无 backdrop material，`setOpacity` 是裸整窗 alpha，同样 0.965 读起来远比 macOS 激进。`*0.7` 斜率是按 macOS 的 vibrancy 调的，套到 Windows 过激。
+- **修复**：把转换抽成纯函数 `opacityForIntensity(intensity, isWindows)`（新建 `apps/desktop/electron/translucency.cjs`），Windows 走更缓曲线（floor 0.75 / `*0.25`），macOS 逐字节不变。详见 §13.1。
+- **涉及文件**：`apps/desktop/electron/translucency.cjs`（新增）、`apps/desktop/electron/translucency.test.cjs`（新增）、`apps/desktop/electron/main.cjs`（import + 委托）
+- **测试**：`cd apps/desktop && node --test electron/translucency.test.cjs` → 9 pass
