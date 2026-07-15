@@ -241,6 +241,27 @@
 - **侵入类型**：inline 逻辑修改（约 14 行，在官方 `hermes_cli/models.py` 内）
 - **设计原则**：不硬编码 `mimo-v2.5-pro` 到 `_PROVIDER_MODELS["damodel"]`；只解决 env-var 模板泄露导致的 crash，模型识别仍由现有 catalog fallback 处理。
 - **测试**：`pytest tests/hermes_cli/test_model_validation.py tests/hermes_cli/test_models.py tests/hermes_cli/test_custom_provider_model_switch.py tests/hermes_cli/test_provider_config_validation.py tests/test_minimax_model_validation.py` → 224 passed。
+- **Commit**：`bd430ea81`（原附录 E 2026-07-13 条目以「当前未提交改动」记载，后提交为此 hash）
+
+### 2.9 kimi-coding provider：模型目录隔离 + thinking 回显 + vision 标记
+
+- **背景**：`sk-kimi-*` 直连 `api.kimi.com/coding` 的 key 此前会把 Moonshot 完整 curated catalog 一并合并进 coding-plan picker，导致非 Coding-Plan 模型（`kimi-k2.7-code` / `kimi-k2.6`）泄漏；同时 Kimi k2.7-code 需要原样 `reasoning_content` 回显，UI 此前用空格占位覆盖真实内容；且 kimi-coding 未声明支持 vision，图片被 `auxiliary.vision` 预描述而非原生路由。
+- **方案**（4 commit）：
+  - **模型目录隔离**（`0956317d2`）：`hermes_cli/models.py` 新增 `_KIMI_CODING_PLAN_MODELS` + `_is_kimi_coding_plan_endpoint` 助手，使 targeting `api.kimi.com/coding` 的 key 只暴露 `kimi-for-coding` / `kimi-for-coding-highspeed`；`cached_provider_model_ids` 清掉混入了 Moonshot ID 的 pre-fix 缓存行；kimi-coding 插件在 base_url 缺 `/v1` 时探测 `.../coding/v1/models`，避免 404 回退到 Moonshot catalog。新增 `tests/hermes_cli/test_provider_live_curated_merge.py`、`tests/plugins/model_providers/test_kimi_profile.py`。
+  - **thinking 完整回显 + 隐藏占位**（`66a56b478`）：按 model id 及 host/provider 双重识别 Kimi，replay 时保留真实 `reasoning_content`（含前台 k2.7-code 及其 damodel/custom 代理），UI reasoning 显示跳过纯空白 stub；对常开 thinking 的 k2.7-code 不再下发 `thinking.disabled`。涉及 `agent_runtime_helpers.py` / `anthropic_adapter.py` / `chat_completion_helpers.py` / `turn_finalizer.py` / `cli.py` / `gateway/run.py` / `plugins/model-providers/kimi-coding/__init__.py` / `run_agent.py` + 3 测试。
+  - **严格模型 allow-list**（`0ff98f296`）：`api.kimi.com/coding` 的 `/v1/models` 返回订阅外 ID 时，过滤 live 响应，使 `kimi-coding` / `kimi-coding-cn` picker 只暴露两条订阅模型；`cached_provider_model_ids` 改为走同一 allow-list 的刷新路径。新增回归测试注入额外 live 模型并验证被丢弃。
+  - **vision 标记**（`cd47c815b`）：`kimi-coding` 与 `kimi-coding-cn` 两个 profile 设 `supports_vision=True`，附件图片直接原生路由到模型，而非经 `auxiliary.vision` 预描述。
+- **涉及文件**：纯新增 `plugins/model-providers/kimi-coding/__init__.py`（隔离改造 + vision）、`tests/plugins/model_providers/test_kimi_profile.py`、`tests/hermes_cli/test_provider_live_curated_merge.py`；侵入 `hermes_cli/models.py`（`_KIMI_CODING_PLAN_MODELS` / `_is_kimi_coding_plan_endpoint` / allow-list）、`agent/*`、`cli.py`、`gateway/run.py`、`run_agent.py`。
+- **侵入类型**：纯新增（kimi-coding provider 插件 + 测试）+ inline（models.py 目录隔离 + agent/gateway thinking 回显逻辑）。
+- **Commit**：`0956317d2`（目录隔离）、`66a56b478`（thinking 回显）、`0ff98f296`（allow-list）、`cd47c815b`（vision 标记）
+
+### 2.10 model-switch：显式模型白名单优先于 live `/models` 探测
+
+- **背景**：`list_authenticated_providers` 此前把 lone model / default_model 也当成「白名单」来抑制 live discovery，导致 OpenRouter / Bifrost 类端点会用几百个 live ID 覆盖掉少量已配置子集，进而把 `/providers` picker 卡死。
+- **方案**（`ee10d6230`）：只有 `providers.<name>.models` 列表才视为有意的白名单；lone model / default_model 是「当前选择」不应抑制 live discovery。无 api_key 且 collected model list 非空时保留显式子集；仅对裸端点、或 `discover_models` 开启且不存在 `models:` 白名单时才探测 live `/models`。测试分别断言 config-first 行为与无白名单 live 探测路径。
+- **涉及文件**：`hermes_cli/model_switch.py` + `tests/hermes_cli/test_model_switch_custom_providers.py`、`tests/hermes_cli/test_user_providers_model_switch.py`
+- **侵入类型**：inline 逻辑修改（`hermes_cli/model_switch.py`）
+- **Commit**：`ee10d6230`
 
 ---
 
@@ -1127,7 +1148,7 @@ _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请先�
 ### 2026-07-13：damodel `/model` 校验时 env-var 模板未展开导致 crash
 
 - **类型**：bug fix
-- **Commit**：当前未提交改动
+- **Commit**：`bd430ea81`（原始记载为「当前未提交改动」，后提交为此 hash）
 - **背景**：`config.yaml` 中 `providers.damodel.base_url: ${DAMODEL_BASE_URL}` 在环境变量未加载时，字面量会传到 `probe_api_models()`，urllib 因 unknown url type 抛错，最终显示 `无法验证 mimo-v2.5-pro：unknown url type: '${DAMODEL_BASE_URL}/models'`。
 - **修复**：`hermes_cli/models.py:probe_api_models()` 入口增加 `${VAR}` 展开；展开后仍残留未解析占位符时返回 `models=None`，不再 crash。不硬编码 `mimo-v2.5-pro` 到 catalog。
 - **涉及文件**：`hermes_cli/models.py`、`tests/hermes_cli/test_model_validation.py`
@@ -1142,3 +1163,11 @@ _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请先�
 - **修复**：把转换抽成纯函数 `opacityForIntensity(intensity, isWindows)`（新建 `apps/desktop/electron/translucency.cjs`），Windows 走更缓曲线（floor 0.75 / `*0.25`），macOS 逐字节不变。详见 §13.1。
 - **涉及文件**：`apps/desktop/electron/translucency.cjs`（新增）、`apps/desktop/electron/translucency.test.cjs`（新增）、`apps/desktop/electron/main.cjs`（import + 委托）
 - **测试**：`cd apps/desktop && node --test electron/translucency.test.cjs` → 9 pass
+
+### 2026-07-15：补录遗漏功能点（kimi-coding / model-switch / model-validation hash）
+
+- **类型**：文档补录（无代码变更）
+- **范围**：本机作者「杨天宝」最近 7 天 commit，排除 `owner/scripts/` 与 `patch.yaml` 后，对照本清单发现的遗漏功能点（yangtb provider 移除按约定不记、不补「已退役」）。
+- **新增 §2.9 kimi-coding provider**（4 commit）：`0956317d2`（模型目录从 Moonshot 开放 API 隔离）、`66a56b478`（thinking 完整回显 + 隐藏占位）、`0ff98f296`（严格模型 allow-list）、`cd47c815b`（vision 标记）。
+- **新增 §2.10 model-switch 白名单优先**（`ee10d6230`）：显式 `models:` 白名单优先于 live `/models` 探测，防止 OpenRouter/Bifrost 类端点用几百个 live ID 覆盖已配置子集、卡死 `/providers` picker。
+- **§2.8.1 补录 hash**：`bd430ea81`（原 2026-07-13 条目记作「当前未提交改动」，现已提交为此 hash，功能描述一致）。
