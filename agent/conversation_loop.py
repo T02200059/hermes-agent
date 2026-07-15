@@ -669,7 +669,7 @@ def run_conversation(
             interrupted = True
             _turn_exit_reason = "interrupted_by_user"
             if not agent.quiet_mode:
-                agent._safe_print("\n⚡ Breaking out of tool loop due to interrupt...")
+                agent._safe_print(f"\n{t('gateway.runtime.tool_loop_interrupt')}")
             break
         
         api_call_count += 1
@@ -1014,7 +1014,7 @@ def run_conversation(
             failed = True
             _turn_exit_reason = "ollama_runtime_context_too_small"
             messages.append({"role": "assistant", "content": final_response})
-            agent._emit_status("❌ Ollama runtime context is too small for Hermes tool use")
+            agent._emit_status(t("gateway.runtime.ollama_context_too_small"))
             api_call_count -= 1
             agent._api_call_count = api_call_count
             try:
@@ -1066,8 +1066,10 @@ def run_conversation(
                 compression_attempts,
             )
             agent._emit_status(
-                f"📦 Pre-API compression: ~{request_pressure_tokens:,} tokens "
-                f"near the context/output limit. Compacting before the next model call."
+                t(
+                    "gateway.runtime.pre_api_compression",
+                    tokens=f"{request_pressure_tokens:,}",
+                )
             )
             messages, active_system_prompt = agent._compress_context(
                 messages,
@@ -1507,7 +1509,7 @@ def run_conversation(
                     # rate-limit symptom.  Switch to fallback immediately
                     # rather than retrying with extended backoff.
                     if agent._fallback_index < len(agent._fallback_chain):
-                        agent._buffer_status("⚠️ Empty/malformed response — switching to fallback...")
+                        agent._buffer_status(t("gateway.runtime.fallback_empty_malformed"))
                     if agent._try_activate_fallback():
                         active_system_prompt = _sync_failover_system_message(
                             agent, api_messages, active_system_prompt)
@@ -1580,7 +1582,7 @@ def run_conversation(
                     if retry_count >= max_retries:
                         # Try fallback before giving up
                         if agent._has_pending_fallback():
-                            agent._buffer_status(f"⚠️ Max retries ({max_retries}) for invalid responses — trying fallback...")
+                            agent._buffer_status(t("gateway.runtime.fallback_trying", max_retries=max_retries))
                         if agent._try_activate_fallback():
                             active_system_prompt = _sync_failover_system_message(
                                 agent, api_messages, active_system_prompt)
@@ -1590,7 +1592,7 @@ def run_conversation(
                             continue
                         # Terminal — flush buffered retry trace so user sees what happened.
                         agent._flush_status_buffer()
-                        agent._emit_status(f"❌ Max retries ({max_retries}) exceeded for invalid responses. Giving up.")
+                        agent._emit_status(t("gateway.runtime.max_retries_invalid_response", max_retries=max_retries))
                         # [owner] append Chinese hint for terminal API errors
                         _zh_hint = _get_api_error_hint(_resp_error_code)
                         if _zh_hint:
@@ -2160,7 +2162,9 @@ def run_conversation(
                         ctx = agent.context_compressor.context_length
                         if getattr(agent.context_compressor, "_context_probe_persistable", False):
                             save_context_length(agent.model, agent.base_url, ctx)
-                            agent._safe_print(f"{agent.log_prefix}💾 Cached context length: {ctx:,} tokens for {agent.model}")
+                            agent._safe_print(
+                                f"{agent.log_prefix}{t('gateway.runtime.cached_context_length', ctx=f'{ctx:,}', model=agent.model)}"
+                            )
                         agent.context_compressor._context_probed = False
                         agent.context_compressor._context_probe_persistable = False
 
@@ -3249,19 +3253,21 @@ def run_conversation(
                                 "upstream_provider", "aggregator"
                             )
                             agent._buffer_status(
-                                f"⚠️ Upstream {_upstream_name} rate-limited — "
-                                "switching to fallback model..."
+                                t(
+                                    "gateway.runtime.fallback_upstream_rate_limited",
+                                    upstream=_upstream_name,
+                                )
                             )
                         elif classified.reason == FailoverReason.billing:
                             agent._buffer_status(
-                                "⚠️ Billing or credits exhausted — switching to fallback provider..."
+                                t("gateway.runtime.fallback_billing_exhausted")
                             )
                         elif _is_transport_failure:
                             agent._buffer_status(
-                                "⚠️ Provider unreachable — switching to fallback provider..."
+                                t("gateway.runtime.fallback_provider_unreachable")
                             )
                         else:
-                            agent._buffer_status("⚠️ Rate limited — switching to fallback provider...")
+                            agent._buffer_status(t("gateway.runtime.fallback_rate_limited"))
                         if agent._try_activate_fallback(reason=classified.reason):
                             active_system_prompt = _sync_failover_system_message(
                                 agent, api_messages, active_system_prompt)
@@ -3428,7 +3434,13 @@ def run_conversation(
                             "failed": True,
                             "compression_exhausted": True,
                         }
-                    agent._buffer_status(f"⚠️  Request payload too large (413) — compression attempt {compression_attempts}/{max_compression_attempts}...")
+                    agent._buffer_status(
+                        t(
+                            "gateway.runtime.payload_too_large_compressing",
+                            current=compression_attempts,
+                            total=max_compression_attempts,
+                        )
+                    )
 
                     original_len = len(messages)
                     original_tokens = estimate_messages_tokens_rough(messages)
@@ -3449,9 +3461,21 @@ def run_conversation(
 
                     if len(messages) < original_len or (new_tokens > 0 and new_tokens < original_tokens * 0.95):
                         if len(messages) < original_len:
-                            agent._buffer_status(f"🗜️ Compressed {original_len} → {len(messages)} messages, retrying...")
+                            agent._buffer_status(
+                                t(
+                                    "gateway.runtime.compressed_messages",
+                                    before=original_len,
+                                    after=len(messages),
+                                )
+                            )
                         else:
-                            agent._buffer_status(f"🗜️ Compressed ~{original_tokens:,} → ~{new_tokens:,} tokens, retrying...")
+                            agent._buffer_status(
+                                t(
+                                    "gateway.runtime.compressed_tokens",
+                                    before_tokens=f"{original_tokens:,}",
+                                    after_tokens=f"{new_tokens:,}",
+                                )
+                            )
                         time.sleep(2)  # Brief pause between compression retries
                         _retry.restart_with_compressed_messages = True
                         break
@@ -3651,7 +3675,14 @@ def run_conversation(
                             "failed": True,
                             "compression_exhausted": True,
                         }
-                    agent._buffer_status(f"🗜️ Context too large (~{approx_tokens:,} tokens) — compressing ({compression_attempts}/{max_compression_attempts})...")
+                    agent._buffer_status(
+                        t(
+                            "gateway.runtime.context_too_large_compressing",
+                            tokens=f"{approx_tokens:,}",
+                            current=compression_attempts,
+                            total=max_compression_attempts,
+                        )
+                    )
 
                     original_len = len(messages)
                     original_tokens = estimate_messages_tokens_rough(messages)
@@ -3672,9 +3703,21 @@ def run_conversation(
 
                     if len(messages) < original_len or (new_tokens > 0 and new_tokens < original_tokens * 0.95) or (new_ctx and new_ctx < old_ctx):
                         if len(messages) < original_len:
-                            agent._buffer_status(f"🗜️ Compressed {original_len} → {len(messages)} messages, retrying...")
+                            agent._buffer_status(
+                                t(
+                                    "gateway.runtime.compressed_messages",
+                                    before=original_len,
+                                    after=len(messages),
+                                )
+                            )
                         elif new_tokens > 0 and new_tokens < original_tokens * 0.95:
-                            agent._buffer_status(f"🗜️ Compressed ~{original_tokens:,} → ~{new_tokens:,} tokens, retrying...")
+                            agent._buffer_status(
+                                t(
+                                    "gateway.runtime.compressed_tokens",
+                                    before_tokens=f"{original_tokens:,}",
+                                    after_tokens=f"{new_tokens:,}",
+                                )
+                            )
                         time.sleep(2)  # Brief pause between compression retries
                         _retry.restart_with_compressed_messages = True
                         break
@@ -3781,7 +3824,12 @@ def run_conversation(
                         elif classified.reason == FailoverReason.ssl_cert_verification:
                             agent._buffer_status("⚠️ " + t("gateway.model.tls_cert_verification_failed_trying_fallback"))
                         else:
-                            agent._buffer_status(f"⚠️ Non-retryable error (HTTP {status_code}) — trying fallback...")
+                            agent._buffer_status(
+                                t(
+                                    "gateway.runtime.fallback_non_retryable",
+                                    status_code=status_code,
+                                )
+                            )
                     if agent._try_activate_fallback():
                         active_system_prompt = _sync_failover_system_message(
                             agent, api_messages, active_system_prompt)
@@ -3989,7 +4037,7 @@ def run_conversation(
                         continue
                     # Try fallback before giving up entirely
                     if agent._has_pending_fallback():
-                        agent._buffer_status(f"⚠️ Max retries ({max_retries}) exhausted — trying fallback...")
+                        agent._buffer_status(t("gateway.runtime.fallback_trying", max_retries=max_retries))
                     if agent._try_activate_fallback():
                         active_system_prompt = _sync_failover_system_message(
                             agent, api_messages, active_system_prompt)
@@ -4002,7 +4050,12 @@ def run_conversation(
                     _final_summary = agent._summarize_api_error(api_error)
                     _billing_guidance = ""
                     if classified.reason == FailoverReason.billing:
-                        agent._emit_status(f"❌ Billing or credits exhausted — {_final_summary}")
+                        agent._emit_status(
+                            t(
+                                "gateway.runtime.status_billing_exhausted",
+                                summary=_final_summary,
+                            )
+                        )
                         _billing_guidance = _billing_or_entitlement_message(
                             capability="model access",
                             provider=_provider,
@@ -4017,9 +4070,21 @@ def run_conversation(
                             model=_model,
                         )
                     elif is_rate_limited:
-                        agent._emit_status(f"❌ Rate limited after {max_retries} retries — {_final_summary}")
+                        agent._emit_status(
+                            t(
+                                "gateway.runtime.status_rate_limited",
+                                max_retries=max_retries,
+                                summary=_final_summary,
+                            )
+                        )
                     else:
-                        agent._emit_status(f"❌ API failed after {max_retries} retries — {_final_summary}")
+                        agent._emit_status(
+                            t(
+                                "gateway.runtime.status_api_failed",
+                                max_retries=max_retries,
+                                summary=_final_summary,
+                            )
+                        )
                     # [owner] append Chinese hint for terminal API errors
                     _zh_hint = _get_api_error_hint(
                         getattr(api_error, "status_code", None),
@@ -4217,7 +4282,14 @@ def run_conversation(
                     else:
                         agent._buffer_status(_rate_limit_status)
                 else:
-                    agent._buffer_status(f"⏳ Retrying in {wait_time:.1f}s (attempt {retry_count}/{max_retries})...")
+                    agent._buffer_status(
+                        t(
+                            "gateway.runtime.retrying_in",
+                            wait_time=f"{wait_time:.1f}",
+                            attempt=retry_count,
+                            max=max_retries,
+                        )
+                    )
                 logger.warning(
                     "Retrying API call in %ss (attempt %s/%s) %s policy=%s error=%s",
                     wait_time,
@@ -4851,7 +4923,7 @@ def run_conversation(
                     )
 
                 if agent.compression_enabled and _compressor.should_compress(_real_tokens):
-                    agent._safe_print("  ⟳ compacting context…")
+                    agent._safe_print(f"  {t('gateway.runtime.compacting_context_progress')}")
                     messages, active_system_prompt = agent._compress_context(
                         messages, system_message,
                         approx_tokens=agent.context_compressor.last_prompt_tokens,
@@ -4922,7 +4994,7 @@ def run_conversation(
                     if fallback and getattr(agent, '_last_content_tools_all_housekeeping', False):
                         _turn_exit_reason = "fallback_prior_turn_content"
                         logger.info("Empty follow-up after tool calls — using prior turn content as final response")
-                        agent._emit_status("↻ Empty response after tool calls — using earlier content as final answer")
+                        agent._emit_status(t("gateway.runtime.empty_response_fallback"))
                         agent._last_content_with_tools = None
                         agent._last_content_tools_all_housekeeping = False
                         agent._empty_content_retries = 0
@@ -5311,7 +5383,12 @@ def run_conversation(
                 
                 _turn_exit_reason = f"text_response(finish_reason={finish_reason})"
                 if not agent.quiet_mode:
-                    agent._safe_print(f"🎉 Conversation completed after {api_call_count} OpenAI-compatible API call(s)")
+                    agent._safe_print(
+                        t(
+                            "gateway.runtime.conversation_completed",
+                            count=f"{api_call_count:,}",
+                        )
+                    )
                 break
             
         except Exception as e:

@@ -501,17 +501,23 @@ def interruptible_api_call(agent, api_kwargs: dict):
                 "loop can reconnect.",
                 _elapsed, _ttfb_timeout, api_kwargs.get("model", "unknown"),
             )
+            _model = api_kwargs.get('model', 'unknown')
             if _silent_hint:
                 agent._buffer_status(
-                    f"⚠️ No first byte from provider in {int(_elapsed)}s "
-                    f"(codex stream, model: {api_kwargs.get('model', 'unknown')}). "
-                    f"Reconnecting. {_silent_hint}"
+                    _t(
+                        "gateway.runtime.codex_no_first_byte_with_hint",
+                        elapsed=f"{int(_elapsed)}",
+                        model=_model,
+                        hint=_silent_hint,
+                    )
                 )
             else:
                 agent._buffer_status(
-                    f"⚠️ No first byte from provider in {int(_elapsed)}s "
-                    f"(codex stream, model: {api_kwargs.get('model', 'unknown')}). "
-                    f"Reconnecting."
+                    _t(
+                        "gateway.runtime.codex_no_first_byte",
+                        elapsed=f"{int(_elapsed)}",
+                        model=_model,
+                    )
                 )
             try:
                 _close_request_client_once("codex_ttfb_kill")
@@ -555,9 +561,11 @@ def interruptible_api_call(agent, api_kwargs: dict):
                 f"{_est_tokens_for_codex_watchdog:,}",
             )
             agent._buffer_status(
-                f"⚠️ Codex stream sent no events for {int(_event_stale_elapsed)}s "
-                f"after first byte (model: {api_kwargs.get('model', 'unknown')}). "
-                f"Reconnecting."
+                _t(
+                    "gateway.runtime.codex_stream_idle",
+                    elapsed=f"{int(_event_stale_elapsed)}",
+                    model=api_kwargs.get('model', 'unknown'),
+                )
             )
             try:
                 _close_request_client_once("codex_stream_idle_kill")
@@ -591,17 +599,23 @@ def interruptible_api_call(agent, api_kwargs: dict):
                 _elapsed, _stale_timeout,
                 api_kwargs.get("model", "unknown"), f"{_est_ctx:,}",
             )
+            _model = api_kwargs.get('model', 'unknown')
             if _silent_hint:
                 agent._buffer_status(
-                    f"⚠️ No response from provider for {int(_elapsed)}s "
-                    f"(non-streaming, model: {api_kwargs.get('model', 'unknown')}). "
-                    f"{_silent_hint}"
+                    _t(
+                        "gateway.runtime.provider_no_response_with_hint",
+                        elapsed=f"{int(_elapsed)}",
+                        model=_model,
+                        hint=_silent_hint,
+                    )
                 )
             else:
                 agent._buffer_status(
-                    f"⚠️ No response from provider for {int(_elapsed)}s "
-                    f"(non-streaming, model: {api_kwargs.get('model', 'unknown')}). "
-                    f"Aborting call."
+                    _t(
+                        "gateway.runtime.provider_no_response",
+                        elapsed=f"{int(_elapsed)}",
+                        model=_model,
+                    )
                 )
             try:
                 if agent.api_mode == "anthropic_messages":
@@ -1623,8 +1637,11 @@ def try_activate_fallback(agent, reason: "FailoverReason | None" = None) -> bool
         rewrite_prompt_model_identity(agent, fb_model, fb_provider)
 
         agent._buffer_status(
-            f"🔄 Primary model failed — switching to fallback: "
-            f"{fb_model} via {fb_provider}"
+            _t(
+                "gateway.runtime.fallback_primary_failed",
+                model=fb_model,
+                provider=fb_provider,
+            )
         )
         logger.info(
             "Fallback activated: %s → %s (%s)",
@@ -1990,9 +2007,7 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
                     if is_streaming_access_denied_error(_bedrock_exc):
                         agent._disable_streaming = True
                         agent._safe_print(
-                            "\n⚠  AWS IAM denied bedrock:InvokeModelWithResponseStream — "
-                            "falling back to non-streaming InvokeModel.\n"
-                            "   Grant that action to restore streaming output.\n"
+                            f"\n{_t('gateway.runtime.bedrock_stream_denied')}\n"
                         )
                         logger.info(
                             "bedrock: converse_stream denied by IAM (%s) — "
@@ -2883,17 +2898,20 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
                             mid_tool_call=False,
                             diag=request_client_holder.get("diag"),
                         )
-                        agent._buffer_status(
-                            "❌ Provider returned malformed streaming data after "
-                            f"{_max_stream_retries + 1} attempts. "
-                            "The provider may be experiencing issues — "
-                            "try again in a moment."
-                            if _is_stream_parse_err else
-                            "❌ Connection to provider failed after "
-                            f"{_max_stream_retries + 1} attempts. "
-                            "The provider may be experiencing issues — "
-                            "try again in a moment."
-                        )
+                        if _is_stream_parse_err:
+                            agent._buffer_status(
+                                _t(
+                                    "gateway.runtime.stream_malformed",
+                                    attempts=f"{_max_stream_retries + 1}",
+                                )
+                            )
+                        else:
+                            agent._buffer_status(
+                                _t(
+                                    "gateway.runtime.stream_connection_failed",
+                                    attempts=f"{_max_stream_retries + 1}",
+                                )
+                            )
                     else:
                         _err_lower = str(e).lower()
                         _is_stream_unsupported = (
@@ -2923,16 +2941,14 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
                             )
                         if _is_stream_unsupported or _is_bedrock_stream_denied:
                             agent._disable_streaming = True
-                            agent._safe_print(
-                                "\n⚠  AWS IAM denied bedrock:InvokeModelWithResponseStream. "
-                                "Switching to non-streaming.\n"
-                                "   Grant that action to restore streaming output.\n"
-                                if _is_bedrock_stream_denied else
-                                "\n⚠  Streaming is not supported for this "
-                                "model/provider. Switching to non-streaming.\n"
-                                "   To avoid this delay, set display.streaming: false "
-                                "in config.yaml\n"
-                            )
+                            if _is_bedrock_stream_denied:
+                                agent._safe_print(
+                                    f"\n{_t('gateway.runtime.bedrock_stream_denied')}\n"
+                                )
+                            else:
+                                agent._safe_print(
+                                    f"\n{_t('gateway.runtime.streaming_unsupported')}\n"
+                                )
                         logger.info(
                             "Streaming failed before delivery: %s",
                             e,
@@ -3027,10 +3043,12 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
                 api_kwargs.get("model", "unknown"), f"{_est_ctx:,}",
             )
             agent._buffer_status(
-                f"⚠️ No response from provider for {int(_stale_elapsed)}s "
-                f"(model: {api_kwargs.get('model', 'unknown')}, "
-                f"context: ~{_est_ctx:,} tokens). "
-                f"Reconnecting..."
+                _t(
+                    "gateway.runtime.stream_no_response",
+                    elapsed=f"{int(_stale_elapsed)}",
+                    model=api_kwargs.get('model', 'unknown'),
+                    tokens=f"{_est_ctx:,}",
+                )
             )
             try:
                 _close_request_client_once("stale_stream_kill")

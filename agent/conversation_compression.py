@@ -37,6 +37,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional, Tuple
 
+from agent.i18n import t as _t
 from agent.model_metadata import estimate_request_tokens_rough
 
 logger = logging.getLogger(__name__)
@@ -50,6 +51,19 @@ COMPACTION_STATUS_MARKER = "Compacting context"
 COMPACTION_STATUS = (
     f"🗜️ {COMPACTION_STATUS_MARKER} — summarizing earlier conversation so I can continue..."
 )
+
+
+def get_compaction_status() -> str:
+    """Return the translated compaction status line for runtime emission.
+
+    Keeps ``COMPACTION_STATUS_MARKER`` embedded so the gateway can still
+    recognize the lifecycle status as ``kind="compacting"``. The English
+    ``COMPACTION_STATUS`` constant is retained for tests/back-compat.
+    """
+    return _t(
+        "gateway.runtime.compaction",
+        marker=COMPACTION_STATUS_MARKER,
+    )
 
 
 def _compression_lock_holder(agent: Any) -> str:
@@ -513,7 +527,7 @@ def compress_context(
         f"{approx_tokens:,}" if approx_tokens else "unknown", agent.model,
         focus_topic,
     )
-    agent._emit_status(COMPACTION_STATUS)
+    agent._emit_status(get_compaction_status())
 
     # ── Compression lock ────────────────────────────────────────────────
     # Atomic, state.db-backed lock per session_id.  Without this, two
@@ -1060,7 +1074,7 @@ def _compress_context_via_codex_app_server(
         f"{approx_tokens:,}" if approx_tokens else "unknown",
     )
     try:
-        agent._emit_status(COMPACTION_STATUS)
+        agent._emit_status(get_compaction_status())
     except Exception:
         pass
 
@@ -1378,6 +1392,7 @@ def try_shrink_image_parts_in_messages(
 __all__ = [
     "COMPACTION_STATUS",
     "COMPACTION_STATUS_MARKER",
+    "get_compaction_status",
     "check_compression_model_feasibility",
     "replay_compression_warning",
     "compress_context",

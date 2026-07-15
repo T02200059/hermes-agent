@@ -29,6 +29,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from agent.conversation_compression import conversation_history_after_compression
+from agent.i18n import t as _t
 from agent.iteration_budget import IterationBudget
 from agent.model_metadata import (
     estimate_messages_tokens_rough,
@@ -242,11 +243,7 @@ def build_turn_context(
     if agent.api_mode != "anthropic_messages":
         try:
             if agent._cleanup_dead_connections():
-                agent._emit_status(
-                    "🔌 Detected stale connections from a previous provider "
-                    "issue — cleaned up automatically. Proceeding with fresh "
-                    "connection."
-                )
+                agent._emit_status(_t("gateway.runtime.stale_connections"))
         except Exception:
             pass
     # Replay compression warning through status_callback for gateway platforms.
@@ -322,8 +319,11 @@ def build_turn_context(
     if not agent.quiet_mode:
         _print_preview = summarize_user_message_for_log(user_message)
         agent._safe_print(
-            f"💬 Starting conversation: '{_print_preview[:60]}"
-            f"{'...' if len(_print_preview) > 60 else ''}'"
+            _t(
+                "gateway.runtime.starting_conversation",
+                preview=_print_preview[:60],
+                ellipsis="..." if len(_print_preview) > 60 else "",
+            )
         )
 
     # ── System prompt (cached per session for prefix caching) ──
@@ -426,9 +426,11 @@ def build_turn_context(
                 f"{_compressor.context_length:,}",
             )
             agent._emit_status(
-                f"📦 Preflight compression: ~{_preflight_tokens:,} tokens "
-                f">= {_compressor.threshold_tokens:,} threshold. "
-                "This may take a moment."
+                _t(
+                    "gateway.runtime.preflight_compression",
+                    tokens=f"{_preflight_tokens:,}",
+                    threshold=f"{_compressor.threshold_tokens:,}",
+                )
             )
             for _pass in range(3):
                 _orig_len = len(messages)
