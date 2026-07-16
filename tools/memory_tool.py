@@ -33,6 +33,7 @@ from pathlib import Path
 from hermes_constants import get_hermes_home
 from typing import Dict, Any, List, Optional
 
+from agent.i18n import t
 from utils import atomic_replace
 
 # fcntl is Unix-only; on Windows use msvcrt for file locking
@@ -368,12 +369,11 @@ class MemoryStore:
                 current = self._char_count(target)
                 return self._consolidation_failure({
                     "success": False,
-                    "error": (
-                        f"Memory at {current:,}/{limit:,} chars. "
-                        f"Adding this entry ({len(content)} chars) would exceed the limit. "
-                        f"Consolidate now: use 'replace' to merge overlapping entries into "
-                        f"shorter ones or 'remove' stale or less important entries (see "
-                        f"current_entries below), then retry this add — all in this turn."
+                    "error": t(
+                        "memory.add_exceeds_limit",
+                        current=f"{current:,}",
+                        limit=f"{limit:,}",
+                        entry_chars=len(content),
                     ),
                     "current_entries": entries,
                     "usage": f"{current:,}/{limit:,}",

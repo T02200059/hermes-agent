@@ -1131,6 +1131,11 @@ toolguard:
   halt_status: "⚠️ 工具护栏已暂停 {tool_name}：{code}"
   halt_response: "我已停止重试 {tool_name}，因为它在 {count} 次重复无进展的尝试后触发了工具调用护栏（{code}）。最后一次工具结果已说明阻塞原因；下一步应改变策略，而不是重复相同的调用。"
 
+# Memory 工具状态消息。操作名（add/replace/remove）与 current_entries 字段名保持字面量，
+# 便于模型按工具协议直接操作。
+memory:
+  add_exceeds_limit: "内存已用 {current}/{limit} 字符。新增此条目（{entry_chars} 字符）将超出上限。请立即整理：使用 'replace' 将重叠条目合并为更短内容，或使用 'remove' 删除过时或不太重要的条目（见下方 current_entries），然后在本回合内重试本次 add。"
+
 memory_proposal:
   action_add: "添加"
   action_replace: "替换"

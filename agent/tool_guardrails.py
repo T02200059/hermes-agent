@@ -211,7 +211,11 @@ def classify_tool_failure(tool_name: str, result: str | None) -> tuple[bool, str
     if tool_name == "memory":
         data = safe_json_loads(result)
         if isinstance(data, dict):
-            if data.get("success") is False and "exceed the limit" in data.get("error", ""):
+            err = data.get("error", "") or ""
+            # Match English + localized (zh) overflow wording from memory.add_exceeds_limit.
+            if data.get("success") is False and (
+                "exceed the limit" in err or "超出上限" in err
+            ):
                 return True, " [full]"
 
     lower = result[:500].lower()

@@ -1131,6 +1131,11 @@ toolguard:
   halt_status: "⚠️ Tool guardrail halted {tool_name}: {code}"
   halt_response: "I stopped retrying {tool_name} because it hit the tool-call guardrail ({code}) after {count} repeated non-progressing attempts. The last tool result explains the blocker; the next step is to change strategy instead of repeating the same call."
 
+# Memory tool user/model-facing status messages. Keep action names (add/replace/
+# remove) and the current_entries field name literal so the model can act on them.
+memory:
+  add_exceeds_limit: "Memory at {current}/{limit} chars. Adding this entry ({entry_chars} chars) would exceed the limit. Consolidate now: use 'replace' to merge overlapping entries into shorter ones or 'remove' stale or less important entries (see current_entries below), then retry this add — all in this turn."
+
 memory_proposal:
   action_add: "Add"
   action_replace: "Replace"
