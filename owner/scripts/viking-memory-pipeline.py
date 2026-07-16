@@ -4,6 +4,11 @@
 Always emits a full JSON report to stdout (unlike the cron scanner which is
 silent when clean). Never writes to OpenViking.
 
+Layers:
+  tier1 — non-Chinese
+  tier2 — near-duplicates (URIs pending translate this round are deferred)
+  tier3 — preference / hard-claim candidates (skips human_reviewed=1)
+
 Usage:
   python3 viking-memory-pipeline.py [--threshold 0.85] [--verbose]
   python3 viking-memory-pipeline.py --output /tmp/viking-report.json
@@ -31,10 +36,17 @@ def main() -> int:
     parser.add_argument("--skip-non-chinese", action="store_true")
     parser.add_argument(
         "--include-english",
-        action="store_true",
-        help="Also flag English-heavy memories",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Flag English / low-Chinese Latin text for translate tier (default: on)",
     )
     parser.add_argument("--exclude-category", default="")
+    parser.add_argument(
+        "--preference-limit",
+        type=int,
+        default=10,
+        help="Max preference (tier3) candidates to return (default 10; 0=unlimited)",
+    )
     parser.add_argument("--output", help="Also write report to this path")
     parser.add_argument("--verbose", action="store_true")
     parser.add_argument(
@@ -65,9 +77,10 @@ def main() -> int:
         skip_non_chinese=args.skip_non_chinese,
         include_english=args.include_english,
         exclude_categories=exclude or None,
+        preference_limit=args.preference_limit,
     )
 
-    # Stable shape for downstream fix workers.
+    pref = report.get("preferences") or {}
     out = {
         "tier1": {
             "scanned": report["inventory"]["total_files"],
@@ -90,6 +103,9 @@ def main() -> int:
         "tier2": {
             "scanned": report["similar_meta"].get("vectors_used", 0),
             "pairs": report["summary"]["similar_pairs_count"],
+            "deferred_for_translate": report["summary"].get(
+                "similar_pairs_deferred_translate_count", 0
+            ),
             "items": [
                 {
                     "similarity": pair["similarity"],
@@ -105,11 +121,21 @@ def main() -> int:
                 }
                 for pair in report["similar_pairs"]
             ],
+            "deferred_items": report.get("similar_pairs_deferred_translate") or [],
             "meta": report["similar_meta"],
+        },
+        "tier3": {
+            "scanned": pref.get("scanned_files", 0),
+            "skipped_human_reviewed": pref.get("skipped_human_reviewed", 0),
+            "candidates": pref.get("candidate_count", 0),
+            "limit": report["config"].get("preference_limit"),
+            "items": pref.get("candidates") or [],
+            "tag_schema": pref.get("tag_schema") or {},
         },
         "inventory": report["inventory"],
         "config": report["config"],
         "has_work": report["summary"]["has_work"],
+        "summary": report["summary"],
         "scan_time": report["scan_time"],
     }
 
