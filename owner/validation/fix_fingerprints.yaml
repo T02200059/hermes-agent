@@ -1,0 +1,91 @@
+# Bug 修复指纹库
+#
+# 记录 owner 分支已提前修复的 bug。当上游后续也修复同一问题时，
+# FingerprintDetector 会基于文件交集率 + 关键词命中率计算相似度，
+# 相似度 > 0.5 即在报告中提示"疑似重复修复"，供人工决策
+# （删本地取官方 / 融合 / 保留本地）。
+#
+# Schema 见架构文档 3.2 节：
+#   id              : 唯一标识符
+#   title           : 人类可读描述
+#   owner_commit    : 改动清单章节号（如 "2.2.1"）
+#   owner_commit_hash: owner 分支 commit hash（可选）
+#   fixed_files     : 本地修复涉及的文件列表（相对仓库根）
+#   fix_keywords    : 修复意图关键词列表
+#   fix_category    : bugfix | security | enhancement
+#   status          : active | superseded | merged_upstream
+#                     仅 active 条目参与检测
+
+fixes:
+  - id: credential-pool-env-seed-asymmetry
+    title: "credential pool env seeding 不校验 key 格式"
+    owner_commit: "2.2.1"
+    owner_commit_hash: "e0230f90a"
+    fixed_files:
+      - hermes_cli/auth.py
+      - agent/credential_pool.py
+      - hermes_cli/model_switch.py
+    fix_keywords:
+      - api_key_prefixes
+      - _seed_from_env
+      - copilot
+      - ghp_
+    fix_category: bugfix
+    status: active
+
+  - id: anthropic-unconditional-probe
+    title: "anthropic 无条件探测拖慢 /providers"
+    owner_commit: "2.2.2"
+    owner_commit_hash: ""
+    fixed_files:
+      - hermes_cli/model_switch.py
+      - hermes_cli/providers.py
+    fix_keywords:
+      - _cred_signal_slugs
+      - anthropic
+      - should_probe
+      - has_explicit_models
+    fix_category: bugfix
+    status: active
+
+  - id: env-only-providers-display
+    title: "env-only providers 不纳入显示列表"
+    owner_commit: "2.2.3"
+    owner_commit_hash: "83576b22c"
+    fixed_files:
+      - hermes_cli/model_switch.py
+    fix_keywords:
+      - env-only
+      - provider
+      - display
+      - list
+    fix_category: bugfix
+    status: active
+
+  - id: feishu-model-picker-stale-session
+    title: "飞书 model_picker 卡片 stale session 卡 loading"
+    owner_commit: "2.2.4"
+    owner_commit_hash: ""
+    fixed_files:
+      - plugins/platforms/feishu/adapter.py
+    fix_keywords:
+      - model_picker
+      - stale
+      - loading
+      - action_value
+    fix_category: bugfix
+    status: active
+
+  - id: damodel-env-var-template-crash
+    title: "damodel /model 校验时 env-var 模板未展开导致 crash"
+    owner_commit: "2.8.1"
+    owner_commit_hash: ""
+    fixed_files:
+      - hermes_cli/model_switch.py
+    fix_keywords:
+      - damodel
+      - base_url
+      - template
+      - env
+    fix_category: bugfix
+    status: active

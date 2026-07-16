@@ -1,0 +1,69 @@
+# ─── 仓库配置 ───
+repo:
+  root: "~/.hermes/hermes-agent"     # 仓库根目录（~ 自动展开）
+  owner_branch: "owner"               # 二次开发分支
+  upstream_remote: "upstream"          # 上游 remote 名
+  upstream_branch: "main"             # 上游分支名
+  venv_python: ".venv/bin/python"     # venv Python 路径（相对 repo.root）
+
+# ─── cron 配置 ───
+cron:
+  schedule: "0 3 * * *"               # crontab 表达式（每日凌晨 3:00）
+  max_commits_threshold: 100          # 积累超过此数 → 自动转 MANUAL_REVIEW
+
+# ─── 变更分级配置 ───
+classification:
+  d1_max_files: 20                    # D1: 总改动文件数阈值
+  # D2: 锚点文件列表（从 anchors.yaml 读取，此处仅指定路径）
+  d2_anchors_file: "owner/validation/anchors.yaml"
+  # D3: 重度侵入文件列表（来自改动清单附录 B.1）
+  d3_heavily_intruded_files:
+    - "gateway/run.py"
+    - "plugins/platforms/feishu/adapter.py"
+    - "agent/conversation_loop.py"
+    - "tools/approval.py"
+    - "gateway/platforms/base.py"
+    - "tools/cronjob_tools.py"
+    - "cron/jobs.py"
+    - "cron/scheduler.py"
+  # D5: 危险关键词列表
+  d5_dangerous_keywords:
+    - "refactor"
+    - "rewrite"
+    - "architecture"
+    - "remove"
+    - "deprecate"
+    - "rename"
+    - "split"
+    - "restructure"
+
+# ─── 健康检查配置 ───
+health_check:
+  script: "owner/validation/merge_health_check.py"
+  # 使用 repo.venv_python 执行
+
+# ─── 测试配置 ───
+testing:
+  command: ".venv/bin/python -m pytest tests/owner/ -x -q"
+  timeout_seconds: 600                # 测试超时（10 分钟）
+
+# ─── Bug 指纹检测配置 ───
+fingerprint:
+  file: "owner/validation/fix_fingerprints.yaml"
+  high_confidence_threshold: 0.8      # > 0.8 → 高置信度 MANUAL_REVIEW
+  medium_confidence_threshold: 0.5    # 0.5-0.8 → 中置信度 MANUAL_REVIEW
+  file_weight: 0.6                    # 文件交集率权重
+  keyword_weight: 0.4                 # 关键词命中率权重
+
+# ─── 通知配置 ───
+notification:
+  log_dir: "owner/logs/upstream-sync" # 日志目录
+  feishu_webhook: ""                  # 飞书 webhook URL（空=禁用，P2）
+
+# ─── 状态文件配置 ───
+state:
+  file: "owner/logs/upstream-sync/.sync_state.json"
+
+# ─── 回滚配置 ───
+rollback:
+  strategy: "reset_hard"              # 回滚策略：git reset --hard
