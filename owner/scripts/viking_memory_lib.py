@@ -11,6 +11,7 @@ No admin user-key resolution. No network I/O on import.
 Scan focus (read-only analysis for later pipelines):
 - non-Chinese natural-language content
 - near-duplicates by stored dense vectors (NOT exact peer mirrors)
+- preference / hard-claim candidates + human_* governance tags
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
@@ -291,13 +293,12 @@ def content_sha256(text: str) -> str:
 def detect_non_chinese(
     text: str,
     *,
-    include_english: bool = False,
+    include_english: bool = True,
 ) -> Optional[Dict[str, Any]]:
-    """Detect non-Chinese natural language contamination.
+    """Detect non-Chinese natural language (any Latin-heavy / low Chinese).
 
-    Default focus: pt/es/it/fr/de (and accent-heavy unknown Latin).
-    English is extremely common in OV auto-extracted trajectories; it is
-    only flagged when ``include_english=True``.
+    Default includes English. Set ``include_english=False`` to only flag
+    pt/es/it/fr/de (+ accent-heavy Latin).
 
     Returns None when content looks Chinese-primary or has too little signal.
     """
@@ -327,12 +328,12 @@ def detect_non_chinese(
             accent_bonus = len(pattern.findall(text))
         scores[lang] = float(hits + accent_bonus)
 
-    # Prefer non-English languages for primary classification.
+    # Prefer non-English languages for primary classification when strong.
     non_en_scores = {k: v for k, v in scores.items() if k != "en"}
     best_lang, best_score = max(non_en_scores.items(), key=lambda x: x[1])
     density = best_score / max(len(words), 1)
 
-    # Romance/Germanic contamination (main governance target).
+    # Romance/Germanic contamination.
     if best_score >= MIN_STOPWORD_HITS and density >= MIN_DENSITY:
         return {
             "language": best_lang,
@@ -366,11 +367,12 @@ def detect_non_chinese(
     if include_english:
         en_hits = scores.get("en", 0)
         en_density = en_hits / max(len(words), 1)
+        # English-heavy prose
         if (
             zh_ratio <= MAX_ZH_RATIO_FOR_FLAG
             and latin_chars >= MIN_LATIN_CHARS_FOR_EN
-            and en_hits >= 8
-            and en_density >= 0.15
+            and en_hits >= 5
+            and en_density >= 0.10
         ):
             return {
                 "language": "en",
@@ -381,6 +383,18 @@ def detect_non_chinese(
                 "zh_chars": zh_chars,
                 "word_count": len(words),
                 "reason": "english_heavy",
+            }
+        # Low Chinese + substantial Latin script, language unclear → still flag
+        if zh_ratio <= 0.20 and latin_chars >= MIN_LATIN_CHARS_FOR_EN and len(words) >= 8:
+            return {
+                "language": "en" if en_hits >= best_score else (best_lang if best_score >= 2 else "latin"),
+                "stopword_hits": int(max(en_hits, best_score)),
+                "density": round(max(en_density, density), 3),
+                "zh_ratio": round(zh_ratio, 3),
+                "latin_chars": latin_chars,
+                "zh_chars": zh_chars,
+                "word_count": len(words),
+                "reason": "low_zh_latin_script",
             }
 
     return None
@@ -602,6 +616,215 @@ class OVClient:
         )
         return payload.get("status") == "ok"
 
+    def fs_attrs(self, uri: str) -> Dict[str, Any]:
+        payload = self._request("GET", "/api/v1/fs/attrs", params={"uri": uri})
+        if payload.get("status") == "error":
+            return {}
+        result = payload.get("result") or {}
+        return result if isinstance(result, dict) else {}
+
+    def set_tags(
+        self,
+        uri: str,
+        tags: Sequence[str],
+        *,
+        mode: str = "replace",
+        recursive: bool = False,
+    ) -> Dict[str, Any]:
+        """Set k=v tags on a URI. Mode: replace (default; OV rejects merge)."""
+        payload = self._request(
+            "POST",
+            "/api/v1/content/set_tags",
+            body={
+                "uri": uri,
+                "tags": list(tags),
+                "mode": mode,
+                "recursive": recursive,
+            },
+        )
+        return payload
+
+
+# ---------------------------------------------------------------------------
+# Human review tags (governance)
+# ---------------------------------------------------------------------------
+
+# OpenViking lowercases tag strings; avoid ISO "T" (becomes "t").
+# Format: 2026-07-16_10-43-18+0800
+HUMAN_REVIEWED_KEY = "human_reviewed"
+HUMAN_REVIEWED_AT_KEY = "human_reviewed_at"
+# human_reviewed=1 means permanently skip re-queue (no TTL) until tag cleared.
+
+
+def format_human_reviewed_at(when: Optional[datetime] = None) -> str:
+    dt = when or datetime.now().astimezone()
+    # %z → +0800; replace colon form if any
+    return dt.strftime("%Y-%m-%d_%H-%M-%S%z")
+
+
+def parse_tag_map(tags: Sequence[str] | None) -> Dict[str, str]:
+    out: Dict[str, str] = {}
+    for raw in tags or []:
+        if not isinstance(raw, str) or "=" not in raw:
+            continue
+        k, _, v = raw.partition("=")
+        out[k.strip().lower()] = v.strip()
+    return out
+
+
+def tags_from_attrs(attrs_payload: Dict[str, Any]) -> List[str]:
+    attrs = attrs_payload.get("attrs") if isinstance(attrs_payload, dict) else None
+    if not isinstance(attrs, dict):
+        return []
+    tags = attrs.get("tags") or []
+    return list(tags) if isinstance(tags, list) else []
+
+
+def is_human_reviewed(tags: Sequence[str] | Dict[str, str] | None) -> bool:
+    """True when human_reviewed=1 (no TTL re-queue)."""
+    if tags is None:
+        return False
+    if isinstance(tags, dict):
+        m = {str(k).lower(): str(v) for k, v in tags.items()}
+    else:
+        m = parse_tag_map(tags)
+    return m.get(HUMAN_REVIEWED_KEY) in {"1", "true", "yes"}
+
+
+def human_review_tag_list(
+    *,
+    reviewed: bool = True,
+    reviewed_at: Optional[datetime] = None,
+    extra: Optional[Dict[str, str]] = None,
+) -> List[str]:
+    """Build tag list for set_tags (replace mode)."""
+    tags = [
+        f"{HUMAN_REVIEWED_KEY}={'1' if reviewed else '0'}",
+        f"{HUMAN_REVIEWED_AT_KEY}={format_human_reviewed_at(reviewed_at)}",
+    ]
+    if extra:
+        for k, v in extra.items():
+            if not k or v is None:
+                continue
+            tags.append(f"{k}={v}")
+    return tags
+
+
+def mark_human_reviewed(
+    client: OVClient,
+    uri: str,
+    *,
+    reviewed_at: Optional[datetime] = None,
+    extra: Optional[Dict[str, str]] = None,
+) -> Dict[str, Any]:
+    tags = human_review_tag_list(reviewed=True, reviewed_at=reviewed_at, extra=extra)
+    result = client.set_tags(uri, tags, mode="replace")
+    return {"uri": uri, "tags": tags, "response": result}
+
+
+# Absolute / over-strong preference language (zh + light en)
+_HARD_CLAIM_RE = re.compile(
+    r"(明确要求|明确表示|必须|务必|禁止|永远|始终|不要再|以后都|一律|绝对|"
+    r"只能|不得|严禁|一定要|强制|"
+    r"\balways\b|\bnever\b|\bmust\b|\bexplicitly\s+require)",
+    re.IGNORECASE,
+)
+
+
+def preference_risk_flags(content: str, *, uri: str = "") -> List[str]:
+    """Heuristic risk flags for preference / hard-claim review."""
+    flags: List[str] = []
+    text = content or ""
+    if _HARD_CLAIM_RE.search(text):
+        flags.append("absolute_language")
+    # Preferences path is inherently preference-shaped
+    if "/preferences/" in (uri or ""):
+        flags.append("in_preferences")
+    # Single-line or very short "preference" bodies still get reviewed if absolute
+    if "用户" in text and any(w in text for w in ("要求", "偏好", "不要", "必须")):
+        flags.append("user_preference_voice")
+    return flags
+
+
+def scan_preference_candidates(
+    client: OVClient,
+    *,
+    include_peer: bool = True,
+    skip_reviewed: bool = True,
+    limit: int = 50,
+) -> Dict[str, Any]:
+    """Layer-3: scan preference memories for human-review candidates.
+
+    Skips URIs with human_reviewed=1 when skip_reviewed is True (no TTL).
+    """
+    files = collect_memory_files(
+        client,
+        include_peer=include_peer,
+        categories=["preferences"],
+    )
+    # Also include peer preferences that live under peers/.../preferences
+    # collect_memory_files already walks peer root; category filter uses get_category.
+
+    candidates: List[Dict[str, Any]] = []
+    skipped_reviewed = 0
+    scanned = 0
+    read_failures = 0
+
+    for item in files:
+        scanned += 1
+        attrs = client.fs_attrs(item.uri)
+        tag_list = tags_from_attrs(attrs)
+        tag_map = parse_tag_map(tag_list)
+        if skip_reviewed and is_human_reviewed(tag_map):
+            skipped_reviewed += 1
+            continue
+
+        text = client.content_read(item.uri)
+        if text is None:
+            read_failures += 1
+            continue
+        flags = preference_risk_flags(text, uri=item.uri)
+        # Always surface preference files; rank by flag strength
+        score = 0
+        if "absolute_language" in flags:
+            score += 10
+        if "user_preference_voice" in flags:
+            score += 3
+        if "in_preferences" in flags:
+            score += 1
+        snippet = " ".join(text[:240].split())
+        candidates.append(
+            {
+                "uri": item.uri,
+                "rel": item.rel,
+                "space": item.space,
+                "flags": flags,
+                "score": score,
+                "tags": tag_map,
+                "human_reviewed": is_human_reviewed(tag_map),
+                "human_reviewed_at": tag_map.get(HUMAN_REVIEWED_AT_KEY),
+                "snippet": snippet,
+                "content_len": len(text),
+            }
+        )
+
+    candidates.sort(key=lambda c: (-c["score"], c["uri"]))
+    if limit > 0:
+        candidates = candidates[:limit]
+
+    return {
+        "scan_time": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "scanned_files": scanned,
+        "skipped_human_reviewed": skipped_reviewed,
+        "read_failures": read_failures,
+        "candidate_count": len(candidates),
+        "candidates": candidates,
+        "tag_schema": {
+            HUMAN_REVIEWED_KEY: "1 = permanently skip re-queue (no TTL)",
+            HUMAN_REVIEWED_AT_KEY: "datetime like 2026-07-16_10-43-18+0800",
+        },
+    }
+
 
 # ---------------------------------------------------------------------------
 # Inventory
@@ -767,7 +990,7 @@ def scan_non_chinese(
     contents: Dict[str, str],
     *,
     skip_mirrors: bool = True,
-    include_english: bool = False,
+    include_english: bool = True,
 ) -> List[Dict[str, Any]]:
     findings: List[Dict[str, Any]] = []
     for item in files:
@@ -967,11 +1190,20 @@ def build_scan_report(
     threshold: float = 0.85,
     skip_similar: bool = False,
     skip_non_chinese: bool = False,
-    include_english: bool = False,
+    include_english: bool = True,
     exclude_categories: Optional[Iterable[str]] = None,
     categories: Optional[Iterable[str]] = None,
+    preference_limit: int = 10,
 ) -> Dict[str, Any]:
-    """Run full analysis and return a JSON-serializable report."""
+    """Run full analysis and return a JSON-serializable report.
+
+    preference_limit: max tier3 preference candidates returned (default 10).
+    Use 0 for unlimited (still capped by scan_preference_candidates if limit<=0
+    means no slice — we pass max(0, preference_limit) and treat 0 as no cap).
+
+    include_english: default True — flag any low-Chinese / Latin-heavy text
+    (including English ops prefs) for the translate tier.
+    """
     files = collect_memory_files(
         client,
         include_peer=include_peer,
@@ -1008,6 +1240,42 @@ def build_scan_report(
             skip_identical_content=True,
         )
 
+    # Priority rule: if a URI is flagged for translation this round, drop any
+    # similar-pair that touches it (exact URI or same canonical path).
+    translate_uris = {str(item.get("uri") or "") for item in non_chinese if item.get("uri")}
+    translate_canons = {canonical_uri(u) for u in translate_uris if u}
+    deferred_pairs: List[Dict[str, Any]] = []
+    kept_pairs: List[Dict[str, Any]] = []
+    for pair in similar_pairs:
+        ua = str(pair.get("uri_a") or "")
+        ub = str(pair.get("uri_b") or "")
+        hit = (
+            ua in translate_uris
+            or ub in translate_uris
+            or canonical_uri(ua) in translate_canons
+            or canonical_uri(ub) in translate_canons
+        )
+        if hit:
+            deferred = dict(pair)
+            deferred["deferred_reason"] = "uri_pending_translate"
+            deferred["suggestion"] = "defer_until_after_translate"
+            deferred_pairs.append(deferred)
+            continue
+        kept_pairs.append(pair)
+    similar_meta = dict(similar_meta or {})
+    similar_meta["skipped_pending_translate"] = len(deferred_pairs)
+    similar_meta["pairs_after_translate_priority"] = len(kept_pairs)
+    similar_pairs = kept_pairs
+
+    # Layer-3 preference candidates (skip human_reviewed=1)
+    pref_limit = int(preference_limit)
+    pref_report = scan_preference_candidates(
+        client,
+        include_peer=include_peer,
+        skip_reviewed=True,
+        limit=pref_limit if pref_limit > 0 else 0,
+    )
+
     report = {
         "scan_time": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "config": {
@@ -1019,6 +1287,8 @@ def build_scan_report(
             "include_peer": include_peer,
             "include_english": include_english,
             "threshold": threshold,
+            "preference_limit": pref_limit if pref_limit > 0 else None,
+            "translate_priority_over_similar": True,
             "exclude_categories": sorted(set(exclude_categories or ())),
         },
         "inventory": {
@@ -1032,11 +1302,21 @@ def build_scan_report(
         },
         "non_chinese": non_chinese,
         "similar_pairs": similar_pairs,
+        "similar_pairs_deferred_translate": deferred_pairs,
         "similar_meta": similar_meta,
+        "preferences": pref_report,
         "summary": {
             "non_chinese_count": len(non_chinese),
             "similar_pairs_count": len(similar_pairs),
-            "has_work": bool(non_chinese or similar_pairs),
+            "similar_pairs_deferred_translate_count": len(deferred_pairs),
+            "preference_candidate_count": pref_report.get("candidate_count", 0),
+            "preference_skipped_reviewed": pref_report.get("skipped_human_reviewed", 0),
+            "preference_limit": pref_limit if pref_limit > 0 else None,
+            "has_work": bool(
+                non_chinese
+                or similar_pairs
+                or (pref_report.get("candidate_count") or 0) > 0
+            ),
             "mirror_pairs_excluded_from_similarity": int(
                 similar_meta.get("skipped_mirror_pairs") or 0
             ),

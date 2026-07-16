@@ -164,8 +164,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     scan.add_argument(
         "--include-english",
-        action="store_true",
-        help="Also flag English-heavy memories (default: pt/es/it/fr/de only)",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Flag English / low-Chinese Latin text for translate tier (default: on; use --no-include-english to disable)",
     )
     scan.add_argument(
         "--exclude-category",

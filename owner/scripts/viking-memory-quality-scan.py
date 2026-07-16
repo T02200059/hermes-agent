@@ -61,8 +61,9 @@ def main() -> int:
     parser.add_argument("--skip-non-chinese", action="store_true")
     parser.add_argument(
         "--include-english",
-        action="store_true",
-        help="Also flag English-heavy memories (default: only pt/es/it/fr/de contamination)",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Flag English / low-Chinese Latin text for translate tier (default: on; use --no-include-english to disable)",
     )
     parser.add_argument(
         "--exclude-category",
