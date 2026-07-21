@@ -3765,6 +3765,20 @@ class FeishuAdapter(BasePlatformAdapter):
                 chat_type=chat_type,
                 text=text,
                 message_id=message_id,
+                message_type=inbound_type.value,
+                user_id=str(getattr(sender_id, "user_id", "") or "").strip(),
+                union_id=str(getattr(sender_id, "union_id", "") or "").strip(),
+                is_bot=is_bot,
+                thread_id=str(thread_id) if thread_id else None,
+                reply_to_message_id=(
+                    str(reply_to_message_id) if reply_to_message_id else None
+                ),
+                reply_to_text=reply_to_text,
+                raw_message_type=str(
+                    getattr(message, "message_type", "") or ""
+                ),
+                raw_content=str(getattr(message, "content", "") or ""),
+                media_expected=bool(media_urls),
             )
             if _routed:
                 return
@@ -3816,6 +3830,16 @@ class FeishuAdapter(BasePlatformAdapter):
         chat_id: str = "",
         chat_type: str = "p2p",
         message_id: Optional[str] = None,
+        message_type: str = "text",
+        user_id: str = "",
+        union_id: str = "",
+        is_bot: bool = False,
+        thread_id: Optional[str] = None,
+        reply_to_message_id: Optional[str] = None,
+        reply_to_text: Optional[str] = None,
+        raw_message_type: str = "",
+        raw_content: str = "",
+        media_expected: bool = False,
     ) -> None:
         """Run a forwarded message through the normal inbound pipeline.
 
@@ -3835,8 +3859,54 @@ class FeishuAdapter(BasePlatformAdapter):
         the open_id from metadata (injected by run.py for Feishu DMs), while
         the plain-text path sends to ``source.chat_id``.
         """
-        if not text or not text.strip():
-            return
+        event = await self.build_forwarded_inbound_event(
+            text=text,
+            open_id=open_id,
+            chat_id=chat_id,
+            chat_type=chat_type,
+            message_id=message_id,
+            message_type=message_type,
+            user_id=user_id,
+            union_id=union_id,
+            is_bot=is_bot,
+            thread_id=thread_id,
+            reply_to_message_id=reply_to_message_id,
+            reply_to_text=reply_to_text,
+            raw_message_type=raw_message_type,
+            raw_content=raw_content,
+            media_expected=media_expected,
+        )
+        if event is not None:
+            await self._dispatch_inbound_event(event)
+
+    async def build_forwarded_inbound_event(
+        self,
+        *,
+        text: str,
+        open_id: str,
+        chat_id: str = "",
+        chat_type: str = "p2p",
+        message_id: Optional[str] = None,
+        message_type: str = "text",
+        user_id: str = "",
+        union_id: str = "",
+        is_bot: bool = False,
+        thread_id: Optional[str] = None,
+        reply_to_message_id: Optional[str] = None,
+        reply_to_text: Optional[str] = None,
+        raw_message_type: str = "",
+        raw_content: str = "",
+        media_expected: bool = False,
+    ) -> Optional[MessageEvent]:
+        """Rebuild a normalized event admitted by the profile RPC transport.
+
+        Preparation is separate from dispatch so the API endpoint can finish
+        media rehydration and validate the event *before* returning 202.  Media
+        is downloaded again from Feishu using resource keys in ``raw_content``;
+        ingress-process cache paths are never assumed to exist in this process.
+        """
+        if (not text or not text.strip()) and not media_expected:
+            return None
 
         is_dm = (chat_type or "").strip().lower() in ("p2p", "dm")
         src_chat_type = "dm" if is_dm else "group"
@@ -3858,11 +3928,25 @@ class FeishuAdapter(BasePlatformAdapter):
             except Exception:
                 pass
 
+        from types import SimpleNamespace
+
+        sender_profile = await self._resolve_sender_profile(
+            SimpleNamespace(
+                open_id=open_id or None,
+                user_id=user_id or None,
+                union_id=union_id or None,
+            ),
+            is_bot=is_bot,
+        )
         source = self.build_source(
             chat_id=src_chat_id,
             chat_name=chat_name,
             chat_type=src_chat_type,
-            user_id=open_id or None,
+            user_id=sender_profile["user_id"],
+            user_name=sender_profile["user_name"],
+            thread_id=thread_id,
+            user_id_alt=sender_profile["user_id_alt"],
+            is_bot=is_bot,
         )
 
         # Per-channel ephemeral prompt is resolved HERE in the container — the
@@ -3875,13 +3959,49 @@ class FeishuAdapter(BasePlatformAdapter):
                 self.config.extra, open_id, parent_id=src_chat_id
             )
         else:
-            _channel_prompt = resolve_channel_prompt(self.config.extra, src_chat_id)
+            _channel_prompt = resolve_channel_prompt(
+                self.config.extra, src_chat_id, parent_id=thread_id
+            )
+
+        try:
+            resolved_message_type = MessageType(str(message_type or "text"))
+        except ValueError:
+            resolved_message_type = MessageType.TEXT
+
+        media_urls: List[str] = []
+        media_types: List[str] = []
+        if media_expected:
+            if not message_id or not raw_message_type or not raw_content:
+                raise ValueError(
+                    "forwarded Feishu media requires message_id, "
+                    "raw_message_type, and raw_content"
+                )
+            media_message = SimpleNamespace(
+                message_id=message_id,
+                message_type=raw_message_type,
+                content=raw_content,
+                mentions=None,
+            )
+            extracted_text, extracted_type, media_urls, media_types, _ = (
+                await self._extract_message_content(media_message)
+            )
+            if not media_urls:
+                raise RuntimeError(
+                    f"failed to rehydrate forwarded Feishu media for {message_id}"
+                )
+            resolved_message_type = extracted_type
+            if not text or not text.strip():
+                text = extracted_text
 
         event = MessageEvent(
             text=text,
-            message_type=MessageType.TEXT,
+            message_type=resolved_message_type,
             source=source,
             message_id=message_id,
+            media_urls=media_urls,
+            media_types=media_types,
+            reply_to_message_id=reply_to_message_id,
+            reply_to_text=reply_to_text,
             channel_prompt=_channel_prompt,
             timestamp=datetime.now(),
         )
@@ -3890,7 +4010,7 @@ class FeishuAdapter(BasePlatformAdapter):
             "chat_id=%s, open_id=%s, has_msg_id=%s)",
             src_chat_type, src_chat_id, open_id, bool(message_id),
         )
-        await self._dispatch_inbound_event(event)
+        return event
 
     async def _dispatch_inbound_event(self, event: MessageEvent) -> None:
         """Apply Feishu-specific burst protection before entering the base adapter."""

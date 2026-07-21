@@ -29,6 +29,8 @@ from typing import Any, Dict, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
+FEISHU_INBOUND_SCHEMA_VERSION = 1
+
 
 def _load_routing_config() -> Dict[str, Any]:
     """Fail-open loader for the ``feishu.user_routing`` section.
@@ -209,6 +211,16 @@ async def _forward_to_profile_container(
     chat_id: str,
     chat_type: str,
     message_id: Optional[str],
+    message_type: str = "text",
+    user_id: str = "",
+    union_id: str = "",
+    is_bot: bool = False,
+    thread_id: Optional[str] = None,
+    reply_to_message_id: Optional[str] = None,
+    reply_to_text: Optional[str] = None,
+    raw_message_type: str = "",
+    raw_content: str = "",
+    media_expected: bool = False,
 ) -> bool:
     """POST a Feishu message to a profile container's ``/v1/feishu/inbound``.
 
@@ -224,7 +236,7 @@ async def _forward_to_profile_container(
 
     Returns True if the HTTP request was accepted (200/202), False otherwise.
     """
-    if not text or not text.strip():
+    if (not text or not text.strip()) and not media_expected:
         logger.debug(
             "[Feishu] Skipping forward for message id=%s: empty text",
             message_id,
@@ -246,10 +258,25 @@ async def _forward_to_profile_container(
         "Content-Type": "application/json",
     }
     body: Dict[str, Any] = {
+        "schema_version": FEISHU_INBOUND_SCHEMA_VERSION,
         "text": text,
+        "message_type": message_type,
         "open_id": open_id,
+        "user_id": user_id,
+        "union_id": union_id,
+        "is_bot": bool(is_bot),
         "chat_id": chat_id,
         "chat_type": chat_type,
+        "thread_id": thread_id,
+        "reply_to_message_id": reply_to_message_id,
+        "reply_to_text": reply_to_text,
+        # Feishu message content contains resource keys, not file bytes.  The
+        # target process uses these fields and its own send_only client to
+        # download media into that profile's cache; local cache paths from the
+        # ingress process are deliberately never sent across the RPC boundary.
+        "raw_message_type": raw_message_type,
+        "raw_content": raw_content,
+        "media_expected": bool(media_expected),
     }
     if message_id:
         body["message_id"] = message_id
@@ -463,6 +490,16 @@ async def try_route_inbound_message(
     chat_type: str,
     text: str,
     message_id: str,
+    message_type: str = "text",
+    user_id: str = "",
+    union_id: str = "",
+    is_bot: bool = False,
+    thread_id: Optional[str] = None,
+    reply_to_message_id: Optional[str] = None,
+    reply_to_text: Optional[str] = None,
+    raw_message_type: str = "",
+    raw_content: str = "",
+    media_expected: bool = False,
 ) -> bool:
     """Route an inbound message to a profile container if configured.
 
@@ -495,6 +532,16 @@ async def try_route_inbound_message(
         chat_id=chat_id,
         chat_type=chat_type,
         message_id=message_id,
+        message_type=message_type,
+        user_id=user_id,
+        union_id=union_id,
+        is_bot=is_bot,
+        thread_id=thread_id,
+        reply_to_message_id=reply_to_message_id,
+        reply_to_text=reply_to_text,
+        raw_message_type=raw_message_type,
+        raw_content=raw_content,
+        media_expected=media_expected,
     )
     if forwarded:
         logger.info(

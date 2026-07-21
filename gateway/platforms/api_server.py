@@ -5339,13 +5339,24 @@ class APIServerAdapter(BasePlatformAdapter):
         if err:
             return err
 
+        schema_version = body.get("schema_version", 0)
+        if schema_version not in (0, 1):
+            return web.json_response(
+                _openai_error(
+                    f"Unsupported Feishu inbound schema_version: {schema_version}",
+                    code="unsupported_schema_version",
+                ),
+                status=400,
+            )
+
         text = body.get("text") or body.get("input") or ""
         open_id = str(body.get("open_id") or "").strip()
         chat_id = str(body.get("chat_id") or "").strip()
         chat_type = str(body.get("chat_type") or "p2p").strip()
         message_id = body.get("message_id") or None
+        media_expected = bool(body.get("media_expected", False))
 
-        if not text or not str(text).strip():
+        if (not text or not str(text).strip()) and not media_expected:
             return web.json_response(_openai_error("text is required", code="invalid_request"), status=400)
         if not open_id and not chat_id:
             return web.json_response(
@@ -5357,24 +5368,83 @@ class APIServerAdapter(BasePlatformAdapter):
             "owner.feishu.profile_routing", "_get_inprocess_feishu_adapter"
         )
         adapter = _get_adapter() if _get_adapter is not None else None
-        if adapter is None or not hasattr(adapter, "inject_inbound"):
+        if adapter is None or not hasattr(adapter, "build_forwarded_inbound_event"):
             logger.warning("[api_server] /v1/feishu/inbound: no Feishu adapter in this container")
             return web.json_response(
                 _openai_error("Feishu adapter unavailable", code="feishu_unavailable"),
                 status=503,
             )
 
-        # Run the full pipeline on the gateway loop without blocking the ack.
-        asyncio.ensure_future(
-            adapter.inject_inbound(
-                text=str(text),
-                open_id=open_id,
-                chat_id=chat_id,
-                chat_type=chat_type,
-                message_id=str(message_id) if message_id else None,
+        forwarded_kwargs = {
+            "text": str(text),
+            "open_id": open_id,
+            "chat_id": chat_id,
+            "chat_type": chat_type,
+            "message_id": str(message_id) if message_id else None,
+            "message_type": str(body.get("message_type") or "text"),
+            "user_id": str(body.get("user_id") or "").strip(),
+            "union_id": str(body.get("union_id") or "").strip(),
+            "is_bot": bool(body.get("is_bot", False)),
+            "thread_id": str(body.get("thread_id") or "").strip() or None,
+            "reply_to_message_id": (
+                str(body.get("reply_to_message_id") or "").strip() or None
+            ),
+            "reply_to_text": body.get("reply_to_text"),
+            "raw_message_type": str(body.get("raw_message_type") or ""),
+            "raw_content": str(body.get("raw_content") or ""),
+            "media_expected": media_expected,
+        }
+
+        # Rebuild and validate the event (including child-local media download)
+        # before acknowledging it.  Once admitted, keep the dispatch task in
+        # the adapter lifecycle registry so shutdown cancels/awaits it and any
+        # post-admission exception is observed rather than silently discarded.
+        try:
+            event = await adapter.build_forwarded_inbound_event(**forwarded_kwargs)
+            if event is None:
+                raise ValueError("forwarded Feishu event was empty")
+            task = asyncio.create_task(adapter._dispatch_inbound_event(event))
+            self._background_tasks.add(task)
+        except Exception as exc:
+            logger.warning(
+                "[api_server] /v1/feishu/inbound admission failed: %s",
+                exc,
+                exc_info=True,
             )
+            return web.json_response(
+                _openai_error(
+                    "Feishu inbound admission failed",
+                    code="feishu_inbound_admission_failed",
+                ),
+                status=503,
+            )
+
+        def _finish_forwarded_inbound(done_task: "asyncio.Task") -> None:
+            self._background_tasks.discard(done_task)
+            if done_task.cancelled():
+                return
+            try:
+                exc = done_task.exception()
+            except asyncio.CancelledError:
+                return
+            if exc is not None:
+                logger.error(
+                    "[api_server] forwarded Feishu inbound task failed "
+                    "after admission (message_id=%s): %s",
+                    message_id or "unknown",
+                    exc,
+                    exc_info=(type(exc), exc, exc.__traceback__),
+                )
+
+        task.add_done_callback(_finish_forwarded_inbound)
+        return web.json_response(
+            {
+                "accepted": True,
+                "schema_version": schema_version or 1,
+                "message_id": str(message_id) if message_id else None,
+            },
+            status=202,
         )
-        return web.json_response({"accepted": True}, status=202)
 
     async def _handle_feishu_card_action(self, request: "web.Request") -> "web.Response":
         """POST /v1/feishu/card-actions — [owner] multi-profile card-action transport.
