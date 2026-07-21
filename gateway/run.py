@@ -19314,8 +19314,12 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         # there. Rendering rides the existing _keep_typing refresh: the
         # callback only stores a phrase on the adapter, costing zero extra
         # platform API calls.
-        _live_status_mode = resolve_display_setting(
-            user_config, platform_key, "live_status", "full"
+        _live_status_mode = resolve_display_setting_for_source(
+            user_config,
+            platform_key,
+            "live_status",
+            "full",
+            source=source,  # [owner] per-chat display override
         )
         _live_status_adapter = self._adapter_for_source(source)
         if not getattr(_live_status_adapter, "supports_status_text", False):

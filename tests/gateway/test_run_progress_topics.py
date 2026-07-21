@@ -271,6 +271,46 @@ def _make_runner(adapter):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("platform", [Platform.FEISHU, Platform.QQBOT])
+async def test_run_agent_starts_for_owner_gateway_platforms(monkeypatch, tmp_path, platform):
+    """Feishu and QQ must reach the shared agent path without display resolver errors."""
+    monkeypatch.setenv("HERMES_TOOL_PROGRESS_MODE", "off")
+
+    fake_dotenv = types.ModuleType("dotenv")
+    fake_dotenv.load_dotenv = lambda *args, **kwargs: None
+    monkeypatch.setitem(sys.modules, "dotenv", fake_dotenv)
+
+    fake_run_agent = types.ModuleType("run_agent")
+    fake_run_agent.AIAgent = FakeAgent
+    monkeypatch.setitem(sys.modules, "run_agent", fake_run_agent)
+
+    adapter = ProgressCaptureAdapter(platform=platform)
+    runner = _make_runner(adapter)
+    gateway_run = importlib.import_module("gateway.run")
+    monkeypatch.setattr(gateway_run, "_hermes_home", tmp_path)
+    monkeypatch.setattr(
+        gateway_run, "_resolve_runtime_agent_kwargs", lambda: {"api_key": "fake"}
+    )
+    source = SessionSource(
+        platform=platform,
+        chat_id="owner-platform-chat",
+        chat_type="dm",
+        user_id="owner-platform-user",
+    )
+
+    result = await runner._run_agent(
+        message="hi",
+        context_prompt="",
+        history=[],
+        source=source,
+        session_id=f"sess-{platform.value}",
+        session_key=f"agent:main:{platform.value}:dm:owner-platform-chat",
+    )
+
+    assert result["final_response"] == "done"
+
+
+@pytest.mark.asyncio
 async def test_run_agent_progress_stays_in_originating_topic(monkeypatch, tmp_path):
     monkeypatch.setenv("HERMES_TOOL_PROGRESS_MODE", "all")
 
@@ -310,11 +350,18 @@ async def test_run_agent_progress_stays_in_originating_topic(monkeypatch, tmp_pa
             "chat_id": "-1001",
             "content": '💻 Running pwd',
             "reply_to": None,
-            "metadata": {"thread_id": "17585"},
+            "metadata": {
+                "thread_id": "17585",
+                "__hermes_progress_bubble": True,
+            },
         }
     ]
     assert adapter.edits
-    assert all(call["metadata"] == {"thread_id": "17585"} for call in adapter.typing)
+    assert all(
+        call["metadata"]
+        == {"thread_id": "17585", "__hermes_progress_bubble": True}
+        for call in adapter.typing
+    )
 
 
 @pytest.mark.asyncio
@@ -352,7 +399,11 @@ async def test_run_agent_progress_edits_keep_originating_topic_metadata(monkeypa
 
     assert result["final_response"] == "done"
     assert adapter.edits
-    assert all(call["metadata"] == {"thread_id": "17585"} for call in adapter.edits)
+    assert all(
+        call["metadata"]
+        == {"thread_id": "17585", "__hermes_progress_bubble": True}
+        for call in adapter.edits
+    )
 
 
 @pytest.mark.asyncio
@@ -393,8 +444,11 @@ async def test_run_agent_progress_does_not_use_event_message_id_for_telegram_dm(
 
     assert result["final_response"] == "done"
     assert adapter.sent
-    assert adapter.sent[0]["metadata"] is None
-    assert all(call["metadata"] is None for call in adapter.typing)
+    assert adapter.sent[0]["metadata"] == {"__hermes_progress_bubble": True}
+    assert all(
+        call["metadata"] == {"__hermes_progress_bubble": True}
+        for call in adapter.typing
+    )
 
 
 @pytest.mark.asyncio
@@ -443,8 +497,18 @@ async def test_run_agent_progress_uses_event_message_id_for_slack_dm(monkeypatch
 
     assert result["final_response"] == "done"
     assert adapter.sent
-    assert adapter.sent[0]["metadata"] == {"thread_id": "1234567890.000001"}
-    assert all(call["metadata"] == {"thread_id": "1234567890.000001"} for call in adapter.typing)
+    assert adapter.sent[0]["metadata"] == {
+        "thread_id": "1234567890.000001",
+        "__hermes_progress_bubble": True,
+    }
+    assert all(
+        call["metadata"]
+        == {
+            "thread_id": "1234567890.000001",
+            "__hermes_progress_bubble": True,
+        }
+        for call in adapter.typing
+    )
 
 
 @pytest.mark.asyncio
@@ -486,7 +550,10 @@ async def test_run_agent_feishu_progress_replies_inside_existing_thread(monkeypa
     assert result["final_response"] == "done"
     assert adapter.sent
     assert adapter.sent[0]["reply_to"] == "om_triggering_user_message"
-    assert adapter.sent[0]["metadata"] == {"thread_id": "topic_17585"}
+    assert adapter.sent[0]["metadata"] == {
+        "thread_id": "topic_17585",
+        "__hermes_progress_bubble": True,
+    }
     assert adapter.edits
     assert adapter.edits[0]["message_id"] == "progress-1"
 
