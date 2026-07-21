@@ -2061,20 +2061,34 @@ def list_authenticated_providers(
         if mdev_id and _owner_check_auth_entry(providers_store, mdev_id):
             return True
 
-        # Credential pool presence in auth store (fast path)
+        # A real credential pool is authoritative.  The normal authenticated
+        # provider list must hide a pool whose entries are all cooling down or
+        # exhausted, while the interactive picker deliberately keeps it
+        # visible so the user can inspect or switch to it.  Preserve support
+        # for legacy opaque auth.json pool values that cannot be deserialized.
+        raw_pool_present = False
         if auth_store:
             cred_pool = auth_store.get("credential_pool", {})
-            if cred_pool.get(slug) or (mdev_id and cred_pool.get(mdev_id)):
-                return True
+            raw_pool_present = bool(
+                cred_pool.get(slug) or (mdev_id and cred_pool.get(mdev_id))
+            )
 
-        # Full credential pool check
         try:
             from agent.credential_pool import load_pool
+
             pool = load_pool(slug)
-            if _owner_check_pool_creds(pool):
-                return True
+            if pool.has_credentials():
+                # Owner OAuth pools additionally reject expired entries.
+                if not _owner_check_pool_creds(pool):
+                    return False
+                return pool.has_available() or for_picker
         except Exception as exc:
             logger.debug("Credential pool check failed for %s: %s", slug, exc)
+
+        if _credential_pool_is_usable(
+            slug, raw_pool_present=raw_pool_present
+        ):
+            return True
 
         # Anthropic external credential files
         if slug == "anthropic":
