@@ -8,9 +8,29 @@ This module covers the chat_completions path (/v1 endpoint).
 """
 
 from typing import Any
+from urllib.parse import urlparse
 
 from providers import register_provider
 from providers.base import OMIT_TEMPERATURE, ProviderProfile
+
+
+def _is_confirmed_kimi_coding_url(base_url: str) -> bool:
+    """Return True only for Kimi Code's canonical HTTPS API surfaces."""
+    try:
+        parsed = urlparse(base_url)
+        port = parsed.port
+    except ValueError:
+        return False
+    return (
+        parsed.scheme.lower() == "https"
+        and (parsed.hostname or "").lower() == "api.kimi.com"
+        and port in (None, 443)
+        and parsed.username is None
+        and parsed.password is None
+        and parsed.path.rstrip("/") in {"/coding", "/coding/v1"}
+        and not parsed.query
+        and not parsed.fragment
+    )
 
 
 class KimiProfile(ProviderProfile):
@@ -32,20 +52,18 @@ class KimiProfile(ProviderProfile):
         full Moonshot curated catalog. Try the ``/v1`` catalog base first
         when the coding plan endpoint is in use.
         """
-        effective = (base_url or self.base_url or "").rstrip("/")
-        if "api.kimi.com/coding" in effective.lower() and not effective.lower().endswith(
-            "/v1"
-        ):
-            coding_catalog = super().fetch_models(
-                api_key=api_key,
-                base_url=f"{effective}/v1",
-                timeout=timeout,
-            )
-            if coding_catalog:
-                return coding_catalog
-        return super().fetch_models(
-            api_key=api_key, base_url=base_url, timeout=timeout
+        effective_base = (base_url or self.base_url or "").rstrip("/")
+        confirmed_coding_endpoint = _is_confirmed_kimi_coding_url(effective_base)
+        if confirmed_coding_endpoint and urlparse(effective_base).path.rstrip("/") == "/coding":
+            effective_base += "/v1"
+        models = super().fetch_models(
+            api_key=api_key,
+            base_url=effective_base or None,
+            timeout=timeout,
         )
+        if models is None or confirmed_coding_endpoint:
+            return models
+        return [model for model in models if model.strip().lower() != "k3"]
 
     def build_api_kwargs_extras(
         self, *, reasoning_config: dict | None = None, **context

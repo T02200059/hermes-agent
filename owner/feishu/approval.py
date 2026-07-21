@@ -56,14 +56,20 @@ def _get_resolved_label(choice: str) -> str:
 
 
 def build_approval_card(
-    *, command: str, description: str, approval_id: int
+    *,
+    command: str,
+    description: str,
+    approval_id: int,
+    allow_permanent: Optional[bool] = None,
+    smart_denied: bool = False,
 ) -> Dict[str, Any]:
     """Build the interactive approval card JSON (header + markdown preview + action buttons).
 
     Truncates long commands.  Conditionally includes "Always" button + hint text
     based on get_allow_permanent().  All user-visible strings via i18n.
     """
-    allow_permanent = get_allow_permanent()
+    configured_permanent = get_allow_permanent()
+    allow_permanent = configured_permanent and allow_permanent is not False
 
     cmd_preview = command[:3000] + "..." if len(command) > 3000 else command
 
@@ -75,18 +81,19 @@ def build_approval_card(
             "value": {"hermes_action": action_name, "approval_id": approval_id},
         }
 
-    buttons = [
-        _btn(t("approval.feishu_btn_once"), "approve_once", "primary"),
-        _btn(t("approval.feishu_btn_session"), "approve_session"),
-    ]
-    if allow_permanent:
-        buttons.append(_btn(t("approval.feishu_btn_always"), "approve_always"))
+    buttons = [_btn(t("approval.feishu_btn_once"), "approve_once", "primary")]
+    if not smart_denied:
+        buttons.append(_btn(t("approval.feishu_btn_session"), "approve_session"))
+        if allow_permanent:
+            buttons.append(_btn(t("approval.feishu_btn_always"), "approve_always"))
     buttons.append(_btn(t("approval.feishu_btn_deny"), "deny", "danger"))
 
     md_content = f"```\n{cmd_preview}\n```\n" + t(
         "approval.feishu_reason_label", description=description
     )
-    if not allow_permanent:
+    if smart_denied:
+        md_content += "\n\n**Smart DENY:** owner override applies to this one operation only."
+    elif not allow_permanent:
         md_content += "\n\n" + t("approval.feishu_permanent_disabled")
 
     return {

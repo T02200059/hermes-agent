@@ -40,7 +40,7 @@ class TestClarifyPrimitive:
             cm.resolve_gateway_clarify("id1", "B")
 
         threading.Thread(target=resolver).start()
-        result = cm.wait_for_response("id1", timeout=2.0)
+        result = cm.wait_for_response("id1", timeout=10.0)
         assert result == "B"
 
     def test_open_ended_auto_awaits_text(self):

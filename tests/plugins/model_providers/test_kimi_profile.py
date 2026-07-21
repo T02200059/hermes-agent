@@ -123,6 +123,26 @@ class TestKimiReasoningWireShape:
         assert not ("thinking" in extra_body and "reasoning_effort" in top_level)
 
 
+class TestKimiModelDiscovery:
+    def test_malformed_base_url_is_unconfirmed_and_filters_k3(self, kimi_profile):
+        """Malformed user URLs must fall through safely, never authorize K3."""
+        from unittest.mock import patch
+
+        from providers.base import ProviderProfile
+
+        with patch.object(
+            ProviderProfile,
+            "fetch_models",
+            return_value=["k3", "kimi-k2.6"],
+        ):
+            models = kimi_profile.fetch_models(
+                api_key="test-key",
+                base_url="https://[api.kimi.com/coding",
+            )
+
+        assert models == ["kimi-k2.6"]
+
+
 class TestKimiFullKwargsIntegration:
     """The transport's full kwargs carry at most one reasoning knob."""
 
@@ -185,7 +205,10 @@ class TestKimiCodingPlanFetchModels:
                 raise Exception("HTTP Error 404: Not Found")
             return _Resp()
 
-        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+        with patch(
+            "hermes_cli.urllib_security.open_credentialed_url",
+            side_effect=fake_urlopen,
+        ):
             result = kimi_profile.fetch_models(
                 api_key="sk-kimi-test",
                 base_url="https://api.kimi.com/coding",

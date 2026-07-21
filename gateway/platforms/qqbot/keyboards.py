@@ -203,8 +203,8 @@ def _make_callback_button(
     )
 
 
-def build_approval_keyboard(session_key: str) -> InlineKeyboard:
-    """Build the 3-button approval keyboard.
+def build_approval_keyboard(session_key: str, *, allow_permanent: bool = True) -> InlineKeyboard:
+    """Build the approval keyboard, hiding persistent scope when unavailable.
 
     Layout: ``[Allow Once] [Always Allow] [Deny]`` — all three share
     ``group_id='approval'`` so clicking one greys out the rest.
@@ -212,38 +212,32 @@ def build_approval_keyboard(session_key: str) -> InlineKeyboard:
     :param session_key: Embedded into ``button_data`` so the decision
         routes back to the right pending approval.
     """
-    return InlineKeyboard(
-        content=KeyboardContent(
-            rows=[
-                KeyboardRow(buttons=[
-                    _make_callback_button(
-                        btn_id="allow",
-                        label=t("approval.qqbot_btn_once"),
-                        visited_label=t("approval.qqbot_visited_once"),
-                        data=f"{APPROVAL_BUTTON_PREFIX}{session_key}:allow-once",
-                        style=1,
-                        group_id="approval",
-                    ),
-                    _make_callback_button(
-                        btn_id="always",
-                        label=t("approval.qqbot_btn_always"),
-                        visited_label=t("approval.qqbot_visited_always"),
-                        data=f"{APPROVAL_BUTTON_PREFIX}{session_key}:allow-always",
-                        style=1,
-                        group_id="approval",
-                    ),
-                    _make_callback_button(
-                        btn_id="deny",
-                        label=t("approval.qqbot_btn_deny"),
-                        visited_label=t("approval.qqbot_visited_deny"),
-                        data=f"{APPROVAL_BUTTON_PREFIX}{session_key}:deny",
-                        style=0,
-                        group_id="approval",
-                    ),
-                ]),
-            ]
+    buttons = [
+        _make_callback_button(
+            btn_id="allow",
+            label=t("approval.qqbot_btn_once"),
+            visited_label=t("approval.qqbot_visited_once"),
+            data=f"{APPROVAL_BUTTON_PREFIX}{session_key}:allow-once",
+            style=1,
+            group_id="approval",
         )
-    )
+    ]
+    if allow_permanent:
+        buttons.append(_make_callback_button(
+            btn_id="always",
+            label=t("approval.qqbot_btn_always"),
+            visited_label=t("approval.qqbot_visited_always"),
+            data=f"{APPROVAL_BUTTON_PREFIX}{session_key}:allow-always",
+            style=1, group_id="approval",
+        ))
+    buttons.append(_make_callback_button(
+        btn_id="deny",
+        label=t("approval.qqbot_btn_deny"),
+        visited_label=t("approval.qqbot_visited_deny"),
+        data=f"{APPROVAL_BUTTON_PREFIX}{session_key}:deny",
+        style=0, group_id="approval",
+    ))
+    return InlineKeyboard(content=KeyboardContent(rows=[KeyboardRow(buttons=buttons)]))
 
 
 def build_update_prompt_keyboard() -> InlineKeyboard:
@@ -297,6 +291,7 @@ class ApprovalRequest:
     tool_name: str = ""
     severity: str = ""
     timeout_sec: int = 120
+    allow_permanent: bool = True
 
 
 def build_approval_text(req: ApprovalRequest) -> str:
