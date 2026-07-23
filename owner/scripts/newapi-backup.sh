@@ -5,7 +5,7 @@
 # Schedule: 05:00 daily.  Retention: last 3 archives each.
 # Cron: no_agent=true, deliver=qqbot on failure.
 #
-# Backup contents (stored under node010:/data/ai/newapi/backups/):
+# Backup contents (stored under node010:/data/ai/hermes-backup/yangtb/newapi/):
 #   1. MySQL dump: newapi-YYYYMMDD_HHMMSS.sql.gz (via docker compose backup service)
 #   2. App data:   newapi-data-YYYYMMDD-HHMMSS.tar.gz (newapi-data/ + compose config)
 set -u
@@ -13,7 +13,7 @@ set -o pipefail
 
 REMOTE_HOST="node010"
 REMOTE_BASE="/data/ai/newapi"
-REMOTE_BACKUPS="${REMOTE_BASE}/backups"
+REMOTE_BACKUPS="/data/ai/hermes-backup/yangtb/newapi"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 MYSQL_STAMP="$(date +%Y%m%d_%H%M%S)"
 MYSQL_ARCHIVE="newapi-${MYSQL_STAMP}.sql.gz"
