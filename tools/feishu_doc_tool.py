@@ -7,15 +7,20 @@ When a comment-event handler injects a lark client via ``set_client`` we use
 it; otherwise we build a tenant client from ``FEISHU_APP_ID`` /
 ``FEISHU_APP_SECRET`` so the tool also works in plain DM/group-chat contexts.
 Shared helpers live in :mod:`tools.feishu_client_utils`.
+
+For docx, embedded images are downloaded to
+``$HERMES_HOME/cache/feishu_doc_images/``, OCR'd via auxiliary vision, and
+embedded into the returned text as ``[Image N: /local/path]`` plus the
+transcribed content so the agent can read screenshot-heavy docs in one call.
 """
 
 import logging
 import threading
 
 from tools.feishu_client_utils import (
-    do_request,
     extract_token,
     read_bitable_as_text,
+    read_docx_with_images,
     read_sheet_as_text,
     resolve_client,
     resolve_wiki_node,
@@ -42,15 +47,17 @@ def get_client():
 # feishu_doc_read
 # ---------------------------------------------------------------------------
 
-_RAW_CONTENT_URI = "/open-apis/docx/v1/documents/:document_id/raw_content"
-
 FEISHU_DOC_READ_SCHEMA = {
     "name": "feishu_doc_read",
     "description": (
         "Read the full content of a Feishu/Lark document as plain text. "
         "Useful when you need more context beyond the quoted text in a comment. "
         "Accepts a docx token, a wiki node token, or a full Feishu/Lark URL; "
-        "docx documents, bitable (多维表格) bases, and sheets (电子表格) are supported."
+        "docx documents, bitable (多维表格) bases, and sheets (电子表格) are supported. "
+        "For docx, embedded images are downloaded, OCR'd via auxiliary vision, "
+        "and inlined into the text as [Image N: /path] plus the transcribed "
+        "content (screenshot-heavy docs become readable without a second tool call). "
+        "Local paths remain available for re-inspection with vision_analyze."
     ),
     "parameters": {
         "type": "object",
@@ -85,25 +92,6 @@ def _check_feishu():
         return False
 
 
-def _read_docx_raw(client, doc_token):
-    """Call the docx ``raw_content`` API. Returns ``(content_or_None, error_or_None)``."""
-    code, msg, data = do_request(
-        client, "GET", _RAW_CONTENT_URI,
-        paths={"document_id": doc_token},
-    )
-    if code != 0:
-        return None, f"Failed to read document: code={code} msg={msg}"
-
-    content = ""
-    if isinstance(data, dict):
-        content = data.get("content", "") or ""
-    if not content and hasattr(data, "content"):
-        content = getattr(data, "content", "") or ""
-    if not content:
-        return None, "No content returned from document API"
-    return content, None
-
-
 def _handle_feishu_doc_read(args: dict, **kwargs) -> str:
     raw_token = args.get("doc_token", "").strip()
     if not raw_token:
@@ -134,10 +122,41 @@ def _handle_feishu_doc_read(args: dict, **kwargs) -> str:
 
     try:
         if obj_type == "docx":
-            content, err = _read_docx_raw(client, obj_token)
+            content, err, images = read_docx_with_images(client, obj_token)
             if err:
                 return tool_error(err)
-            return tool_result(success=True, content=content)
+            # Compact image summary for structured consumers; full OCR text
+            # is already embedded in ``content`` for the model to see.
+            image_summaries = []
+            vision_ok = 0
+            for img in images:
+                summary = {
+                    "index": img.get("index"),
+                    "token": img.get("token"),
+                    "path": img.get("path") or "",
+                }
+                if img.get("error"):
+                    summary["error"] = img["error"]
+                if img.get("vision_error"):
+                    summary["vision_error"] = img["vision_error"]
+                analysis = (img.get("analysis") or "").strip()
+                if analysis:
+                    summary["has_analysis"] = True
+                    vision_ok += 1
+                else:
+                    summary["has_analysis"] = False
+                if img.get("width") is not None:
+                    summary["width"] = img["width"]
+                if img.get("height") is not None:
+                    summary["height"] = img["height"]
+                image_summaries.append(summary)
+            return tool_result(
+                success=True,
+                content=content,
+                images=image_summaries,
+                image_count=len(image_summaries),
+                vision_analyzed=vision_ok,
+            )
 
         if obj_type == "bitable":
             text = read_bitable_as_text(client, obj_token)

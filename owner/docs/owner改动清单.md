@@ -1172,3 +1172,15 @@ _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请先�
 - **新增 §2.9 kimi-coding provider**（4 commit）：`0956317d2`（模型目录从 Moonshot 开放 API 隔离）、`66a56b478`（thinking 完整回显 + 隐藏占位）、`0ff98f296`（严格模型 allow-list）、`cd47c815b`（vision 标记）。
 - **新增 §2.10 model-switch 白名单优先**（`ee10d6230`）：显式 `models:` 白名单优先于 live `/models` 探测，防止 OpenRouter/Bifrost 类端点用几百个 live ID 覆盖已配置子集、卡死 `/providers` picker。
 - **§2.8.1 补录 hash**：`bd430ea81`（原 2026-07-13 条目记作「当前未提交改动」，现已提交为此 hash，功能描述一致）。
+
+### 2026-07-23：feishu_doc_read 下载文档内嵌图片（修复 image.png 占位）
+
+- **类型**：bug fix
+- **背景**：`feishu_doc_read` 仅调用 docx `raw_content` API，飞书会把 image block 压成文本 `image.png`。agent 看不到真实截图；完整链路是 blocks 取 `image.token` → `drive/v1/medias/{token}/download` → 本地文件 → `vision_analyze`。
+- **方案**：
+  - `tools/feishu_client_utils.py`：新增 `list_docx_image_tokens`（分页读 blocks，`block_type=27`）、`download_media`、`download_docx_images`（落盘 `$HERMES_HOME/cache/feishu_doc_images/<doc>/`）、`inject_image_paths_into_content`（按序替换 `image.png` 为 `[Image N: /path]`）、`read_docx_with_images` 编排。上限 40 张 / 10MiB 每张。
+  - `tools/feishu_doc_tool.py`：docx 分支改走 `read_docx_with_images`；返回 `content` + `images[]` + `image_count`；schema 说明可把本地路径交给 `vision_analyze`。
+- **涉及文件**：`tools/feishu_client_utils.py`、`tools/feishu_doc_tool.py`、`tests/tools/test_feishu_client_utils.py`
+- **测试**：`scripts/run_tests.sh tests/tools/test_feishu_client_utils.py tests/tools/test_feishu_tools.py` → 54 passed
+- **后续（同日）**：用户反馈 `[Image N: path]` 仍被视为占位符。补 `analyze_docx_images`：下载后自动 auxiliary vision OCR，正文嵌入转录文字；返回增加 `vision_analyzed`。并发 3 / 上限 40。测试 59 passed。
+

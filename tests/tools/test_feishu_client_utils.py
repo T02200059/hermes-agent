@@ -20,7 +20,7 @@ from unittest import mock
 from tools import feishu_client_utils as fcu
 
 
-def _make_response(code=0, msg="", data=None, raw_content=None):
+def _make_response(code=0, msg="", data=None, raw_content=None, headers=None, status_code=200):
     """Build a stub lark response object."""
 
     class _Raw:
@@ -36,6 +36,8 @@ def _make_response(code=0, msg="", data=None, raw_content=None):
     if raw_content is not None:
         r.raw = _Raw()
         r.raw.content = raw_content
+        r.raw.headers = headers or {}
+        r.raw.status_code = status_code
     else:
         r.raw = None
     return r
@@ -425,6 +427,367 @@ class TestReadSheetAsText(unittest.TestCase):
         self.assertEqual(fcu._col_letter(26), "Z")
         self.assertEqual(fcu._col_letter(27), "AA")
         self.assertEqual(fcu._col_letter(52), "AZ")
+
+
+# ---------------------------------------------------------------------------
+# Docx image materialization
+# ---------------------------------------------------------------------------
+
+# Minimal valid PNG (1x1 pixel)
+_PNG_1X1 = (
+    b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
+    b"\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x0cIDATx\x9cc\xf8\x0f"
+    b"\x00\x00\x01\x01\x00\x05\x18\xd8N\x00\x00\x00\x00IEND\xaeB`\x82"
+)
+
+
+class TestListDocxImageTokens(unittest.TestCase):
+    def test_extracts_image_blocks_in_order(self):
+        blocks = _make_response(data={
+            "items": [
+                {"block_type": 1, "text": {"elements": []}},
+                {
+                    "block_type": 27,
+                    "image": {"token": "imgTokA", "width": 100, "height": 50},
+                },
+                {"block_type": 2},
+                {
+                    "block_type": 27,
+                    "image": {"token": "imgTokB", "width": 200, "height": 80},
+                },
+            ],
+            "has_more": False,
+        })
+        client = _StubClient(blocks)
+        images = fcu.list_docx_image_tokens(client, "doc123")
+        self.assertEqual(len(images), 2)
+        self.assertEqual(images[0]["token"], "imgTokA")
+        self.assertEqual(images[0]["width"], 100)
+        self.assertEqual(images[1]["token"], "imgTokB")
+
+    def test_paginates_blocks(self):
+        page1 = _make_response(data={
+            "items": [
+                {"block_type": 27, "image": {"token": "t1"}},
+            ],
+            "has_more": True,
+            "page_token": "p2",
+        })
+        page2 = _make_response(data={
+            "items": [
+                {"block_type": 27, "image": {"token": "t2"}},
+            ],
+            "has_more": False,
+        })
+        client = _StubClient([page1, page2])
+        images = fcu.list_docx_image_tokens(client, "doc123")
+        self.assertEqual([i["token"] for i in images], ["t1", "t2"])
+        self.assertEqual(len(client.calls), 2)
+
+    def test_respects_max_images(self):
+        blocks = _make_response(data={
+            "items": [
+                {"block_type": 27, "image": {"token": f"t{i}"}}
+                for i in range(5)
+            ],
+            "has_more": False,
+        })
+        client = _StubClient(blocks)
+        images = fcu.list_docx_image_tokens(client, "doc", max_images=2)
+        self.assertEqual(len(images), 2)
+
+    def test_skips_image_blocks_without_token(self):
+        blocks = _make_response(data={
+            "items": [
+                {"block_type": 27, "image": {}},
+                {"block_type": 27, "image": {"token": "ok"}},
+            ],
+            "has_more": False,
+        })
+        client = _StubClient(blocks)
+        images = fcu.list_docx_image_tokens(client, "doc")
+        self.assertEqual([i["token"] for i in images], ["ok"])
+
+    def test_api_error_returns_empty(self):
+        client = _StubClient(_make_response(code=999, msg="fail"))
+        self.assertEqual(fcu.list_docx_image_tokens(client, "doc"), [])
+
+
+class TestInjectImagePaths(unittest.TestCase):
+    def test_replaces_placeholders_in_order(self):
+        content = "before\nimage.png\nmiddle\nimage.png\nafter"
+        images = [
+            {"index": 1, "path": "/tmp/a.png", "error": None, "analysis": "图A文字"},
+            {"index": 2, "path": "/tmp/b.png", "error": None, "analysis": "图B文字"},
+        ]
+        out = fcu.inject_image_paths_into_content(content, images)
+        self.assertIn("[Image 1: /tmp/a.png]", out)
+        self.assertIn("图A文字", out)
+        self.assertIn("[Image 2: /tmp/b.png]", out)
+        self.assertIn("图B文字", out)
+        self.assertNotIn("image.png", out)
+        self.assertIn("before", out)
+        self.assertIn("after", out)
+
+    def test_failed_download_marker(self):
+        content = "x image.png y"
+        images = [{"index": 1, "path": "", "error": "HTTP 403"}]
+        out = fcu.inject_image_paths_into_content(content, images)
+        self.assertIn("[Image 1: unavailable (HTTP 403)]", out)
+
+    def test_appendix_when_more_images_than_placeholders(self):
+        content = "only one image.png here"
+        images = [
+            {"index": 1, "path": "/tmp/a.png", "analysis": "first"},
+            {"index": 2, "path": "/tmp/b.png", "analysis": "second"},
+        ]
+        out = fcu.inject_image_paths_into_content(content, images)
+        self.assertIn("[Image 1: /tmp/a.png]", out)
+        self.assertIn("first", out)
+        self.assertIn("--- Document images ---", out)
+        self.assertIn("[Image 2: /tmp/b.png]", out)
+        self.assertIn("second", out)
+
+    def test_vision_error_keeps_path_hint(self):
+        content = "image.png"
+        images = [{
+            "index": 1,
+            "path": "/tmp/a.png",
+            "vision_error": "vision backend not configured",
+        }]
+        out = fcu.inject_image_paths_into_content(content, images)
+        self.assertIn("[Image 1: /tmp/a.png]", out)
+        self.assertIn("vision unavailable", out)
+        self.assertIn("vision_analyze", out)
+
+    def test_empty_images_passthrough(self):
+        self.assertEqual(
+            fcu.inject_image_paths_into_content("hello image.png", []),
+            "hello image.png",
+        )
+
+
+class TestSniffAndSlug(unittest.TestCase):
+    def test_sniff_png(self):
+        self.assertEqual(fcu._sniff_image_ext(_PNG_1X1), ".png")
+
+    def test_sniff_jpeg(self):
+        self.assertEqual(fcu._sniff_image_ext(b"\xff\xd8\xff\xe0rest"), ".jpg")
+
+    def test_safe_slug_strips(self):
+        self.assertEqual(fcu._safe_slug("ab/../cd!@#ef"), "abcdef")
+        self.assertEqual(fcu._safe_slug(""), "img")
+
+
+class TestDownloadDocxImages(unittest.TestCase):
+    def test_writes_png_to_cache(self):
+        import tempfile
+        from pathlib import Path
+
+        media_resp = _make_response(
+            raw_content=_PNG_1X1,
+            headers={"Content-Type": "image/png"},
+            status_code=200,
+        )
+        client = _StubClient(media_resp)
+        with tempfile.TemporaryDirectory() as tmp:
+            hermes_home = Path(tmp) / ".hermes"
+            hermes_home.mkdir()
+            with mock.patch.dict("os.environ", {"HERMES_HOME": str(hermes_home)}):
+                results = fcu.download_docx_images(
+                    client,
+                    "DocTokenXYZ",
+                    [{"token": "MediaTok1", "width": 10, "height": 20}],
+                )
+            self.assertEqual(len(results), 1)
+            self.assertIsNone(results[0]["error"])
+            path = Path(results[0]["path"])
+            self.assertTrue(path.is_file())
+            self.assertEqual(path.read_bytes(), _PNG_1X1)
+            self.assertTrue(str(path).endswith(".png"))
+            self.assertEqual(results[0]["bytes"], len(_PNG_1X1))
+
+    def test_download_error_recorded(self):
+        err_body = b'{"code": 99991400, "msg": "rate limited"}'
+        media_resp = _make_response(
+            code=99991400,
+            msg="rate limited",
+            raw_content=err_body,
+            headers={"Content-Type": "application/json"},
+            status_code=400,
+        )
+        client = _StubClient(media_resp)
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmp:
+            hermes_home = Path(tmp) / ".hermes"
+            hermes_home.mkdir()
+            with mock.patch.dict("os.environ", {"HERMES_HOME": str(hermes_home)}):
+                results = fcu.download_docx_images(
+                    client, "doc", [{"token": "badTok"}]
+                )
+        self.assertEqual(results[0]["path"], "")
+        self.assertIn("99991400", results[0]["error"])
+
+    def test_rejects_oversized_image(self):
+        big = b"\x89PNG\r\n\x1a\n" + (b"x" * 100)
+        media_resp = _make_response(
+            raw_content=big,
+            headers={"Content-Type": "image/png"},
+        )
+        client = _StubClient(media_resp)
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmp:
+            hermes_home = Path(tmp) / ".hermes"
+            hermes_home.mkdir()
+            with mock.patch.dict("os.environ", {"HERMES_HOME": str(hermes_home)}):
+                results = fcu.download_docx_images(
+                    client,
+                    "doc",
+                    [{"token": "bigTok"}],
+                    max_bytes=50,
+                )
+        self.assertIn("too large", results[0]["error"])
+        self.assertEqual(results[0]["path"], "")
+
+
+class TestAnalyzeDocxImages(unittest.TestCase):
+    def test_attaches_analysis_from_vision(self):
+        images = [
+            {"index": 1, "path": "/tmp/a.png", "error": None},
+            {"index": 2, "path": "/tmp/b.png", "error": None},
+        ]
+
+        def fake_analyze(path, prompt):
+            return (f"OCR for {path}", None)
+
+        with mock.patch(
+            "tools.vision_tools.check_vision_requirements", return_value=True,
+        ), mock.patch.object(fcu, "_analyze_one_image", side_effect=fake_analyze):
+            out = fcu.analyze_docx_images(images, max_workers=2)
+
+        self.assertEqual(out[0]["analysis"], "OCR for /tmp/a.png")
+        self.assertEqual(out[1]["analysis"], "OCR for /tmp/b.png")
+
+    def test_marks_when_vision_unavailable(self):
+        images = [{"index": 1, "path": "/tmp/a.png", "error": None}]
+        with mock.patch(
+            "tools.vision_tools.check_vision_requirements", return_value=False,
+        ):
+            out = fcu.analyze_docx_images(images)
+        self.assertIn("not configured", out[0].get("vision_error", ""))
+        self.assertIsNone(out[0].get("analysis"))
+
+    def test_respects_max_vision_cap(self):
+        images = [
+            {"index": i, "path": f"/tmp/{i}.png", "error": None}
+            for i in range(1, 5)
+        ]
+        with mock.patch(
+            "tools.vision_tools.check_vision_requirements", return_value=True,
+        ), mock.patch.object(
+            fcu, "_analyze_one_image", return_value=("ok", None),
+        ):
+            out = fcu.analyze_docx_images(images, max_vision=2)
+        self.assertEqual(out[0].get("analysis"), "ok")
+        self.assertEqual(out[1].get("analysis"), "ok")
+        self.assertIn("capped", out[2].get("vision_error", ""))
+        self.assertIn("capped", out[3].get("vision_error", ""))
+
+
+class TestReadDocxWithImages(unittest.TestCase):
+    def test_end_to_end_replaces_placeholders_and_ocr(self):
+        import tempfile
+        from pathlib import Path
+
+        raw = _make_response(data={
+            "content": "Title\nimage.png\nFooter text",
+        })
+        blocks = _make_response(data={
+            "items": [
+                {
+                    "block_type": 27,
+                    "image": {"token": "ImgTok1", "width": 736, "height": 202},
+                },
+            ],
+            "has_more": False,
+        })
+        media = _make_response(
+            raw_content=_PNG_1X1,
+            headers={"Content-Type": "image/png"},
+        )
+        client = _StubClient([raw, blocks, media])
+
+        with tempfile.TemporaryDirectory() as tmp:
+            hermes_home = Path(tmp) / ".hermes"
+            hermes_home.mkdir()
+            with mock.patch.dict("os.environ", {"HERMES_HOME": str(hermes_home)}), \
+                 mock.patch(
+                     "tools.vision_tools.check_vision_requirements",
+                     return_value=True,
+                 ), \
+                 mock.patch.object(
+                     fcu, "_analyze_one_image",
+                     return_value=("聊天截图：模型起来了", None),
+                 ):
+                content, err, images = fcu.read_docx_with_images(client, "DocABC")
+
+        self.assertIsNone(err)
+        self.assertNotIn("image.png", content)
+        self.assertIn("[Image 1:", content)
+        self.assertIn("聊天截图：模型起来了", content)
+        self.assertEqual(len(images), 1)
+        self.assertTrue(images[0]["path"])
+        self.assertEqual(images[0].get("analysis"), "聊天截图：模型起来了")
+        self.assertIn(images[0]["path"], content)
+        self.assertIn("Title", content)
+        self.assertIn("Footer text", content)
+
+    def test_analyze_images_false_skips_vision(self):
+        import tempfile
+        from pathlib import Path
+
+        raw = _make_response(data={"content": "image.png"})
+        blocks = _make_response(data={
+            "items": [{"block_type": 27, "image": {"token": "T1"}}],
+            "has_more": False,
+        })
+        media = _make_response(
+            raw_content=_PNG_1X1,
+            headers={"Content-Type": "image/png"},
+        )
+        client = _StubClient([raw, blocks, media])
+        with tempfile.TemporaryDirectory() as tmp:
+            hermes_home = Path(tmp) / ".hermes"
+            hermes_home.mkdir()
+            with mock.patch.dict("os.environ", {"HERMES_HOME": str(hermes_home)}), \
+                 mock.patch.object(fcu, "analyze_docx_images") as mock_vision:
+                content, err, images = fcu.read_docx_with_images(
+                    client, "DocSkip", analyze_images=False,
+                )
+        mock_vision.assert_not_called()
+        self.assertIsNone(err)
+        self.assertIn("[Image 1:", content)
+        self.assertTrue(images[0]["path"])
+
+    def test_no_images_returns_raw_text(self):
+        raw = _make_response(data={"content": "just text"})
+        blocks = _make_response(data={"items": [{"block_type": 1}], "has_more": False})
+        client = _StubClient([raw, blocks])
+        content, err, images = fcu.read_docx_with_images(client, "DocNoImg")
+        self.assertIsNone(err)
+        self.assertEqual(content, "just text")
+        self.assertEqual(images, [])
+
+    def test_raw_content_failure(self):
+        client = _StubClient(_make_response(code=1770032, msg="forbidden"))
+        content, err, images = fcu.read_docx_with_images(client, "DocX")
+        self.assertIsNone(content)
+        self.assertIn("1770032", err)
+        self.assertEqual(images, [])
 
 
 if __name__ == "__main__":

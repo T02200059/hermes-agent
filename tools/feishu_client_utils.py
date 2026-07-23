@@ -1,6 +1,6 @@
 """Shared helpers for the Feishu/Lark document and drive tools.
 
-Two responsibilities live here so ``feishu_doc_tool.py`` and
+Responsibilities live here so ``feishu_doc_tool.py`` and
 ``feishu_drive_tool.py`` don't have to duplicate them:
 
 1. **Fallback lark client.** Both tools are normally driven by a lark client
@@ -10,21 +10,32 @@ Two responsibilities live here so ``feishu_doc_tool.py`` and
    ``FEISHU_APP_ID`` + ``FEISHU_APP_SECRET`` are present in the environment we
    build a tenant client on demand and cache it process-wide.
 
-2. **Wiki node resolution + bitable reading.** ``feishu_doc_read`` only knew
-   how to call the docx ``raw_content`` API. A wiki node token resolves to a
-   real document (``obj_token``) whose type (``obj_type``) can be ``docx``,
-   ``bitable``, ``sheet`` ... This module resolves the node and, for
-   bitables, flattens every table into readable plain text.
+2. **Wiki node resolution + bitable/sheet reading.** A wiki node token
+   resolves to a real document (``obj_token``) whose type (``obj_type``) can
+   be ``docx``, ``bitable``, ``sheet`` ... This module resolves the node and,
+   for bitables/sheets, flattens content into readable plain text.
+
+3. **Docx image materialization + vision OCR.** The docx ``raw_content`` API
+   turns image blocks into text placeholders like ``image.png``. We list
+   image blocks (``block_type=27``), download each via
+   ``/drive/v1/medias/{token}/download``, write under
+   ``$HERMES_HOME/cache/feishu_doc_images/``, run auxiliary
+   ``vision_analyze`` on each local file, and inject both the path and the
+   transcribed text into the returned document so the agent sees image
+   content without a second tool round-trip.
 
 ``lark_oapi`` is imported lazily inside the functions that need it -- the SDK
 eagerly loads a large surface and costs ~5s to import, which is why the
 tool-availability probe (``_check_feishu``) uses ``find_spec`` instead.
 """
 
+import concurrent.futures
 import json
 import logging
 import os
+import re
 import threading
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -459,3 +470,528 @@ def read_sheet_as_text(client, sheet_token):
             lines.append(f"  ...(已达到 {_SHEET_MAX_ROWS} 行上限)")
 
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Docx image blocks + media download
+# ---------------------------------------------------------------------------
+
+# Image block type in the docx blocks API (block_type=27 → image).
+_IMAGE_BLOCK_TYPE = 27
+_DOCX_BLOCKS_URI = "/open-apis/docx/v1/documents/:document_id/blocks"
+_MEDIA_DOWNLOAD_URI = "/open-apis/drive/v1/medias/:file_token/download"
+
+# Caps so a screenshot-heavy doc cannot explode disk / tool latency.
+# Media download is rate-limited at ~5 QPS by Feishu; keep sequential.
+_DOCX_MAX_IMAGES = 40
+_DOCX_MAX_IMAGE_BYTES = 10 * 1024 * 1024  # 10 MiB per image
+_DOCX_BLOCKS_PAGE_SIZE = 500
+# Vision OCR: concurrent auxiliary calls (each image is one LLM call).
+_DOCX_MAX_VISION_IMAGES = 40
+_DOCX_VISION_WORKERS = 3
+_DOCX_VISION_PROMPT = (
+    "这是飞书文档中的嵌入图片（多为运维聊天截图、日志、表格或监控面板）。"
+    "请完整转录图中全部可见文字（含 UI 标签、表格、代码、聊天记录、时间戳）。"
+    "保留关键结构；若几乎无文字，则用 1-3 句中文概括画面。"
+    "不要编造图中不存在的信息。"
+)
+
+# raw_content turns every image block into a bare filename-like token.
+_RAW_IMAGE_PLACEHOLDER_RE = re.compile(
+    r"\bimage\.(png|jpe?g|gif|webp|bmp)\b",
+    re.IGNORECASE,
+)
+
+_MIME_TO_EXT = {
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+    "image/jpg": ".jpg",
+    "image/gif": ".gif",
+    "image/webp": ".webp",
+    "image/bmp": ".bmp",
+    "image/x-ms-bmp": ".bmp",
+}
+
+
+def _safe_slug(value: str, *, max_len: int = 40) -> str:
+    """Filesystem-safe fragment from a Feishu token (alphanumeric + _-)."""
+    slug = re.sub(r"[^A-Za-z0-9_-]", "", value or "")
+    return (slug[:max_len] if slug else "img")
+
+
+def _sniff_image_ext(data: bytes) -> str:
+    """Guess a file extension from magic bytes; default ``.bin``."""
+    if not data:
+        return ".bin"
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return ".png"
+    if data.startswith(b"\xff\xd8"):
+        return ".jpg"
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return ".gif"
+    if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return ".webp"
+    if data[:2] == b"BM":
+        return ".bmp"
+    return ".bin"
+
+
+def _header_value(headers, *names):
+    """Case-insensitive header lookup on a dict-like headers object."""
+    if not headers:
+        return ""
+    # Prefer exact keys first, then a case-folded scan.
+    for name in names:
+        if name in headers:
+            val = headers.get(name)
+            if val is not None:
+                return str(val)
+    try:
+        lowered = {str(k).lower(): v for k, v in headers.items()}
+    except Exception:
+        return ""
+    for name in names:
+        val = lowered.get(name.lower())
+        if val is not None:
+            return str(val)
+    return ""
+
+
+def list_docx_image_tokens(client, doc_token, *, max_images=_DOCX_MAX_IMAGES):
+    """Return ordered image descriptors from a docx document's blocks.
+
+    Each item is ``{"token": str, "width": int|None, "height": int|None}``.
+    Stops after ``max_images`` tokens. Pagination continues until the API
+    reports no more pages (or the cap is hit).
+    """
+    images = []
+    page_token = ""
+    while len(images) < max_images:
+        queries = [("page_size", str(_DOCX_BLOCKS_PAGE_SIZE))]
+        if page_token:
+            queries.append(("page_token", page_token))
+        code, msg, data = do_request(
+            client, "GET", _DOCX_BLOCKS_URI,
+            paths={"document_id": doc_token},
+            queries=queries,
+        )
+        if code != 0:
+            logger.debug(
+                "feishu_client_utils: list blocks failed doc=%s code=%s msg=%s",
+                doc_token, code, msg,
+            )
+            break
+
+        items = data.get("items") or []
+        for block in items:
+            if not isinstance(block, dict):
+                continue
+            if block.get("block_type") != _IMAGE_BLOCK_TYPE:
+                continue
+            image = block.get("image") or {}
+            if not isinstance(image, dict):
+                continue
+            token = image.get("token") or ""
+            if not token:
+                continue
+            images.append({
+                "token": token,
+                "width": image.get("width"),
+                "height": image.get("height"),
+            })
+            if len(images) >= max_images:
+                break
+
+        if len(images) >= max_images:
+            break
+        has_more = data.get("has_more")
+        page_token = data.get("page_token", "") or ""
+        if not has_more or not page_token:
+            break
+    return images
+
+
+def download_media(client, file_token):
+    """Download a drive media object.
+
+    Returns ``(bytes_or_None, content_type_or_empty, error_or_None)``.
+    Success sets ``error`` to ``None`` and returns the binary body.
+    """
+    from lark_oapi import AccessTokenType
+    from lark_oapi.core.enum import HttpMethod
+    from lark_oapi.core.model.base_request import BaseRequest
+
+    request = (
+        BaseRequest.builder()
+        .http_method(HttpMethod.GET)
+        .uri(_MEDIA_DOWNLOAD_URI)
+        .token_types({AccessTokenType.TENANT})
+        .paths({"file_token": file_token})
+        .build()
+    )
+    response = client.request(request)
+
+    code = getattr(response, "code", None)
+    msg = getattr(response, "msg", "") or ""
+    raw = getattr(response, "raw", None)
+    status = getattr(raw, "status_code", None) if raw is not None else None
+
+    def _error_detail(default):
+        detail = default
+        if raw is not None and getattr(raw, "content", None):
+            try:
+                body = json.loads(raw.content)
+                if isinstance(body, dict):
+                    detail = (
+                        f"code={body.get('code', code)} "
+                        f"msg={body.get('msg', msg) or detail}"
+                    )
+            except (json.JSONDecodeError, TypeError, UnicodeDecodeError, ValueError):
+                pass
+        return detail
+
+    # Feishu JSON errors set ``code`` != 0. Binary success sets code=0.
+    # Non-JSON HTTP errors may leave code as None with a non-2xx status.
+    if code not in (0, None):
+        return None, "", _error_detail(msg or f"code={code}")
+    if status is not None and not (200 <= int(status) < 300):
+        return None, "", _error_detail(f"HTTP {status} msg={msg}")
+
+    if raw is None:
+        return None, "", "empty response (no raw body)"
+
+    content = getattr(raw, "content", None)
+    if content is None:
+        return None, "", "empty response body"
+    if isinstance(content, str):
+        content = content.encode("utf-8")
+    if not isinstance(content, (bytes, bytearray)):
+        return None, "", f"unexpected body type: {type(content).__name__}"
+    content = bytes(content)
+    if not content:
+        return None, "", "empty response body"
+
+    headers = getattr(raw, "headers", None) or {}
+    content_type = _header_value(headers, "Content-Type", "content-type")
+    # Strip "; charset=..." etc.
+    if ";" in content_type:
+        content_type = content_type.split(";", 1)[0].strip()
+
+    return content, content_type, None
+
+
+def _image_cache_dir(doc_token: str) -> Path:
+    from hermes_constants import get_hermes_home
+
+    base = get_hermes_home() / "cache" / "feishu_doc_images" / _safe_slug(doc_token)
+    base.mkdir(parents=True, exist_ok=True)
+    return base
+
+
+def download_docx_images(client, doc_token, image_tokens, *, max_bytes=_DOCX_MAX_IMAGE_BYTES):
+    """Download image tokens to ``$HERMES_HOME/cache/feishu_doc_images/<doc>/``.
+
+    ``image_tokens`` is the list from :func:`list_docx_image_tokens`.
+    Returns a list of dicts::
+
+        {
+          "index": 1-based int,
+          "token": str,
+          "path": str or "",
+          "width": ...,
+          "height": ...,
+          "error": str or None,
+          "bytes": int,
+        }
+    """
+    if not image_tokens:
+        return []
+
+    dest_dir = _image_cache_dir(doc_token)
+    results = []
+    for i, meta in enumerate(image_tokens, 1):
+        token = meta.get("token") or ""
+        entry = {
+            "index": i,
+            "token": token,
+            "path": "",
+            "width": meta.get("width"),
+            "height": meta.get("height"),
+            "error": None,
+            "bytes": 0,
+        }
+        if not token:
+            entry["error"] = "missing image token"
+            results.append(entry)
+            continue
+
+        data, content_type, err = download_media(client, token)
+        if err or not data:
+            entry["error"] = err or "download returned no data"
+            results.append(entry)
+            logger.debug(
+                "feishu_client_utils: media download failed token=%s err=%s",
+                token, entry["error"],
+            )
+            continue
+
+        if len(data) > max_bytes:
+            entry["error"] = (
+                f"image too large ({len(data)} bytes, max {max_bytes})"
+            )
+            results.append(entry)
+            continue
+
+        mime_key = (content_type or "").lower().strip()
+        ext = _MIME_TO_EXT.get(mime_key) or _sniff_image_ext(data)
+        filename = f"img_{i:02d}_{_safe_slug(token, max_len=20)}{ext}"
+        path = dest_dir / filename
+        try:
+            path.write_bytes(data)
+        except OSError as exc:
+            entry["error"] = f"write failed: {exc}"
+            results.append(entry)
+            continue
+
+        entry["path"] = str(path)
+        entry["bytes"] = len(data)
+        results.append(entry)
+
+    return results
+
+
+def _format_image_marker(img: dict) -> str:
+    """Render one image as a block for the returned document text.
+
+    Prefer embedding vision OCR text so the agent does not need a second
+    round-trip. Always keep the local path for re-inspection.
+    """
+    n = img.get("index") or 0
+    path = img.get("path") or ""
+    analysis = (img.get("analysis") or "").strip()
+    vision_err = img.get("vision_error")
+
+    if not path:
+        err = img.get("error") or "download failed"
+        return f"[Image {n}: unavailable ({err})]"
+
+    if analysis:
+        return f"[Image {n}: {path}]\n{analysis}"
+
+    if vision_err:
+        return (
+            f"[Image {n}: {path}]\n"
+            f"(vision unavailable: {vision_err}; "
+            f"use vision_analyze on this path to read the image)"
+        )
+
+    return (
+        f"[Image {n}: {path}]\n"
+        f"(no vision text; use vision_analyze on this path to read the image)"
+    )
+
+
+def inject_image_paths_into_content(content: str, images: list) -> str:
+    """Replace raw_content ``image.png`` placeholders with image blocks.
+
+    Placeholders are substituted in document order. Each successful download
+    becomes ``[Image N: /abs/path]`` plus vision OCR text when available.
+    Failures become ``[Image N: unavailable (...)]``. If more images exist
+    than placeholders (or zero placeholders matched), an appendix lists the
+    remainder so the agent still sees every image.
+    """
+    if not images:
+        return content or ""
+
+    text = content or ""
+    cursor = 0
+
+    def _repl(_match):
+        nonlocal cursor
+        if cursor >= len(images):
+            return _match.group(0)
+        marker = _format_image_marker(images[cursor])
+        cursor += 1
+        return marker
+
+    new_text = _RAW_IMAGE_PLACEHOLDER_RE.sub(_repl, text)
+
+    # Images that never got a placeholder slot (API shape drift, or more
+    # image blocks than raw_content placeholders) still need to surface.
+    if cursor < len(images):
+        leftover = images[cursor:]
+        lines = ["", "--- Document images ---"]
+        for img in leftover:
+            lines.append(_format_image_marker(img))
+        new_text = new_text.rstrip() + "\n" + "\n".join(lines)
+
+    return new_text
+
+
+def _analyze_one_image(path: str, prompt: str) -> tuple:
+    """Run auxiliary vision on one local path. Returns ``(analysis, error)``."""
+    try:
+        from model_tools import _run_async
+        from tools.vision_tools import vision_analyze_tool
+    except ImportError as exc:
+        return None, f"vision import failed: {exc}"
+
+    try:
+        result_json = _run_async(
+            vision_analyze_tool(image_url=path, user_prompt=prompt)
+        )
+    except Exception as exc:
+        logger.debug(
+            "feishu_client_utils: vision_analyze failed path=%s err=%s",
+            path, exc,
+        )
+        return None, str(exc)
+
+    try:
+        data = json.loads(result_json) if isinstance(result_json, str) else result_json
+    except (json.JSONDecodeError, TypeError) as exc:
+        return None, f"invalid vision response: {exc}"
+
+    if not isinstance(data, dict):
+        return None, "invalid vision response type"
+
+    if data.get("success"):
+        analysis = (data.get("analysis") or "").strip()
+        if analysis:
+            return analysis, None
+        return None, "empty vision analysis"
+
+    return None, data.get("error") or data.get("message") or "vision failed"
+
+
+def analyze_docx_images(
+    images: list,
+    *,
+    max_vision: int = _DOCX_MAX_VISION_IMAGES,
+    max_workers: int = _DOCX_VISION_WORKERS,
+    prompt: str = _DOCX_VISION_PROMPT,
+) -> list:
+    """Run auxiliary vision OCR on downloaded docx images (in place).
+
+    Adds ``analysis`` and/or ``vision_error`` keys to each image dict that
+    has a local ``path``. Caps at ``max_vision`` successful path candidates;
+    remaining images keep path-only markers. Concurrent via a small thread
+    pool (each worker bridges to the async vision tool).
+    """
+    if not images:
+        return images
+
+    # Skip entirely when no vision backend is configured — path markers alone
+    # are still useful, and we avoid N hard failures.
+    try:
+        from tools.vision_tools import check_vision_requirements
+        if not check_vision_requirements():
+            for img in images:
+                if img.get("path") and not img.get("error"):
+                    img["vision_error"] = "vision backend not configured"
+            return images
+    except Exception as exc:
+        logger.debug("feishu_client_utils: vision requirement check failed: %s", exc)
+        for img in images:
+            if img.get("path") and not img.get("error"):
+                img["vision_error"] = f"vision unavailable: {exc}"
+        return images
+
+    # Collect work items (indexes into ``images``); cap at max_vision.
+    work = []
+    for i, img in enumerate(images):
+        if not img.get("path") or img.get("error"):
+            continue
+        if len(work) < max_vision:
+            work.append(i)
+        else:
+            img["vision_error"] = f"vision skipped (capped at {max_vision} images)"
+
+    if not work:
+        return images
+
+    workers = max(1, min(max_workers, len(work)))
+
+    def _job(idx: int):
+        path = images[idx]["path"]
+        analysis, err = _analyze_one_image(path, prompt)
+        return idx, analysis, err
+
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = [pool.submit(_job, idx) for idx in work]
+            for fut in concurrent.futures.as_completed(futures):
+                try:
+                    idx, analysis, err = fut.result()
+                except Exception as exc:
+                    logger.debug(
+                        "feishu_client_utils: vision worker crashed: %s", exc,
+                    )
+                    continue
+                if analysis:
+                    images[idx]["analysis"] = analysis
+                    images[idx]["vision_error"] = None
+                else:
+                    images[idx]["vision_error"] = err or "vision failed"
+    except Exception as exc:
+        logger.warning(
+            "feishu_client_utils: vision pool failed: %s", exc,
+        )
+        for idx in work:
+            if not images[idx].get("analysis"):
+                images[idx]["vision_error"] = f"vision pool failed: {exc}"
+
+    return images
+
+
+def read_docx_with_images(
+    client,
+    doc_token,
+    *,
+    max_images=_DOCX_MAX_IMAGES,
+    analyze_images: bool = True,
+):
+    """Read a docx as plain text, download images, and OCR them via vision.
+
+    Returns ``(content_or_None, error_or_None, images_list)``.
+    ``images_list`` is always a list (empty on failure / no images). When
+    ``analyze_images`` is True (default), each downloaded image is passed
+    through auxiliary vision and the transcript is embedded in ``content``.
+    """
+    code, msg, data = do_request(
+        client, "GET",
+        "/open-apis/docx/v1/documents/:document_id/raw_content",
+        paths={"document_id": doc_token},
+    )
+    if code != 0:
+        return None, f"Failed to read document: code={code} msg={msg}", []
+
+    content = ""
+    if isinstance(data, dict):
+        content = data.get("content", "") or ""
+    if not content and hasattr(data, "content"):
+        content = getattr(data, "content", "") or ""
+    if not content:
+        return None, "No content returned from document API", []
+
+    image_tokens = list_docx_image_tokens(
+        client, doc_token, max_images=max_images,
+    )
+    if not image_tokens:
+        return content, None, []
+
+    images = download_docx_images(client, doc_token, image_tokens)
+    if analyze_images:
+        images = analyze_docx_images(images)
+
+    content = inject_image_paths_into_content(content, images)
+
+    # Note truncation so the agent knows more images may exist.
+    if len(image_tokens) >= max_images:
+        content = (
+            content.rstrip()
+            + f"\n\n...(image download capped at {max_images}; "
+            "later images were not fetched)"
+        )
+
+    return content, None, images
