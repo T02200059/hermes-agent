@@ -3134,8 +3134,9 @@ def test_run_conversation_codex_preserves_encrypted_reasoning_in_interim(monkeyp
 
 def test_chat_messages_to_responses_input_reasoning_only_has_following_item(monkeypatch):
     """When converting a reasoning-only interim message to Responses API input,
-    the reasoning items must be followed by an assistant message (even if empty)
-    to satisfy the API's 'required following item' constraint."""
+    the reasoning items must be followed by a non-empty assistant message to
+    satisfy the API's 'required following item' constraint without emitting
+    content:"" (rejected by strict gateways as missing input.content)."""
     agent = _build_agent(monkeypatch)
     messages = [
         {"role": "user", "content": "think hard"},
@@ -3161,6 +3162,66 @@ def test_chat_messages_to_responses_input_reasoning_only_has_following_item(monk
     assert ri_idx < len(items) - 1, "Reasoning item must not be the last item (missing_following_item)"
     following = items[ri_idx + 1]
     assert following.get("role") == "assistant"
+    # Non-empty placeholder — empty string is missing input.content on Ark/Volcengine.
+    assert following.get("content") == " "
+
+
+def test_chat_messages_to_responses_input_reasoning_with_tool_calls_skips_empty_assistant(
+    monkeypatch,
+):
+    """Reasoning + tool_calls must not insert a content:"" assistant item.
+
+    function_call items already satisfy the Responses following-item rule.
+    Emitting an empty assistant between them triggers MissingParameter
+    input.content on strict gateways (Volcengine/Ark).
+    """
+    _build_agent(monkeypatch)
+    from agent.codex_responses_adapter import _chat_messages_to_responses_input
+
+    items = _chat_messages_to_responses_input(
+        [
+            {"role": "user", "content": "run terminal"},
+            {
+                "role": "assistant",
+                "content": "",
+                "codex_reasoning_items": [
+                    {
+                        "type": "reasoning",
+                        "id": "rs_tool",
+                        "encrypted_content": "enc_tool",
+                        "summary": [],
+                    },
+                ],
+                "tool_calls": [
+                    {
+                        "id": "call_term1",
+                        "type": "function",
+                        "function": {"name": "terminal", "arguments": "{}"},
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "tool_call_id": "call_term1",
+                "content": '{"exit_code":0,"stdout":"ok"}',
+            },
+        ]
+    )
+
+    reasoning_indices = [i for i, it in enumerate(items) if it.get("type") == "reasoning"]
+    assert len(reasoning_indices) == 1
+    ri_idx = reasoning_indices[0]
+    assert ri_idx < len(items) - 1
+    following = items[ri_idx + 1]
+    # Next item must be the function_call, not a content:"" assistant message.
+    assert following.get("type") == "function_call"
+    assert following.get("name") == "terminal"
+    assert not any(
+        isinstance(it, dict)
+        and it.get("role") == "assistant"
+        and it.get("content") == ""
+        for it in items
+    )
 
 
 def test_codex_message_item_status_survives_conversion_and_preflight(monkeypatch):

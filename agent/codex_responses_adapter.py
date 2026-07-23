@@ -504,10 +504,29 @@ def _chat_messages_to_responses_input(
                 elif has_codex_reasoning:
                     # The Responses API requires a following item after each
                     # reasoning item (otherwise: missing_following_item error).
-                    # When the assistant produced only reasoning with no visible
-                    # content, emit an empty assistant message as the required
-                    # following item.
-                    items.append({"role": "assistant", "content": ""})
+                    #
+                    # Two-step rule (strict gateways e.g. Volcengine/Ark reject
+                    # content:"" as missing ``input.content``):
+                    # 1. If this turn will emit function_call item(s), those
+                    #    already satisfy the following-item constraint — do
+                    #    NOT insert a content:"" assistant message.
+                    # 2. Otherwise emit a non-empty placeholder assistant
+                    #    message (single space). Empty string is not used.
+                    _raw_tcs = msg.get("tool_calls")
+                    _has_emit_tool_calls = False
+                    if isinstance(_raw_tcs, list):
+                        for _tc in _raw_tcs:
+                            if not isinstance(_tc, dict):
+                                continue
+                            _fn = _tc.get("function", {})
+                            _fn_name = (
+                                _fn.get("name") if isinstance(_fn, dict) else None
+                            )
+                            if isinstance(_fn_name, str) and _fn_name.strip():
+                                _has_emit_tool_calls = True
+                                break
+                    if not _has_emit_tool_calls:
+                        items.append({"role": "assistant", "content": " "})
 
                 tool_calls = msg.get("tool_calls")
                 if isinstance(tool_calls, list):
