@@ -333,15 +333,25 @@ async def patch_message_via_rest(
         )
         patch_data = patch_resp.json()
         if patch_data.get("code", -1) != 0:
-            logger.debug(
-                "[Feishu] patch_message_via_rest failed (code %d): %s",
-                patch_data.get("code"), patch_data.get("msg"),
+            logger.warning(
+                "[Feishu card] patch_message failed message_id=%s code=%s msg=%s",
+                message_id,
+                patch_data.get("code"),
+                patch_data.get("msg"),
             )
             return False
     except Exception as exc:
-        logger.debug("[Feishu] patch_message_via_rest failed (non-fatal): %s", exc)
+        logger.warning(
+            "[Feishu card] patch_message failed message_id=%s: %s",
+            message_id,
+            exc,
+        )
         return False
 
+    logger.info(
+        "[Feishu card] patch_message OK message_id=%s",
+        message_id,
+    )
     return True
 
 
@@ -378,6 +388,21 @@ async def send_clarify(
         "question": question,
         "message_id": result.message_id,
     }
+    if getattr(result, "success", False):
+        logger.info(
+            "[Feishu card] clarify sent OK clarify_id=%s chat_id=%s message_id=%s choices=%d",
+            clarify_id,
+            chat_id,
+            result.message_id or "(none)",
+            len(choices or []),
+        )
+    else:
+        logger.warning(
+            "[Feishu card] clarify send failed clarify_id=%s chat_id=%s error=%s",
+            clarify_id,
+            chat_id,
+            getattr(result, "error", None),
+        )
     return result
 
 
@@ -402,12 +427,19 @@ async def expire_clarify(
         return False
 
     card = build_expired_clarify_card(question, choices, timeout_minutes)
-    return await patch_message_via_rest(
+    ok = await patch_message_via_rest(
         app_id=adapter._app_id,
         app_secret=adapter._app_secret,
         message_id=message_id,
         card=card,
     )
+    logger.info(
+        "[Feishu card] clarify expired clarify_id=%s message_id=%s ok=%s",
+        clarify_id,
+        message_id,
+        ok,
+    )
+    return ok
 
 
 def handle_clarify_card_action(
@@ -461,6 +493,10 @@ def handle_clarify_card_action(
             card.type = "raw"
             card.data = orig_card
             response.card = card
+        logger.info(
+            "[Feishu card] clarify action=back clarify_id=%s",
+            clarify_id,
+        )
         return response
 
     # Handle form submission from input card
@@ -492,6 +528,11 @@ def handle_clarify_card_action(
             card.type = "raw"
             card.data = frozen_card
             response.card = card
+        logger.info(
+            "[Feishu card] clarify resolved clarify_id=%s via=other answer_len=%d",
+            clarify_id,
+            len(str(answer)),
+        )
         return response
 
     if choice == "__other__":
@@ -505,6 +546,10 @@ def handle_clarify_card_action(
             card.type = "raw"
             card.data = input_card
             response.card = card
+        logger.info(
+            "[Feishu card] clarify action=other clarify_id=%s",
+            clarify_id,
+        )
         return response
     else:
         from tools.clarify_gateway import resolve_gateway_clarify
@@ -531,4 +576,10 @@ def handle_clarify_card_action(
         card.type = "raw"
         card.data = frozen_card
         response.card = card
+    logger.info(
+        "[Feishu card] clarify resolved clarify_id=%s choice=%s label=%s",
+        clarify_id,
+        choice,
+        selected_label,
+    )
     return response

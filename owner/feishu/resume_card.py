@@ -217,10 +217,15 @@ async def send_resume_card(
         )
         result = await send_card_via_rest(adapter, chat_id, card, metadata)
         if result.success:
-            logger.info("[Feishu] /resume interactive card sent successfully")
+            logger.info(
+                "[Feishu card] resume sent OK chat_id=%s message_id=%s sessions=%d",
+                chat_id,
+                result.message_id or "(none)",
+                len(sessions or []),
+            )
             return result
         logger.info(
-            "[Feishu] /resume card send failed (%s); falling back to plain text",
+            "[Feishu card] resume send failed (%s); falling back to plain text",
             result.error,
         )
     except Exception as exc:

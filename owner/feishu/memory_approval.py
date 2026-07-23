@@ -247,7 +247,22 @@ async def send_approval_card(
         meta = dict(metadata) if metadata else {}
         meta["session_id"] = session_id
         meta["chat_id"] = chat_id
-        return await send_card_via_rest(adapter, chat_id, card, meta)
+        result = await send_card_via_rest(adapter, chat_id, card, meta)
+        if getattr(result, "success", False):
+            logger.info(
+                "[Feishu card] memory_approval sent OK pending_id=%s chat_id=%s message_id=%s",
+                pending_id,
+                chat_id,
+                getattr(result, "message_id", None) or "(none)",
+            )
+        else:
+            logger.warning(
+                "[Feishu card] memory_approval send failed pending_id=%s chat_id=%s error=%s",
+                pending_id,
+                chat_id,
+                getattr(result, "error", None),
+            )
+        return result
     except Exception as exc:
         logger.warning(
             "[Feishu] memory_approval send_approval_card failed (pending=%s): %s",
@@ -393,6 +408,13 @@ def handle_card_click(
         command = f"/memory reject {pending_id}"
 
     _route_command(adapter, loop, command=command, chat_id=chat_id, event=event)
+    logger.info(
+        "[Feishu card] memory_approval action pending_id=%s choice=%s chat_id=%s command=%s",
+        pending_id,
+        choice,
+        chat_id,
+        command,
+    )
 
     # Resolve the original card inline (freeze + colour + title change).
     proposal_md = str(action_value.get("proposal_md", "") or "")

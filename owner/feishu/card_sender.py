@@ -178,7 +178,12 @@ async def send_card_via_rest(
         msg_data = send_data.get("data", {})
         if isinstance(msg_data, dict):
             message_id = str(msg_data.get("message_id", ""))
-        logger.debug("[Feishu] send_card success: message_id=%s", message_id)
+        logger.info(
+            "[Feishu card] send_via_rest OK chat_id=%s message_id=%s receive_id_type=%s",
+            chat_id,
+            message_id or "(none)",
+            receive_id_type,
+        )
         return SendResult(success=True, message_id=message_id)
     except Exception as exc:
         logger.warning("[Feishu] send_card exception: %s", exc)

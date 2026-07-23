@@ -254,8 +254,16 @@ async def send_feishu_diff_card(
         logger.debug("feishu diff card skipped: empty card")
         return None
 
-    logger.info("feishu diff card sent: tool=%s file=%s diff_id=%s", tool_name, file_path, diff_id)
-    return await adapter.send_card(chat_id, card)
+    result = await adapter.send_card(chat_id, card)
+    logger.info(
+        "[Feishu card] diff sent tool=%s file=%s diff_id=%s success=%s message_id=%s",
+        tool_name,
+        file_path,
+        diff_id,
+        bool(getattr(result, "success", False)),
+        getattr(result, "message_id", None) or "(none)",
+    )
+    return result
 
 
 def handle_feishu_diff_action(
@@ -279,6 +287,7 @@ def handle_feishu_diff_action(
     max_lines = cached.get("max_lines", 60)
 
     if action_value.get("expand_diff"):
+        action = "expand"
         card = diff_to_feishu_card(
             diff_text, tool_name,
             file_path=file_path,
@@ -287,6 +296,7 @@ def handle_feishu_diff_action(
             compact=False,
         )
     elif action_value.get("collapse_diff"):
+        action = "collapse"
         card = diff_to_feishu_card(
             diff_text, tool_name,
             file_path=file_path,
@@ -295,8 +305,10 @@ def handle_feishu_diff_action(
             compact=True,
         )
     elif action_value.get("show_full_diff"):
+        action = "show_full"
         card = _full_diff_card(diff_text, tool_name, file_path, diff_id)
     else:
+        action = "unknown"
         card = None
 
     if P2CardActionTriggerResponse is None:
@@ -308,4 +320,12 @@ def handle_feishu_diff_action(
         cb_card.type = "raw"
         cb_card.data = card
         response.card = cb_card
+    logger.info(
+        "[Feishu card] diff action=%s diff_id=%s tool=%s file=%s has_card=%s",
+        action,
+        diff_id,
+        tool_name,
+        file_path,
+        card is not None,
+    )
     return response

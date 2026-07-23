@@ -484,6 +484,7 @@
   - `0dbae9a40` — agent running 时点击 bot menu 触发 `/feishu-guide`，`should_bypass_active_session()` 只查 `resolve_command()`（仅含 `COMMAND_REGISTRY` 内置命令），plugin 命令不在其中，导致落入 busy-input 路径被当普通消息注入 agent。修复为同时检查 `is_gateway_known_command()`（覆盖 plugin 命令）。同 bug 影响 `/providers` 等所有 plugin 命令。
   - `8c4c902e1` — `feishu_guide` bot menu 事件绕过普通命令管线直接发卡片。原路径经过 `_handle_message_with_guards` 会被 per-chat lock 阻塞，导致 ack 到卡片出现之间延迟数秒；现在 ack 后直接调用 `adapter.send_guide_card()` 并 return，提升响应速度。
   - `5b2f8ed74` — `feishu_guide` 引导卡片提交后，合成的 `/steer` `/queue` `/goal` 等命令没有注入到正在运行的 agent，而是被 LLM 当普通消息回复。根因：`bot_menu.py` 的 feishu_guide 快捷路径用 `SimpleNamespace` 构建 source，`chat_type` 字面量 `'p2p'` 未归一化为 `'dm'`，导致合成 event 的 session key 与运行中 agent 的不匹配，gateway runner 的 running-agent fast path 未命中。修复：`steer_card.py::_route_guide_command` 在 `_dispatch` 中重建 source、走 `_resolve_source_chat_type` 归一化路径（与普通 bot menu 命令一致）；`bot_menu.py` 的 `SimpleNamespace` 改用 `adapter.build_source()` 补全缺失字段；`adapter.py` 加 `form_value` JSON string 归一化（防御性）+ 诊断日志。端到端验证：steer 注入成功（chat_type=dm，session key 匹配）。
+  - **queue 撤销队列 + 执行后冻结（个人 fork，仅飞书卡）** — queue 提交后 done 卡增加「撤销队列」；FIFO 开始执行时 REST patch 卡片为「▶️ 已开始执行」蓝底终态。**禁止**把 token 写入 `message_id`（会当 reply_to 导致 99992354）。实现：`owner/feishu/steer_card.py` + `owner/patches/queue_cancel_patch.py`（按 prompt 文本匹配入队、`event._owner_queue_token` 打标、包装 `_enqueue_fifo`/`_dequeue_pending_event`、`cancel_queued_by_token`；并 wait 在途 prefetch 以避免 queue 紧接上轮时跳过 openviking 召回卡）。注册于 `owner-extensions`。
 
 ### 4.12 飞书文件上传大小守卫
 

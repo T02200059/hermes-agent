@@ -170,6 +170,12 @@ def handle_picker_action(
                                        f"未找到 provider「{provider_slug}」，请重新执行 /providers")
             models = provider_row.get("models") or []
             name = provider_row.get("name", provider_slug)
+            logger.info(
+                "[Feishu card] model_picker step=provider picker_id=%s provider=%s models=%d",
+                picker_id,
+                provider_slug,
+                len(models),
+            )
             return _card_response(
                 P2CardActionTriggerResponse, CallBackCard,
                 build_model_card(picker_id, provider_slug, name, models),
@@ -181,6 +187,11 @@ def handle_picker_action(
                 return _toast_response(P2CardActionTriggerResponse, CallBackToast,
                                        "会话已过期，请重新执行 /providers")
             rows = state.get("providers", [])
+            logger.info(
+                "[Feishu card] model_picker step=back picker_id=%s providers=%d",
+                picker_id,
+                len(rows),
+            )
             return _card_response(
                 P2CardActionTriggerResponse, CallBackCard,
                 build_provider_card(picker_id, rows),
@@ -200,6 +211,12 @@ def handle_picker_action(
 
             # Route the synthetic command through the adapter.
             _route_picker_command(adapter, command, open_id, state)
+            logger.info(
+                "[Feishu card] model_picker step=confirm picker_id=%s command=%s user=%s",
+                picker_id,
+                command,
+                user_name,
+            )
 
             return _card_response(
                 P2CardActionTriggerResponse, CallBackCard,
@@ -252,6 +269,11 @@ def _route_picker_command(
                 timestamp=datetime.now(),
             )
             await adapter._handle_message_with_guards(synthetic_event)
+            logger.info(
+                "[Feishu card] model_picker command routed OK command=%s chat_id=%s",
+                command,
+                chat_id,
+            )
         except Exception as exc:
             logger.warning("[Feishu] model picker route failed: %s", exc)
 

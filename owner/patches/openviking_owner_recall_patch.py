@@ -330,11 +330,14 @@ def _send_feishu_card_sync(chat_id: str, card: dict, metadata: dict) -> bool:
     app_id = os.environ.get("FEISHU_APP_ID", "")
     app_secret = os.environ.get("FEISHU_APP_SECRET", "")
     if not app_id or not app_secret:
-        logger.warning("FEISHU_APP_ID/SECRET missing")
+        logger.warning(
+            "openviking_recall: feishu card send aborted — FEISHU_APP_ID/SECRET missing"
+        )
         return False
 
     token = _acquire_feishu_token(app_id, app_secret)
     if not token:
+        logger.warning("openviking_recall: feishu card send aborted — token acquire failed")
         return False
 
     raw_chat_type = (metadata.get("chat_type") or "").strip().lower()
@@ -345,6 +348,14 @@ def _send_feishu_card_sync(chat_id: str, card: dict, metadata: dict) -> bool:
     else:
         receive_id = chat_id
         receive_id_type = "chat_id"
+
+    logger.info(
+        "openviking_recall: feishu card send start receive_id_type=%s receive_id=%s "
+        "chat_type=%s",
+        receive_id_type,
+        (receive_id or "")[:48],
+        raw_chat_type or "(empty)",
+    )
 
     try:
         payload = json.dumps(card, ensure_ascii=False)
@@ -360,11 +371,24 @@ def _send_feishu_card_sync(chat_id: str, card: dict, metadata: dict) -> bool:
         data = resp.json()
         code = data.get("code", -1)
         if code != 0:
-            logger.warning("feishu card send API error (code %s): %s", code, data.get("msg", "unknown"))
+            logger.warning(
+                "openviking_recall: feishu card send API error (code %s): %s",
+                code,
+                data.get("msg", "unknown"),
+            )
             return False
+        msg_id = ""
+        try:
+            msg_id = str((data.get("data") or {}).get("message_id") or "")
+        except Exception:
+            pass
+        logger.info(
+            "openviking_recall: feishu card send OK message_id=%s",
+            msg_id or "(none)",
+        )
         return True
     except Exception as e:
-        logger.warning("feishu card send failed: %s", e)
+        logger.warning("openviking_recall: feishu card send failed: %s", e)
         return False
 
 
@@ -431,49 +455,155 @@ def _send_qqbot_text_sync(chat_id: str, content: str, metadata: dict) -> bool:
         return False
 
 
+def _query_preview(query: Any, limit: int = 80) -> str:
+    text = query if isinstance(query, str) else repr(query)
+    text = " ".join(text.split())
+    if len(text) > limit:
+        return text[:limit] + "..."
+    return text
+
+
+def _hit_summaries(hits: List[dict], limit: int = 6) -> List[str]:
+    out: List[str] = []
+    for h in (hits or [])[:limit]:
+        if not isinstance(h, dict):
+            out.append(str(h)[:60])
+            continue
+        title = (
+            h.get("title")
+            or h.get("name")
+            or h.get("uri")
+            or h.get("path")
+            or h.get("id")
+            or "?"
+        )
+        score = h.get("score")
+        if score is not None:
+            out.append(f"{title}(score={score})")
+        else:
+            out.append(str(title)[:80])
+    return out
+
+
 def _fire_recall_display(hits: List[dict], ctx: dict, elapsed_ms: float) -> None:
-    """Dispatch recall card/text asynchronously, fail-silent."""
+    """Dispatch recall card/text asynchronously; log every skip path."""
+    ctx = ctx or {}
     if not hits:
+        logger.info(
+            "openviking_recall: display skip reason=no_hits elapsed_ms=%.0f",
+            elapsed_ms,
+        )
         return
+
     platform = (ctx.get("platform") or "").lower()
-    chat_id = ctx.get("chat_id", "")
+    chat_id = ctx.get("chat_id", "") or ""
+    user_id = ctx.get("user_id", "") or ""
+    chat_type = ctx.get("chat_type", "") or ""
+
+    logger.info(
+        "openviking_recall: display attempt hits=%d elapsed_ms=%.0f "
+        "platform=%r chat_id=%r chat_type=%r user_id=%r",
+        len(hits),
+        elapsed_ms,
+        platform or "(empty)",
+        chat_id[:48] if chat_id else "(empty)",
+        chat_type or "(empty)",
+        (user_id[:32] if user_id else "(empty)"),
+    )
+
     if not chat_id:
+        logger.warning(
+            "openviking_recall: display skip reason=missing_chat_id "
+            "(provider initialize never got chat_id — card cannot be routed)"
+        )
         return
 
     cfg = _load_card_cfg()
     if not cfg.get("enabled", True):
+        logger.info(
+            "openviking_recall: display skip reason=card_disabled cfg=%s",
+            {k: cfg.get(k) for k in ("enabled", "feishu_card", "qqbot_text")},
+        )
         return
 
     # WR-04: per-chat debounce — collapse repeated recalls in the same
     # chat within 5s into a single card. Prevents a single chat with
     # bursty memory hits from hammering Feishu/QQ with N cards.
     if _is_chat_debounced(chat_id):
+        logger.info(
+            "openviking_recall: display skip reason=debounced chat_id=%s "
+            "window_s=%s",
+            chat_id[:48],
+            _RECALL_DEBOUNCE_SECONDS,
+        )
         return
 
     metadata = {
-        "chat_type": ctx.get("chat_type", ""),
-        "open_id": ctx.get("user_id", ""),
+        "chat_type": chat_type,
+        "open_id": user_id,
     }
 
     executor = _get_recall_executor()
 
     if platform == "feishu" and cfg.get("feishu_card", True):
         card = build_viking_recall_card(hits, elapsed_ms)
-        if card:
-            try:
-                executor.submit(_send_feishu_card_sync, chat_id, card, metadata)
-            except RuntimeError:
-                # Executor shut down (process exit) — fail silent.
+        if not card:
+            logger.warning(
+                "openviking_recall: display skip reason=empty_card_build hits=%d",
+                len(hits),
+            )
+            return
+        try:
+            fut = executor.submit(_send_feishu_card_sync, chat_id, card, metadata)
+            logger.info(
+                "openviking_recall: feishu card queued hits=%d titles=%s",
+                len(hits),
+                _hit_summaries(hits),
+            )
 
-                pass
+            def _log_done(f):
+                try:
+                    ok = f.result()
+                    logger.info(
+                        "openviking_recall: feishu card future done ok=%s", ok
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "openviking_recall: feishu card future error: %s", exc
+                    )
+
+            fut.add_done_callback(_log_done)
+        except RuntimeError:
+            # Executor shut down (process exit) — fail silent.
+            logger.warning(
+                "openviking_recall: display skip reason=executor_shutdown"
+            )
 
     elif platform == "qqbot" and cfg.get("qqbot_text", True):
         text = build_viking_recall_text(hits, elapsed_ms)
         if text:
             try:
                 executor.submit(_send_qqbot_text_sync, chat_id, text, metadata)
+                logger.info(
+                    "openviking_recall: qqbot text queued hits=%d", len(hits)
+                )
             except RuntimeError:
-                pass
+                logger.warning(
+                    "openviking_recall: display skip reason=executor_shutdown"
+                )
+        else:
+            logger.warning(
+                "openviking_recall: display skip reason=empty_qq_text hits=%d",
+                len(hits),
+            )
+    else:
+        logger.info(
+            "openviking_recall: display skip reason=platform_or_channel_gate "
+            "platform=%r feishu_card=%s qqbot_text=%s",
+            platform or "(empty)",
+            cfg.get("feishu_card", True),
+            cfg.get("qqbot_text", True),
+        )
 
 
 def _wrap_initialize(orig_init):
@@ -487,6 +617,18 @@ def _wrap_initialize(orig_init):
             "user_name": kwargs.get("user_name", ""),
             "chat_name": kwargs.get("chat_name", ""),
         }
+        self._owner_recall_hits = []
+        has_client = bool(getattr(self, "_client", None))
+        logger.info(
+            "openviking_recall: initialize session_id=%s platform=%r chat_id=%r "
+            "chat_type=%r user_id=%r has_client=%s",
+            session_id,
+            self._recall_card_ctx["platform"] or "(empty)",
+            (self._recall_card_ctx["chat_id"] or "(empty)")[:48],
+            self._recall_card_ctx["chat_type"] or "(empty)",
+            (self._recall_card_ctx["user_id"] or "(empty)")[:32],
+            has_client,
+        )
     return wrapped
 
 
@@ -495,7 +637,17 @@ def _wrap_build_prefetch_entries(orig_fn):
         cfg = _load_sync_cfg()
         top_n = max(1, int(cfg.get("top_n", 6)))
         # Store the selected hits (post-dedup) for the recall card.
-        self._owner_recall_hits = list(items)[:top_n]
+        items_list = list(items) if items else []
+        self._owner_recall_hits = items_list[:top_n]
+        logger.info(
+            "openviking_recall: build_prefetch_entries raw_items=%d top_n=%d "
+            "stored_hits=%d titles=%s prefer_abstract=%s",
+            len(items_list),
+            top_n,
+            len(self._owner_recall_hits),
+            _hit_summaries(self._owner_recall_hits),
+            prefer_abstract,
+        )
         return orig_fn(
             self,
             client,
@@ -511,14 +663,74 @@ def _wrap_build_prefetch_entries(orig_fn):
 
 def _wrap_prefetch(orig_fn):
     def wrapped(self, query, *, session_id=""):
-        start = time.time()
-        result = orig_fn(self, query, session_id=session_id)
-        elapsed_ms = (time.time() - start) * 1000
+        # Clear stale hits so an empty search cannot re-fire a previous card.
+        self._owner_recall_hits = []
+        q_preview = _query_preview(query)
+        q_len = len(query) if isinstance(query, str) else -1
+        has_client = bool(getattr(self, "_client", None))
+        ctx = getattr(self, "_recall_card_ctx", {}) or {}
+        logger.info(
+            "openviking_recall: prefetch start session_id=%s query_len=%s "
+            "query=%r has_client=%s platform=%r chat_id=%r",
+            session_id or getattr(self, "_session_id", "") or "",
+            q_len,
+            q_preview,
+            has_client,
+            (ctx.get("platform") or "(empty)"),
+            (str(ctx.get("chat_id") or "(empty)"))[:48],
+        )
 
+        start = time.time()
+        try:
+            result = orig_fn(self, query, session_id=session_id)
+        except Exception as exc:
+            elapsed_ms = (time.time() - start) * 1000
+            logger.warning(
+                "openviking_recall: prefetch raised after %.0fms: %s",
+                elapsed_ms,
+                exc,
+                exc_info=True,
+            )
+            raise
+
+        elapsed_ms = (time.time() - start) * 1000
+        result_s = result if isinstance(result, str) else ""
+        hits = getattr(self, "_owner_recall_hits", []) or []
         cfg = _load_card_cfg()
-        hits = getattr(self, "_owner_recall_hits", [])
+
+        # Infer early-return reasons from empty result + empty hits.
+        skip_hint = ""
+        if not result_s and not hits:
+            if not has_client:
+                skip_hint = "likely_no_client"
+            elif isinstance(query, str) and len(query.strip()) < 5:
+                skip_hint = "query_shorter_than_min_chars(5)"
+            else:
+                skip_hint = "empty_search_or_no_entries"
+
+        logger.info(
+            "openviking_recall: prefetch done elapsed_ms=%.0f result_chars=%d "
+            "hits=%d card_enabled=%s skip_hint=%s titles=%s",
+            elapsed_ms,
+            len(result_s),
+            len(hits),
+            cfg.get("enabled", True),
+            skip_hint or "none",
+            _hit_summaries(hits),
+        )
+
         if hits and cfg.get("enabled", True):
-            _fire_recall_display(hits, getattr(self, "_recall_card_ctx", {}), elapsed_ms)
+            _fire_recall_display(hits, ctx, elapsed_ms)
+        elif not hits:
+            logger.info(
+                "openviking_recall: no card — zero hits (skip_hint=%s query=%r)",
+                skip_hint or "none",
+                q_preview,
+            )
+        else:
+            logger.info(
+                "openviking_recall: no card — card display disabled in config"
+            )
 
         return result
     return wrapped

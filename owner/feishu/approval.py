@@ -264,6 +264,12 @@ def handle_approval_card_action(
         return P2CardActionTriggerResponse() if P2CardActionTriggerResponse else None
 
     logger.info(
+        "[Feishu card] approval action approval_id=%s choice=%s open_id=%r",
+        approval_id,
+        choice,
+        open_id,
+    )
+    logger.info(
         "[Feishu] approval callback: operator open_id=%r cached=%r",
         open_id,
         get_cached_sender_name(adapter, open_id),

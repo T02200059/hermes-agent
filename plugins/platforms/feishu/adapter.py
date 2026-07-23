@@ -2181,6 +2181,12 @@ class FeishuAdapter(BasePlatformAdapter):
                     chat_id=chat_id,
                     command=command,
                 )
+                logger.info(
+                    "[Feishu card] approval sent OK approval_id=%s chat_id=%s message_id=%s",
+                    approval_id,
+                    chat_id,
+                    result.message_id or "(none)",
+                )
             return result
         except Exception as exc:
             logger.warning("[Feishu] send_exec_approval failed: %s", exc)
@@ -3084,7 +3090,20 @@ class FeishuAdapter(BasePlatformAdapter):
                 reply_to=None,
                 metadata=metadata,
             )
-            return self._finalize_send_result(response, "card send failed")
+            result = self._finalize_send_result(response, "card send failed")
+            if result.success:
+                logger.info(
+                    "[Feishu card] send_card OK chat_id=%s message_id=%s",
+                    chat_id,
+                    result.message_id or "(none)",
+                )
+            else:
+                logger.warning(
+                    "[Feishu card] send_card failed chat_id=%s error=%s",
+                    chat_id,
+                    result.error,
+                )
+            return result
         except Exception as exc:
             logger.warning("[Feishu] send_card failed: %s", exc)
             return SendResult(success=False, error=str(exc))
@@ -3167,7 +3186,19 @@ class FeishuAdapter(BasePlatformAdapter):
 
         picker_id = str(_uuid.uuid4())
         self._model_picker_state[picker_id] = {"providers": providers, "source": source}
-        await self.send_card(chat_id=chat_id, card=build_provider_card(picker_id, providers), metadata=metadata)
+        result = await self.send_card(
+            chat_id=chat_id,
+            card=build_provider_card(picker_id, providers),
+            metadata=metadata,
+        )
+        logger.info(
+            "[Feishu card] model_picker sent picker_id=%s chat_id=%s providers=%d success=%s message_id=%s",
+            picker_id,
+            chat_id,
+            len(providers or []),
+            bool(getattr(result, "success", False)),
+            getattr(result, "message_id", None) or "(none)",
+        )
 
     def _handle_model_picker_action(
         self, *, event: Any, action_value: Dict[str, Any], loop: Any
@@ -3178,6 +3209,13 @@ class FeishuAdapter(BasePlatformAdapter):
         """
         from owner.feishu.model_picker import handle_picker_action
 
+        step = action_value.get("hermes_model_picker", "?") if isinstance(action_value, dict) else "?"
+        picker_id = action_value.get("picker_id", "?") if isinstance(action_value, dict) else "?"
+        logger.info(
+            "[Feishu card] model_picker action step=%s picker_id=%s",
+            step,
+            picker_id,
+        )
         return handle_picker_action(
             adapter=self,
             action_value=action_value,
@@ -3201,7 +3239,16 @@ class FeishuAdapter(BasePlatformAdapter):
 
         guide_id = str(_uuid.uuid4())
         self._guide_card_state[guide_id] = {"source": source}
-        await self.send_card(chat_id=chat_id, card=build_guide_card(guide_id), metadata=metadata)
+        result = await self.send_card(
+            chat_id=chat_id, card=build_guide_card(guide_id), metadata=metadata,
+        )
+        logger.info(
+            "[Feishu card] guide sent guide_id=%s chat_id=%s success=%s message_id=%s",
+            guide_id,
+            chat_id,
+            bool(getattr(result, "success", False)),
+            getattr(result, "message_id", None) or "(none)",
+        )
 
     def _handle_guide_card_action(
         self, *, event: Any, action_value: Dict[str, Any], loop: Any
@@ -3214,13 +3261,21 @@ class FeishuAdapter(BasePlatformAdapter):
 
         step = action_value.get("hermes_feishu_guide", "?") if isinstance(action_value, dict) else "?"
         guide_id = action_value.get("guide_id", "?") if isinstance(action_value, dict) else "?"
-        logger.info("[Feishu Guide] _handle_guide_card_action: step=%s guide_id=%s", step, guide_id)
+        logger.info(
+            "[Feishu card] guide action step=%s guide_id=%s",
+            step,
+            guide_id,
+        )
         result = handle_guide_card_action(
             adapter=self,
             action_value=action_value,
             event=event,
         )
-        logger.info("[Feishu Guide] _handle_guide_card_action result: type=%s", type(result).__name__)
+        logger.info(
+            "[Feishu card] guide action result step=%s type=%s",
+            step,
+            type(result).__name__,
+        )
         return result
 
     async def _resolve_approval(

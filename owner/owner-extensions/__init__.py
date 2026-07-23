@@ -101,3 +101,13 @@ def register(ctx) -> None:
         logger.debug("owner: memory-feishu-bridge hooks registered via owner-extensions")
     except Exception:
         logger.warning("owner: memory-feishu-bridge hooks registration failed", exc_info=True)
+
+    # §4.11 Feishu guide card — queue cancel (owner-q token on FIFO)
+    # Enables「撤销队列」on the queue done card without a core /unqueue command.
+    # See owner/patches/queue_cancel_patch.py + owner/feishu/steer_card.py.
+    try:
+        from owner.patches.queue_cancel_patch import apply_patch
+        apply_patch()
+        logger.debug("owner: queue_cancel_patch applied via plugin register")
+    except Exception:
+        logger.warning("owner: queue_cancel_patch failed", exc_info=True)
