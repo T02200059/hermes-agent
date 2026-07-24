@@ -477,6 +477,7 @@ def read_sheet_as_text(client, sheet_token):
             lines.append("(no data)")
             continue
 
+        row_lines = []
         for r_idx, row in enumerate(rows_data, 1):
             cells = []
             for c_idx in range(cols_to_read):
@@ -484,7 +485,12 @@ def read_sheet_as_text(client, sheet_token):
                     cells.append(_stringify_field(row[c_idx]))
                 else:
                     cells.append("")
-            lines.append("\t".join(cells))
+            row_lines.append("\t".join(cells))
+
+        # Strip trailing all-empty rows (spreadsheets often pad to grid size).
+        while row_lines and not any(c.strip() for c in row_lines[-1].split("\t")):
+            row_lines.pop()
+        lines.extend(row_lines)
 
         if rows_to_read >= _SHEET_MAX_ROWS:
             lines.append(f"  ...(已达到 {_SHEET_MAX_ROWS} 行上限)")
