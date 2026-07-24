@@ -6199,6 +6199,13 @@ class AIAgent:
         # Allow _vprint during tool execution even with stream consumers
         self._executing_tools = True
         try:
+            # [owner] semantic audit gate (see owner/semantic_audit/)
+            try:
+                from owner.semantic_audit import maybe_audit_batch
+                if maybe_audit_batch(self, assistant_message, messages, effective_task_id):
+                    return
+            except Exception:
+                pass  # fail-open：删除 owner/ 或导入失败时核心仍可用
             if len(tool_calls) <= 1:
                 return self._execute_tool_calls_sequential(
                     assistant_message, messages, effective_task_id, api_call_count
