@@ -169,35 +169,40 @@ class TestResolveClient(unittest.TestCase):
 
 class TestExtractToken(unittest.TestCase):
     def test_bare_token(self):
-        tok, is_wiki = fcu.extract_token("ABCdef123")
+        tok, is_wiki, inferred = fcu.extract_token("ABCdef123")
         self.assertEqual(tok, "ABCdef123")
         self.assertFalse(is_wiki)
+        self.assertEqual(inferred, "")
 
     def test_docx_url(self):
-        tok, is_wiki = fcu.extract_token("https://xxx.feishu.cn/docx/DocToken123")
+        tok, is_wiki, inferred = fcu.extract_token("https://xxx.feishu.cn/docx/DocToken123")
         self.assertEqual(tok, "DocToken123")
         self.assertFalse(is_wiki)
+        self.assertEqual(inferred, "docx")
 
     def test_wiki_url_is_flagged(self):
-        tok, is_wiki = fcu.extract_token("https://xxx.feishu.cn/wiki/NodeToken456")
+        tok, is_wiki, inferred = fcu.extract_token("https://xxx.feishu.cn/wiki/NodeToken456")
         self.assertEqual(tok, "NodeToken456")
         self.assertTrue(is_wiki)
+        self.assertEqual(inferred, "")
 
     def test_wiki_url_strips_query_and_fragment(self):
-        tok, is_wiki = fcu.extract_token(
+        tok, is_wiki, inferred = fcu.extract_token(
             "https://xxx.feishu.cn/wiki/NodeToken456?from=menu#section"
         )
         self.assertEqual(tok, "NodeToken456")
         self.assertTrue(is_wiki)
+        self.assertEqual(inferred, "")
 
     def test_sheets_url(self):
-        tok, is_wiki = fcu.extract_token("https://xxx.feishu.cn/sheets/SheetToken")
+        tok, is_wiki, inferred = fcu.extract_token("https://xxx.feishu.cn/sheets/SheetToken")
         self.assertEqual(tok, "SheetToken")
         self.assertFalse(is_wiki)
+        self.assertEqual(inferred, "sheet")
 
     def test_empty(self):
-        self.assertEqual(fcu.extract_token(""), ("", False))
-        self.assertEqual(fcu.extract_token("   "), ("", False))
+        self.assertEqual(fcu.extract_token(""), ("", False, ""))
+        self.assertEqual(fcu.extract_token("   "), ("", False, ""))
 
 
 class TestResolveWikiNode(unittest.TestCase):
@@ -292,14 +297,16 @@ class TestDoRequest(unittest.TestCase):
 
 class TestExtractTokenBitable(unittest.TestCase):
     def test_bitable_url(self):
-        tok, is_wiki = fcu.extract_token("https://xxx.feishu.cn/base/AppToken123")
+        tok, is_wiki, inferred = fcu.extract_token("https://xxx.feishu.cn/base/AppToken123")
         self.assertEqual(tok, "AppToken123")
         self.assertFalse(is_wiki)
+        self.assertEqual(inferred, "bitable")
 
     def test_bitable_url_variant(self):
-        tok, is_wiki = fcu.extract_token("https://xxx.feishu.cn/bitable/AppToken456")
+        tok, is_wiki, inferred = fcu.extract_token("https://xxx.feishu.cn/bitable/AppToken456")
         self.assertEqual(tok, "AppToken456")
         self.assertFalse(is_wiki)
+        self.assertEqual(inferred, "bitable")
 
 
 class TestReadTableRecordsPagination(unittest.TestCase):

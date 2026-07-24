@@ -107,11 +107,14 @@ def _handle_feishu_doc_read(args: dict, **kwargs) -> str:
         )
 
     # Extract the token and decide whether it needs wiki node resolution.
-    token, is_wiki = extract_token(raw_token)
+    # inferred_type comes from the URL path (/sheets/ → sheet, /base/ →
+    # bitable, …); bare tokens and wiki URLs leave it empty so we default
+    # to docx until resolve_wiki_node (or the caller) supplies a real type.
+    token, is_wiki, inferred_type = extract_token(raw_token)
     if not token:
         return tool_error("Could not extract a document token from the input")
 
-    obj_token, obj_type = token, "docx"
+    obj_token, obj_type = token, (inferred_type or "docx")
     if is_wiki:
         obj_token, obj_type = resolve_wiki_node(client, token)
         if not obj_token:

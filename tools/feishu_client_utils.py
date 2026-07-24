@@ -166,17 +166,34 @@ def do_request(client, method, uri, paths=None, queries=None, body=None):
 # Token extraction + wiki node resolution
 # ---------------------------------------------------------------------------
 
+# Path prefix -> Feishu obj_type. Wiki is omitted: the node must be resolved
+# before the real type is known. Unknown / bare tokens yield "".
+_TOKEN_PREFIX_TYPES = (
+    ("/docx/", "docx"),
+    ("/doc/", "docx"),
+    ("/sheets/", "sheet"),
+    ("/base/", "bitable"),
+    ("/bitable/", "bitable"),
+)
+
+
 def extract_token(raw):
     """Pull the document token out of a user-supplied value.
 
-    Accepts a bare token or a Feishu/Lark URL. Returns ``(token, is_wiki)``:
-    ``is_wiki`` is True only when the input was a ``/wiki/<node_token>`` URL,
-    because that is the one case where the raw token is a wiki *node* token
-    rather than the final document token. ``/docx/<token>`` and ``/sheets/``
-    paths already carry the real document token and are returned as-is.
+    Accepts a bare token or a Feishu/Lark URL. Returns
+    ``(token, is_wiki, inferred_type)``:
+
+    - ``is_wiki`` is True only for ``/wiki/<node_token>`` URLs, because that
+      is the one case where the raw token is a wiki *node* token rather than
+      the final document token.
+    - ``inferred_type`` is the document type inferred from the URL path
+      (``"docx"`` / ``"sheet"`` / ``"bitable"``), or ``""`` when unknown
+      (bare token, wiki URL that still needs ``resolve_wiki_node``, or an
+      unrecognised path). Callers should fall back to a default (typically
+      ``"docx"``) when the value is empty.
     """
     if not raw:
-        return "", False
+        return "", False, ""
     value = raw.strip()
 
     # URL form -- pull the path segment after the recognised doc path.
@@ -185,24 +202,25 @@ def extract_token(raw):
         for sep in ("#", "?"):
             if sep in value:
                 value = value.split(sep, 1)[0]
-        # ``/wiki/<node_token>`` -> the node token must be resolved.
+        # ``/wiki/<node_token>`` -> the node token must be resolved; type unknown.
         if "/wiki/" in value:
             node = value.rsplit("/wiki/", 1)[1].strip("/")
             # A trailing path segment only; ignore anything after the token.
             node = node.split("/", 1)[0] if "/" in node else node
-            return node, True
+            return node, True, ""
         # ``/docx/<token>`` / ``/doc/<token>`` / ``/sheets/<token>`` /
-        # ``/base/<token>`` -- the token is already the obj_token.
-        for prefix in ("/docx/", "/doc/", "/sheets/", "/base/", "/bitable/"):
+        # ``/base/<token>`` / ``/bitable/<token>`` -- token is the obj_token.
+        for prefix, inferred_type in _TOKEN_PREFIX_TYPES:
             if prefix in value:
                 tok = value.rsplit(prefix, 1)[1].strip("/")
                 tok = tok.split("/", 1)[0] if "/" in tok else tok
-                return tok, False
-        # Unknown URL shape -- take the last path segment.
+                return tok, False, inferred_type
+        # Unknown URL shape -- take the last path segment; type unknown.
         tail = value.rstrip("/").rsplit("/", 1)[-1]
-        return tail, False
+        return tail, False, ""
 
-    return value, False
+    # Bare token -- type cannot be inferred from the string alone.
+    return value, False, ""
 
 
 _WIKI_GET_NODE_URI = "/open-apis/wiki/v2/spaces/get_node"
