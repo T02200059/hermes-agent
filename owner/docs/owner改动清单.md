@@ -1184,3 +1184,9 @@ _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请先�
 - **测试**：`scripts/run_tests.sh tests/tools/test_feishu_client_utils.py tests/tools/test_feishu_tools.py` → 54 passed
 - **后续（同日）**：用户反馈 `[Image N: path]` 仍被视为占位符。补 `analyze_docx_images`：下载后自动 auxiliary vision OCR，正文嵌入转录文字；返回增加 `vision_analyzed`。并发 3 / 上限 40。测试 59 passed。
 
+### 2026-07-24：feishu_doc_read 图片上限 40→500 + 429 退避重试
+
+- **类型**：体验调参 / 可靠性
+- **变动**：`_DOCX_MAX_IMAGES` / `_DOCX_MAX_VISION_IMAGES` 从 40 提到 500；并发仍为 3。媒体下载与 vision OCR 共用 `_call_with_rate_limit_retry`（识别 HTTP 429 / Feishu 99991400 / rate limit 文案，指数退避最多 5 次，上限 60s）。
+- **涉及文件**：`tools/feishu_client_utils.py`、`tests/tools/test_feishu_client_utils.py`
+

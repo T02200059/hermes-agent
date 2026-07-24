@@ -654,6 +654,84 @@ class TestDownloadDocxImages(unittest.TestCase):
         self.assertEqual(results[0]["path"], "")
 
 
+class TestRateLimitRetry(unittest.TestCase):
+    def test_detects_429_and_feishu_codes(self):
+        self.assertTrue(fcu._is_rate_limited_error("HTTP 429 Too Many Requests"))
+        self.assertTrue(fcu._is_rate_limited_error("code=99991400 msg=rate limited"))
+        self.assertTrue(fcu._is_rate_limited_error("RateLimitError: quota exceeded"))
+        self.assertFalse(fcu._is_rate_limited_error("HTTP 403 forbidden"))
+        self.assertFalse(fcu._is_rate_limited_error(None))
+
+    def test_retries_then_succeeds(self):
+        calls = {"n": 0}
+
+        def flaky():
+            calls["n"] += 1
+            if calls["n"] < 3:
+                return None, "HTTP 429 rate limited"
+            return b"ok", None
+
+        with mock.patch.object(fcu, "_rate_limit_sleep", return_value=0.0) as sleep_mock:
+            data, err = fcu._call_with_rate_limit_retry(flaky, label="test", max_retries=5)
+
+        self.assertEqual(data, b"ok")
+        self.assertIsNone(err)
+        self.assertEqual(calls["n"], 3)
+        self.assertEqual(sleep_mock.call_count, 2)
+
+    def test_gives_up_after_max_retries(self):
+        calls = {"n": 0}
+
+        def always_429():
+            calls["n"] += 1
+            return None, "429"
+
+        with mock.patch.object(fcu, "_rate_limit_sleep", return_value=0.0):
+            data, err = fcu._call_with_rate_limit_retry(
+                always_429, label="test", max_retries=2,
+            )
+
+        self.assertIsNone(data)
+        self.assertEqual(err, "429")
+        # initial + 2 retries = 3
+        self.assertEqual(calls["n"], 3)
+
+    def test_non_rate_limit_not_retried(self):
+        calls = {"n": 0}
+
+        def hard_fail():
+            calls["n"] += 1
+            return None, "HTTP 403 forbidden"
+
+        with mock.patch.object(fcu, "_rate_limit_sleep") as sleep_mock:
+            data, err = fcu._call_with_rate_limit_retry(hard_fail, label="test")
+
+        self.assertEqual(err, "HTTP 403 forbidden")
+        self.assertEqual(calls["n"], 1)
+        sleep_mock.assert_not_called()
+
+    def test_download_media_retries_on_429(self):
+        err_body = b'{"code": 99991400, "msg": "rate limited"}'
+        fail = _make_response(
+            code=99991400,
+            msg="rate limited",
+            raw_content=err_body,
+            headers={"Content-Type": "application/json"},
+            status_code=400,
+        )
+        ok = _make_response(
+            raw_content=_PNG_1X1,
+            headers={"Content-Type": "image/png"},
+            status_code=200,
+        )
+        client = _StubClient([fail, ok])
+        with mock.patch.object(fcu, "_rate_limit_sleep", return_value=0.0):
+            data, ct, err = fcu.download_media(client, "tok1")
+        self.assertIsNone(err)
+        self.assertEqual(data, _PNG_1X1)
+        self.assertEqual(len(client.calls), 2)
+
+
 class TestAnalyzeDocxImages(unittest.TestCase):
     def test_attaches_analysis_from_vision(self):
         images = [

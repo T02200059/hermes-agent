@@ -33,8 +33,10 @@ import concurrent.futures
 import json
 import logging
 import os
+import random
 import re
 import threading
+import time
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -483,11 +485,13 @@ _MEDIA_DOWNLOAD_URI = "/open-apis/drive/v1/medias/:file_token/download"
 
 # Caps so a screenshot-heavy doc cannot explode disk / tool latency.
 # Media download is rate-limited at ~5 QPS by Feishu; keep sequential.
-_DOCX_MAX_IMAGES = 40
+_DOCX_MAX_IMAGES = 500
 _DOCX_MAX_IMAGE_BYTES = 10 * 1024 * 1024  # 10 MiB per image
 _DOCX_BLOCKS_PAGE_SIZE = 500
 # Vision OCR: concurrent auxiliary calls (each image is one LLM call).
-_DOCX_MAX_VISION_IMAGES = 40
+# Concurrency stays modest; the image cap matches download so large
+# screenshot-heavy docs can still be fully OCR'd in one read.
+_DOCX_MAX_VISION_IMAGES = 500
 _DOCX_VISION_WORKERS = 3
 _DOCX_VISION_PROMPT = (
     "这是飞书文档中的嵌入图片（多为运维聊天截图、日志、表格或监控面板）。"
@@ -495,6 +499,11 @@ _DOCX_VISION_PROMPT = (
     "保留关键结构；若几乎无文字，则用 1-3 句中文概括画面。"
     "不要编造图中不存在的信息。"
 )
+
+# Shared 429 / rate-limit backoff for media download + vision OCR.
+_RATE_LIMIT_MAX_RETRIES = 5
+_RATE_LIMIT_BASE_SLEEP_S = 1.0
+_RATE_LIMIT_MAX_SLEEP_S = 60.0
 
 # raw_content turns every image block into a bare filename-like token.
 _RAW_IMAGE_PLACEHOLDER_RE = re.compile(
@@ -557,6 +566,65 @@ def _header_value(headers, *names):
     return ""
 
 
+def _is_rate_limited_error(detail) -> bool:
+    """True when an error string/code looks like HTTP 429 / provider rate limit."""
+    if detail is None:
+        return False
+    text = str(detail).lower()
+    if "429" in text:
+        return True
+    # Feishu open-platform frequency limit code.
+    if "99991400" in text:
+        return True
+    if "rate limit" in text or "rate_limit" in text or "ratelimit" in text:
+        return True
+    if "too many request" in text:
+        return True
+    if "frequency" in text and "limit" in text:
+        return True
+    if "quota" in text and ("exceed" in text or "exhausted" in text):
+        return True
+    return False
+
+
+def _rate_limit_sleep(attempt: int) -> float:
+    """Exponential backoff with jitter. ``attempt`` is 0-based (first retry)."""
+    base = min(
+        _RATE_LIMIT_MAX_SLEEP_S,
+        _RATE_LIMIT_BASE_SLEEP_S * (2 ** attempt),
+    )
+    # ±20% jitter so concurrent workers don't stampede.
+    delay = base * (0.8 + 0.4 * random.random())
+    time.sleep(delay)
+    return delay
+
+
+def _call_with_rate_limit_retry(fn, *, label: str, max_retries: int = _RATE_LIMIT_MAX_RETRIES):
+    """Run ``fn()`` and retry on rate-limit errors.
+
+    ``fn`` must return ``(ok_payload..., error_or_None)`` where the **last**
+    element is the error string (or ``None`` on success). On non-rate-limit
+    errors, or after exhausting retries, the last result is returned as-is.
+    """
+    last = None
+    for attempt in range(max_retries + 1):
+        last = fn()
+        if not isinstance(last, tuple) or not last:
+            return last
+        err = last[-1]
+        if err is None or not _is_rate_limited_error(err):
+            return last
+        if attempt >= max_retries:
+            break
+        delay = _rate_limit_sleep(attempt)
+        logger.info(
+            "feishu_client_utils: rate limited on %s (attempt %s/%s), "
+            "sleeping %.1fs then retrying: %s",
+            label, attempt + 1, max_retries, delay, err,
+        )
+    return last
+
+
 def list_docx_image_tokens(client, doc_token, *, max_images=_DOCX_MAX_IMAGES):
     """Return ordered image descriptors from a docx document's blocks.
 
@@ -611,11 +679,10 @@ def list_docx_image_tokens(client, doc_token, *, max_images=_DOCX_MAX_IMAGES):
     return images
 
 
-def download_media(client, file_token):
-    """Download a drive media object.
+def _download_media_once(client, file_token):
+    """Single attempt to download a drive media object.
 
     Returns ``(bytes_or_None, content_type_or_empty, error_or_None)``.
-    Success sets ``error`` to ``None`` and returns the binary body.
     """
     from lark_oapi import AccessTokenType
     from lark_oapi.core.enum import HttpMethod
@@ -678,6 +745,18 @@ def download_media(client, file_token):
         content_type = content_type.split(";", 1)[0].strip()
 
     return content, content_type, None
+
+
+def download_media(client, file_token):
+    """Download a drive media object with 429 / rate-limit backoff retries.
+
+    Returns ``(bytes_or_None, content_type_or_empty, error_or_None)``.
+    Success sets ``error`` to ``None`` and returns the binary body.
+    """
+    return _call_with_rate_limit_retry(
+        lambda: _download_media_once(client, file_token),
+        label=f"media_download:{file_token[:16]}",
+    )
 
 
 def _image_cache_dir(doc_token: str) -> Path:
@@ -828,8 +907,8 @@ def inject_image_paths_into_content(content: str, images: list) -> str:
     return new_text
 
 
-def _analyze_one_image(path: str, prompt: str) -> tuple:
-    """Run auxiliary vision on one local path. Returns ``(analysis, error)``."""
+def _analyze_one_image_once(path: str, prompt: str) -> tuple:
+    """Single vision attempt. Returns ``(analysis, error)``."""
     try:
         from model_tools import _run_async
         from tools.vision_tools import vision_analyze_tool
@@ -862,6 +941,17 @@ def _analyze_one_image(path: str, prompt: str) -> tuple:
         return None, "empty vision analysis"
 
     return None, data.get("error") or data.get("message") or "vision failed"
+
+
+def _analyze_one_image(path: str, prompt: str) -> tuple:
+    """Run auxiliary vision with 429 / rate-limit backoff retries.
+
+    Returns ``(analysis, error)``.
+    """
+    return _call_with_rate_limit_retry(
+        lambda: _analyze_one_image_once(path, prompt),
+        label=f"vision:{Path(path).name}",
+    )
 
 
 def analyze_docx_images(
