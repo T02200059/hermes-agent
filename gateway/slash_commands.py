@@ -4500,11 +4500,41 @@ class GatewaySlashCommandsMixin:
                 db = SessionDB()
                 engine = InsightsEngine(db)
                 report = engine.generate(days=days, source=source)
-                result = engine.format_gateway(report)
                 db.close()
+                return report
+
+            report = await loop.run_in_executor(None, _run_insights)
+
+            # [owner] feishu: send card with markdown tables
+            msg_source = event.source
+            from gateway.config import Platform
+
+            if msg_source.platform == Platform.FEISHU:
+                adapter = self.adapters.get(Platform.FEISHU)
+                if adapter is not None:
+                    try:
+                        from owner.feishu.insights_card import try_send_insights_card
+                        return await try_send_insights_card(
+                            adapter,
+                            source=msg_source,
+                            event=event,
+                            report=report,
+                        )
+                    except Exception as card_exc:
+                        logger.warning(
+                            "Feishu /insights card send failed, falling back to plain text: %s",
+                            card_exc,
+                        )
+
+            # Plain-text fallback (CLI / Telegram / failed card)
+            def _format_plain():
+                db2 = SessionDB()
+                engine2 = InsightsEngine(db2)
+                result = engine2.format_gateway(report)
+                db2.close()
                 return result
 
-            return await loop.run_in_executor(None, _run_insights)
+            return await loop.run_in_executor(None, _format_plain)
         except Exception as e:
             logger.error("Insights command error: %s", e, exc_info=True)
             return t("gateway.insights.error", error=e)
