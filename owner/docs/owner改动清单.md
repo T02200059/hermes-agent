@@ -586,7 +586,9 @@
   - **WR-04**：`684de6981` — bound recall-card thread pool + per-chat debounce
 - **侵入类型**：import 编排（runtime patch）+ 薄胶水
 - **Commit**：`76fa75f36`（§11.6 精简迁移）、`684de6981`（§11.6 WR-04 bound thread pool + debounce）、`6a9e28b92`（迁入 `owner-extensions` plugin）
-- **后续修复**：`6a9383d38` — 移除 `plugins/memory/openviking/__init__.py` 中基于 `subprocess.Popen` 的本地 server auto-start。裸 Python `openviking-server`（未带 hotfix patch）会在 gateway restart 时与 Docker 容器抢端口 1933 并劫持端口。改为由 Docker 外部管理 server。同时删除对应的 `test_start_local_openviking_server_uses_endpoint_host_and_port` 测试。
+- **后续修复**：
+  - `6a9383d38` — 移除 `plugins/memory/openviking/__init__.py` 中基于 `subprocess.Popen` 的本地 server auto-start。裸 Python `openviking-server`（未带 hotfix patch）会在 gateway restart 时与 Docker 容器抢端口 1933 并劫持端口。改为由 Docker 外部管理 server。同时删除对应的 `test_start_local_openviking_server_uses_endpoint_host_and_port` 测试。
+  - `04b0b7ae8` — recall 注入内容截断 ChatLog，防止模型把历史对话误当当前上下文。根因：Viking memory 文件带 `YYYY-MM-DD ChatLog: [user]: ... [hermes]: ...` 段落，与 live 对话 turn 格式完全一致；长对话 + 多工具并行时 qwen3.7-max（2026-07-28 验证）会把召回的"damodel 400 排查"历史记录当成当前待办，主动开始排查并编造不存在的截图。方案：`plugins/memory/openviking/__init__.py` 加 `_truncate_chatlog_from_recall()`，按 `ChatLog:` / `Chat记录:` / 日期前缀正则截断，只保留 Summary，末尾追加 `→ For full conversation: viking_read(uri=..., level='full')` 提示；`owner/patches/openviking_owner_recall_patch.py` 改写 advisory System note，明确告知 agent "ChatLog 已被剥离，需细节时调用 `viking_read`，禁止凭 summary 编造内容"。
 
 ### 7.4 Cron env 隔离（ContextVar + restart scrub）
 
