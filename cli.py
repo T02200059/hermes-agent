@@ -1232,14 +1232,31 @@ def _run_cleanup(*, notify_session_finalize: bool = True):
                     getattr(_active_agent_ref, "session_id", None) or "<unknown>",
                     len(_session_msgs),
                 )
-                _active_agent_ref.shutdown_memory_provider(_session_msgs)
+                # Catch KeyboardInterrupt alongside Exception: a SIGINT that
+                # races through a httpx recv in on_session_end (the OS-level
+                # SIGINT path before this fix landed) would otherwise escape
+                # this handler and print a full traceback on Ctrl+C exit.
+                # The shutdown is best-effort — the KB here only means we
+                # couldn't reach OpenViking this tick, not that the process
+                # is unrecoverable.
+                try:
+                    _active_agent_ref.shutdown_memory_provider(_session_msgs)
+                except (Exception, KeyboardInterrupt) as e:
+                    logger.warning(
+                        "CLI cleanup memory shutdown failed: %s", e, exc_info=True
+                    )
             else:
                 logger.info(
                     "CLI cleanup calling memory shutdown for session %s without session message list",
                     getattr(_active_agent_ref, "session_id", None) or "<unknown>",
                 )
-                _active_agent_ref.shutdown_memory_provider()
-    except Exception as e:
+                try:
+                    _active_agent_ref.shutdown_memory_provider()
+                except (Exception, KeyboardInterrupt) as e:
+                    logger.warning(
+                        "CLI cleanup memory shutdown failed: %s", e, exc_info=True
+                    )
+    except (Exception, KeyboardInterrupt) as e:
         logger.warning("CLI cleanup memory shutdown failed: %s", e, exc_info=True)
 
 
@@ -15297,19 +15314,39 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             # handles the same Windows quirk (cancellation is driven by
             # the TUI key handler, not by OS signals).
             #
-            # POSIX: leave the default SIGINT handler alone. prompt_toolkit
-            # installs its own handler there and it works as expected.
-            if sys.platform == "win32":
-                def _sigint_absorb(signum, frame):
-                    # Absorb silently. Do NOT call agent.interrupt() here:
-                    # Windows fires spurious CTRL_C_EVENT whenever a
-                    # background thread spawns a .cmd subprocess, and
-                    # interrupt() would inject a fake user message each
-                    # time. Real user Ctrl+C routes through prompt_toolkit's
-                    # own c-c key binding at the TUI layer (same pattern as
-                    # Claude Code's Windows handling).
-                    return
-                _signal.signal(_signal.SIGINT, _sigint_absorb)
+            # POSIX: route OS-level SIGINT through the same ``app.exit()``
+            # path SIGTERM/SIGHUP already use (see _signal_handler above).
+            # Without this, prompt_toolkit's TUI-layer c-c binding covers
+            # the common case (idle / finished turn), but any SIGINT that
+            # races past the keypress layer — subshell PTY bounce, MCP
+            # reconnect timer firing during a re-render, a stray background
+            # thread raising — falls to Python's default handler, which
+            # raises KeyboardInterrupt mid-frame and unwinds the process
+            # through a httpx recv.  That KeyboardInterrupt then escapes
+            # every ``except Exception`` in the cleanup chain (it is a
+            # BaseException, not Exception) and prints the full traceback
+            # the user saw before this fix.  Routing the signal through
+            # ``app.exit()`` makes Ctrl+C and ``/exit`` share the same
+            # graceful unwind through ``_run_cleanup`` → memory commit.
+            if sys.platform != "win32":
+                def _sigint_to_app_exit(signum, frame):
+                    try:
+                        from prompt_toolkit.application.current import (
+                            get_app_or_none as _get_app_or_none,
+                        )
+                        _app = _get_app_or_none()
+                        if _app is not None:
+                            _loop = getattr(_app, "loop", None)
+                            if _loop is not None:
+                                _loop.call_soon_threadsafe(_app.exit)
+                                return
+                    except Exception:
+                        pass  # never block signal handling
+                    # Fallback only when no TUI app is alive (e.g. -q
+                    # single-query mode, or pre-app setup).  Signal-driven
+                    # KB is the right semantic for those contexts.
+                    raise KeyboardInterrupt()
+                _signal.signal(_signal.SIGINT, _sigint_to_app_exit)
         except Exception:
             pass  # Signal handlers may fail in restricted environments
         

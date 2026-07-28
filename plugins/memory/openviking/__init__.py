@@ -2436,6 +2436,17 @@ class OpenVikingMemoryProvider(MemoryProvider):
         return self._session_has_pending_tokens(sid)
 
     def _commit_session(self, sid: str, turn_count: int, *, context: str) -> bool:
+        # Short-circuit if shutdown has been armed.  A commit POST against
+        # a torn-down client races the SIGINT signal handler in httpx.recv;
+        # the resulting KeyboardInterrupt is a BaseException, escapes every
+        # ``except Exception`` in the call chain, and prints a full traceback
+        # on Ctrl+C exit.  Skipping is safe — the next ``on_session_switch``
+        # re-commits the same sid if the user keeps using the CLI, and an
+        # ungraceful exit means the session is already toast from the user's
+        # POV.  Matches the existing _finalize_session_async guard at
+        # line ~2471 so commit semantics are identical between the two paths.
+        if self._shutting_down:
+            return False
         try:
             self._client.post(
                 f"/api/v1/sessions/{sid}/commit",
@@ -2444,7 +2455,7 @@ class OpenVikingMemoryProvider(MemoryProvider):
             self._mark_session_committed(sid)
             logger.info("OpenViking session %s committed %s (%d turns)", sid, context, turn_count)
             return True
-        except Exception as e:
+        except (Exception, KeyboardInterrupt) as e:
             logger.warning("OpenViking session commit failed for %s: %s", sid, e)
             return False
 
