@@ -161,9 +161,11 @@ def _build_advisory_memory_context_block(raw_context: str) -> str:
     return (
         "<memory-context>\n"
         "[System note: The following is recalled memory context, "
-        "NOT new user input. It may help inform the response, but use it "
-        "only when relevant to the user's current message — treat as helpful "
-        "hints, not authoritative facts.]\n\n"
+        "NOT new user input. Each entry shows a Summary only — the original "
+        "conversation log has been stripped to prevent role confusion. "
+        "If you need specific details, quotes, or code from a past session, "
+        "call viking_read(uri=<uri>, level='full') — do NOT guess or "
+        "invent content that is not in the summary.]\n\n"
         f"{clean}\n"
         "</memory-context>"
     )

@@ -192,6 +192,49 @@ def _preview(value: Any, limit: int = 160) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Recall content post-processing — strip ChatLog to prevent role confusion
+# ---------------------------------------------------------------------------
+# Viking memory files store "Summary: ...\nYYYY-MM-DD ChatLog:\n[user]: ..."
+# The ChatLog section uses [user]:/[hermes]: formatting that looks identical
+# to live conversation turns, causing the model to confuse recalled history
+# with the current conversation (verified incident 2026-07-28, qwen3.7-max).
+#
+# Solution: strip everything from the first ChatLog-like marker onward,
+# keeping only the Summary. The URI is already shown above the content so
+# the agent can call viking_read(uri, level='full') for full details.
+
+_CHATLOG_RE = re.compile(
+    r"\n\s*(?:\d{4}-\d{2}-\d{2}\s*(?:\([^)]+\))?\s*ChatLog:\s*"
+    r"|\d{4}-\d{2}-\d{2}\s*(?:\([^)]+\))?\s*Chat记录:\s*"
+    r"|ChatLog:\s*"
+    r"|Chat记录:\s*)",
+    re.IGNORECASE,
+)
+
+
+def _truncate_chatlog_from_recall(content: str, uri: str = "") -> str:
+    """Strip ChatLog section from recalled memory content.
+
+    Keeps only the Summary (or abstract) portion. Appends a viking_read
+    hint so the agent knows how to get full details if needed.
+    """
+    if not content:
+        return content
+    match = _CHATLOG_RE.search(content)
+    if match is None:
+        return content
+    summary = content[: match.start()].rstrip()
+    if not summary:
+        return content  # nothing before ChatLog — keep original as fallback
+    hint = f"\n→ For full conversation: viking_read(uri='{uri}', level='full')"
+    logger.debug(
+        "Stripped ChatLog from recall for %s (%d → %d chars)",
+        uri, len(content), len(summary) + len(hint),
+    )
+    return summary + hint
+
+
+# ---------------------------------------------------------------------------
 # Process-level atexit safety net — ensures pending sessions are committed
 # even if shutdown_memory_provider is never called (e.g. gateway crash,
 # SIGKILL, or exception in the session expiry watcher preventing shutdown).
@@ -2763,7 +2806,7 @@ class OpenVikingMemoryProvider(MemoryProvider):
                     )
                 )
                 if content:
-                    return content
+                    return _truncate_chatlog_from_recall(content, uri)
             except Exception as e:
                 logger.debug("OpenViking prefetch full read failed for %s: %s", uri, e)
         return abstract
