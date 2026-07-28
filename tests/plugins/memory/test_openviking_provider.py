@@ -1225,15 +1225,22 @@ def test_tool_add_resource_uploads_existing_local_file(tmp_path):
         "wait": True,
     }))
 
-    provider._client.upload_temp_file.assert_called_once_with(sample)
-    provider._client.post.assert_called_once_with("/api/v1/resources", {
-        "reason": "local test",
-        "wait": True,
-        "source_name": "sample.md",
-        "temp_file_id": "upload_sample.md",
-    })
+    provider._client.upload_temp_file.assert_called_once_with(
+        sample, timeout=openviking_module._TIMEOUT
+    )
+    provider._client.post.assert_called_once_with(
+        "/api/v1/resources",
+        {
+            "reason": "local test",
+            "wait": True,
+            "source_name": "sample.md",
+            "temp_file_id": "upload_sample.md",
+        },
+        timeout=openviking_module._TIMEOUT,
+    )
     assert result["status"] == "added"
     assert result["root_uri"] == "viking://resources/sample"
+    assert result["wait"] is True
 
 
 def test_tool_add_resource_uploads_file_uri(tmp_path):
@@ -1252,14 +1259,21 @@ def test_tool_add_resource_uploads_file_uri(tmp_path):
         "reason": "file uri test",
     }))
 
-    provider._client.upload_temp_file.assert_called_once_with(sample)
-    provider._client.post.assert_called_once_with("/api/v1/resources", {
-        "reason": "file uri test",
-        "source_name": "sample.md",
-        "temp_file_id": "upload_sample.md",
-    })
+    provider._client.upload_temp_file.assert_called_once_with(
+        sample, timeout=openviking_module._TIMEOUT
+    )
+    provider._client.post.assert_called_once_with(
+        "/api/v1/resources",
+        {
+            "reason": "file uri test",
+            "source_name": "sample.md",
+            "temp_file_id": "upload_sample.md",
+        },
+        timeout=openviking_module._TIMEOUT,
+    )
     assert result["status"] == "added"
     assert result["root_uri"] == "viking://resources/sample"
+    assert "indexing_is_async" in result.get("hint", "")
 
 
 def test_tool_add_resource_rejects_hermes_credential_file_upload(tmp_path, monkeypatch):
@@ -1293,7 +1307,7 @@ def test_tool_add_resource_uploads_existing_local_directory_and_cleans_zip(tmp_p
     provider._client = MagicMock()
     uploaded_paths = []
     provider._client.upload_temp_file.side_effect = (
-        lambda path: uploaded_paths.append(path) or "upload_docs.zip"
+        lambda path, **_kwargs: uploaded_paths.append(path) or "upload_docs.zip"
     )
     provider._client.post.return_value = {
         "status": "ok",
@@ -1309,12 +1323,16 @@ def test_tool_add_resource_uploads_existing_local_directory_and_cleans_zip(tmp_p
     assert uploaded_paths
     assert uploaded_paths[0].suffix == ".zip"
     assert not uploaded_paths[0].exists()
-    provider._client.post.assert_called_once_with("/api/v1/resources", {
-        "reason": "directory test",
-        "wait": True,
-        "source_name": "docs",
-        "temp_file_id": "upload_docs.zip",
-    })
+    provider._client.post.assert_called_once_with(
+        "/api/v1/resources",
+        {
+            "reason": "directory test",
+            "wait": True,
+            "source_name": "docs",
+            "temp_file_id": "upload_docs.zip",
+        },
+        timeout=openviking_module._TIMEOUT,
+    )
     assert result["status"] == "added"
     assert result["root_uri"] == "viking://resources/docs"
 
@@ -1335,7 +1353,7 @@ def test_tool_add_resource_directory_zip_skips_symlink_escape(tmp_path):
     provider._client = MagicMock()
     archive_entries = {}
 
-    def inspect_upload(path):
+    def inspect_upload(path, **_kwargs):
         with zipfile.ZipFile(path) as archive:
             archive_entries["names"] = archive.namelist()
             archive_entries["payloads"] = {
@@ -1372,7 +1390,7 @@ def test_tool_add_resource_directory_zip_skips_hermes_credential_files(tmp_path,
     provider._client = MagicMock()
     archive_entries = {}
 
-    def inspect_upload(path):
+    def inspect_upload(path, **_kwargs):
         with zipfile.ZipFile(path) as archive:
             archive_entries["names"] = archive.namelist()
             archive_entries["payloads"] = {
@@ -1402,7 +1420,7 @@ def test_tool_add_resource_cleans_local_directory_zip_when_add_fails(tmp_path):
     provider._client = MagicMock()
     uploaded_paths = []
     provider._client.upload_temp_file.side_effect = (
-        lambda path: uploaded_paths.append(path) or "upload_docs.zip"
+        lambda path, **_kwargs: uploaded_paths.append(path) or "upload_docs.zip"
     )
     provider._client.post.side_effect = RuntimeError("add failed")
 
@@ -1421,7 +1439,7 @@ def test_tool_add_resource_cleans_local_directory_zip_when_upload_fails(tmp_path
     provider._client = MagicMock()
     uploaded_paths = []
 
-    def fail_upload(path):
+    def fail_upload(path, **_kwargs):
         uploaded_paths.append(path)
         raise RuntimeError("upload failed")
 
@@ -1458,9 +1476,11 @@ def test_tool_add_resource_sends_remote_url_as_path():
     provider._tool_add_resource({"url": "https://example.com/doc.md"})
 
     provider._client.upload_temp_file.assert_not_called()
-    provider._client.post.assert_called_once_with("/api/v1/resources", {
-        "path": "https://example.com/doc.md",
-    })
+    provider._client.post.assert_called_once_with(
+        "/api/v1/resources",
+        {"path": "https://example.com/doc.md"},
+        timeout=openviking_module._TIMEOUT,
+    )
 
 
 @pytest.mark.parametrize("url", [
@@ -1480,9 +1500,75 @@ def test_tool_add_resource_sends_git_remote_sources_as_path(url):
     provider._tool_add_resource({"url": url})
 
     provider._client.upload_temp_file.assert_not_called()
-    provider._client.post.assert_called_once_with("/api/v1/resources", {
-        "path": url,
-    })
+    provider._client.post.assert_called_once_with(
+        "/api/v1/resources",
+        {"path": url},
+        timeout=openviking_module._TIMEOUT,
+    )
+
+
+def test_tool_add_resource_raises_http_timeout_for_wait_true_timeout():
+    provider = OpenVikingMemoryProvider()
+    provider._client = MagicMock()
+    provider._client.post.side_effect = TimeoutError("timed out")
+
+    result = json.loads(provider._tool_add_resource({
+        "url": "https://example.com/doc.md",
+        "wait": True,
+        "timeout": 300,
+    }))
+
+    expected_http_timeout = 300 + openviking_module._ADD_RESOURCE_WAIT_TIMEOUT_BUFFER
+    provider._client.post.assert_called_once_with(
+        "/api/v1/resources",
+        {
+            "wait": True,
+            "timeout": 300,
+            "path": "https://example.com/doc.md",
+        },
+        timeout=expected_http_timeout,
+    )
+    assert result["status"] == "timeout"
+    assert result["wait"] is True
+    assert result["may_have_written"] is True
+    assert result["http_timeout_seconds"] == expected_http_timeout
+    assert "does NOT necessarily mean" in result["error"]
+    assert "wait=false" in result["error"]
+    assert "outage" in result["error"] or "failure" in result["error"].lower()
+
+
+def test_tool_add_resource_timeout_on_temp_upload_is_actionable(tmp_path):
+    sample = tmp_path / "sample.md"
+    sample.write_text("# Local resource\n", encoding="utf-8")
+    provider = OpenVikingMemoryProvider()
+    provider._client = MagicMock()
+    provider._client.upload_temp_file.side_effect = TimeoutError("The read operation timed out")
+
+    result = json.loads(provider._tool_add_resource({
+        "url": str(sample),
+        "wait": False,
+    }))
+
+    assert result["status"] == "timeout"
+    assert result["phase"] == "temp_upload"
+    assert result["may_have_written"] is True
+    assert "wait=false" in result["error"] or "wait=true" in result["error"]
+    provider._client.post.assert_not_called()
+
+
+def test_resolve_add_resource_http_timeout_defaults_and_wait_budget():
+    assert OpenVikingMemoryProvider._resolve_add_resource_http_timeout({}) == (
+        openviking_module._TIMEOUT
+    )
+    assert OpenVikingMemoryProvider._resolve_add_resource_http_timeout(
+        {"wait": True}
+    ) == openviking_module._TIMEOUT
+    assert OpenVikingMemoryProvider._resolve_add_resource_http_timeout(
+        {"wait": True, "timeout": 30}
+    ) == openviking_module._TIMEOUT
+    assert OpenVikingMemoryProvider._resolve_add_resource_http_timeout(
+        {"wait": True, "timeout": 300}
+    ) == 300 + openviking_module._ADD_RESOURCE_WAIT_TIMEOUT_BUFFER
 
 
 def test_get_tool_schemas_includes_narrow_forget_tool():
@@ -2556,7 +2642,7 @@ def test_on_session_switch_swallows_commit_failure():
 
 # ---------------------------------------------------------------------------
 # Hung-writer protection: the sync worker can outlive the bounded join
-# because each OpenViking POST has _TIMEOUT=30s and there are two per turn.
+# because each OpenViking POST has _TIMEOUT (default 120s) and there are two per turn.
 # Committing while late writes are still in flight would orphan them past
 # the commit boundary — they would never be extracted.
 # ---------------------------------------------------------------------------

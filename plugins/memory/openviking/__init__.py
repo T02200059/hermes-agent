@@ -67,9 +67,14 @@ _OPENVIKING_ENV_KEYS = (
     "OPENVIKING_USER",
     "OPENVIKING_AGENT",
 )
-_TIMEOUT = 30.0
+# Default HTTP timeout for OpenViking REST calls. Resource ingest with
+# wait=true often needs longer; add_resource may raise this further.
+_TIMEOUT = 120.0
 _SESSION_DRAIN_TIMEOUT = 10.0
 _DEFERRED_COMMIT_TIMEOUT = (_TIMEOUT * 2) + 5.0
+# Extra seconds beyond the tool's wait timeout so the server can return
+# before the client aborts.
+_ADD_RESOURCE_WAIT_TIMEOUT_BUFFER = 5.0
 _REMOTE_RESOURCE_PREFIXES = ("http://", "https://", "git@", "ssh://", "git://")
 _SYNC_TRACE_ENV = "HERMES_OPENVIKING_SYNC_TRACE"
 _DEFAULT_RECALL_LIMIT = 6
@@ -346,8 +351,9 @@ class _VikingClient:
             )
         )
 
-    def upload_temp_file(self, file_path: Path) -> str:
+    def upload_temp_file(self, file_path: Path, timeout: float | None = None) -> str:
         mime_type = mimetypes.guess_type(file_path.name)[0] or "application/octet-stream"
+        request_timeout = _TIMEOUT if timeout is None else float(timeout)
 
         def _send(headers):
             with file_path.open("rb") as f:
@@ -355,7 +361,7 @@ class _VikingClient:
                     self._url("/api/v1/resources/temp_upload"),
                     files={"file": (file_path.name, f, mime_type)},
                     headers=headers,
-                    timeout=_TIMEOUT,
+                    timeout=request_timeout,
                 )
 
         data = self._send_with_trusted_identity_retry(_send, multipart=True)
@@ -519,7 +525,11 @@ ADD_RESOURCE_SCHEMA = {
         "Add a remote URL or local file/directory to the OpenViking knowledge base. "
         "Remote resources must be public http(s), git, or ssh URLs. "
         "Local files are uploaded first using OpenViking temp_upload. "
-        "The system automatically parses, indexes, and generates summaries."
+        "The system automatically parses, indexes, and generates summaries. "
+        "Prefer wait=false (default): the resource is usually accepted immediately "
+        "and indexed asynchronously. Use viking_search/viking_browse a few seconds "
+        "later to verify. wait=true blocks until full indexing finishes and often "
+        "hits client timeouts even when the write already succeeded."
     ),
     "parameters": {
         "type": "object",
@@ -543,11 +553,20 @@ ADD_RESOURCE_SCHEMA = {
             },
             "wait": {
                 "type": "boolean",
-                "description": "Whether to wait for processing to complete.",
+                "description": (
+                    "Wait for full indexing before returning. Default false (recommended). "
+                    "wait=true is slow and often times out on the client even after "
+                    "OpenViking has already accepted the resource. Prefer wait=false, "
+                    "then verify with viking_search/viking_browse."
+                ),
             },
             "timeout": {
                 "type": "number",
-                "description": "Timeout in seconds when wait is true.",
+                "description": (
+                    "Seconds to wait for indexing when wait=true. Also raises the HTTP "
+                    "client budget (with a small buffer). Prefer wait=false instead of "
+                    "raising this."
+                ),
             },
         },
         "required": ["url"],
@@ -3634,6 +3653,82 @@ class OpenVikingMemoryProvider(MemoryProvider):
 
         return json.dumps(payload, ensure_ascii=False)
 
+    @staticmethod
+    def _is_http_timeout_error(exc: BaseException) -> bool:
+        """True for httpx/urllib/socket client timeouts (not server 4xx/5xx).
+
+        Match exception *types* named *Timeout* and phrases like "timed out".
+        Avoid bare substring ``timeout`` so messages such as
+        ``unexpected keyword argument 'timeout'`` are not misclassified.
+        """
+        name = type(exc).__name__.lower()
+        if "timeout" in name or "timedout" in name:
+            return True
+        msg = str(exc).lower()
+        return "timed out" in msg
+
+    @staticmethod
+    def _resolve_add_resource_http_timeout(args: dict) -> float:
+        """HTTP budget for add_resource / temp_upload.
+
+        Default is ``_TIMEOUT`` (120s). When wait=true and a larger tool
+        ``timeout`` is provided, raise the client budget so we do not abort
+        before the server's wait window ends.
+        """
+        http_timeout = float(_TIMEOUT)
+        if not args.get("wait"):
+            return http_timeout
+        wait_timeout = args.get("timeout")
+        if isinstance(wait_timeout, (int, float)) and float(wait_timeout) > 0:
+            http_timeout = max(
+                http_timeout,
+                float(wait_timeout) + _ADD_RESOURCE_WAIT_TIMEOUT_BUFFER,
+            )
+        return http_timeout
+
+    @staticmethod
+    def _add_resource_timeout_error(
+        *,
+        wait: bool,
+        http_timeout: float,
+        url: str,
+        phase: str,
+    ) -> str:
+        """Actionable timeout payload so the model does not assume total failure."""
+        if wait:
+            message = (
+                f"Client timed out after {http_timeout:.0f}s while wait=true "
+                f"({phase}). This does NOT necessarily mean the resource failed "
+                "to write — OpenViking often accepts the upload/path and continues "
+                "indexing asynchronously; the client only stopped waiting for "
+                "full processing to finish. Prefer wait=false next time (default), "
+                "then verify with viking_search / viking_browse / viking_read after "
+                "a few seconds. Do not treat this alone as an OpenViking outage."
+            )
+            hint = (
+                "retry_with_wait_false_then_verify; "
+                "resource_may_already_be_queued_or_indexed"
+            )
+        else:
+            message = (
+                f"Client timed out after {http_timeout:.0f}s ({phase}). "
+                "A timeout is not always a hard failure — check OpenViking health "
+                "and whether the resource already appears under viking://resources/ "
+                "via viking_browse or viking_search. Prefer wait=false (do not set "
+                "wait=true) and retry once if nothing was written."
+            )
+            hint = "check_health_and_browse_resources; avoid_wait_true"
+        return tool_error(
+            message,
+            status="timeout",
+            wait=wait,
+            http_timeout_seconds=http_timeout,
+            url=url,
+            phase=phase,
+            hint=hint,
+            may_have_written=True,
+        )
+
     def _tool_add_resource(self, args: dict) -> str:
         from agent.file_safety import raise_if_read_blocked
 
@@ -3643,6 +3738,9 @@ class OpenVikingMemoryProvider(MemoryProvider):
 
         if args.get("to") and args.get("parent"):
             return tool_error("Cannot specify both 'to' and 'parent'")
+
+        wait = bool(args.get("wait"))
+        http_timeout = self._resolve_add_resource_http_timeout(args)
 
         payload: Dict[str, Any] = {}
         for key in ("reason", "to", "parent", "instruction", "wait", "timeout"):
@@ -3662,40 +3760,93 @@ class OpenVikingMemoryProvider(MemoryProvider):
             source_path = Path(url).expanduser()
 
         cleanup_path: Optional[Path] = None
+        result: Dict[str, Any] = {}
         try:
-            if source_path is not None:
-                if source_path.exists():
-                    if source_path.is_dir():
-                        payload["source_name"] = source_path.name
-                        cleanup_path = _zip_directory(source_path)
-                        upload_path = cleanup_path
-                    elif source_path.is_file():
+            try:
+                if source_path is not None:
+                    if source_path.exists():
+                        if source_path.is_dir():
+                            payload["source_name"] = source_path.name
+                            cleanup_path = _zip_directory(source_path)
+                            upload_path = cleanup_path
+                        elif source_path.is_file():
+                            try:
+                                raise_if_read_blocked(str(source_path))
+                            except ValueError as exc:
+                                return tool_error(str(exc))
+                            payload["source_name"] = source_path.name
+                            upload_path = source_path
+                        else:
+                            return tool_error(f"Unsupported local resource path: {url}")
                         try:
-                            raise_if_read_blocked(str(source_path))
-                        except ValueError as exc:
-                            return tool_error(str(exc))
-                        payload["source_name"] = source_path.name
-                        upload_path = source_path
+                            payload["temp_file_id"] = self._client.upload_temp_file(
+                                upload_path, timeout=http_timeout
+                            )
+                        except Exception as e:
+                            if self._is_http_timeout_error(e):
+                                return self._add_resource_timeout_error(
+                                    wait=wait,
+                                    http_timeout=http_timeout,
+                                    url=url,
+                                    phase="temp_upload",
+                                )
+                            raise
+                    elif _is_local_path_reference(url):
+                        return tool_error(f"Local resource path does not exist: {url}")
                     else:
-                        return tool_error(f"Unsupported local resource path: {url}")
-                    payload["temp_file_id"] = self._client.upload_temp_file(upload_path)
-                elif _is_local_path_reference(url):
-                    return tool_error(f"Local resource path does not exist: {url}")
+                        payload["path"] = url
                 else:
                     payload["path"] = url
-            else:
-                payload["path"] = url
 
-            resp = self._client.post("/api/v1/resources", payload)
-            result = resp.get("result", {})
+                try:
+                    resp = self._client.post(
+                        "/api/v1/resources", payload, timeout=http_timeout
+                    )
+                except Exception as e:
+                    if self._is_http_timeout_error(e):
+                        return self._add_resource_timeout_error(
+                            wait=wait,
+                            http_timeout=http_timeout,
+                            url=url,
+                            phase="add_resource",
+                        )
+                    raise
+                result = resp.get("result", {}) if isinstance(resp, dict) else {}
+            except Exception as e:
+                if self._is_http_timeout_error(e):
+                    return self._add_resource_timeout_error(
+                        wait=wait,
+                        http_timeout=http_timeout,
+                        url=url,
+                        phase="add_resource",
+                    )
+                raise
         finally:
             if cleanup_path:
                 cleanup_path.unlink(missing_ok=True)
 
+        root_uri = ""
+        if isinstance(result, dict):
+            root_uri = result.get("root_uri", "") or ""
+        message = (
+            "Resource accepted and queued for async processing. "
+            "Use viking_search / viking_browse after a moment to find it."
+        )
+        if wait:
+            message = (
+                "Resource add returned after wait=true. "
+                "If indexing still looks incomplete, browse the root_uri or search shortly."
+            )
         return json.dumps({
             "status": "added",
-            "root_uri": result.get("root_uri", ""),
-            "message": "Resource queued for processing. Use viking_search after a moment to find it.",
+            "root_uri": root_uri,
+            "wait": wait,
+            "message": message,
+            "hint": (
+                "prefer_wait_false_for_future_calls"
+                if wait
+                else "indexing_is_async_verify_with_search"
+            ),
         }, ensure_ascii=False)
 
 
