@@ -24,7 +24,7 @@
 | owner/ 纯新增 | ~75 个文件 |
 | 官方文件侵入 | ~70 个文件（含 ~20 个测试文件） |
 | 范围 | 模型归因 / patch.yaml 配置 / 审批安全 / 飞书深度定制 / TUI 皮肤 / Cron 运维 / Gateway 稳定性 / Checkpoint 预测 / Desktop 窗口透明度 |
-| 最后更新 | 2026-07-14 |
+| 最后更新 | 2026-07-28 |
 | 来源 | 从 `owner-v17`（500+ commit）清洗迁移而来；本分支是重新整理后的最小叠加版本 |
 
 ### 0.2 章节索引
@@ -262,6 +262,19 @@
 - **涉及文件**：`hermes_cli/model_switch.py` + `tests/hermes_cli/test_model_switch_custom_providers.py`、`tests/hermes_cli/test_user_providers_model_switch.py`
 - **侵入类型**：inline 逻辑修改（`hermes_cli/model_switch.py`）
 - **Commit**：`ee10d6230`
+
+### 2.11 provider model 缓存 TTL 延长至 24h + 无变化时不写磁盘
+
+- **背景**：`/providers` 命令和 agent 构造时，`_PROVIDER_MODELS_CACHE` 和 `models_dev` 两层缓存原先都是硬编码 3600s（1h）TTL。模型列表变化频率远低于 1h，每天白白 fetch 23 次浪费网络 I/O。
+- **方案**（`c780e7a63`）：
+  1. `agent/models_dev.py`：`_MODELS_DEV_CACHE_TTL` 3600 → 86400（24h），models.dev 社区数据库变化极少，纯 TTL 延长即可。
+  2. `hermes_cli/models.py`：`_PROVIDER_MODELS_CACHE_TTL` 3600 → 86400（24h）。
+  3. `hermes_cli/models.py`：`cached_provider_model_ids` 加 diff 逻辑 — TTL 过期后 fetch，但新旧模型 ID set 相同且 credential fingerprint 未变时，只刷新内存时间戳，**不写磁盘**。模型列表有增删或 fp 变化时才 `_save_provider_models_cache`。
+  4. `force_refresh=True`（`/model --refresh`）路径不受影响，总是 fetch + 写磁盘。
+- **涉及文件**：
+  - 侵入（inline 逻辑修改）：`agent/models_dev.py`、`hermes_cli/models.py`
+- **侵入类型**：inline 逻辑修改（常量 + 条件分支）
+- **Commit**：`c780e7a63`
 
 ---
 
