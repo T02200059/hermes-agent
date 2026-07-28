@@ -589,6 +589,7 @@
 - **后续修复**：
   - `6a9383d38` — 移除 `plugins/memory/openviking/__init__.py` 中基于 `subprocess.Popen` 的本地 server auto-start。裸 Python `openviking-server`（未带 hotfix patch）会在 gateway restart 时与 Docker 容器抢端口 1933 并劫持端口。改为由 Docker 外部管理 server。同时删除对应的 `test_start_local_openviking_server_uses_endpoint_host_and_port` 测试。
   - `04b0b7ae8` — recall 注入内容截断 ChatLog，防止模型把历史对话误当当前上下文。根因：Viking memory 文件带 `YYYY-MM-DD ChatLog: [user]: ... [hermes]: ...` 段落，与 live 对话 turn 格式完全一致；长对话 + 多工具并行时 qwen3.7-max（2026-07-28 验证）会把召回的"damodel 400 排查"历史记录当成当前待办，主动开始排查并编造不存在的截图。方案：`plugins/memory/openviking/__init__.py` 加 `_truncate_chatlog_from_recall()`，按 `ChatLog:` / `Chat记录:` / 日期前缀正则截断，只保留 Summary，末尾追加 `→ For full conversation: viking_read(uri=..., level='full')` 提示；`owner/patches/openviking_owner_recall_patch.py` 改写 advisory System note，明确告知 agent "ChatLog 已被剥离，需细节时调用 `viking_read`，禁止凭 summary 编造内容"。
+  - `2587260ca` — 写入端给 user/assistant 消息设置人类可读 peer_id，使 Viking 存储的对话记录不再与 live turn 格式混淆。新增 `_resolve_user_display_label()`：优先从飞书 Inbound context 提取 `user_name: \`杨天宝\`` 中文名，fallback 到 `"过去的用户"`；`_resolve_assistant_display_label()`：取 `get_active_profile_name()`（子 profile 如 `hermesxiyun`/`sunqifei`），主 profile `default` 映射为 `hermes`，fallback 到 `"过去的助手"`。两个 peer_id 通过 `_messages_to_openviking_batch(user_peer_id=..., assistant_peer_id=...)` 传入 payload，Viking 端 `MessageRange._speaker_for()` 返回 display label 而非裸 role string。测试 `test_sync_turn_structured_messages_include_assistant_peer_id` 断言同步更新。
 
 ### 7.4 Cron env 隔离（ContextVar + restart scrub）
 
