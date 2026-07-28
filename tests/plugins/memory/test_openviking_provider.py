@@ -2505,7 +2505,7 @@ def test_sync_turn_structured_messages_include_assistant_peer_id():
         "/api/v1/sessions/sid-structured/messages/batch",
         {
             "messages": [
-                {"role": "user", "parts": [{"type": "text", "text": "u"}]},
+                {"role": "user", "parts": [{"type": "text", "text": "u"}], "peer_id": "过去的用户"},
                 {"role": "assistant", "parts": [{"type": "text", "text": "Looking."}], "peer_id": "hermes"},
                 {
                     "role": "assistant",

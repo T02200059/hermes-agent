@@ -1874,6 +1874,47 @@ class OpenVikingMemoryProvider(MemoryProvider):
     def name(self) -> str:
         return "openviking"
 
+    # -- Display label resolution for Viking session payloads -------------
+    # These produce human-readable peer_ids so Viking-stored ChatLog uses
+    # e.g. [杨天宝] instead of [user], preventing recall confusion with
+    # live conversation turns.  Verified incident 2026-07-28.
+
+    _USER_NAME_RE = re.compile(r"user_name:\s*`([^`]+)`")
+
+    def _resolve_user_display_label(self, user_content: str) -> str:
+        """User display label for Viking payloads.
+
+        Priority:
+        1. Feishu Chinese name from Inbound context ``user_name: `xxx` ``
+        2. Fallback to the fixed prefix ``过去的用户``
+        """
+        if user_content:
+            match = self._USER_NAME_RE.search(user_content)
+            if match:
+                name = match.group(1).strip()
+                if name:
+                    return name
+        return "过去的用户"
+
+    def _resolve_assistant_display_label(self) -> str:
+        """Assistant display label for Viking payloads.
+
+        Priority:
+        1. Active profile name (``hermesxiyun`` / ``sunqifei``), with ``default`` mapped to ``hermes``
+        2. Fallback to the fixed prefix ``过去的助手``
+        """
+        try:
+            from hermes_cli.profiles import get_active_profile_name
+            profile = get_active_profile_name()
+            if profile and profile not in ("", "custom"):
+                return "hermes" if profile == "default" else profile
+        except Exception:
+            pass
+        agent = getattr(self, "_agent", "") or _DEFAULT_AGENT
+        if agent and agent != "hermes":
+            return agent
+        return "过去的助手"
+
     def is_available(self) -> bool:
         """Check if OpenViking endpoint is configured. No network calls."""
         if os.environ.get("OPENVIKING_ENDPOINT"):
@@ -2988,9 +3029,11 @@ class OpenVikingMemoryProvider(MemoryProvider):
         messages: List[Dict[str, Any]],
         *,
         assistant_peer_id: str = "",
+        user_peer_id: str = "",
     ) -> List[Dict[str, Any]]:
         """Convert Hermes canonical messages into OpenViking batch payloads."""
         assistant_peer_id = str(assistant_peer_id or "").strip()
+        user_peer_id = str(user_peer_id or "").strip()
         tool_calls_by_id: Dict[str, Dict[str, Any]] = {}
         completed_tool_ids: set[str] = set()
         skipped_tool_ids: set[str] = set()
@@ -3026,6 +3069,8 @@ class OpenVikingMemoryProvider(MemoryProvider):
             payload: Dict[str, Any] = {"role": role, "parts": parts}
             if role == "assistant" and assistant_peer_id:
                 payload["peer_id"] = assistant_peer_id
+            elif role == "user" and user_peer_id:
+                payload["peer_id"] = user_peer_id
             return payload
 
         def flush_tool_parts() -> None:
@@ -3130,7 +3175,8 @@ class OpenVikingMemoryProvider(MemoryProvider):
                     break
         batch_messages = self._messages_to_openviking_batch(
             turn_messages,
-            assistant_peer_id=getattr(self, "_agent", _DEFAULT_AGENT),
+            assistant_peer_id=self._resolve_assistant_display_label(),
+            user_peer_id=self._resolve_user_display_label(user_content),
         )
 
         if _sync_trace_enabled():
