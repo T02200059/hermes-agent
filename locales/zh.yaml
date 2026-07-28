@@ -529,6 +529,13 @@ gateway:
   moa_prepare_failed: "准备 MoA 回合失败。"
   chained_commands_executed: "命令已执行。"
 
+  # 会话自动重置通知 — 当过期会话在新消息到达时被清除显示。
+  session_reset_notice: "◐ 会话已自动重置（{reason}）。对话历史已清除。\n使用 /resume 浏览并恢复之前的会话。\n可在 config.yaml 的 session_reset 下调整重置时间。"
+  session_reset_reason_suspended: "上一个会话已被停止或中断"
+  session_reset_reason_resume_expired: "网关重启恢复超时"
+  session_reset_reason_daily: "每日定时重置（{hour}:00）"
+  session_reset_reason_idle: "已闲置 {duration}"
+
   # 操作中断占位文案 -- 当轮次被截断（用户 /stop、API 错误重试、网关重启等）
   # 且没有产生可见的助手回复时显示。默认占位是简短状态行；
   # 友好版本会加上可操作的建议。
