@@ -36,10 +36,18 @@ _SAFE_TOOLS = frozenset(
         "browser_get_content",
         "read_terminal",
         "close_terminal",
-        "process",  # list/poll only when no kill payload; still check args below
+        # process 不在此列：list/poll/log/wait 在 classify 中 early-skip，
+        # kill/write/submit/close 等副作用 action 走 tier1。
         "tool_search",
         "tool_describe",
     }
+)
+
+# process 只读 / 无副作用 action（与 tools/process_registry 对齐）
+_PROCESS_READ_ACTIONS = frozenset({"list", "poll", "log", "wait", "status", ""})
+# process 有副作用的 action（终止会话、stdin 注入、EOF）
+_PROCESS_SIDE_EFFECT_ACTIONS = frozenset(
+    {"kill", "write", "submit", "close", "signal"}
 )
 
 # 明确需要检查的副作用工具
@@ -155,10 +163,11 @@ def _command_from_args(name: str, args: Dict[str, Any]) -> str:
     if name == "execute_code":
         return str(args.get("code") or args.get("source") or "")
     if name == "process":
-        # only side-effect actions
+        # only side-effect actions (session_id is the real process tool key)
         action = str(args.get("action") or "").lower()
-        if action in {"kill", "write", "signal"}:
-            return f"process {action} {args.get('pid', '')} {args.get('data', '')}"
+        if action in _PROCESS_SIDE_EFFECT_ACTIONS:
+            sid = args.get("session_id") or args.get("pid") or ""
+            return f"process {action} {sid} {args.get('data', '')}"
     return ""
 
 
@@ -192,10 +201,11 @@ def classify_tool_call(tc: Any) -> ClassifiedCall:
     args = _parse_args(raw_args)
     name, args = unwrap_tool_call(original_name, args)
 
-    # process kill 等仍需检查；list/poll 跳过
+    # process：list/poll/log/wait 跳过；kill/write/submit/close 等进 tier1
+    # （不得落入 _SAFE_TOOLS，否则副作用 action 会被当 safe tool 整段跳过）
     if name == "process":
         action = str(args.get("action") or "list").lower()
-        if action in {"list", "poll", "log", "status", ""}:
+        if action in _PROCESS_READ_ACTIONS:
             return ClassifiedCall(
                 tool_call_id=tid,
                 original_name=original_name,
@@ -205,6 +215,15 @@ def classify_tool_call(tc: Any) -> ClassifiedCall:
                 reason="process read-only action",
                 raw_tc=tc,
             )
+        return ClassifiedCall(
+            tool_call_id=tid,
+            original_name=original_name,
+            name=name,
+            args=args,
+            tier="tier1",
+            reason=f"process {action}",
+            raw_tc=tc,
+        )
 
     cmd = _command_from_args(name, args)
     path = _path_from_args(name, args)

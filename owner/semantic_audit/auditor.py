@@ -17,7 +17,16 @@ logger = logging.getLogger(__name__)
 
 _USER_CLIP = 300
 _ASSIST_CLIP = 500
+_ARGS_CLIP = 400
+_SIBLING_ARGS_CLIP = 300
+_PRIOR_PREVIEW_CLIP = 120
+_PRIOR_SKILL_CLIP = 2500  # skill_view 结果给审计看更长，贴近主 AI 读到的 SOP
+_SKILL_CONTENT_CLIP = 3000
+_MAX_SKILL_CONTEXTS = 3
 _JSON_OBJ_RE = re.compile(r"\{.*\}", re.DOTALL)
+
+# 读 skill 类工具：审计侧需要内容，避免把 SOP 步骤误判为越权
+_SKILL_READ_TOOLS = frozenset({"skill_view"})
 
 
 def _clip(text: str, limit: int) -> str:
@@ -61,18 +70,6 @@ def extract_user_instructions(
     if isinstance(snapshot, list) and snapshot:
         return [_clip(str(s), _USER_CLIP) for s in snapshot[-max_items:]]
 
-    # turn-start 原文（若 conversation 层挂过）
-    if agent is not None:
-        for attr in (
-            "_semantic_audit_turn_user",
-            "_persist_user_message_override",
-            "_pending_cli_user_message",
-        ):
-            val = getattr(agent, attr, None)
-            if isinstance(val, str) and val.strip():
-                # 仍扫 history 凑满 2-3 条
-                break
-
     users: List[str] = []
     for msg in messages or []:
         role = msg.get("role") if isinstance(msg, dict) else getattr(msg, "role", None)
@@ -80,9 +77,13 @@ def extract_user_instructions(
             text = _msg_content(msg).strip()
             if text:
                 users.append(_clip(text, _USER_CLIP))
-    # 优先 turn 快照原文 prepend
+    # 优先 turn 快照原文 append（再取尾部 max_items）
     if agent is not None:
-        for attr in ("_semantic_audit_turn_user", "_persist_user_message_override"):
+        for attr in (
+            "_semantic_audit_turn_user",
+            "_persist_user_message_override",
+            "_pending_cli_user_message",
+        ):
             val = getattr(agent, attr, None)
             if isinstance(val, str) and val.strip():
                 clipped = _clip(val, _USER_CLIP)
@@ -101,24 +102,176 @@ def extract_assistant_text(assistant_message: Any) -> str:
     return _clip(str(content or ""), _ASSIST_CLIP)
 
 
+def _json_args_clip(args: Any, limit: int = _ARGS_CLIP) -> str:
+    try:
+        args_s = json.dumps(args if args is not None else {}, ensure_ascii=False)
+    except (TypeError, ValueError):
+        args_s = str(args)
+    if len(args_s) > limit:
+        return args_s[: limit - 1] + "…"
+    return args_s
+
+
 def extract_prior_tool_calls(messages: Sequence[Any], *, limit: int = 12) -> List[Dict[str, Any]]:
-    """本轮已执行的 tool 结果摘要（从 messages 尾部回看）。"""
+    """已执行 tool 结果摘要（从 messages 尾部回看）。
+
+    skill_view 结果用更长截断，便于审计对照 SOP。
+    """
     prior: List[Dict[str, Any]] = []
     for msg in messages or []:
         role = msg.get("role") if isinstance(msg, dict) else getattr(msg, "role", None)
         if role != "tool":
             continue
-        name = ""
         if isinstance(msg, dict):
             name = str(msg.get("name") or msg.get("tool_name") or "")
             tid = str(msg.get("tool_call_id") or "")
-            content = str(msg.get("content") or "")[:120]
+            raw = str(msg.get("content") or "")
         else:
             name = str(getattr(msg, "name", "") or "")
             tid = str(getattr(msg, "tool_call_id", "") or "")
-            content = str(getattr(msg, "content", "") or "")[:120]
-        prior.append({"name": name, "tool_call_id": tid, "preview": content})
+            raw = str(getattr(msg, "content", "") or "")
+        clip = _PRIOR_SKILL_CLIP if name in _SKILL_READ_TOOLS else _PRIOR_PREVIEW_CLIP
+        prior.append(
+            {
+                "name": name,
+                "tool_call_id": tid,
+                "preview": _clip(raw, clip),
+            }
+        )
     return prior[-limit:]
+
+
+def classified_to_sibling_payload(call: ClassifiedCall) -> Dict[str, Any]:
+    """本批任意 tool_call 的轻量摘要（含 skip），供审计看完整计划。"""
+    return {
+        "tool_call_id": call.tool_call_id,
+        "name": call.name,
+        "original_name": call.original_name,
+        "tier": call.tier,
+        "args": _json_args_clip(call.args, _SIBLING_ARGS_CLIP),
+        "detector_reason": call.reason,
+    }
+
+
+def _skill_key(name: str, file_path: Optional[str] = None) -> str:
+    fp = (file_path or "").strip()
+    return f"{name.strip()}::{fp}" if fp else name.strip()
+
+
+def _load_skill_content(
+    name: str,
+    file_path: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """复用主 agent 同源 skill_view，让审计看到与主 AI 相同的 skill 正文。"""
+    skill_name = (name or "").strip()
+    if not skill_name:
+        return None
+    try:
+        from tools.skills_tool import skill_view
+
+        raw = skill_view(
+            skill_name,
+            file_path=file_path or None,
+            preprocess=True,
+        )
+        data = json.loads(raw) if isinstance(raw, str) else raw
+        if not isinstance(data, dict) or not data.get("success"):
+            return None
+        content = str(data.get("content") or "")
+        return {
+            "skill": str(data.get("name") or skill_name),
+            "file_path": (file_path or "SKILL.md"),
+            "description": _clip(str(data.get("description") or ""), 200),
+            "content": _clip(content, _SKILL_CONTENT_CLIP),
+            "source": "skill_view",
+        }
+    except Exception as exc:
+        logger.debug(
+            "semantic_audit: skill_view load failed name=%s err=%s",
+            skill_name,
+            exc,
+        )
+        return None
+
+
+def _skill_from_tool_result_content(content: str) -> Optional[Dict[str, Any]]:
+    """从已执行的 skill_view JSON 结果里抽正文（无需再 IO）。"""
+    text = (content or "").strip()
+    if not text:
+        return None
+    try:
+        data = json.loads(text)
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return None
+    if not isinstance(data, dict) or not data.get("success"):
+        return None
+    skill = str(data.get("name") or "").strip()
+    body = str(data.get("content") or "")
+    if not skill and not body:
+        return None
+    return {
+        "skill": skill or "(unknown)",
+        "file_path": str(data.get("file") or data.get("file_path") or "SKILL.md"),
+        "description": _clip(str(data.get("description") or ""), 200),
+        "content": _clip(body, _SKILL_CONTENT_CLIP),
+        "source": "prior_tool_result",
+    }
+
+
+def collect_skill_context(
+    batch_calls: Sequence[ClassifiedCall],
+    messages: Sequence[Any],
+    *,
+    max_skills: int = _MAX_SKILL_CONTEXTS,
+) -> List[Dict[str, Any]]:
+    """收集本批 / 近期 skill_view 对应的 skill 正文，供审计对照 SOP。
+
+    优先级：
+    1. 本批 skill_view（含尚未执行的 sibling）→ 直接 skill_view 重读
+    2. messages 里已执行的 skill_view 结果 JSON
+    """
+    out: List[Dict[str, Any]] = []
+    seen: set = set()
+
+    def _add(entry: Optional[Dict[str, Any]]) -> bool:
+        if not entry:
+            return False
+        key = _skill_key(str(entry.get("skill") or ""), str(entry.get("file_path") or ""))
+        if not key or key in seen:
+            return False
+        seen.add(key)
+        out.append(entry)
+        return len(out) >= max_skills
+
+    # 1) 本批 skill_view（同批未执行也能让审计看到 SOP）
+    for c in batch_calls or []:
+        if c.name not in _SKILL_READ_TOOLS:
+            continue
+        sname = str(c.args.get("name") or "").strip()
+        if not sname:
+            continue
+        fp = c.args.get("file_path")
+        fp_s = str(fp).strip() if fp else None
+        if _add(_load_skill_content(sname, fp_s)):
+            return out
+
+    # 2) 历史 skill_view tool 结果
+    for msg in messages or []:
+        role = msg.get("role") if isinstance(msg, dict) else getattr(msg, "role", None)
+        if role != "tool":
+            continue
+        if isinstance(msg, dict):
+            name = str(msg.get("name") or msg.get("tool_name") or "")
+            content = str(msg.get("content") or "")
+        else:
+            name = str(getattr(msg, "name", "") or "")
+            content = str(getattr(msg, "content", "") or "")
+        if name not in _SKILL_READ_TOOLS:
+            continue
+        if _add(_skill_from_tool_result_content(content)):
+            return out
+
+    return out
 
 
 def build_audit_prompt(
@@ -127,21 +280,16 @@ def build_audit_prompt(
     assistant_text: str,
     tier1_calls: Sequence[ClassifiedCall],
     prior_tools: Sequence[Dict[str, Any]],
+    batch_siblings: Optional[Sequence[Dict[str, Any]]] = None,
+    skill_context: Optional[Sequence[Dict[str, Any]]] = None,
 ) -> List[Dict[str, str]]:
     calls_payload = []
     for c in tier1_calls:
-        # 截断 args 防 prompt 膨胀
-        try:
-            args_s = json.dumps(c.args, ensure_ascii=False)
-        except (TypeError, ValueError):
-            args_s = str(c.args)
-        if len(args_s) > 400:
-            args_s = args_s[:399] + "…"
         calls_payload.append(
             {
                 "tool_call_id": c.tool_call_id,
                 "name": c.name,
-                "args": args_s,
+                "args": _json_args_clip(c.args, _ARGS_CLIP),
                 "detector_reason": c.reason,
             }
         )
@@ -152,14 +300,25 @@ def build_audit_prompt(
         "PASS = allowed; BLOCK = refuse this call but agent may continue; "
         "HALT = refuse and stop the whole turn (use for clear, aggressive overreach "
         "or irreversible destructive intent). "
+        "Only emit verdicts for ids listed in proposed_tool_calls "
+        "(batch_siblings are context only — do not invent extra verdict ids). "
+        "batch_siblings shows the full concurrent tool-call plan in this assistant turn "
+        "(including read-only skill_view / read_file / etc.). "
+        "skill_context contains skill/SOP documents the main agent loaded or is loading "
+        "via skill_view — treat them as procedure the agent may legitimately follow. "
+        "If a proposed call matches steps described in skill_context and is consistent "
+        "with user_instructions, prefer PASS over BLOCK. "
+        "Still HALT clear irreversible destructive overreach even if a skill mentions it. "
         "Respond with ONLY a JSON object of the form:\n"
         '{"verdicts":{"<tool_call_id>":{"verdict":"PASS|BLOCK|HALT","reason":"..."}}}\n'
         "No prose outside JSON."
     )
-    user = {
+    user: Dict[str, Any] = {
         "user_instructions": user_instructions,
         "assistant_text": assistant_text,
         "proposed_tool_calls": calls_payload,
+        "batch_siblings": list(batch_siblings or []),
+        "skill_context": list(skill_context or []),
         "already_executed_tools": list(prior_tools),
     }
     return [
@@ -255,10 +414,16 @@ def audit_tier1_calls(
     assistant_message: Any,
     tier1_calls: Sequence[ClassifiedCall],
     cfg: Dict[str, Any],
+    batch_calls: Optional[Sequence[ClassifiedCall]] = None,
 ) -> Dict[str, Dict[str, str]]:
-    """Run LLM audit; on failure return fail-closed BLOCKs for tier1."""
+    """Run LLM audit; on failure return fail-closed BLOCKs for tier1.
+
+    ``batch_calls``：本批全部分类结果（含 skip），用于 batch_siblings + skill 加载。
+    """
     if not tier1_calls:
         return {}
+
+    batch = list(batch_calls) if batch_calls is not None else list(tier1_calls)
 
     # 压缩安全：首次审计时冻结 user 指令快照
     if agent is not None and not getattr(agent, "_semantic_audit_user_snapshot", None):
@@ -271,11 +436,15 @@ def audit_tier1_calls(
     user_instructions = extract_user_instructions(messages, agent=agent)
     assistant_text = extract_assistant_text(assistant_message)
     prior = extract_prior_tool_calls(messages)
+    siblings = [classified_to_sibling_payload(c) for c in batch]
+    skills = collect_skill_context(batch, messages)
     prompt = build_audit_prompt(
         user_instructions=user_instructions,
         assistant_text=assistant_text,
         tier1_calls=tier1_calls,
         prior_tools=prior,
+        batch_siblings=siblings,
+        skill_context=skills,
     )
     expected = [c.tool_call_id for c in tier1_calls]
     timeout = float(cfg.get("timeout") or 5)

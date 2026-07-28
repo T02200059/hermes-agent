@@ -51,8 +51,15 @@ AIAgent._execute_tool_calls
 
 - API：`agent.auxiliary_client.call_llm(task="semantic_audit", …)` 同步
 - 超时：默认 5s（`auxiliary.semantic_audit.timeout`）
-- 输入：最近 2–3 条用户指令（截断 300 字）、assistant text（500 字）、Tier1 tool_calls、本轮已执行 tools
-- 输出：`{"verdicts":{"<id>":{"verdict":"PASS|BLOCK|HALT","reason":"..."}}}`
+- 输入：
+  - 最近 2–3 条用户指令（截断 300 字）
+  - assistant text（500 字）
+  - `proposed_tool_calls`：本批 tier1（需裁决）
+  - `batch_siblings`：本批**全部** tool_call（含 skill_view / read_file 等 skip）
+  - `skill_context`：本批或近期 `skill_view` 的 skill 正文（同源 `tools.skills_tool.skill_view`，截断 ~3k）
+  - `already_executed_tools`：历史 tool 摘要（skill_view 预览更长）
+- 输出：`{"verdicts":{"<id>":{"verdict":"PASS|BLOCK|HALT","reason":"..."}}}`（仅 proposed ids）
+- **SOP 防误判**：skill_context 视为主 agent 正在遵循的流程；与用户意图一致时优先 PASS
 - **fail 策略**：超时/失败时，tier1（已标危险）→ BLOCK（fail-closed）；skip 工具不调用 LLM（等价 PASS）
 
 压缩安全：首次审计时把 user 指令快照挂到 `agent._semantic_audit_user_snapshot`，避免只依赖可能被压缩的 messages。

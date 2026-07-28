@@ -103,7 +103,7 @@ def _invoke_remaining(
 def _notify_halt_user(agent: Any, tool_name: str, reason: str) -> None:
     """Surface HALT to CLI / gateway users (best-effort, never raises)."""
     notice = (
-        f"⛔ 语义审计中断\n"
+        f"[HALT] 语义审计中断\n"
         f"模型尝试执行：{tool_name}\n"
         f"判定原因：{reason}\n"
         f"本轮已终止。"
@@ -127,7 +127,7 @@ def _notify_block_user(
 ) -> None:
     """Surface BLOCK to CLI / gateway users (lightweight, best-effort)."""
     notice = (
-        f"🛡️ 语义审计拦截：{blocked_count} 个越权操作已阻止"
+        f"[BLOCK] 语义审计拦截：{blocked_count} 个越权操作已阻止"
         f"（strike {strikes}/{max_strikes}）"
     )
     try:
@@ -217,11 +217,13 @@ def _maybe_audit_batch_impl(
         return False
 
     # ── Tier 1：LLM 审计 ─────────────────────────────────────────────
+    # 传入整批 classified，供 batch_siblings + skill_view SOP 上下文
     llm_verdicts = auditor.audit_tier1_calls(
         agent=agent,
         messages=messages,
         assistant_message=assistant_message,
         tier1_calls=tier1,
+        batch_calls=classified,
         cfg=cfg,
     )
 

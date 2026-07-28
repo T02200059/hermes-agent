@@ -12,14 +12,11 @@ def block_message(
     strikes: int = 1,
     max_strikes: int = 2,
 ) -> str:
-    remaining = max(0, max_strikes - strikes)
     warn = (
         f" Strike {strikes}/{max_strikes}."
         if strikes < max_strikes
         else f" Strike {strikes}/{max_strikes} — next violation will HALT the turn."
     )
-    if remaining == 0 and strikes < max_strikes:
-        warn = f" Strike {strikes}/{max_strikes}."
     return (
         f"[semantic_audit] BLOCKED tool `{tool_name}`: {reason}.{warn} "
         "Do not retry the same action with a different phrasing. "

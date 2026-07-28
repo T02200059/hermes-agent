@@ -157,7 +157,7 @@ def test_strike_two_blocks_escalate_to_halt(enabled_cfg, monkeypatch):
     """第 2 次 BLOCK 升级为 HALT。"""
     from owner.semantic_audit.gate import maybe_audit_batch
 
-    def _llm_block(*, agent, messages, assistant_message, tier1_calls, cfg):
+    def _llm_block(*, agent, messages, assistant_message, tier1_calls, cfg, **_kw):
         return {
             c.tool_call_id: {
                 "verdict": "BLOCK",
@@ -266,7 +266,7 @@ def test_block_keeps_pass_calls_for_dispatch(enabled_cfg, monkeypatch):
     """BLOCK 后 PASS 的 call 由 gate 内执行；不改 tool_calls，返回 True。"""
     from owner.semantic_audit.gate import maybe_audit_batch
 
-    def _mixed(*, agent, messages, assistant_message, tier1_calls, cfg):
+    def _mixed(*, agent, messages, assistant_message, tier1_calls, cfg, **_kw):
         out = {}
         for c in tier1_calls:
             if "restart" in str(c.args):
@@ -308,7 +308,7 @@ def test_block_tool_result_protocol_1to1(enabled_cfg, monkeypatch):
     """BLOCK 混合 batch：每个 tool_call_id 有且仅有一条 result，顺序一致。"""
     from owner.semantic_audit.gate import maybe_audit_batch
 
-    def _mixed(*, agent, messages, assistant_message, tier1_calls, cfg):
+    def _mixed(*, agent, messages, assistant_message, tier1_calls, cfg, **_kw):
         out = {}
         for c in tier1_calls:
             if "restart" in str(c.args):
@@ -380,7 +380,7 @@ def test_halt_plus_pass_stops_whole_batch(enabled_cfg, monkeypatch):
     """同批 HALT + PASS 时整批停，PASS 也不执行。"""
     from owner.semantic_audit.gate import maybe_audit_batch
 
-    def _halt_one(*, agent, messages, assistant_message, tier1_calls, cfg):
+    def _halt_one(*, agent, messages, assistant_message, tier1_calls, cfg, **_kw):
         out = {}
         for i, c in enumerate(tier1_calls):
             if i == 0:
@@ -436,6 +436,69 @@ def test_detector_skips_read_file():
     assert c.tier == "skip"
 
 
+def test_detector_process_kill_is_tier1():
+    """process kill 必须进 tier1，不能被 _SAFE_TOOLS 跳过。"""
+    from owner.semantic_audit.detector import classify_tool_call
+
+    c = classify_tool_call(
+        _tc("c1", "process", {"action": "kill", "session_id": "bg-1234"})
+    )
+    assert c.tier == "tier1", f"process kill must be tier1, got {c.tier}"
+    assert "kill" in c.reason
+
+
+def test_detector_process_write_submit_close_are_tier1():
+    from owner.semantic_audit.detector import classify_tool_call
+
+    for action in ("write", "submit", "close"):
+        c = classify_tool_call(
+            _tc("c2", "process", {"action": action, "session_id": "bg-1", "data": "x"})
+        )
+        assert c.tier == "tier1", f"process {action} must be tier1, got {c.tier}"
+
+
+def test_detector_process_list_and_wait_skip():
+    from owner.semantic_audit.detector import classify_tool_call
+
+    for action in ("list", "poll", "log", "wait"):
+        args = {"action": action}
+        if action != "list":
+            args["session_id"] = "bg-1"
+        c = classify_tool_call(_tc("c3", "process", args))
+        assert c.tier == "skip", f"process {action} must skip, got {c.tier}"
+        assert c.reason == "process read-only action"
+
+
+def test_detector_process_not_in_safe_tools():
+    from owner.semantic_audit.detector import _SAFE_TOOLS
+
+    assert "process" not in _SAFE_TOOLS
+
+
+def test_block_message_no_dead_branch():
+    from owner.semantic_audit.notify import block_message
+
+    msg1 = block_message("terminal", "scope", strikes=1, max_strikes=2)
+    assert "Strike 1/2." in msg1
+    assert "next violation" not in msg1
+
+    msg2 = block_message("terminal", "scope", strikes=2, max_strikes=2)
+    assert "Strike 2/2" in msg2
+    assert "HALT" in msg2
+
+
+def test_extract_user_instructions_uses_pending_cli():
+    from owner.semantic_audit.auditor import extract_user_instructions
+
+    agent = SimpleNamespace(_pending_cli_user_message="  from cli  ")
+    out = extract_user_instructions(
+        [{"role": "user", "content": "history user"}],
+        agent,
+        max_items=3,
+    )
+    assert "from cli" in out[-1]
+
+
 def test_unwrap_tool_call_bridge(monkeypatch):
     from owner.semantic_audit import detector
 
@@ -458,6 +521,237 @@ def test_parse_verdicts_json():
     out = parse_verdicts(content, ["a", "b"])
     assert out["a"]["verdict"] == "BLOCK"
     assert out["b"]["verdict"] == "PASS"
+
+
+def test_build_audit_prompt_includes_batch_siblings_and_skill_context():
+    from owner.semantic_audit.auditor import build_audit_prompt
+    from owner.semantic_audit.detector import ClassifiedCall
+
+    tier1 = ClassifiedCall(
+        tool_call_id="t1",
+        original_name="terminal",
+        name="terminal",
+        args={"command": "systemctl restart nginx"},
+        tier="tier1",
+        reason="dangerous",
+    )
+    prompt = build_audit_prompt(
+        user_instructions=["check nginx"],
+        assistant_text="following skill",
+        tier1_calls=[tier1],
+        prior_tools=[],
+        batch_siblings=[
+            {
+                "tool_call_id": "s1",
+                "name": "skill_view",
+                "tier": "skip",
+                "args": '{"name":"ops-nginx"}',
+            },
+            {
+                "tool_call_id": "t1",
+                "name": "terminal",
+                "tier": "tier1",
+                "args": '{"command":"systemctl restart nginx"}',
+            },
+        ],
+        skill_context=[
+            {
+                "skill": "ops-nginx",
+                "file_path": "SKILL.md",
+                "content": "When restarting nginx use systemctl restart nginx",
+                "source": "skill_view",
+            }
+        ],
+    )
+    user_payload = json.loads(prompt[1]["content"])
+    assert "batch_siblings" in user_payload
+    assert len(user_payload["batch_siblings"]) == 2
+    assert user_payload["batch_siblings"][0]["name"] == "skill_view"
+    assert "skill_context" in user_payload
+    assert user_payload["skill_context"][0]["skill"] == "ops-nginx"
+    assert "SOP" in prompt[0]["content"] or "skill_context" in prompt[0]["content"]
+
+
+def test_collect_skill_context_loads_sibling_skill_view(monkeypatch):
+    """同批 skill_view 未执行时，审计侧应主动 skill_view 拿到正文。"""
+    import owner.semantic_audit.auditor as auditor
+    from owner.semantic_audit.detector import ClassifiedCall
+
+    def fake_skill_view(name, file_path=None, task_id=None, preprocess=True):
+        return json.dumps(
+            {
+                "success": True,
+                "name": name,
+                "description": "nginx ops SOP",
+                "content": (
+                    "## Procedure\n"
+                    "1. systemctl status nginx\n"
+                    "2. systemctl restart nginx\n"
+                ),
+            },
+            ensure_ascii=False,
+        )
+
+    monkeypatch.setattr(
+        "tools.skills_tool.skill_view",
+        fake_skill_view,
+        raising=False,
+    )
+    # also patch if already imported path used inside _load_skill_content
+    import tools.skills_tool as st
+
+    monkeypatch.setattr(st, "skill_view", fake_skill_view)
+
+    batch = [
+        ClassifiedCall(
+            tool_call_id="s1",
+            original_name="skill_view",
+            name="skill_view",
+            args={"name": "ops-nginx"},
+            tier="skip",
+            reason="safe tool",
+        ),
+        ClassifiedCall(
+            tool_call_id="t1",
+            original_name="terminal",
+            name="terminal",
+            args={"command": "systemctl restart nginx"},
+            tier="tier1",
+            reason="dangerous",
+        ),
+    ]
+    ctx = auditor.collect_skill_context(batch, messages=[])
+    assert len(ctx) == 1
+    assert ctx[0]["skill"] == "ops-nginx"
+    assert "systemctl restart nginx" in ctx[0]["content"]
+    assert ctx[0]["source"] == "skill_view"
+
+
+def test_collect_skill_context_from_prior_tool_result():
+    from owner.semantic_audit.auditor import collect_skill_context
+
+    body = json.dumps(
+        {
+            "success": True,
+            "name": "deploy-app",
+            "description": "deploy sop",
+            "content": "Step: kubectl apply -f deploy.yaml",
+        },
+        ensure_ascii=False,
+    )
+    messages = [
+        {
+            "role": "tool",
+            "name": "skill_view",
+            "tool_call_id": "old1",
+            "content": body,
+        }
+    ]
+    ctx = collect_skill_context([], messages)
+    assert len(ctx) == 1
+    assert ctx[0]["skill"] == "deploy-app"
+    assert "kubectl apply" in ctx[0]["content"]
+    assert ctx[0]["source"] == "prior_tool_result"
+
+
+def test_extract_prior_tool_calls_longer_for_skill_view():
+    from owner.semantic_audit.auditor import extract_prior_tool_calls
+
+    long_body = "S" * 800
+    messages = [
+        {
+            "role": "tool",
+            "name": "read_file",
+            "tool_call_id": "a",
+            "content": "X" * 500,
+        },
+        {
+            "role": "tool",
+            "name": "skill_view",
+            "tool_call_id": "b",
+            "content": long_body,
+        },
+    ]
+    prior = extract_prior_tool_calls(messages)
+    by_name = {p["name"]: p for p in prior}
+    assert len(by_name["read_file"]["preview"]) <= 121
+    assert len(by_name["skill_view"]["preview"]) > 200
+
+
+def test_audit_tier1_prompt_wires_siblings(monkeypatch):
+    """audit_tier1_calls 应把整批 siblings 和 skill 写入 LLM prompt。"""
+    from owner.semantic_audit import auditor
+    from owner.semantic_audit.detector import ClassifiedCall
+
+    captured = {}
+
+    def fake_llm(**kwargs):
+        captured["messages"] = kwargs["messages"]
+        return SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(
+                        content=json.dumps(
+                            {
+                                "verdicts": {
+                                    "t1": {
+                                        "verdict": "PASS",
+                                        "reason": "matches skill SOP",
+                                    }
+                                }
+                            }
+                        )
+                    )
+                )
+            ]
+        )
+
+    monkeypatch.setattr(auditor, "_call_llm_sync", fake_llm)
+    monkeypatch.setattr(
+        auditor,
+        "collect_skill_context",
+        lambda *a, **k: [
+            {
+                "skill": "ops",
+                "file_path": "SKILL.md",
+                "content": "restart ok",
+                "source": "skill_view",
+            }
+        ],
+    )
+
+    tier1 = ClassifiedCall(
+        tool_call_id="t1",
+        original_name="terminal",
+        name="terminal",
+        args={"command": "systemctl restart nginx"},
+        tier="tier1",
+        reason="dangerous",
+    )
+    skill_skip = ClassifiedCall(
+        tool_call_id="s1",
+        original_name="skill_view",
+        name="skill_view",
+        args={"name": "ops"},
+        tier="skip",
+        reason="safe tool",
+    )
+    out = auditor.audit_tier1_calls(
+        agent=_agent(),
+        messages=[{"role": "user", "content": "fix nginx"}],
+        assistant_message=SimpleNamespace(content="using skill", tool_calls=[]),
+        tier1_calls=[tier1],
+        batch_calls=[skill_skip, tier1],
+        cfg={
+            "timeout": 5,
+            "provider": "auto",
+            "model": "auto",
+        },
+    )
+    assert out["t1"]["verdict"] == "PASS"
+    payload = json.loads(captured["messages"][1]["content"])
+    assert any(s["name"] == "skill_view" for s in payload["batch_siblings"])
+    assert payload["skill_context"][0]["skill"] == "ops"
 
 
 def test_run_agent_glue_fail_open(monkeypatch):
