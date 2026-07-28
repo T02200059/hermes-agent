@@ -32,7 +32,7 @@ import requests
 logger = logging.getLogger(__name__)
 
 MODELS_DEV_URL = "https://models.dev/api.json"
-_MODELS_DEV_CACHE_TTL = 3600  # 1 hour in-memory
+_MODELS_DEV_CACHE_TTL = 86400  # 24 hours in-memory (owner: was 3600)
 
 # In-memory cache
 _models_dev_cache: Dict[str, Any] = {}

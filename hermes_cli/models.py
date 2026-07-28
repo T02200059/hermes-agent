@@ -2729,7 +2729,7 @@ def provider_model_ids(provider: Optional[str], *, force_refresh: bool = False) 
 #   - Cache file is best-effort. Any read/write error degrades silently
 #     to a live fetch — the picker keeps working.
 
-_PROVIDER_MODELS_CACHE_TTL = 3600  # 1h
+_PROVIDER_MODELS_CACHE_TTL = 86400  # 24h (owner: was 3600)
 
 
 def _provider_models_cache_path() -> Path:
@@ -2887,12 +2887,21 @@ def cached_provider_model_ids(
     # Cache miss / stale / forced refresh — call the live path.
     live = provider_model_ids(normalized, force_refresh=force_refresh)
     if live:
+        # Owner fork: diff-check — only write disk if model list changed (save I/O).
+        old_models = entry.get("models") if isinstance(entry, dict) else None
+        old_fp = entry.get("fp") if isinstance(entry, dict) else None
+        models_changed = (
+            not isinstance(old_models, list)
+            or set(old_models) != set(live)
+            or old_fp != fp
+        )
         cache[normalized] = {
             "fp": fp,
             "at": now,
             "models": list(live),
         }
-        _save_provider_models_cache(cache)
+        if models_changed:
+            _save_provider_models_cache(cache)
         return list(live)
 
     # Live fetch returned nothing. If we have a stale entry with the
