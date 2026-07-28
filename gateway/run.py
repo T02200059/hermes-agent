@@ -15002,6 +15002,13 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     except Exception as e:
                         logger.warning("Background task vision enrichment failed: %s", e)
 
+            # [owner] stable per-chat key for background-task agents so memory
+            # approval cards can resolve Feishu chat_id (parity with main turn).
+            try:
+                _bg_session_key = self._session_key_for_source(source)
+            except Exception:
+                _bg_session_key = None
+
             def run_sync():
                 agent = AIAgent(
                     model=turn_route["model"],
@@ -15030,6 +15037,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     chat_name=source.chat_name,
                     chat_type=source.chat_type,
                     thread_id=source.thread_id,
+                    gateway_session_key=_bg_session_key,  # [owner]
                     session_db=getattr(self._session_db, "_db", self._session_db),
                     # Reload from disk — do not reuse the startup snapshot (#60955).
                     fallback_model=self._refresh_fallback_model(),

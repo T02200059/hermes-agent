@@ -2467,6 +2467,8 @@ def invoke_tool(agent, function_name: str, function_args: dict, effective_task_i
                 error_message=block_message,
                 middleware_trace=list(_tool_middleware_trace),
                 gateway_session_key=getattr(agent, "_gateway_session_key", "") or "",  # [owner] expose per-chat key
+                platform=str(getattr(agent, "platform", "") or ""),  # [owner]
+                chat_id=str(getattr(agent, "_chat_id", "") or ""),  # [owner]
             )
         except Exception:
             pass
@@ -2476,6 +2478,7 @@ def invoke_tool(agent, function_name: str, function_args: dict, effective_task_i
 
     def _finish_agent_tool(result: Any, observed_args: Optional[dict] = None) -> Any:
         hook_args = observed_args if isinstance(observed_args, dict) else function_args
+        _duration_ms = int((time.monotonic() - tool_start_time) * 1000)
         try:
             from model_tools import _emit_post_tool_call_hook
             _emit_post_tool_call_hook(
@@ -2487,9 +2490,26 @@ def invoke_tool(agent, function_name: str, function_args: dict, effective_task_i
                 tool_call_id=tool_call_id or "",
                 turn_id=getattr(agent, "_current_turn_id", "") or "",
                 api_request_id=getattr(agent, "_current_api_request_id", "") or "",
-                duration_ms=int((time.monotonic() - tool_start_time) * 1000),
+                duration_ms=_duration_ms,
                 middleware_trace=list(_tool_middleware_trace),
                 gateway_session_key=getattr(agent, "_gateway_session_key", "") or "",  # [owner] expose per-chat key
+                platform=str(getattr(agent, "platform", "") or ""),  # [owner]
+                chat_id=str(getattr(agent, "_chat_id", "") or ""),  # [owner]
+            )
+        except Exception:
+            pass
+        # [owner] transform_tool_result for agent-loop tools (parity with
+        # sequential tool_executor path / handle_function_call).
+        try:
+            from agent.tool_executor import _apply_transform_tool_result_hook
+            result = _apply_transform_tool_result_hook(
+                agent,
+                function_name=function_name,
+                function_args=hook_args if isinstance(hook_args, dict) else {},
+                result=result,
+                effective_task_id=effective_task_id or "",
+                tool_call_id=tool_call_id or "",
+                duration_ms=_duration_ms,
             )
         except Exception:
             pass

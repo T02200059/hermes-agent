@@ -515,6 +515,140 @@ def test_dispatch_failure_does_not_mark_sent():
     assert "fail_1" not in bridge._SENT_CARD_IDS
 
 
+def test_submit_returns_false_does_not_mark_sent_when_fallback_also_fails():
+    """_submit_on_loop returning False used to be ignored (card silently
+    dropped but _SENT_CARD_IDS still marked). When both submit and the
+    run_coroutine_threadsafe fallback fail, the set must stay empty."""
+    bridge = _get_bridge()
+    bridge._SENT_CARD_IDS.clear()
+
+    class _FalseSubmit:
+        def __call__(self, loop, coro):
+            coro.close()
+            return False
+
+    adapter = SimpleNamespace(
+        _loop=_make_live_loop(),
+        _submit_on_loop=_FalseSubmit(),
+    )
+    with patch.object(bridge, "_FEISHU_ADAPTER", adapter), \
+         patch("asyncio.run_coroutine_threadsafe", side_effect=RuntimeError("no loop")):
+        bridge._on_post_tool_call(
+            tool_name="memory",
+            args=_simple_memory_args(),
+            result=json.dumps({"staged": True, "pending_id": "false_submit"}),
+            session_id="agent:main:feishu:dm:oc_false",
+        )
+    assert "false_submit" not in bridge._SENT_CARD_IDS
+
+
+def test_chat_id_hint_fallback_when_session_keys_unparseable():
+    """When session keys lack Feishu shape, agent-level chat_id + platform
+    still schedules the card (2026-07-28 regression: silent skip)."""
+    bridge = _get_bridge()
+    bridge._SENT_CARD_IDS.clear()
+    adapter = SimpleNamespace(
+        _loop=_make_live_loop(),
+        _submit_on_loop=_CapturingSubmit(),
+    )
+    with patch.object(bridge, "_FEISHU_ADAPTER", adapter):
+        bridge._on_post_tool_call(
+            tool_name="memory",
+            args=_simple_memory_args(),
+            result=json.dumps({"staged": True, "pending_id": "hint_1"}),
+            session_id="20260728_184040_0e88da8d",  # bare timestamp
+            gateway_session_key="",
+            platform="feishu",
+            chat_id="oc_from_agent_chat_id",
+        )
+    assert len(adapter._submit_on_loop.calls) == 1
+    assert "hint_1" in bridge._SENT_CARD_IDS
+
+
+def test_empty_args_still_sends_card_with_fallback_summary():
+    """Empty/unknown tool args used to abort on empty build_preview summary.
+    Staged writes must still produce a card."""
+    bridge = _get_bridge()
+    bridge._SENT_CARD_IDS.clear()
+    adapter = SimpleNamespace(
+        _loop=_make_live_loop(),
+        _submit_on_loop=_CapturingSubmit(),
+    )
+    with patch.object(bridge, "_FEISHU_ADAPTER", adapter):
+        bridge._on_post_tool_call(
+            tool_name="memory",
+            args={},  # no action/content
+            result=json.dumps({"staged": True, "pending_id": "empty_args"}),
+            gateway_session_key="agent:main:feishu:dm:oc_empty_args",
+        )
+    assert len(adapter._submit_on_loop.calls) == 1
+    assert "empty_args" in bridge._SENT_CARD_IDS
+
+
+def test_staged_memory_invokes_send_approval_card():
+    """End-to-end: staged memory result → scheduled coroutine calls
+    owner.feishu.memory_approval.send_approval_card (the actual Feishu
+    card send). Mocks send_approval_card so we assert the call without
+    hitting the network."""
+    import asyncio
+
+    bridge = _get_bridge()
+    bridge._SENT_CARD_IDS.clear()
+    captured = {}
+
+    async def _fake_send(adapter, **kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(success=True, message_id="om_test")
+
+    class _RunSubmit:
+        """Run the scheduled coroutine on a temporary event loop."""
+
+        def __call__(self, loop, coro):
+            # Drive the coroutine to completion so send_approval_card runs.
+            asyncio.get_event_loop_policy().new_event_loop()
+            tmp = asyncio.new_event_loop()
+            try:
+                tmp.run_until_complete(coro)
+            finally:
+                tmp.close()
+            return True
+
+    adapter = SimpleNamespace(
+        _loop=_make_live_loop(),
+        _submit_on_loop=_RunSubmit(),
+    )
+    with patch.object(bridge, "_FEISHU_ADAPTER", adapter), \
+         patch(
+             "owner.feishu.memory_approval.send_approval_card",
+             side_effect=_fake_send,
+         ):
+        bridge._on_post_tool_call(
+            tool_name="memory",
+            args={
+                "action": "batch",
+                "target": "memory",
+                "operations": [
+                    {"action": "remove", "old_text": "entry one"},
+                    {"action": "remove", "old_text": "entry two"},
+                ],
+            },
+            result=json.dumps({
+                "success": True,
+                "staged": True,
+                "pending_id": "7bdca1a2",
+                "message": "Staged for approval",
+            }),
+            session_id="20260728_184040_0e88da8d",
+            gateway_session_key="agent:main:feishu:dm:oc_1918df05db4fc0d7044d13e599721dc8",
+        )
+
+    assert captured.get("pending_id") == "7bdca1a2"
+    assert captured.get("chat_id") == "oc_1918df05db4fc0d7044d13e599721dc8"
+    assert "7bdca1a2" in bridge._SENT_CARD_IDS
+    # Preview should mention the batch removes.
+    assert "entry one" in (captured.get("content_preview") or "")
+
+
 def test_gateway_session_key_empty_falls_back_to_session_id():
     """When gateway_session_key is missing, fall back to session_id (legacy path)."""
     bridge = _get_bridge()

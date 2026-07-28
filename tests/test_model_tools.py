@@ -82,6 +82,8 @@ class TestHandleFunctionCall:
                 error_message=None,
                 middleware_trace=[],
                 gateway_session_key="",
+                platform="",  # [owner] agent-level card-bridge fallbacks
+                chat_id="",  # [owner]
             ),
             call(
                 "transform_tool_result",

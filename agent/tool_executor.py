@@ -195,9 +195,62 @@ def _emit_terminal_post_tool_call(
             error_message=error_message,
             middleware_trace=list(middleware_trace or []),
             gateway_session_key=getattr(agent, "_gateway_session_key", "") or "",  # [owner] expose per-chat key
+            # [owner] agent-level platform/chat_id so memory-approval card
+            # bridge can address Feishu even when session keys are unparseable.
+            platform=str(getattr(agent, "platform", "") or ""),
+            chat_id=str(getattr(agent, "_chat_id", "") or ""),
         )
     except Exception:
         pass
+
+
+def _apply_transform_tool_result_hook(
+    agent,
+    *,
+    function_name: str,
+    function_args: dict,
+    result: Any,
+    effective_task_id: str,
+    tool_call_id: str,
+    duration_ms: int = 0,
+) -> Any:
+    """Apply ``transform_tool_result`` for agent-loop tools (memory, etc.).
+
+    Registry tools get this transform inside ``handle_function_call``. Agent-
+    runtime tools never reach that path, so sequential/concurrent agent
+    execution must apply the same seam here — otherwise Feishu memory-approval
+    rewrites (and any other transform plugins) never see staged memory results.
+    """
+    try:
+        from hermes_cli.plugins import has_hook, invoke_hook
+        if not has_hook("transform_tool_result"):
+            return result
+        from model_tools import _tool_result_observer_fields
+        status, error_type, error_message = _tool_result_observer_fields(result)
+        hook_results = invoke_hook(
+            "transform_tool_result",
+            tool_name=function_name,
+            args=function_args if isinstance(function_args, dict) else {},
+            result=result,
+            task_id=effective_task_id or "",
+            session_id=getattr(agent, "session_id", "") or "",
+            gateway_session_key=getattr(agent, "_gateway_session_key", "") or "",  # [owner]
+            platform=str(getattr(agent, "platform", "") or ""),  # [owner]
+            chat_id=str(getattr(agent, "_chat_id", "") or ""),  # [owner]
+            tool_call_id=tool_call_id or "",
+            turn_id=getattr(agent, "_current_turn_id", "") or "",
+            api_request_id=getattr(agent, "_current_api_request_id", "") or "",
+            duration_ms=duration_ms,
+            status=status,
+            error_type=error_type,
+            error_message=error_message,
+        )
+        for hook_result in hook_results:
+            if isinstance(hook_result, str):
+                return hook_result
+    except Exception:
+        pass
+    return result
 
 
 def _cancelled_tool_result(reason: str = "user interrupt") -> str:
@@ -1656,6 +1709,19 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
                 tool_call_id=getattr(tool_call, "id", "") or "",
                 duration_ms=int(tool_duration * 1000),
                 middleware_trace=list(middleware_trace),
+            )
+            # [owner] transform_tool_result for agent-loop tools (memory etc.).
+            # Registry tools get this inside handle_function_call; agent-loop
+            # tools never reach that path. Apply AFTER post_tool_call so the
+            # observational card-dispatch hook still sees the original result.
+            function_result = _apply_transform_tool_result_hook(
+                agent,
+                function_name=function_name,
+                function_args=function_args if isinstance(function_args, dict) else {},
+                result=function_result,
+                effective_task_id=effective_task_id,
+                tool_call_id=getattr(tool_call, "id", "") or "",
+                duration_ms=int(tool_duration * 1000),
             )
         if not _execution_blocked:
             function_result = agent._append_guardrail_observation(

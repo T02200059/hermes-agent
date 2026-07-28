@@ -820,12 +820,11 @@
 - **Commit**：`872ffe0ce`、`b5aa55c65`、`b50da840b`、`d6757b656`、`ca80a4957`
 - **补充说明**（`ca80a4957`）：新增 `tests/owner/test_contract_entrypoints.py`（7 个 P1 contract test，验证 owner 逻辑确实接到 upstream entrypoint：gateway inbound session_key 透传、per-chat display override、long-running surface source-aware resolver、build_api_kwargs 透传 owner_provider_name、chat_completions transport extra_body、cron scheduler run_job 设置 HERMES_CRON_SESSION contextvar、owner-extensions plugin apply memory_synthetic_guard patch）；同时 `owner/validation/inventory.yaml` 扩充 11 项 inventory（pool base_url override、credential prefix gate、feishu auto-card、diff card dispatch、approval card、feishu-guide command、cron job args、message token breakdown、qwen thinking debris、damodel prompt cache policy、rate-limit quota classification、gateway restart pycache cleanup）。
 
-### 12.5 owner/examples 参考文档（base config + SOUL 模板）
+### 12.5 owner/examples 参考文档（base config 模板）
 
-- **背景**：需要一个仓库内的参考点，记录脱敏后的 Hermes base config 和 depersonalized SOUL 模板，便于新节点初始化和对照排查。
+- **背景**：需要一个仓库内的参考点，记录脱敏后的 Hermes base config，便于新节点初始化和对照排查。
 - **方案**：纯新增 `owner/examples/`：
   - `owner/examples/config.base.example.yaml`（539 行，脱敏 base config）
-  - `owner/examples/SOUL.md`（286 行，depersonalized SOUL 模板）
   - `.gitignore` 增加规则，把 `owner/examples` 从 repo-wide `examples/` ignore 中 allowlist 出来
 - **侵入类型**：纯新增（参考文档目录）
 - **Commit**：`c83fbf923`

@@ -987,6 +987,8 @@ def _emit_post_tool_call_hook(
     error_message: Optional[str] = None,
     middleware_trace: Optional[List[Dict[str, Any]]] = None,
     gateway_session_key: Optional[str] = None,  # [owner] stable per-chat key for hook plugins
+    platform: Optional[str] = None,  # [owner] agent platform for card-bridge fallbacks
+    chat_id: Optional[str] = None,  # [owner] agent chat_id for card-bridge fallbacks
 ) -> None:
     """Emit the ``post_tool_call`` observer hook.
 
@@ -1019,6 +1021,8 @@ def _emit_post_tool_call_hook(
             error_message=error_message,
             middleware_trace=list(middleware_trace or []),
             gateway_session_key=gateway_session_key or "",  # [owner] expose per-chat key to plugins
+            platform=platform or "",  # [owner]
+            chat_id=chat_id or "",  # [owner]
         )
     except Exception as _hook_err:
         logger.debug("post_tool_call hook error: %s", _hook_err)
