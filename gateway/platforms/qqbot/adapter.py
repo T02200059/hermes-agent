@@ -2767,14 +2767,15 @@ class QQAdapter(BasePlatformAdapter):
         kwargs.pop("sender_open_id", None)
         kwargs.pop("sender_is_bot", None)
         del metadata  # QQ doesn't have thread_id / DM targeting overrides.
-        if smart_denied:
-            description += " Owner override applies to this one operation only."
 
         # Use the reply-to message for passive-message context when we have one.
         # QQ requires a msg_id on outbound messages to a user we've never
         # seen; the last inbound msg_id is the natural choice.
         msg_id = self._last_msg_id.get(chat_id)
 
+        # Smart DENY: one-shot override only — hide Always and use i18n explain
+        # copy (see approval.qqbot_smart_deny_note). Do not append English
+        # prose into description; build_approval_text renders the note.
         req = ApprovalRequest(
             session_key=session_key,
             title=t("approval.qqbot_exec_subtitle"),
@@ -2782,6 +2783,7 @@ class QQAdapter(BasePlatformAdapter):
             command_preview=command,
             timeout_sec=self._APPROVAL_TIMEOUT_SECONDS,
             allow_permanent=allow_permanent and not smart_denied,
+            smart_denied=smart_denied,
         )
         return await self.send_approval_request(
             chat_id, req, reply_to=msg_id,

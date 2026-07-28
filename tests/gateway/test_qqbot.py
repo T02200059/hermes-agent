@@ -1178,6 +1178,33 @@ class TestBuildApprovalText:
         preview_content = "\n".join(lines[fence_indices[0] + 1 : fence_indices[1]])
         assert len(preview_content) == 300
 
+    def test_smart_denied_uses_title_and_explain_copy(self):
+        from agent.i18n import t
+        from gateway.platforms.qqbot.keyboards import (
+            ApprovalRequest, build_approval_text,
+        )
+        req = ApprovalRequest(
+            session_key="s",
+            title="t",
+            command_preview="rm -rf /",
+            description="destructive wipe",
+            smart_denied=True,
+            allow_permanent=False,
+            timeout_sec=60,
+        )
+        text = build_approval_text(req)
+        assert t("approval.qqbot_exec_title_smart_deny") in text
+        assert t("approval.qqbot_smart_deny_note") in text
+        assert "destructive wipe" in text
+        # Normal title path is suppressed for smart DENY.
+        assert t("approval.qqbot_exec_title") not in text
+
+    def test_allow_permanent_false_hides_always_button(self):
+        from gateway.platforms.qqbot.keyboards import build_approval_keyboard
+        kb = build_approval_keyboard("s", allow_permanent=False)
+        datas = [b.action.data for b in kb.content.rows[0].buttons]
+        assert datas == ["approve:s:allow-once", "approve:s:deny"]
+
 
 class TestInteractionEventParsing:
     def test_parse_c2c_interaction(self):

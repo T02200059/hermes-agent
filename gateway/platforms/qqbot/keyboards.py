@@ -282,6 +282,8 @@ class ApprovalRequest:
     :param tool_name: Tool name (plugin approvals).
     :param severity: ``'critical' | 'info' | ''``.
     :param timeout_sec: Seconds until the approval expires.
+    :param allow_permanent: When False, hide Always Allow on the keyboard.
+    :param smart_denied: Smart DENY owner override — once/deny only + explain copy.
     """
     session_key: str
     title: str
@@ -292,6 +294,7 @@ class ApprovalRequest:
     severity: str = ""
     timeout_sec: int = 120
     allow_permanent: bool = True
+    smart_denied: bool = False
 
 
 def build_approval_text(req: ApprovalRequest) -> str:
@@ -302,16 +305,30 @@ def build_approval_text(req: ApprovalRequest) -> str:
 
 
 def _build_exec_text(req: ApprovalRequest) -> str:
-    lines: List[str] = [t("approval.qqbot_exec_title"), ""]
+    title_key = (
+        "approval.qqbot_exec_title_smart_deny"
+        if req.smart_denied
+        else "approval.qqbot_exec_title"
+    )
+    lines: List[str] = [t(title_key), ""]
     if req.command_preview:
         preview = req.command_preview[:300]
         lines.append(f"```\n{preview}\n```")
     if req.cwd:
         lines.append(t("approval.qqbot_cwd_label", cwd=req.cwd))
-    if req.title and req.title != req.command_preview:
+    if req.title and req.title != req.command_preview and not req.smart_denied:
         lines.append(f"📋 {req.title}")
     if req.description:
         lines.append(t("approval.qqbot_reason_label", description=req.description))
+    if req.smart_denied:
+        # Upstream design: Smart DENY override is one-shot only (always/session
+        # unavailable). Mirror Feishu card copy so users understand the reduced
+        # button set.
+        lines.append("")
+        lines.append(t("approval.qqbot_smart_deny_note"))
+    elif not req.allow_permanent:
+        lines.append("")
+        lines.append(t("approval.qqbot_permanent_disabled"))
     lines.append("")
     lines.append(t("approval.qqbot_timeout_label", timeout=req.timeout_sec))
     return "\n".join(lines)
@@ -377,7 +394,10 @@ class ApprovalSender:
         :returns: ``True`` on success, ``False`` on failure.
         """
         text = build_approval_text(req)
-        keyboard = build_approval_keyboard(req.session_key)
+        keyboard = build_approval_keyboard(
+            req.session_key,
+            allow_permanent=req.allow_permanent and not req.smart_denied,
+        )
 
         logger.info(
             "[%s] Sending approval request to %s:%s (session=%.20s…)",

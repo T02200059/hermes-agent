@@ -157,6 +157,54 @@ class TestFeishuExecApproval:
         assert "disabled" not in card["elements"][0]["content"].lower()
 
     @pytest.mark.asyncio
+    async def test_smart_denied_shows_once_deny_only_with_explain_copy(self):
+        """Smart DENY owner override: once/deny only + explicit one-shot copy."""
+        adapter = _make_adapter()
+
+        mock_response = SimpleNamespace(
+            success=lambda: True,
+            data=SimpleNamespace(message_id="msg_sd"),
+        )
+        with patch.object(
+            adapter, "_feishu_send_with_retry", new_callable=AsyncMock,
+            return_value=mock_response,
+        ) as mock_send:
+            await adapter.send_exec_approval(
+                chat_id="oc_12345",
+                command="rm -rf /",
+                session_key="s",
+                description="destructive wipe",
+                smart_denied=True,
+            )
+
+        card = json.loads(mock_send.call_args[1]["payload"])
+        assert card["header"]["template"] == "red"
+        title = card["header"]["title"]["content"]
+        assert "Smart DENY" in title or "智能审批" in title or "Allow Once Only" in title or "仅可允许一次" in title
+
+        actions = card["elements"][1]["actions"]
+        assert [a["value"]["hermes_action"] for a in actions] == [
+            "approve_once", "deny"
+        ]
+
+        body = card["elements"][0]["content"]
+        assert "destructive wipe" in body
+        # Explain why session/always are unavailable (en or zh catalog).
+        assert (
+            "single operation" in body.lower()
+            or "仅限本次" in body
+            or "one operation" in body.lower()
+            or "本次执行一次" in body
+        )
+        # Note should call out that Session / Always are not offered.
+        assert (
+            "Session" in body
+            or "Always" in body
+            or "本次会话" in body
+            or "永久允许" in body
+        )
+
+    @pytest.mark.asyncio
     async def test_pre_warms_sender_name_cache(self):
         import plugins.platforms.feishu.adapter as feishu_mod
 

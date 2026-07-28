@@ -59,6 +59,7 @@ approval:
 
   # Feishu approval card — interactive card UI text.
   feishu_card_title: "⚠️ Command Approval Required"
+  feishu_card_title_smart_deny: "⚠️ Smart DENY — Allow Once Only"
   feishu_reason_label: "**Reason:** {description}"
   feishu_btn_once: "✅ Allow Once"
   feishu_btn_session: "✅ Session"
@@ -71,11 +72,17 @@ approval:
   feishu_resolved_default: "Resolved"
   feishu_resolved_body: "by {user_name}\n\n```\n{command}\n```"
   feishu_permanent_disabled: "💡 Permanent approval is disabled. Choose Allow Once or Session instead."
-  qqbot_permanent_disabled: "💡 Permanent approval is disabled. Choose Allow Once or Session instead."
+  # Shown when approvals.mode=smart returns DENY and the owner is asked to
+  # override. Session/Always are intentionally unavailable — one override must
+  # not authorize the same dangerous pattern for the rest of the conversation.
+  feishu_smart_deny_note: "🤖 **Smart DENY:** The smart-approval model assessed this command as genuinely dangerous.\n\nYou can still override, but **only for this single operation**. Session and Always are unavailable so one click cannot weaken protection for similar later commands."
+  # QQ has no Session button (once / always / deny only).
+  qqbot_permanent_disabled: "💡 Permanent approval is disabled. Choose Allow Once instead."
   yolo_auto_resolved: "🔄 YOLO mode enabled — {count} pending approval(s) auto-resolved."
 
   # QQBot approval card — interactive card UI text.
   qqbot_exec_title: "🔐 **Command Execution Approval**"
+  qqbot_exec_title_smart_deny: "🔐 **Smart DENY — Allow Once Only**"
   qqbot_exec_subtitle: "Execute this command?"
   qqbot_plugin_title: "**Approval Request**"
   qqbot_cwd_label: "📁 Directory: {cwd}"
@@ -88,6 +95,8 @@ approval:
   qqbot_visited_once: "Allowed"
   qqbot_visited_always: "Always Allowed"
   qqbot_visited_deny: "Denied"
+  # Smart DENY owner override: Always Allow is hidden; explain one-shot scope.
+  qqbot_smart_deny_note: "🤖 **Smart DENY:** The smart-approval model assessed this command as genuinely dangerous.\n\nYou can still override, but **only for this single operation**. Always Allow is unavailable so one click cannot weaken protection for similar later commands."
 
   # Generic reason label — used by fallback, Telegram, Discord, Slack.
   reason_label: "Reason: {description}"

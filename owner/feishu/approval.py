@@ -92,15 +92,25 @@ def build_approval_card(
         "approval.feishu_reason_label", description=description
     )
     if smart_denied:
-        md_content += "\n\n**Smart DENY:** owner override applies to this one operation only."
+        # Upstream design (d48bf743f): Smart DENY owner override is one-shot only.
+        # Session / Always are hidden so a single override cannot re-open a
+        # whole class of commands for the rest of the conversation.
+        md_content += "\n\n" + t("approval.feishu_smart_deny_note")
     elif not allow_permanent:
         md_content += "\n\n" + t("approval.feishu_permanent_disabled")
 
+    title_key = (
+        "approval.feishu_card_title_smart_deny"
+        if smart_denied
+        else "approval.feishu_card_title"
+    )
     return {
         "config": {"wide_screen_mode": True},
         "header": {
-            "title": {"content": t("approval.feishu_card_title"), "tag": "plain_text"},
-            "template": "orange",
+            "title": {"content": t(title_key), "tag": "plain_text"},
+            # Red template for Smart DENY so it is visually distinct from a
+            # normal escalate-style orange approval card.
+            "template": "red" if smart_denied else "orange",
         },
         "elements": [
             {
