@@ -28,7 +28,9 @@ from typing import Any, Dict, Optional
 logger = logging.getLogger(__name__)
 
 # token -> {"status": scheduled|enqueued|cancelled|executed, "text": str, ...card}
+# Guarded by _token_lock: cancel / enqueue / freeze threads all touch this map.
 _token_state: Dict[str, Dict[str, Any]] = {}
+_token_lock = threading.Lock()
 
 _originals: Dict[str, Any] = {}
 _applied: bool = False
@@ -70,24 +72,26 @@ def register_scheduled_token(
     """Mark a token as submitted; optionally bind Feishu card identity for freeze."""
     if not token:
         return
-    _token_state[token] = {
-        "status": "scheduled",
-        "text": (text or "").strip(),
-        "card_message_id": (card_message_id or "").strip(),
-        "chat_id": (chat_id or "").strip(),
-        "user_input": user_input or text or "",
-        "user_name": user_name or "",
-        "app_id": app_id or "",
-        "app_secret": app_secret or "",
-    }
+    with _token_lock:
+        _token_state[token] = {
+            "status": "scheduled",
+            "text": (text or "").strip(),
+            "card_message_id": (card_message_id or "").strip(),
+            "chat_id": (chat_id or "").strip(),
+            "user_input": user_input or text or "",
+            "user_name": user_name or "",
+            "app_id": app_id or "",
+            "app_secret": app_secret or "",
+        }
 
 
 def should_skip_dispatch(token: Optional[str]) -> bool:
     """True when cancel won the race before the synthetic /queue was handled."""
     if not token:
         return False
-    meta = _token_state.get(token) or {}
-    return meta.get("status") == "cancelled"
+    with _token_lock:
+        meta = _token_state.get(token) or {}
+        return meta.get("status") == "cancelled"
 
 
 def resolve_runner_from_adapter(adapter: Any) -> Any:
@@ -174,25 +178,28 @@ def cancel_queued_by_token(adapter: Any, token: str) -> str:
         return "invalid"
 
     if _remove_from_fifo(adapter, token):
-        meta = _token_state.get(token) or {}
-        meta["status"] = "cancelled"
-        _token_state[token] = meta
+        with _token_lock:
+            meta = _token_state.get(token) or {}
+            meta["status"] = "cancelled"
+            _token_state[token] = meta
         return "ok"
 
-    meta = _token_state.get(token)
-    if meta and meta.get("status") == "scheduled":
-        meta["status"] = "cancelled"
-        logger.info(
-            "[owner queue-cancel] armed pre-enqueue cancel token=%s",
-            token[:8],
-        )
-        return "ok"
+    with _token_lock:
+        meta = _token_state.get(token)
+        if meta and meta.get("status") == "scheduled":
+            meta["status"] = "cancelled"
+            logger.info(
+                "[owner queue-cancel] armed pre-enqueue cancel token=%s",
+                token[:8],
+            )
+            return "ok"
+        status = (meta or {}).get("status")
 
     logger.info(
         "[owner queue-cancel] token not found (already running or gone) "
         "token=%s state=%s",
         token[:8],
-        (meta or {}).get("status"),
+        status,
     )
     return "not_found"
 
@@ -202,17 +209,20 @@ def _match_token_for_text(text: str) -> Optional[str]:
     needle = (text or "").strip()
     if not needle:
         return None
-    for token, meta in _token_state.items():
-        if meta.get("text") != needle:
-            continue
-        if meta.get("status") in ("scheduled", "cancelled"):
-            return token
+    with _token_lock:
+        for token, meta in _token_state.items():
+            if meta.get("text") != needle:
+                continue
+            if meta.get("status") in ("scheduled", "cancelled"):
+                return token
     return None
 
 
 def _freeze_card_for_token(token: str) -> None:
     """Best-effort REST update of the Feishu guide card to「已执行」."""
-    meta = _token_state.get(token) or {}
+    # Snapshot under lock so freeze daemon races safely with cancel/enqueue.
+    with _token_lock:
+        meta = dict(_token_state.get(token) or {})
     if meta.get("status") == "cancelled":
         return
     message_id = meta.get("card_message_id") or ""
@@ -273,13 +283,14 @@ def notify_queue_started(token: str) -> None:
     """Mark token executed and freeze the guide card (non-blocking)."""
     if not token:
         return
-    meta = _token_state.get(token)
-    if not meta:
-        return
-    if meta.get("status") in ("cancelled", "executed"):
-        return
-    meta["status"] = "executed"
-    _token_state[token] = meta
+    with _token_lock:
+        meta = _token_state.get(token)
+        if not meta:
+            return
+        if meta.get("status") in ("cancelled", "executed"):
+            return
+        meta["status"] = "executed"
+        _token_state[token] = meta
     # Don't block the gateway dequeue path on Feishu REST.
     threading.Thread(
         target=_freeze_card_for_token,
@@ -300,31 +311,32 @@ def _enqueue_fifo(self, session_key: str, queued_event: Any, adapter: Any) -> No
     text = getattr(queued_event, "text", None) or ""
     token = _match_token_for_text(text)
     if token:
-        meta = _token_state.get(token) or {}
-        if meta.get("status") == "cancelled":
-            logger.info(
-                "[owner queue-cancel] drop enqueue for cancelled token=%s session=%s",
-                token[:8],
-                session_key,
-            )
-            return None
-        try:
-            setattr(queued_event, _EVENT_TOKEN_ATTR, token)
-        except Exception:
-            logger.warning(
-                "[owner queue-cancel] failed to stamp token on event token=%s",
-                token[:8],
-            )
-        meta["status"] = "enqueued"
-        _token_state[token] = meta
-        # Prefer credentials from the live adapter when available.
-        if adapter is not None:
-            app_id = getattr(adapter, "_app_id", None) or ""
-            app_secret = getattr(adapter, "_app_secret", None) or ""
-            if app_id:
-                meta["app_id"] = app_id
-            if app_secret:
-                meta["app_secret"] = app_secret
+        with _token_lock:
+            meta = _token_state.get(token) or {}
+            if meta.get("status") == "cancelled":
+                logger.info(
+                    "[owner queue-cancel] drop enqueue for cancelled token=%s session=%s",
+                    token[:8],
+                    session_key,
+                )
+                return None
+            try:
+                setattr(queued_event, _EVENT_TOKEN_ATTR, token)
+            except Exception:
+                logger.warning(
+                    "[owner queue-cancel] failed to stamp token on event token=%s",
+                    token[:8],
+                )
+            meta["status"] = "enqueued"
+            # Prefer credentials from the live adapter when available.
+            if adapter is not None:
+                app_id = getattr(adapter, "_app_id", None) or ""
+                app_secret = getattr(adapter, "_app_secret", None) or ""
+                if app_id:
+                    meta["app_id"] = app_id
+                if app_secret:
+                    meta["app_secret"] = app_secret
+            _token_state[token] = meta
 
     return _originals["_enqueue_fifo"](self, session_key, queued_event, adapter)
 
@@ -423,7 +435,8 @@ def revert_patch() -> None:
     """Restore originals and clear token state."""
     global _applied
     if not _applied:
-        _token_state.clear()
+        with _token_lock:
+            _token_state.clear()
         return
     try:
         import gateway.run as gateway_run
@@ -445,6 +458,7 @@ def revert_patch() -> None:
         logger.warning("queue_cancel_patch: revert memory failed", exc_info=True)
 
     _originals.clear()
-    _token_state.clear()
+    with _token_lock:
+        _token_state.clear()
     _applied = False
     logger.info("queue_cancel_patch reverted")
