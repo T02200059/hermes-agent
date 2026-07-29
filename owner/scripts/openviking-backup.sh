@@ -24,7 +24,11 @@ RETRY_DELAYS=(5 15 30)
 SRC_DIR="${HOME}/.openviking"
 LOG_TAG="[openviking-backup]"
 
-log()  { echo "${LOG_TAG} $*"; }
+log()  {
+    if [ "${BACKUP_QUIET:-0}" != "1" ]; then
+        echo "${LOG_TAG} $*"
+    fi
+}
 fail() { echo "${LOG_TAG} FAIL: $*" >&2; exit 1; }
 
 # --- Preflight ---

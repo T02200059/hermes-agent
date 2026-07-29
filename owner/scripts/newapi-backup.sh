@@ -21,12 +21,25 @@ DATA_ARCHIVE="newapi-data-${STAMP}.tar.gz"
 REMOTE_KEEP=3
 LOG_TAG="[newapi-backup]"
 
-log()  { echo "${LOG_TAG} $*"; }
+log()  {
+    if [ "${BACKUP_QUIET:-0}" != "1" ]; then
+        echo "${LOG_TAG} $*"
+    fi
+}
 fail() { echo "${LOG_TAG} FAIL: $*" >&2; exit 1; }
 
 # --- Single SSH session: run all remote work in one heredoc ---
 log "starting backup (single SSH session)"
-ssh -o BatchMode=yes -o ConnectTimeout=15 "${REMOTE_HOST}" bash -s <<REMOTE_SCRIPT || fail "remote execution failed"
+
+# In quiet mode, suppress remote stdout (success logs). stderr still flows to fail().
+# Use process substitution to avoid duplicating the heredoc.
+if [ "${BACKUP_QUIET:-0}" = "1" ]; then
+    exec 3>/dev/null
+else
+    exec 3>&1
+fi
+
+ssh -o BatchMode=yes -o ConnectTimeout=15 "${REMOTE_HOST}" bash -s >&3 <<REMOTE_SCRIPT || { exec 3>&-; fail "remote execution failed"; }
 set -e
 cd '${REMOTE_BASE}'
 
@@ -53,10 +66,7 @@ MYSQL_COUNT=\$(ls -1 newapi-????????_??????.sql.gz 2>/dev/null | wc -l)
 DATA_COUNT=\$(ls -1 newapi-data-*.tar.gz 2>/dev/null | wc -l)
 echo "[remote] done. mysql: \${MYSQL_COUNT} archive(s) (\${MYSQL_SIZE} bytes), data: \${DATA_COUNT} archive(s) (\${DATA_SIZE} bytes)"
 REMOTE_SCRIPT
+exec 3>&-
 
-if [ "${BACKUP_QUIET:-0}" = "1" ]; then
-    : # success — stay silent
-else
-    log "done"
-fi
+log "done"
 exit 0
