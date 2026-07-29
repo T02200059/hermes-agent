@@ -254,7 +254,7 @@ TIPS = [
     # --- 杂项 ---
     "Prompt caching（Anthropic）通过复用缓存的系统提示前缀降低成本。",
     "agent 在后台线程自动生成会话标题 — 零延迟影响。",
-    "Smart 模型路由可自动将简单查询路由到更便宜的模型。",
+    # "Smart 模型路由可自动将简单查询路由到更便宜的模型。",  # removed: feature deleted in #12732 (2026-04-19)
     "Slash 命令支持前缀匹配：/h 解析为 /help，/mod 解析为 /model。",
     "将文件路径拖入终端自动附加图片或作为上下文发送。",
     "仓库根目录的 .worktreeinclude 列出要复制到 worktree 的 gitignored 文件。",

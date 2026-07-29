@@ -255,7 +255,7 @@ TIPS = [
     # --- Miscellaneous ---
     "Prompt caching (Anthropic) reduces costs by reusing cached system prompt prefixes.",
     "The agent auto-generates session titles in a background thread — zero latency impact.",
-    "Smart model routing can auto-route simple queries to a cheaper model.",
+    # "Smart model routing can auto-route simple queries to a cheaper model.",  # removed: feature deleted in #12732 (2026-04-19)
     "Slash commands support prefix matching: /h resolves to /help, /mod to /model.",
     "Dragging a file path into the terminal auto-attaches images or sends as context.",
     ".worktreeinclude in your repo root lists gitignored files to copy into worktrees.",
