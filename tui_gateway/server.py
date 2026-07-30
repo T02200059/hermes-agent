@@ -903,6 +903,35 @@ def _shutdown_sessions() -> None:
         _close_session_by_id(sid, end_reason="tui_shutdown")
 
 
+_runtime_shutdown_lock = threading.RLock()
+
+
+def _shutdown_runtime() -> None:
+    """Drain TUI sessions and process-global async services before exit.
+
+    Session teardown deliberately stays first: ``_close_session_by_id`` is the
+    existing, idempotent lifecycle funnel that persists history and emits every
+    ``on_session_end`` / session-boundary event.  MCP owns a separate asyncio
+    loop, so it must be stopped while that loop is still alive; leaving it to
+    interpreter finalization produces ``MCPServerTask.run`` coroutines whose
+    child futures try to cancel after the event loop has already closed.
+
+    The lock serializes the explicit signal path with normal ``atexit``.  Both
+    operations are idempotent, so a second pass remains safe if the first pass
+    was only partially completed.
+    """
+    with _runtime_shutdown_lock:
+        try:
+            _shutdown_sessions()
+        finally:
+            try:
+                from tools.mcp_tool import shutdown_mcp_servers
+
+                shutdown_mcp_servers()
+            except Exception:
+                logger.debug("TUI MCP shutdown failed", exc_info=True)
+
+
 # Last-resort net for any disconnect path that slips past the WS finally. TTL is
 # hours-scale because last_active freezes during a long turn and on passive
 # viewing — running/pending/starting/live-transport are hard exemptions instead.
@@ -1029,7 +1058,7 @@ def _start_idle_reaper() -> None:
     threading.Thread(target=_loop, daemon=True).start()
 
 
-atexit.register(_shutdown_sessions)
+atexit.register(_shutdown_runtime)
 _start_idle_reaper()
 
 

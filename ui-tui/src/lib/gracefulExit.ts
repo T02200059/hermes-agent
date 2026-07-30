@@ -4,6 +4,7 @@ interface SetupOptions {
   ignoredSignals?: GracefulSignal[]
   onError?: (scope: 'uncaughtException' | 'unhandledRejection', err: unknown) => void
   onSignal?: (signal: NodeJS.Signals) => void
+  signalExitCodes?: Partial<Record<GracefulSignal, number>>
 }
 
 export type GracefulSignal = 'SIGHUP' | 'SIGINT' | 'SIGTERM'
@@ -21,12 +22,18 @@ let wired = false
 export const shouldExitForSignal = (signal: GracefulSignal, ignoredSignals: readonly GracefulSignal[] = []) =>
   !ignoredSignals.includes(signal)
 
+export const exitCodeForSignal = (
+  signal: GracefulSignal,
+  overrides: Partial<Record<GracefulSignal, number>> = {}
+) => overrides[signal] ?? SIGNAL_EXIT_CODE[signal]
+
 export function setupGracefulExit({
   cleanups = [],
   failsafeMs = 4000,
   ignoredSignals = [],
   onError,
-  onSignal
+  onSignal,
+  signalExitCodes = {}
 }: SetupOptions = {}) {
   if (wired) {
     return
@@ -58,7 +65,7 @@ export function setupGracefulExit({
         return
       }
 
-      exit(SIGNAL_EXIT_CODE[sig], sig)
+      exit(exitCodeForSignal(sig, signalExitCodes), sig)
     })
   }
 

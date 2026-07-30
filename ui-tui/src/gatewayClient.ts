@@ -16,6 +16,7 @@ const MAX_BUFFERED_EVENTS = 2000
 const MAX_LOG_PREVIEW = 240
 const STARTUP_TIMEOUT_MS = Math.max(5000, parseInt(process.env.HERMES_TUI_STARTUP_TIMEOUT_MS ?? '15000', 10) || 15000)
 const REQUEST_TIMEOUT_MS = Math.max(30000, parseInt(process.env.HERMES_TUI_RPC_TIMEOUT_MS ?? '120000', 10) || 120000)
+const GRACEFUL_GATEWAY_EXIT_TIMEOUT_MS = 20000
 const WS_CONNECTING = 0
 const WS_OPEN = 1
 const WS_CLOSING = 2
@@ -149,6 +150,7 @@ export class GatewayClient extends EventEmitter {
   private drainGeneration = 0
   private stdoutRl: ReturnType<typeof createInterface> | null = null
   private stderrRl: ReturnType<typeof createInterface> | null = null
+  private gracefulShutdownPromise: Promise<void> | null = null
 
   constructor() {
     super()
@@ -790,5 +792,71 @@ export class GatewayClient extends EventEmitter {
     // skip handleTransportExit. Reject pending RPCs explicitly so
     // attach-mode promises do not hang after an intentional kill.
     this.rejectPending(new Error('gateway closed'))
+  }
+
+  shutdownGracefully(reason = 'requested'): Promise<void> {
+    if (this.gracefulShutdownPromise) {
+      return this.gracefulShutdownPromise
+    }
+
+    const proc = this.proc
+
+    // Attach mode does not own the shared gateway process. Closing the socket
+    // preserves the existing WS orphan/session-reaper contract without taking
+    // down MCP or sessions belonging to another client.
+    if (!proc) {
+      this.kill(reason)
+
+      return Promise.resolve()
+    }
+
+    this.lifecycle(`[lifecycle] GatewayClient.shutdownGracefully reason=${reason} ${describeChild(proc)}`)
+
+    this.gracefulShutdownPromise = new Promise<void>(resolveShutdown => {
+      let settled = false
+
+      const finish = () => {
+        if (settled) {
+          return
+        }
+
+        settled = true
+        clearTimeout(timer)
+        proc.removeListener('exit', finish)
+        resolveShutdown()
+      }
+
+      const timer = setTimeout(() => {
+        this.lifecycle(
+          `[lifecycle] graceful gateway timeout after ${GRACEFUL_GATEWAY_EXIT_TIMEOUT_MS}ms; sending SIGTERM ${describeChild(proc)}`
+        )
+        proc.kill()
+        finish()
+      }, GRACEFUL_GATEWAY_EXIT_TIMEOUT_MS)
+
+      timer.unref?.()
+      proc.once('exit', finish)
+
+      try {
+        // EOF is the standalone gateway's normal shutdown protocol. Python
+        // returns from its read loop and runs _shutdown_runtime via atexit,
+        // preserving every session-end event before stopping the MCP loop.
+        proc.stdin?.end()
+      } catch {
+        proc.kill()
+        finish()
+      }
+
+      if (proc.exitCode !== null || proc.signalCode !== null) {
+        finish()
+      }
+    }).finally(() => {
+      this.closeGatewaySocket()
+      this.closeSidecarSocket()
+      this.clearReadyTimer()
+      this.rejectPending(new Error('gateway closed'))
+    })
+
+    return this.gracefulShutdownPromise
   }
 }

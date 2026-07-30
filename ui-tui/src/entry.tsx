@@ -60,9 +60,13 @@ setupGracefulExit({
     () => {
       resetTerminalModes()
 
-      return gw.kill('graceful-exit-cleanup')
+      return gw.shutdownGracefully('graceful-exit-cleanup')
     }
   ],
+  // MCP teardown can legitimately wait for a transport task to unwind. Keep
+  // Node alive long enough for the owned Python gateway to drain its session
+  // lifecycle and async services; GatewayClient has its own bounded fallback.
+  failsafeMs: 25000,
   onError: (scope, err) => {
     const message = err instanceof Error ? `${err.name}: ${err.message}\n${err.stack ?? ''}` : String(err)
 
@@ -70,10 +74,7 @@ setupGracefulExit({
     process.stderr.write(`hermes-tui lifecycle ${scope}: ${message.slice(0, 2000)}\n`)
   },
   onSignal: signal => {
-    // The next line in the crash log is the child's `=== SIGTERM received ===`
-    // (gw.kill forwards SIGTERM regardless of which signal hit us) — this is
-    // what tells SIGHUP (terminal/SSH dropped) apart from a real SIGTERM.
-    recordParentLifecycle(`graceful-exit received signal=${signal} → killing gateway`)
+    recordParentLifecycle(`graceful-exit received signal=${signal} → draining gateway`)
     resetTerminalModes()
     process.stderr.write(`hermes-tui lifecycle: received ${signal}\n`)
   },
@@ -81,7 +82,10 @@ setupGracefulExit({
   // exits. Ignore SIGINT there so Ctrl+C cannot kill the embedded TUI if raw
   // mode briefly drops and the terminal driver turns the keystroke into a
   // signal instead of input bytes. SIGTERM/SIGHUP still cleanly shut down.
-  ignoredSignals: DASHBOARD_TUI_MODE ? ['SIGINT'] : []
+  ignoredSignals: DASHBOARD_TUI_MODE ? ['SIGINT'] : [],
+  // An idle Ctrl+C is a normal user exit, just like /exit. SIGTERM/SIGHUP keep
+  // their conventional signal-derived statuses for supervisors.
+  signalExitCodes: { SIGINT: 0 }
 })
 
 const stopMemoryMonitor = startMemoryMonitor({

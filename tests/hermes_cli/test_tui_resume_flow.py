@@ -1673,6 +1673,31 @@ def test_launch_tui_exports_model_provider_and_toolsets(monkeypatch, main_mod):
     assert env["NODE_ENV"] == "production"
 
 
+def test_call_tui_process_absorbs_parent_sigint_until_child_exits(monkeypatch, main_mod):
+    import signal
+
+    observed = {}
+    original = signal.getsignal(signal.SIGINT)
+
+    def fake_call(argv, cwd=None, env=None):
+        installed = signal.getsignal(signal.SIGINT)
+        observed["installed"] = installed
+        # Simulate the launcher's copy of the foreground-process-group SIGINT.
+        # It must not raise KeyboardInterrupt or return before the child does.
+        installed(signal.SIGINT, None)
+        observed["continued"] = True
+        return 0
+
+    monkeypatch.setattr(main_mod.subprocess, "call", fake_call)
+
+    assert main_mod._call_tui_process(
+        ["node", "dist/entry.js"], cwd=".", env={}
+    ) == 0
+    assert observed["continued"] is True
+    assert callable(observed["installed"])
+    assert signal.getsignal(signal.SIGINT) is original
+
+
 def test_launch_tui_worktree_validates_relative_python_against_final_cwd(
     monkeypatch, main_mod, tmp_path
 ):

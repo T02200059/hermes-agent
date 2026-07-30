@@ -2164,6 +2164,49 @@ def _apply_tui_python_env(env: dict) -> None:
         env["HERMES_PYTHON"] = sys.executable
 
 
+def _call_tui_process(argv: list[str], *, cwd: str, env: dict) -> int:
+    """Wait for the TUI child to own Ctrl+C shutdown from start to finish.
+
+    The shell sends SIGINT to the whole foreground process group.  Node's TUI
+    handler turns that into the same graceful drain used by ``/exit``; the
+    Python launcher must therefore stay alive and keep waiting.  Letting the
+    default Python handler raise ``KeyboardInterrupt`` here made the wrapper
+    print its goodbye and exit while Node/Python-gateway cleanup was still in
+    flight, closing the MCP event loop underneath parked ``MCPServerTask``
+    coroutines.
+
+    A caught (non-ignored) handler is reset to the platform default across
+    ``exec``, so the Node child still receives and handles SIGINT.  The parent
+    handler only absorbs its own copy of the same process-group signal.
+    """
+    previous_sigint = None
+    installed = False
+    try:
+        import signal
+
+        if hasattr(signal, "SIGINT"):
+            previous_sigint = signal.getsignal(signal.SIGINT)
+
+            def _wait_for_child_shutdown(_signum, _frame):
+                return None
+
+            signal.signal(signal.SIGINT, _wait_for_child_shutdown)
+            installed = True
+    except (ValueError, OSError, RuntimeError):
+        # Non-main-thread embedders cannot install signal handlers. Keep the
+        # legacy KeyboardInterrupt fallback in _launch_tui for those callers.
+        installed = False
+
+    try:
+        return subprocess.call(argv, cwd=cwd, env=env)
+    finally:
+        if installed:
+            try:
+                signal.signal(signal.SIGINT, previous_sigint)
+            except (ValueError, OSError, RuntimeError):
+                pass
+
+
 def _launch_tui(
     resume_session_id: Optional[str] = None,
     tui_dev: bool = False,
@@ -2294,8 +2337,12 @@ def _launch_tui(
     code: Optional[int] = None
     try:
         try:
-            code = subprocess.call(argv, cwd=str(cwd), env=env)
+            code = _call_tui_process(argv, cwd=str(cwd), env=env)
         except KeyboardInterrupt:
+            # Fallback for non-main-thread embedders where Python could not
+            # install the launcher-side SIGINT absorber. Normal terminal
+            # launches stay inside _call_tui_process until Node completes the
+            # same graceful shutdown path as /exit.
             code = 130
 
         if code in {0, 130}:
