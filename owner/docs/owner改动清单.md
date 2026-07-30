@@ -23,8 +23,8 @@
 | 改动文件总数 | 172（去重后） |
 | owner/ 纯新增 | ~75 个文件 |
 | 官方文件侵入 | ~70 个文件（含 ~20 个测试文件） |
-| 范围 | 模型归因 / patch.yaml 配置 / 审批安全 / 飞书深度定制 / TUI 皮肤 / Cron 运维 / Gateway 稳定性 / Checkpoint 预测 / Desktop 窗口透明度 |
-| 最后更新 | 2026-07-28 |
+| 范围 | 模型归因 / patch.yaml 配置 / 审批安全 / 语义审计 / 飞书深度定制 / TUI 皮肤 / Cron 运维 / Gateway 稳定性 / Checkpoint 预测 / Upstream Sync / Viking 记忆治理 / Desktop 窗口透明度 |
+| 最后更新 | 2026-07-30 |
 | 来源 | 从 `owner-v17`（500+ commit）清洗迁移而来；本分支是重新整理后的最小叠加版本 |
 
 ### 0.2 章节索引
@@ -33,11 +33,12 @@
 |----------|----------|
 | 先判断某个 owner 能力属于哪里 | §1-§13 功能正文 |
 | 看模型/provider/API 调用链 | §1、§2、§10 |
-| 看审批、安全、自动审批、cron 上下文 | §3、§7.4、§11 |
+| 看审批、安全、自动审批、语义审计、cron 上下文 | §3、§7.4、§11 |
 | 看飞书平台定制 | §4 |
+| 看 TUI / Ctrl+C 退出 | §6 |
 | 看 Desktop 桌面端改动 | §13 |
 | 看 Gateway merge 后最容易丢的胶水 | §7、附录 B、附录 C |
-| 看脚本、cron、运维能力 | §11 |
+| 看脚本、cron、备份、Upstream Sync、Viking 记忆治理 | §11 |
 | 看 owner/ 模块到官方侵入点的映射 | 附录 A、附录 B |
 | 看后续是否值得 hook/plugin 化 | 附录 C |
 | 看最近阶段性变化 | 附录 E |
@@ -367,6 +368,34 @@
 - **SSRF 防护**（§17.8）：`1b0b3fce1` — `save_url_image` 拒绝非 http(s) scheme（WR-02）
 - **Feishu user_name sanitize**（§17.16）：`f28061959` — 注入 user turn 前清洗 Feishu user_name（CR-03）
 
+### 3.9 Semantic Audit Gate（工具分发前语义审计门）
+
+- **背景**：现有 approval 只能按命令模式 block 危险操作。模型陷入激进幻觉时（用户说「看 nginx 状态」，模型执行 `systemctl restart nginx`）会换姿势绕路。需要在 **tool dispatch 之前** 增加语义层审计：用 cheap LLM 判断操作是否超出用户指令范围。
+- **方案**：
+  - 纯新增包 `owner/semantic_audit/`：`gate.py`（`maybe_audit_batch`）、`detector.py`（Tier0 hardline / Tier1 pattern / skip）、`auditor.py`（`call_llm(task="semantic_audit")`）、`policy.py`（strike 升级）、`notify.py`、`config.py`
+  - 官方胶水仅 1 处：`run_agent.py` → `AIAgent._execute_tool_calls` 路径选择前 `# [owner] semantic audit gate`，`try: from owner.semantic_audit import maybe_audit_batch`（≤5 行 + fail-open）
+  - **三档 verdict**：PASS 放行；BLOCK 拒绝本次 call 并注入 synthetic error（strike +1）；HALT 拒绝 + `agent.interrupt()`，整批 tool_call_id 注入 result
+  - **Tier0 hardline**（reboot / `rm -rf /` / mkfs / dd / DROP…）直接 HALT，yolo 不可旁路
+  - **Tier1**（approval dangerous + 敏感路径写）→ LLM 审计；只读工具 skip
+  - **后续增强**（`0f28e4bde`）：`skill_context`（从本批/近期 `skill_view` 取 SOP 正文，~3k 预览，防误拦 skill 流程）；`batch_siblings`（整批 tool_calls 上下文）；process 工具分级（kill/write/submit/close → tier1，list/poll/log/wait → skip）
+  - 默认 **关闭**；用户 `config.yaml` 设 `semantic_audit.enabled: true` 开启。辅助模型走 `auxiliary.semantic_audit`（timeout 默认 5s）
+  - 设计文档：`owner/docs/semantic-audit-design.md`
+- **涉及文件**：
+  - 纯新增：`owner/semantic_audit/*`、`owner/docs/semantic-audit-design.md`
+  - 侵入：`run_agent.py`（1 处薄胶水）
+- **侵入类型**：薄胶水（fail-open try-import）+ 纯新增（审计实现全在 owner/）
+- **Commit**：`f07bdf6b8`（feat 门禁）、`0f28e4bde`（skill_context + batch_siblings + process 分级）
+
+### 3.10 Smart DENY 一次性说明 + QQ DM 审批按钮鉴权
+
+- **背景**：(1) Smart approval 返回 DENY 时 owner 覆盖策略是 **once-only**（无 session/always），但飞书/QQ 卡片按钮集变少时用户不理解；(2) QQ 私聊 session key 使用 `chat_type=dm`（`agent:main:qqbot:dm:<uid>`），而 `_is_authorized_interaction_for_session` 只匹配 `c2c`，导致所有 DM 审批按钮点击被拒，agent 卡到审批超时（默认 3600s）。
+- **方案**：
+  - `ec98dff9b` — 飞书审批卡（`owner/feishu/approval.py`）与 QQ keyboard（`gateway/platforms/qqbot/keyboards.py`）在 Smart DENY 场景补充 one-shot 文案说明（i18n key，en/zh）
+  - `ae912986f` — QQ adapter 把 `dm` 与 `c2c` 同等处理（operator == chat_id）
+- **涉及文件**：`owner/feishu/approval.py`、`gateway/platforms/qqbot/adapter.py`、`gateway/platforms/qqbot/keyboards.py`、`locales/en.yaml`、`locales/zh.yaml` + 相关测试
+- **侵入类型**：薄胶水 / inline（消息文案 + 1 行鉴权分支）
+- **Commit**：`ec98dff9b`、`ae912986f`
+
 ---
 
 ## 四、飞书平台：深度定制与交互卡片
@@ -383,7 +412,9 @@
   - 配置：`owner/config/patch_feishu_profile.yaml`（`feishu.bots.<bot_id>.user_routing.{whitelist,chat_profile_routes,user_profile_routes,default_profile,profile_endpoints}`）
 - **侵入类型**：薄胶水 + try-import（adapter）、import 编排（profile_routing 全在 owner/）
 - **涉及文件**：`a0636e1ef`（T1）、`4839cd605`（T2）、`c06de158c`（T3）、`f9a38e9f0`（§5.9 `_standalone_send` 支持 extra_metadata 保留 chat_type/open_id）
-- **后续修复**：`fc6f2fbc4` — merge 冲突解决时同时保留了 owner 的 `setdefault(connection_mode)` 和上游 `.update()` 中的 `connection_mode`，`.update()` 无条件覆盖 `setdefault`，导致 `config.yaml` 中 `connection_mode: send_only` 的子 profile 容器被改写为 `websocket`。修复：从 `.update()` 中移除 `connection_mode`，仅靠 `setdefault` 维持 config.yaml > env 优先级。
+- **后续修复**：
+  - `fc6f2fbc4` — merge 冲突解决时同时保留了 owner 的 `setdefault(connection_mode)` 和上游 `.update()` 中的 `connection_mode`，`.update()` 无条件覆盖 `setdefault`，导致 `config.yaml` 中 `connection_mode: send_only` 的子 profile 容器被改写为 `websocket`。修复：从 `.update()` 中移除 `connection_mode`，仅靠 `setdefault` 维持 config.yaml > env 优先级。
+  - `bc1feb536` — **harden Feishu profile transport**：加固多 profile 下消息/卡片往返传输路径。`gateway/platforms/api_server.py` 端点校验与错误路径、`owner/feishu/profile_routing.py` 路由边界、`plugins/platforms/feishu/adapter.py` 接线同步加固；新增 `tests/owner/test_feishu_profile_transport.py`（约 400 行）锁定 transport 契约，防止 merge 后子 profile 投递丢 `chat_type`/`open_id` 或错误落到 default profile。
 
 ### 4.2 长文本自动卡片（auto-card）
 
@@ -439,6 +470,8 @@
 - **后续扩展**：
   - `ec3e6bb78` — 在 `owner/config/patch.yaml` 的 `feishu.bot_menu` 命令映射新增 `usage` / `insights` 两个菜单项，并在 `bot_menu_dedup.per_key` 配置 ack（`ack: null` = 不显示 typing 指示器，因为这两个命令是异步汇总，typing 反而误导）。
   - `912c7af85`（部分）— 补 `/usage` 和 `/insights` 的 ack 消息内容。
+  - `ee1e29084` — `bot_menu` 新增 `agents` 菜单项与 ack（映射 `/agents`，与 usage/insights 同模式）。
+  - `195996b48` — `bot_menu` 新增 `viking_human_review` 菜单项与 ack（对接 §11.6 Viking 记忆质量人工复核入口）。
 
 ### 4.7 飞书编辑上限轮转 + 进度 dedup
 
@@ -497,7 +530,8 @@
   - `0dbae9a40` — agent running 时点击 bot menu 触发 `/feishu-guide`，`should_bypass_active_session()` 只查 `resolve_command()`（仅含 `COMMAND_REGISTRY` 内置命令），plugin 命令不在其中，导致落入 busy-input 路径被当普通消息注入 agent。修复为同时检查 `is_gateway_known_command()`（覆盖 plugin 命令）。同 bug 影响 `/providers` 等所有 plugin 命令。
   - `8c4c902e1` — `feishu_guide` bot menu 事件绕过普通命令管线直接发卡片。原路径经过 `_handle_message_with_guards` 会被 per-chat lock 阻塞，导致 ack 到卡片出现之间延迟数秒；现在 ack 后直接调用 `adapter.send_guide_card()` 并 return，提升响应速度。
   - `5b2f8ed74` — `feishu_guide` 引导卡片提交后，合成的 `/steer` `/queue` `/goal` 等命令没有注入到正在运行的 agent，而是被 LLM 当普通消息回复。根因：`bot_menu.py` 的 feishu_guide 快捷路径用 `SimpleNamespace` 构建 source，`chat_type` 字面量 `'p2p'` 未归一化为 `'dm'`，导致合成 event 的 session key 与运行中 agent 的不匹配，gateway runner 的 running-agent fast path 未命中。修复：`steer_card.py::_route_guide_command` 在 `_dispatch` 中重建 source、走 `_resolve_source_chat_type` 归一化路径（与普通 bot menu 命令一致）；`bot_menu.py` 的 `SimpleNamespace` 改用 `adapter.build_source()` 补全缺失字段；`adapter.py` 加 `form_value` JSON string 归一化（防御性）+ 诊断日志。端到端验证：steer 注入成功（chat_type=dm，session key 匹配）。
-  - **queue 撤销队列 + 执行后冻结（个人 fork，仅飞书卡）** — queue 提交后 done 卡增加「撤销队列」；FIFO 开始执行时 REST patch 卡片为「▶️ 已开始执行」蓝底终态。**禁止**把 token 写入 `message_id`（会当 reply_to 导致 99992354）。实现：`owner/feishu/steer_card.py` + `owner/patches/queue_cancel_patch.py`（按 prompt 文本匹配入队、`event._owner_queue_token` 打标、包装 `_enqueue_fifo`/`_dequeue_pending_event`、`cancel_queued_by_token`；并 wait 在途 prefetch 以避免 queue 紧接上轮时跳过 openviking 召回卡）。注册于 `owner-extensions`。
+  - **queue 撤销队列 + 执行后冻结（个人 fork，仅飞书卡）** — `89fa171bc`：queue 提交后 done 卡增加「撤销队列」；FIFO 开始执行时 REST patch 卡片为「▶️ 已开始执行」蓝底终态。**禁止**把 token 写入 `message_id`（会当 reply_to 导致 99992354）。实现：`owner/feishu/steer_card.py` + `owner/patches/queue_cancel_patch.py`（按 prompt 文本匹配入队、`event._owner_queue_token` 打标、包装 `_enqueue_fifo`/`_dequeue_pending_event`、`cancel_queued_by_token`；并 wait 在途 prefetch 以避免 queue 紧接上轮时跳过 openviking 召回卡）。注册于 `owner-extensions`。同 commit 还补：openviking 召回全链路 INFO 诊断；各类飞书卡片发送/点击成功路径统一 `[Feishu card]` 日志。
+  - `306fb0be8` — `queue_cancel_patch` 的 `_token_state` 在 cancel/enqueue/freeze 多线程并发读写，加 `_token_lock` 保护全部读写路径。
 
 ### 4.12 飞书文件上传大小守卫
 
@@ -505,6 +539,19 @@
 - **方案**：`owner/feishu/` 模块中增加文件上传大小守卫，超限时向用户发送错误提示消息而非静默失败。
 - **侵入类型**：薄胶水 + try-import
 - **Commit**：`3ae4c4bbf`
+
+### 4.13 feishu_doc_read：文档内嵌图片物化 + Vision OCR + 类型推断
+
+- **背景**：`feishu_doc_read` 仅调 docx `raw_content` 时，飞书把 image block 压成文本 `image.png`，agent 看不到真实截图。完整链路需要 blocks 取 `image.token` → 下载媒体 → 本地缓存 →（可选）`vision_analyze`。另：`/sheets/`、`/base/` URL 提取 token 后若丢失类型，handler 默认 `docx` 会 1770002。
+- **方案**：
+  - `7230d71e9` — `tools/feishu_client_utils.py` 新增 `list_docx_image_tokens` / `download_media` / `download_docx_images` / `inject_image_paths_into_content` / `read_docx_with_images` / `analyze_docx_images`；docx 分支改走物化路径；返回 `content` + `images[]` + `image_count` + `vision_analyzed`；schema 说明可把本地路径交给 `vision_analyze`
+  - `e5e90f874` — `_DOCX_MAX_IMAGES` / `_DOCX_MAX_VISION_IMAGES` 40→500；共用 `_call_with_rate_limit_retry`（HTTP 429 / Feishu 99991400 / rate-limit 文案，指数退避最多 5 次，上限 60s）
+  - `4ca60433a` — `extract_token` 返回 3-tuple `(token, is_wiki, inferred_type)`：`/sheets/`→sheet，`/base|/bitable/`→bitable，`/docx|/doc/`→docx，避免 sheet URL 当 docx 读
+  - `749f68abb` — `read_sheet_as_text` 去掉 grid `row_count` 尾部空行填充
+- **涉及文件**：`tools/feishu_client_utils.py`、`tools/feishu_doc_tool.py`、`tests/tools/test_feishu_client_utils.py`
+- **侵入类型**：inline（官方 feishu tools 内扩展读取路径）
+- **Commit**：`7230d71e9`、`e5e90f874`、`4ca60433a`、`749f68abb`
+- **附录 E**：2026-07-23 / 2026-07-24 条目与本节省略互补（E 偏时间线，本节钉 hash）
 
 ---
 
@@ -551,6 +598,16 @@
 - **侵入类型**：inline（删除启动警告代码）+ 纯新增（skin YAML 字段补全）
 - **Commit**：`1731193cb`
 
+### 6.3 Ctrl+C /exit 与 graceful drain（CLI + TUI）
+
+- **背景**：(1) prompt_toolkit 的 TUI 层 `c-c` 绑定只覆盖空闲/回合结束的常见路径；任何绕过按键层的 OS SIGINT（子 shell PTY 回弹、MCP reconnect 定时器、后台线程）会落到 Python 默认 handler，在 httpx recv 中途抛 `KeyboardInterrupt` 并逃出 `except Exception` 清理链；(2) `hermes --tui` 退出时若对 gateway 发 SIGTERM 或过早拆 MCP，任务会在 event loop 关闭后被 cancel，退出码与 `/exit` 不一致。
+- **方案**：
+  - `300160673` — CLI：OS SIGINT 路由到 `app.exit()`，使 Ctrl+C 语义对齐 `/exit`；顺带加固 openviking 与 `run_agent` 对中断路径的容错
+  - `5d1539c99` — TUI：Python launcher 在 Node 持有 process-group SIGINT 时继续 wait；owned gateway 用 stdin EOF 关闭而非 SIGTERM；先 `session-end` 再 MCP teardown；standalone Ctrl+C 退出码 0（与 `/exit` 一致）
+- **涉及文件**：`cli.py`、`hermes_cli/main.py`、`tui_gateway/{entry,server}.py`、`ui-tui/src/{entry.tsx,gatewayClient.ts,lib/gracefulExit.ts,app/useMainApp.ts}` + 对应测试
+- **侵入类型**：inline（退出/中断路径）+ 纯新增测试
+- **Commit**：`300160673`、`5d1539c99`
+
 ---
 
 ## 七、运行稳定性：Gateway / Cron / Memory / Merge 修复
@@ -590,6 +647,9 @@
   - `6a9383d38` — 移除 `plugins/memory/openviking/__init__.py` 中基于 `subprocess.Popen` 的本地 server auto-start。裸 Python `openviking-server`（未带 hotfix patch）会在 gateway restart 时与 Docker 容器抢端口 1933 并劫持端口。改为由 Docker 外部管理 server。同时删除对应的 `test_start_local_openviking_server_uses_endpoint_host_and_port` 测试。
   - `04b0b7ae8` — recall 注入内容截断 ChatLog，防止模型把历史对话误当当前上下文。根因：Viking memory 文件带 `YYYY-MM-DD ChatLog: [user]: ... [hermes]: ...` 段落，与 live 对话 turn 格式完全一致；长对话 + 多工具并行时 qwen3.7-max（2026-07-28 验证）会把召回的"damodel 400 排查"历史记录当成当前待办，主动开始排查并编造不存在的截图。方案：`plugins/memory/openviking/__init__.py` 加 `_truncate_chatlog_from_recall()`，按 `ChatLog:` / `Chat记录:` / 日期前缀正则截断，只保留 Summary，末尾追加 `→ For full conversation: viking_read(uri=..., level='full')` 提示；`owner/patches/openviking_owner_recall_patch.py` 改写 advisory System note，明确告知 agent "ChatLog 已被剥离，需细节时调用 `viking_read`，禁止凭 summary 编造内容"。
   - `2587260ca` — 写入端给 user/assistant 消息设置人类可读 peer_id，使 Viking 存储的对话记录不再与 live turn 格式混淆。新增 `_resolve_user_display_label()`：优先从飞书 Inbound context 提取 `user_name: \`杨天宝\`` 中文名，fallback 到 `"过去的用户"`；`_resolve_assistant_display_label()`：取 `get_active_profile_name()`（子 profile 如 `hermesxiyun`/`sunqifei`），主 profile `default` 映射为 `hermes`，fallback 到 `"过去的助手"`。两个 peer_id 通过 `_messages_to_openviking_batch(user_peer_id=..., assistant_peer_id=...)` 传入 payload，Viking 端 `MessageRange._speaker_for()` 返回 display label 而非裸 role string。测试 `test_sync_turn_structured_messages_include_assistant_peer_id` 断言同步更新。
+
+  - `7733cabf7` — **`viking_add_resource` 超时 UX**：默认 HTTP timeout 提到 120s，client 尊重 wait timeout；超时返回可操作 payload，避免模型把 `wait=true` 超时当成硬写失败而重试/幻觉。
+  - `89fa171bc`（部分）— openviking 召回全链路 INFO 诊断日志（与 §4.11 queue 撤销同 commit；见 steer_card / recall patch 侧）。
 
 ### 7.4 Cron env 隔离（ContextVar + restart scrub）
 
@@ -682,6 +742,37 @@
   3. `gateway/run.py`：两处 `resolve_display_setting()` 改为 `resolve_display_setting_for_source(..., source=source)`，恢复 per-chat display override。
 - **侵入类型**：inline（死代码删除 + 变量修复）
 - **Commit**：`dd0b8aa5d`
+
+### 7.14 Gateway 生命周期消息打 active profile 标签
+
+- **背景**：多 profile 并行跑 gateway 时，关机/重启/drain/上线等生命周期通知无法区分是哪个 profile，运维排查困难。
+- **方案**：`gateway/run.py` 新增 `_gateway_profile_tag()` + `_t_gateway_lifecycle()`：default profile 的 `{profile_tag}` 为空；命名/custom profile 为 `" [<name>]"`；解析失败回退原文并 warning。生命周期相关 locale key（en/zh 等）统一加 `{profile_tag}` 占位（文案骨架变更，属功能而非纯翻译）。覆盖 shutdown/restart/drain busy-ack、model restart notices、recovered-reply markers 等。
+- **涉及文件**：`gateway/run.py`、`gateway/delivery_ledger.py`、`locales/*.yaml`、`tests/gateway/test_restart_notification.py`
+- **侵入类型**：inline（gateway 文案解析 helper）+ locale 占位符
+- **Commit**：`8676ad980`
+
+### 7.15 Codex Responses：避免 reasoning 后空 assistant content
+
+- **背景**：严格网关（如火山方舟 Ark）拒绝 `content:""` 为 missing `input.content`。当 reasoning 后紧跟 tool_calls 时，adapter 会产出空 assistant following item 导致整请求失败。
+- **方案**：`agent/codex_responses_adapter.py` — 有 tool_calls 时跳过空 assistant following；否则发非空空格占位而非 `""`。
+- **涉及文件**：`agent/codex_responses_adapter.py`、`tests/run_agent/test_run_agent_codex_responses.py`
+- **侵入类型**：inline（adapter 边界）
+- **Commit**：`952be6814`
+
+### 7.16 merge 后保留 exhausted credential pool 语义
+
+- **背景**：上游 merge 可能冲掉 owner 对「credential pool 已耗尽」的短路语义，导致继续探测/误报可用。
+- **方案**：`hermes_cli/model_switch.py` 恢复 exhausted pool 的保留分支（不再把已确认空的 pool 当可重试）。
+- **侵入类型**：inline
+- **Commit**：`217bd8589`
+
+### 7.17 恢复 owner display resolution wiring
+
+- **背景**：merge 后 `gateway/run.py` 上 per-chat / long-running 显示解析又退回非 source-aware 路径，§9.1 display overrides 失效。
+- **方案**：`6d5c00b51` 恢复 owner display resolution 接线（与 §7.13 第 3 点、`resolve_display_setting_for_source` 一致），并补 progress topics 相关测试。
+- **涉及文件**：`gateway/run.py`、`tests/gateway/test_run_progress_topics.py`
+- **侵入类型**：inline（薄恢复）
+- **Commit**：`6d5c00b51`
 
 ---
 
@@ -805,6 +896,56 @@
 - **侵入类型**：纯新增（脚本 + 测试）
 - **Commit**：`f3a1b1fa4`
 
+### 11.6 Viking 记忆质量治理流水线
+
+- **背景**：OpenViking 中堆积多语言/重复/未审核偏好记忆，需要 **只读扫描 → 人工复核 → 可选修复** 的治理链，而不是静默 auto-write。
+- **方案**（脚本均在 `owner/scripts/`，cron `no_agent=True` 友好）：
+  - `f1d1fb109` — `viking-memory-quality-scan.py`：按 stopword 密度检测非中文记忆，经 LLM 译为 zh-CN
+  - `1a1f0e7fa` — 拆为只读分析工具包：共享库 `viking_memory_lib.py`；`viking-memory-quality-scan.py` 改为 read-only；新增 `viking-memory-dedup-scan.py`（dense vector 近重）、`viking-memory-fix.py`（延后修复 worker，默认只 summary 不 auto-write）、`viking-memory-pipeline.py`（统一编排）、`viking-memory-quality/` CLI 入口 + README
+  - `80434b966` — 治理标签 `human_reviewed` / `human_reviewed_at`；Layer-3 `scan_preference_candidates()`；translate 优先于 similar 的 defer 策略；`include_english` 默认改为 True
+  - `573f7ac52` — pipeline tier3 preference 输出 + `--preference-limit`；`viking-quality-kanban-run.sh`（scan/apply/pref/status）；`viking-quality-pref-review.py`（人工复核打标 CLI）
+  - 飞书入口：`195996b48`（§4.6 `viking_human_review` bot_menu）
+- **涉及文件**：`owner/scripts/viking_memory_lib.py`、`viking-memory-*.py`、`viking-quality-*`、`viking-memory-quality/`
+- **侵入类型**：纯新增（脚本；不进 agent 核心 tool schema）
+- **Commit**：`f1d1fb109`、`1a1f0e7fa`、`80434b966`、`573f7ac52`、`195996b48`
+
+### 11.7 Upstream Sync（上游同步流水线）
+
+- **背景**：owner 分支需持续吸收 `upstream/main`，同时避免把 owner 专属修复/胶水冲掉或重复解决已 backport 的 bug。需要可配置的 **fetch → 分类 → dry-run → merge → 通知** 流水线，而不是手工 git 运气。
+- **方案**：
+  - 核心库 `owner/sync/`（`f05e2dd7e`）：classifier / config / fingerprint / gitops / health / merger / models / notifier / report / state
+  - 配置与指纹库（`4e076c9b0`）：`owner/config/upstream_sync.yaml`（repo/cron/D1–D7 分类/fingerprint/通知）、`owner/validation/fix_fingerprints.yaml`（owner bugfix 指纹，检测上游 backport 重叠）
+  - CLI + cron（`1f24486b5`）：`owner/scripts/upstream_sync.py`、`upstream_sync_cron.sh`
+  - 文档与测试（`81afb5256`）：`owner/docs/upstream-sync-guide.md` + `tests/owner/test_upstream_sync/*`（13 文件）
+  - 后续（`8ee7ca57d` 部分）：architecture / PRD / kanban 文档；`owner/sync/kanban_ticket.py` + 测试，把 sync 发现的工作项落到 kanban
+- **涉及文件**：`owner/sync/*`、`owner/scripts/upstream_sync*`、`owner/config/upstream_sync.yaml`、`owner/docs/hermes-upstream-sync-*.md`、`owner/docs/upstream-sync-*.md`
+- **侵入类型**：纯新增（不侵入官方运行时路径；运维侧工具）
+- **Commit**：`f05e2dd7e`、`4e076c9b0`、`1f24486b5`、`81afb5256`、`8ee7ca57d`（docs + kanban_ticket）
+
+### 11.8 增量备份体系（rsync / NewAPI / OpenViking / BACKUP_QUIET）
+
+- **背景**：早期 `hermes-backup.sh` 为 tar+scp 全量，大目录与频繁 cron 成本高；NewAPI 与 OpenViking 数据也需独立日备。
+- **方案**：
+  - `8b443c20e` — `hermes-backup.sh` 改为 **rsync + hardlink 快照**；新增 `openviking-backup.sh`（`~/.openviking`）；支持重试与远端归档轮转
+  - `79b2c5c71` — `newapi-backup.sh`：node010 NewAPI（MySQL docker backup + app/config tarball，保留最近 3 份，单 SSH 会话）
+  - `5a5956baa` — `BACKUP_QUIET` 接入 backup log 函数（newapi/openviking），静默 cron 不刷屏
+  - `30c449bd4` — 恢复 `hermes-backup.sh` 的 `BACKUP_QUIET` 静默模式（回归）
+  - `8ee7ca57d`（部分）— newapi 备份目录迁至 `hermes-backup/yangtb/newapi`；`cron-health-check.py` 增加 node010 bifang-backup 巡检
+- **涉及文件**：`owner/scripts/hermes-backup.sh`、`openviking-backup.sh`、`newapi-backup.sh`、`cron-health-check.py`
+- **侵入类型**：纯新增 / 脚本改写
+- **Commit**：`8b443c20e`、`79b2c5c71`、`5a5956baa`、`30c449bd4`、`8ee7ca57d`（部分）
+
+### 11.9 飞书周会脚本、Swagger/Kanban 工具与 image_gen 预设
+
+- **背景**：运维侧还有若干「不进 agent 核心、但进 owner 日常」的能力，集中记在此节。
+- **方案**：
+  - `3d53da788` — `owner/scripts/feishu_weekly_ops.py`：读飞书 wiki 周会表，按列抽取指定周（`--col` / `--list` / `--dump-json`）
+  - `8ee7ca57d`（部分）— Swagger 变更采集与拆分：`swagger-change-collector.sh`、`swagger-split-blocks.sh`、`swagger-kanban-run.sh`；配合 §11.7 `kanban_ticket`
+  - `8ee7ca57d`（部分）— `owner/config/patch.yaml` **image_gen 预设**：`qwen-pro`（dashscope qwen-pro）、`wan2-pro`（Wan 2.7 Pro）、`image-edit`（qwen-image-edit-plus，支持 mask/instruction 编辑）
+- **涉及文件**：`owner/scripts/feishu_weekly_ops.py`、`owner/scripts/swagger-*.sh`、`owner/config/patch.yaml`
+- **侵入类型**：纯新增（脚本 + 配置）
+- **Commit**：`3d53da788`、`8ee7ca57d`
+
 ---
 
 ## 十二、治理与文档杂项
@@ -896,9 +1037,12 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 | `owner/diff_card/` | diff 卡片平台分发（飞书/QQ） | feishu/adapter.py |
 | `owner/feishu/` | 飞书深度定制（16 模块） | feishu/adapter.py（64 处标记） |
 | `owner/gateway/` | inbound_context + hygiene_compression_notice | gateway/run.py |
-| `owner/patches/` | runtime patch（OpenViking recall + memory synthetic guard + pool base_url override） | owner-extensions plugin / hermes_cli/runtime_provider.py |
+| `owner/patches/` | runtime patch（OpenViking recall + memory synthetic guard + pool base_url override + **queue_cancel**） | owner-extensions plugin / hermes_cli/runtime_provider.py |
 | `owner/providers/credential_helpers.py` | GitHub token 校验等 credential helper | hermes_cli/model_switch.py |
-| `owner/scripts/` | 运维脚本（备份/健康检查/汇率/todo 扫描/**HN Daily 新闻摘要/skill 同步**） | — |
+| `owner/scripts/` | 运维脚本（备份/健康检查/汇率/todo 扫描/**HN Daily**/skill 同步/**Viking 记忆质量**/upstream_sync/周会/swagger） | — |
+| `owner/semantic_audit/` | 工具分发前语义审计门（Tier0/1 + LLM + strike） | `run_agent.py` 1 处薄胶水 |
+| `owner/sync/` | Upstream Sync 流水线（classify/fingerprint/merge/notify/kanban_ticket） | —（运维侧） |
+| `owner/patches/queue_cancel_patch.py` | 飞书 queue 撤销/执行冻结 runtime patch | owner-extensions plugin |
 | `owner/skins/` | ruolin 系列皮肤 YAML | — |
 | `owner/tools/schema_patches.py` | 运行时 schema patch（legacy send_message card + image_generate model） | owner-extensions plugin（import/apply） |
 | `owner/validation/` | merge 后健康检查（anchors + inventory + import/patch/marker checks） | — |
@@ -956,6 +1100,9 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 | `agent/usage_pricing.py` | attribution helper for billing | 薄胶水 |
 | `agent/background_review.py` | 多行 bullet 格式 | inline（字符串） |
 | `tools/code_execution_tool.py` / `tools/delegate_tool.py` | extra_body 透传 | 薄胶水 |
+| `run_agent.py` | `_execute_tool_calls` 前 `maybe_audit_batch`（§3.9 semantic audit） | 薄胶水（fail-open） |
+| `agent/codex_responses_adapter.py` | reasoning 后跳过/占位空 content（§7.15 方舟严格网关） | inline |
+| `cli.py` / `hermes_cli/main.py` / TUI | Ctrl+C → `app.exit` / gateway drain via stdin EOF（§6.3） | inline |
 
 ### B.4 与附录 C 的交叉覆盖
 
@@ -1191,6 +1338,7 @@ _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请先�
 ### 2026-07-23：feishu_doc_read 下载文档内嵌图片（修复 image.png 占位）
 
 - **类型**：bug fix
+- **Commit**：`7230d71e9`
 - **背景**：`feishu_doc_read` 仅调用 docx `raw_content` API，飞书会把 image block 压成文本 `image.png`。agent 看不到真实截图；完整链路是 blocks 取 `image.token` → `drive/v1/medias/{token}/download` → 本地文件 → `vision_analyze`。
 - **方案**：
   - `tools/feishu_client_utils.py`：新增 `list_docx_image_tokens`（分页读 blocks，`block_type=27`）、`download_media`、`download_docx_images`（落盘 `$HERMES_HOME/cache/feishu_doc_images/<doc>/`）、`inject_image_paths_into_content`（按序替换 `image.png` 为 `[Image N: /path]`）、`read_docx_with_images` 编排。上限 40 张 / 10MiB 每张。
@@ -1202,6 +1350,28 @@ _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请先�
 ### 2026-07-24：feishu_doc_read 图片上限 40→500 + 429 退避重试
 
 - **类型**：体验调参 / 可靠性
+- **Commit**：`e5e90f874`
 - **变动**：`_DOCX_MAX_IMAGES` / `_DOCX_MAX_VISION_IMAGES` 从 40 提到 500；并发仍为 3。媒体下载与 vision OCR 共用 `_call_with_rate_limit_retry`（识别 HTTP 429 / Feishu 99991400 / rate limit 文案，指数退避最多 5 次，上限 60s）。
 - **涉及文件**：`tools/feishu_client_utils.py`、`tests/tools/test_feishu_client_utils.py`
+
+### 2026-07-30：漏写功能点补录（近 30 天本机作者 commit 审计）
+
+- **类型**：文档补录（无代码变更）
+- **范围**：本机作者「杨天宝 / yangtb」近 30 天 commit，排除 i18n 专向、纯 docs、纯 test 噪音；对照本清单发现的遗漏功能点。
+- **高优先（新建正文）**：
+  - **§3.9 Semantic Audit Gate**：`f07bdf6b8`、`0f28e4bde`
+  - **§11.7 Upstream Sync**：`f05e2dd7e`、`4e076c9b0`、`1f24486b5`、`81afb5256`、`8ee7ca57d`（部分）
+  - **§11.6 Viking 记忆质量治理流水线**：`f1d1fb109`、`1a1f0e7fa`、`80434b966`、`573f7ac52`、`195996b48`
+- **中优先（新建/扩展）**：
+  - **§6.3** Ctrl+C /exit drain：`300160673`、`5d1539c99`
+  - **§7.14** lifecycle `{profile_tag}`：`8676ad980`
+  - **§4.1** profile transport harden：`bc1feb536`
+  - **§3.10** Smart DENY one-shot + QQ DM 鉴权：`ec98dff9b`、`ae912986f`
+  - **§7.15** codex 空 content：`952be6814`
+  - **§7.3** viking_add_resource 超时：`7733cabf7`
+  - **§7.16 / §7.17** exhausted pool / display resolution：`217bd8589`、`6d5c00b51`
+- **§11 运维扩写**：§11.8 rsync/NewAPI/OpenViking 备份；§11.9 周会脚本 / swagger-kanban / image_gen 预设
+- **钉 hash**：§4.11 queue 撤销 `89fa171bc` + 锁 `306fb0be8`；§4.13 feishu 文档图 `7230d71e9`/`e5e90f874`/`4ca60433a`/`749f68abb`；§4.6 `agents` 菜单 `ee1e29084`
+- **附录 A/B**：补 `owner/semantic_audit/`、`owner/sync/`、queue_cancel、run_agent/codex/TUI 轻度侵入行
+- **刻意不记**：yangtb provider 移除（已退役约定）、纯 i18n、tips 清理等琐碎维护
 
