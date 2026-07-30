@@ -263,7 +263,7 @@ async def test_send_home_channel_startup_notification_to_configured_home(tmp_pat
     assert delivered == {("telegram", "home-42", None)}
     adapter.send.assert_called_once_with(
         "home-42",
-        "🏙 Gateway online — Hermes is back and ready.",
+        gateway_run._gateway_lifecycle_msg("gateway.online"),
     )
 
 
@@ -297,7 +297,7 @@ async def test_send_home_channel_startup_notification_preserves_thread_metadata(
     assert delivered == {("telegram", "parent-42", "777")}
     adapter.send.assert_called_once_with(
         "parent-42",
-        "🏙 Gateway online — Hermes is back and ready.",
+        gateway_run._gateway_lifecycle_msg("gateway.online"),
         metadata={
             "thread_id": "777",
             "telegram_dm_topic_reply_fallback": True,
@@ -660,7 +660,7 @@ async def test_shutdown_notifications_use_cached_live_thread_source_when_origin_
 
     adapter.send.assert_awaited_once_with(
         "parent-42",
-        "⚠️ Gateway shutting down — Your current task will be interrupted.",
+        gateway_run._gateway_lifecycle_msg("gateway.shutdown_notify_stop"),
         metadata={"thread_id": "topic-7"},
     )
 
@@ -688,3 +688,161 @@ async def test_restart_shutdown_notification_anchors_telegram_dm_topic():
         "direct_messages_topic_id": "20197",
         "telegram_reply_to_message_id": "462",
     }
+
+
+# ── profile tag for lifecycle messages ───────────────────────────────────
+
+
+def test_gateway_profile_tag_empty_for_default(monkeypatch):
+    monkeypatch.setattr(
+        "hermes_cli.profiles.get_active_profile_name",
+        lambda: "default",
+    )
+    assert gateway_run._gateway_profile_tag() == ""
+
+
+def test_gateway_profile_tag_named_profile(monkeypatch):
+    monkeypatch.setattr(
+        "hermes_cli.profiles.get_active_profile_name",
+        lambda: "coder",
+    )
+    assert gateway_run._gateway_profile_tag() == " [coder]"
+
+
+def test_gateway_profile_tag_fallback_on_error_logs_warning(monkeypatch, caplog):
+    def _boom():
+        raise RuntimeError("profiles unavailable")
+
+    monkeypatch.setattr(
+        "hermes_cli.profiles.get_active_profile_name",
+        _boom,
+    )
+    with caplog.at_level("WARNING"):
+        assert gateway_run._gateway_profile_tag() == ""
+    assert any(
+        "Could not resolve active profile name" in r.getMessage()
+        for r in caplog.records
+    )
+
+
+def test_gateway_profile_tag_fallback_on_empty_name_logs_warning(monkeypatch, caplog):
+    monkeypatch.setattr(
+        "hermes_cli.profiles.get_active_profile_name",
+        lambda: "   ",
+    )
+    with caplog.at_level("WARNING"):
+        assert gateway_run._gateway_profile_tag() == ""
+    assert any(
+        "empty/invalid" in r.getMessage()
+        for r in caplog.records
+    )
+
+
+def test_gateway_lifecycle_msg_includes_profile_tag(monkeypatch):
+    monkeypatch.setattr(
+        "hermes_cli.profiles.get_active_profile_name",
+        lambda: "work",
+    )
+    msg = gateway_run._gateway_lifecycle_msg("gateway.shutdown_notify_stop")
+    assert " [work] " in msg or msg.startswith("⚠️ Gateway [work]")
+    assert "shutting down" in msg
+
+
+def test_gateway_lifecycle_msg_matches_original_when_default(monkeypatch):
+    monkeypatch.setattr(
+        "hermes_cli.profiles.get_active_profile_name",
+        lambda: "default",
+    )
+    msg = gateway_run._gateway_lifecycle_msg("gateway.shutdown_notify_stop")
+    assert msg == (
+        "⚠️ Gateway shutting down — Your current task will be interrupted."
+    )
+
+
+@pytest.mark.asyncio
+async def test_shutdown_notification_includes_named_profile(monkeypatch):
+    monkeypatch.setattr(
+        "hermes_cli.profiles.get_active_profile_name",
+        lambda: "ops",
+    )
+    runner, adapter = make_restart_runner()
+    source = make_restart_source(chat_id="parent-42", chat_type="group", thread_id="topic-7")
+    session_key = build_session_key(source)
+    runner._running_agents[session_key] = object()
+    runner.session_store._entries[session_key] = MagicMock(origin=source)
+    adapter.send = AsyncMock(return_value=SendResult(success=True, message_id="shutdown"))
+
+    await runner._notify_active_sessions_of_shutdown()
+
+    adapter.send.assert_awaited_once()
+    assert adapter.send.await_args.args[1] == (
+        "⚠️ Gateway [ops] shutting down — Your current task will be interrupted."
+    )
+
+
+def test_lifecycle_msg_draining_includes_named_profile(monkeypatch):
+    monkeypatch.setattr(
+        "hermes_cli.profiles.get_active_profile_name",
+        lambda: "coder",
+    )
+    msg = gateway_run._gateway_lifecycle_msg("gateway.draining", count=2)
+    assert " [coder] " in msg or msg.startswith("⏳ [coder]")
+    assert "2" in msg
+    assert "Draining" in msg
+
+
+def test_lifecycle_msg_busy_drain_includes_named_profile(monkeypatch):
+    monkeypatch.setattr(
+        "hermes_cli.profiles.get_active_profile_name",
+        lambda: "work",
+    )
+    msg = gateway_run._gateway_lifecycle_msg(
+        "gateway.busy_drain_queued",
+        action="restarting",
+    )
+    assert "Gateway [work] restarting" in msg
+
+
+def test_lifecycle_msg_model_restarting_includes_named_profile(monkeypatch):
+    monkeypatch.setattr(
+        "hermes_cli.profiles.get_active_profile_name",
+        lambda: "ops",
+    )
+    msg = gateway_run._gateway_lifecycle_msg("gateway.model.gateway_restarting")
+    assert "gateway [ops] is restarting" in msg
+
+
+def test_lifecycle_msg_code_skew_includes_named_profile(monkeypatch):
+    monkeypatch.setattr(
+        "hermes_cli.profiles.get_active_profile_name",
+        lambda: "ops",
+    )
+    msg = gateway_run._gateway_lifecycle_msg(
+        "gateway.model.code_skew_restart_required",
+        boot_rev="aaa",
+        disk_rev="bbb",
+    )
+    assert "gateway [ops] is running" in msg
+    assert "aaa" in msg and "bbb" in msg
+
+
+def test_recovered_reply_marker_named_profile(monkeypatch):
+    from gateway.delivery_ledger import RECOVERED_MARKER, recovered_reply_marker
+
+    monkeypatch.setattr(
+        "hermes_cli.profiles.get_active_profile_name",
+        lambda: "ops",
+    )
+    marker = recovered_reply_marker()
+    assert "gateway [ops] restarted" in marker
+    assert marker != RECOVERED_MARKER
+
+
+def test_recovered_reply_marker_default_matches_baseline(monkeypatch):
+    from gateway.delivery_ledger import RECOVERED_MARKER, recovered_reply_marker
+
+    monkeypatch.setattr(
+        "hermes_cli.profiles.get_active_profile_name",
+        lambda: "default",
+    )
+    assert recovered_reply_marker() == RECOVERED_MARKER

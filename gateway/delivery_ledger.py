@@ -64,10 +64,40 @@ _MAX_ROWS = 500
 
 # Visible prefix for redeliveries that might duplicate an already-received
 # message (crash mid-send / post-rejection retry). Honest at-least-once.
+# Untagged baseline — prefer :func:`recovered_reply_marker` at send sites so
+# multi-profile fleets can tell which gateway crashed mid-delivery.
 RECOVERED_MARKER = (
     "♻️ Recovered reply — the gateway restarted during delivery, "
     "so this may be a duplicate:\n\n"
 )
+
+
+def recovered_reply_marker() -> str:
+    """Return the recovered-reply prefix, optionally tagged with the profile.
+
+    Falls back to :data:`RECOVERED_MARKER` (original untagged wording) when the
+    active profile is ``default`` or cannot be resolved. Resolution failures
+    log a warning; this path must never raise into the redelivery loop.
+    """
+    try:
+        # Lazy import: gateway.run imports this module on the redelivery path.
+        from gateway.run import _gateway_profile_tag
+
+        tag = _gateway_profile_tag()
+    except Exception as exc:
+        logger.warning(
+            "Could not resolve profile tag for recovered-reply marker; "
+            "using untagged text: %s",
+            exc,
+        )
+        return RECOVERED_MARKER
+
+    if not tag:
+        return RECOVERED_MARKER
+    return (
+        f"♻️ Recovered reply — the gateway{tag} restarted during delivery, "
+        "so this may be a duplicate:\n\n"
+    )
 
 
 def _db_path():

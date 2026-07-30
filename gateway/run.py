@@ -2395,6 +2395,52 @@ _CONTROL_INTERRUPT_MESSAGES = frozenset(
 )
 
 
+def _gateway_profile_tag() -> str:
+    """Return a display tag for lifecycle messages, e.g. ``" [coder]"``.
+
+    Named profiles (and non-default ``HERMES_HOME`` → ``custom``) get
+    ``" [<name>]"`` so multi-gateway fleets can tell which process is
+    shutting down or coming back online.  The default profile returns
+    ``""`` so single-profile installs keep the original untagged wording.
+
+    Any resolution failure also returns ``""`` (fallback to the original
+    message shape) and logs a warning — lifecycle notifications must never
+    crash the shutdown/startup path over a missing profile id.
+    """
+    try:
+        from hermes_cli.profiles import get_active_profile_name
+
+        name = get_active_profile_name()
+    except Exception as exc:
+        logger.warning(
+            "Could not resolve active profile name for lifecycle messages; "
+            "using untagged gateway text: %s",
+            exc,
+        )
+        return ""
+
+    if not isinstance(name, str) or not name.strip():
+        logger.warning(
+            "Active profile name is empty/invalid (%r); using untagged gateway text",
+            name,
+        )
+        return ""
+
+    name = name.strip()
+    if name == "default":
+        return ""
+    return f" [{name}]"
+
+
+def _gateway_lifecycle_msg(key: str, **format_kwargs: Any) -> str:
+    """Translate a gateway lifecycle key with an optional ``{profile_tag}``.
+
+    Extra ``format_kwargs`` (e.g. ``count``, ``action``, ``boot_rev``) are
+    forwarded to :func:`agent.i18n.t` alongside the resolved profile tag.
+    """
+    return t(key, profile_tag=_gateway_profile_tag(), **format_kwargs)
+
+
 def _is_control_interrupt_message(message: Optional[str]) -> bool:
     """Return True when an interrupt message is internal control flow."""
     if not message:
@@ -5845,9 +5891,15 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             thread_meta = self._thread_metadata_for_source(event.source, reply_anchor)
             if self._queue_during_drain_enabled():
                 self._queue_or_replace_pending_event(session_key, event)
-                message = t("gateway.busy_drain_queued", action=self._status_action_gerund())
+                message = _gateway_lifecycle_msg(
+                    "gateway.busy_drain_queued",
+                    action=self._status_action_gerund(),
+                )
             else:
-                message = t("gateway.busy_drain_not_accepting", action=self._status_action_gerund())
+                message = _gateway_lifecycle_msg(
+                    "gateway.busy_drain_not_accepting",
+                    action=self._status_action_gerund(),
+                )
 
             await adapter._send_with_retry(
                 chat_id=event.source.chat_id,
@@ -6286,10 +6338,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         active = self._snapshot_running_agents()
         restart_source = self._restart_command_source if self._restart_requested else None
 
-        msg = (
-            t("gateway.shutdown_notify_restart")
+        msg = _gateway_lifecycle_msg(
+            "gateway.shutdown_notify_restart"
             if self._restart_requested
-            else t("gateway.shutdown_notify_stop")
+            else "gateway.shutdown_notify_stop"
         )
 
         notified: set[tuple[str, str, Optional[str]]] = set()
@@ -7127,10 +7179,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         """
         try:
             from gateway.delivery_ledger import (
-                RECOVERED_MARKER,
                 ledger_enabled,
                 mark_delivered,
                 mark_failed,
+                recovered_reply_marker,
                 sweep_recoverable,
             )
 
@@ -7168,7 +7220,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 continue
             content = row["content"]
             if row.get("needs_marker"):
-                content = RECOVERED_MARKER + content
+                content = recovered_reply_marker() + content
             metadata = (
                 {"thread_id": row["thread_id"]} if row.get("thread_id") else None
             )
@@ -10802,9 +10854,15 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 if self._queue_during_drain_enabled():
                     self._queue_or_replace_pending_event(_quick_key, event)
                 return (
-                    t("gateway.busy_drain_queued", action=self._status_action_gerund())
+                    _gateway_lifecycle_msg(
+                        "gateway.busy_drain_queued",
+                        action=self._status_action_gerund(),
+                    )
                     if self._queue_during_drain_enabled()
-                    else t("gateway.busy_drain_not_accepting", action=self._status_action_gerund())
+                    else _gateway_lifecycle_msg(
+                        "gateway.busy_drain_not_accepting",
+                        action=self._status_action_gerund(),
+                    )
                 )
             if self._busy_input_mode == "queue":
                 logger.debug("PRIORITY queue follow-up for session %s", _quick_key)
@@ -11288,7 +11346,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             return await self._handle_voice_command(event)
 
         if self._draining:
-            return t("gateway.busy_drain_no_work", action=self._status_action_gerund())
+            return _gateway_lifecycle_msg(
+                "gateway.busy_drain_no_work",
+                action=self._status_action_gerund(),
+            )
 
         # User-defined quick commands (bypass agent loop, no LLM call)
         if command:
@@ -11552,7 +11613,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 "Refusing new turn for session %s — external drain active.",
                 _quick_key,
             )
-            return t("gateway.busy_drain_maintenance")
+            return _gateway_lifecycle_msg("gateway.busy_drain_maintenance")
 
         # ── Claim this session before any await ───────────────────────
         # Between here and _run_agent registering the real AIAgent, there
@@ -13809,7 +13870,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             # running. Not a real failure — tell the user to resend instead of
             # dumping a RuntimeError.
             if _is_executor_shutdown_error(e):
-                return t("gateway.model.gateway_restarting")
+                return _gateway_lifecycle_msg("gateway.model.gateway_restarting")
             status_hint = ""
             status_code = getattr(e, "status_code", None)
             _hist_len = len(history) if 'history' in locals() else 0
@@ -16495,7 +16556,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             )
             result = await adapter.send(
                 str(chat_id),
-                t("gateway.restart_success"),
+                _gateway_lifecycle_msg("gateway.restart_success"),
                 metadata=_non_conversational_metadata(metadata, platform=platform),
             )
             # adapter.send() catches provider errors (e.g. "Chat not found")
@@ -16536,7 +16597,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         """
         delivered: set[tuple[str, str, Optional[str]]] = set()
         skipped = skip_targets or set()
-        message = t("gateway.online")
+        message = _gateway_lifecycle_msg("gateway.online")
 
         for platform, adapter in self.adapters.items():
             home = self.config.get_home_channel(platform)

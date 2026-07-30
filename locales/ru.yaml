@@ -21,7 +21,7 @@ approval:
 
 gateway:
   approval_expired: "⚠️ Срок одобрения истёк (агент больше не ожидает). Попросите агента повторить попытку."
-  draining:         "⏳ Ожидание завершения {count} активных агент(ов) перед перезапуском..."
+  draining:         "⏳{profile_tag} Ожидание завершения {count} активных агент(ов) перед перезапуском..."
   goal_cleared:     "✓ Цель очищена."
   no_active_goal:   "Нет активной цели."
   config_read_failed: "⚠️ Не удалось прочитать config.yaml: {error}"
@@ -48,7 +48,7 @@ gateway:
 
   model:
     error_prefix:           "Ошибка: {error}"
-    code_skew_restart_required: "This gateway is running code from {boot_rev} but the checkout on disk is now {disk_rev}. Switching models would risk a stale-module crash — restart the gateway to load the new code: hermes gateway restart"
+    code_skew_restart_required: "This gateway{profile_tag} is running code from {boot_rev} but the checkout on disk is now {disk_rev}. Switching models would risk a stale-module crash — restart the gateway to load the new code: hermes gateway restart"
     switched:               "Модель изменена на `{model}`"
     provider_label:         "Провайдер: {provider}"
     context_label:          "Контекст: {tokens} токенов"
@@ -258,8 +258,8 @@ gateway:
     tip:                   "\n✦ Совет: {tip}"
 
   restart:
-    in_progress:           "⏳ Перезапуск шлюза уже выполняется..."
-    restarting:            "♻ Перезапуск шлюза. Если уведомление не придёт в течение 60 секунд, перезапустите из консоли командой `hermes gateway restart`."
+    in_progress:           "⏳{profile_tag} Перезапуск шлюза уже выполняется..."
+    restarting:            "♻{profile_tag} Перезапуск шлюза. Если уведомление не придёт в течение 60 секунд, перезапустите из консоли командой `hermes gateway restart`."
 
   resume:
     db_unavailable:        "База данных сеансов недоступна."

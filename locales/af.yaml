@@ -21,7 +21,7 @@ approval:
 
 gateway:
   approval_expired: "⚠️ Goedkeuring het verval (die agent wag nie meer nie). Vra die agent om weer te probeer."
-  draining:         "⏳ Wag vir {count} aktiewe agent(e) voor herbegin..."
+  draining:         "⏳{profile_tag} Wag vir {count} aktiewe agent(e) voor herbegin..."
   goal_cleared:     "✓ Doelwit verwyder."
   no_active_goal:   "Geen aktiewe doelwit nie."
   config_read_failed: "⚠️ Kon nie config.yaml lees nie: {error}"
@@ -48,7 +48,7 @@ gateway:
 
   model:
     error_prefix:           "Fout: {error}"
-    code_skew_restart_required: "This gateway is running code from {boot_rev} but the checkout on disk is now {disk_rev}. Switching models would risk a stale-module crash — restart the gateway to load the new code: hermes gateway restart"
+    code_skew_restart_required: "This gateway{profile_tag} is running code from {boot_rev} but the checkout on disk is now {disk_rev}. Switching models would risk a stale-module crash — restart the gateway to load the new code: hermes gateway restart"
     switched:               "Model verander na `{model}`"
     provider_label:         "Verskaffer: {provider}"
     context_label:          "Konteks: {tokens} tokens"
@@ -258,8 +258,8 @@ gateway:
     tip:                   "\n✦ Wenk: {tip}"
 
   restart:
-    in_progress:           "⏳ Gateway-herbegin reeds aan die gang..."
-    restarting:            "♻ Herbegin van gateway. As jy nie binne 60 sekondes in kennis gestel word nie, herbegin vanaf die konsole met `hermes gateway restart`."
+    in_progress:           "⏳{profile_tag} Gateway-herbegin reeds aan die gang..."
+    restarting:            "♻{profile_tag} Herbegin van gateway. As jy nie binne 60 sekondes in kennis gestel word nie, herbegin vanaf die konsole met `hermes gateway restart`."
 
   resume:
     db_unavailable:        "Sessie-databasis is nie beskikbaar nie."

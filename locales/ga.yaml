@@ -25,7 +25,7 @@ approval:
 
 gateway:
   approval_expired: "⚠️ Tá an cead imithe in éag (níl an gníomhaire ag fanacht níos mó). Iarr ar an ngníomhaire iarracht eile a dhéanamh."
-  draining:         "⏳ Ag fanacht le {count} gníomhaire(í) gníomhach roimh atosú..."
+  draining:         "⏳{profile_tag} Ag fanacht le {count} gníomhaire(í) gníomhach roimh atosú..."
   goal_cleared:     "✓ Sprioc glanta."
   no_active_goal:   "Níl aon sprioc ghníomhach ann."
   config_read_failed: "⚠️ Níorbh fhéidir config.yaml a léamh: {error}"
@@ -52,7 +52,7 @@ gateway:
 
   model:
     error_prefix:           "Earráid: {error}"
-    code_skew_restart_required: "This gateway is running code from {boot_rev} but the checkout on disk is now {disk_rev}. Switching models would risk a stale-module crash — restart the gateway to load the new code: hermes gateway restart"
+    code_skew_restart_required: "This gateway{profile_tag} is running code from {boot_rev} but the checkout on disk is now {disk_rev}. Switching models would risk a stale-module crash — restart the gateway to load the new code: hermes gateway restart"
     switched:               "Athraíodh an tsamhail go `{model}`"
     provider_label:         "Soláthraí: {provider}"
     context_label:          "Comhthéacs: {tokens} comhartha"
@@ -262,8 +262,8 @@ gateway:
     tip:                   "\n✦ Leid: {tip}"
 
   restart:
-    in_progress:           "⏳ Tá atosú gateway ar siúl cheana féin..."
-    restarting:            "♻ Ag atosú gateway. Mura gcuirfear in iúl duit laistigh de 60 soicind, atosaigh ón gconsól le `hermes gateway restart`."
+    in_progress:           "⏳{profile_tag} Tá atosú gateway ar siúl cheana féin..."
+    restarting:            "♻{profile_tag} Ag atosú gateway. Mura gcuirfear in iúl duit laistigh de 60 soicind, atosaigh ón gconsól le `hermes gateway restart`."
 
   resume:
     db_unavailable:        "Níl bunachar sonraí na seisiún ar fáil."

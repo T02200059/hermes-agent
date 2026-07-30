@@ -137,7 +137,7 @@ def test_t_explicit_lang():
 
 
 def test_t_formats_placeholders():
-    msg = i18n.t("gateway.draining", lang="en", count=3)
+    msg = i18n.t("gateway.draining", lang="en", count=3, profile_tag="")
     assert "3" in msg
 
 

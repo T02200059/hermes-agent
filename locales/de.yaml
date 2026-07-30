@@ -21,7 +21,7 @@ approval:
 
 gateway:
   approval_expired: "⚠️ Genehmigung abgelaufen (Agent wartet nicht mehr). Bitten Sie den Agenten, es erneut zu versuchen."
-  draining:         "⏳ Warte auf {count} aktive(n) Agent(en) vor dem Neustart..."
+  draining:         "⏳{profile_tag} Warte auf {count} aktive(n) Agent(en) vor dem Neustart..."
   goal_cleared:     "✓ Ziel gelöscht."
   no_active_goal:   "Kein aktives Ziel."
   config_read_failed: "⚠️ config.yaml konnte nicht gelesen werden: {error}"
@@ -48,7 +48,7 @@ gateway:
 
   model:
     error_prefix:           "Fehler: {error}"
-    code_skew_restart_required: "This gateway is running code from {boot_rev} but the checkout on disk is now {disk_rev}. Switching models would risk a stale-module crash — restart the gateway to load the new code: hermes gateway restart"
+    code_skew_restart_required: "This gateway{profile_tag} is running code from {boot_rev} but the checkout on disk is now {disk_rev}. Switching models would risk a stale-module crash — restart the gateway to load the new code: hermes gateway restart"
     switched:               "Modell gewechselt zu `{model}`"
     provider_label:         "Anbieter: {provider}"
     context_label:          "Kontext: {tokens} Tokens"
@@ -258,8 +258,8 @@ gateway:
     tip:                   "\n✦ Tipp: {tip}"
 
   restart:
-    in_progress:           "⏳ Gateway-Neustart läuft bereits..."
-    restarting:            "♻ Gateway wird neu gestartet. Falls Sie nicht innerhalb von 60 Sekunden benachrichtigt werden, starten Sie über die Konsole mit `hermes gateway restart` neu."
+    in_progress:           "⏳{profile_tag} Gateway-Neustart läuft bereits..."
+    restarting:            "♻{profile_tag} Gateway wird neu gestartet. Falls Sie nicht innerhalb von 60 Sekunden benachrichtigt werden, starten Sie über die Konsole mit `hermes gateway restart` neu."
 
   resume:
     db_unavailable:        "Sitzungsdatenbank nicht verfügbar."

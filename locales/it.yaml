@@ -21,7 +21,7 @@ approval:
 
 gateway:
   approval_expired: "⚠️ Approvazione scaduta (l'agente non è più in attesa). Chiedi all'agente di riprovare."
-  draining:         "⏳ Attendo il completamento di {count} agente/i attivo/i prima di riavviare..."
+  draining:         "⏳{profile_tag} Attendo il completamento di {count} agente/i attivo/i prima di riavviare..."
   goal_cleared:     "✓ Obiettivo cancellato."
   no_active_goal:   "Nessun obiettivo attivo."
   config_read_failed: "⚠️ Impossibile leggere config.yaml: {error}"
@@ -48,7 +48,7 @@ gateway:
 
   model:
     error_prefix:           "Errore: {error}"
-    code_skew_restart_required: "This gateway is running code from {boot_rev} but the checkout on disk is now {disk_rev}. Switching models would risk a stale-module crash — restart the gateway to load the new code: hermes gateway restart"
+    code_skew_restart_required: "This gateway{profile_tag} is running code from {boot_rev} but the checkout on disk is now {disk_rev}. Switching models would risk a stale-module crash — restart the gateway to load the new code: hermes gateway restart"
     switched:               "Modello cambiato a `{model}`"
     provider_label:         "Provider: {provider}"
     context_label:          "Contesto: {tokens} token"
@@ -258,8 +258,8 @@ gateway:
     tip:                   "\n✦ Suggerimento: {tip}"
 
   restart:
-    in_progress:           "⏳ Riavvio del gateway già in corso..."
-    restarting:            "♻ Riavvio del gateway. Se non ricevi una notifica entro 60 secondi, riavvia dalla console con `hermes gateway restart`."
+    in_progress:           "⏳{profile_tag} Riavvio del gateway già in corso..."
+    restarting:            "♻{profile_tag} Riavvio del gateway. Se non ricevi una notifica entro 60 secondi, riavvia dalla console con `hermes gateway restart`."
 
   resume:
     db_unavailable:        "Database delle sessioni non disponibile."

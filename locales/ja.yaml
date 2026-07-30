@@ -21,7 +21,7 @@ approval:
 
 gateway:
   approval_expired: "⚠️ 承認の有効期限が切れました（エージェントはもう待機していません）。エージェントに再試行を依頼してください。"
-  draining:         "⏳ 再起動前に {count} 個のアクティブエージェントの終了を待っています..."
+  draining:         "⏳{profile_tag} 再起動前に {count} 個のアクティブエージェントの終了を待っています..."
   goal_cleared:     "✓ 目標をクリアしました。"
   no_active_goal:   "アクティブな目標はありません。"
   config_read_failed: "⚠️ config.yaml を読み込めませんでした: {error}"
@@ -48,7 +48,7 @@ gateway:
 
   model:
     error_prefix:           "エラー: {error}"
-    code_skew_restart_required: "This gateway is running code from {boot_rev} but the checkout on disk is now {disk_rev}. Switching models would risk a stale-module crash — restart the gateway to load the new code: hermes gateway restart"
+    code_skew_restart_required: "This gateway{profile_tag} is running code from {boot_rev} but the checkout on disk is now {disk_rev}. Switching models would risk a stale-module crash — restart the gateway to load the new code: hermes gateway restart"
     switched:               "モデルを `{model}` に切り替えました"
     provider_label:         "プロバイダー: {provider}"
     context_label:          "コンテキスト: {tokens} トークン"
@@ -258,8 +258,8 @@ gateway:
     tip:                   "\n✦ ヒント: {tip}"
 
   restart:
-    in_progress:           "⏳ ゲートウェイの再起動はすでに進行中です..."
-    restarting:            "♻ ゲートウェイを再起動しています。60 秒以内に通知が届かない場合は、コンソールで `hermes gateway restart` を実行してください。"
+    in_progress:           "⏳{profile_tag} ゲートウェイの再起動はすでに進行中です..."
+    restarting:            "♻{profile_tag} ゲートウェイを再起動しています。60 秒以内に通知が届かない場合は、コンソールで `hermes gateway restart` を実行してください。"
 
   resume:
     db_unavailable:        "セッションデータベースは利用できません。"

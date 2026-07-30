@@ -242,7 +242,7 @@ class TestGatewayRedeliverySweep:
         await runner._redeliver_pending_obligations()
 
         sent = adapter.send.call_args.kwargs
-        assert sent["content"].startswith(dl.RECOVERED_MARKER)
+        assert sent["content"].startswith(dl.recovered_reply_marker())
         assert sent["content"].endswith("the final answer")
 
     @pytest.mark.asyncio

@@ -75,7 +75,9 @@ def _model_switch_skew_guard() -> Optional[str]:
     if not skew:
         return None
     boot_rev, disk_rev = skew
-    return t(
+    from gateway.run import _gateway_lifecycle_msg
+
+    return _gateway_lifecycle_msg(
         "gateway.model.code_skew_restart_required",
         boot_rev=boot_rev,
         disk_rev=disk_rev,
@@ -1264,10 +1266,14 @@ class GatewaySlashCommandsMixin:
             return ""
 
         if self._restart_requested or self._draining:
+            from gateway.run import _gateway_lifecycle_msg
+
             count = self._running_agent_count()
             if count:
-                return t("gateway.draining", count=count)
-            return EphemeralReply(t("gateway.restart.in_progress"))
+                return _gateway_lifecycle_msg("gateway.draining", count=count)
+            return EphemeralReply(
+                _gateway_lifecycle_msg("gateway.restart.in_progress")
+            )
 
         # Save the requester's routing info so the new gateway process can
         # notify them once it comes back online.
@@ -1337,9 +1343,13 @@ class GatewaySlashCommandsMixin:
             self.request_restart(detached=False, via_service=True)
         else:
             self.request_restart(detached=True, via_service=False)
+        from gateway.run import _gateway_lifecycle_msg
+
         if active_agents:
-            return t("gateway.draining", count=active_agents)
-        return EphemeralReply(t("gateway.restart.restarting"))
+            return _gateway_lifecycle_msg("gateway.draining", count=active_agents)
+        return EphemeralReply(
+            _gateway_lifecycle_msg("gateway.restart.restarting")
+        )
 
     async def _handle_version_command(self, event: MessageEvent) -> str:
         """Handle /version — show the running Hermes Agent version."""

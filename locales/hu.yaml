@@ -21,7 +21,7 @@ approval:
 
 gateway:
   approval_expired: "⚠️ A jóváhagyás lejárt (az ügynök már nem vár). Kérd meg az ügynököt, hogy próbálja újra."
-  draining:         "⏳ {count} aktív ügynök befejezésére várunk az újraindítás előtt..."
+  draining:         "⏳{profile_tag} {count} aktív ügynök befejezésére várunk az újraindítás előtt..."
   goal_cleared:     "✓ A cél törölve."
   no_active_goal:   "Nincs aktív cél."
   config_read_failed: "⚠️ Nem sikerült olvasni a config.yaml fájlt: {error}"
@@ -48,7 +48,7 @@ gateway:
 
   model:
     error_prefix:           "Hiba: {error}"
-    code_skew_restart_required: "This gateway is running code from {boot_rev} but the checkout on disk is now {disk_rev}. Switching models would risk a stale-module crash — restart the gateway to load the new code: hermes gateway restart"
+    code_skew_restart_required: "This gateway{profile_tag} is running code from {boot_rev} but the checkout on disk is now {disk_rev}. Switching models would risk a stale-module crash — restart the gateway to load the new code: hermes gateway restart"
     switched:               "Modell átváltva: `{model}`"
     provider_label:         "Szolgáltató: {provider}"
     context_label:          "Kontextus: {tokens} token"
@@ -258,8 +258,8 @@ gateway:
     tip:                   "\n✦ Tipp: {tip}"
 
   restart:
-    in_progress:           "⏳ Az átjáró újraindítása már folyamatban van..."
-    restarting:            "♻ Átjáró újraindítása. Ha 60 másodpercen belül nem kapsz értesítést, indítsd újra a konzolból a `hermes gateway restart` paranccsal."
+    in_progress:           "⏳{profile_tag} Az átjáró újraindítása már folyamatban van..."
+    restarting:            "♻{profile_tag} Átjáró újraindítása. Ha 60 másodpercen belül nem kapsz értesítést, indítsd újra a konzolból a `hermes gateway restart` paranccsal."
 
   resume:
     db_unavailable:        "A munkamenet-adatbázis nem érhető el."

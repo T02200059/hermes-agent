@@ -21,7 +21,7 @@ approval:
 
 gateway:
   approval_expired: "⚠️ 批准已逾期（代理不再等待）。請讓代理重試。"
-  draining:         "⏳ 正在等待 {count} 個活躍代理結束後重新啟動..."
+  draining:         "⏳{profile_tag} 正在等待 {count} 個活躍代理結束後重新啟動..."
   goal_cleared:     "✓ 目標已清除。"
   no_active_goal:   "目前沒有作用中的目標。"
   config_read_failed: "⚠️ 無法讀取 config.yaml：{error}"
@@ -48,7 +48,7 @@ gateway:
 
   model:
     error_prefix:           "錯誤：{error}"
-    code_skew_restart_required: "This gateway is running code from {boot_rev} but the checkout on disk is now {disk_rev}. Switching models would risk a stale-module crash — restart the gateway to load the new code: hermes gateway restart"
+    code_skew_restart_required: "This gateway{profile_tag} is running code from {boot_rev} but the checkout on disk is now {disk_rev}. Switching models would risk a stale-module crash — restart the gateway to load the new code: hermes gateway restart"
     switched:               "已切換模型為 `{model}`"
     provider_label:         "提供方：{provider}"
     context_label:          "上下文：{tokens} tokens"
@@ -258,8 +258,8 @@ gateway:
     tip:                   "\n✦ 提示：{tip}"
 
   restart:
-    in_progress:           "⏳ 閘道重新啟動已在進行中……"
-    restarting:            "♻ 正在重新啟動閘道。如果 60 秒內未收到通知，請在主控台執行 `hermes gateway restart` 重新啟動。"
+    in_progress:           "⏳{profile_tag} 閘道重新啟動已在進行中……"
+    restarting:            "♻{profile_tag} 正在重新啟動閘道。如果 60 秒內未收到通知，請在主控台執行 `hermes gateway restart` 重新啟動。"
 
   resume:
     db_unavailable:        "工作階段資料庫無法使用。"

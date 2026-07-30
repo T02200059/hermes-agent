@@ -21,7 +21,7 @@ approval:
 
 gateway:
   approval_expired: "⚠️ Onay süresi doldu (ajan artık beklemiyor). Ajanın tekrar denemesini isteyin."
-  draining:         "⏳ Yeniden başlatmadan önce {count} aktif ajan bekleniyor..."
+  draining:         "⏳{profile_tag} Yeniden başlatmadan önce {count} aktif ajan bekleniyor..."
   goal_cleared:     "✓ Hedef temizlendi."
   no_active_goal:   "Aktif hedef yok."
   config_read_failed: "⚠️ config.yaml okunamadı: {error}"
@@ -48,7 +48,7 @@ gateway:
 
   model:
     error_prefix:           "Hata: {error}"
-    code_skew_restart_required: "This gateway is running code from {boot_rev} but the checkout on disk is now {disk_rev}. Switching models would risk a stale-module crash — restart the gateway to load the new code: hermes gateway restart"
+    code_skew_restart_required: "This gateway{profile_tag} is running code from {boot_rev} but the checkout on disk is now {disk_rev}. Switching models would risk a stale-module crash — restart the gateway to load the new code: hermes gateway restart"
     switched:               "Model `{model}` olarak değiştirildi"
     provider_label:         "Sağlayıcı: {provider}"
     context_label:          "Bağlam: {tokens} token"
@@ -258,8 +258,8 @@ gateway:
     tip:                   "\n✦ İpucu: {tip}"
 
   restart:
-    in_progress:           "⏳ Gateway yeniden başlatma zaten sürüyor..."
-    restarting:            "♻ Gateway yeniden başlatılıyor. 60 saniye içinde bildirim almazsanız konsoldan `hermes gateway restart` ile yeniden başlatın."
+    in_progress:           "⏳{profile_tag} Gateway yeniden başlatma zaten sürüyor..."
+    restarting:            "♻{profile_tag} Gateway yeniden başlatılıyor. 60 saniye içinde bildirim almazsanız konsoldan `hermes gateway restart` ile yeniden başlatın."
 
   resume:
     db_unavailable:        "Oturum veritabanı kullanılamıyor."

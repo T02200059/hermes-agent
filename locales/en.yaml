@@ -438,7 +438,8 @@ approval:
 gateway:
   # Messenger replies to slash commands and implicit state changes.
   approval_expired: "⚠️ Approval expired (agent is no longer waiting). Ask the agent to try again."
-  draining:         "⏳ Draining {count} active agent(s) before restart..."
+  # {profile_tag} is "" for default, or " [<name>]" for named/custom profiles.
+  draining:         "⏳{profile_tag} Draining {count} active agent(s) before restart..."
   goal_cleared:     "✓ Goal cleared."
   no_active_goal:   "No active goal."
   config_read_failed: "⚠️ Could not read config.yaml: {error}"
@@ -464,16 +465,17 @@ gateway:
   background_task_failed: "❌ Background task {task_id} failed: {error}"
 
   # Gateway lifecycle messages — shown during restart/shutdown/draining.
-  shutdown_notify_restart: "🌆 Gateway restarting — Your current task will be interrupted. Send any message after restart and I'll try to resume where you left off."
-  shutdown_notify_stop:    "⚠️ Gateway shutting down — Your current task will be interrupted."
-  restart_success:         "🌃 Gateway restarted successfully. Your session continues."
-  online:                  "🏙 Gateway online — Hermes is back and ready."
+  # {profile_tag} is "" for the default profile, or " [<name>]" for named/custom.
+  shutdown_notify_restart: "🌆 Gateway{profile_tag} restarting — Your current task will be interrupted. Send any message after restart and I'll try to resume where you left off."
+  shutdown_notify_stop:    "⚠️ Gateway{profile_tag} shutting down — Your current task will be interrupted."
+  restart_success:         "🌃 Gateway{profile_tag} restarted successfully. Your session continues."
+  online:                  "🏙 Gateway{profile_tag} online — Hermes is back and ready."
 
   # Busy-ack messages — shown when the user sends a message while the agent is running/draining.
-  busy_drain_queued:       "⏳ Gateway {action} — queued for the next turn after it comes back."
-  busy_drain_not_accepting: "⏳ Gateway is {action} and is not accepting another turn right now."
-  busy_drain_no_work:      "⏳ Gateway is {action} and is not accepting new work right now."
-  busy_drain_maintenance:  "⏳ This agent is draining for a maintenance action and isn't accepting new turns right now. It'll be back in a moment — please resend shortly."
+  busy_drain_queued:       "⏳ Gateway{profile_tag} {action} — queued for the next turn after it comes back."
+  busy_drain_not_accepting: "⏳ Gateway{profile_tag} is {action} and is not accepting another turn right now."
+  busy_drain_no_work:      "⏳ Gateway{profile_tag} is {action} and is not accepting new work right now."
+  busy_drain_maintenance:  "⏳ This agent{profile_tag} is draining for a maintenance action and isn't accepting new turns right now. It'll be back in a moment — please resend shortly."
   busy_steer_ack:          "⏩ Steered into current run{status_detail}. Your message arrives after the next tool call."
   busy_queue_ack:          "⏳ Queued for the next turn{status_detail}. I'll respond once the current task finishes."
   busy_interrupt_ack:      "⚡ Interrupting current task{status_detail}. I'll respond to your message shortly."
@@ -661,7 +663,7 @@ Install it with: `hermes skills install {path}`"
   # ("Provider:", "Context:", etc.) and the help/footer lines are localized.
   model:
     error_prefix:           "Error: {error}"
-    code_skew_restart_required: "This gateway is running code from {boot_rev} but the checkout on disk is now {disk_rev}. Switching models would risk a stale-module crash — restart the gateway to load the new code: hermes gateway restart"
+    code_skew_restart_required: "This gateway{profile_tag} is running code from {boot_rev} but the checkout on disk is now {disk_rev}. Switching models would risk a stale-module crash — restart the gateway to load the new code: hermes gateway restart"
     rate_limited: "⏱️ The model provider is rate-limiting requests. Please wait a moment and try again."
     switched:               "Model switched to `{model}`"
     provider_label:         "Provider: {provider}"
@@ -761,7 +763,7 @@ Install it with: `hermes skills install {path}`"
     no_response_generated:             "⚠️ Processing completed but no response was generated. This may be a transient error — try sending your message again."
     not_processed_prev_turn:           "⚠️ Your message wasn't processed (the previous turn was still being cleaned up). Please send it again."
     empty_tool_response:               "⚠️ The model returned no response after processing tool results. This can happen with some models — try again or rephrase your question."
-    gateway_restarting:                "⚠️ The gateway is restarting, so your message wasn't fully processed.\nPlease send it again in a few seconds."
+    gateway_restarting:                "⚠️ The gateway{profile_tag} is restarting, so your message wasn't fully processed.\nPlease send it again in a few seconds."
     compression_aborted:               "⚠️ Context compression aborted ({error}). No messages were dropped — conversation is unchanged. Run /compress to retry, /reset for a clean session, or check your auxiliary.compression model configuration."
 
   agents:
@@ -1001,8 +1003,8 @@ Install it with: `hermes skills install {path}`"
     tip:                   "\n✦ Tip: {tip}"
 
   restart:
-    in_progress:           "⏳ Gateway restart already in progress..."
-    restarting:            "🌇 Restarting gateway. If you aren't notified within 60 seconds, restart from the console with `hermes gateway restart`."
+    in_progress:           "⏳ Gateway{profile_tag} restart already in progress..."
+    restarting:            "🌇 Restarting gateway{profile_tag}. If you aren't notified within 60 seconds, restart from the console with `hermes gateway restart`."
 
   resume:
     db_unavailable:        "Session database not available."

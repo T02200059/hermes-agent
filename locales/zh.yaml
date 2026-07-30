@@ -445,7 +445,8 @@ approval:
 
 gateway:
   approval_expired: "⚠️ 批准已过期（代理不再等待）。请让代理重试。"
-  draining:         "⏳ 正在等待 {count} 个活跃代理结束后重启..."
+  # {profile_tag} 对 default 为空，命名/custom profile 为 " [<name>]"。
+  draining:         "⏳{profile_tag} 正在等待 {count} 个活跃代理结束后重启..."
   goal_cleared:     "✓ 目标已清除。"
   no_active_goal:   "当前没有活跃的目标。"
   config_read_failed: "⚠️ 无法读取 config.yaml：{error}"
@@ -470,16 +471,17 @@ gateway:
   background_task_failed: "❌ 后台任务 {task_id} 失败：{error}"
 
   # Gateway 生命周期消息 — 重启/关闭/排空时显示
-  shutdown_notify_restart: "🌆 网关正在重启 — 当前任务将被中断。重启后发送任意消息，我会尝试从断点处继续。"
-  shutdown_notify_stop:    "⏸️ 网关正在关闭 — 当前任务将被中断。"
-  restart_success:         "🌃 网关重启成功。你的会话继续。"
-  online:                  "🏙 网关已上线 — Hermes 已准备就绪。"
+  # {profile_tag} 对 default 为空，命名/custom profile 为 " [<name>]"。
+  shutdown_notify_restart: "🌆 网关{profile_tag}正在重启 — 当前任务将被中断。重启后发送任意消息，我会尝试从断点处继续。"
+  shutdown_notify_stop:    "⏸️ 网关{profile_tag}正在关闭 — 当前任务将被中断。"
+  restart_success:         "🌃 网关{profile_tag}重启成功。你的会话继续。"
+  online:                  "🏙 网关{profile_tag}已上线 — Hermes 已准备就绪。"
 
   # 忙碌应答 — 代理正在运行时用户发消息的反馈
-  busy_drain_queued:        "⏳ 网关正在{action} — 消息已排队，待网关恢复后进入下一轮。"
-  busy_drain_not_accepting: "⏳ 网关正在{action}，目前无法接受新的轮次。"
-  busy_drain_no_work:       "⏳ 网关正在{action}，目前无法接受新任务。"
-  busy_drain_maintenance:   "⏳ 当前代理正在为维护操作排空，暂时不接受新的轮次。稍后会恢复，请稍后重新发送消息。"
+  busy_drain_queued:        "⏳ 网关{profile_tag}正在{action} — 消息已排队，待网关恢复后进入下一轮。"
+  busy_drain_not_accepting: "⏳ 网关{profile_tag}正在{action}，目前无法接受新的轮次。"
+  busy_drain_no_work:       "⏳ 网关{profile_tag}正在{action}，目前无法接受新任务。"
+  busy_drain_maintenance:   "⏳ 当前代理{profile_tag}正在为维护操作排空，暂时不接受新的轮次。稍后会恢复，请稍后重新发送消息。"
   busy_steer_ack:           "⏩ 已导向当前运行{status_detail}。你的消息将在下一次工具调用后送达。"
   busy_queue_ack:           "⏳ 已排队到下一轮{status_detail}。当前任务完成后我会回复你。"
   busy_interrupt_ack:       "⚡ 正在中断当前任务{status_detail}。稍后我会回复你的消息。"
@@ -661,7 +663,7 @@ gateway:
 
   model:
     error_prefix:           "错误：{error}"
-    code_skew_restart_required: "当前网关运行的代码版本为 {boot_rev}，但磁盘上的 checkout 已变为 {disk_rev}。此时切换模型可能导致模块过期崩溃 — 请重启网关以加载新代码：hermes gateway restart"
+    code_skew_restart_required: "当前网关{profile_tag}运行的代码版本为 {boot_rev}，但磁盘上的 checkout 已变为 {disk_rev}。此时切换模型可能导致模块过期崩溃 — 请重启网关以加载新代码：hermes gateway restart"
     rate_limited: "⏱️ 模型提供方正在限制请求速率。请稍后再试。"
     switched:               "已切换模型为 `{model}`"
     provider_label:         "提供方：{provider}"
@@ -759,7 +761,7 @@ gateway:
     no_response_generated:             "⚠️ 处理已完成但未生成回复。这可能是暂时性错误 — 请重新发送你的消息。"
     not_processed_prev_turn:           "⚠️ 你的消息未被处理（上一轮仍在清理中）。请重新发送。"
     empty_tool_response:               "⚠️ 模型在处理工具结果后未返回响应。某些模型可能会出现这种情况 — 请重试或重新表述你的问题。"
-    gateway_restarting:                "⚠️ 网关正在重启，因此你的消息未被完整处理。\n请几秒后重新发送。"
+    gateway_restarting:                "⚠️ 网关{profile_tag}正在重启，因此你的消息未被完整处理。\n请几秒后重新发送。"
     compression_aborted:               "⚠️ 上下文压缩已中止（{error}）。没有消息被丢弃 — 对话保持不变。运行 /compress 重试，/reset 开始新会话，或检查 auxiliary.compression 模型配置。"
 
   agents:
@@ -999,8 +1001,8 @@ gateway:
     tip:                   "\n✦ 提示：{tip}"
 
   restart:
-    in_progress:           "⏳ 网关重启已在进行中……"
-    restarting:            "🌇 正在重启网关。如果 60 秒内没有收到通知，请在控制台运行 `hermes gateway restart` 重启。"
+    in_progress:           "⏳ 网关{profile_tag}重启已在进行中……"
+    restarting:            "🌇 正在重启网关{profile_tag}。如果 60 秒内没有收到通知，请在控制台运行 `hermes gateway restart` 重启。"
 
   resume:
     db_unavailable:        "会话数据库不可用。"
