@@ -16,12 +16,19 @@
 
 feishu:
   bots:
-    cli_a96f6714a2781cb3: # YangtbClawProMax
+    cli_a96f6714a2781cb3: # YangtbClawProMax (主 bot WS 在 default 网关)
       user_routing:
+        # resolve_profile_route 优先级：
+        #   1. whitelist open_id → 主网关 (None，不转发)
+        #   2. chat_profile_routes / user_profile_routes
+        #   3. default_profile → profile_endpoints 转发
+        #   4. 无 route → 主网关
+        #
+        # 杨天宝在 whitelist → 对话留在主网关 (default)。
+        # 其他人走 default_profile → hermesxiyun。
         whitelist:
-        # - 1 # 占位符
-        - ou_2924a1f56adac3a07a0fef2cea2543c5  # 杨天宝
-        - ou_6cb6f4ab129937d7fbf01bd7bf5cfe8d  # 庭威总
+          - ou_2924a1f56adac3a07a0fef2cea2543c5  # 杨天宝 → 主网关
+        # - ou_6cb6f4ab129937d7fbf01bd7bf5cfe8d  # 庭威总
         chat_profile_routes: {}
         user_profile_routes: {}
         default_profile: hermesxiyun
