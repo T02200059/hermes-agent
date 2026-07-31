@@ -35,6 +35,39 @@ _NON_CODE_VERIFY_EXTENSIONS = frozenset(
         ".log",
         ".csv",
         ".tsv",
+        # Creative / visual artifacts — no verifiable runtime behavior; the
+        # ``CODING_VERIFY_GUIDANCE`` addendum already says hold off tests and
+        # linters until the user says they like the result. Including these
+        # here keeps the "edit code -> verify" nudge from firing on PPT,
+        # diagram, image, and document work and forcing ``hermes-verify-*``
+        # scripts (verified fix 2026-07-31: 7-30 architecture-diagram session
+        # hit this false-positive 6 times in a row on /tmp/*.svg writes).
+        ".svg",
+        ".svgz",
+        ".html",
+        ".htm",
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".gif",
+        ".webp",
+        ".bmp",
+        ".tiff",
+        ".ico",
+        ".pdf",
+        ".pptx",
+        ".ppt",
+        ".key",
+        ".odp",
+        ".fig",
+        ".sketch",
+        ".psd",
+        ".ai",
+        ".indd",
+        ".xlsx",
+        ".xls",
+        ".docx",
+        ".doc",
     }
 )
 

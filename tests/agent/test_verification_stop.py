@@ -385,3 +385,34 @@ def test_is_non_code_path_classification():
     assert _is_non_code_path("src/app.ts") is False
     assert _is_non_code_path("config.yaml") is False
     assert _is_non_code_path("run_agent.py") is False
+    # Creative / visual artifacts must be classified as non-code so the
+    # "edit code -> verify" nudge does not fire on PPT / diagram / image work.
+    for path in (
+        "/tmp/damodel-ops-diagram/damodel-ops.svg",
+        "/tmp/diagram/architecture-blueprint.svg",
+        "static/landing/index.html",
+        "exports/quarterly-deck.pptx",
+        "exports/quarterly-deck.pdf",
+        "assets/logo.png",
+        "assets/hero.jpg",
+        "exports/animated-flow.gif",
+        "exports/diagram.webp",
+        "exports/photo.bmp",
+        "exports/print.tiff",
+        "exports/favicon.ico",
+        "exports/source.fig",
+        "exports/cover.sketch",
+        "exports/design.psd",
+        "exports/illustration.ai",
+        "exports/book.indd",
+        "exports/spreadsheet.xlsx",
+        "exports/spreadsheet.xls",
+        "exports/report.docx",
+        "exports/report.doc",
+        "exports/slides.odp",
+        "exports/keynote.key",
+        "exports/old.ppt",
+        "exports/page.htm",
+        "exports/archive.svgz",
+    ):
+        assert _is_non_code_path(path) is True, f"expected non-code: {path}"
