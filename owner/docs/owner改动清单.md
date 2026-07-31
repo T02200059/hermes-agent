@@ -774,6 +774,17 @@
 - **侵入类型**：inline（薄恢复）
 - **Commit**：`6d5c00b51`
 
+### 7.18 Steer 模式 vision enrichment（飞书图片不丢弃）
+
+- **背景**：`busy_input_mode=steer` 时，`_handle_active_session_busy_message` 只取 `event.text` 传给 `agent.steer()`，`event.media_urls` 被静默丢弃。飞书用户在 agent 运行期间发带图片的富文本消息（post 类型），图片被 adapter 下载到本地缓存后放入 `media_urls`，但 steer 分支不处理它们——agent 只看到用户的文字，看不到图片内容。`/queue` 路径不受影响（drain 时走完整 vision 管线），问题仅限 `/steer`。
+- **方案**：
+  - `owner/gateway/steer_vision.py`：`enrich_steer_with_vision(runner, steer_text, event, session_key)` — 检查 `event.media_urls`，有图片时调 `runner._enrich_message_with_vision()`（复用正常消息路径的 text-mode vision 管线，底层走 `auxiliary.vision`）把图片描述拼到 steer_text 前面。失败时 fallback 到原始 steer_text，不丢失 steer。
+  - `gateway/run.py`：steer 分支加 3 行薄胶水委托（`# [owner]` 标记 + lazy import + 调用）
+  - `tests/gateway/test_steer_vision_enrichment.py`：4 个测试覆盖有图/无图/失败 fallback/空文本
+- **涉及文件**：`owner/gateway/steer_vision.py`（新增）、`gateway/run.py`（3 行薄胶水）、`tests/gateway/test_steer_vision_enrichment.py`（新增）
+- **侵入类型**：薄胶水 / 委托（`[owner]` 标记 + lazy import + 委托到 owner/）
+- **Commit**：`176b387a7`
+
 ---
 
 ## 八、工具链：Diff / Patch / Checkpoint
@@ -1036,7 +1047,7 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 | `owner/cron/` | cron session 隔离 + restart scrub + run_job hook + approval helper | cron/* + gateway/run.py |
 | `owner/diff_card/` | diff 卡片平台分发（飞书/QQ） | feishu/adapter.py |
 | `owner/feishu/` | 飞书深度定制（16 模块） | feishu/adapter.py（64 处标记） |
-| `owner/gateway/` | inbound_context + hygiene_compression_notice | gateway/run.py |
+| `owner/gateway/` | inbound_context + hygiene_compression_notice + steer_vision | gateway/run.py |
 | `owner/patches/` | runtime patch（OpenViking recall + memory synthetic guard + pool base_url override + **queue_cancel**） | owner-extensions plugin / hermes_cli/runtime_provider.py |
 | `owner/providers/credential_helpers.py` | GitHub token 校验等 credential helper | hermes_cli/model_switch.py |
 | `owner/scripts/` | 运维脚本（备份/健康检查/汇率/todo 扫描/**HN Daily**/skill 同步/**Viking 记忆质量**/upstream_sync/周会/swagger） | — |
@@ -1055,7 +1066,7 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 
 | 文件 | 侵入内容 | owner/ 对应模块 | 相关 commit |
 |------|----------|-----------------|-------------|
-| `gateway/run.py` | cron env scrub ×3、executor-shutdown、inbound context、hygiene notice、auto-card、per-chat display、chained quick command | owner/cron/、owner/gateway/、owner/feishu/、owner/display_overrides.py | 几乎所有 §11/§17 commit |
+| `gateway/run.py` | cron env scrub ×3、executor-shutdown、inbound context、hygiene notice、auto-card、per-chat display、chained quick command、steer vision enrichment（§7.18） | owner/cron/、owner/gateway/、owner/feishu/、owner/display_overrides.py、owner/gateway/steer_vision.py | 几乎所有 §11/§17 commit |
 | `plugins/platforms/feishu/adapter.py` | 64 处 `[owner]` 标记：approval/auto_card/bot_menu/clarify/diff_card/model_picker/profile_routing/resume_card/sender_name/early-typing 委托 | owner/feishu/*（16 模块） | §4.2/§5.3-5.7/§17.1 |
 | `agent/conversation_loop.py` | MoA 注入（CR-005 已改为独立 message）、content-filter fallback、adaptive backoff、thinking-timeout、attribution 重建、tool_call_id 胶水 | owner/attribution.py、owner/api_error_hints.py | a6dcd6ed8、9a05e50b4、362304bc8 |
 | `tools/approval.py` | home-prefix fold（CR-001 修复）、skill script 自动审批（3 处委托）、patch.yaml allowlist 合并、cron active helper | owner/approval/、owner/patch_config.py、owner/cron/approval_helper.py | 82fe8c962、5dd9580b4、99a374f64 |
