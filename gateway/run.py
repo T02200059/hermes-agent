@@ -6057,6 +6057,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         steered = False
         if effective_mode == "steer":
             steer_text = (event.text or "").strip()
+            # [owner] steer vision enrichment for attached images (see owner/gateway/steer_vision.py)
+            from owner.gateway.steer_vision import enrich_steer_with_vision
+            steer_text = await enrich_steer_with_vision(self, steer_text, event, session_key)
             can_steer = (
                 steer_text
                 and running_agent is not None
