@@ -61,6 +61,19 @@ approval:
   feishu_resolved_deny: "已拒绝"
   feishu_resolved_default: "已处理"
   feishu_resolved_body: "由 {user_name} 操作\n\n```\n{command}\n```"
+  # 审批卡点击失败态（CallBackCard，避免静默无反馈）
+  feishu_fail_unauthorized_title: "⚠️ 无权审批"
+  feishu_fail_unauthorized_body: "你的账号无权操作此审批。请使用已授权账号，或联系管理员检查 FEISHU_GROUP_POLICY / 用户允许列表。**审批仍在等待**，未授权点击不会取消请求。"
+  feishu_fail_already_resolved_title: "ℹ️ 已处理"
+  feishu_fail_already_resolved_body: "该审批已被处理或已失效，无需再次点击。"
+  feishu_fail_chat_mismatch_title: "⚠️ 无效操作"
+  feishu_fail_chat_mismatch_body: "请在原审批消息所在群聊中点击，勿转发到其它会话。"
+  feishu_fail_missing_id_title: "⚠️ 无效请求"
+  feishu_fail_missing_id_body: "审批标识缺失，无法处理本次点击。"
+  feishu_fail_submit_failed_title: "⚠️ 处理失败"
+  feishu_fail_submit_failed_body: "无法提交审批结果，请稍后重试或在原对话重新发起操作。"
+  feishu_fail_default_title: "⚠️ 操作失败"
+  feishu_fail_default_body: "审批操作未生效，请查看日志或联系管理员。"
   feishu_permanent_disabled: "💡 永久允许已禁用，请选择允许一次或本次会话"
   # approvals.mode=smart 判定 DENY 后，仍允许 owner 人工覆盖，但仅限一次操作。
   # 不提供「本次会话 / 永久允许」，避免一次放行削弱后续同类命令的防护。

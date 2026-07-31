@@ -232,7 +232,12 @@ def handle_approval_card_action(
     action_value: Dict[str, Any],
     loop: Any,
 ) -> Any:
-    """Schedule approval resolution and build the synchronous callback response."""
+    """Schedule approval resolution and build the synchronous callback response.
+
+    Failure paths return a frozen error CallBackCard (not an empty response) so
+    the click is never silent. Unauthorized / mismatch must **not** unblock the
+    agent — only a successful resolve path does.
+    """
     try:
         from lark_oapi.event.callback.model.p2_card_action_trigger import (
             CallBackCard,
@@ -242,14 +247,27 @@ def handle_approval_card_action(
         CallBackCard = None  # type: ignore[misc, assignment]
         P2CardActionTriggerResponse = None  # type: ignore[misc, assignment]
 
+    def _fail(reason: str, command: str = "") -> Any:
+        return _callback_response_with_card(
+            CallBackCard,
+            P2CardActionTriggerResponse,
+            build_failed_approval_card(reason=reason, command=command),
+        )
+
     approval_id = action_value.get("approval_id")
     if approval_id is None:
-        logger.debug("[Feishu] Card action missing approval_id, ignoring")
-        return P2CardActionTriggerResponse() if P2CardActionTriggerResponse else None
+        logger.warning("[Feishu] Card action missing approval_id")
+        return _fail("missing_id")
+
     state = ctx.get(approval_id)
     if not state:
-        logger.debug("[Feishu] Approval %s already resolved or unknown", approval_id)
-        return P2CardActionTriggerResponse() if P2CardActionTriggerResponse else None
+        logger.info(
+            "[Feishu] Approval %s already resolved or unknown (click feedback card)",
+            approval_id,
+        )
+        return _fail("already_resolved")
+
+    command = str(state.get("command", "") or "")
     choice = ctx.choice_from_action(action_value.get("hermes_action"))
 
     operator = getattr(event, "operator", None)
@@ -259,8 +277,20 @@ def handle_approval_card_action(
         user_id=str(getattr(operator, "user_id", "") or ""),
     )
     if not adapter._allow_group_message(sender_id, state.get("chat_id", ""), is_bot=False):
-        logger.warning("[Feishu] Unauthorized approval click by %s", open_id or "<unknown>")
-        return P2CardActionTriggerResponse() if P2CardActionTriggerResponse else None
+        logger.warning(
+            "[Feishu] Unauthorized approval click by %s (group policy)",
+            open_id or "<unknown>",
+        )
+        return _fail("unauthorized", command)
+
+    if not adapter._is_interactive_operator_authorized(open_id):
+        logger.warning(
+            "[Feishu] Unauthorized approval click by %s for approval %s "
+            "(interactive operator allowlist)",
+            open_id or "<unknown>",
+            approval_id,
+        )
+        return _fail("unauthorized", command)
 
     callback_chat_id = str(getattr(getattr(event, "context", None), "open_chat_id", "") or "")
     expected_chat_id = str(state.get("chat_id", "") or "")
@@ -271,7 +301,7 @@ def handle_approval_card_action(
             expected_chat_id,
             callback_chat_id,
         )
-        return P2CardActionTriggerResponse() if P2CardActionTriggerResponse else None
+        return _fail("chat_mismatch", command)
 
     logger.info(
         "[Feishu card] approval action approval_id=%s choice=%s open_id=%r",
@@ -300,20 +330,18 @@ def handle_approval_card_action(
             chat_id=chat_id,
         ),
     ):
-        return P2CardActionTriggerResponse() if P2CardActionTriggerResponse else None
-
-    command = state.get("command", "") if isinstance(state, dict) else ""
-    if P2CardActionTriggerResponse is None:
-        return None
-    response = P2CardActionTriggerResponse()
-    if CallBackCard is not None:
-        card = CallBackCard()
-        card.type = "raw"
-        card.data = build_resolved_approval_card(
-            choice=choice, user_name=user_name, command=command
+        logger.warning(
+            "[Feishu] Failed to schedule approval resolve for %s", approval_id,
         )
-        response.card = card
-    return response
+        return _fail("submit_failed", command)
+
+    return _callback_response_with_card(
+        CallBackCard,
+        P2CardActionTriggerResponse,
+        build_resolved_approval_card(
+            choice=choice, user_name=user_name, command=command
+        ),
+    )
 
 
 def build_resolved_approval_card(
@@ -341,3 +369,67 @@ def build_resolved_approval_card(
             },
         ],
     }
+
+
+# Failure reasons for CallBackCard error states (not silent empty responses).
+# Keys map to approval.feishu_fail_<reason>_title / _body i18n entries.
+_FAIL_REASON_KEYS = frozenset({
+    "unauthorized",
+    "already_resolved",
+    "chat_mismatch",
+    "missing_id",
+    "submit_failed",
+})
+
+
+def build_failed_approval_card(
+    *,
+    reason: str,
+    command: str = "",
+) -> Dict[str, Any]:
+    """Build a frozen failure-state card when a click cannot resolve the approval.
+
+    Does **not** unblock the agent (unauthorized / mismatch must not act as
+    deny). Removes action buttons so the user sees an explicit outcome instead
+    of a silent no-op.
+    """
+    key = reason if reason in _FAIL_REASON_KEYS else "default"
+    title = t(f"approval.feishu_fail_{key}_title")
+    body = t(f"approval.feishu_fail_{key}_body")
+    cmd = (command or "").strip()
+    if cmd:
+        preview = cmd[:500] + ("..." if len(cmd) > 500 else "")
+        body = f"{body}\n\n```\n{preview}\n```"
+
+    # Orange for "already done" (informational); red for hard failures.
+    template = "orange" if key == "already_resolved" else "red"
+    return {
+        "config": {"wide_screen_mode": True},
+        "header": {
+            "title": {"content": title, "tag": "plain_text"},
+            "template": template,
+        },
+        "elements": [
+            {
+                "tag": "markdown",
+                "content": body,
+            },
+        ],
+    }
+
+
+def _callback_response_with_card(
+    CallBackCard: Any,
+    P2CardActionTriggerResponse: Any,
+    card_data: Dict[str, Any],
+) -> Any:
+    """Wrap raw card dict in Feishu SDK CallBackCard response, or empty if SDK missing."""
+    if P2CardActionTriggerResponse is None:
+        return None
+    response = P2CardActionTriggerResponse()
+    if CallBackCard is not None and card_data:
+        card = CallBackCard()
+        card.type = "raw"
+        card.data = card_data
+        response.card = card
+    return response
