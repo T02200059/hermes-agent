@@ -102,6 +102,15 @@ def register(ctx) -> None:
     except Exception:
         logger.warning("owner: memory-feishu-bridge hooks registration failed", exc_info=True)
 
+    # § skill_manage Feishu write approval (profile whitelist + 24h wait)
+    # See owner/approval/skill_manage_gate.py + skill_manage_bridge/
+    try:
+        from .skill_manage_bridge import register_hooks as _register_skill_manage_hooks
+        _register_skill_manage_hooks(ctx)
+        logger.debug("owner: skill_manage-bridge hooks registered via owner-extensions")
+    except Exception:
+        logger.warning("owner: skill_manage-bridge hooks registration failed", exc_info=True)
+
     # §4.11 Feishu guide card — queue cancel (owner-q token on FIFO)
     # Enables「撤销队列」on the queue done card without a core /unqueue command.
     # See owner/patches/queue_cancel_patch.py + owner/feishu/steer_card.py.
