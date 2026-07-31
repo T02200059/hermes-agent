@@ -265,17 +265,38 @@ def _route_picker_command(
                 message_type=MessageType.COMMAND,
                 source=source,
                 raw_message=None,
-                message_id="",  # no reply_to — synthetic, not a real Feishu message
+                message_id="",  # no reply_to - synthetic, not a real Feishu message
                 timestamp=datetime.now(),
             )
-            await adapter._handle_message_with_guards(synthetic_event)
+
+            # Call the gateway message handler directly (not
+            # _handle_message_with_guards) so the /model command is
+            # processed synchronously and its response is sent to the
+            # user.  Going through _handle_message_with_guards ->
+            # handle_message -> _start_session_processing spawns a
+            # fire-and-forget background task that is silently dropped
+            # when the session is idle (no active agent turn to attach
+            # to), causing the model switch to never execute while the
+            # done-card already told the user it succeeded.
+            handler = getattr(adapter, "_message_handler", None)
+            if handler is not None:
+                response = await handler(synthetic_event)
+                # Send the response just like handle_message would for
+                # a bypass command (inline dispatch path).
+                if response:
+                    _text = response.strip() if isinstance(response, str) else str(response)
+                    if _text:
+                        await adapter._send_with_retry(
+                            chat_id=chat_id,
+                            content=_text,
+                        )
             logger.info(
                 "[Feishu card] model_picker command routed OK command=%s chat_id=%s",
                 command,
                 chat_id,
             )
         except Exception as exc:
-            logger.warning("[Feishu] model picker route failed: %s", exc)
+            logger.warning("[Feishu] model picker route failed: %s", exc, exc_info=True)
 
     adapter._submit_on_loop(loop, _dispatch())
 
