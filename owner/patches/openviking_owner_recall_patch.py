@@ -265,7 +265,7 @@ def build_viking_recall_card(hits: List[dict], elapsed_ms: float) -> Optional[di
         "schema": "2.0",
         "config": {"wide_screen_mode": True},
         "header": {
-            "title": {"tag": "plain_text", "content": "🧠 知识库召回"},
+            "title": {"tag": "plain_text", "content": "📚 知识库召回"},
             "template": "blue",
         },
         "body": {
@@ -284,7 +284,7 @@ def build_viking_recall_text(hits: List[dict], elapsed_ms: float) -> str:
         return ""
     top_score = max(h.get("score", 0) for h in hits)
     lines = [
-        f"🧠 **OpenViking 召回** · {len(hits)} 条匹配 · 最高 **{top_score:.3f}** · {elapsed_ms:.0f}ms",
+        f"📚 **OpenViking 召回** · {len(hits)} 条匹配 · 最高 **{top_score:.3f}** · {elapsed_ms:.0f}ms",
         "",
     ]
     for h in hits:
