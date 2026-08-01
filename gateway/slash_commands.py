@@ -199,6 +199,21 @@ class GatewaySlashCommandsMixin:
         except Exception:
             pass
 
+        # [owner] Invalidate patch.yaml + patch_feishu_profile.yaml caches so
+        # the new session picks up any config edits made during the previous
+        # conversation without waiting for the 60s TTL.  This is the natural
+        # session-boundary refresh point: old conversation state is already
+        # cleared, new session has not been created yet.
+        try:
+            from owner.patch_config import (
+                invalidate_patch_owner_config_cache,
+                invalidate_patch_feishu_profile_config_cache,
+            )
+            invalidate_patch_owner_config_cache()
+            invalidate_patch_feishu_profile_config_cache()
+        except Exception:
+            pass
+
         # Reset the session
         new_entry = await self.async_session_store.reset_session(session_key)
 
