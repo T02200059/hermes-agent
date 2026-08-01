@@ -2944,6 +2944,14 @@ class FeishuAdapter(BasePlatformAdapter):
                 adapter=self, event=event, action_value=action_value, loop=loop,
             )
 
+        # [owner] skill_approval_gate: route skill approval card button clicks
+        # (see owner/feishu/skill_approval_card.py).
+        if hermes_action == "skill_approval_gate":
+            from owner.feishu.skill_approval_card import handle_card_click
+            return handle_card_click(
+                adapter=self, event=event, action_value=action_value, loop=loop,
+            )
+
         if hermes_action:
             return self._handle_approval_card_action(event=event, action_value=action_value, loop=loop)
         if update_prompt_action:

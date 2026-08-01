@@ -1,4 +1,4 @@
-"""Tests for owner.approval.skill_manage_gate (Feishu skill_manage write gate)."""
+"""Tests for owner.approval.skill_manage_gate (Feishu skill approval gate v2)."""
 
 from __future__ import annotations
 
@@ -17,18 +17,17 @@ def _reset_patches(monkeypatch):
     yield
 
 
-def _patch_cfg(monkeypatch, *, enabled=True, profiles=None, timeout=86400, disable_bg=True):
+def _patch_cfg(monkeypatch, *, enabled=True, profiles=None, timeout=86400,
+               disable_bg=True, home_chat_id="oc_home"):
     cfg = {
         "enabled": enabled,
         "profiles": profiles if profiles is not None else ["hermesxiyun"],
+        "approval_home_chat_id": home_chat_id,
         "timeout_seconds": timeout,
         "disable_background_skill_review": disable_bg,
     }
 
-    def _load():
-        return {"approvals": {"skill_manage": cfg}}
-
-    monkeypatch.setattr(gate, "_load_skill_manage_cfg", lambda: cfg)
+    monkeypatch.setattr(gate, "_load_skill_approval_cfg", lambda: cfg)
     return cfg
 
 
@@ -95,16 +94,7 @@ def test_run_gate_blocks_background_review(monkeypatch):
 
 
 def test_get_approval_home_chat_id(monkeypatch):
-    _patch_cfg(monkeypatch)
-    monkeypatch.setattr(
-        gate,
-        "_load_skill_manage_cfg",
-        lambda: {
-            "approval_home_chat_id": "oc_home_group",
-            "profiles": ["default"],
-            "enabled": True,
-        },
-    )
+    _patch_cfg(monkeypatch, home_chat_id="oc_home_group")
     assert gate.get_approval_home_chat_id() == "oc_home_group"
 
 
@@ -115,6 +105,9 @@ def test_run_gate_approved_returns_none(monkeypatch):
     monkeypatch.setattr(gate, "_prepare_activity_keepalive", lambda: None)
     monkeypatch.setattr(gate, "apply_timeout_patch", lambda: None)
     monkeypatch.setattr(gate, "get_approval_home_chat_id", lambda: "")
+    monkeypatch.setattr(gate, "_send_origin_chat_notice", lambda **kw: None)
+    monkeypatch.setattr(gate, "_get_origin_chat_id", lambda: "")
+    monkeypatch.setattr(gate, "_current_profile", lambda: "test")
 
     import tools.approval as approval_mod
 
@@ -123,7 +116,6 @@ def test_run_gate_approved_returns_none(monkeypatch):
     monkeypatch.setattr(
         approval_mod, "_gateway_notify_cbs", {"sess-1": lambda data: None},
     )
-    # unlock uses real RLock
     monkeypatch.setattr(
         approval_mod,
         "_await_gateway_decision",
@@ -137,17 +129,18 @@ def test_run_gate_approved_returns_none(monkeypatch):
 
 
 def test_run_gate_uses_home_notify(monkeypatch):
-    _patch_cfg(monkeypatch, timeout=120)
+    _patch_cfg(monkeypatch, timeout=120, home_chat_id="oc_home123")
     monkeypatch.setattr(gate, "should_escalate", lambda *a, **k: True)
     monkeypatch.setattr(gate, "_is_background_review", lambda: False)
     monkeypatch.setattr(gate, "_prepare_activity_keepalive", lambda: None)
     monkeypatch.setattr(gate, "apply_timeout_patch", lambda: None)
-    monkeypatch.setattr(
-        gate, "get_approval_home_chat_id", lambda: "oc_f206b3d2a547a12f430593ea44076031",
-    )
+    monkeypatch.setattr(gate, "_send_origin_chat_notice", lambda **kw: None)
+    monkeypatch.setattr(gate, "_get_origin_chat_id", lambda: "oc_origin")
+    monkeypatch.setattr(gate, "_current_profile", lambda: "test")
+
     home_notifies = []
 
-    def _fake_home_notify(session_key, home_chat_id):
+    def _fake_home_notify(session_key, home_chat_id, **kw):
         def _cb(data):
             home_notifies.append((session_key, home_chat_id, data))
         return _cb
@@ -165,7 +158,6 @@ def test_run_gate_uses_home_notify(monkeypatch):
 
     def _await(session_key, notify_cb, approval_data, surface="gateway"):
         seen["session_key"] = session_key
-        seen["home"] = True
         notify_cb(approval_data)
         return {"resolved": True, "choice": "once", "reason": None}
 
@@ -176,7 +168,7 @@ def test_run_gate_uses_home_notify(monkeypatch):
     )
     assert result is None
     assert home_notifies
-    assert home_notifies[0][1] == "oc_f206b3d2a547a12f430593ea44076031"
+    assert home_notifies[0][1] == "oc_home123"
     assert seen["session_key"] == "sess-1"
 
 
@@ -187,6 +179,9 @@ def test_run_gate_deny_hard_stops(monkeypatch):
     monkeypatch.setattr(gate, "_prepare_activity_keepalive", lambda: None)
     monkeypatch.setattr(gate, "apply_timeout_patch", lambda: None)
     monkeypatch.setattr(gate, "get_approval_home_chat_id", lambda: "")
+    monkeypatch.setattr(gate, "_send_origin_chat_notice", lambda **kw: None)
+    monkeypatch.setattr(gate, "_get_origin_chat_id", lambda: "")
+    monkeypatch.setattr(gate, "_current_profile", lambda: "test")
     stopped = []
     monkeypatch.setattr(gate, "hard_stop_turn", lambda msg: stopped.append(msg))
 
@@ -219,6 +214,9 @@ def test_run_gate_timeout_hard_stops(monkeypatch):
     monkeypatch.setattr(gate, "_prepare_activity_keepalive", lambda: None)
     monkeypatch.setattr(gate, "apply_timeout_patch", lambda: None)
     monkeypatch.setattr(gate, "get_approval_home_chat_id", lambda: "")
+    monkeypatch.setattr(gate, "_send_origin_chat_notice", lambda **kw: None)
+    monkeypatch.setattr(gate, "_get_origin_chat_id", lambda: "")
+    monkeypatch.setattr(gate, "_current_profile", lambda: "test")
     stopped = []
     monkeypatch.setattr(gate, "hard_stop_turn", lambda msg: stopped.append(msg))
 
@@ -258,3 +256,145 @@ def test_rule_key_and_message():
     msg = gate.build_approval_message(args)
     assert "create" in msg
     assert "demo" in msg
+
+
+# ---------------------------------------------------------------------------
+# Skill approval card tests
+# ---------------------------------------------------------------------------
+
+def test_skill_approval_card_build():
+    from owner.feishu.skill_approval_card import build_skill_approval_card
+
+    card = build_skill_approval_card(
+        action="create",
+        name="my-skill",
+        args={"action": "create", "name": "my-skill", "category": "devops",
+              "content": "# My Skill\nDoes stuff with terminal and ssh."},
+        profile="hermesxiyun",
+        origin_chat_id="oc_abc",
+        session_key="sess-1",
+        chat_id="oc_home",
+    )
+    assert card["header"]["template"] == "orange"
+    assert "create" in card["header"]["title"]["content"]
+    assert "my-skill" in card["header"]["title"]["content"]
+    # Three markdown sections + hr + buttons
+    elements = card["elements"]
+    markdowns = [e for e in elements if e.get("tag") == "markdown"]
+    assert len(markdowns) == 3  # summary, assessment, review prompt
+    actions = [e for e in elements if e.get("tag") == "action"]
+    assert len(actions) == 1
+    buttons = actions[0]["actions"]
+    assert len(buttons) == 2  # approve + deny
+
+
+def test_skill_approval_card_assessment_detects_risks():
+    from owner.feishu.skill_approval_card import _build_assessment_section
+
+    assessment = _build_assessment_section(
+        action="create",
+        name="dangerous",
+        args={"action": "create", "content": "run rm -rf / && sudo chmod 777 /etc"},
+    )
+    assert "rm -rf" in assessment
+    assert "sudo" in assessment
+    assert "⚠️" in assessment
+
+
+def test_skill_approval_card_review_prompt():
+    from owner.feishu.skill_approval_card import _build_review_prompt
+
+    prompt = _build_review_prompt(
+        action="edit",
+        name="my-skill",
+        args={"action": "edit", "name": "my-skill", "content": "Some content"},
+        profile="hermesxiyun",
+        origin_chat_id="oc_abc",
+    )
+    assert "edit" in prompt
+    assert "my-skill" in prompt
+    assert "审查要点" in prompt
+    assert "安全性" in prompt
+
+
+def test_skill_approval_card_click_resolve():
+    """Test that handle_card_click calls resolve_gateway_approval."""
+    from owner.feishu.skill_approval_card import handle_card_click, ACTION_KEY
+
+    resolved_calls = []
+
+    def _fake_resolve(session_key, choice, **kw):
+        resolved_calls.append((session_key, choice))
+        return 1
+
+    with patch("tools.approval.resolve_gateway_approval", _fake_resolve):
+        result = handle_card_click(
+            adapter=MagicMock(),
+            event=MagicMock(),
+            action_value={
+                "hermes_action": ACTION_KEY,
+                "choice": "approve",
+                "session_key": "sess-1",
+                "chat_id": "oc_home",
+                "action": "create",
+                "skill_name": "my-skill",
+                "review_prompt": "review text here",
+            },
+            loop=MagicMock(),
+        )
+    assert resolved_calls
+    assert resolved_calls[0] == ("sess-1", "approve")
+
+
+def test_skill_approval_card_click_deny():
+    """Test that deny choice also resolves."""
+    from owner.feishu.skill_approval_card import handle_card_click, ACTION_KEY
+
+    resolved_calls = []
+
+    def _fake_resolve(session_key, choice, **kw):
+        resolved_calls.append((session_key, choice))
+        return 1
+
+    with patch("tools.approval.resolve_gateway_approval", _fake_resolve):
+        result = handle_card_click(
+            adapter=MagicMock(),
+            event=MagicMock(),
+            action_value={
+                "hermes_action": ACTION_KEY,
+                "choice": "deny",
+                "session_key": "sess-1",
+                "chat_id": "oc_home",
+                "action": "delete",
+                "skill_name": "old-skill",
+                "review_prompt": "",
+            },
+            loop=MagicMock(),
+        )
+    assert resolved_calls
+    assert resolved_calls[0] == ("sess-1", "deny")
+
+
+def test_skill_approval_card_click_wrong_action():
+    """Non-matching hermes_action returns None."""
+    from owner.feishu.skill_approval_card import handle_card_click
+
+    result = handle_card_click(
+        adapter=MagicMock(),
+        event=MagicMock(),
+        action_value={"hermes_action": "something_else"},
+        loop=MagicMock(),
+    )
+    assert result is None
+
+
+def test_skill_approval_resolved_card():
+    from owner.feishu.skill_approval_card import build_resolved_card
+
+    card = build_resolved_card(choice="approve", action="create", skill_name="x")
+    assert card["header"]["template"] == "green"
+    assert "已批准" in card["header"]["title"]["content"]
+
+    card = build_resolved_card(choice="deny", action="delete", skill_name="y")
+    assert card["header"]["template"] == "red"
+    assert "已拒绝" in card["header"]["title"]["content"]

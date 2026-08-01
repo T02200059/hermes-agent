@@ -38,3 +38,32 @@ feishu:
             # Must match the container's API_SERVER_KEY (profile .env), else the
             # container's _check_auth rejects forwarded requests with 401.
             api_key: "sk-HpFO0tO2GKpEmkTO4020Cf3454224306B3C11393D22007D9"
+
+  # ── Skill approval (profile-level) ───────────────────────────────────────
+  # Strict skill_manage write approval for sub-profile Feishu sessions.
+  # When enabled AND active profile ∈ profiles:
+  #   - Feishu sessions: skill_manage write actions block for human approval
+  #     (skills_list / skill_view / ordinary file tools / terminal: not gated)
+  #   - background_review skill evolution forced off (memory review unchanged)
+  #   - curator ignored; terminal may still edit skills/ (accepted bypass)
+  # Deny/timeout hard-stops the turn. Wait timeout is independent of
+  # config.yaml approvals.timeout (default 24h); activity keepalive avoids
+  # agent.gateway_timeout inactivity kills during the wait.
+  #
+  # Approval cards are self-built (owner/feishu/skill_approval_card.py) and
+  # sent to approval_home_chat_id.  Button clicks are handled by a dedicated
+  # ``hermes_action == "skill_approval_gate"`` dispatch branch.
+  #
+  # A "waiting for approval" text message is sent to the origin conversation
+  # chat so the user knows the agent is blocked.
+  skill_approval:
+    enabled: true
+    # Profile 白名单：命中才启用严格 skill 审批（空列表 = 全关）。
+    profiles:
+      - hermesxiyun
+    # 审批卡片固定发到此群，与触发对话所在群无关。
+    approval_home_chat_id: oc_f206b3d2a547a12f430593ea44076031
+    # Seconds to wait for approve/deny (default 86400 = 24h).
+    timeout_seconds: 86400
+    # When true (default), profile-level disable of bg skill evolution.
+    disable_background_skill_review: true

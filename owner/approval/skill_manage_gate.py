@@ -1,34 +1,42 @@
-"""Feishu skill_manage write gate — owner customization.
+"""Feishu skill approval gate - owner customization.
 
 Strict skill approval for gateway Feishu sessions when the active profile is
-on the ``owner.approvals.skill_manage.profiles`` whitelist in patch.yaml.
+on the ``feishu.skill_approval.profiles`` whitelist in patch_feishu_profile.yaml.
 
-Behavior (v1):
+Behavior (v2):
 - Only ``skill_manage`` write actions are gated (not skills_list / skill_view).
 - Only Feishu/Lark sessions escalate; CLI and other platforms are no-ops.
 - Ordinary file tools / terminal are intentionally out of scope (bypass OK).
 - When the gate is active for the profile, background_review skill evolution
   is suppressed (``review_skills=False``). Curator is not touched.
 - Wait blocks the agent thread (same human-gate as exec approval).
-- Approval cards go to ``approval_home_chat_id`` (e.g. 效率为王), NOT the
-  conversation chat that triggered skill_manage. Multi-profile routing decides
-  which profile runs the conversation; the home is only the approval sink.
+- Approval cards are self-built (owner/feishu/skill_approval_card.py) and sent
+  via ``send_card_via_rest`` to ``approval_home_chat_id``.  Button clicks are
+  handled by a dedicated ``hermes_action == "skill_approval_gate"`` dispatch
+  branch that calls ``resolve_gateway_approval`` directly.
+- A "waiting for approval" text message is sent to the origin conversation
+  chat so the user knows the agent is blocked.
 - Default wait timeout is 24h (configurable); activity is kept warm so the
   gateway inactivity watchdog does not kill the turn.
 - Deny / timeout hard-stops the turn (``agent.interrupt``) so the model cannot
   retry or jailbreak in the same turn.
 - YOLO does not bypass this gate.
 
+Config source: ``~/.hermes/patch_feishu_profile.yaml`` under
+``feishu.skill_approval`` (profile-level, not global).
+
 Integration:
 - pre_tool_call hook in owner-extensions (runs the gate, returns block or None)
 - AIAgent._spawn_background_review thin wrap (suppress skill review)
 - tools.approval._get_approval_timeout context override (24h wait)
+- adapter._dispatch_card_action: ``skill_approval_gate`` branch -> handle_card_click
 
 Removable: deleting this module + unregistering hooks restores stock behavior.
 """
 
 from __future__ import annotations
 
+import asyncio
 import contextvars
 import logging
 import threading
@@ -48,7 +56,7 @@ WRITE_ACTIONS: frozenset[str] = frozenset({
 
 FEISHU_PLATFORMS: frozenset[str] = frozenset({"feishu", "lark"})
 
-# 24 hours — skill SKILL.md review can take a long time; keep warm via
+# 24 hours - skill SKILL.md review can take a long time; keep warm via
 # activity touches so agent.gateway_timeout (inactivity) does not fire.
 DEFAULT_TIMEOUT_SECONDS = 24 * 60 * 60
 
@@ -67,22 +75,30 @@ _timeout_patched = False
 
 
 # ---------------------------------------------------------------------------
-# Config
+# Config (reads from patch_feishu_profile.yaml, not patch.yaml)
 # ---------------------------------------------------------------------------
 
-def _load_skill_manage_cfg() -> Dict[str, Any]:
+def _load_skill_approval_cfg() -> Dict[str, Any]:
+    """Load ``feishu.skill_approval`` from patch_feishu_profile.yaml."""
     try:
-        from owner.patch_config import load_patch_config
+        from owner.patch_config import load_patch_feishu_profile_config
 
-        owner = load_patch_config() or {}
-        cfg = owner.get("approvals", {}).get("skill_manage", {})
+        data = load_patch_feishu_profile_config() or {}
+        feishu = data.get("feishu", {})
+        if not isinstance(feishu, dict):
+            return {}
+        cfg = feishu.get("skill_approval", {})
         return cfg if isinstance(cfg, dict) else {}
     except Exception:
         return {}
 
 
+# Backward compat alias
+_load_skill_manage_cfg = _load_skill_approval_cfg
+
+
 def get_timeout_seconds() -> int:
-    cfg = _load_skill_manage_cfg()
+    cfg = _load_skill_approval_cfg()
     raw = cfg.get("timeout_seconds", DEFAULT_TIMEOUT_SECONDS)
     try:
         val = int(raw)
@@ -92,12 +108,12 @@ def get_timeout_seconds() -> int:
 
 
 def get_approval_home_chat_id() -> str:
-    """Fixed Feishu chat that receives skill_manage approval cards.
+    """Fixed Feishu chat that receives skill approval cards.
 
     Distinct from the conversation chat: multi-profile routing can put the
     agent turn anywhere; approvals always land on this home when set.
     """
-    cfg = _load_skill_manage_cfg()
+    cfg = _load_skill_approval_cfg()
     for key in ("approval_home_chat_id", "approval_chat_id"):
         raw = cfg.get(key)
         if raw is not None and str(raw).strip():
@@ -106,8 +122,8 @@ def get_approval_home_chat_id() -> str:
 
 
 def is_gate_enabled() -> bool:
-    """True when patch says enabled AND current profile is on the whitelist."""
-    cfg = _load_skill_manage_cfg()
+    """True when config says enabled AND current profile is on the whitelist."""
+    cfg = _load_skill_approval_cfg()
     if not cfg.get("enabled", False):
         return False
     profiles = cfg.get("profiles") or []
@@ -123,7 +139,7 @@ def should_suppress_background_skill_review() -> bool:
     """Profile-level: when gate is on, disable bg skill evolution by default."""
     if not is_gate_enabled():
         return False
-    cfg = _load_skill_manage_cfg()
+    cfg = _load_skill_approval_cfg()
     # Default true when key absent
     return bool(cfg.get("disable_background_skill_review", True))
 
@@ -161,6 +177,16 @@ def _is_background_review() -> bool:
         return False
 
 
+def _get_origin_chat_id() -> str:
+    """Get the chat_id of the conversation that triggered the skill_manage call."""
+    try:
+        from gateway.session_context import get_session_env
+
+        return get_session_env("HERMES_SESSION_CHAT_ID", "") or ""
+    except Exception:
+        return ""
+
+
 # ---------------------------------------------------------------------------
 # Escalation decision
 # ---------------------------------------------------------------------------
@@ -187,7 +213,7 @@ def build_approval_message(args: Optional[Dict[str, Any]]) -> str:
     name = str(args.get("name") or "?").strip()
     parts = [
         f"skill_manage {action} '{name}'",
-        "— 需确认后才写入技能库。",
+        "- 需确认后才写入技能库。",
         "批准后继续本轮；拒绝/超时将结束本轮，请勿换方式重试。",
     ]
     file_path = args.get("file_path")
@@ -248,7 +274,7 @@ def _prepare_activity_keepalive() -> None:
         touch = getattr(agent, "_touch_activity", None)
         if callable(touch):
             set_activity_callback(touch)
-            touch("waiting for skill_manage approval")
+            touch("waiting for skill approval")
     except Exception:
         logger.debug("skill_manage_gate: activity keepalive setup failed", exc_info=True)
 
@@ -270,7 +296,9 @@ def _resolve_feishu_adapter() -> Any:
     return adapter
 
 
-def _resolve_live_loop(adapter: Any) -> Any:
+def _resolve_live_loop() -> Any:
+    """Find a live event loop from adapter or gateway."""
+    adapter = _resolve_feishu_adapter()
     candidates = []
     if adapter is not None:
         candidates.append(getattr(adapter, "_loop", None))
@@ -291,86 +319,50 @@ def _resolve_live_loop(adapter: Any) -> Any:
     return None
 
 
-def _make_home_approval_notify(session_key: str, home_chat_id: str):
-    """Notify callback that sends the approval card to the fixed home chat.
+def _send_origin_chat_notice(
+    *,
+    action: str,
+    name: str,
+    origin_chat_id: str,
+    home_chat_id: str,
+) -> None:
+    """Send a 'waiting for approval' text message to the origin conversation chat.
 
-    Session correlation still uses *session_key* (the conversation that is
-    blocked). Card clicks in the home chat resolve that same session.
-
-    On sub-profiles (send_only), button values are tagged with
-    ``hermes_profile`` so the main gateway WS can route the click back here.
+    This tells the user in the sub-profile's conversation that the agent is
+    blocked waiting for approval.  The actual approval card goes to the home
+    chat (approval group).
     """
+    if not origin_chat_id or origin_chat_id == home_chat_id:
+        return  # same chat, don't send twice
 
-    def _notify(approval_data: dict) -> None:
-        adapter = _resolve_feishu_adapter()
-        if adapter is None:
-            raise RuntimeError("Feishu adapter unavailable for skill approval home send")
-        if getattr(type(adapter), "send_exec_approval", None) is None:
-            raise RuntimeError("Feishu adapter has no send_exec_approval")
+    adapter = _resolve_feishu_adapter()
+    if adapter is None:
+        return
 
-        loop = _resolve_live_loop(adapter)
-        if loop is None:
-            raise RuntimeError("No live event loop for skill approval home send")
+    loop = _resolve_live_loop()
+    if loop is None:
+        return
 
-        import asyncio
+    msg = (
+        f"⏳ skill_manage {action} '{name}' 需要审批。\n"
+        "审批卡片已发送到审批专属群，请等待审批结果。\n"
+        "本轮将等待审批结果（最长 24h）。"
+    )
 
-        cmd = approval_data.get("command", "")
-        desc = approval_data.get("description", "skill_manage approval")
-        allow_permanent = bool(approval_data.get("allow_permanent", False))
-
-        # Tag buttons for multi-profile click routing (main WS → this profile).
-        _tag_token = None
+    async def _send() -> None:
         try:
-            from hermes_cli.profiles import get_active_profile_name
-            from owner.feishu import approval as feishu_approval_mod
-            from owner.feishu.card_sender import _inject_profile_tag
-
-            profile_tag = get_active_profile_name() or ""
-            if profile_tag and profile_tag not in ("default", "custom"):
-                _orig_build = feishu_approval_mod.build_approval_card
-
-                def _tagged_build(*args, **kwargs):
-                    card = _orig_build(*args, **kwargs)
-                    try:
-                        _inject_profile_tag(card, profile_tag)
-                    except Exception:
-                        pass
-                    return card
-
-                feishu_approval_mod.build_approval_card = _tagged_build
-                _tag_token = (_orig_build, feishu_approval_mod)
-        except Exception:
-            logger.debug(
-                "skill_manage_gate: profile tag wrap skipped", exc_info=True,
+            await adapter.send(chat_id=origin_chat_id, content=msg)
+        except Exception as exc:
+            logger.warning(
+                "skill_manage_gate: origin chat notice failed: %s", exc,
             )
 
-        try:
-            coro = adapter.send_exec_approval(
-                chat_id=home_chat_id,
-                command=cmd,
-                session_key=session_key,
-                description=desc,
-                metadata={"chat_type": "group"},
-                allow_permanent=allow_permanent,
-                smart_denied=bool(approval_data.get("smart_denied", False)),
-            )
-            fut = asyncio.run_coroutine_threadsafe(coro, loop)
-            result = fut.result(timeout=20)
-        finally:
-            if _tag_token is not None:
-                _orig_build, mod = _tag_token
-                mod.build_approval_card = _orig_build
-
-        if not getattr(result, "success", False):
-            err = getattr(result, "error", None) or "unknown send error"
-            raise RuntimeError(f"skill approval home send failed: {err}")
-        logger.info(
-            "skill_manage_gate: approval card sent to home chat_id=%s session=%s",
-            home_chat_id,
-            session_key,
+    try:
+        asyncio.run_coroutine_threadsafe(_send(), loop).result(timeout=10)
+    except Exception as exc:
+        logger.warning(
+            "skill_manage_gate: origin chat notice dispatch failed: %s", exc,
         )
-
-    return _notify
 
 
 def hard_stop_turn(reason: str) -> None:
@@ -498,15 +490,74 @@ def ensure_patches() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Notify callback: send self-built approval card to home chat
+# ---------------------------------------------------------------------------
+
+def _make_home_approval_notify(
+    session_key: str,
+    home_chat_id: str,
+    *,
+    action: str,
+    name: str,
+    args: Dict[str, Any],
+    profile: str,
+    origin_chat_id: str,
+):
+    """Build a notify callback that sends a self-built skill approval card.
+
+    Uses ``owner.feishu.skill_approval_card.send_skill_approval_card`` (via
+    ``send_card_via_rest``) instead of ``send_exec_approval``.  The card
+    carries ``session_key`` + ``chat_id`` in button values so clicks can
+    resolve via ``resolve_gateway_approval``.
+    """
+
+    def _notify(approval_data: dict) -> None:
+        adapter = _resolve_feishu_adapter()
+        if adapter is None:
+            raise RuntimeError("Feishu adapter unavailable for skill approval")
+
+        loop = _resolve_live_loop()
+        if loop is None:
+            raise RuntimeError("No live event loop for skill approval card send")
+
+        from owner.feishu.skill_approval_card import send_skill_approval_card
+
+        coro = send_skill_approval_card(
+            adapter,
+            chat_id=home_chat_id,
+            action=action,
+            name=name,
+            args=args,
+            profile=profile,
+            origin_chat_id=origin_chat_id,
+            session_key=session_key,
+            metadata={"chat_type": "group"},
+        )
+        fut = asyncio.run_coroutine_threadsafe(coro, loop)
+        result = fut.result(timeout=20)
+
+        if not getattr(result, "success", False):
+            err = getattr(result, "error", None) or "unknown send error"
+            raise RuntimeError(f"skill approval card send failed: {err}")
+        logger.info(
+            "skill_manage_gate: approval card sent to home chat_id=%s session=%s",
+            home_chat_id,
+            session_key,
+        )
+
+    return _notify
+
+
+# ---------------------------------------------------------------------------
 # Main gate (called from pre_tool_call)
 # ---------------------------------------------------------------------------
 
 def run_gate(tool_name: str, args: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-    """Run the skill_manage approval gate.
+    """Run the skill approval gate.
 
     Returns:
-        None — proceed with the tool (not gated, or approved).
-        ``{"action": "block", "message": "..."}`` — deny / timeout / error;
+        None - proceed with the tool (not gated, or approved).
+        ``{"action": "block", "message": "..."}`` - deny / timeout / error;
         turn is hard-stopped on deny/timeout.
     """
     if not should_escalate(tool_name, args):
@@ -515,15 +566,14 @@ def run_gate(tool_name: str, args: Optional[Dict[str, Any]]) -> Optional[Dict[st
     args = args if isinstance(args, dict) else {}
     action = str(args.get("action") or "").strip()
     name = str(args.get("name") or "").strip()
-    reason = build_approval_message(args)
     pattern_key = f"plugin_rule:{rule_key_for_args(args)}"
     timeout_s = get_timeout_seconds()
 
-    # Background fork: no human — hard block without wait
+    # Background fork: no human - hard block without wait
     if _is_background_review():
         msg = (
             f"BLOCKED: skill_manage {action} '{name}' refused during "
-            "background review while owner.approvals.skill_manage is active."
+            "background review while skill_approval gate is active."
         )
         hard_stop_turn(msg)
         return {"action": "block", "message": msg}
@@ -537,15 +587,14 @@ def run_gate(tool_name: str, args: Optional[Dict[str, Any]]) -> Optional[Dict[st
             get_current_session_key,
             is_approved,
         )
-        from agent.redact import redact_sensitive_text
     except Exception as exc:
-        msg = f"BLOCKED: skill_manage approval infrastructure unavailable ({exc})"
+        msg = f"BLOCKED: skill approval infrastructure unavailable ({exc})"
         hard_stop_turn(msg)
         return {"action": "block", "message": msg}
 
     session_key = get_current_session_key(default="") or ""
     if not session_key:
-        msg = "BLOCKED: skill_manage approval requires a gateway session key."
+        msg = "BLOCKED: skill approval requires a gateway session key."
         hard_stop_turn(msg)
         return {"action": "block", "message": msg}
 
@@ -556,62 +605,60 @@ def run_gate(tool_name: str, args: Optional[Dict[str, Any]]) -> Optional[Dict[st
         )
         return None
 
-    # Prefer fixed approval home (e.g. 效率为王). Fall back to the session's
-    # gateway notify (current conversation chat) only when home is unset.
     home_chat_id = get_approval_home_chat_id()
-    notify_cb = None
+    origin_chat_id = _get_origin_chat_id()
+    profile = _current_profile()
+
+    # --- Build the notify callback ---
+    # The notify callback sends the self-built approval card to the home chat.
+    # We still require a registered gateway session so _await_gateway_decision
+    # can unblock this turn; the card itself goes to the home chat.
     if home_chat_id:
-        # Still require a registered gateway session so resolve_gateway_approval
-        # can unblock this turn; the card itself goes to the home chat.
         with _lock:
             has_channel = session_key in _gateway_notify_cbs
         if not has_channel:
             msg = (
-                "BLOCKED: skill_manage requires a gateway session with an "
+                "BLOCKED: skill approval requires a gateway session with an "
                 "approval channel, but none is registered for this session."
             )
             hard_stop_turn(msg)
             return {"action": "block", "message": msg}
-        notify_cb = _make_home_approval_notify(session_key, home_chat_id)
+        notify_cb = _make_home_approval_notify(
+            session_key, home_chat_id,
+            action=action, name=name, args=args,
+            profile=profile, origin_chat_id=origin_chat_id,
+        )
     else:
+        # No home chat configured - fall back to session's gateway notify
         with _lock:
             notify_cb = _gateway_notify_cbs.get(session_key)
         if notify_cb is None:
             msg = (
-                "BLOCKED: skill_manage requires interactive Feishu approval, "
+                "BLOCKED: skill approval requires interactive Feishu approval, "
                 "but no gateway approval channel is registered for this session "
                 "(and approval_home_chat_id is not set)."
             )
             hard_stop_turn(msg)
             return {"action": "block", "message": msg}
 
-    # Permanent button follows owner.approvals.allow_permanent (default false)
-    allow_permanent = False
-    try:
-        from owner.feishu.approval import get_allow_permanent
+    # --- Send "waiting for approval" notice to origin chat ---
+    _send_origin_chat_notice(
+        action=action, name=name,
+        origin_chat_id=origin_chat_id, home_chat_id=home_chat_id,
+    )
 
-        allow_permanent = bool(get_allow_permanent())
-    except Exception:
-        allow_permanent = False
+    # --- Build approval_data for _await_gateway_decision ---
+    # The command/description fields are used for hook logging and fallback
+    # display only; the actual card content is built by skill_approval_card.
+    from agent.redact import redact_sensitive_text
 
     display_target = f"<skill_manage {action} {name}>"
-    # Include origin session hint so reviewers in the home group know context.
-    origin_hint = ""
-    try:
-        from gateway.session_context import get_session_env
-
-        origin_chat = get_session_env("HERMES_SESSION_CHAT_ID", "") or ""
-        if origin_chat and origin_chat != home_chat_id:
-            origin_hint = f" [from chat {origin_chat}]"
-    except Exception:
-        origin_hint = ""
-    desc = redact_sensitive_text(reason + origin_hint)
     approval_data = {
         "command": redact_sensitive_text(display_target),
         "pattern_key": pattern_key,
         "pattern_keys": [pattern_key],
-        "description": desc,
-        "allow_permanent": allow_permanent,
+        "description": redact_sensitive_text(build_approval_message(args)),
+        "allow_permanent": False,
     }
 
     _prepare_activity_keepalive()
@@ -619,22 +666,23 @@ def run_gate(tool_name: str, args: Optional[Dict[str, Any]]) -> Optional[Dict[st
 
     logger.info(
         "skill_manage_gate: waiting for approval action=%s name=%s "
-        "timeout_s=%s session=%s home=%s",
+        "timeout_s=%s session=%s home=%s origin=%s",
         action,
         name,
         timeout_s,
         session_key,
         home_chat_id or "(session chat)",
+        origin_chat_id or "(none)",
     )
 
     with approval_timeout_override(timeout_s):
         decision = _await_gateway_decision(
-            session_key, notify_cb, approval_data, surface="skill_manage",
+            session_key, notify_cb, approval_data, surface="skill_approval",
         )
 
     if decision.get("notify_failed"):
         msg = (
-            "BLOCKED: Failed to send skill_manage approval request to Feishu. "
+            "BLOCKED: Failed to send skill approval request to Feishu. "
             "Do NOT retry via another path."
         )
         hard_stop_turn(msg)
@@ -648,7 +696,7 @@ def run_gate(tool_name: str, args: Optional[Dict[str, Any]]) -> Optional[Dict[st
         if choice == "session":
             approve_session(session_key, pattern_key)
         elif choice == "always":
-            # Still session-scope for skill writes even if card offered always —
+            # Still session-scope for skill writes even if card offered always -
             # permanent allowlist for skill_manage is intentionally avoided.
             approve_session(session_key, pattern_key)
             logger.info(
