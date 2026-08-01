@@ -133,19 +133,17 @@ def get_auto_card_split_max_chars() -> int:
 def is_feishu_streaming_disabled() -> bool:
     """Check whether streaming is explicitly disabled for feishu platform.
 
-    Reads ``display.platforms.feishu.streaming`` from config.yaml.
+    Reads ``display.platforms.feishu.streaming`` from config.yaml via the
+    unified ``load_config_readonly()`` loader (mtime-cached, no raw I/O).
     Auto-card only activates when streaming is off, because streaming mode
     chops the response into short chunks that never reach the length threshold.
     """
     try:
-        import yaml
-        from hermes_constants import get_hermes_home
-        path = get_hermes_home() / "config.yaml"
-        if path.exists():
-            data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-            platforms = data.get("display", {}).get("platforms") or {}
-            feishu_cfg = platforms.get("feishu") or {}
-            return feishu_cfg.get("streaming", True) is False
+        from hermes_cli.config import load_config_readonly
+        cfg = load_config_readonly()
+        platforms = cfg.get("display", {}).get("platforms") or {}
+        feishu_cfg = platforms.get("feishu") or {}
+        return feishu_cfg.get("streaming", True) is False
     except Exception:
         pass
     return False
