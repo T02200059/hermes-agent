@@ -45,7 +45,9 @@ anchors:
       - 'owner_provider_name=msg.get("owner_provider_name")'
 
   - id: message-token-breakdown-db
-    file: hermes_state.py
+    # Upstream extracted CREATE TABLE DDL into hermes_state_common.py;
+    # hermes_state.py still has INSERT/UPDATE call sites for these columns.
+    file: hermes_state_common.py
     contains:
       - 'owner_provider_name TEXT'
       - 'input_tokens INTEGER DEFAULT 0'
@@ -169,11 +171,13 @@ anchors:
       - 'owner/scripts'
 
   - id: cron-runtime-session-context
+    # Main now sets HERMES_CRON_SESSION via gateway.session_context ContextVar
+    # natively (_cron_session_var.set). Owner still has run_job_hook exit scrub
+    # + scripts allowlist; enter() is optional/compat.
     file: cron/scheduler.py
     contains:
       - '[Cron context]'
-      - 'owner.cron.run_job_hook'
-      - 'owner_cron_session_enter'
+      - 'HERMES_CRON_SESSION'
       - '_get_owner_scripts_allowlist'
 
   - id: env-template-runtime-provider-guard
