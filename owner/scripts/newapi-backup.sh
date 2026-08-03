@@ -11,6 +11,14 @@
 set -u
 set -o pipefail
 
+# --- Parse CLI args (cron scheduler passes --KEY VALUE) ---
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --BACKUP_QUIET) BACKUP_QUIET="$2"; shift 2 ;;
+        *) shift ;;
+    esac
+done
+
 REMOTE_HOST="node010"
 REMOTE_BASE="/data/ai/newapi"
 REMOTE_BACKUPS="/data/ai/hermes-backup/yangtb/newapi"

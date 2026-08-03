@@ -29,6 +29,15 @@
 set -u
 set -o pipefail
 
+# --- Parse CLI args (cron scheduler passes --KEY VALUE) ---
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --BACKUP_QUIET) BACKUP_QUIET="$2"; shift 2 ;;
+        --timeout_seconds) shift 2 ;;
+        *) shift ;;
+    esac
+done
+
 # --- Config ---
 BACKUP_REMOTE_DIR="/data/ai/hermes-backup/yangtb"
 BACKUP_REMOTE_HOST="node010"
