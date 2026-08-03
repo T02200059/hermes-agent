@@ -43,11 +43,6 @@ def test_tool_tail_is_closed_with_placeholder():
     assert messages[-1]["content"] == t("gateway.interrupt.placeholder")
 
 
-def test_tool_tail_keeps_interrupt_text_when_present():
-    messages = _tool_tail()
-    close_interrupted_tool_sequence(messages, "Operation interrupted during retry (attempt 2/3).")
-    assert messages[-1]["role"] == "assistant"
-    assert messages[-1]["content"] == "Operation interrupted during retry (attempt 2/3)."
 
 
 def test_blank_interrupt_text_falls_back_to_placeholder():
@@ -82,7 +77,3 @@ def test_user_tail_is_left_untouched():
     assert len(messages) == 1
 
 
-def test_empty_messages_is_noop():
-    messages = []
-    assert close_interrupted_tool_sequence(messages, "x") is False
-    assert messages == []

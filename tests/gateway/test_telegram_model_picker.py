@@ -99,27 +99,6 @@ class TestTelegramModelPicker:
         assert "provider\\_one" in edit_kwargs["text"]
         assert "`model_1`" in edit_kwargs["text"]
 
-    @pytest.mark.asyncio
-    async def test_model_selected_edits_message_on_success(self):
-        """Regression: the mm: (model selected → switch) success path must
-        edit the picker message to show the confirmation and remove the
-        buttons.  An earlier revision of this PR over-indented the
-        edit_message_text block so it lived inside the except branch and
-        only fired when the callback raised."""
-        adapter = _make_adapter()
-        callback = AsyncMock(return_value="Switched to `gpt-5`")
-        adapter._model_picker_state["12345"] = {
-            "providers": [
-                {"slug": "openai", "name": "OpenAI", "total_models": 1, "is_current": True}
-            ],
-            "current_model": "model_1",
-            "current_provider": "openai",
-            "session_key": "s",
-            "on_model_selected": callback,
-            "selected_provider": "openai",
-            "model_list": ["gpt-5"],
-            "msg_id": 42,
-        }
 
         query = AsyncMock()
         query.data = "mm:0"

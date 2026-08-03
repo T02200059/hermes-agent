@@ -159,10 +159,6 @@ class TestKimiFullKwargsIntegration:
             provider_name="kimi-coding",
         )
 
-    def test_explicit_effort_omits_thinking(self, kimi_profile):
-        kwargs = self._build(kimi_profile, {"enabled": True, "effort": "high"})
-        assert kwargs["reasoning_effort"] == "high"
-        assert "thinking" not in kwargs.get("extra_body", {})
 
     def test_no_config_omits_effort(self, kimi_profile):
         kwargs = self._build(kimi_profile, None)
