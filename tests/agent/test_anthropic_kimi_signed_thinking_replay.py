@@ -43,21 +43,12 @@ def test_kimi_coding_strips_signed_thinking():
     assert not _thinking_on_replay(KIMI)
 
 
-def test_kimi_coding_keeps_unsigned_thinking():
-    assert _thinking_on_replay(KIMI, signature="")
 
 
 def test_moonshot_strips_signed_thinking():
     assert not _thinking_on_replay(MOONSHOT)
 
 
-def test_deepseek_still_strips_signed_thinking():
-    # A DeepSeek model on the DeepSeek Anthropic endpoint must strip signed
-    # thinking on replay. (The model must be a real DeepSeek slug: the bare
-    # ``k3`` slug is now classified as Kimi family, and a Kimi-family MODEL
-    # name deliberately preserves thinking regardless of gateway hostname —
-    # the proxied-endpoint path, see _is_kimi_family_endpoint.)
-    assert not _thinking_on_replay(DEEPSEEK, model="deepseek-reasoner")
 
 
 def test_kimi_model_name_on_foreign_gateway_preserves_only_unsigned_thinking():

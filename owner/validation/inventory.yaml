@@ -166,9 +166,12 @@ items:
           - 'owner.attribution'
           - 'inject_attribution_into_message'
       - type: file_contains
-        file: hermes_state.py
+        file: hermes_state_common.py
         contains:
           - 'owner_provider_name TEXT'
+      - type: file_contains
+        file: hermes_state.py
+        contains:
           - 'owner_provider_name, model, provider'
 
   - id: runtime-schema-patches
@@ -329,8 +332,9 @@ items:
       - type: file_contains
         file: cron/scheduler.py
         contains:
+          # Main-native ContextVar set OR residual owner hook both OK.
+          - 'HERMES_CRON_SESSION'
           - 'owner.cron.run_job_hook'
-          - 'owner_cron_session_enter'
           - 'owner_cron_session_exit'
       - type: file_contains
         file: owner/cron/run_job_hook.py
@@ -575,12 +579,15 @@ items:
     source: owner/docs/owner改动清单.md#102-token-breakdown
     static_checks:
       - type: file_contains
-        file: hermes_state.py
+        file: hermes_state_common.py
         contains:
           - 'input_tokens INTEGER DEFAULT 0'
           - 'output_tokens INTEGER DEFAULT 0'
           - 'cache_read_tokens INTEGER DEFAULT 0'
           - 'cache_write_tokens INTEGER DEFAULT 0'
+      - type: file_contains
+        file: hermes_state.py
+        contains:
           - 'input_tokens, output_tokens, cache_read_tokens, cache_write_tokens'
       - type: file_contains
         file: run_agent.py

@@ -21,7 +21,7 @@ class TestLoadPermanentAllowlistPatchMerge:
             return {"approvals": {"command_allowlist": ["patch-entry", "tirith:raw_ip_url"]}}
 
         try:
-            with patch("hermes_cli.config.load_config", _fake_load_config), patch(
+            with patch("hermes_cli.config.load_config_readonly", _fake_load_config), patch(
                 "owner.patch_config._load_patch_owner_config", _fake_load_patch
             ):
                 patterns = load_permanent_allowlist()
@@ -45,7 +45,7 @@ class TestLoadPermanentAllowlistPatchMerge:
             return {"image_gen": {}}
 
         try:
-            with patch("hermes_cli.config.load_config", _fake_load_config), patch(
+            with patch("hermes_cli.config.load_config_readonly", _fake_load_config), patch(
                 "owner.patch_config._load_patch_owner_config", _fake_load_patch
             ):
                 patterns = load_permanent_allowlist()
@@ -67,7 +67,7 @@ class TestLoadPermanentAllowlistPatchMerge:
             raise RuntimeError("patch.yaml missing")
 
         try:
-            with patch("hermes_cli.config.load_config", _fake_load_config), patch(
+            with patch("hermes_cli.config.load_config_readonly", _fake_load_config), patch(
                 "owner.patch_config._load_patch_owner_config", _broken_load_patch
             ):
                 patterns = load_permanent_allowlist()
