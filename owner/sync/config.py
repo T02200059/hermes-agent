@@ -100,6 +100,23 @@ class SyncConfig:
         rollback = raw["rollback"]
         self.rollback_strategy: str = rollback["strategy"]
 
+        # Optional kanban section (K0 manual-review tickets). Missing/empty = disabled.
+        kanban = raw.get("kanban") or {}
+        self.kanban_enabled: bool = bool(kanban.get("enabled", False))
+        self.kanban_create_on: list[str] = list(
+            kanban.get("create_on") or ["MANUAL_REVIEW"]
+        )
+        self.kanban_tenant: str = str(kanban.get("tenant") or "owner-upstream-sync")
+        ws = str(kanban.get("workspace") or "~/.hermes/kanban/workspaces/owner-upstream-sync")
+        self.kanban_workspace: Path = Path(os.path.expanduser(ws)).resolve()
+        self.kanban_assignee: str = str(kanban.get("assignee") or "")
+        self.kanban_initial_status: str = str(kanban.get("initial_status") or "blocked")
+        self.kanban_priority: int = int(kanban.get("priority") or 20)
+        self.kanban_created_by: str = str(kanban.get("created_by") or "upstream-sync")
+        self.kanban_hermes_bin: str = str(kanban.get("hermes_bin") or "hermes")
+        self.kanban_max_runtime: str = str(kanban.get("max_runtime") or "")
+        self.kanban_timeout_seconds: int = int(kanban.get("timeout_seconds") or 120)
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------

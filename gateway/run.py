@@ -8976,6 +8976,12 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             steer_text = await enrich_steer_with_vision(
                 self, steer_text, event, session_key
             )
+            # [owner] After steer vision enrichment, image (or mixed non-voice)
+            # attachments may still have media_urls set; main's original gate
+            # rejected any non-voice media and silently fell back to queue,
+            # undoing §7.18. Allow TEXT+media when we already have steer_text
+            # (vision/STT filled it). Pure empty-media text still uses the
+            # strict no-media branch; pure voice uses _steer_all_voice.
             can_steer = (
                 steer_text
                 and (
@@ -8985,6 +8991,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                         and not event.media_types
                     )
                     or _steer_all_voice
+                    or (
+                        event.message_type == MessageType.TEXT
+                        and bool(_steer_media_urls)
+                    )
                 )
                 and running_agent is not None
                 and running_agent is not _AGENT_PENDING_SENTINEL

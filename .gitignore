@@ -211,3 +211,4 @@ owner/feishu_profile/hermesxiyun/.env
 .install_method
 .omo/
 .zcode/
+.venv

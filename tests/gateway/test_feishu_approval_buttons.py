@@ -504,7 +504,9 @@ class TestCardActionCallbackResponse:
             response = adapter._on_card_action_trigger(data)
 
         assert response is not None
-        assert response.card is None
+        # [owner] unauthorized path returns a frozen error CallBackCard
+        # (cd11a5ff8) instead of an empty response that leaves the client loading.
+        assert response.card is not None
         mock_submit.assert_not_called()
 
     def test_rejects_approval_click_when_callback_chat_mismatches(self, _patch_callback_card_types):
@@ -527,7 +529,8 @@ class TestCardActionCallbackResponse:
             response = adapter._on_card_action_trigger(data)
 
         assert response is not None
-        assert response.card is None
+        # [owner] chat_mismatch also returns frozen error CallBackCard
+        assert response.card is not None
         mock_submit.assert_not_called()
 
     def test_returns_card_for_update_prompt_yes(self, _patch_callback_card_types):

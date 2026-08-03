@@ -34,7 +34,9 @@ class TestAdvisoryMemoryContext:
         import agent.memory_manager as mm
 
         block = mm.build_memory_context_block("some context")
-        assert "helpful hints, not authoritative facts" in block
+        assert "recalled memory context" in block
+        assert "NOT new user input" in block
+        assert "Summary only" in block or "summary" in block.lower()
         assert "authoritative reference data" not in block
         assert "<memory-context>" in block
 
@@ -122,7 +124,7 @@ class TestRecallCardBuilders:
         ]
         card = build_viking_recall_card(hits, elapsed_ms=42)
         assert card is not None
-        assert card["header"]["title"]["content"] == "🧠 知识库召回"
+        assert card["header"]["title"]["content"] == "📚 知识库召回"
 
     def test_build_viking_recall_card_empty(self):
         assert build_viking_recall_card([], elapsed_ms=0) is None

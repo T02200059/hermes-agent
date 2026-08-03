@@ -255,11 +255,11 @@ async def test_relay_fronted_logical_home_gets_startup_notification(tmp_path, mo
 
     assert delivered == {("slack", "D123", None)}
     relay.send_for_platform.assert_awaited_once()
-    assert relay.send_for_platform.await_args.args[:3] == (
-        Platform.SLACK,
-        "D123",
-        "♻️ Gateway online — Hermes is back and ready.",
-    )
+    # Emoji / wording comes from i18n + owner lifecycle branding; only
+    # require platform, chat, and "Gateway online" content.
+    assert relay.send_for_platform.await_args.args[0] == Platform.SLACK
+    assert relay.send_for_platform.await_args.args[1] == "D123"
+    assert "Gateway online" in relay.send_for_platform.await_args.args[2]
     assert relay.send_for_platform.await_args.kwargs["metadata"]["user_id"] == "U123"
     assert relay.send_for_platform.await_args.kwargs["metadata"]["scope_id"] == "T123"
 

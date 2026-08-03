@@ -279,6 +279,10 @@ def _is_cron_approval_context() -> bool:
         return env_var_enabled("HERMES_CRON_SESSION")
 
 
+
+# [owner] Back-compat alias: older owner hooks/tests import `_is_cron_session`.
+# Main renamed the helper to `_is_cron_approval_context` (same ContextVar path).
+_is_cron_session = _is_cron_approval_context
 def _is_gateway_approval_context() -> bool:
     """True when this call is inside a gateway/API session.
 

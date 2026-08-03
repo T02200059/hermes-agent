@@ -87,7 +87,7 @@ class KanbanTicketOpener:
             "reasons": list(report.classification.reasons)
             if report.classification
             else [],
-            "soft_warnings": list(report.classification.soft_warnings)
+            "soft_warnings": list(getattr(report.classification, "soft_warnings", []) or [])
             if report.classification
             else [],
             "report_file": str(report_path),

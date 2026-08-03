@@ -47,14 +47,32 @@ async def enrich_steer_with_vision(
     if not steer_text or not media_urls:
         return steer_text
 
+    # Only vision-eligible image attachments. Voice/audio is handled by
+    # STT in _prepare_busy_steer_text; passing .ogg/.mp3 into vision produces
+    # noisy failure prefixes and breaks pure-voice steer.
+    media_types = getattr(event, "media_types", None) or []
+    image_urls: list = []
+    for i, url in enumerate(media_urls):
+        mt = (media_types[i] if i < len(media_types) else "") or ""
+        mt = str(mt).lower()
+        low = str(url).lower()
+        is_audio = mt.startswith("audio/") or low.endswith(
+            (".ogg", ".opus", ".mp3", ".wav", ".m4a", ".aac", ".flac", ".webm")
+        )
+        if is_audio:
+            continue
+        image_urls.append(url)
+    if not image_urls:
+        return steer_text
+
     try:
         enriched = await runner._enrich_message_with_vision(
-            steer_text, media_urls,
+            steer_text, image_urls,
         )
         if enriched:
             logger.info(
                 "Steer vision enrichment: %d image(s) described for session %s",
-                len(media_urls), session_key or "?",
+                len(image_urls), session_key or "?",
             )
             return enriched
     except Exception as exc:

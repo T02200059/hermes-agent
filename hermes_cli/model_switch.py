@@ -2464,6 +2464,12 @@ def list_authenticated_providers(
             _ep_is_current = (
                 _ep_slug_norm == _current_provider_norm
                 or _ep_custom_slug_norm == _current_provider_norm
+                # Stable custom IDs are stored as custom:<slug> while Layer 1
+                # rows keep the bare config key as slug (section 3).
+                or (
+                    _current_provider_norm.startswith("custom:")
+                    and _current_provider_norm.split(":", 1)[1] == _ep_slug_norm
+                )
                 or (
                     _current_provider_norm == "custom"
                     and bool(_current_base_url_norm)
@@ -3046,7 +3052,7 @@ def list_authenticated_providers(
             if group_key not in groups:
                 # Reuse the prefix computed above as the row display name;
                 # fall back to the raw name if stripping left it empty.
-                display_name = _display_prefix or raw_name
+                display_name = display_prefix or raw_name
                 provider_key = str(entry.get("provider_key") or "").strip()
                 slug = custom_provider_slug(display_name, provider_key)
                 groups[group_key] = {
