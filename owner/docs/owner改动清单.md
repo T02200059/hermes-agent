@@ -23,8 +23,8 @@
 | 改动文件总数 | 172（去重后） |
 | owner/ 纯新增 | ~75 个文件 |
 | 官方文件侵入 | ~70 个文件（含 ~20 个测试文件） |
-| 范围 | 模型归因 / patch.yaml 配置 / 审批安全 / 语义审计 / 飞书深度定制 / TUI 皮肤 / Cron 运维 / Gateway 稳定性 / Checkpoint 预测 / Upstream Sync / Viking 记忆治理 / Desktop 窗口透明度 |
-| 最后更新 | 2026-07-30 |
+| 范围 | 模型归因 / patch.yaml 配置 / 审批安全 / skill 写入审批 / 语义审计 / 飞书深度定制 / TUI 皮肤 / Cron 运维 / Gateway 稳定性 / Checkpoint 预测 / Upstream Sync / Viking 记忆治理 / Desktop 窗口透明度 |
+| 最后更新 | 2026-08-03 |
 | 来源 | 从 `owner-v17`（500+ commit）清洗迁移而来；本分支是重新整理后的最小叠加版本 |
 
 ### 0.2 章节索引
@@ -87,6 +87,7 @@
 - **配置文件**（实际在用，软链接到 `~/.hermes/`）：`owner/config/patch.yaml`、`owner/config/patch_feishu_profile.yaml`
 - **侵入类型**：纯新增（加载器在 owner/），官方文件只是 import + 调用
 - **Commit**：`f181c7cad`（§2.2）、`6154c7474`（§2.2/§17.9: 迁入完整 patch.yaml 配置内容）
+- **后续**：`88336be4f` — `/new` session 边界调用 `invalidate_patch_owner_config_cache()` + `invalidate_patch_feishu_profile_config_cache()`，新会话立即读到上一会话期间改过的 patch 配置，不必等 60s TTL。
 
 ### 1.3 模型级 extra_body 注入
 
@@ -173,6 +174,7 @@
 - **修复**：
   - `440d5b023` — `owner/feishu/model_picker.py` 在 stale session / unknown step 下改为返回 `CallBackToast` 提示；归一化 `action_value` 的 JSON-string→dict 两种形态；dispatch 包 try/except 防止静默失败。涉及 `owner/feishu/model_picker.py`（+142/-47）+ `plugins/platforms/feishu/adapter.py`（+39）。
   - `5251db809` — `adapter.py` card action handler 中 `_normalise_card_action_value` 调用漏传 `self`（调成了模块函数而非方法），导致 form 提交的 `action_value` 未被归一化、下游 `isinstance(action_value, dict)` 全部跳过、卡片表现为「卡住」。1 行修复：`_normalise_card_action_value(...)` → `self._normalise_card_action_value(...)`。
+  - `63fa17e1b` — idle session 下 model 切换合成命令改走 `_message_handler`（同步），避免经 `_handle_message_with_guards` 的 fire-and-forget 任务在无 active turn 时被静默丢弃（done 卡已成功、实际未切模型）。
 - **涉及文件**：`owner/feishu/model_picker.py`、`plugins/platforms/feishu/adapter.py`
 
 ### 2.3 运行时 schema patches + credential pool base_url override
@@ -276,6 +278,7 @@
   - 侵入（inline 逻辑修改）：`agent/models_dev.py`、`hermes_cli/models.py`
 - **侵入类型**：inline 逻辑修改（常量 + 条件分支）
 - **Commit**：`c780e7a63`
+- **后续**：`8c00a813f` — `fetch_models_dev` 网络超时 15s → 5s，避免 models.dev 慢响应拖慢 `/providers` 探测。
 
 ---
 
@@ -294,6 +297,7 @@
   - `locales/*.yaml` 增加审批相关 i18n
 - **侵入类型**：薄胶水 + try-import（adapter 从 ~250 行审批逻辑压到 ~20-30 行委托）
 - **Commit**：`fa6995bc9`（§4.2）、`4a4b13226`（补 [owner] 标记到 sender_name TTL 注释行）、`d7c487275`（fix tests: group_policy=allowlist 显式设置）
+- **后续**：`cd11a5ff8` — 点击失败路径（unauthorized / already_resolved / chat_mismatch / missing_id / submit_failed）改为返回冻结错误 CallBackCard + i18n 文案，不再空响应让客户端卡 loading；仅成功 resolve 才放行 agent。
 
 ### 3.2 飞书 inbound context 用户身份注入
 
@@ -396,6 +400,19 @@
 - **侵入类型**：薄胶水 / inline（消息文案 + 1 行鉴权分支）
 - **Commit**：`ec98dff9b`、`ae912986f`
 
+### 3.11 skill 写入飞书审批门（skill_manage / skill_approval）
+
+- **背景**：子 profile / 飞书会话上 agent 可直接 `skill_manage` 写 skills（create/edit/delete），无人类把关时易污染 skill 库；需要与 memory 审批类似的「写操作拦截 + 飞书卡片审批」，且仅对白名单 profile 生效。
+- **方案**：
+  - **v1**（`55b070fd8`）：`owner/approval/skill_manage_gate.py`（gate + monkey-patch 超时/抑制 bg skill review）+ `owner/owner-extensions/skill_manage_bridge/`（`pre_tool_call` 拦截写 action、`pre_gateway_dispatch` 缓存 gateway）；`skills_list` / `skill_view` / 普通文件工具 / terminal **不**门控；gate 开启时强制关 background skill review；配置初版在 `patch.yaml` 的 `owner.approvals.skill_manage`（profile 白名单、24h 超时、`approval_home_chat_id`）。
+  - **v2**（`cd937b412`）：(1) **origin 会话通知** — 审批卡发到审批专属群时，原对话 chat 同步文本「⏳ skill_manage … 审批卡片已发送…」；(2) 配置迁到 `patch_feishu_profile.yaml` 的 `feishu.skill_approval`（profile 级，非全局），命名从 skill_manage 扩为 skill_approval；(3) **自建审批卡** `owner/feishu/skill_approval_card.py`（改动概要 / 模板风险初评 / 可复制审查 Prompt），替代 `send_exec_approval`；adapter 增 `hermes_action == "skill_approval_gate"` 点击路由。
+- **涉及文件**：
+  - 纯新增：`owner/approval/skill_manage_gate.py`、`owner/feishu/skill_approval_card.py`、`owner/owner-extensions/skill_manage_bridge/`、`tests/owner/test_skill_manage_gate.py`
+  - 配置：`owner/config/patch_feishu_profile.yaml`（`feishu.skill_approval`）、`owner/config/patch.yaml`（v1 段已迁出）
+  - 侵入：`plugins/platforms/feishu/adapter.py`（薄胶水 card action 分支）、`owner/owner-extensions` plugin hooks
+- **侵入类型**：plugin hook（主路径零 upstream surface）+ adapter 薄胶水（点击路由）
+- **Commit**：`55b070fd8`（v1 gate）、`cd937b412`（v2 自建卡 + origin 通知 + profile 配置）
+
 ---
 
 ## 四、飞书平台：深度定制与交互卡片
@@ -428,6 +445,7 @@
 - **侵入类型**：薄胶水 + try-import
 - **Commit**：`aa70fd675`（§5.3）
 - **后续修复**：`ff42d3601` - auto-card 全链路修复：send_card 响应校验 + 表格原子切分 + 降级路径 + 并发锁
+- **后续**：`5c750982d` — streaming 开关读取改为统一 `load_config_readonly()`（mtime 缓存），去掉手写 `yaml.safe_load`。
 
 ### 4.3 输入中反应（early-typing）
 
@@ -513,6 +531,7 @@
   - `e297792cd` — 修复 false-confirmation 竞态。`_on_post_tool_call` 异步派发卡片后立即写 `_SENT_CARD_IDS`，但异步派发可能在途失败（网络错误 / API 拒绝），此时 transform 会把消息改成「卡片已发送」——一个 agent 无法核实的虚假确认。改为 transform 不再依赖 `_SENT_CARD_IDS`，而是基于「这是带 staged memory write 的飞书 session」（从 gateway session key 推导飞书 chat id），并用进行时态 "Approval card being sent"（无论卡片是否最终送达都成立）。同时 `model_tools.py` 把 `gateway_session_key` 透传给 transform hook（与 post_tool_call 对齐）。
   - `8a9273b25`（test）— 补 `_SENT_CARD_IDS` 生产路径写入 + 派发失败路径（失败时不得写入）。
   - `e218fc7dd`（test）— `e297792cd` 的 follow-up：`tests/test_model_tools.py` 的 transform hook exact-match 断言加入新的 `gateway_session_key=''` 入参。
+  - `c812f9df5` — **卡片 invisible 根治**：post_tool_call 各 skip 路径打 WARNING；发送时从 `gateway.adapters` 解析 Feishu adapter（Platform enum + `'feishu'` 字符串）；`_submit_on_loop` 失败时 fallback `run_coroutine_threadsafe` 且不写 `_SENT_CARD_IDS`；core 透传 `agent.platform` / `agent._chat_id`；agent-loop 路径补跑 `transform_tool_result`（原先仅 gateway 路径执行）。生产证据 7/26–7/28 零发卡。
 
 ### 4.11 /feishu-guide 对话引导交互卡片
 
@@ -650,6 +669,7 @@
 
   - `7733cabf7` — **`viking_add_resource` 超时 UX**：默认 HTTP timeout 提到 120s，client 尊重 wait timeout；超时返回可操作 payload，避免模型把 `wait=true` 超时当成硬写失败而重试/幻觉。
   - `89fa171bc`（部分）— openviking 召回全链路 INFO 诊断日志（与 §4.11 queue 撤销同 commit；见 steer_card / recall patch 侧）。
+  - `2da7512f4` — 召回卡 header emoji 🧠→📚，蓝底上对比度更好。
 
 ### 7.4 Cron env 隔离（ContextVar + restart scrub）
 
@@ -816,6 +836,14 @@
 - **侵入类型**：inline（batch task 调用点 4 行修复）
 - **Commit**：`ff88f6063`（先删 `acp_command`）、`2f455b63a`（再删 `task_acp_args`/`acp_args`）
 
+### 8.4 verify-on-stop 对创意 / 视觉产物抑制 nudge
+
+- **背景**：turn 结束 verify-on-stop 会在「改了代码却无验证证据」时注入 follow-up；`_NON_CODE_VERIFY_EXTENSIONS` 原先只覆盖 prose（`.md`/`.txt` 等），编辑 `.svg`/`.html`/`.png`/`.pptx` 等仍被当成 coding edit，连续 nudge 写 ad-hoc 校验脚本，与 CODING_VERIFY_GUIDANCE「创意 UI/视觉先等用户确认」矛盾。
+- **方案**：`21543bcfc` — 扩展 `_NON_CODE_VERIFY_EXTENSIONS`（svg/html/png/jpg/pdf/pptx/fig/sketch 等），无运行时语义的视觉/文档产物直接 suppress nudge；单测 `tests/agent/test_verification_stop.py`。
+- **涉及文件**：`agent/verification_stop.py`、`tests/agent/test_verification_stop.py`
+- **侵入类型**：inline（扩展 allowlist 常量）
+- **Commit**：`21543bcfc`
+
 ---
 
 ## 九、显示策略与个性化
@@ -942,9 +970,10 @@
   - `5a5956baa` — `BACKUP_QUIET` 接入 backup log 函数（newapi/openviking），静默 cron 不刷屏
   - `30c449bd4` — 恢复 `hermes-backup.sh` 的 `BACKUP_QUIET` 静默模式（回归）
   - `8ee7ca57d`（部分）— newapi 备份目录迁至 `hermes-backup/yangtb/newapi`；`cron-health-check.py` 增加 node010 bifang-backup 巡检
+  - `8c00a813f` — 三个备份脚本解析 cron 传入的 `--BACKUP_QUIET VALUE`（及 hermes 的 `--timeout_seconds` 透传忽略），与 scheduler 参数形态对齐
 - **涉及文件**：`owner/scripts/hermes-backup.sh`、`openviking-backup.sh`、`newapi-backup.sh`、`cron-health-check.py`
 - **侵入类型**：纯新增 / 脚本改写
-- **Commit**：`8b443c20e`、`79b2c5c71`、`5a5956baa`、`30c449bd4`、`8ee7ca57d`（部分）
+- **Commit**：`8b443c20e`、`79b2c5c71`、`5a5956baa`、`30c449bd4`、`8ee7ca57d`（部分）、`8c00a813f`
 
 ### 11.9 飞书周会脚本、Swagger/Kanban 工具与 image_gen 预设
 
@@ -1040,6 +1069,9 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 | `owner/file_tool_timeout.py` | read_file/search_files 超时守卫 | agent/tool_executor.py |
 | `owner/tips_zh.py` | 中文 tips 数据源 | hermes_cli/tips.py |
 | `owner/approval/skill_script_approval.py` | skill 脚本自动审批 + 安全门 | tools/approval.py / skills_tool.py |
+| `owner/approval/skill_manage_gate.py` | skill_manage 写操作飞书审批门（profile 白名单） | plugin hook + feishu adapter 点击路由 |
+| `owner/feishu/skill_approval_card.py` | skill 审批自建卡 + card action 处理 | feishu/adapter.py（skill_approval_gate） |
+| `owner/owner-extensions/skill_manage_bridge/` | pre_tool_call / gateway 缓存接线 skill 审批门 | owner-extensions plugin |
 | `owner/checkpoint_predictor/` | terminal 预测式 checkpoint（静态+LLM） | agent/tool_executor.py |
 | `owner/clarify/` | clarify choice 归一化 + gateway helpers | tools/clarify_tool.py / clarify_gateway.py |
 | `owner/cli/yolo.py` | YOLO on/off/status 命令 | — |
@@ -1067,7 +1099,7 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 | 文件 | 侵入内容 | owner/ 对应模块 | 相关 commit |
 |------|----------|-----------------|-------------|
 | `gateway/run.py` | cron env scrub ×3、executor-shutdown、inbound context、hygiene notice、auto-card、per-chat display、chained quick command、steer vision enrichment（§7.18） | owner/cron/、owner/gateway/、owner/feishu/、owner/display_overrides.py、owner/gateway/steer_vision.py | 几乎所有 §11/§17 commit |
-| `plugins/platforms/feishu/adapter.py` | 64 处 `[owner]` 标记：approval/auto_card/bot_menu/clarify/diff_card/model_picker/profile_routing/resume_card/sender_name/early-typing 委托 | owner/feishu/*（16 模块） | §4.2/§5.3-5.7/§17.1 |
+| `plugins/platforms/feishu/adapter.py` | 64+ 处 `[owner]` 标记：approval/auto_card/bot_menu/clarify/diff_card/model_picker/profile_routing/resume_card/sender_name/early-typing/**skill_approval_gate** 委托 | owner/feishu/*（含 skill_approval_card） | §4.2/§5.3-5.7/§17.1/§3.11 |
 | `agent/conversation_loop.py` | MoA 注入（CR-005 已改为独立 message）、content-filter fallback、adaptive backoff、thinking-timeout、attribution 重建、tool_call_id 胶水 | owner/attribution.py、owner/api_error_hints.py | a6dcd6ed8、9a05e50b4、362304bc8 |
 | `tools/approval.py` | home-prefix fold（CR-001 修复）、skill script 自动审批（3 处委托）、patch.yaml allowlist 合并、cron active helper | owner/approval/、owner/patch_config.py、owner/cron/approval_helper.py | 82fe8c962、5dd9580b4、99a374f64 |
 | `gateway/platforms/base.py` | per-profile cache roots、SendResult rotate/retry_after、chained quick command（`[owner-patch]`）、progress dedup code-fence 守卫 | — | 1d908072a、2be0af638 |
@@ -1101,7 +1133,9 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 | `agent/credential_pool.py` | base_url override 钩子 | 薄胶水 |
 | `agent/agent_runtime_helpers.py` | `_auth_pool_refresh_counts` defensive getter + file timeout | 薄胶水 |
 | `agent/codex_runtime.py` | owner_provider_name 透传 | 薄胶水 |
-| `gateway/display_config.py` / `gateway/slash_commands.py` | per-chat display source 透传 + i18n | 薄胶水 |
+| `gateway/display_config.py` / `gateway/slash_commands.py` | per-chat display source 透传 + i18n；`/new` 时 invalidate patch 配置缓存（§1.2） | 薄胶水 |
+| `agent/verification_stop.py` | 创意/视觉扩展名 suppress verify-on-stop（§8.4） | inline（allowlist） |
+| `agent/models_dev.py` | models.dev 缓存 TTL 24h（§2.11）+ fetch 超时 5s | inline |
 | `gateway/session_context.py` | cron session 隔离接线 | 薄胶水 |
 | `gateway/platforms/api_server.py` | `_owner_import` helper + 多 profile 路由端点 + send_only config | 薄胶水 + try-import |
 | `plugins/platforms/discord/adapter.py` | clarify button `get_choice_display` | 薄胶水 |
@@ -1385,4 +1419,22 @@ _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请先�
 - **钉 hash**：§4.11 queue 撤销 `89fa171bc` + 锁 `306fb0be8`；§4.13 feishu 文档图 `7230d71e9`/`e5e90f874`/`4ca60433a`/`749f68abb`；§4.6 `agents` 菜单 `ee1e29084`
 - **附录 A/B**：补 `owner/semantic_audit/`、`owner/sync/`、queue_cancel、run_agent/codex/TUI 轻度侵入行
 - **刻意不记**：yangtb provider 移除（已退役约定）、纯 i18n、tips 清理等琐碎维护
+
+### 2026-08-03：近 15 天本机 commit 补录
+
+- **类型**：文档补录（无代码变更；对照 `owner` 本机作者 07-21～08-03 与正文 diff）
+- **新建正文**：
+  - **§3.11** skill 写入飞书审批门：`55b070fd8`（v1 gate）、`cd937b412`（v2 自建卡 + origin 通知 + profile 配置）
+  - **§8.4** verify-on-stop 创意/视觉产物抑制：`21543bcfc`
+- **已有章节后续**（一句话挂 hash）：
+  - §1.2 session reset 清 patch 缓存：`88336be4f`
+  - §2.2.4 model_picker idle：`63fa17e1b`
+  - §2.11 models.dev 超时 5s：`8c00a813f`（部分）
+  - §3.1 审批失败 CallBackCard：`cd11a5ff8`
+  - §4.2 auto_card `load_config_readonly`：`5c750982d`
+  - §4.10 memory 审批卡 invisible 根治：`c812f9df5`
+  - §7.3 召回 emoji 📚：`2da7512f4`
+  - §11.8 备份脚本解析 cron `--BACKUP_QUIET`：`8c00a813f`
+- **附录 A/B**：skill_manage_gate / skill_approval_card / skill_manage_bridge；adapter skill_approval_gate；slash_commands 清缓存；verification_stop / models_dev
+- **刻意不记**：纯 docs / 纯 i18n / tips 清理 / merge main / 运维白名单注释配置
 
