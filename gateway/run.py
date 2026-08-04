@@ -18371,9 +18371,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             status_code = getattr(e, "status_code", None)
             _hist_len = len(history) if 'history' in locals() else 0
             if status_code == 401:
-                status_hint = " Check your API key or run `claude /login` to refresh OAuth credentials."
+                status_hint = t("gateway.agent_error_hint_auth")
             elif status_code == 402:
-                status_hint = " Your API balance or quota is exhausted. Check your provider dashboard."
+                status_hint = t("gateway.agent_error_hint_billing")
             elif status_code == 429:
                 # Check if this is a plan usage limit (resets on a schedule) vs a transient rate limit
                 _err_body = getattr(e, "response", None)
@@ -18390,29 +18390,26 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     if _resets_in and _resets_in > 0:
                         import math
                         _hours = math.ceil(_resets_in / 3600)
-                        status_hint = f" Your plan's usage limit has been reached. It resets in ~{_hours}h."
+                        status_hint = t(
+                            "gateway.agent_error_hint_usage_limit_resets",
+                            hours=_hours,
+                        )
                     else:
-                        status_hint = " Your plan's usage limit has been reached. Please wait until it resets."
+                        status_hint = t("gateway.agent_error_hint_usage_limit")
                 else:
-                    status_hint = " You are being rate-limited. Please wait a moment and try again."
+                    status_hint = t("gateway.agent_error_hint_rate_limited")
             elif status_code == 529:
-                status_hint = " The API is temporarily overloaded. Please try again shortly."
+                status_hint = t("gateway.agent_error_hint_overloaded")
             elif status_code in {400, 500}:
                 # 400 with a large session is context overflow.
                 # 500 with a large session often means the payload is too large
                 # for the API to process — treat it the same way.
                 if _hist_len > 50:
-                    return (
-                        "⚠️ Session too large for the model's context window.\n"
-                        "Use /compact to compress the conversation, or "
-                        "/reset to start fresh."
-                    )
+                    return t("gateway.model.context_too_large")
                 elif status_code == 400:
-                    status_hint = " The request was rejected by the API."
-            return (
-                f"Sorry, I encountered an unexpected error.{status_hint}\n"
-                "Try again or use /reset to start a fresh session."
-            )
+                    status_hint = t("gateway.agent_error_hint_rejected")
+            return t("gateway.agent_error", status_hint=status_hint)
+
         finally:
             # Restore session context variables to their pre-handler state
             self._clear_session_env(_session_env_tokens)

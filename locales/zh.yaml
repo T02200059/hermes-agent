@@ -477,6 +477,17 @@ gateway:
   # 消息处理意外崩溃时向用户显示的通用错误。
   handler_error: "抱歉，发生了错误（{error_type}）。\n{error_detail}\n请重试，或使用 /reset 开始新会话。"
 
+  # Agent 轮次异常兜底（gateway/run.py）。仅按状态码给提示，不暴露异常类型/原文。
+  # {status_hint} 为空或 agent_error_hint_* 之一。中文不在 hint 前加空格（句号后直接接续）。
+  agent_error: "抱歉，遇到了意外错误。{status_hint}\n请重试，或使用 /reset 开始新会话。"
+  agent_error_hint_auth: "请检查 API 密钥，或运行 `claude /login` 刷新 OAuth 凭证。"
+  agent_error_hint_billing: "API 余额或额度已用尽，请检查服务商控制台。"
+  agent_error_hint_rate_limited: "当前触发了速率限制，请稍后再试。"
+  agent_error_hint_usage_limit: "当前套餐用量已达上限，请等待额度重置。"
+  agent_error_hint_usage_limit_resets: "当前套餐用量已达上限，约 {hours} 小时后重置。"
+  agent_error_hint_overloaded: "API 暂时过载，请稍后重试。"
+  agent_error_hint_rejected: "请求被 API 拒绝。"
+
   # 后台任务完成/失败通知。
   background_task_complete: "✅ 后台任务完成\n提示：\"{preview}\"\n\n{response}"
   background_task_no_response: "（未生成响应）"

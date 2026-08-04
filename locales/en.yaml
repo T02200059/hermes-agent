@@ -471,6 +471,19 @@ gateway:
   # Generic error shown to the user when message processing crashes unexpectedly.
   handler_error: "Sorry, I encountered an error ({error_type}).\n{error_detail}\nTry again or use /reset to start a fresh session."
 
+  # Agent-turn exception fallback (gateway/run.py).  Only status-code hints —
+  # never raw exception types/messages (info-leakage risk).  {status_hint} is
+  # either empty or one of the agent_error_hint_* strings below (leading space
+  # preserved so English reads as "...error. Hint…").
+  agent_error: "Sorry, I encountered an unexpected error.{status_hint}\nTry again or use /reset to start a fresh session."
+  agent_error_hint_auth: " Check your API key or run `claude /login` to refresh OAuth credentials."
+  agent_error_hint_billing: " Your API balance or quota is exhausted. Check your provider dashboard."
+  agent_error_hint_rate_limited: " You are being rate-limited. Please wait a moment and try again."
+  agent_error_hint_usage_limit: " Your plan's usage limit has been reached. Please wait until it resets."
+  agent_error_hint_usage_limit_resets: " Your plan's usage limit has been reached. It resets in ~{hours}h."
+  agent_error_hint_overloaded: " The API is temporarily overloaded. Please try again shortly."
+  agent_error_hint_rejected: " The request was rejected by the API."
+
   # Background task completion/failure notifications.
   background_task_complete: "✅ Background task complete\nPrompt: \"{preview}\"\n\n{response}"
   background_task_no_response: "(No response generated)"
