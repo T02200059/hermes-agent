@@ -2897,14 +2897,20 @@ def _gateway_profile_tag() -> str:
     shutting down or coming back online.  The default profile returns
     ``""`` so single-profile installs keep the original untagged wording.
 
+    Resolution order:
+    1. ``HERMES_PROFILE`` env var (set by ``-p`` / profile selection)
+    2. ``get_active_profile_name()`` (inferred from ``HERMES_HOME`` path)
+
     Any resolution failure also returns ``""`` (fallback to the original
     message shape) and logs a warning — lifecycle notifications must never
     crash the shutdown/startup path over a missing profile id.
     """
     try:
-        from hermes_cli.profiles import get_active_profile_name
+        name = (os.environ.get("HERMES_PROFILE") or "").strip()
+        if not name:
+            from hermes_cli.profiles import get_active_profile_name
 
-        name = get_active_profile_name()
+            name = get_active_profile_name()
     except Exception as exc:
         logger.warning(
             "Could not resolve active profile name for lifecycle messages; "

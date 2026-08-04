@@ -437,6 +437,7 @@ async def test_shutdown_notifications_are_fully_muted_when_flag_disabled():
 
 
 def test_gateway_profile_tag_empty_for_default(monkeypatch):
+    monkeypatch.delenv("HERMES_PROFILE", raising=False)
     monkeypatch.setattr(
         "hermes_cli.profiles.get_active_profile_name",
         lambda: "default",
@@ -445,6 +446,7 @@ def test_gateway_profile_tag_empty_for_default(monkeypatch):
 
 
 def test_gateway_profile_tag_named_profile(monkeypatch):
+    monkeypatch.delenv("HERMES_PROFILE", raising=False)
     monkeypatch.setattr(
         "hermes_cli.profiles.get_active_profile_name",
         lambda: "coder",
@@ -452,10 +454,30 @@ def test_gateway_profile_tag_named_profile(monkeypatch):
     assert gateway_run._gateway_profile_tag() == " [coder]"
 
 
+def test_gateway_profile_tag_prefers_hermes_profile_env(monkeypatch):
+    """HERMES_PROFILE env wins over get_active_profile_name()."""
+    monkeypatch.setenv("HERMES_PROFILE", "fleet-a")
+    monkeypatch.setattr(
+        "hermes_cli.profiles.get_active_profile_name",
+        lambda: "coder",
+    )
+    assert gateway_run._gateway_profile_tag() == " [fleet-a]"
+
+
+def test_gateway_profile_tag_hermes_profile_env_default_is_empty(monkeypatch):
+    monkeypatch.setenv("HERMES_PROFILE", "default")
+    monkeypatch.setattr(
+        "hermes_cli.profiles.get_active_profile_name",
+        lambda: "coder",
+    )
+    assert gateway_run._gateway_profile_tag() == ""
+
+
 def test_gateway_profile_tag_fallback_on_error_logs_warning(monkeypatch, caplog):
     def _boom():
         raise RuntimeError("profiles unavailable")
 
+    monkeypatch.delenv("HERMES_PROFILE", raising=False)
     monkeypatch.setattr(
         "hermes_cli.profiles.get_active_profile_name",
         _boom,
@@ -469,6 +491,7 @@ def test_gateway_profile_tag_fallback_on_error_logs_warning(monkeypatch, caplog)
 
 
 def test_gateway_profile_tag_fallback_on_empty_name_logs_warning(monkeypatch, caplog):
+    monkeypatch.delenv("HERMES_PROFILE", raising=False)
     monkeypatch.setattr(
         "hermes_cli.profiles.get_active_profile_name",
         lambda: "   ",
@@ -482,6 +505,7 @@ def test_gateway_profile_tag_fallback_on_empty_name_logs_warning(monkeypatch, ca
 
 
 def test_gateway_lifecycle_msg_includes_profile_tag(monkeypatch):
+    monkeypatch.delenv("HERMES_PROFILE", raising=False)
     monkeypatch.setattr(
         "hermes_cli.profiles.get_active_profile_name",
         lambda: "work",
