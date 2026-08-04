@@ -1,472 +1,1518 @@
-# Каталог статических сообщений Hermes -- Русский
-# See locales/en.yaml for the source of truth; keep keys in sync.
-
 approval:
-  dangerous_header: "⚠️  ОПАСНАЯ КОМАНДА: {description}"
-  choose_long:     "      [o]один раз  |  [s]сеанс  |  [a]всегда  |  [d]отклонить"
-  choose_short:    "      [o]один раз  |  [s]сеанс  |  [d]отклонить"
-  prompt_long:     "      Выбор [o/s/a/D]: "
-  prompt_short:    "      Выбор [o/s/D]: "
-  choose_smart_deny: "      [o]один раз  |  [d]отклонить"
-  prompt_smart_deny: "      Выбор [o/D]: "
-  smart_deny_once_inputs: "o,once"
-  smart_deny_deny_inputs: "d,deny"
-  timeout:         "      ⏱ Время ожидания истекло — команда отклонена"
-  allowed_once:    "      ✓ Разрешено один раз"
-  allowed_session: "      ✓ Разрешено для этого сеанса"
-  allowed_always:  "      ✓ Добавлено в постоянный список разрешённых"
-  denied:          "      ✗ Отклонено"
-  cancelled:       "      ✗ Отменено"
-  blocklist_message: "Эта команда находится в безусловном списке блокировки и не может быть одобрена."
+  dangerous_header: '⚠️  ОПАСНАЯ КОМАНДА: {description}'
+  choose_long: '      [o]один раз  |  [s]сеанс  |  [a]всегда  |  [d]отклонить'
+  choose_short: '      [o]один раз  |  [s]сеанс  |  [d]отклонить'
+  prompt_long: '      Выбор [o/s/a/D]: '
+  prompt_short: '      Выбор [o/s/D]: '
+  choose_smart_deny: '      [o]один раз  |  [d]отклонить'
+  prompt_smart_deny: '      Выбор [o/D]: '
+  smart_deny_once_inputs: o,once
+  smart_deny_deny_inputs: d,deny
+  timeout: '      ⏱ Время ожидания истекло — команда отклонена'
+  allowed_once: '      ✓ Разрешено один раз'
+  allowed_session: '      ✓ Разрешено для этого сеанса'
+  allowed_always: '      ✓ Добавлено в постоянный список разрешённых'
+  denied: '      ✗ Отклонено'
+  cancelled: '      ✗ Отменено'
+  blocklist_message: Эта команда находится в безусловном списке блокировки и не может быть одобрена.
+  dangerous_title: ⚠️  Dangerous Command
+  choice_once: Allow once
+  choice_session: Allow for this session
+  choice_always: Add to permanent allowlist
+  choice_deny: Deny
+  choice_view: Show full command
+  hint_choose_view: … (choose Show full command)
+  hint_command_truncated: … (command truncated — use /logs or /debug for full text)
+  hint_description_truncated: … (description truncated)
+  hardline_blocked: 'BLOCKED (hardline): {description}. This command is on the unconditional blocklist and cannot be executed via the agent — not even with --yolo, /yolo, approvals.mode=off, or cron approve mode. If you genuinely need to run it, run it yourself in a terminal outside the agent.'
+  sudo_stdin_blocked: 'BLOCKED: {description}. Do not pipe passwords to ''sudo -S'' — this is a brute-force attack vector. Set SUDO_PASSWORD in your .env file if the agent needs passwordless sudo, or run the sudo command manually in your own terminal.'
+  cron_blocked: 'BLOCKED: Command flagged as dangerous ({description}) but cron jobs run without a user present to approve it. Find an alternative approach that avoids this command. To allow dangerous commands in cron jobs, set approvals.cron_mode: approve in config.yaml.'
+  gateway_asking: '⚠️ This command is potentially dangerous ({description}). Asking the user for approval.
 
+
+    **Command:**
+
+    ```
+
+    {command}
+
+    ```'
+  gateway_asking_combined: '⚠️ {description}. Asking the user for approval.
+
+
+    **Command:**
+
+    ```
+
+    {command}
+
+    ```'
+  user_denied: 'BLOCKED: User denied this potentially dangerous command (matched ''{description}'' pattern). Do NOT retry this command — the user has explicitly rejected it.'
+  smart_denied: 'BLOCKED by smart approval: {description}. The command was assessed as genuinely dangerous. Do NOT retry.'
+  gateway_notify_failed: 'BLOCKED: Failed to send approval request to user. Do NOT retry.'
+  gateway_timeout_denied: 'BLOCKED: Command {reason}. The user has NOT consented to this action. Do NOT retry this command, do NOT rephrase it, and do NOT attempt the same outcome via a different command. Stop the current workflow and wait for the user to respond before taking any further destructive or irreversible action.{timeout_addendum}'
+  cli_denied: 'BLOCKED: User denied this command. The user has NOT consented to this action. Do NOT retry this command, do NOT rephrase it, and do NOT attempt the same outcome via a different command. Stop the current workflow and wait for the user to respond before taking any further destructive or irreversible action.'
+  execute_code_smart_denied: 'BLOCKED by smart approval: execute_code script execution was assessed as genuinely dangerous. Do NOT retry.'
+  execute_code_gateway_asking: '⚠️ {description}. Asking the user for approval.
+
+
+    **Code:**
+
+    ```python
+
+    {code}
+
+    ```'
+  execute_code_notify_failed: 'BLOCKED: Failed to send execute_code approval request to user. Do NOT retry.'
+  execute_code_timeout_denied: 'BLOCKED: execute_code script timed out without user response. The user has NOT consented to running this code. Do NOT retry, do NOT rephrase the script, and do NOT attempt the same outcome via a different tool. Silence is not consent.'
+  execute_code_user_denied: 'BLOCKED: execute_code script denied by user. The user has NOT consented to running this code. Do NOT retry, do NOT rephrase the script, and do NOT attempt the same outcome via a different tool.'
+  feishu_card_title: ⚠️ Command Approval Required
+  feishu_card_title_smart_deny: ⚠️ Smart DENY — Allow Once Only
+  feishu_reason_label: '**Reason:** {description}'
+  feishu_btn_once: ✅ Allow Once
+  feishu_btn_session: ✅ Session
+  feishu_btn_always: ✅ Always
+  feishu_btn_deny: ❌ Deny
+  feishu_resolved_once: Approved once
+  feishu_resolved_session: Approved for session
+  feishu_resolved_always: Approved permanently
+  feishu_resolved_deny: Denied
+  feishu_resolved_default: Resolved
+  feishu_resolved_body: 'by {user_name}
+
+
+    ```
+
+    {command}
+
+    ```'
+  feishu_fail_unauthorized_title: ⚠️ Not authorized
+  feishu_fail_unauthorized_body: Your account is not allowed to act on this approval. Use an authorized account, or ask an admin to check FEISHU_GROUP_POLICY / allowlists. **The request is still waiting** — unauthorized clicks do not cancel it.
+  feishu_fail_already_resolved_title: ℹ️ Already handled
+  feishu_fail_already_resolved_body: This approval was already resolved or has expired. No further action needed.
+  feishu_fail_chat_mismatch_title: ⚠️ Invalid click
+  feishu_fail_chat_mismatch_body: Please click the original approval card in its chat. Do not forward it elsewhere.
+  feishu_fail_missing_id_title: ⚠️ Invalid request
+  feishu_fail_missing_id_body: Missing approval id; this click cannot be processed.
+  feishu_fail_submit_failed_title: ⚠️ Submit failed
+  feishu_fail_submit_failed_body: Could not schedule the approval result. Retry later or re-trigger the action in the original conversation.
+  feishu_fail_default_title: ⚠️ Failed
+  feishu_fail_default_body: The approval action did not take effect. Check logs or contact an admin.
+  feishu_permanent_disabled: 💡 Permanent approval is disabled. Choose Allow Once or Session instead.
+  feishu_smart_deny_note: '🤖 **Smart DENY:** The smart-approval model assessed this command as genuinely dangerous.
+
+
+    You can still override, but **only for this single operation**. Session and Always are unavailable so one click cannot weaken protection for similar later commands.'
+  qqbot_permanent_disabled: 💡 Permanent approval is disabled. Choose Allow Once instead.
+  yolo_auto_resolved: 🔄 YOLO mode enabled — {count} pending approval(s) auto-resolved.
+  qqbot_exec_title: 🔐 **Command Execution Approval**
+  qqbot_exec_title_smart_deny: 🔐 **Smart DENY — Allow Once Only**
+  qqbot_exec_subtitle: Execute this command?
+  qqbot_plugin_title: '**Approval Request**'
+  qqbot_cwd_label: '📁 Directory: {cwd}'
+  qqbot_reason_label: 📝 {description}
+  qqbot_tool_label: '🔧 Tool: {tool_name}'
+  qqbot_timeout_label: '⏱️ Timeout: {timeout} seconds'
+  qqbot_btn_once: ✅ Allow Once
+  qqbot_btn_always: ⭐ Always Allow
+  qqbot_btn_deny: ❌ Deny
+  qqbot_visited_once: Allowed
+  qqbot_visited_always: Always Allowed
+  qqbot_visited_deny: Denied
+  qqbot_smart_deny_note: '🤖 **Smart DENY:** The smart-approval model assessed this command as genuinely dangerous.
+
+
+    You can still override, but **only for this single operation**. Always Allow is unavailable so one click cannot weaken protection for similar later commands.'
+  reason_label: 'Reason: {description}'
+  scan_prefix: Security scan
+  slash_confirm:
+    destructive_title: ⚠️  /{command} — destroys conversation state
+    destructive_detail_default: This will discard the current conversation history. This cannot be undone.
+    mcp_title: ⚠️  /{command} — Prompt cache invalidation warning
+    mcp_detail: Reloading MCP servers rebuilds the tool set for this session and invalidates the provider prompt cache. The next message will re-send full input tokens (can be expensive on long-context or high-reasoning models).
+    choice_once: Approve Once
+    choice_always: Always Approve
+    choice_cancel: Cancel
+    hint_destructive_once: proceed this time only
+    hint_destructive_always: proceed and silence this prompt permanently
+    hint_destructive_cancel: keep current conversation
+    hint_mcp_once: reload now
+    hint_mcp_always: reload now and silence this prompt permanently
+    hint_mcp_cancel: leave MCP tools unchanged
+    cancelled_no_input: 🟡 /{command} cancelled (no input).
+    cancelled_unrecognized: 🟡 Unrecognized choice '{raw}'. /{command} cancelled.
+    cancelled_explicit_destructive: 🟡 /{command} cancelled. Conversation unchanged.
+    cancelled_explicit_mcp: 🟡 /{command} cancelled. MCP tools unchanged.
+    optout_saved_destructive: 🔒 Future /clear, /new, /reset, and /undo will run without confirmation.
+    optout_saved_mcp: 🔒 Future /{command} calls will run without confirmation.
+    optout_hint_destructive: '   Re-enable via `approvals.destructive_slash_confirm: true` in config.yaml.'
+    optout_hint_mcp: '   Re-enable via `approvals.mcp_reload_confirm: true` in config.yaml.'
+    optout_failed_destructive: ⚠️  Couldn't persist opt-out — proceeding once.
+    optout_failed_mcp: ⚠️  Couldn't persist opt-out — reloading once.
+    reloading_mcp: 🔄 Reloading MCP servers...
+    mcp_config_changed: 🔄 MCP server config changed — reloading connections...
+    reloading_skills: 🔄 Reloading skills...
+  dangerous_desc:
+    delete_in_root_path: delete in root path
+    recursive_delete: recursive delete
+    recursive_delete_long_flag: recursive delete (long flag)
+    world_other_writable_permissions: world/other-writable permissions
+    recursive_world_other_writable_long_flag: recursive world/other-writable (long flag)
+    recursive_chown_to_root: recursive chown to root
+    recursive_chown_to_root_long_flag: recursive chown to root (long flag)
+    format_filesystem: format filesystem
+    disk_copy: disk copy
+    write_to_block_device: write to block device
+    sql_drop: SQL DROP
+    sql_delete_without_where: SQL DELETE without WHERE
+    sql_truncate: SQL TRUNCATE
+    overwrite_system_config: overwrite system config
+    stop_restart_system_service: stop/restart system service
+    system_shutdown_reboot: system shutdown/reboot
+    init_0_6_shutdown_reboot: init 0/6 (shutdown/reboot)
+    systemctl_poweroff_reboot: systemctl poweroff/reboot
+    telinit_0_6_shutdown_reboot: telinit 0/6 (shutdown/reboot)
+    kill_all_processes: kill all processes
+    force_kill_processes: force kill processes
+    force_kill_processes_killall_kill: force kill processes (killall -KILL)
+    force_kill_processes_killall_s_kill: force kill processes (killall -s KILL)
+    kill_processes_by_regex_killall_r: kill processes by regex (killall -r)
+    fork_bomb: fork bomb
+    shell_command_via_c_lc_flag: shell command via -c/-lc flag
+    script_execution_via_e_c_flag: script execution via -e/-c flag
+    pipe_remote_content_to_shell: pipe remote content to shell
+    execute_remote_script_via_process_substitution: execute remote script via process substitution
+    overwrite_system_file_via_tee: overwrite system file via tee
+    overwrite_system_file_via_redirection: overwrite system file via redirection
+    overwrite_project_env_config_via_tee: overwrite project env/config via tee
+    overwrite_project_env_config_via_redirection: overwrite project env/config via redirection
+    xargs_with_rm: xargs with rm
+    find_exec_execdir_rm: find -exec/-execdir rm
+    find_delete: find -delete
+    stop_restart_hermes_gateway_kills_running_agents: stop/restart hermes gateway (kills running agents)
+    hermes_update_restarts_gateway_kills_running_agents: hermes update (restarts gateway, kills running agents)
+    start_gateway_outside_systemd: start gateway outside systemd (use 'systemctl --user restart hermes-gateway')
+    nohup_gateway_run: start gateway outside systemd (use 'systemctl --user restart hermes-gateway')
+    kill_hermes_gateway_process_self_termination: kill hermes/gateway process (self-termination)
+    kill_process_via_pgrep_expansion_self_termination: kill process via pgrep expansion (self-termination)
+    kill_process_via_backtick_pgrep_expansion_self_termination: kill process via backtick pgrep expansion (self-termination)
+    copy_move_file_into_system_config_path: copy/move file into system config path
+    overwrite_project_env_config_file: overwrite project env/config file
+    in_place_edit_of_system_config: in-place edit of system config
+    in_place_edit_of_system_config_long_flag: in-place edit of system config (long flag)
+    script_execution_via_heredoc: script execution via heredoc
+    git_reset_hard_destroys_uncommitted_changes: git reset --hard (destroys uncommitted changes)
+    git_force_push_rewrites_remote_history: git force push (rewrites remote history)
+    git_force_push_short_flag_rewrites_remote_history: git force push short flag (rewrites remote history)
+    git_clean_with_force_deletes_untracked_files: git clean with force (deletes untracked files)
+    git_branch_force_delete: git branch force delete
+    chmod_x_followed_by_immediate_execution: chmod +x followed by immediate execution
+    sudo_with_privilege_flag_stdin_askpass_shell_list: sudo with privilege flag (stdin/askpass/shell/list)
+    sudo_with_combined_flag_privilege_escalation: sudo with combined-flag privilege escalation
+    windows_cmd_destructive_delete: Windows cmd destructive delete
+    windows_powershell_destructive_delete: Windows PowerShell destructive delete
+    powershell_encoded_command_execution: PowerShell encoded command execution
+    execute_remote_content_via_command_substitution: execute remote content via command substitution
+    pipe_decoded_content_to_shell_possible_command_obfuscation: pipe decoded content to shell (possible command obfuscation)
+    pipe_xxd_decoded_content_to_shell_possible_command_obfuscation: pipe xxd-decoded content to shell (possible command obfuscation)
+    pipe_tr_transformed_output_to_shell_possible_command_obfuscation: pipe tr-transformed output to shell (possible command obfuscation)
+    pipe_openssl_decoded_content_to_shell_possible_command_obfuscation: pipe openssl-decoded content to shell (possible command obfuscation)
+    docker_compose_restart_stop_kill_down_container_lifecycle: docker compose restart/stop/kill/down (container lifecycle)
+    docker_restart_stop_kill_container_lifecycle: docker restart/stop/kill (container lifecycle)
+    start_gateway_outside_systemd_use_systemctl_user_restart_hermes_gateway: start gateway outside systemd (use 'systemctl --user restart hermes-gateway')
+    kill_process_via_pgrep_pidof_expansion_self_termination: kill process via pgrep/pidof expansion (self-termination)
+    kill_process_via_backtick_pgrep_pidof_expansion_self_termination: kill process via backtick pgrep/pidof expansion (self-termination)
+    stop_restart_hermes_launchd_service_kills_running_agents: stop/restart hermes launchd service (kills running agents)
+    copy_move_file_into_sensitive_credential_ssh_shell_rc_path: copy/move file into sensitive credential/SSH/shell-rc path
+    in_place_edit_of_sensitive_credential_ssh_shell_rc_path: in-place edit of sensitive credential/SSH/shell-rc path
+    in_place_edit_of_sensitive_credential_ssh_shell_rc_path_long_flag: in-place edit of sensitive credential/SSH/shell-rc path (long flag)
+    in_place_edit_of_sensitive_credential_ssh_shell_rc_path_perl_ruby: in-place edit of sensitive credential/SSH/shell-rc path (perl/ruby)
+    in_place_edit_of_hermes_config_env: in-place edit of Hermes config/env
+    in_place_edit_of_hermes_config_env_long_flag: in-place edit of Hermes config/env (long flag)
+    in_place_edit_of_hermes_config_env_perl_ruby: in-place edit of Hermes config/env (perl/ruby)
+    shell_execution_via_heredoc: shell execution via heredoc
+    git_branch_force_delete_long_flags: git branch force delete (long flags)
+    git_branch_force_delete_long_flags_force_first: git branch force delete (long flags, force-first)
+  hardline_desc:
+    recursive_delete_of_root_filesystem: recursive delete of root filesystem
+    recursive_delete_of_system_directory: recursive delete of system directory
+    recursive_delete_of_home_directory: recursive delete of home directory
+    format_filesystem_mkfs: format filesystem (mkfs)
+    dd_to_raw_block_device: dd to raw block device
+    redirect_to_raw_block_device: redirect to raw block device
+    fork_bomb: fork bomb
+    kill_all_processes: kill all processes
+    system_shutdown_reboot: system shutdown/reboot
+    init_0_6_shutdown_reboot: init 0/6 (shutdown/reboot)
+    systemctl_poweroff_reboot: systemctl poweroff/reboot
+    telinit_0_6_shutdown_reboot: telinit 0/6 (shutdown/reboot)
+  tirith:
+    raw_ip_url:
+      title: URL uses raw IP address
+    plain_http_to_sink:
+      title: Plain HTTP URL in execution context
+    private_network_access:
+      title: Private network access
+    curl_pipe_shell:
+      title: 'Pipe to interpreter: curl | shell'
+    non_ascii_hostname:
+      title: Non-ASCII characters in hostname
+    punycode_domain:
+      title: Punycode domain detected
+    lookalike_tld:
+      title: Lookalike TLD detected
+    ansi_escapes:
+      title: ANSI escape sequences in pasted content
+    archive_extract:
+      title: Archive extraction to sensitive path
+    base64_decode_execute:
+      title: Base64 decode and execute
+    bidi_controls:
+      title: Unicode bidirectional override characters
+    clipboard_hidden:
+      title: Hidden content in clipboard paste
+    code_injection_env:
+      title: Code injection via environment variable
+    command_network_deny:
+      title: Policy network deny list match
+    config_injection:
+      title: Prompt injection in AI config file
+    config_invisible_unicode:
+      title: Invisible Unicode in config file
+    config_malformed:
+      title: Malformed configuration file
+    config_non_ascii:
+      title: Non-ASCII characters in ASCII config file
+    config_suspicious_indicator:
+      title: Suspicious indicator in config file
+    confusable_domain:
+      title: Confusable domain name
+    confusable_text:
+      title: Unicode confusable text
+    control_chars:
+      title: Display-overwriting control characters
+    credential_file_sweep:
+      title: Multiple credential file access
+    credential_in_text:
+      title: Known credential pattern detected
+    custom_rule_match:
+      title: Custom rule match
+    data_exfiltration:
+      title: Data exfiltration via upload
+    docker_remote_priv_esc:
+      title: Docker remote daemon privilege escalation
+    docker_untrusted_registry:
+      title: Docker image from untrusted registry
+    dotfile_overwrite:
+      title: Dotfile overwrite via redirect
+    double_encoding:
+      title: Double percent-encoding in URL
+    dynamic_code_execution:
+      title: Dynamic code execution with encoded payload
+    git_typosquat:
+      title: Git repository typosquatting
+    hangul_filler:
+      title: Hangul filler characters
+    hidden_color_content:
+      title: Same-color hidden text
+    hidden_css_content:
+      title: CSS-hidden content
+    hidden_html_attribute:
+      title: Hidden HTML attribute
+    hidden_multiline:
+      title: Hidden commands in multiline paste
+    high_entropy_secret:
+      title: High-entropy secret detected
+    homoglyph_in_path:
+      title: Homoglyph in URL path
+    html_comment:
+      title: HTML comment
+    httpie_pipe_shell:
+      title: HTTPie piped to shell
+    insecure_tls_flags:
+      title: Insecure TLS flags
+    interpreter_hijack_env:
+      title: Interpreter module path hijack
+    invalid_host_chars:
+      title: Invalid characters in hostname
+    invisible_math_operator:
+      title: Invisible mathematical operators
+    invisible_whitespace:
+      title: Unusual invisible whitespace
+    license_required:
+      title: License required
+    markdown_comment:
+      title: HTML comment in Markdown
+    mcp_duplicate_server_name:
+      title: Duplicate MCP server name
+    mcp_insecure_server:
+      title: MCP server using insecure transport
+    mcp_overly_permissive:
+      title: Overly permissive MCP server
+    mcp_suspicious_args:
+      title: Shell metacharacters in MCP server args
+    mcp_untrusted_server:
+      title: MCP server from untrusted source
+    metadata_endpoint:
+      title: Cloud metadata endpoint access
+    mixed_script_in_label:
+      title: Mixed Unicode scripts in hostname label
+    non_ascii_path:
+      title: Non-ASCII characters in URL path
+    non_standard_port:
+      title: Non-standard port on known domain
+    npm_url_install:
+      title: npm install from non-registry URL
+    obfuscated_payload:
+      title: Obfuscated code payload
+    pdf_hidden_text:
+      title: Hidden text in PDF
+    pip_url_install:
+      title: pip install from non-PyPI URL
+    pipe_to_interpreter:
+      title: Pipe to shell interpreter
+    policy_blocklisted:
+      title: Policy blocklist match
+    private_key_exposed:
+      title: Private key exposed
+    proc_mem_access:
+      title: Process memory access via /proc
+    proxy_env_set:
+      title: Proxy environment variable set
+    schemeless_to_sink:
+      title: Schemeless URL in download command
+    sensitive_env_export:
+      title: Sensitive credential exported to environment
+    server_cloaking:
+      title: Server-side content cloaking
+    shell_injection_env:
+      title: Shell injection via startup variable
+    shortened_url:
+      title: URL shortener detected
+    suspicious_code_exfiltration:
+      title: Suspicious network request in code file
+    threat_cisa_kev:
+      title: CISA Known Exploited Vulnerability
+    threat_malicious_ip:
+      title: Known malicious IP address
+    threat_malicious_package:
+      title: Known malicious package
+    threat_malicious_url:
+      title: Known malicious URL
+    threat_osv_vulnerable:
+      title: OSV vulnerability detected
+    threat_package_similar_name:
+      title: Package name similar to popular package
+    threat_package_typosquat:
+      title: Confirmed package typosquat
+    threat_phishing_url:
+      title: Known phishing URL
+    threat_safe_browsing:
+      title: Google Safe Browsing hit
+    threat_suspicious_package:
+      title: Suspicious package metadata
+    threat_threat_fox_ioc:
+      title: ThreatFox IOC match
+    threat_tor_exit_node:
+      title: Tor exit node IP
+    trailing_dot_whitespace:
+      title: Trailing dot or whitespace in hostname
+    unicode_tags:
+      title: Unicode Tag characters
+    userinfo_trick:
+      title: Userinfo domain impersonation
+    variation_selector:
+      title: Unicode variation selectors
+    vet_not_configured:
+      title: cargo-vet not configured
+    web3_address_in_url:
+      title: Ethereum address in URL
+    web3_rpc_endpoint:
+      title: Web3 RPC endpoint
+    wget_pipe_shell:
+      title: wget piped to shell
+    xh_pipe_shell:
+      title: xh piped to shell
+    zero_width_chars:
+      title: Zero-width characters
+  feishu_update_card_title: ⚕ Update Needs Your Input
+  feishu_update_default_hint: 'Default: `{default}`'
+  feishu_update_yes: 'Yes'
+  feishu_update_no: 'No'
+  feishu_update_title: 'Update prompt answered: {label}'
+  feishu_update_body: Answered by **{user_name}**
 gateway:
-  approval_expired: "⚠️ Срок одобрения истёк (агент больше не ожидает). Попросите агента повторить попытку."
-  draining:         "⏳{profile_tag} Ожидание завершения {count} активных агент(ов) перед перезапуском..."
-  goal_cleared:     "✓ Цель очищена."
-  no_active_goal:   "Нет активной цели."
-  config_read_failed: "⚠️ Не удалось прочитать config.yaml: {error}"
-  config_save_failed: "⚠️ Не удалось сохранить конфигурацию: {error}"
-
-  # Platform adapter fallback messages — shown when a message cannot be delivered
-  # in its original format (rich formatting, attachments, clarify buttons, etc.).
-  formatting_failed_prefix: "(Response formatting failed, plain text:)"
-  delivery_failed_notice: "⚠️ Message delivery failed after multiple attempts. Please try again — your request was processed but the response could not be sent."
-  clarify_question: "❓ {question}"
-  clarify_choices: "❓ {question}\n\n{choices}\n\nReply with the number, the option text, or your own answer."
-  file_attachment_failed: "⚠️ Couldn't deliver the file attachment."
-  file_attachment_failed_with_name: "⚠️ Couldn't deliver the file attachment ({file_name})."
-
-  # Generic error shown to the user when message processing crashes unexpectedly.
-  handler_error: "Sorry, I encountered an error ({error_type}).\n{error_detail}\nTry again or use /reset to start a fresh session."
-
-  # Background task completion/failure notifications.
-  background_task_complete: "✅ Background task complete\nPrompt: \"{preview}\"\n\n{response}"
-  background_task_no_response: "(No response generated)"
-  background_task_error_prefix: "Error: {error}"
-  background_task_failed: "❌ Background task {task_id} failed: {error}"
+  approval_expired: ⚠️ Срок одобрения истёк (агент больше не ожидает). Попросите агента повторить попытку.
+  draining: ⏳{profile_tag} Ожидание завершения {count} активных агент(ов) перед перезапуском...
+  goal_cleared: ✓ Цель очищена.
+  no_active_goal: Нет активной цели.
+  config_read_failed: '⚠️ Не удалось прочитать config.yaml: {error}'
+  config_save_failed: '⚠️ Не удалось сохранить конфигурацию: {error}'
+  formatting_failed_prefix: (Response formatting failed, plain text:)
+  delivery_failed_notice: ⚠️ Message delivery failed after multiple attempts. Please try again — your request was processed but the response could not be sent.
+  clarify_question: ❓ {question}
+  clarify_choices: '❓ {question}
 
 
+    {choices}
+
+
+    Reply with the number, the option text, or your own answer.'
+  file_attachment_failed: ⚠️ Couldn't deliver the file attachment.
+  file_attachment_failed_with_name: ⚠️ Couldn't deliver the file attachment ({file_name}).
+  handler_error: 'Sorry, I encountered an error ({error_type}).
+
+    {error_detail}
+
+    Try again or use /reset to start a fresh session.'
+  background_task_complete: '✅ Background task complete
+
+    Prompt: "{preview}"
+
+
+    {response}'
+  background_task_no_response: (No response generated)
+  background_task_error_prefix: 'Error: {error}'
+  background_task_failed: '❌ Background task {task_id} failed: {error}'
   model:
-    error_prefix:           "Ошибка: {error}"
-    code_skew_restart_required: "This gateway{profile_tag} is running code from {boot_rev} but the checkout on disk is now {disk_rev}. Switching models would risk a stale-module crash — restart the gateway to load the new code: hermes gateway restart"
-    switched:               "Модель изменена на `{model}`"
-    provider_label:         "Провайдер: {provider}"
-    context_label:          "Контекст: {tokens} токенов"
-    max_output_label:       "Макс. вывод: {tokens} токенов"
-    cost_label:             "Стоимость: {cost}"
-    capabilities_label:     "Возможности: {capabilities}"
-    prompt_caching_enabled: "Кеширование промптов: включено"
-    warning_prefix:         "Предупреждение: {warning}"
-    saved_global:           "Сохранено в config.yaml (`--global`)"
-    session_only_hint:      "_(только для этого сеанса — добавьте `--global`, чтобы сохранить)_"
-    current_label:          "Текущая: `{model}` на {provider}"
-    current_tag:            " (текущая)"
-    more_models_suffix:     " (+ещё {count})"
-    usage_switch_model:     "`/model <name>` — сменить модель"
-    usage_switch_provider:  "`/model <name> --provider <slug>` — сменить провайдера"
-    usage_persist:          "`/model <name> --global` — сохранить навсегда"
+    error_prefix: 'Ошибка: {error}'
+    code_skew_restart_required: 'This gateway{profile_tag} is running code from {boot_rev} but the checkout on disk is now {disk_rev}. Switching models would risk a stale-module crash — restart the gateway to load the new code: hermes gateway restart'
+    switched: Модель изменена на `{model}`
+    provider_label: 'Провайдер: {provider}'
+    context_label: 'Контекст: {tokens} токенов'
+    max_output_label: 'Макс. вывод: {tokens} токенов'
+    cost_label: 'Стоимость: {cost}'
+    capabilities_label: 'Возможности: {capabilities}'
+    prompt_caching_enabled: 'Кеширование промптов: включено'
+    warning_prefix: 'Предупреждение: {warning}'
+    saved_global: Сохранено в config.yaml (`--global`)
+    session_only_hint: _(только для этого сеанса — добавьте `--global`, чтобы сохранить)_
+    current_label: 'Текущая: `{model}` на {provider}'
+    current_tag: ' (текущая)'
+    more_models_suffix: ' (+ещё {count})'
+    usage_switch_model: '`/model <name>` — сменить модель'
+    usage_switch_provider: '`/model <name> --provider <slug>` — сменить провайдера'
+    usage_persist: '`/model <name> --global` — сохранить навсегда'
+    rate_limited: ⏱️ The model provider is rate-limiting requests. Please wait a moment and try again.
+    info_model: '◆ Model: `{model}`'
+    info_provider: '◆ Provider: {provider}'
+    info_context: '◆ Context: {ctx} tokens ({source})'
+    info_endpoint: '◆ Endpoint: {base_url}'
+    ctx_source_config: config
+    ctx_source_default: default — set model.context_length in config to override
+    ctx_source_detected: detected
+    content_policy_recovery_hint: Try rephrasing the request, narrowing the context, or adding a fallback provider with `hermes fallback add`.
+    content_policy_trying_fallback: Model declined to respond (safety refusal) — trying fallback...
+    content_policy_refusal_status: The model declined to respond to this request (safety refusal).
+    content_policy_refusal_response: The model declined to respond to this request (safety refusal — not a Hermes/gateway failure).
+    content_policy_explanation: 'Model''s explanation: {explanation}'
+    content_policy_no_explanation: The model returned no explanation.
+    content_policy_provider_blocked: The model provider's safety filter blocked this request (not a Hermes/gateway failure).
+    content_policy_provider_message: 'Provider message: {message}'
+    content_policy_provider_trying_fallback: Provider safety filter blocked this request — trying fallback...
+    validation_empty: Model name cannot be empty.
+    validation_no_spaces: Model names cannot contain spaces.
+    validation_moa_not_found: MoA preset `{requested}` was not found. Run `hermes moa list`.
+    validation_moa_read_error: 'Could not read MoA presets: {error}'
+    validation_auto_corrected: Auto-corrected `{requested}` → `{corrected}`
+    validation_invalid_model: Invalid model
+    validation_could_not_validate: 'Could not validate `{model}`: {error}'
+    validation_not_found_in_provider: Model `{requested}` was not found in this provider's model listing.
+    validation_lmstudio_auth: Set `LM_API_KEY` (or update it) to match the server's bearer token.
+    validation_lmstudio_unreachable: Could not reach LM Studio's `/api/v1/models` to validate `{requested}`.
+    validation_lmstudio_no_models_1: 'LM Studio is reachable but no chat-capable models are loaded. '
+    validation_lmstudio_no_models_2: Load `{requested}` in LM Studio (Developer tab → Load Model) and try again.
+    validation_lmstudio_not_found: Model `{requested}` was not found in LM Studio's model listing.
+    validation_custom_not_found_1: 'Note: `{requested}` was not found in this custom endpoint''s model listing ({url}). '
+    validation_custom_not_found_2: It may still work if the server supports hidden or aliased models.
+    validation_custom_fallback: "\n  Endpoint verification succeeded after trying `{url}`. Consider saving that as your base URL."
+    validation_custom_unreachable: 'Note: could not reach this custom endpoint''s model listing at `{url}`. '
+    validation_custom_unreachable_2: Hermes will still save `{requested}`, but the endpoint should expose `/models` for verification.
+    validation_custom_anthropic_note: "\n  Many Anthropic-compatible proxies do not implement the Models API (GET /v1/models).  The model name has been accepted without verification."
+    validation_custom_suggested_url: "\n  If this server expects `/v1`, try base URL: `{url}`"
+    validation_codex_not_plausible: '`{requested}` doesn''t look like a {provider_label} model and isn''t in its listing, so it was not accepted. If it belongs to another configured provider, switch with `--provider <slug>` (or select it from the `/model` picker).'
+    validation_catalog_not_found: 'Note: `{requested}` was not found in the {provider_label} model listing. '
+    validation_catalog_not_found_2: It may still work if your account has access to a newer or hidden model ID.
+    validation_minimax_not_found: 'Note: `{requested}` was not found in the MiniMax catalog.'
+    validation_minimax_no_models_endpoint: "\n  MiniMax does not expose a /models endpoint, so Hermes cannot verify the model name."
+    validation_minimax_may_still_work: "\n  The model may still work if it exists on the server."
+    validation_anthropic_not_found: 'Note: `{requested}` was not found in Anthropic''s /v1/models listing. '
+    validation_anthropic_not_found_2: It may still work if you have early-access or snapshot IDs.
+    validation_anthropic_messages_unverified: 'Note: could not verify `{requested}` against this endpoint''s model listing.  Many Anthropic-compatible proxies do not implement GET /v1/models.  The model name has been accepted without verification.'
+    validation_live_not_found_catalog: 'Note: `{requested}` was not found in the live /v1/models listing but exists in the curated catalog — accepted.'
+    validation_bedrock_not_found: 'Note: `{requested}` was not found in Bedrock model discovery for {region}. '
+    validation_bedrock_not_found_2: It may still work with custom inference profiles or cross-account access.
+    validation_catalog_fallback_not_found: 'Note: `{requested}` was not found in the {provider_label} curated catalog and the /models endpoint was unreachable.'
+    validation_catalog_fallback_may_work: "\n  The model may still work if it exists on the provider."
+    validation_api_unreachable: 'Note: could not reach the {provider_label} API to validate `{requested}`. If the service isn''t down, this model may not be valid.'
+    validation_hermes_non_agentic: Nous Research Hermes 3 & 4 models are NOT agentic and are not designed for use with Hermes Agent. They lack the tool-calling capabilities required for agent workflows. Consider using an agentic model instead (Claude, GPT, Gemini, DeepSeek, etc.).
+    switch_unknown_provider: Unknown provider '{provider}'. Check 'hermes model' for available providers, or define it in config.yaml under 'providers:'.
+    switch_config_issues: '
 
+
+      Run ''hermes doctor'' — config issues detected:'
+    switch_alias_no_credentials: Provider '{alias}' is an alias that routes through {provider}, which has no credentials configured.{hint}
+    switch_no_model_detected: 'No model detected on {provider} ({base_url}). Specify the model explicitly: /model <model-name> --provider {provider_slug}'
+    switch_no_base_url: 'Provider ''{provider}'' has no base URL configured. Specify a model: /model <model-name> --provider {provider_slug}'
+    switch_alias_not_found: Alias '{alias}' maps to {vendor}/{family} but no matching model was found in any provider catalog. Try specifying the full model name.
+    switch_multiple_providers: '''{model}'' is declared by multiple configured providers ({providers}). Re-run with --provider <slug> to choose which one to use.'
+    switch_credential_error: 'Could not resolve credentials for provider ''{provider}'': {error}'
+    provider_auth_failed: ⚠️ Provider authentication failed. Check the configured credentials; raw provider details are in the gateway logs.
+    provider_policy_rejected: ⚠️ The model provider rejected the request. I kept the raw provider error out of chat; check gateway logs for details or try rephrasing.
+    provider_failed_after_retries: ⚠️ The model provider failed after retries. I kept raw provider details out of chat; check gateway logs for diagnostics.
+    context_too_large: '⚠️ Session too large for the model''s context window.
+
+      Use /compact to compress the conversation, or /reset to start fresh.'
+    request_failed: 'The request failed: {error}
+
+      Try again or use /reset to start a fresh session.'
+    no_response_generated: ⚠️ Processing completed but no response was generated. This may be a transient error — try sending your message again.
+    not_processed_prev_turn: ⚠️ Your message wasn't processed (the previous turn was still being cleaned up). Please send it again.
+    empty_tool_response: ⚠️ The model returned no response after processing tool results. This can happen with some models — try again or rephrase your question.
+    gateway_restarting: '⚠️ The gateway{profile_tag} is restarting, so your message wasn''t fully processed.
+
+      Please send it again in a few seconds.'
+    compression_aborted: ⚠️ Context compression aborted ({error}). No messages were dropped — conversation is unchanged. Run /compress to retry, /reset for a clean session, or check your auxiliary.compression model configuration.
   agents:
-    header:                "🤖 **Активные агенты и задачи**"
-    active_agents:         "**Активные агенты:** {count}"
-    this_chat:             " · этот чат"
-    more:                  "... и ещё {count}"
-    running_processes:     "**Выполняющиеся фоновые процессы:** {count}"
-    async_jobs:            "**Асинхронные задачи шлюза:** {count}"
-    background_delegations: "**Фоновые делегирования:** {count}"
-    none:                  "Нет активных агентов или выполняющихся задач."
-    state_starting:        "запускается"
-    state_running:         "выполняется"
-
+    header: 🤖 **Активные агенты и задачи**
+    active_agents: '**Активные агенты:** {count}'
+    this_chat: ' · этот чат'
+    more: '... и ещё {count}'
+    running_processes: '**Выполняющиеся фоновые процессы:** {count}'
+    async_jobs: '**Асинхронные задачи шлюза:** {count}'
+    background_delegations: '**Фоновые делегирования:** {count}'
+    none: Нет активных агентов или выполняющихся задач.
+    state_starting: запускается
+    state_running: выполняется
   approve:
-    no_pending:            "Нет команды, ожидающей одобрения."
-    once_singular:         "✅ Команда одобрена. Агент возобновляет работу..."
-    once_plural:           "✅ Команды одобрены ({count} команд). Агент возобновляет работу..."
-    session_singular:      "✅ Команда одобрена (шаблон одобрен для этого сеанса). Агент возобновляет работу..."
-    session_plural:        "✅ Команды одобрены (шаблон одобрен для этого сеанса) ({count} команд). Агент возобновляет работу..."
-    always_singular:       "✅ Команда одобрена (шаблон одобрен навсегда). Агент возобновляет работу..."
-    always_plural:         "✅ Команды одобрены (шаблон одобрен навсегда) ({count} команд). Агент возобновляет работу..."
-
+    no_pending: Нет команды, ожидающей одобрения.
+    once_singular: ✅ Команда одобрена. Агент возобновляет работу...
+    once_plural: ✅ Команды одобрены ({count} команд). Агент возобновляет работу...
+    session_singular: ✅ Команда одобрена (шаблон одобрен для этого сеанса). Агент возобновляет работу...
+    session_plural: ✅ Команды одобрены (шаблон одобрен для этого сеанса) ({count} команд). Агент возобновляет работу...
+    always_singular: ✅ Команда одобрена (шаблон одобрен навсегда). Агент возобновляет работу...
+    always_plural: ✅ Команды одобрены (шаблон одобрен навсегда) ({count} команд). Агент возобновляет работу...
+    singular: ✅ Memory updated — approved {count} proposal(s).
   background:
-    usage:                 "Использование: /background <запрос>\nПример: /background Сделай сводку лучших историй с HN сегодня\n\nЗапускает запрос в отдельном сеансе. Можно продолжить общение — результат появится здесь по завершении."
-    started:               "🔄 Фоновая задача запущена: «{preview}»\nID задачи: {task_id}\nМожно продолжить общение — результаты появятся здесь по завершении."
+    usage: 'Использование: /background <запрос>
 
+      Пример: /background Сделай сводку лучших историй с HN сегодня
+
+
+      Запускает запрос в отдельном сеансе. Можно продолжить общение — результат появится здесь по завершении.'
+    started: '🔄 Фоновая задача запущена: «{preview}»
+
+      ID задачи: {task_id}
+
+      Можно продолжить общение — результаты появятся здесь по завершении.'
   branch:
-    db_unavailable:        "База данных сеансов недоступна."
-    no_conversation:       "Нет беседы для ответвления — сначала отправьте сообщение."
-    create_failed:         "Не удалось создать ветку: {error}"
-    switch_failed:         "Ветка создана, но переключиться на неё не удалось."
-    branched_one:          "⑂ Создана ветка **{title}** (скопировано {count} сообщение)\nОригинал: `{parent}`\nВетка: `{new}`\nИспользуйте `/resume`, чтобы вернуться к оригиналу."
-    branched_many:         "⑂ Создана ветка **{title}** (скопировано {count} сообщений)\nОригинал: `{parent}`\nВетка: `{new}`\nИспользуйте `/resume`, чтобы вернуться к оригиналу."
+    db_unavailable: База данных сеансов недоступна.
+    no_conversation: Нет беседы для ответвления — сначала отправьте сообщение.
+    create_failed: 'Не удалось создать ветку: {error}'
+    switch_failed: Ветка создана, но переключиться на неё не удалось.
+    branched_one: '⑂ Создана ветка **{title}** (скопировано {count} сообщение)
 
+      Оригинал: `{parent}`
+
+      Ветка: `{new}`
+
+      Используйте `/resume`, чтобы вернуться к оригиналу.'
+    branched_many: '⑂ Создана ветка **{title}** (скопировано {count} сообщений)
+
+      Оригинал: `{parent}`
+
+      Ветка: `{new}`
+
+      Используйте `/resume`, чтобы вернуться к оригиналу.'
   commands:
-    usage:                 "Использование: `/commands [page]`"
-    skill_header:          "⚡ **Команды навыков**:"
-    default_desc:          "Команда навыка"
-    none:                  "Нет доступных команд."
-    header:                "📚 **Команды** (всего {total}, страница {page}/{total_pages})"
-    nav_prev:              "`/commands {page}` ← пред."
-    nav_next:              "след. → `/commands {page}`"
-    out_of_range:          "_(Запрошенная страница {requested} вне диапазона, показана страница {page}.)_"
-
+    usage: 'Использование: `/commands [page]`'
+    skill_header: '⚡ **Команды навыков**:'
+    default_desc: Команда навыка
+    none: Нет доступных команд.
+    header: 📚 **Команды** (всего {total}, страница {page}/{total_pages})
+    nav_prev: '`/commands {page}` ← пред.'
+    nav_next: след. → `/commands {page}`
+    out_of_range: _(Запрошенная страница {requested} вне диапазона, показана страница {page}.)_
   compress:
-    not_enough:            "Недостаточно беседы для сжатия (нужно минимум 4 сообщения)."
-    no_provider:           "Провайдер не настроен — сжатие невозможно."
-    nothing_to_do:         "Пока нечего сжимать (стенограмма всё ещё полностью является защищённым контекстом)."
-    aggressive_unsupported: "--aggressive не поддерживается; используйте '/compress here [N]', чтобы сохранить только недавние обмены, или /undo, чтобы удалить ходы."
-    focus_line:            "Фокус: \"{topic}\""
-    summary_failed:        "⚠️ Не удалось сгенерировать сводку ({error}). {count} историч. сообщений было удалено и заменено заполнителем; предыдущий контекст больше нельзя восстановить. Проверьте конфигурацию модели auxiliary.compression."
-    aborted:               "⚠️ Сжатие прервано ({error}). Сообщения не были удалены — разговор не изменился. Запустите /compress для повторной попытки, /reset для новой сессии или проверьте конфигурацию модели auxiliary.compression."
-    aux_failed:            "ℹ️ Настроенная модель сжатия `{model}` дала сбой ({error}). Восстановлено с помощью основной модели — контекст не повреждён — но рекомендуется проверить `auxiliary.compression.model` в config.yaml."
-    failed:                "Сжатие не удалось: {error}"
-
+    not_enough: Недостаточно беседы для сжатия (нужно минимум 4 сообщения).
+    no_provider: Провайдер не настроен — сжатие невозможно.
+    nothing_to_do: Пока нечего сжимать (стенограмма всё ещё полностью является защищённым контекстом).
+    aggressive_unsupported: --aggressive не поддерживается; используйте '/compress here [N]', чтобы сохранить только недавние обмены, или /undo, чтобы удалить ходы.
+    focus_line: 'Фокус: "{topic}"'
+    summary_failed: ⚠️ Не удалось сгенерировать сводку ({error}). {count} историч. сообщений было удалено и заменено заполнителем; предыдущий контекст больше нельзя восстановить. Проверьте конфигурацию модели auxiliary.compression.
+    aborted: ⚠️ Сжатие прервано ({error}). Сообщения не были удалены — разговор не изменился. Запустите /compress для повторной попытки, /reset для новой сессии или проверьте конфигурацию модели auxiliary.compression.
+    aux_failed: ℹ️ Настроенная модель сжатия `{model}` дала сбой ({error}). Восстановлено с помощью основной модели — контекст не повреждён — но рекомендуется проверить `auxiliary.compression.model` в config.yaml.
+    failed: 'Сжатие не удалось: {error}'
   debug:
-    upload_failed:         "✗ Не удалось загрузить отчёт отладки: {error}"
-    header:                "**Отчёт отладки загружен:**"
-    auto_delete:           "⏱ Вставки автоматически удалятся через 6 часов."
-    full_logs_hint:        "Для загрузки полных журналов используйте `hermes debug share` из CLI."
-    share_hint:            "Поделитесь этими ссылками с командой Hermes для получения поддержки."
-
+    upload_failed: '✗ Не удалось загрузить отчёт отладки: {error}'
+    header: '**Отчёт отладки загружен:**'
+    auto_delete: ⏱ Вставки автоматически удалятся через 6 часов.
+    full_logs_hint: Для загрузки полных журналов используйте `hermes debug share` из CLI.
+    share_hint: Поделитесь этими ссылками с командой Hermes для получения поддержки.
   deny:
-    stale:                 "❌ Команда отклонена (одобрение устарело)."
-    no_pending:            "Нет команды для отклонения."
-    denied_singular:       "❌ Команда отклонена."
-    denied_plural:         "❌ Команды отклонены ({count} команд)."
-    denied_reason_singular: "❌ Команда отклонена. Причина передана агенту: \"{reason}\""
-    denied_reason_plural:  "❌ Команды отклонены ({count} команд). Причина передана агенту: \"{reason}\""
-
+    stale: ❌ Команда отклонена (одобрение устарело).
+    no_pending: Нет команды для отклонения.
+    denied_singular: ❌ Команда отклонена.
+    denied_plural: ❌ Команды отклонены ({count} команд).
+    denied_reason_singular: '❌ Команда отклонена. Причина передана агенту: "{reason}"'
+    denied_reason_plural: '❌ Команды отклонены ({count} команд). Причина передана агенту: "{reason}"'
   fast:
-    not_supported:         "⚡ /fast доступен только для моделей OpenAI, поддерживающих Priority Processing."
-    status:                "⚡ Priority Processing\n\nТекущий режим: `{mode}`\n\n_Использование:_ `/fast <normal|fast|status>`"
-    unknown_arg:           "⚠️ Неизвестный аргумент: `{arg}`\n\n**Допустимые варианты:** normal, fast, status"
-    saved:                 "⚡ ✓ Priority Processing: **{label}** (сохранено в конфигурации)\n_(вступит в силу со следующего сообщения)_"
-    session_only:          "⚡ ✓ Priority Processing: **{label}** (только этот сеанс)"
-    label_fast:            "FAST"
-    label_normal:          "NORMAL"
-    status_fast:           "fast"
-    status_normal:         "normal"
-    picker_title:          "⚡ **Priority Processing**\\n\\nТекущий режим: `{mode}`\\n\\nВыберите вариант:"
-    choice_fast:           "fast — Priority Processing включён"
-    choice_normal:         "normal — стандартная обработка"
+    not_supported: ⚡ /fast доступен только для моделей OpenAI, поддерживающих Priority Processing.
+    status: '⚡ Priority Processing
 
+
+      Текущий режим: `{mode}`
+
+
+      _Использование:_ `/fast <normal|fast|status>`'
+    unknown_arg: '⚠️ Неизвестный аргумент: `{arg}`
+
+
+      **Допустимые варианты:** normal, fast, status'
+    saved: '⚡ ✓ Priority Processing: **{label}** (сохранено в конфигурации)
+
+      _(вступит в силу со следующего сообщения)_'
+    session_only: '⚡ ✓ Priority Processing: **{label}** (только этот сеанс)'
+    label_fast: FAST
+    label_normal: NORMAL
+    status_fast: fast
+    status_normal: normal
+    picker_title: '⚡ **Priority Processing**\n\nТекущий режим: `{mode}`\n\nВыберите вариант:'
+    choice_fast: fast — Priority Processing включён
+    choice_normal: normal — стандартная обработка
   footer:
-    status:                "📎 Нижний колонтитул среды выполнения: **{state}**\nПоля: `{fields}`\nПлатформа: `{platform}`"
-    usage:                 "Использование: `/footer [on|off|status]`"
-    saved:                 "📎 Нижний колонтитул среды выполнения: **{state}**{example}\n_(сохранено глобально — вступит в силу со следующего сообщения)_"
-    example_line:          "\nПример: `{preview}`"
-    state_on:              "ON"
-    state_off:             "OFF"
+    status: '📎 Нижний колонтитул среды выполнения: **{state}**
 
+      Поля: `{fields}`
+
+      Платформа: `{platform}`'
+    usage: 'Использование: `/footer [on|off|status]`'
+    saved: '📎 Нижний колонтитул среды выполнения: **{state}**{example}
+
+      _(сохранено глобально — вступит в силу со следующего сообщения)_'
+    example_line: '
+
+      Пример: `{preview}`'
+    state_on: 'ON'
+    state_off: 'OFF'
   goal:
-    unavailable:           "Цели недоступны в этом сеансе."
-    no_goal_set:           "Цель не задана."
-    paused:                "⏸ Цель приостановлена: {goal}"
-    no_resume:             "Нет цели для возобновления."
-    resumed:               "▶ Цель возобновлена: {goal}\nОтправьте любое сообщение, чтобы продолжить, или подождите — я сделаю следующий шаг на следующем ходу."
-    invalid:               "Недопустимая цель: {error}"
-    set:                   "⊙ Цель задана (бюджет {budget} ходов): {goal}\nЯ продолжу работу, пока цель не будет достигнута, вы её не приостановите/очистите, или бюджет не исчерпается.\nУправление: /goal status · /goal pause · /goal resume · /goal clear"
+    unavailable: Цели недоступны в этом сеансе.
+    no_goal_set: Цель не задана.
+    paused: '⏸ Цель приостановлена: {goal}'
+    no_resume: Нет цели для возобновления.
+    resumed: '▶ Цель возобновлена: {goal}
 
+      Отправьте любое сообщение, чтобы продолжить, или подождите — я сделаю следующий шаг на следующем ходу.'
+    invalid: 'Недопустимая цель: {error}'
+    set: '⊙ Цель задана (бюджет {budget} ходов): {goal}
+
+      Я продолжу работу, пока цель не будет достигнута, вы её не приостановите/очистите, или бюджет не исчерпается.
+
+      Управление: /goal status · /goal pause · /goal resume · /goal clear'
   help:
-    header:                "📖 **Команды Hermes**\n"
-    skill_header:          "\n⚡ **Команды навыков** (активных: {count}):"
-    more_use_commands:     "\n... и ещё {count}. Используйте `/commands` для полного списка с постраничной разбивкой."
+    header: '📖 **Команды Hermes**
 
+      '
+    skill_header: '
+
+      ⚡ **Команды навыков** (активных: {count}):'
+    more_use_commands: '
+
+      ... и ещё {count}. Используйте `/commands` для полного списка с постраничной разбивкой.'
   insights:
-    invalid_days:          "Недействительное значение --days: {value}"
-    error:                 "Ошибка при формировании аналитики: {error}"
-
+    invalid_days: 'Недействительное значение --days: {value}'
+    error: 'Ошибка при формировании аналитики: {error}'
+    card:
+      title: 📊 Hermes Insights — Last {days} days
+      sessions: Sessions
+      messages: Messages
+      tool_calls: Tool calls
+      tokens: Tokens
+      token_in: in
+      token_out: out
+      active_time: Active time
+      avg_session: Avg session
+      models_header: 🤖 Models
+      model: Model
+      platforms_header: 📱 Platforms
+      platform: Platform
+      tools_header: 🔧 Top Tools
+      tool: Tool
+      calls: Calls
+      pct: '%'
+      skills_header: 🧠 Top Skills
+      skill: Skill
+      loads: Loads
+      edits: Edits
+      last_used: Last Used
+      activity_header: 📅 Busiest
+      active_days: Active days
+      best_streak: Best streak
+      streak_days: '{count} consecutive days'
+      day_mon: Mondays
+      day_tue: Tuesdays
+      day_wed: Wednesdays
+      day_thu: Thursdays
+      day_fri: Fridays
+      day_sat: Saturdays
+      day_sun: Sundays
   kanban:
-    error_prefix:          "⚠ ошибка kanban: {error}"
-    subscribed_suffix:     "(подписка оформлена — вы получите уведомление, когда {task_id} завершится или будет заблокирован)"
-    truncated_suffix:      "… (сокращено; используйте `hermes kanban …` в терминале для полного вывода)"
-    no_output:             "(нет вывода)"
+    error_prefix: '⚠ ошибка kanban: {error}'
+    subscribed_suffix: (подписка оформлена — вы получите уведомление, когда {task_id} завершится или будет заблокирован)
+    truncated_suffix: … (сокращено; используйте `hermes kanban …` в терминале для полного вывода)
+    no_output: (нет вывода)
     wake:
-      completed:           "completed"
-      gave_up:             "gave up (retries exhausted)"
-      crashed:             "crashed (worker exited); dispatcher will retry"
-      timed_out:           "timed out; dispatcher will retry"
-      blocked:             "blocked; needs attention"
-      status_default:      "status changed"
-      status_joiner:       ", "
-      message:             "[kanban] Task {task_id} {status}.\nTitle: {title}\nAssignee: @{assignee}\nBoard: {board}\n\nCheck the result or decide the next step."
+      completed: completed
+      gave_up: gave up (retries exhausted)
+      crashed: crashed (worker exited); dispatcher will retry
+      timed_out: timed out; dispatcher will retry
+      blocked: blocked; needs attention
+      status_default: status changed
+      status_joiner: ', '
+      message: '[kanban] Task {task_id} {status}.
 
+        Title: {title}
+
+        Assignee: @{assignee}
+
+        Board: {board}
+
+
+        Check the result or decide the next step.'
   personality:
-    none_configured:       "В `{path}/config.yaml` не настроено ни одной личности"
-    header:                "🎭 **Доступные личности**\n"
-    none_option:           "• `none` — (без наложения личности)"
-    item:                  "• `{name}` — {preview}"
-    usage:                 "\nИспользование: `/personality <name>`"
-    save_failed:           "⚠️ Не удалось сохранить изменение личности: {error}"
-    cleared:               "🎭 Личность очищена — используется базовое поведение агента.\n_(вступит в силу со следующего сообщения)_"
-    set_to:                "🎭 Личность установлена на **{name}**\n_(вступит в силу со следующего сообщения)_"
-    unknown:               "Неизвестная личность: `{name}`\n\nДоступные: {available}"
+    none_configured: В `{path}/config.yaml` не настроено ни одной личности
+    header: '🎭 **Доступные личности**
 
+      '
+    none_option: • `none` — (без наложения личности)
+    item: • `{name}` — {preview}
+    usage: '
+
+      Использование: `/personality <name>`'
+    save_failed: '⚠️ Не удалось сохранить изменение личности: {error}'
+    cleared: '🎭 Личность очищена — используется базовое поведение агента.
+
+      _(вступит в силу со следующего сообщения)_'
+    set_to: '🎭 Личность установлена на **{name}**
+
+      _(вступит в силу со следующего сообщения)_'
+    unknown: 'Неизвестная личность: `{name}`
+
+
+      Доступные: {available}'
   profile:
-    header:                "👤 **Профиль:** `{profile}`"
-    home:                  "📂 **Домашний каталог:** `{home}`"
-
+    header: 👤 **Профиль:** `{profile}`
+    home: 📂 **Домашний каталог:** `{home}`
   reasoning:
-    level_default:             "medium (по умолчанию)"
-    level_disabled:            "none (отключено)"
-    scope_session:             "переопределение сеанса"
-    scope_global:              "глобальная конфигурация"
-    status:                    "🧠 **Настройки рассуждений**\n\n**Усилия:** `{level}`\n**Область:** {scope}\n**Отображение:** {display}\n\n_Использование:_ `/reasoning <none|minimal|low|medium|high|xhigh|max|ultra|reset|show|hide> [--global]`"
-    display_on:                "включено ✓"
-    display_off:               "выключено"
-    display_set_on:            "🧠 ✓ Отображение рассуждений: **ВКЛ.**\nМысли модели будут показываться перед каждым ответом на **{platform}**."
-    display_set_off:           "🧠 ✓ Отображение рассуждений: **ВЫКЛ.** для **{platform}**"
-    reset_global_unsupported:  "⚠️ `/reasoning reset --global` не поддерживается. Используйте `/reasoning <level> --global`, чтобы изменить глобальное значение по умолчанию."
-    reset_done:                "🧠 ✓ Переопределение рассуждений для сеанса сброшено; возврат к глобальной конфигурации."
-    unknown_arg:               "⚠️ Неизвестный аргумент: `{arg}`\n\n**Допустимые уровни:** none, minimal, low, medium, high, xhigh, max, ultra\n**Отображение:** show, hide\n**Сохранение:** добавьте `--global`, чтобы сохранить за пределами этого сеанса"
-    picker_title:              "🧠 **Настройки рассуждений**\\n\\n**Усилия:** `{level}`\\n**Область:** {scope}\\n**Отображение:** {display}\\n\\nВыберите вариант:"
-    choice_none:               "none — отключить рассуждения"
-    choice_reset:              "reset — сбросить переопределение сессии"
-    choice_show:               "показывать рассуждения в ответах"
-    choice_hide:               "скрывать рассуждения в ответах"
-    set_global:                "🧠 ✓ Усилия рассуждений установлены на `{effort}` (сохранено в конфигурации)\n_(вступит в силу со следующего сообщения)_"
-    set_global_save_failed:    "🧠 ✓ Усилия рассуждений установлены на `{effort}` (только этот сеанс — не удалось сохранить конфигурацию)\n_(вступит в силу со следующего сообщения)_"
-    set_session:               "🧠 ✓ Усилия рассуждений установлены на `{effort}` (только этот сеанс — добавьте `--global`, чтобы сохранить)\n_(вступит в силу со следующего сообщения)_"
+    level_default: medium (по умолчанию)
+    level_disabled: none (отключено)
+    scope_session: переопределение сеанса
+    scope_global: глобальная конфигурация
+    status: '🧠 **Настройки рассуждений**
 
+
+      **Усилия:** `{level}`
+
+      **Область:** {scope}
+
+      **Отображение:** {display}
+
+
+      _Использование:_ `/reasoning <none|minimal|low|medium|high|xhigh|max|ultra|reset|show|hide> [--global]`'
+    display_on: включено ✓
+    display_off: выключено
+    display_set_on: '🧠 ✓ Отображение рассуждений: **ВКЛ.**
+
+      Мысли модели будут показываться перед каждым ответом на **{platform}**.'
+    display_set_off: '🧠 ✓ Отображение рассуждений: **ВЫКЛ.** для **{platform}**'
+    reset_global_unsupported: ⚠️ `/reasoning reset --global` не поддерживается. Используйте `/reasoning <level> --global`, чтобы изменить глобальное значение по умолчанию.
+    reset_done: 🧠 ✓ Переопределение рассуждений для сеанса сброшено; возврат к глобальной конфигурации.
+    unknown_arg: '⚠️ Неизвестный аргумент: `{arg}`
+
+
+      **Допустимые уровни:** none, minimal, low, medium, high, xhigh, max, ultra
+
+      **Отображение:** show, hide
+
+      **Сохранение:** добавьте `--global`, чтобы сохранить за пределами этого сеанса'
+    picker_title: '🧠 **Настройки рассуждений**\n\n**Усилия:** `{level}`\n**Область:** {scope}\n**Отображение:** {display}\n\nВыберите вариант:'
+    choice_none: none — отключить рассуждения
+    choice_reset: reset — сбросить переопределение сессии
+    choice_show: показывать рассуждения в ответах
+    choice_hide: скрывать рассуждения в ответах
+    set_global: '🧠 ✓ Усилия рассуждений установлены на `{effort}` (сохранено в конфигурации)
+
+      _(вступит в силу со следующего сообщения)_'
+    set_global_save_failed: '🧠 ✓ Усилия рассуждений установлены на `{effort}` (только этот сеанс — не удалось сохранить конфигурацию)
+
+      _(вступит в силу со следующего сообщения)_'
+    set_session: '🧠 ✓ Усилия рассуждений установлены на `{effort}` (только этот сеанс — добавьте `--global`, чтобы сохранить)
+
+      _(вступит в силу со следующего сообщения)_'
   reload_mcp:
-    cancelled:             "🟡 /reload-mcp отменено. MCP-инструменты без изменений."
-    always_followup:       "ℹ️ Будущие вызовы `/reload-mcp` будут выполняться без подтверждения. Снова включить можно через `approvals.mcp_reload_confirm: true` в config.yaml."
-    confirm_prompt:        "⚠️ **Подтверждение /reload-mcp**\n\nПерезагрузка MCP-серверов перестраивает набор инструментов для этого сеанса и **сбрасывает кеш промпта провайдера** — следующее сообщение повторно отправит все входные токены. На моделях с длинным контекстом или высоким уровнем рассуждений это может быть дорого.\n\nВыберите:\n• **Одобрить один раз** — перезагрузить сейчас\n• **Всегда одобрять** — перезагрузить и навсегда отключить этот запрос\n• **Отменить** — оставить MCP-инструменты без изменений\n\n_Текстовая альтернатива: ответьте `/approve`, `/always` или `/cancel`._"
-    header:                "🔄 **MCP-серверы перезагружены**\n"
-    reconnected:           "♻️ Переподключено: {names}"
-    added:                 "➕ Добавлено: {names}"
-    removed:               "➖ Удалено: {names}"
-    none_connected:        "Нет подключённых MCP-серверов."
-    tools_available:       "\n🔧 {tools} инструмент(ов) доступно с {servers} сервер(ов)"
-    failed:                "❌ Ошибка перезагрузки MCP: {error}"
+    cancelled: 🟡 /reload-mcp отменено. MCP-инструменты без изменений.
+    always_followup: 'ℹ️ Будущие вызовы `/reload-mcp` будут выполняться без подтверждения. Снова включить можно через `approvals.mcp_reload_confirm: true` в config.yaml.'
+    confirm_prompt: '⚠️ **Подтверждение /reload-mcp**
 
+
+      Перезагрузка MCP-серверов перестраивает набор инструментов для этого сеанса и **сбрасывает кеш промпта провайдера** — следующее сообщение повторно отправит все входные токены. На моделях с длинным контекстом или высоким уровнем рассуждений это может быть дорого.
+
+
+      Выберите:
+
+      • **Одобрить один раз** — перезагрузить сейчас
+
+      • **Всегда одобрять** — перезагрузить и навсегда отключить этот запрос
+
+      • **Отменить** — оставить MCP-инструменты без изменений
+
+
+      _Текстовая альтернатива: ответьте `/approve`, `/always` или `/cancel`._'
+    header: '🔄 **MCP-серверы перезагружены**
+
+      '
+    reconnected: '♻️ Переподключено: {names}'
+    added: '➕ Добавлено: {names}'
+    removed: '➖ Удалено: {names}'
+    none_connected: Нет подключённых MCP-серверов.
+    tools_available: '
+
+      🔧 {tools} инструмент(ов) доступно с {servers} сервер(ов)'
+    failed: '❌ Ошибка перезагрузки MCP: {error}'
   reload_skills:
-    header:                "🔄 **Навыки перезагружены**\n"
-    no_new:                "Новых навыков не обнаружено."
-    total:                 "\n📚 {count} навык(ов) доступно"
-    added_header:          "➕ **Добавленные навыки:**"
-    removed_header:        "➖ **Удалённые навыки:**"
-    item_with_desc:        "    - {name}: {desc}"
-    item_no_desc:          "    - {name}"
-    failed:                "❌ Ошибка перезагрузки навыков: {error}"
+    header: '🔄 **Навыки перезагружены**
 
+      '
+    no_new: Новых навыков не обнаружено.
+    total: '
+
+      📚 {count} навык(ов) доступно'
+    added_header: ➕ **Добавленные навыки:**
+    removed_header: ➖ **Удалённые навыки:**
+    item_with_desc: '    - {name}: {desc}'
+    item_no_desc: '    - {name}'
+    failed: '❌ Ошибка перезагрузки навыков: {error}'
   reset:
-    header_default:        "✨ Сеанс сброшен! Начинаем с чистого листа."
-    header_new:            "✨ Новый сеанс запущен!"
-    header_titled:         "✨ Новый сеанс запущен: {title}"
-    title_rejected:        "\n⚠️ Название отклонено: {error}"
-    title_error_untitled:  "\n⚠️ {error} — сеанс запущен без названия."
-    title_empty_untitled:  "\n⚠️ После очистки название пусто — сеанс запущен без названия."
-    tip:                   "\n✦ Совет: {tip}"
+    header_default: ✨ Сеанс сброшен! Начинаем с чистого листа.
+    header_new: ✨ Новый сеанс запущен!
+    header_titled: '✨ Новый сеанс запущен: {title}'
+    title_rejected: '
 
+      ⚠️ Название отклонено: {error}'
+    title_error_untitled: '
+
+      ⚠️ {error} — сеанс запущен без названия.'
+    title_empty_untitled: '
+
+      ⚠️ После очистки название пусто — сеанс запущен без названия.'
+    tip: '
+
+      ✦ Совет: {tip}'
   restart:
-    in_progress:           "⏳{profile_tag} Перезапуск шлюза уже выполняется..."
-    restarting:            "♻{profile_tag} Перезапуск шлюза. Если уведомление не придёт в течение 60 секунд, перезапустите из консоли командой `hermes gateway restart`."
-
+    in_progress: ⏳{profile_tag} Перезапуск шлюза уже выполняется...
+    restarting: ♻{profile_tag} Перезапуск шлюза. Если уведомление не придёт в течение 60 секунд, перезапустите из консоли командой `hermes gateway restart`.
   resume:
-    db_unavailable:        "База данных сеансов недоступна."
-    parse_error:           "⚠️ Could not parse `/resume` arguments: {error}.
-Use quotes around titles with spaces, for example: `/resume \"Project A Plan\"`."
-    matrix_no_named_sessions: "No named sessions found for this Matrix room.
-Use `/title My Session` to name the current room session, `/resume --all` to list all Matrix sessions, or `/resume --cross-room <session name>` to explicitly cross room boundaries."
-    matrix_blocked_no_origin: "⚠️ Matrix /resume blocked: this named session has no recorded room origin, so Hermes will not resume it inside the current room by default. Use `/resume --cross-room {name}` if you intentionally want to cross room boundaries."
-    matrix_blocked_other_room: "⚠️ Matrix /resume blocked: that session belongs to a different Matrix room ({room}). Use `/resume --cross-room {name}` if you intentionally want to resume it here."
-    matrix_cross_room_success: "⚠️ Cross-room resume: resumed **{title}** inside Matrix room **{room}**.
-Future messages in this room will use that transcript until `/reset` or another `/resume`.{msg_part}"
-    blocked_not_owner:     "⚠️ /resume blocked: '**{name}**' belongs to a different user or chat. You can only resume sessions from this chat."
-    no_named_sessions:     "Именованных сеансов не найдено.\nИспользуйте `/title Мой сеанс`, чтобы назвать текущий сеанс, затем `/resume Мой сеанс`, чтобы вернуться к нему позже."
-    list_header:           "📋 **Именованные сеансы**\n"
-    list_item:             "• **{title}**{preview_part}"
-    list_item_numbered:    "{index}. **{title}**{preview_part}"
-    list_preview_suffix:   " — _{preview}_"
-    list_footer:           "\nИспользование: `/resume <название сеанса>`"
-    list_footer_numbered:  "\nИспользование: `/resume <имя сеанса>` или `/resume <номер>` (например, `/resume 1` для самого недавнего)"
-    list_failed:           "Не удалось получить список сеансов: {error}"
-    out_of_range:          "Индекс возобновления {index} вне диапазона.\nИспользуйте `/resume` без аргументов, чтобы увидеть доступные сеансы."
-    not_found:             "Сеанс, соответствующий '**{name}**', не найден.\nИспользуйте `/resume` без аргументов, чтобы увидеть доступные сеансы."
-    already_on:            "📌 Уже в сеансе **{name}**."
-    switch_failed:         "Не удалось переключить сеанс."
-    resumed_one:           "↻ Сеанс **{title}** возобновлён ({count} сообщение). Беседа восстановлена."
-    resumed_many:          "↻ Сеанс **{title}** возобновлён ({count} сообщений). Беседа восстановлена."
-    resumed_no_count:      "↻ Сеанс **{title}** возобновлён. Беседа восстановлена."
+    db_unavailable: База данных сеансов недоступна.
+    parse_error: '⚠️ Could not parse `/resume` arguments: {error}. Use quotes around titles with spaces, for example: `/resume "Project A Plan"`.'
+    matrix_no_named_sessions: No named sessions found for this Matrix room. Use `/title My Session` to name the current room session, `/resume --all` to list all Matrix sessions, or `/resume --cross-room <session name>` to explicitly cross room boundaries.
+    matrix_blocked_no_origin: '⚠️ Matrix /resume blocked: this named session has no recorded room origin, so Hermes will not resume it inside the current room by default. Use `/resume --cross-room {name}` if you intentionally want to cross room boundaries.'
+    matrix_blocked_other_room: '⚠️ Matrix /resume blocked: that session belongs to a different Matrix room ({room}). Use `/resume --cross-room {name}` if you intentionally want to resume it here.'
+    matrix_cross_room_success: '⚠️ Cross-room resume: resumed **{title}** inside Matrix room **{room}**. Future messages in this room will use that transcript until `/reset` or another `/resume`.{msg_part}'
+    blocked_not_owner: '⚠️ /resume blocked: ''**{name}**'' belongs to a different user or chat. You can only resume sessions from this chat.'
+    no_named_sessions: 'Именованных сеансов не найдено.
 
+      Используйте `/title Мой сеанс`, чтобы назвать текущий сеанс, затем `/resume Мой сеанс`, чтобы вернуться к нему позже.'
+    list_header: '📋 **Именованные сеансы**
+
+      '
+    list_item: • **{title}**{preview_part}
+    list_item_numbered: '{index}. **{title}**{preview_part}'
+    list_preview_suffix: ' — _{preview}_'
+    list_footer: '
+
+      Использование: `/resume <название сеанса>`'
+    list_footer_numbered: '
+
+      Использование: `/resume <имя сеанса>` или `/resume <номер>` (например, `/resume 1` для самого недавнего)'
+    list_failed: 'Не удалось получить список сеансов: {error}'
+    out_of_range: 'Индекс возобновления {index} вне диапазона.
+
+      Используйте `/resume` без аргументов, чтобы увидеть доступные сеансы.'
+    not_found: 'Сеанс, соответствующий ''**{name}**'', не найден.
+
+      Используйте `/resume` без аргументов, чтобы увидеть доступные сеансы.'
+    already_on: 📌 Уже в сеансе **{name}**.
+    switch_failed: Не удалось переключить сеанс.
+    resumed_one: ↻ Сеанс **{title}** возобновлён ({count} сообщение). Беседа восстановлена.
+    resumed_many: ↻ Сеанс **{title}** возобновлён ({count} сообщений). Беседа восстановлена.
+    resumed_no_count: ↻ Сеанс **{title}** возобновлён. Беседа восстановлена.
+    card_title: Resume recent session
   retry:
-    no_previous:           "Нет предыдущего сообщения для повтора."
-
+    no_previous: Нет предыдущего сообщения для повтора.
   rollback:
-    not_enabled:           "Контрольные точки не включены.\nВключите в config.yaml:\n```\ncheckpoints:\n  enabled: true\n```"
-    none_found:            "Контрольных точек для {cwd} не найдено"
-    invalid_number:        "Недействительный номер контрольной точки. Используйте 1-{max}."
-    restored:              "✅ Восстановлено до контрольной точки {hash}: {reason}\nСнимок перед откатом сохранён автоматически."
-    restore_failed:        "❌ {error}"
+    not_enabled: "Контрольные точки не включены.\nВключите в config.yaml:\n```\ncheckpoints:\n  enabled: true\n```"
+    none_found: Контрольных точек для {cwd} не найдено
+    invalid_number: Недействительный номер контрольной точки. Используйте 1-{max}.
+    restored: '✅ Восстановлено до контрольной точки {hash}: {reason}
 
+      Снимок перед откатом сохранён автоматически.'
+    restore_failed: ❌ {error}
   diff:
-    not_enabled:           "Контрольные точки не включены, поэтому базовой линии сессии нет.\nВключите в config.yaml:\n```\ncheckpoints:\n  enabled: true\n```\nОбычный /diff по-прежнему работает — он использует git напрямую."
-    no_changes:            "Изменений нет."
-    failed:                "{error}"
-
+    not_enabled: "Контрольные точки не включены, поэтому базовой линии сессии нет.\nВключите в config.yaml:\n```\ncheckpoints:\n  enabled: true\n```\nОбычный /diff по-прежнему работает — он использует git напрямую."
+    no_changes: Изменений нет.
+    failed: '{error}'
   set_home:
-    save_failed:           "Не удалось сохранить главный канал: {error}"
-    success:               "✅ Главный канал установлен на **{name}** (ID: {chat_id}).\nCron-задачи и межплатформенные сообщения будут доставляться сюда."
+    save_failed: 'Не удалось сохранить главный канал: {error}'
+    success: '✅ Главный канал установлен на **{name}** (ID: {chat_id}).
+
+      Cron-задачи и межплатформенные сообщения будут доставляться сюда.'
   context:
-    header:                "🧠 **Context Window**"
-    model:                 "Model: `{model}`"
-    window:                "Window: {total} tokens"
-    in_use:                "In use: {used} / {total} ({pct}%)"
-    bar:                   "{bar}"
-    headroom:              "Headroom to limit: {headroom} tokens"
-    threshold:             "Auto-compresses at: {threshold} ({threshold_pct}%) — {to_go} to go"
-    over_threshold:        "⚠️ **Over auto-compression threshold ({threshold}, {threshold_pct}%)**"
-    compressions:          "Compressions this session: {count}"
-    last_savings:          "Last compression freed: {savings}% of context"
-    totals_header:         "Session totals (cumulative across {calls} API calls)"
-    totals_line:           "Input {input} · Output {output} · Reasoning {reasoning}"
-    total_billed:          "Total billed: {total}"
-    throughput_note:       "_Throughput, not context size — each call re-sends the window above._"
-    estimated:             "Estimated context: ~{count} tokens across {messages} messages"
-    detail_after_first:    "_(Full compression and throughput stats available after the first agent response)_"
-    no_data:               "No context data available yet. Send a message to start a session."
-
+    header: 🧠 **Context Window**
+    model: 'Model: `{model}`'
+    window: 'Window: {total} tokens'
+    in_use: 'In use: {used} / {total} ({pct}%)'
+    bar: '{bar}'
+    headroom: 'Headroom to limit: {headroom} tokens'
+    threshold: 'Auto-compresses at: {threshold} ({threshold_pct}%) — {to_go} to go'
+    over_threshold: ⚠️ **Over auto-compression threshold ({threshold}, {threshold_pct}%)**
+    compressions: 'Compressions this session: {count}'
+    last_savings: 'Last compression freed: {savings}% of context'
+    totals_header: Session totals (cumulative across {calls} API calls)
+    totals_line: Input {input} · Output {output} · Reasoning {reasoning}
+    total_billed: 'Total billed: {total}'
+    throughput_note: _Throughput, not context size — each call re-sends the window above._
+    estimated: 'Estimated context: ~{count} tokens across {messages} messages'
+    detail_after_first: _(Full compression and throughput stats available after the first agent response)_
+    no_data: No context data available yet. Send a message to start a session.
   status:
-    header:                "📊 **Состояние Hermes Gateway**"
-    matrix_scope_header:   "**Matrix scope:**"
-    matrix_scope_room:     "  room: {room}"
-    matrix_scope_room_id:  "  room_id: {room_id}"
-    matrix_scope_thread:   "  thread_id: {thread_id}"
-    matrix_scope_mode:     "  session_scope: {scope}"
-    matrix_scope_key:      "  session_key: {session_key}"
-    session_id:            "**ID сеанса:** `{session_id}`"
-    title:                 "**Название:** {title}"
-    created:               "**Создано:** {timestamp}"
-    last_activity:         "**Последняя активность:** {timestamp}"
-    model:                 "**Model:** `{model}`"
-    model_provider:        "**Model:** `{model}` ({provider})"
-    context:               "**Context:** {used} / {total} ({pct}%)"
-    context_used:          "**Context:** ~{used} tokens"
-    tokens:                "**Lifetime tokens billed:** {tokens} _(not your current context size; use `/context`)_"
-    agent_running:         "**Агент активен:** {state}"
-    state_yes:             "Да ⚡"
-    state_no:              "Нет"
-    queued:                "**Очередь продолжений:** {count}"
-    platforms:             "**Подключённые платформы:** {platforms}"
-
+    header: 📊 **Состояние Hermes Gateway**
+    matrix_scope_header: '**Matrix scope:**'
+    matrix_scope_room: '  room: {room}'
+    matrix_scope_room_id: '  room_id: {room_id}'
+    matrix_scope_thread: '  thread_id: {thread_id}'
+    matrix_scope_mode: '  session_scope: {scope}'
+    matrix_scope_key: '  session_key: {session_key}'
+    session_id: '**ID сеанса:** `{session_id}`'
+    title: '**Название:** {title}'
+    created: '**Создано:** {timestamp}'
+    last_activity: '**Последняя активность:** {timestamp}'
+    model: '**Model:** `{model}`'
+    model_provider: '**Model:** `{model}` ({provider})'
+    context: '**Context:** {used} / {total} ({pct}%)'
+    context_used: '**Context:** ~{used} tokens'
+    tokens: '**Lifetime tokens billed:** {tokens} _(not your current context size; use `/context`)_'
+    agent_running: '**Агент активен:** {state}'
+    state_yes: Да ⚡
+    state_no: Нет
+    queued: '**Очередь продолжений:** {count}'
+    platforms: '**Подключённые платформы:** {platforms}'
   stop:
-    stopped_pending:       "⚡ Остановлено. Агент ещё не начинал — вы можете продолжить этот сеанс."
-    stopped:               "⚡ Остановлено. Вы можете продолжить этот сеанс."
-    no_active:             "Нет активной задачи для остановки."
-
+    stopped_pending: ⚡ Остановлено. Агент ещё не начинал — вы можете продолжить этот сеанс.
+    stopped: ⚡ Остановлено. Вы можете продолжить этот сеанс.
+    no_active: Нет активной задачи для остановки.
   title:
-    db_unavailable:        "База данных сеансов недоступна."
-    warn_prefix:           "⚠️ {error}"
-    empty_after_clean:     "⚠️ После очистки название пусто. Используйте печатные символы."
-    set_to:                "✏️ Название сеанса установлено: **{title}**"
-    not_found:             "Сеанс не найден в базе данных."
-    current_with_title:    "📌 Сеанс: `{session_id}`\nНазвание: **{title}**"
-    current_no_title:      "📌 Сеанс: `{session_id}`\nНазвание не задано. Использование: `/title Название моего сеанса`"
+    db_unavailable: База данных сеансов недоступна.
+    warn_prefix: ⚠️ {error}
+    empty_after_clean: ⚠️ После очистки название пусто. Используйте печатные символы.
+    set_to: '✏️ Название сеанса установлено: **{title}**'
+    not_found: Сеанс не найден в базе данных.
+    current_with_title: '📌 Сеанс: `{session_id}`
 
+      Название: **{title}**'
+    current_no_title: '📌 Сеанс: `{session_id}`
+
+      Название не задано. Использование: `/title Название моего сеанса`'
   topic:
-    not_telegram_dm:         "Команда /topic доступна только в личных чатах Telegram."
-    no_session_db:           "База данных сеансов недоступна."
-    unauthorized:            "У вас нет прав использовать /topic в этом боте."
-    restore_needs_topic:     "Чтобы восстановить сеанс, сначала создайте или откройте Telegram topic, затем отправьте /topic <session-id> в этом topic. Чтобы создать новый topic, откройте All Messages и отправьте там любое сообщение."
-    topics_disabled:         "Telegram topics ещё не включены для этого бота.\n\nКак включить:\n1. Откройте @BotFather.\n2. Выберите своего бота.\n3. Откройте Bot Settings → Threads Settings.\n4. Включите Threaded Mode и убедитесь, что пользователям разрешено создавать новые threads.\n\nЗатем снова отправьте /topic."
-    topics_user_disallowed:  "Telegram topics включены, но пользователям не разрешено создавать topics.\n\nОткройте @BotFather → выберите своего бота → Bot Settings → Threads Settings, затем выключите 'Disallow users to create new threads'.\n\nЗатем снова отправьте /topic."
-    enable_failed:           "Не удалось включить режим Telegram topic: {error}"
-    bound_status:            "Этот topic привязан к:\nСеанс: {label}\nID: {session_id}\n\nИспользуйте /new, чтобы заменить этот topic новым сеансом.\nДля параллельной работы откройте All Messages и отправьте там сообщение, чтобы создать другой topic."
-    thread_ready:            "Многосеансовые Telegram topics включены.\n\nЭтот topic будет использоваться как независимый сеанс Hermes. Используйте /new, чтобы заменить текущий сеанс этого topic. Для параллельной работы откройте All Messages и отправьте там сообщение, чтобы создать другой topic."
-    untitled_session:        "Сеанс без названия"
+    not_telegram_dm: Команда /topic доступна только в личных чатах Telegram.
+    no_session_db: База данных сеансов недоступна.
+    unauthorized: У вас нет прав использовать /topic в этом боте.
+    restore_needs_topic: Чтобы восстановить сеанс, сначала создайте или откройте Telegram topic, затем отправьте /topic <session-id> в этом topic. Чтобы создать новый topic, откройте All Messages и отправьте там любое сообщение.
+    topics_disabled: 'Telegram topics ещё не включены для этого бота.
 
+
+      Как включить:
+
+      1. Откройте @BotFather.
+
+      2. Выберите своего бота.
+
+      3. Откройте Bot Settings → Threads Settings.
+
+      4. Включите Threaded Mode и убедитесь, что пользователям разрешено создавать новые threads.
+
+
+      Затем снова отправьте /topic.'
+    topics_user_disallowed: 'Telegram topics включены, но пользователям не разрешено создавать topics.
+
+
+      Откройте @BotFather → выберите своего бота → Bot Settings → Threads Settings, затем выключите ''Disallow users to create new threads''.
+
+
+      Затем снова отправьте /topic.'
+    enable_failed: 'Не удалось включить режим Telegram topic: {error}'
+    bound_status: 'Этот topic привязан к:
+
+      Сеанс: {label}
+
+      ID: {session_id}
+
+
+      Используйте /new, чтобы заменить этот topic новым сеансом.
+
+      Для параллельной работы откройте All Messages и отправьте там сообщение, чтобы создать другой topic.'
+    thread_ready: 'Многосеансовые Telegram topics включены.
+
+
+      Этот topic будет использоваться как независимый сеанс Hermes. Используйте /new, чтобы заменить текущий сеанс этого topic. Для параллельной работы откройте All Messages и отправьте там сообщение, чтобы создать другой topic.'
+    untitled_session: Сеанс без названия
   undo:
-    nothing:               "Нечего отменять."
-    removed:               "↩️ Отменено ходов: {turns} (сообщений: {count}).\nРезервная копия: «{preview}»\nСкопируйте/отредактируйте текст выше и отправьте его, чтобы запросить заново отсюда."
-    invalid_count:         "Недопустимое число «{arg}» — используйте /undo или /undo N."
+    nothing: Нечего отменять.
+    removed: '↩️ Отменено ходов: {turns} (сообщений: {count}).
 
+      Резервная копия: «{preview}»
+
+      Скопируйте/отредактируйте текст выше и отправьте его, чтобы запросить заново отсюда.'
+    invalid_count: Недопустимое число «{arg}» — используйте /undo или /undo N.
   update:
-    platform_not_messaging:  "✗ /update доступен только на платформах обмена сообщениями. Выполните `hermes update` в терминале."
-    not_git_repo:            "✗ Не git-репозиторий — обновление невозможно."
-    hermes_cmd_not_found:    "✗ Не удалось найти команду `hermes`. Hermes запущен, но команда обновления не нашла исполняемый файл в PATH или через текущий интерпретатор Python. Попробуйте выполнить `hermes update` вручную в терминале."
-    start_failed:            "✗ Не удалось запустить обновление: {error}"
-    starting:                "⚕ Запуск обновления Hermes… Я буду транслировать прогресс сюда."
+    platform_not_messaging: ✗ /update доступен только на платформах обмена сообщениями. Выполните `hermes update` в терминале.
+    not_git_repo: ✗ Не git-репозиторий — обновление невозможно.
+    hermes_cmd_not_found: ✗ Не удалось найти команду `hermes`. Hermes запущен, но команда обновления не нашла исполняемый файл в PATH или через текущий интерпретатор Python. Попробуйте выполнить `hermes update` вручную в терминале.
+    start_failed: '✗ Не удалось запустить обновление: {error}'
+    starting: ⚕ Запуск обновления Hermes… Я буду транслировать прогресс сюда.
+    finished: ✅ Hermes update finished.
+    failed_exit: ❌ Hermes update failed (exit code {exit_code}).
+    timed_out: ❌ Hermes update timed out after 30 minutes.
+    finished_with_output: '✅ Hermes update finished.
 
+
+      ```
+
+      {output}
+
+      ```'
+    failed_with_output: '❌ Hermes update failed.
+
+
+      ```
+
+      {output}
+
+      ```'
+    finished_ok: ✅ Hermes update finished successfully.
+    failed_details: ❌ Hermes update failed. Check the gateway logs or run `hermes update` manually for details.
+    needs_input: '⚕ **Update needs your input:**
+
+
+      {prompt}{default_hint}
+
+
+      Reply `{command_prefix}approve` (yes) or `{command_prefix}deny` (no), or type your answer directly.'
+    default_hint: ' (default: {default})'
   usage:
-    rate_limits:              "⏱️ **Ограничения скорости:** {state}"
-    header_session:           "📊 **Использование токенов сеанса**"
-    label_model:              "Модель: `{model}`"
-    label_input_tokens:       "Входные токены: {count}"
-    label_cache_read:         "Токены чтения кеша: {count}"
-    label_cache_write:        "Токены записи кеша: {count}"
-    label_output_tokens:      "Выходные токены: {count}"
-    label_total:              "Всего: {count}"
-    label_api_calls:          "Вызовы API: {count}"
-    label_cost:               "Стоимость: {prefix}${amount}"
-    label_cost_included:      "Стоимость: включено"
-    label_context:            "Контекст: {used} / {total} ({pct}%)"
-    label_compressions:       "Сжатий: {count}"
-    breakdown_header: "🧩 **Разбивка контекста** _(оценка)_"
-    breakdown_line: "• {label}: ~{count} ({pct}%)"
-    breakdown_cat_system_prompt: "Системный промпт"
-    breakdown_cat_tool_definitions: "Определения инструментов"
-    breakdown_cat_rules: "Правила"
-    breakdown_cat_skills: "Навыки"
-    breakdown_cat_mcp: "MCP"
-    breakdown_cat_subagent_definitions: "Определения субагентов"
-    breakdown_cat_memory: "Память"
-    breakdown_cat_conversation: "Разговор"
-    header_session_info:      "📊 **Информация о сеансе**"
-    label_messages:           "Сообщений: {count}"
-    label_estimated_context:  "Ориентировочный контекст: ~{count} токенов"
-    detailed_after_first:     "_(Подробное использование доступно после первого ответа агента)_"
-    no_data:                  "Данные об использовании для этого сеанса отсутствуют."
-    unknown_subcommand:       "Неизвестная подкоманда /usage: `{args}`. Попробуйте `/usage` или `/usage reset [--force]`."
-    reset_wrong_provider:     "Накопленные сбросы лимитов доступны только с провайдером openai-codex. Сначала переключитесь через `/model`."
-
+    rate_limits: ⏱️ **Ограничения скорости:** {state}
+    header_session: 📊 **Использование токенов сеанса**
+    label_model: 'Модель: `{model}`'
+    label_input_tokens: 'Входные токены: {count}'
+    label_cache_read: 'Токены чтения кеша: {count}'
+    label_cache_write: 'Токены записи кеша: {count}'
+    label_output_tokens: 'Выходные токены: {count}'
+    label_total: 'Всего: {count}'
+    label_api_calls: 'Вызовы API: {count}'
+    label_cost: 'Стоимость: {prefix}${amount}'
+    label_cost_included: 'Стоимость: включено'
+    label_context: 'Контекст: {used} / {total} ({pct}%)'
+    label_compressions: 'Сжатий: {count}'
+    breakdown_header: 🧩 **Разбивка контекста** _(оценка)_
+    breakdown_line: '• {label}: ~{count} ({pct}%)'
+    breakdown_cat_system_prompt: Системный промпт
+    breakdown_cat_tool_definitions: Определения инструментов
+    breakdown_cat_rules: Правила
+    breakdown_cat_skills: Навыки
+    breakdown_cat_mcp: MCP
+    breakdown_cat_subagent_definitions: Определения субагентов
+    breakdown_cat_memory: Память
+    breakdown_cat_conversation: Разговор
+    header_session_info: 📊 **Информация о сеансе**
+    label_messages: 'Сообщений: {count}'
+    label_estimated_context: 'Ориентировочный контекст: ~{count} токенов'
+    detailed_after_first: _(Подробное использование доступно после первого ответа агента)_
+    no_data: Данные об использовании для этого сеанса отсутствуют.
+    unknown_subcommand: 'Неизвестная подкоманда /usage: `{args}`. Попробуйте `/usage` или `/usage reset [--force]`.'
+    reset_wrong_provider: Накопленные сбросы лимитов доступны только с провайдером openai-codex. Сначала переключитесь через `/model`.
+    label_cache_hit_rate: 'Cache hit rate: {rate}%'
   credits:
-    not_logged_in:            "Вы не вошли в Nous Portal. Войдите, чтобы увидеть баланс кредитов и пополнить его."
-
+    not_logged_in: Вы не вошли в Nous Portal. Войдите, чтобы увидеть баланс кредитов и пополнить его.
   verbose:
-    not_enabled:           "Команда `/verbose` не включена для платформ обмена сообщениями.\n\nВключите в `config.yaml`:\n```yaml\ndisplay:\n  tool_progress_command: true\n```"
-    mode_off:              "⚙️ Прогресс инструментов: **OFF** — активность инструментов не показывается."
-    mode_new:              "⚙️ Прогресс инструментов: **NEW** — показывается при смене инструмента (длина предпросмотра: `display.tool_preview_length`, по умолчанию 40)."
-    mode_all:              "⚙️ Прогресс инструментов: **ALL** — показывается каждый вызов инструмента (длина предпросмотра: `display.tool_preview_length`, по умолчанию 40)."
-    mode_verbose:          "⚙️ Прогресс инструментов: **VERBOSE** — каждый вызов инструмента с полными аргументами."
-    mode_log:              "⚙️ Прогресс инструментов: **LOG** — тихо в чате; вызовы инструментов записываются в ~/.hermes/logs/tool_calls.log."
-    saved_suffix:          "_(сохранено для **{platform}** — вступит в силу со следующего сообщения)_"
-    save_failed:           "_(не удалось сохранить в конфигурацию: {error})_"
-
+    not_enabled: "Команда `/verbose` не включена для платформ обмена сообщениями.\n\nВключите в `config.yaml`:\n```yaml\ndisplay:\n  tool_progress_command: true\n```"
+    mode_off: '⚙️ Прогресс инструментов: **OFF** — активность инструментов не показывается.'
+    mode_new: '⚙️ Прогресс инструментов: **NEW** — показывается при смене инструмента (длина предпросмотра: `display.tool_preview_length`, по умолчанию 40).'
+    mode_all: '⚙️ Прогресс инструментов: **ALL** — показывается каждый вызов инструмента (длина предпросмотра: `display.tool_preview_length`, по умолчанию 40).'
+    mode_verbose: '⚙️ Прогресс инструментов: **VERBOSE** — каждый вызов инструмента с полными аргументами.'
+    mode_log: '⚙️ Прогресс инструментов: **LOG** — тихо в чате; вызовы инструментов записываются в ~/.hermes/logs/tool_calls.log.'
+    saved_suffix: _(сохранено для **{platform}** — вступит в силу со следующего сообщения)_
+    save_failed: '_(не удалось сохранить в конфигурацию: {error})_'
   voice:
-    enabled_voice_only:    "Голосовой режим включён.\nЯ буду отвечать голосом, когда вы отправляете голосовые сообщения.\nИспользуйте /voice tts, чтобы получать голосовые ответы на все сообщения."
-    disabled_text:         "Голосовой режим отключён. Только текстовые ответы."
-    tts_enabled:           "Авто-TTS включён.\nВсе ответы будут содержать голосовое сообщение."
-    status_mode:           "Голосовой режим: {label}"
-    status_channel:        "Голосовой канал: #{channel}"
-    status_participants:   "Участники: {count}"
-    status_member:         "  - {name}{status}"
-    speaking:              " (говорит)"
-    enabled_short:         "Голосовой режим включён."
-    disabled_short:        "Голосовой режим отключён."
-    label_off:             "Выкл. (только текст)"
-    label_voice_only:      "Вкл. (голосовой ответ на голосовые сообщения)"
-    label_all:             "TTS (голосовой ответ на все сообщения)"
-    help:                  "{toggle}\n\n**Как работает /voice**\n• `/voice on` — голосовой ответ, когда вы отправляете голосовое сообщение\n• `/voice tts` — голосовой ответ на *каждое* сообщение\n• `/voice off` — вернуться к ответам только текстом\n• `/voice status` — показать текущий режим\n• `/voice` (без аргумента) — быстрое переключение между вкл и выкл{channels}"
-    help_channels:         "\n\n**Живые голосовые каналы (Discord)**\n• Сначала зайдите в голосовой канал, затем `/voice channel` — я подключусь, буду слушать и отвечать голосом\n• `/voice leave` — отключиться от голосового канала"
+    enabled_voice_only: 'Голосовой режим включён.
 
+      Я буду отвечать голосом, когда вы отправляете голосовые сообщения.
+
+      Используйте /voice tts, чтобы получать голосовые ответы на все сообщения.'
+    disabled_text: Голосовой режим отключён. Только текстовые ответы.
+    tts_enabled: 'Авто-TTS включён.
+
+      Все ответы будут содержать голосовое сообщение.'
+    status_mode: 'Голосовой режим: {label}'
+    status_channel: 'Голосовой канал: #{channel}'
+    status_participants: 'Участники: {count}'
+    status_member: '  - {name}{status}'
+    speaking: ' (говорит)'
+    enabled_short: Голосовой режим включён.
+    disabled_short: Голосовой режим отключён.
+    label_off: Выкл. (только текст)
+    label_voice_only: Вкл. (голосовой ответ на голосовые сообщения)
+    label_all: TTS (голосовой ответ на все сообщения)
+    help: '{toggle}
+
+
+      **Как работает /voice**
+
+      • `/voice on` — голосовой ответ, когда вы отправляете голосовое сообщение
+
+      • `/voice tts` — голосовой ответ на *каждое* сообщение
+
+      • `/voice off` — вернуться к ответам только текстом
+
+      • `/voice status` — показать текущий режим
+
+      • `/voice` (без аргумента) — быстрое переключение между вкл и выкл{channels}'
+    help_channels: '
+
+
+      **Живые голосовые каналы (Discord)**
+
+      • Сначала зайдите в голосовой канал, затем `/voice channel` — я подключусь, буду слушать и отвечать голосом
+
+      • `/voice leave` — отключиться от голосового канала'
   yolo:
-    disabled:                   "⚠️ Режим YOLO для этого сеанса **ОТКЛЮЧЁН** — опасные команды потребуют одобрения."
-    enabled:                    "⚡ Режим YOLO для этого сеанса **ВКЛЮЧЁН** — все команды одобряются автоматически. Используйте с осторожностью."
-
+    disabled: ⚠️ Режим YOLO для этого сеанса **ОТКЛЮЧЁН** — опасные команды потребуют одобрения.
+    enabled: ⚡ Режим YOLO для этого сеанса **ВКЛЮЧЁН** — все команды одобряются автоматически. Используйте с осторожностью.
   shared:
-    session_db_unavailable:      "База данных сеансов недоступна."
-    session_db_unavailable_prefix: "База данных сеансов недоступна"
-    session_not_found:           "Сеанс не найден в базе данных."
-    warn_passthrough:            "⚠️ {error}"
-
-  # Discord native slash-command ephemeral acknowledgements.
+    session_db_unavailable: База данных сеансов недоступна.
+    session_db_unavailable_prefix: База данных сеансов недоступна
+    session_not_found: Сеанс не найден в базе данных.
+    warn_passthrough: ⚠️ {error}
   discord_slash:
-    new_started: "New conversation started~"
-    reset_started: "Session reset~"
-    retrying: "Retrying~"
-    status_sent: "Status sent~"
-    stop_requested: "Stop requested~"
-    update_initiated: "Update initiated~"
-    restart_requested: "Restart requested~"
-    queued: "Queued for the next turn."
-    background_started: "Background task started~"
+    new_started: New conversation started~
+    reset_started: Session reset~
+    retrying: Retrying~
+    status_sent: Status sent~
+    stop_requested: Stop requested~
+    update_initiated: Update initiated~
+    restart_requested: Restart requested~
+    queued: Queued for the next turn.
+    background_started: Background task started~
+  silent_api_disconnect: ⚠️ The API connection dropped before any response arrived. This is usually a transient network or provider issue — please try again.
+  agent_error: 'Sorry, I encountered an unexpected error.{status_hint}
+
+    Try again or use /reset to start a fresh session.'
+  agent_error_hint_auth: ' Check your API key or run `claude /login` to refresh OAuth credentials.'
+  agent_error_hint_billing: ' Your API balance or quota is exhausted. Check your provider dashboard.'
+  agent_error_hint_rate_limited: ' You are being rate-limited. Please wait a moment and try again.'
+  agent_error_hint_usage_limit: ' Your plan''s usage limit has been reached. Please wait until it resets.'
+  agent_error_hint_usage_limit_resets: ' Your plan''s usage limit has been reached. It resets in ~{hours}h.'
+  agent_error_hint_overloaded: ' The API is temporarily overloaded. Please try again shortly.'
+  agent_error_hint_rejected: ' The request was rejected by the API.'
+  shutdown_notify_restart: 🌆 Gateway{profile_tag} restarting — Your current task will be interrupted. Send any message after restart and I'll try to resume where you left off.
+  shutdown_notify_stop: ⚠️ Gateway{profile_tag} shutting down — Your current task will be interrupted.
+  restart_success: 🌃 Gateway{profile_tag} restarted successfully. Your session continues.
+  online: 🏙 Gateway{profile_tag} online — Hermes is back and ready.
+  busy_drain_queued: ⏳ Gateway{profile_tag} {action} — queued for the next turn after it comes back.
+  busy_drain_not_accepting: ⏳ Gateway{profile_tag} is {action} and is not accepting another turn right now.
+  busy_drain_no_work: ⏳ Gateway{profile_tag} is {action} and is not accepting new work right now.
+  busy_drain_maintenance: ⏳ This agent{profile_tag} is draining for a maintenance action and isn't accepting new turns right now. It'll be back in a moment — please resend shortly.
+  busy_steer_ack: ⏩ Steered into current run{status_detail}. Your message arrives after the next tool call.
+  busy_queue_ack: ⏳ Queued for the next turn{status_detail}. I'll respond once the current task finishes.
+  busy_interrupt_ack: ⚡ Interrupting current task{status_detail}. I'll respond to your message shortly.
+  busy_subagent_queued: ⏳ Subagent working{status_detail} — your message is queued for when it finishes (use /stop to cancel everything).
+  busy_compress_queued: ⏳ Compressing context{status_detail} — your message is queued for when it finishes (use /stop to cancel everything).
+  steer_failed: '⚠️ Steer failed: {error}'
+  steer_queued: '⏩ Steer queued — arrives after the next tool call: ''{preview}'''
+  steer_empty: Steer rejected (empty payload).
+  force_stop_pending: ⚡ Force-stopped. The agent was still starting — session unlocked.
+  still_working: ⏳ Working — {elapsed} min{status_detail}
+  no_activity_warning: ⚠️ No activity for {elapsed} min. If the agent does not respond soon, it will be timed out in {remaining} min. You can continue waiting or use /reset.
+  agent_timeout: '⏱️ Agent inactive for {timeout_mins} min — no tool calls or API responses.
+
+    {detail}
+
+    To increase the limit, set agent.gateway_timeout in config.yaml (value in seconds, 0 = no limit) and restart the gateway.
+
+    Try again, or use /reset to start fresh.'
+  agent_timeout_detail_tool: The agent appears stuck on tool `{cur_tool}` ({secs_since}s since last activity, iteration {iter_n}/{iter_max}).
+  agent_timeout_detail_activity: 'Last activity: {last_desc} ({secs_since}s ago, iteration {iter_n}/{iter_max}). The agent may have been waiting on an API response.'
+  busy_agent_starting: Agent still starting — /steer queued for the next turn.
+  busy_no_active_agent: No active agent — /steer queued for the next turn.
+  busy_model_blocked: Agent is running — wait or /stop first, then switch models.
+  busy_codex_runtime_blocked: Agent is running — wait or /stop first, then change runtime.
+  busy_goal_blocked: Agent is running — use /goal status / pause / clear / wait mid-run, or /stop before setting a new goal.
+  busy_cmd_blocked: ⏳ Agent is running — `/{cmd}` can't run mid-turn. Wait for the current response or `/stop` first.
+  unknown_command: Unknown command `/{command}`. Type /commands to see what's available, or resend without the leading slash to send as a regular message.
+  skill_disabled: 'The **{skill}** skill is installed but disabled. Enable it with: `hermes skills config`'
+  skill_disabled_for_platform: 'The **{skill}** skill is disabled for {platform}. Enable it with: `hermes skills config`'
+  skill_not_installed: 'The **{skill}** skill is available but not installed. Install it with: `hermes skills install {path}`'
+  queue_usage: 'Usage: /queue <prompt>'
+  queue_queued: Queued for the next turn.
+  queue_queued_with_depth: Queued for the next turn. ({depth} queued)
+  steer_usage: 'Usage: /steer <prompt>'
+  steer_usage_no_agent: 'Usage: /steer <prompt>  (no agent is running; sending as a normal message)'
+  learn_failed: Could not start /learn — please try again.
+  quick_command_timeout: Quick command timed out (30s).
+  quick_command_no_output: Command returned no output.
+  quick_command_error: 'Quick command error: {error}'
+  quick_command_no_command: Quick command '/{command}' has no command defined.
+  quick_command_no_target: Quick command '/{command}' has no target defined.
+  quick_command_unsupported_type: 'Quick command ''/{command}'' has unsupported type (supported: ''exec'', ''alias'').'
+  hook_blocked: Command `/{command}` was blocked by a hook.
+  processing_stopped: '⚠️ Processing stopped: {error}. Try again.'
+  suggestions_failed: 'Suggestions command failed: {error}'
+  moa_prepare_failed: Failed to prepare MoA turn.
+  chained_commands_executed: Commands executed.
+  busy_moa_blocked: Agent is running — wait or /stop first, then run /moa.
+  interrupted_before_processing: ⚠️ Your message was interrupted before processing started (likely by a recent /stop). Please send it again.
+  init_failed: Could not start /init — please try again.
+  init_ack_update: Updating AGENTS.md from a project scan…
+  init_ack_generate: Generating AGENTS.md from a project scan…
+  learn_ack_described: Learning a skill from what you described…
+  learn_ack_conversation: Learning a skill from this conversation…
+  stacked_skills_load_failed: Failed to load stacked skills for /{command}.
+  skills_disabled_stacked: 'The **{skills}** skill(s) in this stacked invocation are disabled for {platform}.
+
+    Enable them with: `hermes skills config`'
+  compression_timeout_notice: ⚠️ Context compression timed out after {timeout_s}s with no output from the summary model. No messages were dropped — continuing without compression. Run /compress to retry, /reset for a clean session, or check your auxiliary.compression model configuration.
+  session_auto_reset_exhausted: '
+
+
+    🔄 Session auto-reset — the conversation exceeded the maximum context size and could not be compressed further. Your next message will start a fresh session.'
+  admin_only_can_run: 'You can run: {commands}. Use /whoami for the full list.'
+  admin_only_none_enabled: No slash commands are enabled for non-admins on this platform. Ask an admin to add you to allow_admin_from or to set user_allowed_commands.
+  approval_fallback:
+    heading: ⚠️ **Dangerous command requires approval:**
+    heading_smart_deny: ⚠️ **Smart DENY — owner override for one operation:**
+    choice_once: Reply `{command_prefix}approve` to execute this one operation
+    choice_session: '`{command_prefix}approve session` to approve this pattern for the session'
+    choice_always: '`{command_prefix}approve always` to approve permanently'
+    choice_deny: '`{command_prefix}deny` to cancel'
+    choices_join: '{choices_head}, or {choices_tail}.'
+    body: '{heading}
+
+      ```
+
+      {cmd_preview}
+
+      ```
+
+      {reason}
+
+
+      {choices}'
+  pairing:
+    unrecognized: 'Hi~ I don''t recognize you yet!
+
+
+      Here''s your pairing code: `{code}`
+
+
+      Ask the bot owner to run:
+
+      `hermes {profile_arg}pairing approve {platform_name} {code}`'
+    rate_limited: Too many pairing requests right now~ Please try again later!
+  proxy:
+    aiohttp_missing: '⚠️ Proxy mode requires aiohttp. Install with: pip install aiohttp'
+    url_not_configured: ⚠️ Proxy URL not configured (GATEWAY_PROXY_URL or gateway.proxy_url)
+    http_error: '⚠️ Proxy error ({status}): {error}'
+    connection_error: '⚠️ Proxy connection error: {error}'
+  session_reset_notice: '◐ Session automatically reset ({reason}). Conversation history cleared.
+
+    Use /resume to browse and restore a previous session.
+
+    Adjust reset timing in config.yaml under session_reset.'
+  session_reset_reason_suspended: previous session was stopped or interrupted
+  session_reset_reason_resume_expired: gateway restart recovery timed out
+  session_reset_reason_daily: daily schedule at {hour}:00
+  session_reset_reason_idle: inactive for {duration}
+  interrupt:
+    placeholder: Operation interrupted.
+    friendly: Operation interrupted. The model returned no visible response. Try /new to start a fresh conversation, or switch models with /model. If the issue persists, the current model may not support this workload.
+  interrupt_retry: Operation interrupted during retry ({reason}, attempt {attempt}/{max}).
+  interrupt_api_error: 'Operation interrupted: handling API error ({error_type}: {error_detail}). Try again later or switch models with /model.'
+  interrupt_retry_after_error: 'Operation interrupted: retrying API call after error (retry {attempt}/{max}).'
+  goal_usage_wait: 'Usage: /goal wait <pid> [reason]'
+  goal_no_wait_barrier: No wait barrier set.
+  goal_usage_draft: 'Usage: /goal draft <objective in plain language>'
+  goal_no_active: No active goal. Set one with /goal <text>.
+  subgoal_usage_remove: 'Usage: /subgoal remove <n>'
+  subgoal_no_subgoals: No subgoals to clear.
+  turn_explainer:
+    prefix: '⚠️ No reply: '
+    empty_response_exhausted: the model returned empty content after retries and any fallback providers. Try `continue`, switch model/provider, or inspect the tool output above.
+    all_retries_exhausted: all API retries were exhausted before a response was produced (provider errors / rate limits). Try `continue` or switch provider.
+    partial_stream_recovery: streaming stopped early and only a partial response was recovered. Send `continue` to resume from where it stopped.
+    fallback_prior_turn: no new content was produced this turn; showing recovered prior context. Send `continue` to retry.
+    interrupted_during_api_call: the request was interrupted mid-call before a reply was received. Send `continue` to retry.
+    budget_exhausted: the per-turn iteration/cost budget was exhausted before a final answer. Send `continue` to keep going.
+    ollama_context_too_small: the local model's context window was too small to finish. Increase the context size or use a larger model.
+    max_iterations: the maximum tool-iteration limit was reached before a final answer. Send `continue` to keep going, or raise `max_iterations`.
+    error_near_max_iterations: an error occurred near the iteration limit before a final answer. Check the tool output above, then send `continue`.
+    pending_tool_result: the turn stopped while a tool result was still pending and the model produced no follow-up text. Send `continue` to let it summarize.
+  error:
+    invalid_api_response: 'Invalid API response after {max_retries} retries: {failure_hint}'
+    payload_too_large_max_compression: 'Request payload too large: max compression attempts ({max_compression_attempts}) reached.'
+    payload_too_large_413: Request payload too large (413). Cannot compress further.
+    context_exceeded_max_compression: 'Context length exceeded: max compression attempts ({max_compression_attempts}) reached.'
+    context_exceeded_tokens: Context length exceeded ({new_tokens} tokens). Cannot compress further.
+    billing_exhausted: 'Billing or credits exhausted: {final_summary}. Check your account balance or configure a fallback provider.'
+    api_failed_after_retries: 'API call failed after {max_retries} retries: {final_summary}'
+    invalid_tool_call: 'Model generated invalid tool call: {invalid_preview}. Try switching models with /model or start fresh with /new.'
+    repeated_errors: 'I apologize, but I encountered repeated errors: {error_msg}'
+  runtime:
+    ollama_context_too_small: ❌ Ollama runtime context is too small for Hermes tool use
+    pre_api_compression: '📦 Pre-API compression: ~{tokens} tokens near the context/output limit. Compacting before the next model call.'
+    preflight_compression: '📦 Preflight compression: ~{tokens} tokens >= {threshold} threshold. This may take a moment.'
+    compaction: 🗜️ {marker} — summarizing earlier conversation so I can continue...
+    stale_connections: 🔌 Detected stale connections from a previous provider issue — cleaned up automatically. Proceeding with fresh connection.
+    fallback_trying: ⚠️ Max retries ({max_retries}) exhausted — trying fallback...
+    fallback_empty_malformed: ⚠️ Empty/malformed response — switching to fallback...
+    fallback_rate_limited: ⚠️ Rate limited — switching to fallback provider...
+    fallback_upstream_rate_limited: ⚠️ Upstream {upstream} rate-limited — switching to fallback model...
+    fallback_billing_exhausted: ⚠️ Billing or credits exhausted — switching to fallback provider...
+    fallback_provider_unreachable: ⚠️ Provider unreachable — switching to fallback provider...
+    fallback_non_retryable: ⚠️ Non-retryable error (HTTP {status_code}) — trying fallback...
+    max_retries_invalid_response: ❌ Max retries ({max_retries}) exceeded for invalid responses. Giving up.
+    compressed_messages: 🗜️ Compressed {before} → {after} messages, retrying...
+    compressed_tokens: 🗜️ Compressed ~{before_tokens} → ~{after_tokens} tokens, retrying...
+    payload_too_large_compressing: ⚠️ Request payload too large (413) — compression attempt {current}/{total}...
+    context_too_large_compressing: 🗜️ Context too large (~{tokens} tokens) — compressing ({current}/{total})...
+    empty_response_fallback: ↻ Empty response after tool calls — using earlier content as final answer
+    retrying_in: ⏳ Retrying in {wait_time}s (attempt {attempt}/{max})...
+    status_billing_exhausted: ❌ Billing or credits exhausted — {summary}
+    status_rate_limited: ❌ Rate limited after {max_retries} retries — {summary}
+    status_api_failed: ❌ API failed after {max_retries} retries — {summary}
+    tool_loop_interrupt: ⚡ Breaking out of tool loop due to interrupt...
+    compacting_context_progress: ⟳ compacting context…
+    conversation_completed: 🎉 Conversation completed after {count} OpenAI-compatible API call(s)
+    cached_context_length: '💾 Cached context length: {ctx} tokens for {model}'
+    starting_conversation: '💬 Starting conversation: ''{preview}{ellipsis}'''
+    codex_no_first_byte: '⚠️ No first byte from provider in {elapsed}s (codex stream, model: {model}). Reconnecting.'
+    codex_no_first_byte_with_hint: '⚠️ No first byte from provider in {elapsed}s (codex stream, model: {model}). Reconnecting. {hint}'
+    codex_stream_idle: '⚠️ Codex stream sent no events for {elapsed}s after first byte (model: {model}). Reconnecting.'
+    provider_no_response: '⚠️ No response from provider for {elapsed}s (non-streaming, model: {model}). Aborting call.'
+    provider_no_response_with_hint: '⚠️ No response from provider for {elapsed}s (non-streaming, model: {model}). {hint}'
+    fallback_primary_failed: '🔄 Primary model failed — switching to fallback: {model} via {provider}'
+    bedrock_stream_denied: ⚠  AWS IAM denied bedrock:InvokeModelWithResponseStream — falling back to non-streaming InvokeModel. Grant that action to restore streaming output.
+    streaming_unsupported: '⚠  Streaming is not supported for this model/provider. Switching to non-streaming. To avoid this delay, set display.streaming: false in config.yaml'
+    stream_malformed: ❌ Provider returned malformed streaming data after {attempts} attempts. The provider may be experiencing issues — try again in a moment.
+    stream_connection_failed: ❌ Connection to provider failed after {attempts} attempts. The provider may be experiencing issues — try again in a moment.
+    stream_no_response: '⚠️ No response from provider for {elapsed}s (model: {model}, context: ~{tokens} tokens). Reconnecting...'
+  chat_id_unknown: Could not determine chat ID.
+  session_not_found: 'Session not found: {name}'
+  default_chat_name: Hermes Chat
+  topic_mode_disabled: Multi-session topic mode is not currently enabled for this chat.
+  topic_disabled: 'Multi-session topic mode is now OFF for this chat.
+
+
+    Existing topics in Telegram aren''t removed — they''ll just stop being gated as independent sessions. The root DM works as a normal Hermes chat again. Run /topic to re-enable later.'
+  topic_disable_failed: 'Failed to disable topic mode: {error}'
+  topic_not_telegram_session: That session is not a Telegram session and cannot be restored into this topic.
+  topic_wrong_user: That session does not belong to this Telegram user.
+  topic_already_linked: That session is already linked to another Telegram topic.
+  voice_not_supported: Voice channels are not supported on this platform.
+  voice_discord_only: This command only works in a Discord server.
+  voice_not_in_channel: You need to be in a voice channel first.
+  voice_join_failed: Failed to join voice channel. Check bot permissions (Connect + Speak).
+  voice_left: Left voice channel.
+  voice_joined: 'Joined voice channel **{channel}**.
+
+    I''ll speak my replies and listen to you. Use /voice leave to disconnect.'
+  voice_deps_missing: 'Voice dependencies are missing (PyNaCl / davey). Install with: `{command}`'
+  voice_not_connected: Not in a voice channel.
+  voice_join_failed_with_error: 'Failed to join voice channel: {error}'
+  destructive_slash_confirm:
+    prompt: '⚠️ **Confirm /{command}**
+
+
+      {detail}
+
+
+      Choose:
+
+      • **Approve Once** — proceed this time only
+
+      • **Always Approve** — proceed and silence this prompt permanently
+
+      • **Cancel** — keep current conversation
+
+
+      _Text fallback: reply `{_p}approve`, `{_p}always`, or `{_p}cancel`._'
+    cancelled: 🟡 /{command} cancelled. Conversation unchanged.
+    always_note: '
+
+
+      ℹ️ Future /clear, /new, /reset, and /undo will run without confirmation. Re-enable via `approvals.destructive_slash_confirm: true` in config.yaml.'
+    always_note_persist_failed: '
+
+
+      ⚠️ Could not save that preference (config.yaml is not writable), so /clear, /new, /reset, and /undo will ask again next time. To silence it permanently, set `approvals.destructive_slash_confirm: false` in config.yaml.'
+  admin_only: ⛔ /{command} is admin-only here. {detail}
+  clarify_undelivered: '[clarify prompt could not be delivered]'
+  clarify_timeout: '[user did not respond within {minutes}m]'
+  clarify_timeout_notice: ⏳ No response received within {minutes} minutes; the current operation has stopped. Send me a message if you need anything.
+  update_send_failed: '✗ Failed to send response to update process: {error}'
+  update_sent: ✓ Sent `{label}` to the update process.
+toolguard:
+  halt_status: '⚠️ Tool guardrail halted {tool_name}: {code}'
+  halt_response: I stopped retrying {tool_name} because it hit the tool-call guardrail ({code}) after {count} repeated non-progressing attempts. The last tool result explains the blocker; the next step is to change strategy instead of repeating the same call.
+memory:
+  add_exceeds_limit: 'Memory at {current}/{limit} chars. Adding this entry ({entry_chars} chars) would exceed the limit. Consolidate now: use ''replace'' to merge overlapping entries into shorter ones or ''remove'' stale or less important entries (see current_entries below), then retry this add — all in this turn.'
+memory_proposal:
+  action_add: Add
+  action_replace: Replace
+  action_remove: Remove
+  card_title: 💾 Memory Proposal
+  card_title_batch: 💾 Memory Proposal (batch · {count} ops)
+  card_operation: Operation
+  card_target: Target
+  card_existing: Existing content
+  card_new_content: New content
+  card_empty: (none)
+  card_empty_content: (no content)
+  card_summary_label: Operations
+  card_op_index: '({idx}/{total}) '
+  card_more_ops: … and {count} more ops
+  card_char_budget: 'Est. chars: {final}/{limit}'
+  btn_approve: ✅ Approve
+  btn_deny: 🟥 Deny
+  resolved_approved: Memory proposal approved
+  resolved_denied: Memory proposal denied
+  pending_id_label: Approval ID
+  summary_add: add to {target}
+  summary_replace: replace in {target}
+  summary_remove: remove from {target}
+  summary_batch: apply {count} op(s) to {target}
+  summary_action: '{action} on {target}'
+  approved: Approved
+  denied: Denied
+  confirm_approved: ✅ Memory proposal approved
+  confirm_denied: 🟥 Memory proposal denied
+  response_approved_one: Approved pending memory write '{id}'.
+  response_approved_all: Approved {count} memory write(s).
+  response_rejected_one: Rejected pending memory write '{id}'.
+  response_rejected_all: Rejected {count} pending memory write(s).
+  response_no_pending: No pending memory writes.
+  response_no_match: No pending memory write with id '{id}'.
+  response_usage_approve: 'Usage: /{subsystem} approve <id>  (or ''all'')'
+  response_usage_reject: 'Usage: /{subsystem} reject <id>'
+  response_pending_header: 'Pending memory writes ({count}):'
+  response_approval_state: memory.write_approval = {state}
+  iteration:
+    budget_exhausted: ⚠️ Single-conversation iteration budget exhausted ({used}/{max_total} turns used)
+    budget_exhausted_summary: ⚠️ Iteration budget exhausted ({used}/{max_total}) — requesting summary...

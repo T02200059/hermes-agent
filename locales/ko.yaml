@@ -1,472 +1,1518 @@
-# Hermes 정적 메시지 카탈로그 -- 한국어
-# See locales/en.yaml for the source of truth; keep keys in sync.
-
 approval:
-  dangerous_header: "⚠️  위험한 명령: {description}"
-  choose_long:     "      [o]한 번  |  [s]세션  |  [a]항상  |  [d]거부"
-  choose_short:    "      [o]한 번  |  [s]세션  |  [d]거부"
-  prompt_long:     "      선택 [o/s/a/D]: "
-  prompt_short:    "      선택 [o/s/D]: "
-  choose_smart_deny: "      [o]한 번  |  [d]거부"
-  prompt_smart_deny: "      선택 [o/D]: "
-  smart_deny_once_inputs: "o,once"
-  smart_deny_deny_inputs: "d,deny"
-  timeout:         "      ⏱ 시간 초과 - 명령을 거부합니다"
-  allowed_once:    "      ✓ 한 번 허용됨"
-  allowed_session: "      ✓ 이 세션에서 허용됨"
-  allowed_always:  "      ✓ 영구 허용 목록에 추가됨"
-  denied:          "      ✗ 거부됨"
-  cancelled:       "      ✗ 취소됨"
-  blocklist_message: "이 명령은 무조건 차단 목록에 있으며 승인할 수 없습니다."
+  dangerous_header: '⚠️  위험한 명령: {description}'
+  choose_long: '      [o]한 번  |  [s]세션  |  [a]항상  |  [d]거부'
+  choose_short: '      [o]한 번  |  [s]세션  |  [d]거부'
+  prompt_long: '      선택 [o/s/a/D]: '
+  prompt_short: '      선택 [o/s/D]: '
+  choose_smart_deny: '      [o]한 번  |  [d]거부'
+  prompt_smart_deny: '      선택 [o/D]: '
+  smart_deny_once_inputs: o,once
+  smart_deny_deny_inputs: d,deny
+  timeout: '      ⏱ 시간 초과 - 명령을 거부합니다'
+  allowed_once: '      ✓ 한 번 허용됨'
+  allowed_session: '      ✓ 이 세션에서 허용됨'
+  allowed_always: '      ✓ 영구 허용 목록에 추가됨'
+  denied: '      ✗ 거부됨'
+  cancelled: '      ✗ 취소됨'
+  blocklist_message: 이 명령은 무조건 차단 목록에 있으며 승인할 수 없습니다.
+  dangerous_title: ⚠️  Dangerous Command
+  choice_once: Allow once
+  choice_session: Allow for this session
+  choice_always: Add to permanent allowlist
+  choice_deny: Deny
+  choice_view: Show full command
+  hint_choose_view: … (choose Show full command)
+  hint_command_truncated: … (command truncated — use /logs or /debug for full text)
+  hint_description_truncated: … (description truncated)
+  hardline_blocked: 'BLOCKED (hardline): {description}. This command is on the unconditional blocklist and cannot be executed via the agent — not even with --yolo, /yolo, approvals.mode=off, or cron approve mode. If you genuinely need to run it, run it yourself in a terminal outside the agent.'
+  sudo_stdin_blocked: 'BLOCKED: {description}. Do not pipe passwords to ''sudo -S'' — this is a brute-force attack vector. Set SUDO_PASSWORD in your .env file if the agent needs passwordless sudo, or run the sudo command manually in your own terminal.'
+  cron_blocked: 'BLOCKED: Command flagged as dangerous ({description}) but cron jobs run without a user present to approve it. Find an alternative approach that avoids this command. To allow dangerous commands in cron jobs, set approvals.cron_mode: approve in config.yaml.'
+  gateway_asking: '⚠️ This command is potentially dangerous ({description}). Asking the user for approval.
 
+
+    **Command:**
+
+    ```
+
+    {command}
+
+    ```'
+  gateway_asking_combined: '⚠️ {description}. Asking the user for approval.
+
+
+    **Command:**
+
+    ```
+
+    {command}
+
+    ```'
+  user_denied: 'BLOCKED: User denied this potentially dangerous command (matched ''{description}'' pattern). Do NOT retry this command — the user has explicitly rejected it.'
+  smart_denied: 'BLOCKED by smart approval: {description}. The command was assessed as genuinely dangerous. Do NOT retry.'
+  gateway_notify_failed: 'BLOCKED: Failed to send approval request to user. Do NOT retry.'
+  gateway_timeout_denied: 'BLOCKED: Command {reason}. The user has NOT consented to this action. Do NOT retry this command, do NOT rephrase it, and do NOT attempt the same outcome via a different command. Stop the current workflow and wait for the user to respond before taking any further destructive or irreversible action.{timeout_addendum}'
+  cli_denied: 'BLOCKED: User denied this command. The user has NOT consented to this action. Do NOT retry this command, do NOT rephrase it, and do NOT attempt the same outcome via a different command. Stop the current workflow and wait for the user to respond before taking any further destructive or irreversible action.'
+  execute_code_smart_denied: 'BLOCKED by smart approval: execute_code script execution was assessed as genuinely dangerous. Do NOT retry.'
+  execute_code_gateway_asking: '⚠️ {description}. Asking the user for approval.
+
+
+    **Code:**
+
+    ```python
+
+    {code}
+
+    ```'
+  execute_code_notify_failed: 'BLOCKED: Failed to send execute_code approval request to user. Do NOT retry.'
+  execute_code_timeout_denied: 'BLOCKED: execute_code script timed out without user response. The user has NOT consented to running this code. Do NOT retry, do NOT rephrase the script, and do NOT attempt the same outcome via a different tool. Silence is not consent.'
+  execute_code_user_denied: 'BLOCKED: execute_code script denied by user. The user has NOT consented to running this code. Do NOT retry, do NOT rephrase the script, and do NOT attempt the same outcome via a different tool.'
+  feishu_card_title: ⚠️ Command Approval Required
+  feishu_card_title_smart_deny: ⚠️ Smart DENY — Allow Once Only
+  feishu_reason_label: '**Reason:** {description}'
+  feishu_btn_once: ✅ Allow Once
+  feishu_btn_session: ✅ Session
+  feishu_btn_always: ✅ Always
+  feishu_btn_deny: ❌ Deny
+  feishu_resolved_once: Approved once
+  feishu_resolved_session: Approved for session
+  feishu_resolved_always: Approved permanently
+  feishu_resolved_deny: Denied
+  feishu_resolved_default: Resolved
+  feishu_resolved_body: 'by {user_name}
+
+
+    ```
+
+    {command}
+
+    ```'
+  feishu_fail_unauthorized_title: ⚠️ Not authorized
+  feishu_fail_unauthorized_body: Your account is not allowed to act on this approval. Use an authorized account, or ask an admin to check FEISHU_GROUP_POLICY / allowlists. **The request is still waiting** — unauthorized clicks do not cancel it.
+  feishu_fail_already_resolved_title: ℹ️ Already handled
+  feishu_fail_already_resolved_body: This approval was already resolved or has expired. No further action needed.
+  feishu_fail_chat_mismatch_title: ⚠️ Invalid click
+  feishu_fail_chat_mismatch_body: Please click the original approval card in its chat. Do not forward it elsewhere.
+  feishu_fail_missing_id_title: ⚠️ Invalid request
+  feishu_fail_missing_id_body: Missing approval id; this click cannot be processed.
+  feishu_fail_submit_failed_title: ⚠️ Submit failed
+  feishu_fail_submit_failed_body: Could not schedule the approval result. Retry later or re-trigger the action in the original conversation.
+  feishu_fail_default_title: ⚠️ Failed
+  feishu_fail_default_body: The approval action did not take effect. Check logs or contact an admin.
+  feishu_permanent_disabled: 💡 Permanent approval is disabled. Choose Allow Once or Session instead.
+  feishu_smart_deny_note: '🤖 **Smart DENY:** The smart-approval model assessed this command as genuinely dangerous.
+
+
+    You can still override, but **only for this single operation**. Session and Always are unavailable so one click cannot weaken protection for similar later commands.'
+  qqbot_permanent_disabled: 💡 Permanent approval is disabled. Choose Allow Once instead.
+  yolo_auto_resolved: 🔄 YOLO mode enabled — {count} pending approval(s) auto-resolved.
+  qqbot_exec_title: 🔐 **Command Execution Approval**
+  qqbot_exec_title_smart_deny: 🔐 **Smart DENY — Allow Once Only**
+  qqbot_exec_subtitle: Execute this command?
+  qqbot_plugin_title: '**Approval Request**'
+  qqbot_cwd_label: '📁 Directory: {cwd}'
+  qqbot_reason_label: 📝 {description}
+  qqbot_tool_label: '🔧 Tool: {tool_name}'
+  qqbot_timeout_label: '⏱️ Timeout: {timeout} seconds'
+  qqbot_btn_once: ✅ Allow Once
+  qqbot_btn_always: ⭐ Always Allow
+  qqbot_btn_deny: ❌ Deny
+  qqbot_visited_once: Allowed
+  qqbot_visited_always: Always Allowed
+  qqbot_visited_deny: Denied
+  qqbot_smart_deny_note: '🤖 **Smart DENY:** The smart-approval model assessed this command as genuinely dangerous.
+
+
+    You can still override, but **only for this single operation**. Always Allow is unavailable so one click cannot weaken protection for similar later commands.'
+  reason_label: 'Reason: {description}'
+  scan_prefix: Security scan
+  slash_confirm:
+    destructive_title: ⚠️  /{command} — destroys conversation state
+    destructive_detail_default: This will discard the current conversation history. This cannot be undone.
+    mcp_title: ⚠️  /{command} — Prompt cache invalidation warning
+    mcp_detail: Reloading MCP servers rebuilds the tool set for this session and invalidates the provider prompt cache. The next message will re-send full input tokens (can be expensive on long-context or high-reasoning models).
+    choice_once: Approve Once
+    choice_always: Always Approve
+    choice_cancel: Cancel
+    hint_destructive_once: proceed this time only
+    hint_destructive_always: proceed and silence this prompt permanently
+    hint_destructive_cancel: keep current conversation
+    hint_mcp_once: reload now
+    hint_mcp_always: reload now and silence this prompt permanently
+    hint_mcp_cancel: leave MCP tools unchanged
+    cancelled_no_input: 🟡 /{command} cancelled (no input).
+    cancelled_unrecognized: 🟡 Unrecognized choice '{raw}'. /{command} cancelled.
+    cancelled_explicit_destructive: 🟡 /{command} cancelled. Conversation unchanged.
+    cancelled_explicit_mcp: 🟡 /{command} cancelled. MCP tools unchanged.
+    optout_saved_destructive: 🔒 Future /clear, /new, /reset, and /undo will run without confirmation.
+    optout_saved_mcp: 🔒 Future /{command} calls will run without confirmation.
+    optout_hint_destructive: '   Re-enable via `approvals.destructive_slash_confirm: true` in config.yaml.'
+    optout_hint_mcp: '   Re-enable via `approvals.mcp_reload_confirm: true` in config.yaml.'
+    optout_failed_destructive: ⚠️  Couldn't persist opt-out — proceeding once.
+    optout_failed_mcp: ⚠️  Couldn't persist opt-out — reloading once.
+    reloading_mcp: 🔄 Reloading MCP servers...
+    mcp_config_changed: 🔄 MCP server config changed — reloading connections...
+    reloading_skills: 🔄 Reloading skills...
+  dangerous_desc:
+    delete_in_root_path: delete in root path
+    recursive_delete: recursive delete
+    recursive_delete_long_flag: recursive delete (long flag)
+    world_other_writable_permissions: world/other-writable permissions
+    recursive_world_other_writable_long_flag: recursive world/other-writable (long flag)
+    recursive_chown_to_root: recursive chown to root
+    recursive_chown_to_root_long_flag: recursive chown to root (long flag)
+    format_filesystem: format filesystem
+    disk_copy: disk copy
+    write_to_block_device: write to block device
+    sql_drop: SQL DROP
+    sql_delete_without_where: SQL DELETE without WHERE
+    sql_truncate: SQL TRUNCATE
+    overwrite_system_config: overwrite system config
+    stop_restart_system_service: stop/restart system service
+    system_shutdown_reboot: system shutdown/reboot
+    init_0_6_shutdown_reboot: init 0/6 (shutdown/reboot)
+    systemctl_poweroff_reboot: systemctl poweroff/reboot
+    telinit_0_6_shutdown_reboot: telinit 0/6 (shutdown/reboot)
+    kill_all_processes: kill all processes
+    force_kill_processes: force kill processes
+    force_kill_processes_killall_kill: force kill processes (killall -KILL)
+    force_kill_processes_killall_s_kill: force kill processes (killall -s KILL)
+    kill_processes_by_regex_killall_r: kill processes by regex (killall -r)
+    fork_bomb: fork bomb
+    shell_command_via_c_lc_flag: shell command via -c/-lc flag
+    script_execution_via_e_c_flag: script execution via -e/-c flag
+    pipe_remote_content_to_shell: pipe remote content to shell
+    execute_remote_script_via_process_substitution: execute remote script via process substitution
+    overwrite_system_file_via_tee: overwrite system file via tee
+    overwrite_system_file_via_redirection: overwrite system file via redirection
+    overwrite_project_env_config_via_tee: overwrite project env/config via tee
+    overwrite_project_env_config_via_redirection: overwrite project env/config via redirection
+    xargs_with_rm: xargs with rm
+    find_exec_execdir_rm: find -exec/-execdir rm
+    find_delete: find -delete
+    stop_restart_hermes_gateway_kills_running_agents: stop/restart hermes gateway (kills running agents)
+    hermes_update_restarts_gateway_kills_running_agents: hermes update (restarts gateway, kills running agents)
+    start_gateway_outside_systemd: start gateway outside systemd (use 'systemctl --user restart hermes-gateway')
+    nohup_gateway_run: start gateway outside systemd (use 'systemctl --user restart hermes-gateway')
+    kill_hermes_gateway_process_self_termination: kill hermes/gateway process (self-termination)
+    kill_process_via_pgrep_expansion_self_termination: kill process via pgrep expansion (self-termination)
+    kill_process_via_backtick_pgrep_expansion_self_termination: kill process via backtick pgrep expansion (self-termination)
+    copy_move_file_into_system_config_path: copy/move file into system config path
+    overwrite_project_env_config_file: overwrite project env/config file
+    in_place_edit_of_system_config: in-place edit of system config
+    in_place_edit_of_system_config_long_flag: in-place edit of system config (long flag)
+    script_execution_via_heredoc: script execution via heredoc
+    git_reset_hard_destroys_uncommitted_changes: git reset --hard (destroys uncommitted changes)
+    git_force_push_rewrites_remote_history: git force push (rewrites remote history)
+    git_force_push_short_flag_rewrites_remote_history: git force push short flag (rewrites remote history)
+    git_clean_with_force_deletes_untracked_files: git clean with force (deletes untracked files)
+    git_branch_force_delete: git branch force delete
+    chmod_x_followed_by_immediate_execution: chmod +x followed by immediate execution
+    sudo_with_privilege_flag_stdin_askpass_shell_list: sudo with privilege flag (stdin/askpass/shell/list)
+    sudo_with_combined_flag_privilege_escalation: sudo with combined-flag privilege escalation
+    windows_cmd_destructive_delete: Windows cmd destructive delete
+    windows_powershell_destructive_delete: Windows PowerShell destructive delete
+    powershell_encoded_command_execution: PowerShell encoded command execution
+    execute_remote_content_via_command_substitution: execute remote content via command substitution
+    pipe_decoded_content_to_shell_possible_command_obfuscation: pipe decoded content to shell (possible command obfuscation)
+    pipe_xxd_decoded_content_to_shell_possible_command_obfuscation: pipe xxd-decoded content to shell (possible command obfuscation)
+    pipe_tr_transformed_output_to_shell_possible_command_obfuscation: pipe tr-transformed output to shell (possible command obfuscation)
+    pipe_openssl_decoded_content_to_shell_possible_command_obfuscation: pipe openssl-decoded content to shell (possible command obfuscation)
+    docker_compose_restart_stop_kill_down_container_lifecycle: docker compose restart/stop/kill/down (container lifecycle)
+    docker_restart_stop_kill_container_lifecycle: docker restart/stop/kill (container lifecycle)
+    start_gateway_outside_systemd_use_systemctl_user_restart_hermes_gateway: start gateway outside systemd (use 'systemctl --user restart hermes-gateway')
+    kill_process_via_pgrep_pidof_expansion_self_termination: kill process via pgrep/pidof expansion (self-termination)
+    kill_process_via_backtick_pgrep_pidof_expansion_self_termination: kill process via backtick pgrep/pidof expansion (self-termination)
+    stop_restart_hermes_launchd_service_kills_running_agents: stop/restart hermes launchd service (kills running agents)
+    copy_move_file_into_sensitive_credential_ssh_shell_rc_path: copy/move file into sensitive credential/SSH/shell-rc path
+    in_place_edit_of_sensitive_credential_ssh_shell_rc_path: in-place edit of sensitive credential/SSH/shell-rc path
+    in_place_edit_of_sensitive_credential_ssh_shell_rc_path_long_flag: in-place edit of sensitive credential/SSH/shell-rc path (long flag)
+    in_place_edit_of_sensitive_credential_ssh_shell_rc_path_perl_ruby: in-place edit of sensitive credential/SSH/shell-rc path (perl/ruby)
+    in_place_edit_of_hermes_config_env: in-place edit of Hermes config/env
+    in_place_edit_of_hermes_config_env_long_flag: in-place edit of Hermes config/env (long flag)
+    in_place_edit_of_hermes_config_env_perl_ruby: in-place edit of Hermes config/env (perl/ruby)
+    shell_execution_via_heredoc: shell execution via heredoc
+    git_branch_force_delete_long_flags: git branch force delete (long flags)
+    git_branch_force_delete_long_flags_force_first: git branch force delete (long flags, force-first)
+  hardline_desc:
+    recursive_delete_of_root_filesystem: recursive delete of root filesystem
+    recursive_delete_of_system_directory: recursive delete of system directory
+    recursive_delete_of_home_directory: recursive delete of home directory
+    format_filesystem_mkfs: format filesystem (mkfs)
+    dd_to_raw_block_device: dd to raw block device
+    redirect_to_raw_block_device: redirect to raw block device
+    fork_bomb: fork bomb
+    kill_all_processes: kill all processes
+    system_shutdown_reboot: system shutdown/reboot
+    init_0_6_shutdown_reboot: init 0/6 (shutdown/reboot)
+    systemctl_poweroff_reboot: systemctl poweroff/reboot
+    telinit_0_6_shutdown_reboot: telinit 0/6 (shutdown/reboot)
+  tirith:
+    raw_ip_url:
+      title: URL uses raw IP address
+    plain_http_to_sink:
+      title: Plain HTTP URL in execution context
+    private_network_access:
+      title: Private network access
+    curl_pipe_shell:
+      title: 'Pipe to interpreter: curl | shell'
+    non_ascii_hostname:
+      title: Non-ASCII characters in hostname
+    punycode_domain:
+      title: Punycode domain detected
+    lookalike_tld:
+      title: Lookalike TLD detected
+    ansi_escapes:
+      title: ANSI escape sequences in pasted content
+    archive_extract:
+      title: Archive extraction to sensitive path
+    base64_decode_execute:
+      title: Base64 decode and execute
+    bidi_controls:
+      title: Unicode bidirectional override characters
+    clipboard_hidden:
+      title: Hidden content in clipboard paste
+    code_injection_env:
+      title: Code injection via environment variable
+    command_network_deny:
+      title: Policy network deny list match
+    config_injection:
+      title: Prompt injection in AI config file
+    config_invisible_unicode:
+      title: Invisible Unicode in config file
+    config_malformed:
+      title: Malformed configuration file
+    config_non_ascii:
+      title: Non-ASCII characters in ASCII config file
+    config_suspicious_indicator:
+      title: Suspicious indicator in config file
+    confusable_domain:
+      title: Confusable domain name
+    confusable_text:
+      title: Unicode confusable text
+    control_chars:
+      title: Display-overwriting control characters
+    credential_file_sweep:
+      title: Multiple credential file access
+    credential_in_text:
+      title: Known credential pattern detected
+    custom_rule_match:
+      title: Custom rule match
+    data_exfiltration:
+      title: Data exfiltration via upload
+    docker_remote_priv_esc:
+      title: Docker remote daemon privilege escalation
+    docker_untrusted_registry:
+      title: Docker image from untrusted registry
+    dotfile_overwrite:
+      title: Dotfile overwrite via redirect
+    double_encoding:
+      title: Double percent-encoding in URL
+    dynamic_code_execution:
+      title: Dynamic code execution with encoded payload
+    git_typosquat:
+      title: Git repository typosquatting
+    hangul_filler:
+      title: Hangul filler characters
+    hidden_color_content:
+      title: Same-color hidden text
+    hidden_css_content:
+      title: CSS-hidden content
+    hidden_html_attribute:
+      title: Hidden HTML attribute
+    hidden_multiline:
+      title: Hidden commands in multiline paste
+    high_entropy_secret:
+      title: High-entropy secret detected
+    homoglyph_in_path:
+      title: Homoglyph in URL path
+    html_comment:
+      title: HTML comment
+    httpie_pipe_shell:
+      title: HTTPie piped to shell
+    insecure_tls_flags:
+      title: Insecure TLS flags
+    interpreter_hijack_env:
+      title: Interpreter module path hijack
+    invalid_host_chars:
+      title: Invalid characters in hostname
+    invisible_math_operator:
+      title: Invisible mathematical operators
+    invisible_whitespace:
+      title: Unusual invisible whitespace
+    license_required:
+      title: License required
+    markdown_comment:
+      title: HTML comment in Markdown
+    mcp_duplicate_server_name:
+      title: Duplicate MCP server name
+    mcp_insecure_server:
+      title: MCP server using insecure transport
+    mcp_overly_permissive:
+      title: Overly permissive MCP server
+    mcp_suspicious_args:
+      title: Shell metacharacters in MCP server args
+    mcp_untrusted_server:
+      title: MCP server from untrusted source
+    metadata_endpoint:
+      title: Cloud metadata endpoint access
+    mixed_script_in_label:
+      title: Mixed Unicode scripts in hostname label
+    non_ascii_path:
+      title: Non-ASCII characters in URL path
+    non_standard_port:
+      title: Non-standard port on known domain
+    npm_url_install:
+      title: npm install from non-registry URL
+    obfuscated_payload:
+      title: Obfuscated code payload
+    pdf_hidden_text:
+      title: Hidden text in PDF
+    pip_url_install:
+      title: pip install from non-PyPI URL
+    pipe_to_interpreter:
+      title: Pipe to shell interpreter
+    policy_blocklisted:
+      title: Policy blocklist match
+    private_key_exposed:
+      title: Private key exposed
+    proc_mem_access:
+      title: Process memory access via /proc
+    proxy_env_set:
+      title: Proxy environment variable set
+    schemeless_to_sink:
+      title: Schemeless URL in download command
+    sensitive_env_export:
+      title: Sensitive credential exported to environment
+    server_cloaking:
+      title: Server-side content cloaking
+    shell_injection_env:
+      title: Shell injection via startup variable
+    shortened_url:
+      title: URL shortener detected
+    suspicious_code_exfiltration:
+      title: Suspicious network request in code file
+    threat_cisa_kev:
+      title: CISA Known Exploited Vulnerability
+    threat_malicious_ip:
+      title: Known malicious IP address
+    threat_malicious_package:
+      title: Known malicious package
+    threat_malicious_url:
+      title: Known malicious URL
+    threat_osv_vulnerable:
+      title: OSV vulnerability detected
+    threat_package_similar_name:
+      title: Package name similar to popular package
+    threat_package_typosquat:
+      title: Confirmed package typosquat
+    threat_phishing_url:
+      title: Known phishing URL
+    threat_safe_browsing:
+      title: Google Safe Browsing hit
+    threat_suspicious_package:
+      title: Suspicious package metadata
+    threat_threat_fox_ioc:
+      title: ThreatFox IOC match
+    threat_tor_exit_node:
+      title: Tor exit node IP
+    trailing_dot_whitespace:
+      title: Trailing dot or whitespace in hostname
+    unicode_tags:
+      title: Unicode Tag characters
+    userinfo_trick:
+      title: Userinfo domain impersonation
+    variation_selector:
+      title: Unicode variation selectors
+    vet_not_configured:
+      title: cargo-vet not configured
+    web3_address_in_url:
+      title: Ethereum address in URL
+    web3_rpc_endpoint:
+      title: Web3 RPC endpoint
+    wget_pipe_shell:
+      title: wget piped to shell
+    xh_pipe_shell:
+      title: xh piped to shell
+    zero_width_chars:
+      title: Zero-width characters
+  feishu_update_card_title: ⚕ Update Needs Your Input
+  feishu_update_default_hint: 'Default: `{default}`'
+  feishu_update_yes: 'Yes'
+  feishu_update_no: 'No'
+  feishu_update_title: 'Update prompt answered: {label}'
+  feishu_update_body: Answered by **{user_name}**
 gateway:
-  approval_expired: "⚠️ 승인이 만료되었습니다 (에이전트가 더 이상 대기하지 않습니다). 에이전트에게 다시 시도하도록 요청하세요."
-  draining:         "⏳{profile_tag} 재시작 전에 활성 에이전트 {count}명을 정리하는 중..."
-  goal_cleared:     "✓ 목표가 삭제되었습니다."
-  no_active_goal:   "활성 목표가 없습니다."
-  config_read_failed: "⚠️ config.yaml을 읽을 수 없습니다: {error}"
-  config_save_failed: "⚠️ 설정을 저장할 수 없습니다: {error}"
-
-  # Platform adapter fallback messages — shown when a message cannot be delivered
-  # in its original format (rich formatting, attachments, clarify buttons, etc.).
-  formatting_failed_prefix: "(Response formatting failed, plain text:)"
-  delivery_failed_notice: "⚠️ Message delivery failed after multiple attempts. Please try again — your request was processed but the response could not be sent."
-  clarify_question: "❓ {question}"
-  clarify_choices: "❓ {question}\n\n{choices}\n\nReply with the number, the option text, or your own answer."
-  file_attachment_failed: "⚠️ Couldn't deliver the file attachment."
-  file_attachment_failed_with_name: "⚠️ Couldn't deliver the file attachment ({file_name})."
-
-  # Generic error shown to the user when message processing crashes unexpectedly.
-  handler_error: "Sorry, I encountered an error ({error_type}).\n{error_detail}\nTry again or use /reset to start a fresh session."
-
-  # Background task completion/failure notifications.
-  background_task_complete: "✅ Background task complete\nPrompt: \"{preview}\"\n\n{response}"
-  background_task_no_response: "(No response generated)"
-  background_task_error_prefix: "Error: {error}"
-  background_task_failed: "❌ Background task {task_id} failed: {error}"
+  approval_expired: ⚠️ 승인이 만료되었습니다 (에이전트가 더 이상 대기하지 않습니다). 에이전트에게 다시 시도하도록 요청하세요.
+  draining: ⏳{profile_tag} 재시작 전에 활성 에이전트 {count}명을 정리하는 중...
+  goal_cleared: ✓ 목표가 삭제되었습니다.
+  no_active_goal: 활성 목표가 없습니다.
+  config_read_failed: '⚠️ config.yaml을 읽을 수 없습니다: {error}'
+  config_save_failed: '⚠️ 설정을 저장할 수 없습니다: {error}'
+  formatting_failed_prefix: (Response formatting failed, plain text:)
+  delivery_failed_notice: ⚠️ Message delivery failed after multiple attempts. Please try again — your request was processed but the response could not be sent.
+  clarify_question: ❓ {question}
+  clarify_choices: '❓ {question}
 
 
+    {choices}
+
+
+    Reply with the number, the option text, or your own answer.'
+  file_attachment_failed: ⚠️ Couldn't deliver the file attachment.
+  file_attachment_failed_with_name: ⚠️ Couldn't deliver the file attachment ({file_name}).
+  handler_error: 'Sorry, I encountered an error ({error_type}).
+
+    {error_detail}
+
+    Try again or use /reset to start a fresh session.'
+  background_task_complete: '✅ Background task complete
+
+    Prompt: "{preview}"
+
+
+    {response}'
+  background_task_no_response: (No response generated)
+  background_task_error_prefix: 'Error: {error}'
+  background_task_failed: '❌ Background task {task_id} failed: {error}'
   model:
-    error_prefix:           "오류: {error}"
-    code_skew_restart_required: "This gateway{profile_tag} is running code from {boot_rev} but the checkout on disk is now {disk_rev}. Switching models would risk a stale-module crash — restart the gateway to load the new code: hermes gateway restart"
-    switched:               "모델이 `{model}`(으)로 전환되었습니다"
-    provider_label:         "제공자: {provider}"
-    context_label:          "컨텍스트: {tokens} 토큰"
-    max_output_label:       "최대 출력: {tokens} 토큰"
-    cost_label:             "비용: {cost}"
-    capabilities_label:     "기능: {capabilities}"
-    prompt_caching_enabled: "프롬프트 캐싱: 활성화됨"
-    warning_prefix:         "경고: {warning}"
-    saved_global:           "config.yaml에 저장됨 (`--global`)"
-    session_only_hint:      "_(세션 한정 — 영구 저장하려면 `--global`을 추가하세요)_"
-    current_label:          "현재: `{model}` ({provider})"
-    current_tag:            " (현재)"
-    more_models_suffix:     " (+{count}개 더 있음)"
-    usage_switch_model:     "`/model <name>` — 모델 전환"
-    usage_switch_provider:  "`/model <name> --provider <slug>` — 제공자 전환"
-    usage_persist:          "`/model <name> --global` — 영구 저장"
+    error_prefix: '오류: {error}'
+    code_skew_restart_required: 'This gateway{profile_tag} is running code from {boot_rev} but the checkout on disk is now {disk_rev}. Switching models would risk a stale-module crash — restart the gateway to load the new code: hermes gateway restart'
+    switched: 모델이 `{model}`(으)로 전환되었습니다
+    provider_label: '제공자: {provider}'
+    context_label: '컨텍스트: {tokens} 토큰'
+    max_output_label: '최대 출력: {tokens} 토큰'
+    cost_label: '비용: {cost}'
+    capabilities_label: '기능: {capabilities}'
+    prompt_caching_enabled: '프롬프트 캐싱: 활성화됨'
+    warning_prefix: '경고: {warning}'
+    saved_global: config.yaml에 저장됨 (`--global`)
+    session_only_hint: _(세션 한정 — 영구 저장하려면 `--global`을 추가하세요)_
+    current_label: '현재: `{model}` ({provider})'
+    current_tag: ' (현재)'
+    more_models_suffix: ' (+{count}개 더 있음)'
+    usage_switch_model: '`/model <name>` — 모델 전환'
+    usage_switch_provider: '`/model <name> --provider <slug>` — 제공자 전환'
+    usage_persist: '`/model <name> --global` — 영구 저장'
+    rate_limited: ⏱️ The model provider is rate-limiting requests. Please wait a moment and try again.
+    info_model: '◆ Model: `{model}`'
+    info_provider: '◆ Provider: {provider}'
+    info_context: '◆ Context: {ctx} tokens ({source})'
+    info_endpoint: '◆ Endpoint: {base_url}'
+    ctx_source_config: config
+    ctx_source_default: default — set model.context_length in config to override
+    ctx_source_detected: detected
+    content_policy_recovery_hint: Try rephrasing the request, narrowing the context, or adding a fallback provider with `hermes fallback add`.
+    content_policy_trying_fallback: Model declined to respond (safety refusal) — trying fallback...
+    content_policy_refusal_status: The model declined to respond to this request (safety refusal).
+    content_policy_refusal_response: The model declined to respond to this request (safety refusal — not a Hermes/gateway failure).
+    content_policy_explanation: 'Model''s explanation: {explanation}'
+    content_policy_no_explanation: The model returned no explanation.
+    content_policy_provider_blocked: The model provider's safety filter blocked this request (not a Hermes/gateway failure).
+    content_policy_provider_message: 'Provider message: {message}'
+    content_policy_provider_trying_fallback: Provider safety filter blocked this request — trying fallback...
+    validation_empty: Model name cannot be empty.
+    validation_no_spaces: Model names cannot contain spaces.
+    validation_moa_not_found: MoA preset `{requested}` was not found. Run `hermes moa list`.
+    validation_moa_read_error: 'Could not read MoA presets: {error}'
+    validation_auto_corrected: Auto-corrected `{requested}` → `{corrected}`
+    validation_invalid_model: Invalid model
+    validation_could_not_validate: 'Could not validate `{model}`: {error}'
+    validation_not_found_in_provider: Model `{requested}` was not found in this provider's model listing.
+    validation_lmstudio_auth: Set `LM_API_KEY` (or update it) to match the server's bearer token.
+    validation_lmstudio_unreachable: Could not reach LM Studio's `/api/v1/models` to validate `{requested}`.
+    validation_lmstudio_no_models_1: 'LM Studio is reachable but no chat-capable models are loaded. '
+    validation_lmstudio_no_models_2: Load `{requested}` in LM Studio (Developer tab → Load Model) and try again.
+    validation_lmstudio_not_found: Model `{requested}` was not found in LM Studio's model listing.
+    validation_custom_not_found_1: 'Note: `{requested}` was not found in this custom endpoint''s model listing ({url}). '
+    validation_custom_not_found_2: It may still work if the server supports hidden or aliased models.
+    validation_custom_fallback: "\n  Endpoint verification succeeded after trying `{url}`. Consider saving that as your base URL."
+    validation_custom_unreachable: 'Note: could not reach this custom endpoint''s model listing at `{url}`. '
+    validation_custom_unreachable_2: Hermes will still save `{requested}`, but the endpoint should expose `/models` for verification.
+    validation_custom_anthropic_note: "\n  Many Anthropic-compatible proxies do not implement the Models API (GET /v1/models).  The model name has been accepted without verification."
+    validation_custom_suggested_url: "\n  If this server expects `/v1`, try base URL: `{url}`"
+    validation_codex_not_plausible: '`{requested}` doesn''t look like a {provider_label} model and isn''t in its listing, so it was not accepted. If it belongs to another configured provider, switch with `--provider <slug>` (or select it from the `/model` picker).'
+    validation_catalog_not_found: 'Note: `{requested}` was not found in the {provider_label} model listing. '
+    validation_catalog_not_found_2: It may still work if your account has access to a newer or hidden model ID.
+    validation_minimax_not_found: 'Note: `{requested}` was not found in the MiniMax catalog.'
+    validation_minimax_no_models_endpoint: "\n  MiniMax does not expose a /models endpoint, so Hermes cannot verify the model name."
+    validation_minimax_may_still_work: "\n  The model may still work if it exists on the server."
+    validation_anthropic_not_found: 'Note: `{requested}` was not found in Anthropic''s /v1/models listing. '
+    validation_anthropic_not_found_2: It may still work if you have early-access or snapshot IDs.
+    validation_anthropic_messages_unverified: 'Note: could not verify `{requested}` against this endpoint''s model listing.  Many Anthropic-compatible proxies do not implement GET /v1/models.  The model name has been accepted without verification.'
+    validation_live_not_found_catalog: 'Note: `{requested}` was not found in the live /v1/models listing but exists in the curated catalog — accepted.'
+    validation_bedrock_not_found: 'Note: `{requested}` was not found in Bedrock model discovery for {region}. '
+    validation_bedrock_not_found_2: It may still work with custom inference profiles or cross-account access.
+    validation_catalog_fallback_not_found: 'Note: `{requested}` was not found in the {provider_label} curated catalog and the /models endpoint was unreachable.'
+    validation_catalog_fallback_may_work: "\n  The model may still work if it exists on the provider."
+    validation_api_unreachable: 'Note: could not reach the {provider_label} API to validate `{requested}`. If the service isn''t down, this model may not be valid.'
+    validation_hermes_non_agentic: Nous Research Hermes 3 & 4 models are NOT agentic and are not designed for use with Hermes Agent. They lack the tool-calling capabilities required for agent workflows. Consider using an agentic model instead (Claude, GPT, Gemini, DeepSeek, etc.).
+    switch_unknown_provider: Unknown provider '{provider}'. Check 'hermes model' for available providers, or define it in config.yaml under 'providers:'.
+    switch_config_issues: '
 
+
+      Run ''hermes doctor'' — config issues detected:'
+    switch_alias_no_credentials: Provider '{alias}' is an alias that routes through {provider}, which has no credentials configured.{hint}
+    switch_no_model_detected: 'No model detected on {provider} ({base_url}). Specify the model explicitly: /model <model-name> --provider {provider_slug}'
+    switch_no_base_url: 'Provider ''{provider}'' has no base URL configured. Specify a model: /model <model-name> --provider {provider_slug}'
+    switch_alias_not_found: Alias '{alias}' maps to {vendor}/{family} but no matching model was found in any provider catalog. Try specifying the full model name.
+    switch_multiple_providers: '''{model}'' is declared by multiple configured providers ({providers}). Re-run with --provider <slug> to choose which one to use.'
+    switch_credential_error: 'Could not resolve credentials for provider ''{provider}'': {error}'
+    provider_auth_failed: ⚠️ Provider authentication failed. Check the configured credentials; raw provider details are in the gateway logs.
+    provider_policy_rejected: ⚠️ The model provider rejected the request. I kept the raw provider error out of chat; check gateway logs for details or try rephrasing.
+    provider_failed_after_retries: ⚠️ The model provider failed after retries. I kept raw provider details out of chat; check gateway logs for diagnostics.
+    context_too_large: '⚠️ Session too large for the model''s context window.
+
+      Use /compact to compress the conversation, or /reset to start fresh.'
+    request_failed: 'The request failed: {error}
+
+      Try again or use /reset to start a fresh session.'
+    no_response_generated: ⚠️ Processing completed but no response was generated. This may be a transient error — try sending your message again.
+    not_processed_prev_turn: ⚠️ Your message wasn't processed (the previous turn was still being cleaned up). Please send it again.
+    empty_tool_response: ⚠️ The model returned no response after processing tool results. This can happen with some models — try again or rephrase your question.
+    gateway_restarting: '⚠️ The gateway{profile_tag} is restarting, so your message wasn''t fully processed.
+
+      Please send it again in a few seconds.'
+    compression_aborted: ⚠️ Context compression aborted ({error}). No messages were dropped — conversation is unchanged. Run /compress to retry, /reset for a clean session, or check your auxiliary.compression model configuration.
   agents:
-    header:                "🤖 **활성 에이전트 및 작업**"
-    active_agents:         "**활성 에이전트:** {count}"
-    this_chat:             " · 이 채팅"
-    more:                  "... 외 {count}개 더"
-    running_processes:     "**실행 중인 백그라운드 프로세스:** {count}"
-    async_jobs:            "**게이트웨이 비동기 작업:** {count}"
-    background_delegations: "**백그라운드 위임:** {count}"
-    none:                  "활성 에이전트나 실행 중인 작업이 없습니다."
-    state_starting:        "시작 중"
-    state_running:         "실행 중"
-
+    header: 🤖 **활성 에이전트 및 작업**
+    active_agents: '**활성 에이전트:** {count}'
+    this_chat: ' · 이 채팅'
+    more: '... 외 {count}개 더'
+    running_processes: '**실행 중인 백그라운드 프로세스:** {count}'
+    async_jobs: '**게이트웨이 비동기 작업:** {count}'
+    background_delegations: '**백그라운드 위임:** {count}'
+    none: 활성 에이전트나 실행 중인 작업이 없습니다.
+    state_starting: 시작 중
+    state_running: 실행 중
   approve:
-    no_pending:            "승인 대기 중인 명령이 없습니다."
-    once_singular:         "✅ 명령이 승인되었습니다. 에이전트가 재개됩니다..."
-    once_plural:           "✅ 명령이 승인되었습니다 ({count}개). 에이전트가 재개됩니다..."
-    session_singular:      "✅ 명령이 승인되었습니다 (이 세션 동안 패턴 승인됨). 에이전트가 재개됩니다..."
-    session_plural:        "✅ 명령이 승인되었습니다 (이 세션 동안 패턴 승인됨) ({count}개). 에이전트가 재개됩니다..."
-    always_singular:       "✅ 명령이 승인되었습니다 (패턴 영구 승인됨). 에이전트가 재개됩니다..."
-    always_plural:         "✅ 명령이 승인되었습니다 (패턴 영구 승인됨) ({count}개). 에이전트가 재개됩니다..."
-
+    no_pending: 승인 대기 중인 명령이 없습니다.
+    once_singular: ✅ 명령이 승인되었습니다. 에이전트가 재개됩니다...
+    once_plural: ✅ 명령이 승인되었습니다 ({count}개). 에이전트가 재개됩니다...
+    session_singular: ✅ 명령이 승인되었습니다 (이 세션 동안 패턴 승인됨). 에이전트가 재개됩니다...
+    session_plural: ✅ 명령이 승인되었습니다 (이 세션 동안 패턴 승인됨) ({count}개). 에이전트가 재개됩니다...
+    always_singular: ✅ 명령이 승인되었습니다 (패턴 영구 승인됨). 에이전트가 재개됩니다...
+    always_plural: ✅ 명령이 승인되었습니다 (패턴 영구 승인됨) ({count}개). 에이전트가 재개됩니다...
+    singular: ✅ Memory updated — approved {count} proposal(s).
   background:
-    usage:                 "사용법: /background <prompt>\n예시: /background 오늘 HN 인기 글을 요약해줘\n\n프롬프트를 별도 세션에서 실행합니다. 계속 대화할 수 있으며, 완료되면 결과가 여기에 표시됩니다."
-    started:               "🔄 백그라운드 작업이 시작되었습니다: \"{preview}\"\n작업 ID: {task_id}\n계속 대화하실 수 있습니다 — 완료되면 결과가 여기에 표시됩니다."
+    usage: '사용법: /background <prompt>
 
+      예시: /background 오늘 HN 인기 글을 요약해줘
+
+
+      프롬프트를 별도 세션에서 실행합니다. 계속 대화할 수 있으며, 완료되면 결과가 여기에 표시됩니다.'
+    started: '🔄 백그라운드 작업이 시작되었습니다: "{preview}"
+
+      작업 ID: {task_id}
+
+      계속 대화하실 수 있습니다 — 완료되면 결과가 여기에 표시됩니다.'
   branch:
-    db_unavailable:        "세션 데이터베이스를 사용할 수 없습니다."
-    no_conversation:       "분기할 대화가 없습니다 — 먼저 메시지를 보내주세요."
-    create_failed:         "분기 생성에 실패했습니다: {error}"
-    switch_failed:         "분기는 생성되었으나 전환에 실패했습니다."
-    branched_one:          "⑂ **{title}**(으)로 분기했습니다 (메시지 {count}개 복사됨)\n원본: `{parent}`\n분기: `{new}`\n원본으로 돌아가려면 `/resume`을 사용하세요."
-    branched_many:         "⑂ **{title}**(으)로 분기했습니다 (메시지 {count}개 복사됨)\n원본: `{parent}`\n분기: `{new}`\n원본으로 돌아가려면 `/resume`을 사용하세요."
+    db_unavailable: 세션 데이터베이스를 사용할 수 없습니다.
+    no_conversation: 분기할 대화가 없습니다 — 먼저 메시지를 보내주세요.
+    create_failed: '분기 생성에 실패했습니다: {error}'
+    switch_failed: 분기는 생성되었으나 전환에 실패했습니다.
+    branched_one: '⑂ **{title}**(으)로 분기했습니다 (메시지 {count}개 복사됨)
 
+      원본: `{parent}`
+
+      분기: `{new}`
+
+      원본으로 돌아가려면 `/resume`을 사용하세요.'
+    branched_many: '⑂ **{title}**(으)로 분기했습니다 (메시지 {count}개 복사됨)
+
+      원본: `{parent}`
+
+      분기: `{new}`
+
+      원본으로 돌아가려면 `/resume`을 사용하세요.'
   commands:
-    usage:                 "사용법: `/commands [page]`"
-    skill_header:          "⚡ **스킬 명령**:"
-    default_desc:          "스킬 명령"
-    none:                  "사용 가능한 명령이 없습니다."
-    header:                "📚 **명령 목록** (총 {total}개, {page}/{total_pages} 페이지)"
-    nav_prev:              "`/commands {page}` ← 이전"
-    nav_next:              "다음 → `/commands {page}`"
-    out_of_range:          "_(요청한 페이지 {requested}이(가) 범위를 벗어났습니다. {page} 페이지를 표시합니다.)_"
-
+    usage: '사용법: `/commands [page]`'
+    skill_header: '⚡ **스킬 명령**:'
+    default_desc: 스킬 명령
+    none: 사용 가능한 명령이 없습니다.
+    header: 📚 **명령 목록** (총 {total}개, {page}/{total_pages} 페이지)
+    nav_prev: '`/commands {page}` ← 이전'
+    nav_next: 다음 → `/commands {page}`
+    out_of_range: _(요청한 페이지 {requested}이(가) 범위를 벗어났습니다. {page} 페이지를 표시합니다.)_
   compress:
-    not_enough:            "압축할 대화가 충분하지 않습니다 (최소 4개의 메시지가 필요합니다)."
-    no_provider:           "구성된 제공자가 없습니다 -- 압축할 수 없습니다."
-    nothing_to_do:         "아직 압축할 내용이 없습니다 (대화 내용이 모두 보호된 컨텍스트입니다)."
-    aggressive_unsupported: "--aggressive는 지원되지 않습니다. '/compress here [N]'으로 최근 대화만 유지하거나 /undo로 턴을 삭제하세요."
-    focus_line:            "초점: \"{topic}\""
-    summary_failed:        "⚠️ 요약 생성에 실패했습니다 ({error}). 과거 메시지 {count}개가 제거되어 자리표시자로 대체되었으며, 이전 컨텍스트는 더 이상 복구할 수 없습니다. auxiliary.compression 모델 설정을 확인해 보세요."
-    aborted:               "⚠️ 압축이 중단되었습니다 ({error}). 메시지가 삭제되지 않았으며 대화는 그대로 유지됩니다. 다시 시도하려면 /compress를 실행하거나, 새 세션을 시작하려면 /reset을 사용하거나, auxiliary.compression 모델 설정을 확인하세요."
-    aux_failed:            "ℹ️ 구성된 압축 모델 `{model}`이(가) 실패했습니다 ({error}). 메인 모델로 복구되어 컨텍스트는 보존되었지만, config.yaml의 `auxiliary.compression.model` 설정을 확인하는 것이 좋습니다."
-    failed:                "압축 실패: {error}"
-
+    not_enough: 압축할 대화가 충분하지 않습니다 (최소 4개의 메시지가 필요합니다).
+    no_provider: 구성된 제공자가 없습니다 -- 압축할 수 없습니다.
+    nothing_to_do: 아직 압축할 내용이 없습니다 (대화 내용이 모두 보호된 컨텍스트입니다).
+    aggressive_unsupported: --aggressive는 지원되지 않습니다. '/compress here [N]'으로 최근 대화만 유지하거나 /undo로 턴을 삭제하세요.
+    focus_line: '초점: "{topic}"'
+    summary_failed: ⚠️ 요약 생성에 실패했습니다 ({error}). 과거 메시지 {count}개가 제거되어 자리표시자로 대체되었으며, 이전 컨텍스트는 더 이상 복구할 수 없습니다. auxiliary.compression 모델 설정을 확인해 보세요.
+    aborted: ⚠️ 압축이 중단되었습니다 ({error}). 메시지가 삭제되지 않았으며 대화는 그대로 유지됩니다. 다시 시도하려면 /compress를 실행하거나, 새 세션을 시작하려면 /reset을 사용하거나, auxiliary.compression 모델 설정을 확인하세요.
+    aux_failed: ℹ️ 구성된 압축 모델 `{model}`이(가) 실패했습니다 ({error}). 메인 모델로 복구되어 컨텍스트는 보존되었지만, config.yaml의 `auxiliary.compression.model` 설정을 확인하는 것이 좋습니다.
+    failed: '압축 실패: {error}'
   debug:
-    upload_failed:         "✗ 디버그 보고서 업로드 실패: {error}"
-    header:                "**디버그 보고서가 업로드되었습니다:**"
-    auto_delete:           "⏱ 페이스트는 6시간 후 자동 삭제됩니다."
-    full_logs_hint:        "전체 로그 업로드는 CLI에서 `hermes debug share`를 사용하세요."
-    share_hint:            "지원을 받으려면 이 링크를 Hermes 팀과 공유하세요."
-
+    upload_failed: '✗ 디버그 보고서 업로드 실패: {error}'
+    header: '**디버그 보고서가 업로드되었습니다:**'
+    auto_delete: ⏱ 페이스트는 6시간 후 자동 삭제됩니다.
+    full_logs_hint: 전체 로그 업로드는 CLI에서 `hermes debug share`를 사용하세요.
+    share_hint: 지원을 받으려면 이 링크를 Hermes 팀과 공유하세요.
   deny:
-    stale:                 "❌ 명령이 거부되었습니다 (승인이 만료됨)."
-    no_pending:            "거부 대기 중인 명령이 없습니다."
-    denied_singular:       "❌ 명령이 거부되었습니다."
-    denied_plural:         "❌ 명령이 거부되었습니다 ({count}개)."
-    denied_reason_singular: "❌ 명령이 거부되었습니다. 사유를 에이전트에 전달함: \"{reason}\""
-    denied_reason_plural:  "❌ 명령이 거부되었습니다 ({count}개). 사유를 에이전트에 전달함: \"{reason}\""
-
+    stale: ❌ 명령이 거부되었습니다 (승인이 만료됨).
+    no_pending: 거부 대기 중인 명령이 없습니다.
+    denied_singular: ❌ 명령이 거부되었습니다.
+    denied_plural: ❌ 명령이 거부되었습니다 ({count}개).
+    denied_reason_singular: '❌ 명령이 거부되었습니다. 사유를 에이전트에 전달함: "{reason}"'
+    denied_reason_plural: '❌ 명령이 거부되었습니다 ({count}개). 사유를 에이전트에 전달함: "{reason}"'
   fast:
-    not_supported:         "⚡ /fast는 Priority Processing을 지원하는 OpenAI 모델에서만 사용할 수 있습니다."
-    status:                "⚡ Priority Processing\n\n현재 모드: `{mode}`\n\n_사용법:_ `/fast <normal|fast|status>`"
-    unknown_arg:           "⚠️ 알 수 없는 인수: `{arg}`\n\n**유효한 옵션:** normal, fast, status"
-    saved:                 "⚡ ✓ Priority Processing: **{label}** (설정에 저장됨)\n_(다음 메시지부터 적용됩니다)_"
-    session_only:          "⚡ ✓ Priority Processing: **{label}** (이 세션에만 적용)"
-    label_fast:            "FAST"
-    label_normal:          "NORMAL"
-    status_fast:           "fast"
-    status_normal:         "normal"
-    picker_title:          "⚡ **Priority Processing**\\n\\n현재 모드: `{mode}`\\n\\n옵션을 선택하세요:"
-    choice_fast:           "fast — Priority Processing 켜기"
-    choice_normal:         "normal — 표준 처리"
+    not_supported: ⚡ /fast는 Priority Processing을 지원하는 OpenAI 모델에서만 사용할 수 있습니다.
+    status: '⚡ Priority Processing
 
+
+      현재 모드: `{mode}`
+
+
+      _사용법:_ `/fast <normal|fast|status>`'
+    unknown_arg: '⚠️ 알 수 없는 인수: `{arg}`
+
+
+      **유효한 옵션:** normal, fast, status'
+    saved: '⚡ ✓ Priority Processing: **{label}** (설정에 저장됨)
+
+      _(다음 메시지부터 적용됩니다)_'
+    session_only: '⚡ ✓ Priority Processing: **{label}** (이 세션에만 적용)'
+    label_fast: FAST
+    label_normal: NORMAL
+    status_fast: fast
+    status_normal: normal
+    picker_title: '⚡ **Priority Processing**\n\n현재 모드: `{mode}`\n\n옵션을 선택하세요:'
+    choice_fast: fast — Priority Processing 켜기
+    choice_normal: normal — 표준 처리
   footer:
-    status:                "📎 런타임 푸터: **{state}**\n필드: `{fields}`\n플랫폼: `{platform}`"
-    usage:                 "사용법: `/footer [on|off|status]`"
-    saved:                 "📎 런타임 푸터: **{state}**{example}\n_(전역 저장됨 — 다음 메시지부터 적용됩니다)_"
-    example_line:          "\n예시: `{preview}`"
-    state_on:              "ON"
-    state_off:             "OFF"
+    status: '📎 런타임 푸터: **{state}**
 
+      필드: `{fields}`
+
+      플랫폼: `{platform}`'
+    usage: '사용법: `/footer [on|off|status]`'
+    saved: '📎 런타임 푸터: **{state}**{example}
+
+      _(전역 저장됨 — 다음 메시지부터 적용됩니다)_'
+    example_line: '
+
+      예시: `{preview}`'
+    state_on: 'ON'
+    state_off: 'OFF'
   goal:
-    unavailable:           "이 세션에서는 목표 기능을 사용할 수 없습니다."
-    no_goal_set:           "설정된 목표가 없습니다."
-    paused:                "⏸ 목표 일시정지: {goal}"
-    no_resume:             "재개할 목표가 없습니다."
-    resumed:               "▶ 목표 재개: {goal}\n메시지를 보내 계속하거나 기다려 주세요 — 다음 차례에 다음 단계를 진행하겠습니다."
-    invalid:               "잘못된 목표: {error}"
-    set:                   "⊙ 목표 설정됨 ({budget}회 예산): {goal}\n목표가 완료되거나, 일시정지/삭제하거나, 예산이 소진될 때까지 계속 작업하겠습니다.\n제어: /goal status · /goal pause · /goal resume · /goal clear"
+    unavailable: 이 세션에서는 목표 기능을 사용할 수 없습니다.
+    no_goal_set: 설정된 목표가 없습니다.
+    paused: '⏸ 목표 일시정지: {goal}'
+    no_resume: 재개할 목표가 없습니다.
+    resumed: '▶ 목표 재개: {goal}
 
+      메시지를 보내 계속하거나 기다려 주세요 — 다음 차례에 다음 단계를 진행하겠습니다.'
+    invalid: '잘못된 목표: {error}'
+    set: '⊙ 목표 설정됨 ({budget}회 예산): {goal}
+
+      목표가 완료되거나, 일시정지/삭제하거나, 예산이 소진될 때까지 계속 작업하겠습니다.
+
+      제어: /goal status · /goal pause · /goal resume · /goal clear'
   help:
-    header:                "📖 **Hermes 명령**\n"
-    skill_header:          "\n⚡ **스킬 명령** ({count}개 활성):"
-    more_use_commands:     "\n... 외 {count}개 더. 전체 목록은 `/commands`로 확인하세요."
+    header: '📖 **Hermes 명령**
 
+      '
+    skill_header: '
+
+      ⚡ **스킬 명령** ({count}개 활성):'
+    more_use_commands: '
+
+      ... 외 {count}개 더. 전체 목록은 `/commands`로 확인하세요.'
   insights:
-    invalid_days:          "잘못된 --days 값: {value}"
-    error:                 "인사이트 생성 중 오류: {error}"
-
+    invalid_days: '잘못된 --days 값: {value}'
+    error: '인사이트 생성 중 오류: {error}'
+    card:
+      title: 📊 Hermes Insights — Last {days} days
+      sessions: Sessions
+      messages: Messages
+      tool_calls: Tool calls
+      tokens: Tokens
+      token_in: in
+      token_out: out
+      active_time: Active time
+      avg_session: Avg session
+      models_header: 🤖 Models
+      model: Model
+      platforms_header: 📱 Platforms
+      platform: Platform
+      tools_header: 🔧 Top Tools
+      tool: Tool
+      calls: Calls
+      pct: '%'
+      skills_header: 🧠 Top Skills
+      skill: Skill
+      loads: Loads
+      edits: Edits
+      last_used: Last Used
+      activity_header: 📅 Busiest
+      active_days: Active days
+      best_streak: Best streak
+      streak_days: '{count} consecutive days'
+      day_mon: Mondays
+      day_tue: Tuesdays
+      day_wed: Wednesdays
+      day_thu: Thursdays
+      day_fri: Fridays
+      day_sat: Saturdays
+      day_sun: Sundays
   kanban:
-    error_prefix:          "⚠ kanban 오류: {error}"
-    subscribed_suffix:     "(구독 중 — {task_id}이(가) 완료되거나 차단되면 알림을 받습니다)"
-    truncated_suffix:      "… (잘림; 전체 출력을 보려면 터미널에서 `hermes kanban …`을 사용하세요)"
-    no_output:             "(출력 없음)"
+    error_prefix: '⚠ kanban 오류: {error}'
+    subscribed_suffix: (구독 중 — {task_id}이(가) 완료되거나 차단되면 알림을 받습니다)
+    truncated_suffix: … (잘림; 전체 출력을 보려면 터미널에서 `hermes kanban …`을 사용하세요)
+    no_output: (출력 없음)
     wake:
-      completed:           "completed"
-      gave_up:             "gave up (retries exhausted)"
-      crashed:             "crashed (worker exited); dispatcher will retry"
-      timed_out:           "timed out; dispatcher will retry"
-      blocked:             "blocked; needs attention"
-      status_default:      "status changed"
-      status_joiner:       ", "
-      message:             "[kanban] Task {task_id} {status}.\nTitle: {title}\nAssignee: @{assignee}\nBoard: {board}\n\nCheck the result or decide the next step."
+      completed: completed
+      gave_up: gave up (retries exhausted)
+      crashed: crashed (worker exited); dispatcher will retry
+      timed_out: timed out; dispatcher will retry
+      blocked: blocked; needs attention
+      status_default: status changed
+      status_joiner: ', '
+      message: '[kanban] Task {task_id} {status}.
 
+        Title: {title}
+
+        Assignee: @{assignee}
+
+        Board: {board}
+
+
+        Check the result or decide the next step.'
   personality:
-    none_configured:       "`{path}/config.yaml`에 구성된 성격이 없습니다"
-    header:                "🎭 **사용 가능한 성격**\n"
-    none_option:           "• `none` — (성격 오버레이 없음)"
-    item:                  "• `{name}` — {preview}"
-    usage:                 "\n사용법: `/personality <name>`"
-    save_failed:           "⚠️ 성격 변경 저장에 실패했습니다: {error}"
-    cleared:               "🎭 성격이 해제되었습니다 — 기본 에이전트 동작을 사용합니다.\n_(다음 메시지부터 적용됩니다)_"
-    set_to:                "🎭 성격이 **{name}**(으)로 설정되었습니다\n_(다음 메시지부터 적용됩니다)_"
-    unknown:               "알 수 없는 성격: `{name}`\n\n사용 가능: {available}"
+    none_configured: '`{path}/config.yaml`에 구성된 성격이 없습니다'
+    header: '🎭 **사용 가능한 성격**
 
+      '
+    none_option: • `none` — (성격 오버레이 없음)
+    item: • `{name}` — {preview}
+    usage: '
+
+      사용법: `/personality <name>`'
+    save_failed: '⚠️ 성격 변경 저장에 실패했습니다: {error}'
+    cleared: '🎭 성격이 해제되었습니다 — 기본 에이전트 동작을 사용합니다.
+
+      _(다음 메시지부터 적용됩니다)_'
+    set_to: '🎭 성격이 **{name}**(으)로 설정되었습니다
+
+      _(다음 메시지부터 적용됩니다)_'
+    unknown: '알 수 없는 성격: `{name}`
+
+
+      사용 가능: {available}'
   profile:
-    header:                "👤 **프로필:** `{profile}`"
-    home:                  "📂 **홈:** `{home}`"
-
+    header: 👤 **프로필:** `{profile}`
+    home: 📂 **홈:** `{home}`
   reasoning:
-    level_default:             "medium (기본값)"
-    level_disabled:            "none (비활성화됨)"
-    scope_session:             "세션 재정의"
-    scope_global:              "전역 설정"
-    status:                    "🧠 **추론 설정**\n\n**노력:** `{level}`\n**범위:** {scope}\n**표시:** {display}\n\n_사용법:_ `/reasoning <none|minimal|low|medium|high|xhigh|max|ultra|reset|show|hide> [--global]`"
-    display_on:                "켜짐 ✓"
-    display_off:               "꺼짐"
-    display_set_on:            "🧠 ✓ 추론 표시: **켜짐**\n**{platform}**에서 응답 전에 모델의 사고 과정이 표시됩니다."
-    display_set_off:           "🧠 ✓ 추론 표시: **꺼짐** (**{platform}**에서)"
-    reset_global_unsupported:  "⚠️ `/reasoning reset --global`은 지원되지 않습니다. 전역 기본값을 변경하려면 `/reasoning <level> --global`을 사용하세요."
-    reset_done:                "🧠 ✓ 세션 추론 재정의가 해제되었습니다. 전역 설정으로 돌아갑니다."
-    unknown_arg:               "⚠️ 알 수 없는 인수: `{arg}`\n\n**유효한 수준:** none, minimal, low, medium, high, xhigh, max, ultra\n**표시:** show, hide\n**영구화:** 이 세션을 넘어 저장하려면 `--global`을 추가하세요"
-    picker_title:              "🧠 **추론 설정**\\n\\n**노력:** `{level}`\\n**범위:** {scope}\\n**표시:** {display}\\n\\n옵션을 선택하세요:"
-    choice_none:               "none — 추론 비활성화"
-    choice_reset:              "reset — 세션 재정의 초기화"
-    choice_show:               "응답에 추론 표시"
-    choice_hide:               "응답에서 추론 숨기기"
-    set_global:                "🧠 ✓ 추론 노력이 `{effort}`(으)로 설정되었습니다 (설정에 저장됨)\n_(다음 메시지부터 적용됩니다)_"
-    set_global_save_failed:    "🧠 ✓ 추론 노력이 `{effort}`(으)로 설정되었습니다 (세션 한정 — 설정 저장 실패)\n_(다음 메시지부터 적용됩니다)_"
-    set_session:               "🧠 ✓ 추론 노력이 `{effort}`(으)로 설정되었습니다 (세션 한정 — 영구 저장하려면 `--global` 추가)\n_(다음 메시지부터 적용됩니다)_"
+    level_default: medium (기본값)
+    level_disabled: none (비활성화됨)
+    scope_session: 세션 재정의
+    scope_global: 전역 설정
+    status: '🧠 **추론 설정**
 
+
+      **노력:** `{level}`
+
+      **범위:** {scope}
+
+      **표시:** {display}
+
+
+      _사용법:_ `/reasoning <none|minimal|low|medium|high|xhigh|max|ultra|reset|show|hide> [--global]`'
+    display_on: 켜짐 ✓
+    display_off: 꺼짐
+    display_set_on: '🧠 ✓ 추론 표시: **켜짐**
+
+      **{platform}**에서 응답 전에 모델의 사고 과정이 표시됩니다.'
+    display_set_off: '🧠 ✓ 추론 표시: **꺼짐** (**{platform}**에서)'
+    reset_global_unsupported: ⚠️ `/reasoning reset --global`은 지원되지 않습니다. 전역 기본값을 변경하려면 `/reasoning <level> --global`을 사용하세요.
+    reset_done: 🧠 ✓ 세션 추론 재정의가 해제되었습니다. 전역 설정으로 돌아갑니다.
+    unknown_arg: '⚠️ 알 수 없는 인수: `{arg}`
+
+
+      **유효한 수준:** none, minimal, low, medium, high, xhigh, max, ultra
+
+      **표시:** show, hide
+
+      **영구화:** 이 세션을 넘어 저장하려면 `--global`을 추가하세요'
+    picker_title: '🧠 **추론 설정**\n\n**노력:** `{level}`\n**범위:** {scope}\n**표시:** {display}\n\n옵션을 선택하세요:'
+    choice_none: none — 추론 비활성화
+    choice_reset: reset — 세션 재정의 초기화
+    choice_show: 응답에 추론 표시
+    choice_hide: 응답에서 추론 숨기기
+    set_global: '🧠 ✓ 추론 노력이 `{effort}`(으)로 설정되었습니다 (설정에 저장됨)
+
+      _(다음 메시지부터 적용됩니다)_'
+    set_global_save_failed: '🧠 ✓ 추론 노력이 `{effort}`(으)로 설정되었습니다 (세션 한정 — 설정 저장 실패)
+
+      _(다음 메시지부터 적용됩니다)_'
+    set_session: '🧠 ✓ 추론 노력이 `{effort}`(으)로 설정되었습니다 (세션 한정 — 영구 저장하려면 `--global` 추가)
+
+      _(다음 메시지부터 적용됩니다)_'
   reload_mcp:
-    cancelled:             "🟡 /reload-mcp가 취소되었습니다. MCP 도구는 변경되지 않았습니다."
-    always_followup:       "ℹ️ 이후 `/reload-mcp` 호출은 확인 없이 실행됩니다. config.yaml의 `approvals.mcp_reload_confirm: true`로 다시 활성화할 수 있습니다."
-    confirm_prompt:        "⚠️ **/reload-mcp 확인**\n\nMCP 서버를 재로드하면 이 세션의 도구 세트가 재구성되며 **제공자 프롬프트 캐시가 무효화됩니다** — 다음 메시지에서 전체 입력 토큰이 다시 전송됩니다. 긴 컨텍스트 또는 고도 추론 모델에서는 비용이 클 수 있습니다.\n\n선택하세요:\n• **한 번 승인** — 지금 재로드\n• **항상 승인** — 지금 재로드하고 이 프롬프트를 영구 비활성화\n• **취소** — MCP 도구를 변경하지 않음\n\n_텍스트 대체: `/approve`, `/always`, `/cancel`로 응답하세요._"
-    header:                "🔄 **MCP 서버가 재로드되었습니다**\n"
-    reconnected:           "♻️ 재연결됨: {names}"
-    added:                 "➕ 추가됨: {names}"
-    removed:               "➖ 제거됨: {names}"
-    none_connected:        "연결된 MCP 서버가 없습니다."
-    tools_available:       "\n🔧 {servers}개 서버에서 {tools}개 도구 사용 가능"
-    failed:                "❌ MCP 재로드 실패: {error}"
+    cancelled: 🟡 /reload-mcp가 취소되었습니다. MCP 도구는 변경되지 않았습니다.
+    always_followup: 'ℹ️ 이후 `/reload-mcp` 호출은 확인 없이 실행됩니다. config.yaml의 `approvals.mcp_reload_confirm: true`로 다시 활성화할 수 있습니다.'
+    confirm_prompt: '⚠️ **/reload-mcp 확인**
 
+
+      MCP 서버를 재로드하면 이 세션의 도구 세트가 재구성되며 **제공자 프롬프트 캐시가 무효화됩니다** — 다음 메시지에서 전체 입력 토큰이 다시 전송됩니다. 긴 컨텍스트 또는 고도 추론 모델에서는 비용이 클 수 있습니다.
+
+
+      선택하세요:
+
+      • **한 번 승인** — 지금 재로드
+
+      • **항상 승인** — 지금 재로드하고 이 프롬프트를 영구 비활성화
+
+      • **취소** — MCP 도구를 변경하지 않음
+
+
+      _텍스트 대체: `/approve`, `/always`, `/cancel`로 응답하세요._'
+    header: '🔄 **MCP 서버가 재로드되었습니다**
+
+      '
+    reconnected: '♻️ 재연결됨: {names}'
+    added: '➕ 추가됨: {names}'
+    removed: '➖ 제거됨: {names}'
+    none_connected: 연결된 MCP 서버가 없습니다.
+    tools_available: '
+
+      🔧 {servers}개 서버에서 {tools}개 도구 사용 가능'
+    failed: '❌ MCP 재로드 실패: {error}'
   reload_skills:
-    header:                "🔄 **스킬이 재로드되었습니다**\n"
-    no_new:                "새로운 스킬이 감지되지 않았습니다."
-    total:                 "\n📚 {count}개 스킬 사용 가능"
-    added_header:          "➕ **추가된 스킬:**"
-    removed_header:        "➖ **제거된 스킬:**"
-    item_with_desc:        "    - {name}: {desc}"
-    item_no_desc:          "    - {name}"
-    failed:                "❌ 스킬 재로드 실패: {error}"
+    header: '🔄 **스킬이 재로드되었습니다**
 
+      '
+    no_new: 새로운 스킬이 감지되지 않았습니다.
+    total: '
+
+      📚 {count}개 스킬 사용 가능'
+    added_header: ➕ **추가된 스킬:**
+    removed_header: ➖ **제거된 스킬:**
+    item_with_desc: '    - {name}: {desc}'
+    item_no_desc: '    - {name}'
+    failed: '❌ 스킬 재로드 실패: {error}'
   reset:
-    header_default:        "✨ 세션이 초기화되었습니다! 새로 시작합니다."
-    header_new:            "✨ 새 세션이 시작되었습니다!"
-    header_titled:         "✨ 새 세션이 시작되었습니다: {title}"
-    title_rejected:        "\n⚠️ 제목이 거부되었습니다: {error}"
-    title_error_untitled:  "\n⚠️ {error} — 제목 없이 세션을 시작했습니다."
-    title_empty_untitled:  "\n⚠️ 정리 후 제목이 비어 있습니다 — 제목 없이 세션을 시작했습니다."
-    tip:                   "\n✦ 팁: {tip}"
+    header_default: ✨ 세션이 초기화되었습니다! 새로 시작합니다.
+    header_new: ✨ 새 세션이 시작되었습니다!
+    header_titled: '✨ 새 세션이 시작되었습니다: {title}'
+    title_rejected: '
 
+      ⚠️ 제목이 거부되었습니다: {error}'
+    title_error_untitled: '
+
+      ⚠️ {error} — 제목 없이 세션을 시작했습니다.'
+    title_empty_untitled: '
+
+      ⚠️ 정리 후 제목이 비어 있습니다 — 제목 없이 세션을 시작했습니다.'
+    tip: '
+
+      ✦ 팁: {tip}'
   restart:
-    in_progress:           "⏳{profile_tag} 게이트웨이 재시작이 이미 진행 중입니다..."
-    restarting:            "♻{profile_tag} 게이트웨이를 재시작 중입니다. 60초 이내에 알림이 오지 않으면 콘솔에서 `hermes gateway restart`로 재시작하세요."
-
+    in_progress: ⏳{profile_tag} 게이트웨이 재시작이 이미 진행 중입니다...
+    restarting: ♻{profile_tag} 게이트웨이를 재시작 중입니다. 60초 이내에 알림이 오지 않으면 콘솔에서 `hermes gateway restart`로 재시작하세요.
   resume:
-    db_unavailable:        "세션 데이터베이스를 사용할 수 없습니다."
-    parse_error:           "⚠️ Could not parse `/resume` arguments: {error}.
-Use quotes around titles with spaces, for example: `/resume \"Project A Plan\"`."
-    matrix_no_named_sessions: "No named sessions found for this Matrix room.
-Use `/title My Session` to name the current room session, `/resume --all` to list all Matrix sessions, or `/resume --cross-room <session name>` to explicitly cross room boundaries."
-    matrix_blocked_no_origin: "⚠️ Matrix /resume blocked: this named session has no recorded room origin, so Hermes will not resume it inside the current room by default. Use `/resume --cross-room {name}` if you intentionally want to cross room boundaries."
-    matrix_blocked_other_room: "⚠️ Matrix /resume blocked: that session belongs to a different Matrix room ({room}). Use `/resume --cross-room {name}` if you intentionally want to resume it here."
-    matrix_cross_room_success: "⚠️ Cross-room resume: resumed **{title}** inside Matrix room **{room}**.
-Future messages in this room will use that transcript until `/reset` or another `/resume`.{msg_part}"
-    blocked_not_owner:     "⚠️ /resume blocked: '**{name}**' belongs to a different user or chat. You can only resume sessions from this chat."
-    no_named_sessions:     "이름이 지정된 세션이 없습니다.\n현재 세션에 이름을 지정하려면 `/title 내 세션`을 사용하고, 나중에 `/resume 내 세션`으로 돌아오세요."
-    list_header:           "📋 **이름이 지정된 세션**\n"
-    list_item:             "• **{title}**{preview_part}"
-    list_item_numbered:    "{index}. **{title}**{preview_part}"
-    list_preview_suffix:   " — _{preview}_"
-    list_footer:           "\n사용법: `/resume <session name>`"
-    list_footer_numbered:  "\n사용법: `/resume <세션 이름>` 또는 `/resume <번호>` (예: 가장 최근 세션은 `/resume 1`)"
-    list_failed:           "세션 목록을 가져올 수 없습니다: {error}"
-    out_of_range:          "재개 인덱스 {index}이(가) 범위를 벗어났습니다.\n인자 없이 `/resume`을 실행하면 사용 가능한 세션이 표시됩니다."
-    not_found:             "'**{name}**'와 일치하는 세션이 없습니다.\n사용 가능한 세션을 보려면 인수 없이 `/resume`을 사용하세요."
-    already_on:            "📌 이미 **{name}** 세션에 있습니다."
-    switch_failed:         "세션 전환에 실패했습니다."
-    resumed_one:           "↻ **{title}** 세션 재개됨 (메시지 {count}개). 대화가 복원되었습니다."
-    resumed_many:          "↻ **{title}** 세션 재개됨 (메시지 {count}개). 대화가 복원되었습니다."
-    resumed_no_count:      "↻ **{title}** 세션 재개됨. 대화가 복원되었습니다."
+    db_unavailable: 세션 데이터베이스를 사용할 수 없습니다.
+    parse_error: '⚠️ Could not parse `/resume` arguments: {error}. Use quotes around titles with spaces, for example: `/resume "Project A Plan"`.'
+    matrix_no_named_sessions: No named sessions found for this Matrix room. Use `/title My Session` to name the current room session, `/resume --all` to list all Matrix sessions, or `/resume --cross-room <session name>` to explicitly cross room boundaries.
+    matrix_blocked_no_origin: '⚠️ Matrix /resume blocked: this named session has no recorded room origin, so Hermes will not resume it inside the current room by default. Use `/resume --cross-room {name}` if you intentionally want to cross room boundaries.'
+    matrix_blocked_other_room: '⚠️ Matrix /resume blocked: that session belongs to a different Matrix room ({room}). Use `/resume --cross-room {name}` if you intentionally want to resume it here.'
+    matrix_cross_room_success: '⚠️ Cross-room resume: resumed **{title}** inside Matrix room **{room}**. Future messages in this room will use that transcript until `/reset` or another `/resume`.{msg_part}'
+    blocked_not_owner: '⚠️ /resume blocked: ''**{name}**'' belongs to a different user or chat. You can only resume sessions from this chat.'
+    no_named_sessions: '이름이 지정된 세션이 없습니다.
 
+      현재 세션에 이름을 지정하려면 `/title 내 세션`을 사용하고, 나중에 `/resume 내 세션`으로 돌아오세요.'
+    list_header: '📋 **이름이 지정된 세션**
+
+      '
+    list_item: • **{title}**{preview_part}
+    list_item_numbered: '{index}. **{title}**{preview_part}'
+    list_preview_suffix: ' — _{preview}_'
+    list_footer: '
+
+      사용법: `/resume <session name>`'
+    list_footer_numbered: '
+
+      사용법: `/resume <세션 이름>` 또는 `/resume <번호>` (예: 가장 최근 세션은 `/resume 1`)'
+    list_failed: '세션 목록을 가져올 수 없습니다: {error}'
+    out_of_range: '재개 인덱스 {index}이(가) 범위를 벗어났습니다.
+
+      인자 없이 `/resume`을 실행하면 사용 가능한 세션이 표시됩니다.'
+    not_found: '''**{name}**''와 일치하는 세션이 없습니다.
+
+      사용 가능한 세션을 보려면 인수 없이 `/resume`을 사용하세요.'
+    already_on: 📌 이미 **{name}** 세션에 있습니다.
+    switch_failed: 세션 전환에 실패했습니다.
+    resumed_one: ↻ **{title}** 세션 재개됨 (메시지 {count}개). 대화가 복원되었습니다.
+    resumed_many: ↻ **{title}** 세션 재개됨 (메시지 {count}개). 대화가 복원되었습니다.
+    resumed_no_count: ↻ **{title}** 세션 재개됨. 대화가 복원되었습니다.
+    card_title: Resume recent session
   retry:
-    no_previous:           "재시도할 이전 메시지가 없습니다."
-
+    no_previous: 재시도할 이전 메시지가 없습니다.
   rollback:
-    not_enabled:           "체크포인트가 활성화되어 있지 않습니다.\nconfig.yaml에서 활성화하세요:\n```\ncheckpoints:\n  enabled: true\n```"
-    none_found:            "{cwd}에 체크포인트를 찾을 수 없습니다"
-    invalid_number:        "잘못된 체크포인트 번호입니다. 1-{max}을 사용하세요."
-    restored:              "✅ 체크포인트 {hash}(으)로 복원됨: {reason}\n롤백 전 스냅샷이 자동으로 저장되었습니다."
-    restore_failed:        "❌ {error}"
+    not_enabled: "체크포인트가 활성화되어 있지 않습니다.\nconfig.yaml에서 활성화하세요:\n```\ncheckpoints:\n  enabled: true\n```"
+    none_found: '{cwd}에 체크포인트를 찾을 수 없습니다'
+    invalid_number: 잘못된 체크포인트 번호입니다. 1-{max}을 사용하세요.
+    restored: '✅ 체크포인트 {hash}(으)로 복원됨: {reason}
 
+      롤백 전 스냅샷이 자동으로 저장되었습니다.'
+    restore_failed: ❌ {error}
   diff:
-    not_enabled:           "체크포인트가 활성화되지 않아 세션 기준선이 없습니다.\nconfig.yaml에서 활성화하세요:\n```\ncheckpoints:\n  enabled: true\n```\n일반 /diff는 여전히 작동합니다 — git을 직접 사용합니다."
-    no_changes:            "변경 사항이 없습니다."
-    failed:                "{error}"
-
+    not_enabled: "체크포인트가 활성화되지 않아 세션 기준선이 없습니다.\nconfig.yaml에서 활성화하세요:\n```\ncheckpoints:\n  enabled: true\n```\n일반 /diff는 여전히 작동합니다 — git을 직접 사용합니다."
+    no_changes: 변경 사항이 없습니다.
+    failed: '{error}'
   set_home:
-    save_failed:           "홈 채널 저장에 실패했습니다: {error}"
-    success:               "✅ 홈 채널이 **{name}**(ID: {chat_id})(으)로 설정되었습니다.\n크론 작업과 플랫폼 간 메시지가 여기로 전달됩니다."
+    save_failed: '홈 채널 저장에 실패했습니다: {error}'
+    success: '✅ 홈 채널이 **{name}**(ID: {chat_id})(으)로 설정되었습니다.
+
+      크론 작업과 플랫폼 간 메시지가 여기로 전달됩니다.'
   context:
-    header:                "🧠 **Context Window**"
-    model:                 "Model: `{model}`"
-    window:                "Window: {total} tokens"
-    in_use:                "In use: {used} / {total} ({pct}%)"
-    bar:                   "{bar}"
-    headroom:              "Headroom to limit: {headroom} tokens"
-    threshold:             "Auto-compresses at: {threshold} ({threshold_pct}%) — {to_go} to go"
-    over_threshold:        "⚠️ **Over auto-compression threshold ({threshold}, {threshold_pct}%)**"
-    compressions:          "Compressions this session: {count}"
-    last_savings:          "Last compression freed: {savings}% of context"
-    totals_header:         "Session totals (cumulative across {calls} API calls)"
-    totals_line:           "Input {input} · Output {output} · Reasoning {reasoning}"
-    total_billed:          "Total billed: {total}"
-    throughput_note:       "_Throughput, not context size — each call re-sends the window above._"
-    estimated:             "Estimated context: ~{count} tokens across {messages} messages"
-    detail_after_first:    "_(Full compression and throughput stats available after the first agent response)_"
-    no_data:               "No context data available yet. Send a message to start a session."
-
+    header: 🧠 **Context Window**
+    model: 'Model: `{model}`'
+    window: 'Window: {total} tokens'
+    in_use: 'In use: {used} / {total} ({pct}%)'
+    bar: '{bar}'
+    headroom: 'Headroom to limit: {headroom} tokens'
+    threshold: 'Auto-compresses at: {threshold} ({threshold_pct}%) — {to_go} to go'
+    over_threshold: ⚠️ **Over auto-compression threshold ({threshold}, {threshold_pct}%)**
+    compressions: 'Compressions this session: {count}'
+    last_savings: 'Last compression freed: {savings}% of context'
+    totals_header: Session totals (cumulative across {calls} API calls)
+    totals_line: Input {input} · Output {output} · Reasoning {reasoning}
+    total_billed: 'Total billed: {total}'
+    throughput_note: _Throughput, not context size — each call re-sends the window above._
+    estimated: 'Estimated context: ~{count} tokens across {messages} messages'
+    detail_after_first: _(Full compression and throughput stats available after the first agent response)_
+    no_data: No context data available yet. Send a message to start a session.
   status:
-    header:                "📊 **Hermes 게이트웨이 상태**"
-    matrix_scope_header:   "**Matrix scope:**"
-    matrix_scope_room:     "  room: {room}"
-    matrix_scope_room_id:  "  room_id: {room_id}"
-    matrix_scope_thread:   "  thread_id: {thread_id}"
-    matrix_scope_mode:     "  session_scope: {scope}"
-    matrix_scope_key:      "  session_key: {session_key}"
-    session_id:            "**세션 ID:** `{session_id}`"
-    title:                 "**제목:** {title}"
-    created:               "**생성됨:** {timestamp}"
-    last_activity:         "**최종 활동:** {timestamp}"
-    model:                 "**Model:** `{model}`"
-    model_provider:        "**Model:** `{model}` ({provider})"
-    context:               "**Context:** {used} / {total} ({pct}%)"
-    context_used:          "**Context:** ~{used} tokens"
-    tokens:                "**Lifetime tokens billed:** {tokens} _(not your current context size; use `/context`)_"
-    agent_running:         "**에이전트 실행 중:** {state}"
-    state_yes:             "예 ⚡"
-    state_no:              "아니오"
-    queued:                "**대기 중인 후속 작업:** {count}"
-    platforms:             "**연결된 플랫폼:** {platforms}"
-
+    header: 📊 **Hermes 게이트웨이 상태**
+    matrix_scope_header: '**Matrix scope:**'
+    matrix_scope_room: '  room: {room}'
+    matrix_scope_room_id: '  room_id: {room_id}'
+    matrix_scope_thread: '  thread_id: {thread_id}'
+    matrix_scope_mode: '  session_scope: {scope}'
+    matrix_scope_key: '  session_key: {session_key}'
+    session_id: '**세션 ID:** `{session_id}`'
+    title: '**제목:** {title}'
+    created: '**생성됨:** {timestamp}'
+    last_activity: '**최종 활동:** {timestamp}'
+    model: '**Model:** `{model}`'
+    model_provider: '**Model:** `{model}` ({provider})'
+    context: '**Context:** {used} / {total} ({pct}%)'
+    context_used: '**Context:** ~{used} tokens'
+    tokens: '**Lifetime tokens billed:** {tokens} _(not your current context size; use `/context`)_'
+    agent_running: '**에이전트 실행 중:** {state}'
+    state_yes: 예 ⚡
+    state_no: 아니오
+    queued: '**대기 중인 후속 작업:** {count}'
+    platforms: '**연결된 플랫폼:** {platforms}'
   stop:
-    stopped_pending:       "⚡ 중지되었습니다. 에이전트가 아직 시작되지 않았습니다 — 이 세션을 계속할 수 있습니다."
-    stopped:               "⚡ 중지되었습니다. 이 세션을 계속할 수 있습니다."
-    no_active:             "중지할 활성 작업이 없습니다."
-
+    stopped_pending: ⚡ 중지되었습니다. 에이전트가 아직 시작되지 않았습니다 — 이 세션을 계속할 수 있습니다.
+    stopped: ⚡ 중지되었습니다. 이 세션을 계속할 수 있습니다.
+    no_active: 중지할 활성 작업이 없습니다.
   title:
-    db_unavailable:        "세션 데이터베이스를 사용할 수 없습니다."
-    warn_prefix:           "⚠️ {error}"
-    empty_after_clean:     "⚠️ 정리 후 제목이 비어 있습니다. 인쇄 가능한 문자를 사용해 주세요."
-    set_to:                "✏️ 세션 제목 설정됨: **{title}**"
-    not_found:             "데이터베이스에서 세션을 찾을 수 없습니다."
-    current_with_title:    "📌 세션: `{session_id}`\n제목: **{title}**"
-    current_no_title:      "📌 세션: `{session_id}`\n제목이 설정되지 않았습니다. 사용법: `/title 내 세션 이름`"
+    db_unavailable: 세션 데이터베이스를 사용할 수 없습니다.
+    warn_prefix: ⚠️ {error}
+    empty_after_clean: ⚠️ 정리 후 제목이 비어 있습니다. 인쇄 가능한 문자를 사용해 주세요.
+    set_to: '✏️ 세션 제목 설정됨: **{title}**'
+    not_found: 데이터베이스에서 세션을 찾을 수 없습니다.
+    current_with_title: '📌 세션: `{session_id}`
 
+      제목: **{title}**'
+    current_no_title: '📌 세션: `{session_id}`
+
+      제목이 설정되지 않았습니다. 사용법: `/title 내 세션 이름`'
   topic:
-    not_telegram_dm:         "/topic 명령은 Telegram 비공개 채팅에서만 사용할 수 있습니다."
-    no_session_db:           "세션 데이터베이스를 사용할 수 없습니다."
-    unauthorized:            "이 봇에서 /topic을 사용할 권한이 없습니다."
-    restore_needs_topic:     "세션을 복원하려면 먼저 Telegram 토픽을 만들거나 열고, 해당 토픽 안에서 /topic <session-id>를 보내세요. 새 토픽을 만들려면 All Messages를 열고 그곳으로 메시지를 보내세요."
-    topics_disabled:         "이 봇에는 아직 Telegram 토픽이 활성화되어 있지 않습니다.\n\n활성화 방법:\n1. @BotFather를 엽니다.\n2. 봇을 선택합니다.\n3. Bot Settings → Threads Settings를 엽니다.\n4. Threaded Mode를 켜고 사용자가 새 스레드를 만들 수 있도록 허용합니다.\n\n그런 다음 다시 /topic을 보내세요."
-    topics_user_disallowed:  "Telegram 토픽이 활성화되어 있지만, 사용자가 토픽을 만들 수 없습니다.\n\n@BotFather → 봇 선택 → Bot Settings → Threads Settings를 열고 'Disallow users to create new threads'를 끄세요.\n\n그런 다음 다시 /topic을 보내세요."
-    enable_failed:           "Telegram 토픽 모드 활성화에 실패했습니다: {error}"
-    bound_status:            "이 토픽은 다음에 연결되어 있습니다:\n세션: {label}\nID: {session_id}\n\n이 토픽을 새 세션으로 교체하려면 /new를 사용하세요.\n병렬 작업을 위해서는 All Messages를 열고 메시지를 보내 다른 토픽을 만드세요."
-    thread_ready:            "Telegram 다중 세션 토픽이 활성화되었습니다.\n\n이 토픽은 독립된 Hermes 세션으로 사용됩니다. 이 토픽의 현재 세션을 교체하려면 /new를 사용하세요. 병렬 작업을 위해서는 All Messages를 열고 메시지를 보내 다른 토픽을 만드세요."
-    untitled_session:        "제목 없는 세션"
+    not_telegram_dm: /topic 명령은 Telegram 비공개 채팅에서만 사용할 수 있습니다.
+    no_session_db: 세션 데이터베이스를 사용할 수 없습니다.
+    unauthorized: 이 봇에서 /topic을 사용할 권한이 없습니다.
+    restore_needs_topic: 세션을 복원하려면 먼저 Telegram 토픽을 만들거나 열고, 해당 토픽 안에서 /topic <session-id>를 보내세요. 새 토픽을 만들려면 All Messages를 열고 그곳으로 메시지를 보내세요.
+    topics_disabled: '이 봇에는 아직 Telegram 토픽이 활성화되어 있지 않습니다.
 
+
+      활성화 방법:
+
+      1. @BotFather를 엽니다.
+
+      2. 봇을 선택합니다.
+
+      3. Bot Settings → Threads Settings를 엽니다.
+
+      4. Threaded Mode를 켜고 사용자가 새 스레드를 만들 수 있도록 허용합니다.
+
+
+      그런 다음 다시 /topic을 보내세요.'
+    topics_user_disallowed: 'Telegram 토픽이 활성화되어 있지만, 사용자가 토픽을 만들 수 없습니다.
+
+
+      @BotFather → 봇 선택 → Bot Settings → Threads Settings를 열고 ''Disallow users to create new threads''를 끄세요.
+
+
+      그런 다음 다시 /topic을 보내세요.'
+    enable_failed: 'Telegram 토픽 모드 활성화에 실패했습니다: {error}'
+    bound_status: '이 토픽은 다음에 연결되어 있습니다:
+
+      세션: {label}
+
+      ID: {session_id}
+
+
+      이 토픽을 새 세션으로 교체하려면 /new를 사용하세요.
+
+      병렬 작업을 위해서는 All Messages를 열고 메시지를 보내 다른 토픽을 만드세요.'
+    thread_ready: 'Telegram 다중 세션 토픽이 활성화되었습니다.
+
+
+      이 토픽은 독립된 Hermes 세션으로 사용됩니다. 이 토픽의 현재 세션을 교체하려면 /new를 사용하세요. 병렬 작업을 위해서는 All Messages를 열고 메시지를 보내 다른 토픽을 만드세요.'
+    untitled_session: 제목 없는 세션
   undo:
-    nothing:               "되돌릴 내용이 없습니다."
-    removed:               "↩️ {turns}개 턴을 되돌렸습니다 (메시지 {count}개).\n백업 위치: \"{preview}\"\n위 텍스트를 복사/편집한 후 보내면 여기서 다시 프롬프트할 수 있습니다."
-    invalid_count:         "잘못된 개수 \"{arg}\" — /undo 또는 /undo N을 사용하세요."
+    nothing: 되돌릴 내용이 없습니다.
+    removed: '↩️ {turns}개 턴을 되돌렸습니다 (메시지 {count}개).
 
+      백업 위치: "{preview}"
+
+      위 텍스트를 복사/편집한 후 보내면 여기서 다시 프롬프트할 수 있습니다.'
+    invalid_count: 잘못된 개수 "{arg}" — /undo 또는 /undo N을 사용하세요.
   update:
-    platform_not_messaging:  "✗ /update는 메시징 플랫폼에서만 사용할 수 있습니다. 터미널에서 `hermes update`를 실행하세요."
-    not_git_repo:            "✗ git 저장소가 아닙니다 — 업데이트할 수 없습니다."
-    hermes_cmd_not_found:    "✗ `hermes` 명령을 찾을 수 없습니다. Hermes는 실행 중이지만 PATH나 현재 Python 인터프리터를 통해 실행 파일을 찾을 수 없습니다. 터미널에서 `hermes update`를 직접 실행해 보세요."
-    start_failed:            "✗ 업데이트 시작 실패: {error}"
-    starting:                "⚕ Hermes 업데이트를 시작합니다… 진행 상황을 여기에 스트리밍하겠습니다."
+    platform_not_messaging: ✗ /update는 메시징 플랫폼에서만 사용할 수 있습니다. 터미널에서 `hermes update`를 실행하세요.
+    not_git_repo: ✗ git 저장소가 아닙니다 — 업데이트할 수 없습니다.
+    hermes_cmd_not_found: ✗ `hermes` 명령을 찾을 수 없습니다. Hermes는 실행 중이지만 PATH나 현재 Python 인터프리터를 통해 실행 파일을 찾을 수 없습니다. 터미널에서 `hermes update`를 직접 실행해 보세요.
+    start_failed: '✗ 업데이트 시작 실패: {error}'
+    starting: ⚕ Hermes 업데이트를 시작합니다… 진행 상황을 여기에 스트리밍하겠습니다.
+    finished: ✅ Hermes update finished.
+    failed_exit: ❌ Hermes update failed (exit code {exit_code}).
+    timed_out: ❌ Hermes update timed out after 30 minutes.
+    finished_with_output: '✅ Hermes update finished.
 
+
+      ```
+
+      {output}
+
+      ```'
+    failed_with_output: '❌ Hermes update failed.
+
+
+      ```
+
+      {output}
+
+      ```'
+    finished_ok: ✅ Hermes update finished successfully.
+    failed_details: ❌ Hermes update failed. Check the gateway logs or run `hermes update` manually for details.
+    needs_input: '⚕ **Update needs your input:**
+
+
+      {prompt}{default_hint}
+
+
+      Reply `{command_prefix}approve` (yes) or `{command_prefix}deny` (no), or type your answer directly.'
+    default_hint: ' (default: {default})'
   usage:
-    rate_limits:              "⏱️ **요청 제한:** {state}"
-    header_session:           "📊 **세션 토큰 사용량**"
-    label_model:              "모델: `{model}`"
-    label_input_tokens:       "입력 토큰: {count}"
-    label_cache_read:         "캐시 읽기 토큰: {count}"
-    label_cache_write:        "캐시 쓰기 토큰: {count}"
-    label_output_tokens:      "출력 토큰: {count}"
-    label_total:              "합계: {count}"
-    label_api_calls:          "API 호출: {count}"
-    label_cost:               "비용: {prefix}${amount}"
-    label_cost_included:      "비용: 포함됨"
-    label_context:            "컨텍스트: {used} / {total} ({pct}%)"
-    label_compressions:       "압축: {count}"
-    breakdown_header: "🧩 **컨텍스트 분석** _(추정치)_"
-    breakdown_line: "• {label}: 약 {count} ({pct}%)"
-    breakdown_cat_system_prompt: "시스템 프롬프트"
-    breakdown_cat_tool_definitions: "도구 정의"
-    breakdown_cat_rules: "규칙"
-    breakdown_cat_skills: "스킬"
-    breakdown_cat_mcp: "MCP"
-    breakdown_cat_subagent_definitions: "서브에이전트 정의"
-    breakdown_cat_memory: "메모리"
-    breakdown_cat_conversation: "대화"
-    header_session_info:      "📊 **세션 정보**"
-    label_messages:           "메시지: {count}"
-    label_estimated_context:  "예상 컨텍스트: 약 {count} 토큰"
-    detailed_after_first:     "_(자세한 사용량은 첫 에이전트 응답 이후 확인할 수 있습니다)_"
-    no_data:                  "이 세션에 사용 가능한 사용량 데이터가 없습니다."
-    unknown_subcommand:       "알 수 없는 /usage 하위 명령: `{args}`. `/usage` 또는 `/usage reset [--force]`를 사용해 보세요."
-    reset_wrong_provider:     "적립된 사용량 한도 초기화는 openai-codex 공급자에서만 사용할 수 있습니다. 먼저 `/model`로 전환하세요."
-
+    rate_limits: ⏱️ **요청 제한:** {state}
+    header_session: 📊 **세션 토큰 사용량**
+    label_model: '모델: `{model}`'
+    label_input_tokens: '입력 토큰: {count}'
+    label_cache_read: '캐시 읽기 토큰: {count}'
+    label_cache_write: '캐시 쓰기 토큰: {count}'
+    label_output_tokens: '출력 토큰: {count}'
+    label_total: '합계: {count}'
+    label_api_calls: 'API 호출: {count}'
+    label_cost: '비용: {prefix}${amount}'
+    label_cost_included: '비용: 포함됨'
+    label_context: '컨텍스트: {used} / {total} ({pct}%)'
+    label_compressions: '압축: {count}'
+    breakdown_header: 🧩 **컨텍스트 분석** _(추정치)_
+    breakdown_line: '• {label}: 약 {count} ({pct}%)'
+    breakdown_cat_system_prompt: 시스템 프롬프트
+    breakdown_cat_tool_definitions: 도구 정의
+    breakdown_cat_rules: 규칙
+    breakdown_cat_skills: 스킬
+    breakdown_cat_mcp: MCP
+    breakdown_cat_subagent_definitions: 서브에이전트 정의
+    breakdown_cat_memory: 메모리
+    breakdown_cat_conversation: 대화
+    header_session_info: 📊 **세션 정보**
+    label_messages: '메시지: {count}'
+    label_estimated_context: '예상 컨텍스트: 약 {count} 토큰'
+    detailed_after_first: _(자세한 사용량은 첫 에이전트 응답 이후 확인할 수 있습니다)_
+    no_data: 이 세션에 사용 가능한 사용량 데이터가 없습니다.
+    unknown_subcommand: '알 수 없는 /usage 하위 명령: `{args}`. `/usage` 또는 `/usage reset [--force]`를 사용해 보세요.'
+    reset_wrong_provider: 적립된 사용량 한도 초기화는 openai-codex 공급자에서만 사용할 수 있습니다. 먼저 `/model`로 전환하세요.
+    label_cache_hit_rate: 'Cache hit rate: {rate}%'
   credits:
-    not_logged_in:            "Nous Portal에 로그인되어 있지 않습니다. 로그인하면 크레딧 잔액 확인 및 충전을 할 수 있습니다."
-
+    not_logged_in: Nous Portal에 로그인되어 있지 않습니다. 로그인하면 크레딧 잔액 확인 및 충전을 할 수 있습니다.
   verbose:
-    not_enabled:           "`/verbose` 명령은 메시징 플랫폼에서 활성화되어 있지 않습니다.\n\n`config.yaml`에서 활성화하세요:\n```yaml\ndisplay:\n  tool_progress_command: true\n```"
-    mode_off:              "⚙️ 도구 진행 상황: **OFF** — 도구 활동이 표시되지 않습니다."
-    mode_new:              "⚙️ 도구 진행 상황: **NEW** — 도구가 변경될 때 표시됩니다 (미리보기 길이: `display.tool_preview_length`, 기본 40)."
-    mode_all:              "⚙️ 도구 진행 상황: **ALL** — 모든 도구 호출이 표시됩니다 (미리보기 길이: `display.tool_preview_length`, 기본 40)."
-    mode_verbose:          "⚙️ 도구 진행 상황: **VERBOSE** — 모든 도구 호출이 전체 인수와 함께 표시됩니다."
-    mode_log:              "⚙️ 도구 진행 상황: **LOG** — 채팅에는 표시되지 않으며 도구 호출이 ~/.hermes/logs/tool_calls.log에 기록됩니다."
-    saved_suffix:          "_(**{platform}**에 저장됨 — 다음 메시지부터 적용됩니다)_"
-    save_failed:           "_(설정에 저장할 수 없습니다: {error})_"
-
+    not_enabled: "`/verbose` 명령은 메시징 플랫폼에서 활성화되어 있지 않습니다.\n\n`config.yaml`에서 활성화하세요:\n```yaml\ndisplay:\n  tool_progress_command: true\n```"
+    mode_off: '⚙️ 도구 진행 상황: **OFF** — 도구 활동이 표시되지 않습니다.'
+    mode_new: '⚙️ 도구 진행 상황: **NEW** — 도구가 변경될 때 표시됩니다 (미리보기 길이: `display.tool_preview_length`, 기본 40).'
+    mode_all: '⚙️ 도구 진행 상황: **ALL** — 모든 도구 호출이 표시됩니다 (미리보기 길이: `display.tool_preview_length`, 기본 40).'
+    mode_verbose: '⚙️ 도구 진행 상황: **VERBOSE** — 모든 도구 호출이 전체 인수와 함께 표시됩니다.'
+    mode_log: '⚙️ 도구 진행 상황: **LOG** — 채팅에는 표시되지 않으며 도구 호출이 ~/.hermes/logs/tool_calls.log에 기록됩니다.'
+    saved_suffix: _(**{platform}**에 저장됨 — 다음 메시지부터 적용됩니다)_
+    save_failed: '_(설정에 저장할 수 없습니다: {error})_'
   voice:
-    enabled_voice_only:    "음성 모드가 활성화되었습니다.\n음성 메시지를 보내시면 음성으로 답변하겠습니다.\n모든 메시지에 대해 음성으로 응답받으려면 /voice tts를 사용하세요."
-    disabled_text:         "음성 모드가 비활성화되었습니다. 텍스트로만 응답합니다."
-    tts_enabled:           "자동 TTS가 활성화되었습니다.\n모든 응답에 음성 메시지가 포함됩니다."
-    status_mode:           "음성 모드: {label}"
-    status_channel:        "음성 채널: #{channel}"
-    status_participants:   "참가자: {count}"
-    status_member:         "  - {name}{status}"
-    speaking:              " (말하는 중)"
-    enabled_short:         "음성 모드가 활성화되었습니다."
-    disabled_short:        "음성 모드가 비활성화되었습니다."
-    label_off:             "꺼짐 (텍스트 전용)"
-    label_voice_only:      "켜짐 (음성 메시지에 음성으로 응답)"
-    label_all:             "TTS (모든 메시지에 음성으로 응답)"
-    help:                  "{toggle}\n\n**/voice 사용법**\n• `/voice on` — 음성 메시지를 보내면 음성으로 답변\n• `/voice tts` — *모든* 메시지에 음성으로 답변\n• `/voice off` — 텍스트 전용 답변으로 복귀\n• `/voice status` — 현재 모드 표시\n• `/voice` (인자 없음) — 켜기와 끄기를 빠르게 전환{channels}"
-    help_channels:         "\n\n**라이브 음성 채널 (Discord)**\n• 먼저 음성 채널에 들어간 다음 `/voice channel` — 제가 참여해 듣고 음성으로 답변합니다\n• `/voice leave` — 음성 채널에서 연결 해제"
+    enabled_voice_only: '음성 모드가 활성화되었습니다.
 
+      음성 메시지를 보내시면 음성으로 답변하겠습니다.
+
+      모든 메시지에 대해 음성으로 응답받으려면 /voice tts를 사용하세요.'
+    disabled_text: 음성 모드가 비활성화되었습니다. 텍스트로만 응답합니다.
+    tts_enabled: '자동 TTS가 활성화되었습니다.
+
+      모든 응답에 음성 메시지가 포함됩니다.'
+    status_mode: '음성 모드: {label}'
+    status_channel: '음성 채널: #{channel}'
+    status_participants: '참가자: {count}'
+    status_member: '  - {name}{status}'
+    speaking: ' (말하는 중)'
+    enabled_short: 음성 모드가 활성화되었습니다.
+    disabled_short: 음성 모드가 비활성화되었습니다.
+    label_off: 꺼짐 (텍스트 전용)
+    label_voice_only: 켜짐 (음성 메시지에 음성으로 응답)
+    label_all: TTS (모든 메시지에 음성으로 응답)
+    help: '{toggle}
+
+
+      **/voice 사용법**
+
+      • `/voice on` — 음성 메시지를 보내면 음성으로 답변
+
+      • `/voice tts` — *모든* 메시지에 음성으로 답변
+
+      • `/voice off` — 텍스트 전용 답변으로 복귀
+
+      • `/voice status` — 현재 모드 표시
+
+      • `/voice` (인자 없음) — 켜기와 끄기를 빠르게 전환{channels}'
+    help_channels: '
+
+
+      **라이브 음성 채널 (Discord)**
+
+      • 먼저 음성 채널에 들어간 다음 `/voice channel` — 제가 참여해 듣고 음성으로 답변합니다
+
+      • `/voice leave` — 음성 채널에서 연결 해제'
   yolo:
-    disabled:                   "⚠️ 이 세션에서 YOLO 모드 **꺼짐** — 위험한 명령은 승인이 필요합니다."
-    enabled:                    "⚡ 이 세션에서 YOLO 모드 **켜짐** — 모든 명령이 자동 승인됩니다. 주의해서 사용하세요."
-
+    disabled: ⚠️ 이 세션에서 YOLO 모드 **꺼짐** — 위험한 명령은 승인이 필요합니다.
+    enabled: ⚡ 이 세션에서 YOLO 모드 **켜짐** — 모든 명령이 자동 승인됩니다. 주의해서 사용하세요.
   shared:
-    session_db_unavailable:      "세션 데이터베이스를 사용할 수 없습니다."
-    session_db_unavailable_prefix: "세션 데이터베이스를 사용할 수 없습니다"
-    session_not_found:           "데이터베이스에서 세션을 찾을 수 없습니다."
-    warn_passthrough:            "⚠️ {error}"
-
-  # Discord native slash-command ephemeral acknowledgements.
+    session_db_unavailable: 세션 데이터베이스를 사용할 수 없습니다.
+    session_db_unavailable_prefix: 세션 데이터베이스를 사용할 수 없습니다
+    session_not_found: 데이터베이스에서 세션을 찾을 수 없습니다.
+    warn_passthrough: ⚠️ {error}
   discord_slash:
-    new_started: "New conversation started~"
-    reset_started: "Session reset~"
-    retrying: "Retrying~"
-    status_sent: "Status sent~"
-    stop_requested: "Stop requested~"
-    update_initiated: "Update initiated~"
-    restart_requested: "Restart requested~"
-    queued: "Queued for the next turn."
-    background_started: "Background task started~"
+    new_started: New conversation started~
+    reset_started: Session reset~
+    retrying: Retrying~
+    status_sent: Status sent~
+    stop_requested: Stop requested~
+    update_initiated: Update initiated~
+    restart_requested: Restart requested~
+    queued: Queued for the next turn.
+    background_started: Background task started~
+  silent_api_disconnect: ⚠️ The API connection dropped before any response arrived. This is usually a transient network or provider issue — please try again.
+  agent_error: 'Sorry, I encountered an unexpected error.{status_hint}
+
+    Try again or use /reset to start a fresh session.'
+  agent_error_hint_auth: ' Check your API key or run `claude /login` to refresh OAuth credentials.'
+  agent_error_hint_billing: ' Your API balance or quota is exhausted. Check your provider dashboard.'
+  agent_error_hint_rate_limited: ' You are being rate-limited. Please wait a moment and try again.'
+  agent_error_hint_usage_limit: ' Your plan''s usage limit has been reached. Please wait until it resets.'
+  agent_error_hint_usage_limit_resets: ' Your plan''s usage limit has been reached. It resets in ~{hours}h.'
+  agent_error_hint_overloaded: ' The API is temporarily overloaded. Please try again shortly.'
+  agent_error_hint_rejected: ' The request was rejected by the API.'
+  shutdown_notify_restart: 🌆 Gateway{profile_tag} restarting — Your current task will be interrupted. Send any message after restart and I'll try to resume where you left off.
+  shutdown_notify_stop: ⚠️ Gateway{profile_tag} shutting down — Your current task will be interrupted.
+  restart_success: 🌃 Gateway{profile_tag} restarted successfully. Your session continues.
+  online: 🏙 Gateway{profile_tag} online — Hermes is back and ready.
+  busy_drain_queued: ⏳ Gateway{profile_tag} {action} — queued for the next turn after it comes back.
+  busy_drain_not_accepting: ⏳ Gateway{profile_tag} is {action} and is not accepting another turn right now.
+  busy_drain_no_work: ⏳ Gateway{profile_tag} is {action} and is not accepting new work right now.
+  busy_drain_maintenance: ⏳ This agent{profile_tag} is draining for a maintenance action and isn't accepting new turns right now. It'll be back in a moment — please resend shortly.
+  busy_steer_ack: ⏩ Steered into current run{status_detail}. Your message arrives after the next tool call.
+  busy_queue_ack: ⏳ Queued for the next turn{status_detail}. I'll respond once the current task finishes.
+  busy_interrupt_ack: ⚡ Interrupting current task{status_detail}. I'll respond to your message shortly.
+  busy_subagent_queued: ⏳ Subagent working{status_detail} — your message is queued for when it finishes (use /stop to cancel everything).
+  busy_compress_queued: ⏳ Compressing context{status_detail} — your message is queued for when it finishes (use /stop to cancel everything).
+  steer_failed: '⚠️ Steer failed: {error}'
+  steer_queued: '⏩ Steer queued — arrives after the next tool call: ''{preview}'''
+  steer_empty: Steer rejected (empty payload).
+  force_stop_pending: ⚡ Force-stopped. The agent was still starting — session unlocked.
+  still_working: ⏳ Working — {elapsed} min{status_detail}
+  no_activity_warning: ⚠️ No activity for {elapsed} min. If the agent does not respond soon, it will be timed out in {remaining} min. You can continue waiting or use /reset.
+  agent_timeout: '⏱️ Agent inactive for {timeout_mins} min — no tool calls or API responses.
+
+    {detail}
+
+    To increase the limit, set agent.gateway_timeout in config.yaml (value in seconds, 0 = no limit) and restart the gateway.
+
+    Try again, or use /reset to start fresh.'
+  agent_timeout_detail_tool: The agent appears stuck on tool `{cur_tool}` ({secs_since}s since last activity, iteration {iter_n}/{iter_max}).
+  agent_timeout_detail_activity: 'Last activity: {last_desc} ({secs_since}s ago, iteration {iter_n}/{iter_max}). The agent may have been waiting on an API response.'
+  busy_agent_starting: Agent still starting — /steer queued for the next turn.
+  busy_no_active_agent: No active agent — /steer queued for the next turn.
+  busy_model_blocked: Agent is running — wait or /stop first, then switch models.
+  busy_codex_runtime_blocked: Agent is running — wait or /stop first, then change runtime.
+  busy_goal_blocked: Agent is running — use /goal status / pause / clear / wait mid-run, or /stop before setting a new goal.
+  busy_cmd_blocked: ⏳ Agent is running — `/{cmd}` can't run mid-turn. Wait for the current response or `/stop` first.
+  unknown_command: Unknown command `/{command}`. Type /commands to see what's available, or resend without the leading slash to send as a regular message.
+  skill_disabled: 'The **{skill}** skill is installed but disabled. Enable it with: `hermes skills config`'
+  skill_disabled_for_platform: 'The **{skill}** skill is disabled for {platform}. Enable it with: `hermes skills config`'
+  skill_not_installed: 'The **{skill}** skill is available but not installed. Install it with: `hermes skills install {path}`'
+  queue_usage: 'Usage: /queue <prompt>'
+  queue_queued: Queued for the next turn.
+  queue_queued_with_depth: Queued for the next turn. ({depth} queued)
+  steer_usage: 'Usage: /steer <prompt>'
+  steer_usage_no_agent: 'Usage: /steer <prompt>  (no agent is running; sending as a normal message)'
+  learn_failed: Could not start /learn — please try again.
+  quick_command_timeout: Quick command timed out (30s).
+  quick_command_no_output: Command returned no output.
+  quick_command_error: 'Quick command error: {error}'
+  quick_command_no_command: Quick command '/{command}' has no command defined.
+  quick_command_no_target: Quick command '/{command}' has no target defined.
+  quick_command_unsupported_type: 'Quick command ''/{command}'' has unsupported type (supported: ''exec'', ''alias'').'
+  hook_blocked: Command `/{command}` was blocked by a hook.
+  processing_stopped: '⚠️ Processing stopped: {error}. Try again.'
+  suggestions_failed: 'Suggestions command failed: {error}'
+  moa_prepare_failed: Failed to prepare MoA turn.
+  chained_commands_executed: Commands executed.
+  busy_moa_blocked: Agent is running — wait or /stop first, then run /moa.
+  interrupted_before_processing: ⚠️ Your message was interrupted before processing started (likely by a recent /stop). Please send it again.
+  init_failed: Could not start /init — please try again.
+  init_ack_update: Updating AGENTS.md from a project scan…
+  init_ack_generate: Generating AGENTS.md from a project scan…
+  learn_ack_described: Learning a skill from what you described…
+  learn_ack_conversation: Learning a skill from this conversation…
+  stacked_skills_load_failed: Failed to load stacked skills for /{command}.
+  skills_disabled_stacked: 'The **{skills}** skill(s) in this stacked invocation are disabled for {platform}.
+
+    Enable them with: `hermes skills config`'
+  compression_timeout_notice: ⚠️ Context compression timed out after {timeout_s}s with no output from the summary model. No messages were dropped — continuing without compression. Run /compress to retry, /reset for a clean session, or check your auxiliary.compression model configuration.
+  session_auto_reset_exhausted: '
+
+
+    🔄 Session auto-reset — the conversation exceeded the maximum context size and could not be compressed further. Your next message will start a fresh session.'
+  admin_only_can_run: 'You can run: {commands}. Use /whoami for the full list.'
+  admin_only_none_enabled: No slash commands are enabled for non-admins on this platform. Ask an admin to add you to allow_admin_from or to set user_allowed_commands.
+  approval_fallback:
+    heading: ⚠️ **Dangerous command requires approval:**
+    heading_smart_deny: ⚠️ **Smart DENY — owner override for one operation:**
+    choice_once: Reply `{command_prefix}approve` to execute this one operation
+    choice_session: '`{command_prefix}approve session` to approve this pattern for the session'
+    choice_always: '`{command_prefix}approve always` to approve permanently'
+    choice_deny: '`{command_prefix}deny` to cancel'
+    choices_join: '{choices_head}, or {choices_tail}.'
+    body: '{heading}
+
+      ```
+
+      {cmd_preview}
+
+      ```
+
+      {reason}
+
+
+      {choices}'
+  pairing:
+    unrecognized: 'Hi~ I don''t recognize you yet!
+
+
+      Here''s your pairing code: `{code}`
+
+
+      Ask the bot owner to run:
+
+      `hermes {profile_arg}pairing approve {platform_name} {code}`'
+    rate_limited: Too many pairing requests right now~ Please try again later!
+  proxy:
+    aiohttp_missing: '⚠️ Proxy mode requires aiohttp. Install with: pip install aiohttp'
+    url_not_configured: ⚠️ Proxy URL not configured (GATEWAY_PROXY_URL or gateway.proxy_url)
+    http_error: '⚠️ Proxy error ({status}): {error}'
+    connection_error: '⚠️ Proxy connection error: {error}'
+  session_reset_notice: '◐ Session automatically reset ({reason}). Conversation history cleared.
+
+    Use /resume to browse and restore a previous session.
+
+    Adjust reset timing in config.yaml under session_reset.'
+  session_reset_reason_suspended: previous session was stopped or interrupted
+  session_reset_reason_resume_expired: gateway restart recovery timed out
+  session_reset_reason_daily: daily schedule at {hour}:00
+  session_reset_reason_idle: inactive for {duration}
+  interrupt:
+    placeholder: Operation interrupted.
+    friendly: Operation interrupted. The model returned no visible response. Try /new to start a fresh conversation, or switch models with /model. If the issue persists, the current model may not support this workload.
+  interrupt_retry: Operation interrupted during retry ({reason}, attempt {attempt}/{max}).
+  interrupt_api_error: 'Operation interrupted: handling API error ({error_type}: {error_detail}). Try again later or switch models with /model.'
+  interrupt_retry_after_error: 'Operation interrupted: retrying API call after error (retry {attempt}/{max}).'
+  goal_usage_wait: 'Usage: /goal wait <pid> [reason]'
+  goal_no_wait_barrier: No wait barrier set.
+  goal_usage_draft: 'Usage: /goal draft <objective in plain language>'
+  goal_no_active: No active goal. Set one with /goal <text>.
+  subgoal_usage_remove: 'Usage: /subgoal remove <n>'
+  subgoal_no_subgoals: No subgoals to clear.
+  turn_explainer:
+    prefix: '⚠️ No reply: '
+    empty_response_exhausted: the model returned empty content after retries and any fallback providers. Try `continue`, switch model/provider, or inspect the tool output above.
+    all_retries_exhausted: all API retries were exhausted before a response was produced (provider errors / rate limits). Try `continue` or switch provider.
+    partial_stream_recovery: streaming stopped early and only a partial response was recovered. Send `continue` to resume from where it stopped.
+    fallback_prior_turn: no new content was produced this turn; showing recovered prior context. Send `continue` to retry.
+    interrupted_during_api_call: the request was interrupted mid-call before a reply was received. Send `continue` to retry.
+    budget_exhausted: the per-turn iteration/cost budget was exhausted before a final answer. Send `continue` to keep going.
+    ollama_context_too_small: the local model's context window was too small to finish. Increase the context size or use a larger model.
+    max_iterations: the maximum tool-iteration limit was reached before a final answer. Send `continue` to keep going, or raise `max_iterations`.
+    error_near_max_iterations: an error occurred near the iteration limit before a final answer. Check the tool output above, then send `continue`.
+    pending_tool_result: the turn stopped while a tool result was still pending and the model produced no follow-up text. Send `continue` to let it summarize.
+  error:
+    invalid_api_response: 'Invalid API response after {max_retries} retries: {failure_hint}'
+    payload_too_large_max_compression: 'Request payload too large: max compression attempts ({max_compression_attempts}) reached.'
+    payload_too_large_413: Request payload too large (413). Cannot compress further.
+    context_exceeded_max_compression: 'Context length exceeded: max compression attempts ({max_compression_attempts}) reached.'
+    context_exceeded_tokens: Context length exceeded ({new_tokens} tokens). Cannot compress further.
+    billing_exhausted: 'Billing or credits exhausted: {final_summary}. Check your account balance or configure a fallback provider.'
+    api_failed_after_retries: 'API call failed after {max_retries} retries: {final_summary}'
+    invalid_tool_call: 'Model generated invalid tool call: {invalid_preview}. Try switching models with /model or start fresh with /new.'
+    repeated_errors: 'I apologize, but I encountered repeated errors: {error_msg}'
+  runtime:
+    ollama_context_too_small: ❌ Ollama runtime context is too small for Hermes tool use
+    pre_api_compression: '📦 Pre-API compression: ~{tokens} tokens near the context/output limit. Compacting before the next model call.'
+    preflight_compression: '📦 Preflight compression: ~{tokens} tokens >= {threshold} threshold. This may take a moment.'
+    compaction: 🗜️ {marker} — summarizing earlier conversation so I can continue...
+    stale_connections: 🔌 Detected stale connections from a previous provider issue — cleaned up automatically. Proceeding with fresh connection.
+    fallback_trying: ⚠️ Max retries ({max_retries}) exhausted — trying fallback...
+    fallback_empty_malformed: ⚠️ Empty/malformed response — switching to fallback...
+    fallback_rate_limited: ⚠️ Rate limited — switching to fallback provider...
+    fallback_upstream_rate_limited: ⚠️ Upstream {upstream} rate-limited — switching to fallback model...
+    fallback_billing_exhausted: ⚠️ Billing or credits exhausted — switching to fallback provider...
+    fallback_provider_unreachable: ⚠️ Provider unreachable — switching to fallback provider...
+    fallback_non_retryable: ⚠️ Non-retryable error (HTTP {status_code}) — trying fallback...
+    max_retries_invalid_response: ❌ Max retries ({max_retries}) exceeded for invalid responses. Giving up.
+    compressed_messages: 🗜️ Compressed {before} → {after} messages, retrying...
+    compressed_tokens: 🗜️ Compressed ~{before_tokens} → ~{after_tokens} tokens, retrying...
+    payload_too_large_compressing: ⚠️ Request payload too large (413) — compression attempt {current}/{total}...
+    context_too_large_compressing: 🗜️ Context too large (~{tokens} tokens) — compressing ({current}/{total})...
+    empty_response_fallback: ↻ Empty response after tool calls — using earlier content as final answer
+    retrying_in: ⏳ Retrying in {wait_time}s (attempt {attempt}/{max})...
+    status_billing_exhausted: ❌ Billing or credits exhausted — {summary}
+    status_rate_limited: ❌ Rate limited after {max_retries} retries — {summary}
+    status_api_failed: ❌ API failed after {max_retries} retries — {summary}
+    tool_loop_interrupt: ⚡ Breaking out of tool loop due to interrupt...
+    compacting_context_progress: ⟳ compacting context…
+    conversation_completed: 🎉 Conversation completed after {count} OpenAI-compatible API call(s)
+    cached_context_length: '💾 Cached context length: {ctx} tokens for {model}'
+    starting_conversation: '💬 Starting conversation: ''{preview}{ellipsis}'''
+    codex_no_first_byte: '⚠️ No first byte from provider in {elapsed}s (codex stream, model: {model}). Reconnecting.'
+    codex_no_first_byte_with_hint: '⚠️ No first byte from provider in {elapsed}s (codex stream, model: {model}). Reconnecting. {hint}'
+    codex_stream_idle: '⚠️ Codex stream sent no events for {elapsed}s after first byte (model: {model}). Reconnecting.'
+    provider_no_response: '⚠️ No response from provider for {elapsed}s (non-streaming, model: {model}). Aborting call.'
+    provider_no_response_with_hint: '⚠️ No response from provider for {elapsed}s (non-streaming, model: {model}). {hint}'
+    fallback_primary_failed: '🔄 Primary model failed — switching to fallback: {model} via {provider}'
+    bedrock_stream_denied: ⚠  AWS IAM denied bedrock:InvokeModelWithResponseStream — falling back to non-streaming InvokeModel. Grant that action to restore streaming output.
+    streaming_unsupported: '⚠  Streaming is not supported for this model/provider. Switching to non-streaming. To avoid this delay, set display.streaming: false in config.yaml'
+    stream_malformed: ❌ Provider returned malformed streaming data after {attempts} attempts. The provider may be experiencing issues — try again in a moment.
+    stream_connection_failed: ❌ Connection to provider failed after {attempts} attempts. The provider may be experiencing issues — try again in a moment.
+    stream_no_response: '⚠️ No response from provider for {elapsed}s (model: {model}, context: ~{tokens} tokens). Reconnecting...'
+  chat_id_unknown: Could not determine chat ID.
+  session_not_found: 'Session not found: {name}'
+  default_chat_name: Hermes Chat
+  topic_mode_disabled: Multi-session topic mode is not currently enabled for this chat.
+  topic_disabled: 'Multi-session topic mode is now OFF for this chat.
+
+
+    Existing topics in Telegram aren''t removed — they''ll just stop being gated as independent sessions. The root DM works as a normal Hermes chat again. Run /topic to re-enable later.'
+  topic_disable_failed: 'Failed to disable topic mode: {error}'
+  topic_not_telegram_session: That session is not a Telegram session and cannot be restored into this topic.
+  topic_wrong_user: That session does not belong to this Telegram user.
+  topic_already_linked: That session is already linked to another Telegram topic.
+  voice_not_supported: Voice channels are not supported on this platform.
+  voice_discord_only: This command only works in a Discord server.
+  voice_not_in_channel: You need to be in a voice channel first.
+  voice_join_failed: Failed to join voice channel. Check bot permissions (Connect + Speak).
+  voice_left: Left voice channel.
+  voice_joined: 'Joined voice channel **{channel}**.
+
+    I''ll speak my replies and listen to you. Use /voice leave to disconnect.'
+  voice_deps_missing: 'Voice dependencies are missing (PyNaCl / davey). Install with: `{command}`'
+  voice_not_connected: Not in a voice channel.
+  voice_join_failed_with_error: 'Failed to join voice channel: {error}'
+  destructive_slash_confirm:
+    prompt: '⚠️ **Confirm /{command}**
+
+
+      {detail}
+
+
+      Choose:
+
+      • **Approve Once** — proceed this time only
+
+      • **Always Approve** — proceed and silence this prompt permanently
+
+      • **Cancel** — keep current conversation
+
+
+      _Text fallback: reply `{_p}approve`, `{_p}always`, or `{_p}cancel`._'
+    cancelled: 🟡 /{command} cancelled. Conversation unchanged.
+    always_note: '
+
+
+      ℹ️ Future /clear, /new, /reset, and /undo will run without confirmation. Re-enable via `approvals.destructive_slash_confirm: true` in config.yaml.'
+    always_note_persist_failed: '
+
+
+      ⚠️ Could not save that preference (config.yaml is not writable), so /clear, /new, /reset, and /undo will ask again next time. To silence it permanently, set `approvals.destructive_slash_confirm: false` in config.yaml.'
+  admin_only: ⛔ /{command} is admin-only here. {detail}
+  clarify_undelivered: '[clarify prompt could not be delivered]'
+  clarify_timeout: '[user did not respond within {minutes}m]'
+  clarify_timeout_notice: ⏳ No response received within {minutes} minutes; the current operation has stopped. Send me a message if you need anything.
+  update_send_failed: '✗ Failed to send response to update process: {error}'
+  update_sent: ✓ Sent `{label}` to the update process.
+toolguard:
+  halt_status: '⚠️ Tool guardrail halted {tool_name}: {code}'
+  halt_response: I stopped retrying {tool_name} because it hit the tool-call guardrail ({code}) after {count} repeated non-progressing attempts. The last tool result explains the blocker; the next step is to change strategy instead of repeating the same call.
+memory:
+  add_exceeds_limit: 'Memory at {current}/{limit} chars. Adding this entry ({entry_chars} chars) would exceed the limit. Consolidate now: use ''replace'' to merge overlapping entries into shorter ones or ''remove'' stale or less important entries (see current_entries below), then retry this add — all in this turn.'
+memory_proposal:
+  action_add: Add
+  action_replace: Replace
+  action_remove: Remove
+  card_title: 💾 Memory Proposal
+  card_title_batch: 💾 Memory Proposal (batch · {count} ops)
+  card_operation: Operation
+  card_target: Target
+  card_existing: Existing content
+  card_new_content: New content
+  card_empty: (none)
+  card_empty_content: (no content)
+  card_summary_label: Operations
+  card_op_index: '({idx}/{total}) '
+  card_more_ops: … and {count} more ops
+  card_char_budget: 'Est. chars: {final}/{limit}'
+  btn_approve: ✅ Approve
+  btn_deny: 🟥 Deny
+  resolved_approved: Memory proposal approved
+  resolved_denied: Memory proposal denied
+  pending_id_label: Approval ID
+  summary_add: add to {target}
+  summary_replace: replace in {target}
+  summary_remove: remove from {target}
+  summary_batch: apply {count} op(s) to {target}
+  summary_action: '{action} on {target}'
+  approved: Approved
+  denied: Denied
+  confirm_approved: ✅ Memory proposal approved
+  confirm_denied: 🟥 Memory proposal denied
+  response_approved_one: Approved pending memory write '{id}'.
+  response_approved_all: Approved {count} memory write(s).
+  response_rejected_one: Rejected pending memory write '{id}'.
+  response_rejected_all: Rejected {count} pending memory write(s).
+  response_no_pending: No pending memory writes.
+  response_no_match: No pending memory write with id '{id}'.
+  response_usage_approve: 'Usage: /{subsystem} approve <id>  (or ''all'')'
+  response_usage_reject: 'Usage: /{subsystem} reject <id>'
+  response_pending_header: 'Pending memory writes ({count}):'
+  response_approval_state: memory.write_approval = {state}
+  iteration:
+    budget_exhausted: ⚠️ Single-conversation iteration budget exhausted ({used}/{max_total} turns used)
+    budget_exhausted_summary: ⚠️ Iteration budget exhausted ({used}/{max_total}) — requesting summary...

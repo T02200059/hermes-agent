@@ -499,21 +499,42 @@ def _format_exec_approval_fallback(
 ) -> str:
     """Render the text fallback from approval capabilities, not platform names."""
     cmd_preview = command[:200] + "..." if len(command) > 200 else command
-    heading = "⚠️ **Dangerous command requires approval:**"
+    heading = t("gateway.approval_fallback.heading")
     if smart_denied:
-        heading = "⚠️ **Smart DENY — owner override for one operation:**"
+        heading = t("gateway.approval_fallback.heading_smart_deny")
 
-    choices = [f"Reply `{command_prefix}approve` to execute this one operation"]
+    choices = [
+        t("gateway.approval_fallback.choice_once", command_prefix=command_prefix)
+    ]
     if not smart_denied and allow_session:
         choices.append(
-            f"`{command_prefix}approve session` to approve this pattern for the session"
+            t(
+                "gateway.approval_fallback.choice_session",
+                command_prefix=command_prefix,
+            )
         )
         if allow_permanent:
-            choices.append(f"`{command_prefix}approve always` to approve permanently")
-    choices.append(f"`{command_prefix}deny` to cancel")
-    return (
-        f"{heading}\n```\n{cmd_preview}\n```\nReason: {description}\n\n"
-        + ", ".join(choices[:-1]) + f", or {choices[-1]}."
+            choices.append(
+                t(
+                    "gateway.approval_fallback.choice_always",
+                    command_prefix=command_prefix,
+                )
+            )
+    choices.append(
+        t("gateway.approval_fallback.choice_deny", command_prefix=command_prefix)
+    )
+    reason = t("approval.reason_label", description=description)
+    choices_text = t(
+        "gateway.approval_fallback.choices_join",
+        choices_head=", ".join(choices[:-1]),
+        choices_tail=choices[-1],
+    )
+    return t(
+        "gateway.approval_fallback.body",
+        heading=heading,
+        cmd_preview=cmd_preview,
+        reason=reason,
+        choices=choices_text,
     )
 
 
@@ -3423,10 +3444,7 @@ def _normalize_empty_agent_response(
         # interrupt flag left over from a recent /stop (#44212).  Pure
         # silence there swallows a real user message, so surface it.
         if api_calls == 0:
-            return (
-                "⚠️ Your message was interrupted before processing started "
-                "(likely by a recent /stop). Please send it again."
-            )
+            return t("gateway.interrupted_before_processing")
         return response
     if api_calls > 0:
         if _is_gateway_hidden_reasoning_incomplete_turn(agent_result):
@@ -14118,14 +14136,14 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
     # to the old chain.
     # ------------------------------------------------------------------
 
-    # Command-specific mid-run reject texts (busy_policy == "reject" with a
-    # busy_handler naming an entry here). All other rejected commands get
-    # the generic catch-all text in _dispatch_busy_slash_command.
-    _BUSY_REJECT_TEXT: Dict[str, str] = {
-        "model": "Agent is running — wait or /stop first, then switch models.",
-        "codex-runtime": ("Agent is running — wait or /stop first, then "
-                          "change runtime."),
-        "moa": "Agent is running — wait or /stop first, then run /moa.",
+    # Command-specific mid-run reject i18n keys (busy_policy == "reject" with a
+    # busy_handler naming an entry here). Resolved at call time via t() so
+    # language changes are honored. All other rejected commands get the
+    # generic catch-all text in _dispatch_busy_slash_command.
+    _BUSY_REJECT_I18N_KEYS: Dict[str, str] = {
+        "model": "gateway.busy_model_blocked",
+        "codex-runtime": "gateway.busy_codex_runtime_blocked",
+        "moa": "gateway.busy_moa_blocked",
     }
 
     async def _dispatch_busy_slash_command(
@@ -14162,9 +14180,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             }.get(handler_key)
             if special is not None:
                 return await special(event, quick_key, source)
-            reject_text = self._BUSY_REJECT_TEXT.get(handler_key)
-            if reject_text is not None:
-                return reject_text
+            reject_key = self._BUSY_REJECT_I18N_KEYS.get(handler_key)
+            if reject_key is not None:
+                return t(reject_key)
 
         if policy in ("dispatch", "interrupt_then_dispatch"):
             plain = {
@@ -14196,10 +14214,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         # Catch-all: any other recognized slash command reached the
         # running-agent guard. Reject gracefully rather than falling
         # through to interrupt + discard.
-        return (
-            f"⏳ Agent is running — `/{name}` can't run "
-            f"mid-turn. Wait for the current response or `/stop` first."
-        )
+        return t("gateway.busy_cmd_blocked", cmd=name)
 
     async def _busy_start_command(self, event: MessageEvent, quick_key: str, source):
         # Telegram sends /start for bot launches/deep-links. Treat it as a
@@ -14259,7 +14274,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         # fields silently lost the attachment when the queued turn ran.
         has_media = bool(getattr(event, "media_urls", None))
         if not queued_text and not has_media:
-            return "Usage: /queue <prompt>"
+            return t("gateway.queue_usage")
         adapter = self._adapter_for_source(source)
         if adapter:
             queued_event = MessageEvent(
@@ -14284,8 +14299,8 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             self._enqueue_fifo(quick_key, queued_event, adapter)
         depth = self._queue_depth(quick_key, adapter=self._adapter_for_source(source))
         if depth <= 1:
-            return "Queued for the next turn."
-        return f"Queued for the next turn. ({depth} queued)"
+            return t("gateway.queue_queued")
+        return t("gateway.queue_queued_with_depth", depth=depth)
 
     async def _busy_steer_command(self, event: MessageEvent, quick_key: str, source):
         # /steer <prompt> — inject mid-run after the next tool call.
@@ -14295,7 +14310,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         # no role-alternation violation.
         steer_text = event.get_command_args().strip()
         if not steer_text:
-            return "Usage: /steer <prompt>"
+            return t("gateway.steer_usage")
         _steer_state = self._peek_session_state(quick_key)
         running_agent = _steer_state.turn.agent if _steer_state else None
         if running_agent is _AGENT_PENDING_SENTINEL:
@@ -14311,17 +14326,17 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     channel_context=event.channel_context,
                 )
                 self._enqueue_fifo(quick_key, queued_event, adapter)
-            return "Agent still starting — /steer queued for the next turn."
+            return t("gateway.busy_agent_starting")
         if running_agent and hasattr(running_agent, "steer"):
             try:
                 accepted = running_agent.steer(steer_text)
             except Exception as exc:
                 logger.warning("Steer failed for session %s: %s", quick_key, exc)
-                return f"⚠️ Steer failed: {exc}"
+                return t("gateway.steer_failed", error=exc)
             if accepted:
                 preview = steer_text[:60] + ("..." if len(steer_text) > 60 else "")
-                return f"⏩ Steer queued — arrives after the next tool call: '{preview}'"
-            return "Steer rejected (empty payload)."
+                return t("gateway.steer_queued", preview=preview)
+            return t("gateway.steer_empty")
         # Running agent is missing or lacks steer() — fall back to queue.
         adapter = self._adapter_for_source(source)
         if adapter:
@@ -14334,7 +14349,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 channel_context=event.channel_context,
             )
             self._enqueue_fifo(quick_key, queued_event, adapter)
-        return "No active agent — /steer queued for the next turn."
+        return t("gateway.busy_no_active_agent")
 
     async def _busy_goal_command(self, event: MessageEvent, quick_key: str, source):
         # /goal is safe mid-run for status/pause/clear/wait (inspection
@@ -14353,7 +14368,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         )
         if _is_control:
             return await self._handle_goal_command(event)
-        return "Agent is running — use /goal status / pause / clear / wait mid-run, or /stop before setting a new goal."
+        return t("gateway.busy_goal_blocked")
 
     async def _handle_message(self, event: MessageEvent) -> Optional[str]:
         """
@@ -14522,19 +14537,19 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                         )
                         await adapter.send(
                             source.chat_id,
-                            f"Hi~ I don't recognize you yet!\n\n"
-                            f"Here's your pairing code: `{code}`\n\n"
-                            f"Ask the bot owner to run:\n"
-                            f"`hermes {profile_arg}pairing approve "
-                            f"{platform_name} {code}`"
+                            t(
+                                "gateway.pairing.unrecognized",
+                                code=code,
+                                profile_arg=profile_arg,
+                                platform_name=platform_name,
+                            ),
                         )
                 else:
                     adapter = self._adapter_for_source(source)
                     if adapter:
                         await adapter.send(
                             source.chat_id,
-                            "Too many pairing requests right now~ "
-                            "Please try again later!"
+                            t("gateway.pairing.rate_limited"),
                         )
                     # Record rate limit so subsequent messages are silently ignored
                     pairing_store._record_rate_limit(platform_name, source.user_id)
@@ -15242,9 +15257,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
 
             _learn_req = event.get_command_args().strip()
             _ack = (
-                "Learning a skill from what you described…"
+                t("gateway.learn_ack_described")
                 if _learn_req
-                else "Learning a skill from this conversation…"
+                else t("gateway.learn_ack_conversation")
             )
             try:
                 adapter = self._adapter_for_source(source)
@@ -15271,11 +15286,11 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             try:
                 _init_prompt = build_init_prompt_for_cwd(extra=_init_notes)
             except Exception:
-                return "Could not start /init — please try again."
+                return t("gateway.init_failed")
             _ack = (
-                "Updating AGENTS.md from a project scan…"
+                t("gateway.init_ack_update")
                 if "UPDATE the existing AGENTS.md" in _init_prompt
-                else "Generating AGENTS.md from a project scan…"
+                else t("gateway.init_ack_generate")
             )
             try:
                 adapter = self._adapter_for_source(source)
@@ -15434,7 +15449,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         if canonical == "queue":
             queue_payload = event.get_command_args().strip()
             if not queue_payload:
-                return "Usage: /queue <prompt>"
+                return t("gateway.queue_usage")
             try:
                 event.text = queue_payload
             except Exception:
@@ -15693,10 +15708,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                             if skill_cmds.get(k, {}).get("name", "") in _plat_disabled
                         ]
                         if _disabled_extra:
-                            return (
-                                f"The **{', '.join(_disabled_extra)}** skill(s) in this "
-                                f"stacked invocation are disabled for {_plat}.\n"
-                                f"Enable them with: `hermes skills config`"
+                            return t(
+                                "gateway.skills_disabled_stacked",
+                                skills=", ".join(_disabled_extra),
+                                platform=_plat,
                             )
                     if extra_keys and _build_stacked is not None:
                         stacked_result = _build_stacked(
@@ -15709,7 +15724,10 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                             event.text = msg
                             # Fall through to normal message processing
                         else:
-                            return f"Failed to load stacked skills for /{command}."
+                            return t(
+                                "gateway.stacked_skills_load_failed",
+                                command=command,
+                            )
                     else:
                         msg = build_skill_invocation_message(
                             cmd_key, user_instruction, task_id=_quick_key
@@ -17174,14 +17192,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                                                 time.monotonic() - _hyg_wait_started,
                                                 _hyg_total_ceiling_seconds,
                                             )
-                                            _timeout_msg = (
-                                                "⚠️ Context compression timed out "
-                                                f"after {_hyg_timeout_seconds:.1f}s "
-                                                "with no output from the summary model. "
-                                                "No messages were dropped — continuing without "
-                                                "compression. Run /compress to retry, /reset for "
-                                                "a clean session, or check your "
-                                                "auxiliary.compression model configuration."
+                                            _timeout_msg = t(
+                                                "gateway.compression_timeout_notice",
+                                                timeout_s=f"{_hyg_timeout_seconds:.1f}",
                                             )
                                             try:
                                                 _adapter = self._adapter_for_source(source)
@@ -18056,10 +18069,8 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                         self._sync_telegram_topic_binding,
                         source, session_entry, reason="compression-exhausted-reset",
                     )
-                response = (response or "") + (
-                    "\n\n🔄 Session auto-reset — the conversation exceeded the "
-                    "maximum context size and could not be compressed further. "
-                    "Your next message will start a fresh session."
+                response = (response or "") + t(
+                    "gateway.session_auto_reset_exhausted"
                 )
 
             ts = time.time()  # Unix epoch float — consistent with DB storage
@@ -18585,18 +18596,12 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         )
         allowed_preview = sorted(policy.user_allowed_commands)
         if allowed_preview:
-            suffix = (
-                "You can run: "
-                + ", ".join(f"/{c}" for c in allowed_preview[:12])
-                + ("…" if len(allowed_preview) > 12 else "")
-                + ". Use /whoami for the full list."
-            )
+            cmds = ", ".join(f"/{c}" for c in allowed_preview[:12])
+            if len(allowed_preview) > 12:
+                cmds += "…"
+            suffix = t("gateway.admin_only_can_run", commands=cmds)
         else:
-            suffix = (
-                "No slash commands are enabled for non-admins on this "
-                "platform. Ask an admin to add you to allow_admin_from "
-                "or to set user_allowed_commands."
-            )
+            suffix = t("gateway.admin_only_none_enabled")
         return t("gateway.admin_only", command=canonical_cmd, detail=suffix)
 
 
@@ -20599,21 +20604,14 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             result = await execute()
             if choice == "always":
                 if persisted:
-                    note = (
-                        "\n\nℹ️ Future /clear, /new, /reset, and /undo will run "
-                        "without confirmation. Re-enable via "
-                        "`approvals.destructive_slash_confirm: true` in config.yaml."
-                    )
+                    note = t("gateway.destructive_slash_confirm.always_note")
                 else:
                     # The user did approve this run, so the action still goes
                     # ahead, but the preference did not stick and the prompt
                     # will be back next time. Say so rather than promising an
                     # opt-out that was never written.
-                    note = (
-                        "\n\n⚠️ Could not save that preference (config.yaml is not "
-                        "writable), so /clear, /new, /reset, and /undo will ask "
-                        "again next time. To silence it permanently, set "
-                        "`approvals.destructive_slash_confirm: false` in config.yaml."
+                    note = t(
+                        "gateway.destructive_slash_confirm.always_note_persist_failed"
                     )
                 if isinstance(result, str):
                     return result + note
@@ -20623,14 +20621,11 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             return result
 
         _p = self._typed_command_prefix_for(event.source.platform)
-        prompt_message = (
-            f"⚠️ **Confirm /{command}**\n\n"
-            f"{detail}\n\n"
-            "Choose:\n"
-            "• **Approve Once** — proceed this time only\n"
-            "• **Always Approve** — proceed and silence this prompt permanently\n"
-            "• **Cancel** — keep current conversation\n\n"
-            f"_Text fallback: reply `{_p}approve`, `{_p}always`, or `{_p}cancel`._"
+        prompt_message = t(
+            "gateway.destructive_slash_confirm.prompt",
+            command=command,
+            detail=detail,
+            _p=_p,
         )
         return await self._request_slash_confirm(
             event=event,
@@ -20979,13 +20974,13 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     if exit_code == 0:
                         await adapter.send(
                             chat_id,
-                            "✅ Hermes update finished.",
+                            t("gateway.update.finished"),
                             metadata=_non_conversational_metadata(metadata, platform=platform),
                         )
                     else:
                         await adapter.send(
                             chat_id,
-                            "❌ Hermes update failed (exit code {}).".format(exit_code),
+                            t("gateway.update.failed_exit", exit_code=exit_code),
                             metadata=_non_conversational_metadata(metadata, platform=platform),
                         )
                     logger.info("Update finished (exit=%s), notified %s", exit_code, session_key)
@@ -21051,14 +21046,20 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                             except Exception as btn_err:
                                 logger.debug("Button-based update prompt failed: %s", btn_err)
                         if not sent_buttons:
-                            default_hint = f" (default: {default})" if default else ""
+                            default_hint = (
+                                t("gateway.update.default_hint", default=default)
+                                if default
+                                else ""
+                            )
                             _p = getattr(adapter, "typed_command_prefix", "/")
                             await adapter.send(
                                 chat_id,
-                                f"⚕ **Update needs your input:**\n\n"
-                                f"{prompt_text}{default_hint}\n\n"
-                                f"Reply `{_p}approve` (yes) or `{_p}deny` (no), "
-                                f"or type your answer directly.",
+                                t(
+                                    "gateway.update.needs_input",
+                                    prompt=prompt_text,
+                                    default_hint=default_hint,
+                                    command_prefix=_p,
+                                ),
                                 metadata=_non_conversational_metadata(metadata, platform=platform),
                             )
                         # Keep the prompt marker on disk until the user
@@ -21084,7 +21085,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             try:
                 await adapter.send(
                     chat_id,
-                    "❌ Hermes update timed out after 30 minutes.",
+                    t("gateway.update.timed_out"),
                     metadata=_non_conversational_metadata(metadata, platform=platform),
                 )
             except Exception:
@@ -21187,13 +21188,13 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     if len(output) > 3500:
                         output = "…" + output[-3500:]
                     if exit_code == 0:
-                        msg = f"✅ Hermes update finished.\n\n```\n{output}\n```"
+                        msg = t("gateway.update.finished_with_output", output=output)
                     else:
-                        msg = f"❌ Hermes update failed.\n\n```\n{output}\n```"
+                        msg = t("gateway.update.failed_with_output", output=output)
                 elif exit_code == 0:
-                    msg = "✅ Hermes update finished successfully."
+                    msg = t("gateway.update.finished_ok")
                 else:
-                    msg = "❌ Hermes update failed. Check the gateway logs or run `hermes update` manually for details."
+                    msg = t("gateway.update.failed_details")
                 await adapter.send(
                     chat_id,
                     msg,
@@ -23894,7 +23895,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             from aiohttp import ClientSession as _AioClientSession, ClientTimeout
         except ImportError:
             return {
-                "final_response": "⚠️ Proxy mode requires aiohttp. Install with: pip install aiohttp",
+                "final_response": t("gateway.proxy.aiohttp_missing"),
                 "messages": [],
                 "api_calls": 0,
                 "tools": [],
@@ -23903,7 +23904,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         proxy_url = self._get_proxy_url()
         if not proxy_url:
             return {
-                "final_response": "⚠️ Proxy URL not configured (GATEWAY_PROXY_URL or gateway.proxy_url)",
+                "final_response": t("gateway.proxy.url_not_configured"),
                 "messages": [],
                 "api_calls": 0,
                 "tools": [],
@@ -24041,7 +24042,11 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                             resp.status, proxy_url, error_text[:500],
                         )
                         return {
-                            "final_response": f"⚠️ Proxy error ({resp.status}): {error_text[:300]}",
+                            "final_response": t(
+                                "gateway.proxy.http_error",
+                                status=resp.status,
+                                error=error_text[:300],
+                            ),
                             "messages": [],
                             "api_calls": 0,
                             "tools": [],
@@ -24101,7 +24106,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
             logger.error("Proxy connection error to %s: %s", proxy_url, e)
             if not full_response:
                 return {
-                    "final_response": f"⚠️ Proxy connection error: {e}",
+                    "final_response": t(
+                        "gateway.proxy.connection_error", error=e
+                    ),
                     "messages": [],
                     "api_calls": 0,
                     "tools": [],

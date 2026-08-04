@@ -559,6 +559,40 @@ Install it with: `hermes skills install {path}`"
   moa_prepare_failed: "Failed to prepare MoA turn."
   chained_commands_executed: "Commands executed."
 
+  busy_moa_blocked:        "Agent is running — wait or /stop first, then run /moa."
+  interrupted_before_processing: "⚠️ Your message was interrupted before processing started (likely by a recent /stop). Please send it again."
+  init_failed:             "Could not start /init — please try again."
+  init_ack_update:         "Updating AGENTS.md from a project scan…"
+  init_ack_generate:       "Generating AGENTS.md from a project scan…"
+  learn_ack_described:     "Learning a skill from what you described…"
+  learn_ack_conversation:  "Learning a skill from this conversation…"
+  stacked_skills_load_failed: "Failed to load stacked skills for /{command}."
+  skills_disabled_stacked: "The **{skills}** skill(s) in this stacked invocation are disabled for {platform}.\nEnable them with: `hermes skills config`"
+  compression_timeout_notice: "⚠️ Context compression timed out after {timeout_s}s with no output from the summary model. No messages were dropped — continuing without compression. Run /compress to retry, /reset for a clean session, or check your auxiliary.compression model configuration."
+  session_auto_reset_exhausted: "\n\n🔄 Session auto-reset — the conversation exceeded the maximum context size and could not be compressed further. Your next message will start a fresh session."
+  admin_only_can_run:      "You can run: {commands}. Use /whoami for the full list."
+  admin_only_none_enabled: "No slash commands are enabled for non-admins on this platform. Ask an admin to add you to allow_admin_from or to set user_allowed_commands."
+
+  approval_fallback:
+    heading: "⚠️ **Dangerous command requires approval:**"
+    heading_smart_deny: "⚠️ **Smart DENY — owner override for one operation:**"
+    choice_once: "Reply `{command_prefix}approve` to execute this one operation"
+    choice_session: "`{command_prefix}approve session` to approve this pattern for the session"
+    choice_always: "`{command_prefix}approve always` to approve permanently"
+    choice_deny: "`{command_prefix}deny` to cancel"
+    choices_join: "{choices_head}, or {choices_tail}."
+    body: "{heading}\n```\n{cmd_preview}\n```\n{reason}\n\n{choices}"
+
+  pairing:
+    unrecognized: "Hi~ I don't recognize you yet!\n\nHere's your pairing code: `{code}`\n\nAsk the bot owner to run:\n`hermes {profile_arg}pairing approve {platform_name} {code}`"
+    rate_limited: "Too many pairing requests right now~ Please try again later!"
+
+  proxy:
+    aiohttp_missing: "⚠️ Proxy mode requires aiohttp. Install with: pip install aiohttp"
+    url_not_configured: "⚠️ Proxy URL not configured (GATEWAY_PROXY_URL or gateway.proxy_url)"
+    http_error: "⚠️ Proxy error ({status}): {error}"
+    connection_error: "⚠️ Proxy connection error: {error}"
+
   # Session auto-reset notice — shown when a stale session is cleared on new activity.
   session_reset_notice: "◐ Session automatically reset ({reason}). Conversation history cleared.\nUse /resume to browse and restore a previous session.\nAdjust reset timing in config.yaml under session_reset."
   session_reset_reason_suspended: "previous session was stopped or interrupted"
@@ -861,6 +895,7 @@ Install it with: `hermes skills install {path}`"
     prompt: "⚠️ **Confirm /{command}**\n\n{detail}\n\nChoose:\n• **Approve Once** — proceed this time only\n• **Always Approve** — proceed and silence this prompt permanently\n• **Cancel** — keep current conversation\n\n_Text fallback: reply `{_p}approve`, `{_p}always`, or `{_p}cancel`._"
     cancelled: "🟡 /{command} cancelled. Conversation unchanged."
     always_note: "\n\nℹ️ Future /clear, /new, /reset, and /undo will run without confirmation. Re-enable via `approvals.destructive_slash_confirm: true` in config.yaml."
+    always_note_persist_failed: "\n\n⚠️ Could not save that preference (config.yaml is not writable), so /clear, /new, /reset, and /undo will ask again next time. To silence it permanently, set `approvals.destructive_slash_confirm: false` in config.yaml."
 
 
   admin_only: "⛔ /{command} is admin-only here. {detail}"
@@ -1159,6 +1194,16 @@ Install it with: `hermes skills install {path}`"
     hermes_cmd_not_found:    "✗ Could not locate the `hermes` command. Hermes is running, but the update command could not find the executable on PATH or via the current Python interpreter. Try running `hermes update` manually in your terminal."
     start_failed:            "✗ Failed to start update: {error}"
     starting:                "⚕ Starting Hermes update… I'll stream progress here."
+
+    finished: "✅ Hermes update finished."
+    failed_exit: "❌ Hermes update failed (exit code {exit_code})."
+    timed_out: "❌ Hermes update timed out after 30 minutes."
+    finished_with_output: "✅ Hermes update finished.\n\n```\n{output}\n```"
+    failed_with_output: "❌ Hermes update failed.\n\n```\n{output}\n```"
+    finished_ok: "✅ Hermes update finished successfully."
+    failed_details: "❌ Hermes update failed. Check the gateway logs or run `hermes update` manually for details."
+    needs_input: "⚕ **Update needs your input:**\n\n{prompt}{default_hint}\n\nReply `{command_prefix}approve` (yes) or `{command_prefix}deny` (no), or type your answer directly."
+    default_hint: " (default: {default})"
 
   update_send_failed: "✗ Failed to send response to update process: {error}"
   update_sent: "✓ Sent `{label}` to the update process."

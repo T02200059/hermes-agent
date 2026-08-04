@@ -122,8 +122,12 @@ class TestApprovalCommandWiring:
 
 
 class TestApprovalTextFallbackContract:
-    def test_smart_deny_only_advertises_one_operation(self):
+    def test_smart_deny_only_advertises_one_operation(self, monkeypatch):
+        from agent import i18n
         from gateway.run import _format_exec_approval_fallback
+
+        monkeypatch.setenv("HERMES_LANGUAGE", "en")
+        i18n.reset_language_cache()
 
         text = _format_exec_approval_fallback(
             "rm -rf /", "dangerous deletion", "/",
@@ -134,5 +138,8 @@ class TestApprovalTextFallbackContract:
         assert "`/approve`" in text
         assert "approve session" not in text
         assert "approve always" not in text
+        # Placeholders must be substituted, not left raw.
+        assert "{command_prefix}" not in text
+        assert "{heading}" not in text
 
 

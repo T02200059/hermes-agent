@@ -563,6 +563,40 @@ gateway:
   moa_prepare_failed: "准备 MoA 回合失败。"
   chained_commands_executed: "命令已执行。"
 
+  busy_moa_blocked:        "Agent 运行中 — 请等待结束或先执行 /stop，再运行 /moa。"
+  interrupted_before_processing: "⚠️ 你的消息在开始处理前被中断了（多半是因为最近执行了 /stop）。请重新发送。"
+  init_failed:             "无法启动 /init — 请重试。"
+  init_ack_update:         "正在根据项目扫描更新 AGENTS.md…"
+  init_ack_generate:       "正在根据项目扫描生成 AGENTS.md…"
+  learn_ack_described:     "正在根据你的描述学习技能…"
+  learn_ack_conversation:  "正在根据本次对话学习技能…"
+  stacked_skills_load_failed: "无法为 /{command} 加载叠加技能。"
+  skills_disabled_stacked: "此叠加调用中的 **{skills}** 技能在 {platform} 上已禁用。\n使用 `hermes skills config` 启用。"
+  compression_timeout_notice: "⚠️ 上下文压缩在 {timeout_s} 秒后超时，摘要模型无输出。未丢弃任何消息 — 将跳过压缩继续。可运行 /compress 重试、/reset 清理会话，或检查 auxiliary.compression 模型配置。"
+  session_auto_reset_exhausted: "\n\n🔄 会话已自动重置 — 对话超出最大上下文且无法进一步压缩。你的下一条消息将开启新会话。"
+  admin_only_can_run:      "你可运行：{commands}。使用 /whoami 查看完整列表。"
+  admin_only_none_enabled: "此平台未为非管理员启用任何斜杠命令。请让管理员将你加入 allow_admin_from，或设置 user_allowed_commands。"
+
+  approval_fallback:
+    heading: "⚠️ **危险命令需要审批：**"
+    heading_smart_deny: "⚠️ **智能拒绝 — 仅允许覆盖本次操作：**"
+    choice_once: "回复 `{command_prefix}approve` 仅执行本次操作"
+    choice_session: "`{command_prefix}approve session` 在本会话批准该模式"
+    choice_always: "`{command_prefix}approve always` 永久批准"
+    choice_deny: "`{command_prefix}deny` 取消"
+    choices_join: "{choices_head}，或 {choices_tail}。"
+    body: "{heading}\n```\n{cmd_preview}\n```\n{reason}\n\n{choices}"
+
+  pairing:
+    unrecognized: "嗨~ 我还不认识你！\n\n你的配对码：`{code}`\n\n请让机器人所有者运行：\n`hermes {profile_arg}pairing approve {platform_name} {code}`"
+    rate_limited: "配对请求过多~ 请稍后再试！"
+
+  proxy:
+    aiohttp_missing: "⚠️ 代理模式需要 aiohttp。请安装：pip install aiohttp"
+    url_not_configured: "⚠️ 未配置代理 URL（GATEWAY_PROXY_URL 或 gateway.proxy_url）"
+    http_error: "⚠️ 代理错误（{status}）：{error}"
+    connection_error: "⚠️ 代理连接错误：{error}"
+
   # 会话自动重置通知 — 当过期会话在新消息到达时被清除显示。
   session_reset_notice: "◐ 会话已自动重置（{reason}）。对话历史已清除。\n使用 /resume 浏览并恢复之前的会话。\n可在 config.yaml 的 session_reset 下调整重置时间。"
   session_reset_reason_suspended: "上一个会话已被停止或中断"
@@ -857,6 +891,7 @@ gateway:
     prompt: "⚠️ **确认 /{command}**\n\n{detail}\n\n请选择：\n• **批准一次** — 仅本次执行\n• **始终批准** — 立即执行并永久静默此提示\n• **取消** — 保持当前会话不变\n\n_文本备用：回复 `{_p}approve`、`{_p}always` 或 `{_p}cancel`。_"
     cancelled: "🟡 /{command} 已取消。会话不变。"
     always_note: "\n\nℹ️ 今后 /clear、/new、/reset 和 /undo 将直接执行，不再询问。如需重新启用，请在 config.yaml 中设置 `approvals.destructive_slash_confirm: true`。"
+    always_note_persist_failed: "\n\n⚠️ 无法保存该偏好（config.yaml 不可写），因此 /clear、/new、/reset 和 /undo 下次仍会询问。如需永久关闭，请在 config.yaml 中设置 `approvals.destructive_slash_confirm: false`。"
 
 
   admin_only: "⛔ 此处 /{command} 仅管理员可用。{detail}"
@@ -1154,6 +1189,16 @@ gateway:
     hermes_cmd_not_found:    "✗ 无法找到 `hermes` 命令。Hermes 正在运行，但更新命令无法在 PATH 上或通过当前 Python 解释器找到可执行文件。请尝试在终端中手动运行 `hermes update`。"
     start_failed:            "✗ 启动更新失败：{error}"
     starting:                "⚕ 正在启动 Hermes 更新…… 进度将在此处显示。"
+
+    finished: "✅ Hermes 更新完成。"
+    failed_exit: "❌ Hermes 更新失败（退出码 {exit_code}）。"
+    timed_out: "❌ Hermes 更新在 30 分钟后超时。"
+    finished_with_output: "✅ Hermes 更新完成。\n\n```\n{output}\n```"
+    failed_with_output: "❌ Hermes 更新失败。\n\n```\n{output}\n```"
+    finished_ok: "✅ Hermes 更新已成功完成。"
+    failed_details: "❌ Hermes 更新失败。请查看网关日志，或手动运行 `hermes update` 查看详情。"
+    needs_input: "⚕ **更新需要你的输入：**\n\n{prompt}{default_hint}\n\n回复 `{command_prefix}approve`（是）或 `{command_prefix}deny`（否），或直接输入你的答案。"
+    default_hint: "（默认：{default}）"
 
   update_send_failed: "✗ 发送响应到更新进程失败：{error}"
   update_sent: "✓ 已将 `{label}` 发送到更新进程。"
