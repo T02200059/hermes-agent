@@ -3,7 +3,8 @@
 两步交互卡片，供飞书用户点选对话引导操作并输入 prompt：
 Step 1: 选择操作类型（5 按钮）-> Step 2: 输入框 + 提交/返回
 
-queue 提交后额外展示「撤销队列」按钮（owner 私有 cancel，不引入核心 /unqueue）。
+queue 提交后：同一消息**变身**为 Queue 状态卡（owner/feishu/queue_card.py），
+三按钮（引导对话 / 立即处理 / 取消）由状态卡处理；引导 done 卡不再带撤销按钮。
 见 owner/patches/queue_cancel_patch.py。
 
 参考:
@@ -171,10 +172,13 @@ def build_done_card(
     guide_id: str = "",
     queue_token: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """提交后的确认卡片。
+    """提交后的静态确认卡片（无按钮）。
 
-    queue 且带 ``queue_token`` 时附加「撤销队列」按钮；其余操作保持静态终态。
+    queue 的生命周期 UI 已迁到 ``owner/feishu/queue_card.py``；
+    引导卡 submit(queue) 直接返回状态卡，本函数仅服务 steer/goal/…
+    （``queue_token`` 保留兼容旧调用方，忽略）。
     """
+    del guide_id, queue_token  # unused; kept for call-site compat
     action = next((a for a in _GUIDE_ACTIONS if a["key"] == action_key), None)
     if not action:
         return {
@@ -196,22 +200,6 @@ def build_done_card(
         },
     ]
 
-    # queue only: allow abandoning the pending FIFO item before it starts.
-    if action_key == "queue" and queue_token:
-        elements[0]["content"] += "\n\n⏳ 已排队，等待当前对话结束后执行。"
-        elements.append({
-            "tag": "button",
-            "text": {"tag": "plain_text", "content": "🗑 撤销队列"},
-            "type": "danger",
-            "value": {
-                "hermes_feishu_guide": "cancel_queue",
-                "guide_id": guide_id,
-                "queue_token": queue_token,
-                "user_input": preview,
-                "user_name": user_name,
-            },
-        })
-
     return {
         "schema": "2.0",
         "config": {"wide_screen_mode": True},
@@ -223,80 +211,20 @@ def build_done_card(
     }
 
 
+# Backward-compat re-exports — queue lifecycle cards live in queue_card.py
 def build_queue_cancelled_card(user_input: str, user_name: str) -> Dict[str, Any]:
-    """撤销成功后的终态卡（无按钮）。"""
-    preview = _preview_text(user_input)
-    return {
-        "schema": "2.0",
-        "config": {"wide_screen_mode": True},
-        "header": {
-            "title": {"content": "🗑 已撤销队列", "tag": "plain_text"},
-            "template": "orange",
-        },
-        "body": {
-            "elements": [
-                {
-                    "tag": "markdown",
-                    "content": (
-                        f"已从排队中移除，不会再执行。\n\n"
-                        f"内容: {preview}\n\n"
-                        f"由 {user_name} 撤销。"
-                    ),
-                },
-            ],
-        },
-    }
+    from owner.feishu.queue_card import build_queue_cancelled_card as _build
+    return _build(user_input, user_name)
 
 
 def build_queue_cancel_failed_card(user_input: str, user_name: str) -> Dict[str, Any]:
-    """撤销失败（已开始执行 / 队列已空）终态卡。"""
-    preview = _preview_text(user_input)
-    return {
-        "schema": "2.0",
-        "config": {"wide_screen_mode": True},
-        "header": {
-            "title": {"content": "⚠️ 无法撤销", "tag": "plain_text"},
-            "template": "grey",
-        },
-        "body": {
-            "elements": [
-                {
-                    "tag": "markdown",
-                    "content": (
-                        "该排队项可能已开始执行，或已被消费/清理。\n"
-                        "如需中断当前运行，请使用 `/stop`。\n\n"
-                        f"内容: {preview}\n\n"
-                        f"由 {user_name} 尝试撤销。"
-                    ),
-                },
-            ],
-        },
-    }
+    from owner.feishu.queue_card import build_queue_cancel_failed_card as _build
+    return _build(user_input, user_name)
 
 
 def build_queue_executed_card(user_input: str, user_name: str) -> Dict[str, Any]:
-    """队列项已开始执行：冻结终态卡（无按钮）。"""
-    preview = _preview_text(user_input)
-    return {
-        "schema": "2.0",
-        "config": {"wide_screen_mode": True},
-        "header": {
-            "title": {"content": "▶️ 已开始执行", "tag": "plain_text"},
-            "template": "blue",
-        },
-        "body": {
-            "elements": [
-                {
-                    "tag": "markdown",
-                    "content": (
-                        "排队项已进入本轮对话，无法再撤销。\n\n"
-                        f"内容: {preview}\n\n"
-                        f"由 {user_name} 发起。"
-                    ),
-                },
-            ],
-        },
-    }
+    from owner.feishu.queue_card import build_queue_executed_card as _build
+    return _build(user_input, user_name)
 
 
 # ── 回调处理 ───────────────────────────────────────────────────────────────────
@@ -312,8 +240,9 @@ def handle_guide_card_action(
     Dispatches on the ``hermes_feishu_guide`` step value:
     - ``select`` -> build input form card
     - ``back`` -> rebuild selection card
-    - ``submit`` -> route slash command + build done card
-    - ``cancel_queue`` -> drop owner-tagged FIFO item + final card
+    - ``submit`` -> route slash command + done card
+      (queue submit morphs into queue status card)
+    - ``cancel_queue`` -> legacy cancel (compat with old cards still in chat)
     """
     try:
         from lark_oapi.event.callback.model.p2_card_action_trigger import (
@@ -348,7 +277,7 @@ def handle_guide_card_action(
             build_guide_card(guide_id),
         )
 
-    # queue done card -> 撤销排队
+    # Legacy queue done card -> 撤销排队 (old messages still in chat)
     if step == "cancel_queue":
         return _handle_cancel_queue(
             adapter=adapter,
@@ -387,20 +316,20 @@ def handle_guide_card_action(
         open_id = str(getattr(operator, "open_id", "") or "")
         user_name = operator_display_name(adapter, open_id)
 
-        # queue: mint cancel token; associate by prompt text at enqueue time
-        # (never put token in message_id — Feishu treats it as reply_to).
-        # Bind card open_message_id so we can freeze the card when execution starts.
+        # queue: mint token + morph this message into queue status card.
+        # Lifecycle buttons live on the status card (not guide done).
         queue_token: Optional[str] = None
         if action_key == "queue":
+            from owner.feishu.queue_card import build_queue_status_card
             from owner.patches.queue_cancel_patch import register_scheduled_token
 
             queue_token = str(_uuid.uuid4())
             context = getattr(event, "context", None)
             card_message_id = str(getattr(context, "open_message_id", "") or "")
             chat_id = str(getattr(context, "open_chat_id", "") or "")
-            if not chat_id and isinstance(state, dict):
-                stored = state.get("source")
-                chat_id = str(getattr(stored, "chat_id", "") or "")
+            stored_source = state.get("source") if isinstance(state, dict) else None
+            if not chat_id and stored_source is not None:
+                chat_id = str(getattr(stored_source, "chat_id", "") or "")
             register_scheduled_token(
                 queue_token,
                 text=user_input,
@@ -410,11 +339,25 @@ def handle_guide_card_action(
                 user_name=user_name,
                 app_id=str(getattr(adapter, "_app_id", "") or ""),
                 app_secret=str(getattr(adapter, "_app_secret", "") or ""),
+                source=stored_source,
+            )
+
+            command = f"{action['cmd']} {user_input}"
+            _route_guide_command(
+                adapter, command, open_id, state, queue_token=queue_token,
+            )
+            return _card_response(
+                P2CardActionTriggerResponse, CallBackCard,
+                build_queue_status_card(
+                    user_input,
+                    user_name or "用户",
+                    queue_token=queue_token,
+                ),
             )
 
         command = f"{action['cmd']} {user_input}"
         _route_guide_command(
-            adapter, command, open_id, state, queue_token=queue_token,
+            adapter, command, open_id, state, queue_token=None,
         )
 
         return _card_response(
@@ -424,7 +367,6 @@ def handle_guide_card_action(
                 user_input,
                 user_name,
                 guide_id=guide_id,
-                queue_token=queue_token,
             ),
         )
 
@@ -439,7 +381,7 @@ def _handle_cancel_queue(
     resp_cls: Any,
     card_cls: Any,
 ) -> Any:
-    """Process「撤销队列」: drop FIFO item by token and freeze the card."""
+    """Legacy「撤销队列」on old guide done cards — same cancel pipeline."""
     from owner.patches.queue_cancel_patch import cancel_queued_by_token
 
     token = str(action_value.get("queue_token") or "").strip()
@@ -455,7 +397,7 @@ def _handle_cancel_queue(
     _alog = logging.getLogger(adapter.__class__.__module__)
     status = cancel_queued_by_token(adapter, token) if token else "invalid"
     _alog.info(
-        "[Feishu Guide] cancel_queue: status=%s token=%s",
+        "[Feishu Guide] cancel_queue(legacy): status=%s token=%s",
         status,
         (token or "")[:8],
     )
@@ -570,6 +512,23 @@ def _route_guide_command(
             )
             await adapter._handle_message_with_guards(synthetic_event)
             _alog.info("[Feishu Guide] _dispatch: _handle_message_with_guards returned for command=%s", command)
+            # Idle /queue path never hits FIFO enqueue — freeze status card so
+            # it does not stay "queued" with live cancel after already starting.
+            if queue_token:
+                try:
+                    from owner.patches.queue_cancel_patch import (
+                        get_token_meta,
+                        notify_queue_started,
+                    )
+
+                    meta = get_token_meta(queue_token)
+                    if meta.get("status") == "scheduled":
+                        notify_queue_started(queue_token)
+                except Exception:
+                    _alog.debug(
+                        "[Feishu Guide] idle queue freeze notify failed",
+                        exc_info=True,
+                    )
         except Exception as exc:
             _alog.warning("[Feishu Guide] guide card route failed: %s", exc, exc_info=True)
 

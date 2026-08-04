@@ -2949,6 +2949,12 @@ class FeishuAdapter(BasePlatformAdapter):
             logger.info("[Feishu] Dispatching guide card action: %s", action_value)
             return self._handle_guide_card_action(event=event, action_value=action_value, loop=loop)
 
+        # [owner] queue status card: guide / process_now / cancel (see owner/feishu/queue_card.py)
+        feishu_queue = action_value.get("hermes_queue_card") if isinstance(action_value, dict) else None
+        if feishu_queue:
+            logger.info("[Feishu] Dispatching queue card action: %s", action_value)
+            return self._handle_queue_card_action(event=event, action_value=action_value, loop=loop)
+
         # [owner] diff cards: route expand/collapse/full actions (see owner/diff_card/feishu.py)
         diff_action = (
             (isinstance(action_value, dict) and action_value.get("expand_diff"))
@@ -3314,6 +3320,66 @@ class FeishuAdapter(BasePlatformAdapter):
         )
         logger.info(
             "[Feishu card] guide action result step=%s type=%s",
+            step,
+            type(result).__name__,
+        )
+        return result
+
+    # ── [owner] Feishu queue status card ─────────────────────────────────
+
+    async def send_queue_status_card(
+        self,
+        *,
+        chat_id: str,
+        user_input: str,
+        user_name: str,
+        queue_token: str,
+        depth: int = 0,
+        source: Any = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Any:
+        """Send Feishu-only queue status card (queued + 3 action buttons).
+
+        Thin glue - card building lives in ``owner/feishu/queue_card.py``.
+        """
+        from owner.feishu.queue_card import build_queue_status_card
+
+        card = build_queue_status_card(
+            user_input,
+            user_name,
+            queue_token=queue_token,
+            depth=depth or None,
+        )
+        result = await self.send_card(
+            chat_id=chat_id, card=card, metadata=metadata,
+        )
+        logger.info(
+            "[Feishu card] queue status sent token=%s chat_id=%s success=%s message_id=%s",
+            (queue_token or "")[:8],
+            chat_id,
+            bool(getattr(result, "success", False)),
+            getattr(result, "message_id", None) or "(none)",
+        )
+        return result
+
+    def _handle_queue_card_action(
+        self, *, event: Any, action_value: Dict[str, Any], loop: Any
+    ) -> Any:
+        """Handle queue status card callbacks.
+
+        Thin glue - callback logic lives in ``owner/feishu/queue_card.py``.
+        """
+        from owner.feishu.queue_card import handle_queue_card_action
+
+        step = action_value.get("hermes_queue_card", "?") if isinstance(action_value, dict) else "?"
+        logger.info("[Feishu card] queue action step=%s", step)
+        result = handle_queue_card_action(
+            adapter=self,
+            action_value=action_value,
+            event=event,
+        )
+        logger.info(
+            "[Feishu card] queue action result step=%s type=%s",
             step,
             type(result).__name__,
         )

@@ -1,4 +1,4 @@
-"""Tests for feishu guide card queue-cancel UI in owner/feishu/steer_card.py."""
+"""Tests for feishu guide card queue integration in owner/feishu/steer_card.py."""
 
 from __future__ import annotations
 
@@ -42,7 +42,8 @@ def lark_card_stubs(monkeypatch):
     return Resp, Card
 
 
-def test_build_done_card_queue_has_cancel_button():
+def test_build_done_card_queue_has_no_cancel_button():
+    """Lifecycle UI moved to queue status card — done card is static."""
     card = steer_card.build_done_card(
         "queue",
         "do the thing",
@@ -52,11 +53,7 @@ def test_build_done_card_queue_has_cancel_button():
     )
     assert card["header"]["title"]["content"].startswith("✅")
     body = card["body"]["elements"]
-    assert any(el.get("tag") == "button" for el in body)
-    btn = next(el for el in body if el.get("tag") == "button")
-    assert "撤销队列" in btn["text"]["content"]
-    assert btn["value"]["hermes_feishu_guide"] == "cancel_queue"
-    assert btn["value"]["queue_token"] == "tok-xyz"
+    assert not any(el.get("tag") == "button" for el in body)
     assert "do the thing" in body[0]["content"]
 
 
@@ -67,13 +64,13 @@ def test_build_done_card_steer_has_no_cancel():
 
 def test_build_queue_cancelled_and_failed_cards():
     ok = steer_card.build_queue_cancelled_card("hello world", "Alice")
-    assert "已撤销" in ok["header"]["title"]["content"]
+    assert "已取消" in ok["header"]["title"]["content"] or "已撤销" in ok["header"]["title"]["content"]
     fail = steer_card.build_queue_cancel_failed_card("hello world", "Alice")
-    assert "无法撤销" in fail["header"]["title"]["content"]
+    assert "无法取消" in fail["header"]["title"]["content"] or "无法撤销" in fail["header"]["title"]["content"]
     assert "/stop" in fail["body"]["elements"][0]["content"]
 
 
-def test_handle_cancel_queue_ok(lark_card_stubs):
+def test_handle_cancel_queue_legacy_ok(lark_card_stubs):
     adapter = SimpleNamespace(_pending_messages={}, _owner_gateway_runner=None)
     qcp.register_scheduled_token("tok1", text="preview text")
 
@@ -88,10 +85,11 @@ def test_handle_cancel_queue_ok(lark_card_stubs):
         event=SimpleNamespace(operator=SimpleNamespace(open_id="ou_1")),
     )
     assert result is not None
-    assert result.card.data["header"]["title"]["content"] == "🗑 已撤销队列"
+    title = result.card.data["header"]["title"]["content"]
+    assert "已取消" in title or "已撤销" in title
 
 
-def test_handle_cancel_queue_not_found(lark_card_stubs):
+def test_handle_cancel_queue_legacy_not_found(lark_card_stubs):
     adapter = SimpleNamespace(_pending_messages={}, _owner_gateway_runner=None)
     result = steer_card.handle_guide_card_action(
         adapter=adapter,
@@ -104,10 +102,11 @@ def test_handle_cancel_queue_not_found(lark_card_stubs):
         event=SimpleNamespace(operator=None),
     )
     assert result is not None
-    assert "无法撤销" in result.card.data["header"]["title"]["content"]
+    title = result.card.data["header"]["title"]["content"]
+    assert "无法取消" in title or "无法撤销" in title
 
 
-def test_submit_queue_registers_token_and_routes(lark_card_stubs, monkeypatch):
+def test_submit_queue_morphs_to_status_card(lark_card_stubs, monkeypatch):
     routed = {}
 
     def fake_route(adapter, command, open_id, state, *, queue_token=None):
@@ -121,6 +120,8 @@ def test_submit_queue_registers_token_and_routes(lark_card_stubs, monkeypatch):
 
     adapter = SimpleNamespace(
         _guide_card_state={"g-q": {"source": SimpleNamespace(chat_id="oc_1")}},
+        _app_id="app",
+        _app_secret="sec",
     )
     result = steer_card.handle_guide_card_action(
         adapter=adapter,
@@ -130,14 +131,20 @@ def test_submit_queue_registers_token_and_routes(lark_card_stubs, monkeypatch):
             "action_key": "queue",
             "form_value": {"guide_input": "run later"},
         },
-        event=SimpleNamespace(operator=SimpleNamespace(open_id="ou_c")),
+        event=SimpleNamespace(
+            operator=SimpleNamespace(open_id="ou_c"),
+            context=SimpleNamespace(open_message_id="om_card_1", open_chat_id="oc_1"),
+        ),
     )
     assert routed["command"] == "/queue run later"
     assert routed["queue_token"]
     assert qcp._token_state[routed["queue_token"]]["status"] == "scheduled"
     assert qcp._token_state[routed["queue_token"]]["text"] == "run later"
+    assert qcp._token_state[routed["queue_token"]]["card_message_id"] == "om_card_1"
     assert result is not None
-    btn = next(
-        el for el in result.card.data["body"]["elements"] if el.get("tag") == "button"
-    )
-    assert btn["value"]["queue_token"] == routed["queue_token"]
+    # Morphs into queue status card (not static done card)
+    assert "已排队" in result.card.data["header"]["title"]["content"]
+    row = result.card.data["body"]["elements"][1]
+    buttons = [col["elements"][0] for col in row["columns"]]
+    assert any(b["value"].get("hermes_queue_card") == "cancel" for b in buttons)
+    assert all(b["value"]["queue_token"] == routed["queue_token"] for b in buttons)

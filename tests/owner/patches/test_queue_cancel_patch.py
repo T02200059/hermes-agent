@@ -46,6 +46,72 @@ def test_cancel_pending_slot_promotes_overflow():
     assert qcp._token_state[token]["status"] == "cancelled"
 
 
+def test_cancel_overflow_via_session_field_view_not_dict():
+    """Regression: runner._queued_events is SessionFieldView, not dict.
+
+    isinstance(view, dict) was False, so overflow cancels always failed while
+    the agent turn was still running (pending slot already occupied).
+    """
+    from collections.abc import MutableMapping
+
+    class FakeView(MutableMapping):
+        def __init__(self, data):
+            self._data = data
+
+        def __getitem__(self, k):
+            return self._data[k]
+
+        def __setitem__(self, k, v):
+            self._data[k] = v
+
+        def __delitem__(self, k):
+            del self._data[k]
+
+        def __iter__(self):
+            return iter(self._data)
+
+        def __len__(self):
+            return len(self._data)
+
+    token = "t-ov"
+    qcp.register_scheduled_token(token, text="queued later", session_key="sess-a")
+    target = SimpleNamespace(text="queued later", metadata={})
+    setattr(target, qcp._EVENT_TOKEN_ATTR, token)
+    qcp._token_state[token]["status"] = "enqueued"
+
+    head = SimpleNamespace(text="something else")
+    data = {"sess-a": [target]}
+    view = FakeView(data)
+    assert not isinstance(view, dict)
+
+    runner = SimpleNamespace(_queued_events=view)
+    adapter = SimpleNamespace(
+        _pending_messages={"sess-a": head},
+        _owner_gateway_runner=runner,
+    )
+
+    assert qcp.cancel_queued_by_token(adapter, token) == "ok"
+    assert data.get("sess-a") in (None, []) or "sess-a" not in data or data["sess-a"] == []
+    assert qcp._token_state[token]["status"] == "cancelled"
+    # Head in pending slot untouched
+    assert adapter._pending_messages["sess-a"] is head
+
+
+def test_cancel_by_text_fallback_when_stamp_missing():
+    token = "t-txt"
+    qcp.register_scheduled_token(token, text="do later", session_key="sess-a")
+    qcp._token_state[token]["status"] = "enqueued"
+    # No _owner_queue_token attr — only text matches registered meta
+    event = SimpleNamespace(text="do later", metadata={})
+    adapter = SimpleNamespace(
+        _pending_messages={"sess-a": event},
+        _owner_gateway_runner=SimpleNamespace(_queued_events={}),
+    )
+    assert qcp.cancel_queued_by_token(adapter, token) == "ok"
+    assert "sess-a" not in adapter._pending_messages
+    assert qcp._token_state[token]["status"] == "cancelled"
+
+
 def test_cancel_scheduled_before_enqueue():
     token = "t-race"
     qcp.register_scheduled_token(token, text="later")
@@ -116,6 +182,89 @@ def test_dequeue_notifies_started(monkeypatch):
     out = gateway_run._dequeue_pending_event(SimpleNamespace(), "sess")
     assert out is event
     assert notified == [token]
+
+
+def test_process_now_promotes_to_head_and_interrupts():
+    token = "t-pn"
+    qcp.register_scheduled_token(token, text="later", session_key="sess-a")
+    head = SimpleNamespace(text="first")
+    target = SimpleNamespace(text="later")
+    setattr(target, qcp._EVENT_TOKEN_ATTR, token)
+    qcp._token_state[token]["status"] = "enqueued"
+
+    agent = MagicMock()
+    state = SimpleNamespace(turn=SimpleNamespace(agent=agent))
+    runner = SimpleNamespace(
+        _queued_events={"sess-a": [target]},
+        _peek_session_state=lambda sk: state if sk == "sess-a" else None,
+    )
+    adapter = SimpleNamespace(
+        _pending_messages={"sess-a": head},
+        _owner_gateway_runner=runner,
+    )
+
+    assert qcp.process_now_by_token(adapter, token) == "ok"
+    assert adapter._pending_messages["sess-a"] is target
+    assert runner._queued_events["sess-a"][0] is head
+    agent.interrupt.assert_called_once()
+    assert qcp._token_state[token]["status"] == "process_now"
+
+
+def test_bind_card_message_id():
+    qcp.register_scheduled_token("t-bind", text="x")
+    qcp.bind_card_message_id("t-bind", "om_99", session_key="sk1")
+    meta = qcp.get_token_meta("t-bind")
+    assert meta["card_message_id"] == "om_99"
+    assert meta["session_key"] == "sk1"
+    assert qcp.token_has_card("t-bind")
+
+
+def test_steer_queued_by_token_ok():
+    token = "t-steer"
+    qcp.register_scheduled_token(token, text="please adjust", session_key="sess-a")
+    qcp._token_state[token]["status"] = "enqueued"
+    event = SimpleNamespace(text="please adjust", metadata={})
+    setattr(event, qcp._EVENT_TOKEN_ATTR, token)
+
+    agent = MagicMock()
+    agent.steer.return_value = True
+    state = SimpleNamespace(turn=SimpleNamespace(agent=agent))
+    runner = SimpleNamespace(
+        _queued_events={},
+        _peek_session_state=lambda sk: state if sk == "sess-a" else None,
+    )
+    adapter = SimpleNamespace(
+        _pending_messages={"sess-a": event},
+        _owner_gateway_runner=runner,
+    )
+    assert qcp.steer_queued_by_token(adapter, token) == "ok"
+    agent.steer.assert_called_once_with("please adjust")
+    assert "sess-a" not in adapter._pending_messages
+    assert qcp._token_state[token]["status"] == "steered"
+
+
+def test_steer_queued_reseat_on_reject():
+    token = "t-steer-rej"
+    qcp.register_scheduled_token(token, text="nope", session_key="sess-a")
+    qcp._token_state[token]["status"] = "enqueued"
+    event = SimpleNamespace(text="nope", metadata={})
+    setattr(event, qcp._EVENT_TOKEN_ATTR, token)
+
+    agent = MagicMock()
+    agent.steer.return_value = False
+    state = SimpleNamespace(turn=SimpleNamespace(agent=agent))
+    runner = SimpleNamespace(
+        _queued_events={},
+        _peek_session_state=lambda sk: state if sk == "sess-a" else None,
+    )
+    adapter = SimpleNamespace(
+        _pending_messages={"sess-a": event},
+        _owner_gateway_runner=runner,
+    )
+    assert qcp.steer_queued_by_token(adapter, token) == "rejected"
+    # Reseated so the queue item is not lost
+    assert adapter._pending_messages["sess-a"] is event
+    assert qcp._token_state[token]["status"] == "enqueued"
 
 
 def test_build_queue_executed_card():
