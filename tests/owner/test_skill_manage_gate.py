@@ -318,7 +318,7 @@ def test_skill_approval_card_review_prompt():
 
 
 def test_skill_approval_card_click_resolve():
-    """Test that handle_card_click calls resolve_gateway_approval."""
+    """UI 'approve' must resolve as gateway token 'once' (not 'approve')."""
     from owner.feishu.skill_approval_card import handle_card_click, ACTION_KEY
 
     resolved_calls = []
@@ -343,7 +343,8 @@ def test_skill_approval_card_click_resolve():
             loop=MagicMock(),
         )
     assert resolved_calls
-    assert resolved_calls[0] == ("sess-1", "approve")
+    # Critical: gate only accepts once/session/always — never "approve".
+    assert resolved_calls[0] == ("sess-1", "once")
 
 
 def test_skill_approval_card_click_deny():
@@ -373,6 +374,151 @@ def test_skill_approval_card_click_deny():
         )
     assert resolved_calls
     assert resolved_calls[0] == ("sess-1", "deny")
+
+
+def test_skill_approval_card_click_zero_pending_still_updates_card():
+    """count=0 (wrong process / already resolved) must not crash; card freezes."""
+    from owner.feishu.skill_approval_card import handle_card_click, ACTION_KEY
+
+    with patch("tools.approval.resolve_gateway_approval", return_value=0):
+        result = handle_card_click(
+            adapter=MagicMock(),
+            event=MagicMock(),
+            action_value={
+                "hermes_action": ACTION_KEY,
+                "choice": "approve",
+                "session_key": "sess-missing",
+                "chat_id": "oc_home",
+                "action": "create",
+                "skill_name": "x",
+                "review_prompt": "",
+            },
+            loop=MagicMock(),
+        )
+    # Result may be empty response if lark_oapi missing; must not raise.
+    assert result is None or result is not False
+
+
+def test_skill_approval_card_stamps_hermes_profile():
+    """Sub-profile cards stamp hermes_profile for main→sub card routing."""
+    from owner.feishu.skill_approval_card import build_skill_approval_card
+
+    card = build_skill_approval_card(
+        action="create",
+        name="my-skill",
+        args={"action": "create", "name": "my-skill", "content": "x"},
+        profile="hermesxiyun",
+        session_key="sess-1",
+        chat_id="oc_home",
+    )
+    actions = [e for e in card["elements"] if e.get("tag") == "action"]
+    assert actions
+    for btn in actions[0]["actions"]:
+        assert btn["value"].get("hermes_profile") == "hermesxiyun"
+
+
+def test_skill_approval_card_skips_profile_tag_for_default():
+    from owner.feishu.skill_approval_card import build_skill_approval_card
+
+    card = build_skill_approval_card(
+        action="create",
+        name="my-skill",
+        args={"action": "create", "name": "my-skill", "content": "x"},
+        profile="default",
+        session_key="sess-1",
+        chat_id="oc_home",
+    )
+    actions = [e for e in card["elements"] if e.get("tag") == "action"]
+    for btn in actions[0]["actions"]:
+        assert "hermes_profile" not in btn["value"]
+
+
+def test_run_gate_accepts_approve_alias(monkeypatch):
+    """Defense-in-depth: raw 'approve' from an old card still unblocks."""
+    _patch_cfg(monkeypatch, timeout=120)
+    monkeypatch.setattr(gate, "should_escalate", lambda *a, **k: True)
+    monkeypatch.setattr(gate, "_is_background_review", lambda: False)
+    monkeypatch.setattr(gate, "_prepare_activity_keepalive", lambda: None)
+    monkeypatch.setattr(gate, "apply_timeout_patch", lambda: None)
+    monkeypatch.setattr(gate, "get_approval_home_chat_id", lambda: "")
+    monkeypatch.setattr(gate, "_send_origin_chat_notice", lambda **kw: None)
+    monkeypatch.setattr(gate, "_get_origin_chat_id", lambda: "")
+    monkeypatch.setattr(gate, "_current_profile", lambda: "test")
+    stopped = []
+    monkeypatch.setattr(gate, "hard_stop_turn", lambda msg: stopped.append(msg))
+
+    import tools.approval as approval_mod
+
+    monkeypatch.setattr(approval_mod, "get_current_session_key", lambda default="": "sess-1")
+    monkeypatch.setattr(approval_mod, "is_approved", lambda sk, pk: False)
+    monkeypatch.setattr(
+        approval_mod, "_gateway_notify_cbs", {"sess-1": lambda data: None},
+    )
+    monkeypatch.setattr(
+        approval_mod,
+        "_await_gateway_decision",
+        lambda *a, **k: {"resolved": True, "choice": "approve", "reason": None},
+    )
+
+    result = gate.run_gate(
+        "skill_manage", {"action": "create", "name": "my-skill"},
+    )
+    assert result is None
+    assert not stopped
+
+
+def test_skill_approval_real_queue_approve_maps_once():
+    """Real tools.approval queue: handle_card_click(approve) unblocks with once."""
+    import threading
+    import tools.approval as approval_mod
+    from owner.feishu.skill_approval_card import handle_card_click, ACTION_KEY
+
+    session_key = "sess-real-queue-approve"
+    with approval_mod._lock:
+        approval_mod._gateway_queues.pop(session_key, None)
+
+    result_holder: dict = {}
+
+    def _waiter():
+        def _notify(_data):
+            # Click runs on "gateway" side after notify.
+            handle_card_click(
+                adapter=MagicMock(),
+                event=MagicMock(),
+                action_value={
+                    "hermes_action": ACTION_KEY,
+                    "choice": "approve",
+                    "session_key": session_key,
+                    "chat_id": "oc_home",
+                    "action": "create",
+                    "skill_name": "q-skill",
+                    "review_prompt": "",
+                },
+                loop=MagicMock(),
+            )
+
+        # Short timeout so a mapping regression fails fast.
+        with patch.object(approval_mod, "_get_approval_timeout", return_value=5):
+            result_holder["decision"] = approval_mod._await_gateway_decision(
+                session_key,
+                _notify,
+                {
+                    "command": "<skill_manage create q-skill>",
+                    "pattern_key": "plugin_rule:skill_manage:create",
+                    "pattern_keys": ["plugin_rule:skill_manage:create"],
+                    "description": "test",
+                    "allow_permanent": False,
+                },
+                surface="skill_approval",
+            )
+
+    t = threading.Thread(target=_waiter, daemon=True)
+    t.start()
+    t.join(timeout=10)
+    assert not t.is_alive(), "approval waiter hung — choice mapping likely broken"
+    decision = result_holder.get("decision") or {}
+    assert decision.get("resolved") is True
+    assert decision.get("choice") == "once"
 
 
 def test_skill_approval_card_click_wrong_action():

@@ -54,6 +54,21 @@ ACTION_KEY = "skill_approval_gate"
 _APPROVE_VALUE = "approve"
 _DENY_VALUE = "deny"
 
+# Button ``choice`` values (UI) → tools.approval / skill_manage_gate tokens.
+# Gate only treats once/session/always as approved; pass "approve" through
+# unmapped and the waiting turn hard-stops as a deny (false green card).
+_GATEWAY_CHOICE_MAP: Dict[str, str] = {
+    _APPROVE_VALUE: "once",
+    _DENY_VALUE: "deny",
+    # Accept legacy / alternate labels if ever stamped on old cards.
+    "once": "once",
+    "session": "session",
+    "always": "always",
+    "approve_once": "once",
+    "approve_session": "session",
+    "approve_always": "always",
+}
+
 # Content truncation for card display
 _CONTENT_PREVIEW_LIMIT = 2000
 _SUMMARY_LIMIT = 600
@@ -284,19 +299,27 @@ def build_skill_approval_card(
     )
 
     def _btn(label: str, choice: str, btn_type: str) -> Dict[str, Any]:
+        # Stamp hermes_profile on buttons when the triggering profile is a
+        # routable sub-profile (not default/custom).  send_card_via_rest also
+        # tags in send_only mode; building it here is belt-and-suspenders so
+        # main-gateway card.action routing still reaches the waiter process
+        # even if the send-path tag is skipped.
+        value: Dict[str, Any] = {
+            "hermes_action": ACTION_KEY,
+            "choice": choice,
+            "session_key": session_key,
+            "chat_id": chat_id,
+            "action": action,
+            "skill_name": name,
+            "review_prompt": review_prompt,
+        }
+        if profile and profile not in ("default", "custom"):
+            value["hermes_profile"] = profile
         return {
             "tag": "button",
             "text": {"tag": "plain_text", "content": label},
             "type": btn_type,
-            "value": {
-                "hermes_action": ACTION_KEY,
-                "choice": choice,
-                "session_key": session_key,
-                "chat_id": chat_id,
-                "action": action,
-                "skill_name": name,
-                "review_prompt": review_prompt,
-            },
+            "value": value,
         }
 
     return {
@@ -424,6 +447,13 @@ async def send_skill_approval_card(
 # Click handling - invoked by the adapter dispatch branch
 # ---------------------------------------------------------------------------
 
+def _map_gateway_choice(raw_choice: str) -> Optional[str]:
+    """Map card button choice → gateway approval token, or None if unknown."""
+    if not raw_choice:
+        return None
+    return _GATEWAY_CHOICE_MAP.get(str(raw_choice).strip())
+
+
 def handle_card_click(
     *,
     adapter: Any,
@@ -447,33 +477,50 @@ def handle_card_click(
     if action_value.get("hermes_action") != ACTION_KEY:
         return None
 
-    choice = action_value.get("choice", "")
+    raw_choice = str(action_value.get("choice", "") or "")
     session_key = str(action_value.get("session_key", "") or "")
     chat_id = str(action_value.get("chat_id", "") or "")
     action = str(action_value.get("action", "") or "")
     skill_name = str(action_value.get("skill_name", "") or "")
     review_prompt = str(action_value.get("review_prompt", "") or "")
 
-    if choice not in {_APPROVE_VALUE, _DENY_VALUE} or not session_key:
+    gateway_choice = _map_gateway_choice(raw_choice)
+    if gateway_choice is None or not session_key:
         return _empty_response()
 
     # Resolve the gateway approval - this unblocks the waiting agent thread.
+    # MUST use gateway tokens (once/session/always/deny), not UI labels
+    # (approve/deny): skill_manage_gate only treats once/session/always as OK.
     try:
         from tools.approval import resolve_gateway_approval
 
-        count = resolve_gateway_approval(session_key, choice)
-        logger.info(
-            "[Feishu card] skill_approval action session=%s choice=%s "
-            "resolved=%d action=%s name=%s",
-            session_key, choice, count, action, skill_name,
-        )
+        count = resolve_gateway_approval(session_key, gateway_choice)
+        if count == 0:
+            # Common when the click resolved on the wrong process (main
+            # gateway instead of the hermesxiyun sub-gateway waiter).
+            logger.warning(
+                "[Feishu card] skill_approval resolve found no pending "
+                "approval session=%s gateway_choice=%s raw_choice=%s "
+                "action=%s name=%s (wrong process / already resolved?)",
+                session_key, gateway_choice, raw_choice, action, skill_name,
+            )
+        else:
+            logger.info(
+                "[Feishu card] skill_approval action session=%s "
+                "raw_choice=%s gateway_choice=%s resolved=%d action=%s name=%s",
+                session_key, raw_choice, gateway_choice, count, action, skill_name,
+            )
     except Exception as exc:
         logger.error(
             "[Feishu] skill_approval resolve failed for session %s: %s",
             session_key, exc,
         )
 
-    # Build the resolved card for inline update.
+    # Build the resolved card for inline update (UI labels: approve/deny).
+    ui_choice = (
+        _APPROVE_VALUE if gateway_choice in {"once", "session", "always", _APPROVE_VALUE}
+        else _DENY_VALUE
+    )
     try:
         from lark_oapi.event.callback.model.p2_card_action_trigger import (
             CallBackCard,
@@ -491,7 +538,7 @@ def handle_card_click(
         card = CallBackCard()
         card.type = "raw"
         card.data = build_resolved_card(
-            choice=choice, action=action,
+            choice=ui_choice, action=action,
             skill_name=skill_name, review_prompt=review_prompt,
         )
         response.card = card

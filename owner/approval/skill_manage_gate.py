@@ -692,6 +692,12 @@ def run_gate(tool_name: str, args: Optional[Dict[str, Any]]) -> Optional[Dict[st
     choice = decision.get("choice")
     deny_reason = decision.get("reason")
 
+    # Normalize UI-label leftovers ("approve") so a stale card or a missed
+    # map in skill_approval_card still unblocks the turn instead of hard-
+    # stopping after a green "已批准" card (false deny).
+    if choice == "approve":
+        choice = "once"
+
     if resolved and choice in {"once", "session", "always"}:
         if choice == "session":
             approve_session(session_key, pattern_key)
