@@ -1168,6 +1168,15 @@ def _configured_provider_matches(
             slug = f"custom:{name}"
             if slug in matches:
                 continue
+            # Skip if this custom_providers entry was already matched via its
+            # provider_key in the user_providers scan above.  get_compatible_
+            # custom_providers() converts providers:<slug> entries into the
+            # legacy list shape with provider_key=<slug>, so without this
+            # check the same provider is double-counted as both "<slug>" and
+            # "custom:<slug>" (#switch_multiple_providers false positive).
+            pk = str(entry.get("provider_key", "") or "").strip()
+            if pk and pk in matches:
+                continue
             for key in ("models", "model", "default_model"):
                 hit = _match(entry.get(key))
                 if hit:
