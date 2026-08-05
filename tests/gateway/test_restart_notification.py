@@ -437,6 +437,7 @@ async def test_shutdown_notifications_are_fully_muted_when_flag_disabled():
 
 
 def test_gateway_profile_tag_empty_for_default(monkeypatch):
+    monkeypatch.delenv("HERMES_LIFECYCLE_LABEL", raising=False)
     monkeypatch.delenv("HERMES_PROFILE", raising=False)
     monkeypatch.setattr(
         "hermes_cli.profiles.get_active_profile_name",
@@ -446,6 +447,7 @@ def test_gateway_profile_tag_empty_for_default(monkeypatch):
 
 
 def test_gateway_profile_tag_named_profile(monkeypatch):
+    monkeypatch.delenv("HERMES_LIFECYCLE_LABEL", raising=False)
     monkeypatch.delenv("HERMES_PROFILE", raising=False)
     monkeypatch.setattr(
         "hermes_cli.profiles.get_active_profile_name",
@@ -454,8 +456,29 @@ def test_gateway_profile_tag_named_profile(monkeypatch):
     assert gateway_run._gateway_profile_tag() == " [coder]"
 
 
+def test_gateway_profile_tag_prefers_lifecycle_label_env(monkeypatch):
+    """HERMES_LIFECYCLE_LABEL wins over HERMES_PROFILE / path inference.
+
+    Free-form labels (Chinese, spaces) are allowed — this env is display-only.
+    """
+    monkeypatch.setenv("HERMES_LIFECYCLE_LABEL", "孙起飞的 AI 助手")
+    monkeypatch.setenv("HERMES_PROFILE", "sunqifei")
+    monkeypatch.setattr(
+        "hermes_cli.profiles.get_active_profile_name",
+        lambda: "coder",
+    )
+    assert gateway_run._gateway_profile_tag() == " [孙起飞的 AI 助手]"
+
+
+def test_gateway_profile_tag_lifecycle_label_blank_falls_through(monkeypatch):
+    monkeypatch.setenv("HERMES_LIFECYCLE_LABEL", "   ")
+    monkeypatch.setenv("HERMES_PROFILE", "sunqifei")
+    assert gateway_run._gateway_profile_tag() == " [sunqifei]"
+
+
 def test_gateway_profile_tag_prefers_hermes_profile_env(monkeypatch):
     """HERMES_PROFILE env wins over get_active_profile_name()."""
+    monkeypatch.delenv("HERMES_LIFECYCLE_LABEL", raising=False)
     monkeypatch.setenv("HERMES_PROFILE", "fleet-a")
     monkeypatch.setattr(
         "hermes_cli.profiles.get_active_profile_name",
@@ -465,6 +488,7 @@ def test_gateway_profile_tag_prefers_hermes_profile_env(monkeypatch):
 
 
 def test_gateway_profile_tag_hermes_profile_env_default_is_empty(monkeypatch):
+    monkeypatch.delenv("HERMES_LIFECYCLE_LABEL", raising=False)
     monkeypatch.setenv("HERMES_PROFILE", "default")
     monkeypatch.setattr(
         "hermes_cli.profiles.get_active_profile_name",
@@ -477,6 +501,7 @@ def test_gateway_profile_tag_fallback_on_error_logs_warning(monkeypatch, caplog)
     def _boom():
         raise RuntimeError("profiles unavailable")
 
+    monkeypatch.delenv("HERMES_LIFECYCLE_LABEL", raising=False)
     monkeypatch.delenv("HERMES_PROFILE", raising=False)
     monkeypatch.setattr(
         "hermes_cli.profiles.get_active_profile_name",
@@ -491,6 +516,7 @@ def test_gateway_profile_tag_fallback_on_error_logs_warning(monkeypatch, caplog)
 
 
 def test_gateway_profile_tag_fallback_on_empty_name_logs_warning(monkeypatch, caplog):
+    monkeypatch.delenv("HERMES_LIFECYCLE_LABEL", raising=False)
     monkeypatch.delenv("HERMES_PROFILE", raising=False)
     monkeypatch.setattr(
         "hermes_cli.profiles.get_active_profile_name",
@@ -505,6 +531,7 @@ def test_gateway_profile_tag_fallback_on_empty_name_logs_warning(monkeypatch, ca
 
 
 def test_gateway_lifecycle_msg_includes_profile_tag(monkeypatch):
+    monkeypatch.delenv("HERMES_LIFECYCLE_LABEL", raising=False)
     monkeypatch.delenv("HERMES_PROFILE", raising=False)
     monkeypatch.setattr(
         "hermes_cli.profiles.get_active_profile_name",
@@ -516,6 +543,8 @@ def test_gateway_lifecycle_msg_includes_profile_tag(monkeypatch):
 
 
 def test_gateway_lifecycle_msg_matches_original_when_default(monkeypatch):
+    monkeypatch.delenv("HERMES_LIFECYCLE_LABEL", raising=False)
+    monkeypatch.delenv("HERMES_PROFILE", raising=False)
     monkeypatch.setattr(
         "hermes_cli.profiles.get_active_profile_name",
         lambda: "default",
@@ -524,6 +553,14 @@ def test_gateway_lifecycle_msg_matches_original_when_default(monkeypatch):
     assert msg == (
         "⚠️ Gateway shutting down — Your current task will be interrupted."
     )
+
+
+def test_gateway_lifecycle_msg_uses_lifecycle_label(monkeypatch):
+    monkeypatch.setenv("HERMES_LIFECYCLE_LABEL", "孙起飞的 AI 助手")
+    monkeypatch.setenv("HERMES_PROFILE", "sunqifei")
+    msg = gateway_run._gateway_lifecycle_msg("gateway.shutdown_notify_stop")
+    assert " [孙起飞的 AI 助手]" in msg
+    assert "sunqifei" not in msg
 
 
 @pytest.mark.asyncio

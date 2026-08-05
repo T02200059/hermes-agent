@@ -2919,14 +2919,26 @@ def _gateway_profile_tag() -> str:
     ``""`` so single-profile installs keep the original untagged wording.
 
     Resolution order:
-    1. ``HERMES_PROFILE`` env var (set by ``-p`` / profile selection)
-    2. ``get_active_profile_name()`` (inferred from ``HERMES_HOME`` path)
+    1. ``HERMES_LIFECYCLE_LABEL`` env var — free-form display label for
+       lifecycle / busy-drain messages only (Chinese, spaces, etc. allowed).
+       Intended for one-process-per-tenant fleets that keep a stable
+       ``HERMES_PROFILE`` id for routing while showing a human nickname.
+    2. ``HERMES_PROFILE`` env var (set by ``-p`` / profile selection)
+    3. ``get_active_profile_name()`` (inferred from ``HERMES_HOME`` path)
+
+    ``HERMES_LIFECYCLE_LABEL`` is display-only: it is not validated as a
+    profile id and is not used for routing, auth, or bot identity.
 
     Any resolution failure also returns ``""`` (fallback to the original
     message shape) and logs a warning — lifecycle notifications must never
     crash the shutdown/startup path over a missing profile id.
     """
     try:
+        # Display override first — free-form, no profile-id constraints.
+        label = (os.environ.get("HERMES_LIFECYCLE_LABEL") or "").strip()
+        if label:
+            return f" [{label}]"
+
         name = (os.environ.get("HERMES_PROFILE") or "").strip()
         if not name:
             from hermes_cli.profiles import get_active_profile_name
