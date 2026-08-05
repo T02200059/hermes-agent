@@ -2527,12 +2527,23 @@ def terminal_tool(
                     return None
                 try:
                     local_path = Path(script_path).expanduser()
+                except ValueError:
+                    # [owner-patch] embedded NUL byte in the path — not a
+                    # valid filesystem reference; nothing to read.
+                    return None
+                try:
                     if not local_path.is_absolute():
                         local_path = Path(guard_cwd) / local_path
                     if local_path.is_file():
                         metadata = local_path.stat()
                         if stat.S_ISREG(metadata.st_mode) and metadata.st_size <= 1024 * 1024:
                             data = local_path.read_bytes()
+                            # [owner-patch] a binary (ELF/Mach-O/PE) is not a
+                            # shell script — decoded machine code would be
+                            # re-tokenized into junk paths containing NUL
+                            # bytes and crash the guard recursion.
+                            if b"\x00" in data:
+                                return None
                             if len(data) <= 1024 * 1024:
                                 return data.decode("utf-8", errors="replace")
                 except Exception:

@@ -171,7 +171,13 @@ def contains_launchctl_submit_command(command: str) -> bool:
 
 
 def _resolve_terminal_script_path(candidate: str, cwd: Optional[str]) -> Path:
-    path = Path(candidate).expanduser()
+    try:
+        path = Path(candidate).expanduser()
+    except ValueError:
+        # [owner-patch] expanduser raises ValueError on an embedded NUL byte
+        # (a candidate tokenized from decoded binary contents). A guarded
+        # path must never crash the guard — fall through unexpanded.
+        path = Path(candidate)
     if not path.is_absolute():
         path = Path(cwd or Path.cwd()) / path
     return path
@@ -258,7 +264,10 @@ def _read_referenced_script(path: Path) -> tuple[Optional[str], bool]:
     flags = os.O_RDONLY | getattr(os, "O_NONBLOCK", 0)
     try:
         descriptor = os.open(path, flags)
-    except OSError:
+    except (OSError, ValueError):
+        # OSError: missing/unreadable. ValueError: embedded NUL byte in the
+        # path itself (tokenized from a previously decoded binary's contents)
+        # — a guarded path must never crash the guard (#76762).
         return None, False
     try:
         metadata = os.fstat(descriptor)
@@ -279,7 +288,13 @@ def _read_referenced_script(path: Path) -> tuple[Optional[str], bool]:
     # #76762). Treat it as "nothing to scan" rather than unsafe: a binary
     # executed by the user is not a referenced *shell script*.
     if b"\x00" in data:
-        return None, False
+        # [owner-patch] return empty text, NOT None: None means "file not
+        # found locally" and triggers the read_remote_script fallback, which
+        # would re-read the binary with no NUL check and feed machine-code
+        # tokens (with embedded NUL bytes) back into the recursion, crashing
+        # the guard with ValueError: embedded null byte. A binary executed
+        # by the user is not a referenced *shell script* — skip it.
+        return "", False
     if len(data) > _MAX_REFERENCED_SCRIPT_BYTES:
         return None, True
     return data.decode("utf-8", errors="replace"), False

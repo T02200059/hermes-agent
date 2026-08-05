@@ -9,6 +9,7 @@ Covers:
 import json
 import os
 from argparse import Namespace
+from pathlib import Path
 
 import pytest
 
@@ -694,6 +695,51 @@ class TestLifecycleGuardModule:
             '/usr/bin/python3 -c "print(1)"'
         )
         assert result is False
+
+    def test_binary_via_remote_fallback_does_not_crash_guard(self, tmp_path):
+        """#76762 follow-up: the binary skip must not fall through to
+        read_remote_script. Before this fix, a binary returned (None,
+        False) — indistinguishable from "file not found locally" — so the
+        walk called read_remote_script, which re-read the binary with no NUL
+        check and fed decoded machine code back into the recursion, crashing
+        os.open with ValueError: embedded null byte. This is exactly how the
+        guard crashed on `soffice --version` (LibreOffice) and Chrome
+        absolute-path invocations in a live gateway session (2026-08-05).
+        """
+        binary = tmp_path / "soffice"
+        binary.write_bytes(b"\xcf\xfa\xed\xfe\x00\x00\x00\x00junk")
+        binary.chmod(0o755)
+
+        def read_remote(script_path):
+            # Mirrors tools/terminal_tool.py's _read_script_in_env local
+            # branch: read whatever is a regular file, no NUL check.
+            p = Path(script_path)
+            try:
+                if p.is_file():
+                    return p.read_bytes().decode("utf-8", errors="replace")
+            except Exception:
+                pass
+            return None
+
+        from cron.lifecycle_guard import (
+            contains_gateway_lifecycle_command_or_referenced_script,
+        )
+        result = contains_gateway_lifecycle_command_or_referenced_script(
+            f'"{binary}" --version', read_remote_script=read_remote
+        )
+        assert result is False
+
+    def test_nul_path_in_scan_does_not_crash_guard(self, tmp_path):
+        """A shell script whose referenced paths contain NUL bytes (the
+        shape of junk tokenized from a decoded binary) must not crash the
+        walk — os.open and expanduser both raise ValueError on embedded
+        NUL, and the guard tolerates it."""
+        from cron.lifecycle_guard import _read_referenced_script
+        from pathlib import Path
+
+        text, unsafe = _read_referenced_script(Path("a\x00b"))
+        assert text is None
+        assert unsafe is False
 
     def test_shell_script_reference_walk_still_works(self, tmp_path):
         """The referenced-script walk still applies to real shell scripts:
