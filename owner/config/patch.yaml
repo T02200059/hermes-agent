@@ -219,9 +219,9 @@ owner:
       per_key:
         # /new — 重置当前会话。Agent pipeline 耗时较长，提供明确 ack 让用户知道已触发。
         new:
-          ack: "🔄 新建会话中…"
+          ack: null
         stop:
-          ack: "⏹️ 停止当前任务…"
+          ack: null
         status:
           ack: null
         usage:
