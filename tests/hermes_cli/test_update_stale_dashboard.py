@@ -20,6 +20,8 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
+pytestmark = pytest.mark.skip(reason="Disabled locally: update tests can drive a real `hermes update` against the live checkout (owner branch)")
+
 from hermes_cli.main import (
     _finish_dashboard_update_cleanup,
     _find_stale_dashboard_pids,

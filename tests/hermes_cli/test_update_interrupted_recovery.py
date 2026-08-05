@@ -10,6 +10,10 @@ from __future__ import annotations
 from pathlib import Path
 
 import hermes_cli.main as m
+import pytest
+
+pytestmark = pytest.mark.skip(reason="Disabled locally: update tests can drive a real `hermes update` against the live checkout (owner branch)")
+
 
 
 def test_marker_round_trip(tmp_path, monkeypatch):

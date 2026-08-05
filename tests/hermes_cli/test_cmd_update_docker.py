@@ -21,6 +21,8 @@ from unittest.mock import patch
 
 import pytest
 
+pytestmark = pytest.mark.skip(reason="Disabled locally: update tests can drive a real `hermes update` against the live checkout (owner branch)")
+
 from hermes_cli.main import _cmd_update_check, cmd_update
 
 

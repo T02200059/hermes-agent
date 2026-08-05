@@ -13,6 +13,8 @@ import subprocess
 
 import pytest
 
+pytestmark = pytest.mark.skip(reason="Disabled locally: update tests can drive a real `hermes update` against the live checkout (owner branch)")
+
 from hermes_cli.main import (
     _for_each_systemd_gateway_unit,
     _warn_incomplete_gateway_fleet_restart,

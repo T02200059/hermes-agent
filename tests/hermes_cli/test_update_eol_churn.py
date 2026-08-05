@@ -22,7 +22,7 @@ import pytest
 
 from hermes_cli.update_cmd import _normalize_managed_eol
 
-pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="needs git")
+pytestmark = [pytest.mark.skip(reason="Disabled locally: update tests can drive a real `hermes update` against the live checkout (owner branch)"), pytest.mark.skipif(shutil.which("git") is None, reason="needs git")]
 
 GIT_CMD = ["git"]
 

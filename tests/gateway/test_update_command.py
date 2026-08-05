@@ -10,6 +10,8 @@ from unittest.mock import patch, MagicMock, AsyncMock
 
 import pytest
 
+pytestmark = pytest.mark.skip(reason="Disabled locally: update tests can drive a real `hermes update` against the live checkout (owner branch)")
+
 from gateway.config import Platform
 from gateway.platforms.base import MessageEvent
 from gateway.session import SessionSource

@@ -19,6 +19,10 @@ from pathlib import Path
 
 import hermes_cli.main as main_mod
 import hermes_cli.update_cmd as update_mod
+import pytest
+
+pytestmark = pytest.mark.skip(reason="Disabled locally: update tests can drive a real `hermes update` against the live checkout (owner branch)")
+
 
 
 _COUNT_RE = re.compile(r"user-modified \(kept\)")

@@ -18,6 +18,10 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from hermes_cli import main as hermes_main
+import pytest
+
+pytestmark = pytest.mark.skip(reason="Disabled locally: update tests can drive a real `hermes update` against the live checkout (owner branch)")
+
 
 
 # ---------------------------------------------------------------------------

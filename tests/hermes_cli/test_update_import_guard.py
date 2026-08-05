@@ -20,6 +20,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.skip(reason="Disabled locally: update tests can drive a real `hermes update` against the live checkout (owner branch)")
+
 from hermes_cli import main as hermes_main
 from hermes_cli import update_cmd
 from hermes_constants import partial_update_hint

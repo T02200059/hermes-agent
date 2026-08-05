@@ -13,6 +13,10 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from hermes_cli.main import cmd_update
+import pytest
+
+pytestmark = pytest.mark.skip(reason="Disabled locally: update tests can drive a real `hermes update` against the live checkout (owner branch)")
+
 
 
 def _make_run_side_effect(

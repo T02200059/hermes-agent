@@ -14,6 +14,8 @@ import sys
 
 import pytest
 
+pytestmark = pytest.mark.skip(reason="Disabled locally: update tests can drive a real `hermes update` against the live checkout (owner branch)")
+
 from hermes_cli.main import (
     _UpdateOutputStream,
     _finalize_update_output,

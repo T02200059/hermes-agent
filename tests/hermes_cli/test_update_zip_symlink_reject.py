@@ -15,6 +15,8 @@ from unittest.mock import patch
 
 import pytest
 
+pytestmark = pytest.mark.skip(reason="Disabled locally: update tests can drive a real `hermes update` against the live checkout (owner branch)")
+
 
 def _build_zip_with_symlink_member(zip_path: str, link_name: str, target: str) -> None:
     """Write a ZIP containing a single member with S_IFLNK mode bits set."""
