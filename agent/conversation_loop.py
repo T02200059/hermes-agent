@@ -390,8 +390,10 @@ def _billing_or_entitlement_message(
     if _is_nous_inference_route(provider, base_url):
         return _nous_entitlement_message(capability)
 
-    provider_label = (provider or "").strip() or "the selected provider"
-    model_label = (model or "").strip() or "the selected model"
+    provider_label = (provider or "").strip() or t(
+        "gateway.error.billing_selected_provider"
+    )
+    model_label = (model or "").strip() or t("gateway.error.billing_selected_model")
 
     # Anthropic Claude Pro/Max OAuth subscriptions surface exhaustion of the
     # metered "extra usage" bucket as a hard 400 ("You're out of extra
@@ -401,14 +403,13 @@ def _billing_or_entitlement_message(
     # API key.
     if (provider or "").strip().lower() == "anthropic":
         lines = [
-            (
-                f"{provider_label} reported that your Claude subscription usage is "
-                f"exhausted for {model_label} (included quota + extra-usage credits)."
+            t(
+                "gateway.error.billing_guidance_anthropic_exhausted",
+                provider=provider_label,
+                model=model_label,
             ),
-            "Options: wait for the billing cycle to reset, or add extra usage at "
-            "https://claude.ai/settings/usage",
-            "You can also switch to an Anthropic API key or another provider with "
-            "/model <model> --provider <provider>.",
+            t("gateway.error.billing_guidance_anthropic_options"),
+            t("gateway.error.billing_guidance_anthropic_switch"),
         ]
         return "\n".join(lines)
 
@@ -426,15 +427,22 @@ def _billing_or_entitlement_message(
         billing_url = None
 
     lines = [
-        (
-            f"{provider_label} reported that billing, credits, or account "
-            f"entitlement is exhausted for {model_label}."
+        t(
+            "gateway.error.billing_guidance_exhausted",
+            provider=provider_label,
+            model=model_label,
         ),
-        "Add credits or update billing with that provider, then retry.",
+        t("gateway.error.billing_guidance_add_credits"),
     ]
     if billing_url:
-        lines.append(f"{provider_label} billing: {billing_url}")
-    lines.append("You can switch providers temporarily with /model <model> --provider <provider>.")
+        lines.append(
+            t(
+                "gateway.error.billing_guidance_url",
+                provider=provider_label,
+                url=billing_url,
+            )
+        )
+    lines.append(t("gateway.error.billing_guidance_switch"))
     return "\n".join(lines)
 
 
@@ -5145,18 +5153,25 @@ def run_conversation(
                     _nonretryable_summary = agent._summarize_api_error(api_error)
                     if classified.reason == FailoverReason.content_policy_blocked:
                         agent._emit_status(
-                            f"❌ Provider safety filter blocked this request: "
-                            f"{_nonretryable_summary}"
+                            t(
+                                "gateway.runtime.status_content_policy_blocked",
+                                summary=_nonretryable_summary,
+                            )
                         )
                     elif classified.reason == FailoverReason.ssl_cert_verification:
                         agent._emit_status(
-                            f"❌ TLS certificate verification failed: "
-                            f"{_nonretryable_summary}"
+                            t(
+                                "gateway.runtime.status_ssl_cert_failed",
+                                summary=_nonretryable_summary,
+                            )
                         )
                     else:
                         agent._emit_status(
-                            f"❌ Non-retryable error (HTTP {status_code}): "
-                            f"{_nonretryable_summary}"
+                            t(
+                                "gateway.runtime.status_non_retryable",
+                                status_code=status_code,
+                                summary=_nonretryable_summary,
+                            )
                         )
                     # [owner] append Chinese hint for terminal API errors
                     _zh_hint = _get_api_error_hint(
@@ -5311,7 +5326,10 @@ def run_conversation(
                             base_url=str(_base),
                             model=_model,
                         )
-                        _ce_final = f"Billing or credits exhausted: {_nonretryable_summary}"
+                        _ce_final = t(
+                            "gateway.error.billing_exhausted_header",
+                            summary=_nonretryable_summary,
+                        )
                         if _ce_guidance:
                             _ce_final += f"\n\n{_ce_guidance}"
                         _ce_block = _billing_block_dict(_provider, _base, _model, _ce_guidance)

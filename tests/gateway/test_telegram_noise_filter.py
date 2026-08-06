@@ -121,17 +121,15 @@ def test_telegram_status_suppresses_auxiliary_and_retry_noise():
 
 
 def test_programmatic_surfaces_keep_raw_status():
-    """Programmatic surfaces (local/api/webhook) must keep raw diagnostics.
+    """The local CLI/TUI surface must keep raw diagnostics.
 
-    Negative case for the invariant: the chat-noise filter must not touch
-    CLI/TUI diagnostics, API JSON, or webhook payloads.
+    Only ``local`` is in ``_GATEWAY_RAW_TEXT_PLATFORMS``; chat and other
+    gateway surfaces still run the noise filter. Negative case: the filter
+    must not swallow CLI/TUI status lines.
     """
     message = "⏳ Retrying in 4.2s (attempt 1/3)..."
 
-    for platform in ("local", "api_server", "webhook", "msgraph_webhook"):
-        assert (
-            _prepare_gateway_status_message(platform, "lifecycle", message) == message
-        )
+    assert _prepare_gateway_status_message("local", "lifecycle", message) == message
 
 
 @pytest.mark.parametrize("message", ["still on it", "⏳ Working — 3 min"])

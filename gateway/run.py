@@ -97,7 +97,8 @@ _TELEGRAM_NOISY_STATUS_RE = re.compile(
     r"|auto-lowered\s+(?:this\s+)?session'?s?\s+threshold"
     r"|configured\s+auxiliary\s+compression\s+provider\s+.+\s+unavailable"
     r"|skipping\s+concurrent\s+compression"
-    r"|compacting\s+context\s+[—-]\s+summarizing\s+earlier\s+conversation"
+    # English + zh stems: marker stays "Compacting context" across locales.
+    r"|compacting\s+context\s+[—-]\s+(?:summarizing\s+earlier\s+conversation|正在总结)"
     r"|resumed\s+after\s+\d+s\s+idle\s+[—-]\s+compacting"
     r"|preflight\s+compression"
     r"|pre[- ]api\s+compression"
@@ -110,6 +111,10 @@ _TELEGRAM_NOISY_STATUS_RE = re.compile(
     r"|compressed\s+~[\d,]+\s+(?:→|->)\s+~[\d,]+\s+tokens,\s+retrying"
     r"|context\s+reduced\s+to\s+[\d,]+\s+tokens\s+\(was\s+[\d,]+\),\s+retrying"
     r"|session\s+compressed\s+\d+\s+times"
+    r"|会话已压缩\s*\d+\s*次"
+    r"|压缩摘要失败"
+    r"|回退上下文标记"
+    r"|配置的压缩模型"
     r"|rate\s+limited\.\s+waiting\s+\d"
     r"|retrying\s+in\s+\d"
     r"|max\s+retries\s+\(\d+\).*(?:trying\s+fallback|exhausted|invalid\s+responses)"
@@ -166,17 +171,28 @@ def _status_template_to_regex(template: str) -> str:
 # place, so they are unaffected by this gate.
 _COMPRESSION_PROGRESS_STATUS_RE = re.compile(
     "|".join(
-        _status_template_to_regex(_template)
-        for _template in (
-            COMPACTION_STATUS,
-            PRE_API_COMPRESSION_STATUS_TEMPLATE,
-            PREFLIGHT_COMPRESSION_STATUS_TEMPLATE,
-            IDLE_COMPACTION_STATUS_TEMPLATE,
-            COMPRESSION_RETRY_TOO_LARGE_STATUS_TEMPLATE,
-            COMPRESSION_RETRY_MESSAGES_STATUS_TEMPLATE,
-            COMPRESSION_RETRY_TOKENS_STATUS_TEMPLATE,
-            COMPRESSION_RETRY_CONTEXT_REDUCED_STATUS_TEMPLATE,
+        list(
+            _status_template_to_regex(_template)
+            for _template in (
+                COMPACTION_STATUS,
+                PRE_API_COMPRESSION_STATUS_TEMPLATE,
+                PREFLIGHT_COMPRESSION_STATUS_TEMPLATE,
+                IDLE_COMPACTION_STATUS_TEMPLATE,
+                COMPRESSION_RETRY_TOO_LARGE_STATUS_TEMPLATE,
+                COMPRESSION_RETRY_MESSAGES_STATUS_TEMPLATE,
+                COMPRESSION_RETRY_TOKENS_STATUS_TEMPLATE,
+                COMPRESSION_RETRY_CONTEXT_REDUCED_STATUS_TEMPLATE,
+            )
         )
+        # zh locale stems for the same routine lifecycle lines (en constants
+        # alone miss translated emit sites when display.language=zh).
+        + [
+            r"compacting\s+context\s+[—-]\s+正在总结",
+            r"预\s*API\s*压缩",
+            r"预检压缩",
+            r"已压缩：",
+            r"上下文过大",
+        ]
     ),
     re.IGNORECASE,
 )

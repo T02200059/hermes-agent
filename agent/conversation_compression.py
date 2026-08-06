@@ -102,13 +102,22 @@ COMPACTION_STATUS = (
 COMPACTION_DONE_STATUS = "✓ Context compaction complete — continuing turn..."
 
 
+def get_compaction_done_status() -> str:
+    """Return the translated compaction-complete status line for runtime emission.
+
+    The English ``COMPACTION_DONE_STATUS`` constant is retained for
+    tests/back-compat and noise-filter anchors.
+    """
+    return _t("gateway.runtime.compaction_done")
+
+
 def _emit_compaction_done(agent: Any) -> None:
     """Emit the structured terminal edge for a started compaction."""
     status_callback = getattr(agent, "status_callback", None)
     if not status_callback:
         return
     try:
-        status_callback("compacted", COMPACTION_DONE_STATUS)
+        status_callback("compacted", get_compaction_done_status())
     except Exception:
         logger.debug("status_callback error in compaction completion", exc_info=True)
 
@@ -2307,7 +2316,7 @@ def compress_context(
         f"{approx_tokens:,}" if approx_tokens else "unknown", agent.model,
         focus_topic,
     )
-    _compaction_status = COMPACTION_STATUS
+    _compaction_status = get_compaction_status()
     if not force:
         _compaction_status = automatic_compaction_status_message(
             agent.context_compressor,
@@ -2964,9 +2973,7 @@ def compress_context(
                 if getattr(agent, "_last_compression_summary_warning", None) != _err:
                     agent._last_compression_summary_warning = _err
                     agent._emit_warning(
-                        f"⚠ Compression aborted: {_err}. "
-                        "No messages were dropped — conversation continues unchanged. "
-                        "Run /compress to retry, or /new to start a fresh session."
+                        _t("gateway.compress.auto_aborted", error=_err)
                     )
                 _existing_sp = getattr(agent, "_cached_system_prompt", None)
                 if not _existing_sp:
@@ -3066,8 +3073,7 @@ def compress_context(
             if getattr(agent, "_last_compression_summary_warning", None) != summary_error:
                 agent._last_compression_summary_warning = summary_error
                 agent._emit_warning(
-                    f"⚠ Compression summary failed: {summary_error}. "
-                    "Inserted a fallback context marker."
+                    _t("gateway.compress.summary_marker", error=summary_error)
                 )
         else:
             # No hard failure — but did the configured aux model error out
@@ -3082,9 +3088,11 @@ def compress_context(
                 if getattr(agent, "_last_aux_fallback_warning_key", None) != _aux_key:
                     agent._last_aux_fallback_warning_key = _aux_key
                     agent._emit_warning(
-                        f"ℹ Configured compression model '{_aux_fail_model}' failed "
-                        f"({_aux_fail_err or 'unknown error'}). Recovered using main model — "
-                        "check auxiliary.compression.model in config.yaml."
+                        _t(
+                            "gateway.compress.aux_failed",
+                            model=_aux_fail_model,
+                            error=_aux_fail_err or "unknown error",
+                        )
                     )
 
         todo_snapshot = agent._todo_store.format_for_injection()
@@ -3442,10 +3450,8 @@ def compress_context(
         # re-deliver it once a late-bound gateway status_callback is wired (#36908).
         _cc = agent.context_compressor.compression_count
         if _cc >= 2:
-            _cc_msg = (
-                f"{agent.log_prefix}⚠️  Session compressed {_cc} times — "
-                f"accuracy may degrade. Consider /new to start fresh."
-            )
+            msg = _t("gateway.compress.repeated_warning", count=_cc)
+            _cc_msg = f"{agent.log_prefix}{msg}"
             agent._compression_warning = _cc_msg
             agent._emit_status(_cc_msg)
 
@@ -3662,7 +3668,7 @@ def _compress_context_via_codex_app_server(
     if getattr(result, "interrupted", False) or getattr(result, "error", None):
         try:
             agent._emit_warning(
-                f"⚠ Codex app-server compaction failed: {result.error}"
+                _t("gateway.compress.codex_failed", error=result.error)
             )
         except Exception:
             pass
@@ -4005,6 +4011,7 @@ __all__ = [
     "COMPACTION_DONE_STATUS",
     "COMPACTION_STATUS_MARKER",
     "get_compaction_status",
+    "get_compaction_done_status",
     "check_compression_model_feasibility",
     "replay_compression_warning",
     "compress_context",
