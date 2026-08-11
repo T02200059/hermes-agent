@@ -104,6 +104,54 @@ approval:
   reason_label: "原因：{description}"
   # 安全扫描前缀（tirith 发现）
   scan_prefix: "安全扫描"
+  # _format_tirith_description 框架文案 — 严重级别/标题/描述标点在代码中拼接。
+  scan_summary: "{prefix}：{summary}"
+  scan_findings: "{prefix} — {findings}"
+  tirith_issue_fallback: "检测到安全问题"
+  # cron-deny 下 tirith 发现 / 导入失败文案
+  cron_blocked_tirith: "已拦截：{description}，但定时任务运行时没有用户在场批准。请寻找替代方案来避免此命令。如需在定时任务中允许危险命令，请在 config.yaml 中设置 approvals.cron_mode: approve。"
+  cron_blocked_tirith_import: "已拦截：无法导入 Tirith 安全扫描器，且 security.tirith_fail_open 为 false，因此不能静默放行——且定时任务运行时没有用户在场批准。请寻找替代方案、安装 tirith，或在 config.yaml 中设置 approvals.cron_mode: approve。"
+  # tools/tirith_security.py 已知英文 summary → 本地化（无 finding 路径）
+  tirith_summary:
+    path_unavailable: "tirith 路径不可用"
+    path_unavailable_fail_closed: "tirith 路径不可用（fail-closed）"
+    timeout: "tirith 超时（{timeout}s）"
+    timeout_fail_closed: "tirith 超时（fail-closed）"
+    details_unavailable: "检测到安全问题（详情不可用）"
+    warning_details_unavailable: "检测到安全警告（详情不可用）"
+    import_fail_closed: "Tirith 不可用（fail-closed）"
+    circuit_breaker: "tirith 已禁用（熔断）"
+    unavailable: "tirith 不可用：{detail}"
+    spawn_failed: "{detail}"
+    exit_code: "{detail}"
+  # 高频 tirith 规则描述模板（动态值用占位符）。按 rule_id 映射见 tools/approval.py。
+  tirith_desc:
+    pipe_to_interpreter: "命令将 '{source}' 的输出直接管道至解释器 '{interpreter}'。下载内容将未经检查即被执行。\n  更安全：tirith run {url}  — 或：vet {url}  ({vet_home})"
+    insecure_tls_flags: "标志 '{flag}' 会禁用 TLS 证书校验，可能遭受中间人（MITM）攻击"
+    plain_http_to_sink: "URL '{url}' 使用未加密的 HTTP，且被传入会下载或执行内容的命令。网络攻击者可能篡改该内容。"
+    raw_ip_url: "URL 指向 IP 地址 {ip}，而不是域名"
+    shortened_url: "URL 使用短链接服务 '{host}'，会隐藏真实目标地址"
+    lookalike_tld: "域名使用了 '{tld}' TLD，可能与文件扩展名混淆"
+    non_standard_port: "已知域名 '{domain}' 使用了非标准端口 {port}"
+    punycode_domain: "域名包含 punycode 标签 '{label}'，可能用于伪装真实域名"
+    userinfo_trick: "URL 用户信息段 '{userinfo}' 含有点号，疑似域名仿冒"
+    metadata_endpoint: "命令访问云元数据端点 {ip}，可能泄露实例凭据与敏感配置"
+    private_network_access: "命令访问私有网络地址 {ip}，可能表示 SSRF 或横向移动"
+    code_injection_env: "设置 {var} 可向所有进程注入共享库，从而实现任意代码执行"
+    interpreter_hijack_env: "设置 {var} 可劫持解释器的模块/库搜索路径"
+    shell_injection_env: "设置 {var} 可在 shell 启动时执行任意脚本"
+    sensitive_env_export: "设置 {var} 会暴露敏感凭据，并可能写入 shell 历史"
+    base64_decode_execute: "解释器 '{interpreter}' 在代码中同时出现 base64 解码与 eval/exec"
+    npm_url_install: "包 URL 指向 '{host}'，而不是 npm registry"
+    pip_url_install: "包 URL 指向 '{host}'，而不是 PyPI"
+    docker_untrusted_registry: "镜像 '{image}' 拉取自非标准 registry '{registry}'"
+    archive_extract: "归档命令 '{command}' 解压到可能敏感的位置"
+    credential_file_sweep: "单次调用访问了 {count} 个已知凭据文件路径，可能表示凭据收集"
+    dotfile_overwrite: "命令将输出重定向到主目录下的 dotfile，可能覆盖 shell 配置"
+    proc_mem_access: "命令读取 /proc/*/mem，可转储进程内存内容（含密钥与凭据）"
+    data_exfiltration: "curl 命令将敏感数据（凭据、密钥或私有文件）上传到远程服务器"
+    private_key_exposed: "输入中发现 PEM 编码私钥头。切勿将私钥粘贴到终端或以明文内联使用。"
+    tirith_import_error: "无法导入 Tirith 安全扫描器。由于 security.tirith_fail_open 为 false，此命令不能静默放行。仅在你已确认命令安全时批准。"
 
   # 斜杠命令确认提示（prompt_toolkit UI）。
   # 用于 _confirm_destructive_slash（/clear /new /reset /undo）和
@@ -238,16 +286,17 @@ approval:
     telinit_0_6_shutdown_reboot: "telinit 0/6（关机/重启）"
 
   # Tirith 规则翻译 — 按 tirith JSON 输出的 rule_id 索引。
-  # 仅翻译 title；description 含动态内容（IP 地址、URL）保留原文。
+  # 优先本地化 title；含动态字段的 description 走 approval.tirith_desc.* 模板（占位符）。
+  # 未映射规则保留 tirith 原始英文 description。
   tirith:
     raw_ip_url:
       title: "URL 使用原始 IP 地址"
     plain_http_to_sink:
       title: "执行上下文中的明文 HTTP URL"
     private_network_access:
-      title: "私有网络访问"
+      title: "私有网络访问：{ip}"
     curl_pipe_shell:
-      title: "管道至解释器：curl | shell"
+      title: "管道至解释器：{source} | {interpreter}"
     non_ascii_hostname:
       title: "主机名含非 ASCII 字符"
     punycode_domain:
@@ -280,9 +329,9 @@ approval:
     schemeless_to_sink:
       title: "下载命令中的无协议 URL"
     insecure_tls_flags:
-      title: "不安全的 TLS 标志"
+      title: "检测到不安全的 TLS 标志"
     shortened_url:
-      title: "检测到短链接"
+      title: "检测到短链接 URL"
     # === TERMINAL ===
     ansi_escapes:
       title: "粘贴内容中的 ANSI 转义序列"
@@ -308,13 +357,13 @@ approval:
       title: "Unicode 易混淆文本"
     # === COMMAND ===
     pipe_to_interpreter:
-      title: "管道至 shell 解释器"
+      title: "管道至解释器：{source} | {interpreter}"
     wget_pipe_shell:
-      title: "wget 管道至 shell"
+      title: "管道至解释器：{source} | {interpreter}"
     httpie_pipe_shell:
-      title: "HTTPie 管道至 shell"
+      title: "管道至解释器：{source} | {interpreter}"
     xh_pipe_shell:
-      title: "xh 管道至 shell"
+      title: "管道至解释器：{source} | {interpreter}"
     dotfile_overwrite:
       title: "通过重定向覆盖 dotfile"
     proc_mem_access:
@@ -338,16 +387,18 @@ approval:
     proxy_env_set:
       title: "设置了代理环境变量"
     sensitive_env_export:
-      title: "敏感凭据导出到环境变量"
+      title: "敏感凭据导出：{var}"
     code_injection_env:
-      title: "通过环境变量注入代码"
+      title: "代码注入环境变量：{var}"
     interpreter_hijack_env:
-      title: "解释器模块路径劫持"
+      title: "解释器劫持环境变量：{var}"
     shell_injection_env:
-      title: "通过启动变量注入 shell"
+      title: "Shell 注入环境变量：{var}"
     # === NETWORK ===
     metadata_endpoint:
-      title: "云元数据端点访问"
+      title: "云元数据端点访问：{ip}"
+    "tirith-import-error":
+      title: "Tirith 安全模块不可用"
     command_network_deny:
       title: "策略网络拒绝列表匹配"
     # === CONFIG ===

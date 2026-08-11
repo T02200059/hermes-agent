@@ -1503,3 +1503,231 @@ class TestCliApprovalTimeoutClassifiedSeparately:
         assert result.get("user_consent") is False
         assert "timed out without user response" in result["message"]
         assert "Silence is not consent" in result["message"]
+
+
+class TestTirithDescriptionI18n:
+    """_format_tirith_description localizes scan framing, titles, and
+    templated descriptions (en/zh) while preserving dynamic placeholders."""
+
+    def _pipe_finding(self):
+        return {
+            "rule_id": "curl_pipe_shell",
+            "severity": "HIGH",
+            "title": "Pipe to interpreter: curl | python3",
+            "description": (
+                "Command pipes output from 'curl' directly to interpreter "
+                "'python3'. Downloaded content will be executed without inspection.\n"
+                "  Safer: tirith run https://example.com/x  — or: vet "
+                "https://example.com/x  (https://getvet.sh)"
+            ),
+            "evidence": [
+                {
+                    "type": "command_pattern",
+                    "pattern": "pipe to interpreter",
+                    "matched": "curl | python3",
+                },
+                {"type": "url", "raw": "https://example.com/x"},
+            ],
+        }
+
+    def _tls_finding(self):
+        return {
+            "rule_id": "insecure_tls_flags",
+            "severity": "HIGH",
+            "title": "Insecure TLS flag detected",
+            "description": (
+                "Flag '-k' disables TLS certificate verification, "
+                "allowing MITM attacks"
+            ),
+            "evidence": [
+                {
+                    "type": "command_pattern",
+                    "pattern": "insecure TLS flag",
+                    "matched": "-k",
+                }
+            ],
+        }
+
+    def test_zh_localizes_scan_prefix_title_and_desc(self, monkeypatch):
+        from agent.i18n import reset_language_cache
+
+        monkeypatch.setenv("HERMES_LANGUAGE", "zh")
+        reset_language_cache()
+        try:
+            text = approval_module._format_tirith_description(
+                {
+                    "findings": [self._pipe_finding(), self._tls_finding()],
+                    "summary": "",
+                }
+            )
+        finally:
+            monkeypatch.delenv("HERMES_LANGUAGE", raising=False)
+            reset_language_cache()
+
+        assert text.startswith("安全扫描")
+        assert "管道至解释器：curl | python3" in text
+        assert "命令将 'curl' 的输出直接管道至解释器 'python3'" in text
+        assert "https://example.com/x" in text
+        assert "检测到不安全的 TLS 标志" in text
+        assert "标志 '-k'" in text
+        # Must not leak the English framing / static titles.
+        assert "Security scan" not in text
+        assert "Pipe to interpreter:" not in text
+        assert "Insecure TLS flag detected" not in text
+
+    def test_en_preserves_dynamic_placeholders(self, monkeypatch):
+        from agent.i18n import reset_language_cache
+
+        monkeypatch.setenv("HERMES_LANGUAGE", "en")
+        reset_language_cache()
+        try:
+            text = approval_module._format_tirith_description(
+                {"findings": [self._pipe_finding()], "summary": ""}
+            )
+        finally:
+            monkeypatch.delenv("HERMES_LANGUAGE", raising=False)
+            reset_language_cache()
+
+        assert text.startswith("Security scan")
+        assert "Pipe to interpreter: curl | python3" in text
+        assert "interpreter 'python3'" in text
+        assert "https://example.com/x" in text
+
+    def test_empty_findings_uses_fallback_summary(self, monkeypatch):
+        from agent.i18n import reset_language_cache
+
+        monkeypatch.setenv("HERMES_LANGUAGE", "zh")
+        reset_language_cache()
+        try:
+            text = approval_module._format_tirith_description(
+                {"findings": [], "summary": ""}
+            )
+        finally:
+            monkeypatch.delenv("HERMES_LANGUAGE", raising=False)
+            reset_language_cache()
+
+        assert text == "安全扫描：检测到安全问题"
+
+    def test_unknown_rule_keeps_english_description(self, monkeypatch):
+        from agent.i18n import reset_language_cache
+
+        monkeypatch.setenv("HERMES_LANGUAGE", "zh")
+        reset_language_cache()
+        try:
+            text = approval_module._format_tirith_description(
+                {
+                    "findings": [
+                        {
+                            "rule_id": "totally_unknown_rule_xyz",
+                            "severity": "MEDIUM",
+                            "title": "Some English Title",
+                            "description": "Some English description body.",
+                        }
+                    ],
+                    "summary": "",
+                }
+            )
+        finally:
+            monkeypatch.delenv("HERMES_LANGUAGE", raising=False)
+            reset_language_cache()
+
+        assert text.startswith("安全扫描")
+        # No catalog title → keep raw English title + description.
+        assert "Some English Title" in text
+        assert "Some English description body." in text
+
+    def test_zh_localizes_dynamic_env_and_ip_titles(self, monkeypatch):
+        from agent.i18n import reset_language_cache
+
+        monkeypatch.setenv("HERMES_LANGUAGE", "zh")
+        reset_language_cache()
+        try:
+            text = approval_module._format_tirith_description(
+                {
+                    "findings": [
+                        {
+                            "rule_id": "code_injection_env",
+                            "severity": "HIGH",
+                            "title": "Code injection environment variable: LD_PRELOAD",
+                            "description": (
+                                "Setting LD_PRELOAD can inject shared libraries "
+                                "into all processes, enabling arbitrary code execution"
+                            ),
+                            "evidence": [
+                                {
+                                    "type": "env_var",
+                                    "name": "LD_PRELOAD",
+                                    "value_preview": "[REDACTED]",
+                                }
+                            ],
+                        },
+                        {
+                            "rule_id": "metadata_endpoint",
+                            "severity": "HIGH",
+                            "title": "Cloud metadata endpoint access: 169.254.169.254",
+                            "description": (
+                                "Command accesses cloud metadata endpoint "
+                                "169.254.169.254, which can expose instance "
+                                "credentials and sensitive configuration"
+                            ),
+                        },
+                    ],
+                    "summary": "",
+                }
+            )
+        finally:
+            monkeypatch.delenv("HERMES_LANGUAGE", raising=False)
+            reset_language_cache()
+
+        assert "代码注入环境变量：LD_PRELOAD" in text
+        assert "设置 LD_PRELOAD" in text
+        assert "云元数据端点访问：169.254.169.254" in text
+        assert "Code injection environment variable" not in text
+        assert "Cloud metadata endpoint access" not in text
+
+    def test_zh_localizes_known_summary_timeout(self, monkeypatch):
+        from agent.i18n import reset_language_cache
+
+        monkeypatch.setenv("HERMES_LANGUAGE", "zh")
+        reset_language_cache()
+        try:
+            text = approval_module._format_tirith_description(
+                {"findings": [], "summary": "tirith timed out (5s)"}
+            )
+        finally:
+            monkeypatch.delenv("HERMES_LANGUAGE", raising=False)
+            reset_language_cache()
+
+        assert text == "安全扫描：tirith 超时（5s）"
+
+    def test_zh_localizes_import_error_finding(self, monkeypatch):
+        from agent.i18n import reset_language_cache
+
+        monkeypatch.setenv("HERMES_LANGUAGE", "zh")
+        reset_language_cache()
+        try:
+            text = approval_module._format_tirith_description(
+                {
+                    "findings": [
+                        {
+                            "rule_id": "tirith-import-error",
+                            "severity": "HIGH",
+                            "title": "Tirith security module unavailable",
+                            "description": (
+                                "The Tirith security scanner could not be imported. "
+                                "Because security.tirith_fail_open is false, this "
+                                "command cannot be silently allowed. Approve only if "
+                                "you have verified the command is safe."
+                            ),
+                        }
+                    ],
+                    "summary": "Tirith unavailable (fail-closed)",
+                }
+            )
+        finally:
+            monkeypatch.delenv("HERMES_LANGUAGE", raising=False)
+            reset_language_cache()
+
+        assert "Tirith 安全模块不可用" in text
+        assert "无法导入 Tirith" in text
+        assert "tirith_fail_open is false" not in text

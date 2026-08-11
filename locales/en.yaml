@@ -115,6 +115,55 @@ approval:
   reason_label: "Reason: {description}"
   # Security scan prefix (tirith findings)
   scan_prefix: "Security scan"
+  # Framing for _format_tirith_description — keep severity/title/desc punctuation in code.
+  scan_summary: "{prefix}: {summary}"
+  scan_findings: "{prefix} — {findings}"
+  tirith_issue_fallback: "security issue detected"
+  # Cron-deny messages for tirith findings / import failures.
+  cron_blocked_tirith: "BLOCKED: {description} but cron jobs run without a user present to approve it. Find an alternative approach that avoids this command. To allow dangerous commands in cron jobs, set approvals.cron_mode: approve in config.yaml."
+  cron_blocked_tirith_import: "BLOCKED: the Tirith security scanner could not be imported and security.tirith_fail_open is false, so this command cannot be silently allowed — and cron jobs run without a user present to approve it. Find an alternative approach, install tirith, or set approvals.cron_mode: approve in config.yaml."
+  # Known English summaries from tools/tirith_security.py (empty-findings path).
+  tirith_summary:
+    path_unavailable: "tirith path unavailable"
+    path_unavailable_fail_closed: "tirith path unavailable (fail-closed)"
+    timeout: "tirith timed out ({timeout}s)"
+    timeout_fail_closed: "tirith timed out (fail-closed)"
+    details_unavailable: "security issue detected (details unavailable)"
+    warning_details_unavailable: "security warning detected (details unavailable)"
+    import_fail_closed: "Tirith unavailable (fail-closed)"
+    circuit_breaker: "tirith disabled (circuit breaker)"
+    unavailable: "tirith unavailable: {detail}"
+    spawn_failed: "{detail}"
+    exit_code: "{detail}"
+  # Description templates for high-frequency tirith rules (dynamic values via placeholders).
+  # Matched by rule_id in tools/approval.py::_TIRITH_DESC_TEMPLATE_BY_RULE.
+  tirith_desc:
+    pipe_to_interpreter: "Command pipes output from '{source}' directly to interpreter '{interpreter}'. Downloaded content will be executed without inspection.\n  Safer: tirith run {url}  — or: vet {url}  ({vet_home})"
+    insecure_tls_flags: "Flag '{flag}' disables TLS certificate verification, allowing MITM attacks"
+    plain_http_to_sink: "URL '{url}' uses unencrypted HTTP and is being passed to a command that downloads or executes content. An attacker on the network could modify the content."
+    raw_ip_url: "URL points to IP address {ip} instead of a domain name"
+    shortened_url: "URL uses shortener '{host}' which hides the actual destination"
+    lookalike_tld: "Domain uses '{tld}' TLD which can be confused with file extensions"
+    non_standard_port: "Known domain '{domain}' using non-standard port {port}"
+    punycode_domain: "Domain contains punycode label '{label}' which may disguise the actual domain"
+    userinfo_trick: "URL userinfo '{userinfo}' contains a dot, suggesting domain impersonation"
+    metadata_endpoint: "Command accesses cloud metadata endpoint {ip}, which can expose instance credentials and sensitive configuration"
+    private_network_access: "Command accesses private network address {ip}, which may indicate SSRF or lateral movement"
+    code_injection_env: "Setting {var} can inject shared libraries into all processes, enabling arbitrary code execution"
+    interpreter_hijack_env: "Setting {var} can hijack the interpreter's module/library search path"
+    shell_injection_env: "Setting {var} can cause arbitrary script execution at shell startup"
+    sensitive_env_export: "Setting {var} exposes a sensitive credential that may be logged in shell history"
+    base64_decode_execute: "Interpreter '{interpreter}' executes code with base64 decode and eval/exec co-occurrence"
+    npm_url_install: "Package URL points to '{host}' instead of npm registry"
+    pip_url_install: "Package URL points to '{host}' instead of PyPI"
+    docker_untrusted_registry: "Image '{image}' pulled from non-standard registry '{registry}'"
+    archive_extract: "Archive command '{command}' extracts to a potentially sensitive location"
+    credential_file_sweep: "Command accesses {count} known credential file paths in a single invocation, which may indicate credential harvesting"
+    dotfile_overwrite: "Command redirects output to a dotfile in the home directory, which could overwrite shell configuration"
+    proc_mem_access: "Command reads from /proc/*/mem, which can dump process memory contents including secrets and credentials"
+    data_exfiltration: "curl command uploads sensitive data (credentials, keys, or private files) to a remote server"
+    private_key_exposed: "A PEM-encoded private key header was found in the input. Private keys should never be pasted into a terminal or used inline."
+    tirith_import_error: "The Tirith security scanner could not be imported. Because security.tirith_fail_open is false, this command cannot be silently allowed. Approve only if you have verified the command is safe."
 
   # Slash-command confirmation prompts (prompt_toolkit UI).
   # Used by _confirm_destructive_slash (/clear /new /reset /undo) and
@@ -250,16 +299,17 @@ approval:
     telinit_0_6_shutdown_reboot: "telinit 0/6 (shutdown/reboot)"
 
   # Tirith rule translations — keyed by rule_id from tirith JSON output.
-  # title only; description contains dynamic content (IP addresses, URLs) and stays in original language.
+  # Prefer title localization; descriptions with dynamic fields use approval.tirith_desc.*
+  # templates (placeholders). Unmapped rules keep the original English description.
   tirith:
     raw_ip_url:
       title: "URL uses raw IP address"
     plain_http_to_sink:
       title: "Plain HTTP URL in execution context"
     private_network_access:
-      title: "Private network access"
+      title: "Private network access: {ip}"
     curl_pipe_shell:
-      title: "Pipe to interpreter: curl | shell"
+      title: "Pipe to interpreter: {source} | {interpreter}"
     non_ascii_hostname:
       title: "Non-ASCII characters in hostname"
     punycode_domain:
@@ -277,7 +327,7 @@ approval:
     clipboard_hidden:
       title: "Hidden content in clipboard paste"
     code_injection_env:
-      title: "Code injection via environment variable"
+      title: "Code injection environment variable: {var}"
     command_network_deny:
       title: "Policy network deny list match"
     config_injection:
@@ -333,11 +383,11 @@ approval:
     html_comment:
       title: "HTML comment"
     httpie_pipe_shell:
-      title: "HTTPie piped to shell"
+      title: "Pipe to interpreter: {source} | {interpreter}"
     insecure_tls_flags:
-      title: "Insecure TLS flags"
+      title: "Insecure TLS flag detected"
     interpreter_hijack_env:
-      title: "Interpreter module path hijack"
+      title: "Interpreter hijack environment variable: {var}"
     invalid_host_chars:
       title: "Invalid characters in hostname"
     invisible_math_operator:
@@ -359,7 +409,7 @@ approval:
     mcp_untrusted_server:
       title: "MCP server from untrusted source"
     metadata_endpoint:
-      title: "Cloud metadata endpoint access"
+      title: "Cloud metadata endpoint access: {ip}"
     mixed_script_in_label:
       title: "Mixed Unicode scripts in hostname label"
     non_ascii_path:
@@ -375,7 +425,7 @@ approval:
     pip_url_install:
       title: "pip install from non-PyPI URL"
     pipe_to_interpreter:
-      title: "Pipe to shell interpreter"
+      title: "Pipe to interpreter: {source} | {interpreter}"
     policy_blocklisted:
       title: "Policy blocklist match"
     private_key_exposed:
@@ -387,13 +437,15 @@ approval:
     schemeless_to_sink:
       title: "Schemeless URL in download command"
     sensitive_env_export:
-      title: "Sensitive credential exported to environment"
+      title: "Sensitive credential exported: {var}"
     server_cloaking:
       title: "Server-side content cloaking"
     shell_injection_env:
-      title: "Shell injection via startup variable"
+      title: "Shell injection environment variable: {var}"
     shortened_url:
-      title: "URL shortener detected"
+      title: "Shortened URL detected"
+    "tirith-import-error":
+      title: "Tirith security module unavailable"
     suspicious_code_exfiltration:
       title: "Suspicious network request in code file"
     threat_cisa_kev:
@@ -435,9 +487,9 @@ approval:
     web3_rpc_endpoint:
       title: "Web3 RPC endpoint"
     wget_pipe_shell:
-      title: "wget piped to shell"
+      title: "Pipe to interpreter: {source} | {interpreter}"
     xh_pipe_shell:
-      title: "xh piped to shell"
+      title: "Pipe to interpreter: {source} | {interpreter}"
     zero_width_chars:
       title: "Zero-width characters"
   # Update prompt card

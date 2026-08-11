@@ -3456,31 +3456,466 @@ def request_tool_approval(
 # Combined pre-exec guard (tirith + dangerous command detection)
 # =========================================================================
 
+# Map tirith rule_id → shared description template key under
+# ``approval.tirith_desc.<template>``.  Templates use {placeholders} for
+# dynamic values extracted from the English tirith description / evidence.
+# Rules without a template keep the original English description (title is
+# still localized via ``approval.tirith.<rule_id>.title``).
+_TIRITH_DESC_TEMPLATE_BY_RULE: dict[str, str] = {
+    # pipe family
+    "curl_pipe_shell": "pipe_to_interpreter",
+    "wget_pipe_shell": "pipe_to_interpreter",
+    "httpie_pipe_shell": "pipe_to_interpreter",
+    "xh_pipe_shell": "pipe_to_interpreter",
+    "pipe_to_interpreter": "pipe_to_interpreter",
+    # transport / URL
+    "insecure_tls_flags": "insecure_tls_flags",
+    "plain_http_to_sink": "plain_http_to_sink",
+    "raw_ip_url": "raw_ip_url",
+    "shortened_url": "shortened_url",
+    "lookalike_tld": "lookalike_tld",
+    "non_standard_port": "non_standard_port",
+    "punycode_domain": "punycode_domain",
+    "userinfo_trick": "userinfo_trick",
+    "metadata_endpoint": "metadata_endpoint",
+    "private_network_access": "private_network_access",
+    # environment
+    "code_injection_env": "code_injection_env",
+    "interpreter_hijack_env": "interpreter_hijack_env",
+    "shell_injection_env": "shell_injection_env",
+    "sensitive_env_export": "sensitive_env_export",
+    # ecosystem / command
+    "base64_decode_execute": "base64_decode_execute",
+    "npm_url_install": "npm_url_install",
+    "pip_url_install": "pip_url_install",
+    "docker_untrusted_registry": "docker_untrusted_registry",
+    "archive_extract": "archive_extract",
+    "credential_file_sweep": "credential_file_sweep",
+    # mostly static descriptions (still localized)
+    "dotfile_overwrite": "dotfile_overwrite",
+    "proc_mem_access": "proc_mem_access",
+    "data_exfiltration": "data_exfiltration",
+    "private_key_exposed": "private_key_exposed",
+    # synthetic fail-closed import error
+    "tirith-import-error": "tirith_import_error",
+}
+
+# Extract dynamic fields from tirith's English description text so we can
+# re-render via locale templates without shipping free-form English to users.
+_RE_TIRITH_PIPE_DESC = re.compile(
+    r"Command pipes output from '(?P<source>[^']+)' directly to interpreter "
+    r"'(?P<interpreter>[^']+)'\."
+    r"(?:.*?"
+    r"Safer:\s*tirith run (?P<url>\S+)\s+[—\-]\s+or:\s*vet \S+"
+    r"(?:\s+\((?P<vet_home>[^)]+)\))?"
+    r")?",
+    re.DOTALL,
+)
+_RE_TIRITH_TLS_DESC = re.compile(
+    r"Flag '(?P<flag>[^']+)' disables TLS certificate verification, "
+    r"allowing MITM attacks"
+)
+_RE_TIRITH_HTTP_DESC = re.compile(
+    r"URL '(?P<url>[^']+)' uses unencrypted HTTP"
+)
+_RE_TIRITH_PIPE_TITLE = re.compile(
+    r"Pipe to interpreter:\s*(?P<source>\S+)\s*\|\s*(?P<interpreter>\S+)",
+    re.IGNORECASE,
+)
+_RE_TIRITH_TITLE_SUFFIX = re.compile(r":\s*(?P<value>\S+)\s*$")
+_RE_TIRITH_IP = re.compile(r"\b(?P<ip>(?:\d{1,3}\.){3}\d{1,3})\b")
+_RE_TIRITH_RAW_IP_DESC = re.compile(
+    r"URL points to IP address (?P<ip>\S+) instead of a domain name"
+)
+_RE_TIRITH_SHORTENER_DESC = re.compile(
+    r"URL uses shortener '(?P<host>[^']+)' which hides the actual destination"
+)
+_RE_TIRITH_LOOKALIKE_TLD = re.compile(
+    r"Domain uses '(?P<tld>[^']+)' TLD which can be confused with file extensions"
+)
+_RE_TIRITH_NON_STD_PORT = re.compile(
+    r"Known domain '(?P<domain>[^']+)' using non-standard port (?P<port>\S+)"
+)
+_RE_TIRITH_PUNYCODE = re.compile(
+    r"Domain contains punycode label '(?P<label>[^']+)' which may disguise "
+    r"the actual domain"
+)
+_RE_TIRITH_USERINFO = re.compile(
+    r"URL userinfo '(?P<userinfo>[^']+)' contains a dot"
+)
+_RE_TIRITH_METADATA = re.compile(
+    r"Command accesses cloud metadata endpoint (?P<ip>\S+),"
+)
+_RE_TIRITH_PRIVATE_NET = re.compile(
+    r"Command accesses private network address (?P<ip>\S+),"
+)
+_RE_TIRITH_SETTING_VAR = re.compile(r"^Setting (?P<var>\S+) ")
+_RE_TIRITH_BASE64 = re.compile(
+    r"Interpreter '(?P<interpreter>[^']+)' executes code with base64 decode"
+)
+_RE_TIRITH_PKG_HOST = re.compile(
+    r"Package URL points to '(?P<host>[^']+)' instead of "
+)
+_RE_TIRITH_DOCKER_REG = re.compile(
+    r"Image '(?P<image>[^']+)' pulled from non-standard registry '(?P<registry>[^']+)'"
+)
+_RE_TIRITH_ARCHIVE = re.compile(
+    r"Archive command '(?P<command>[^']+)' extracts to a potentially sensitive location"
+)
+_RE_TIRITH_CRED_SWEEP = re.compile(
+    r"Command accesses (?P<count>\d+) known credential file paths"
+)
+_RE_TIRITH_SUMMARY_TIMEOUT = re.compile(
+    r"^tirith timed out \((?P<timeout>\d+)s\)$"
+)
+_RE_PLACEHOLDER_NAMES = re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}")
+
+# Known English summary strings from tools/tirith_security.py → locale keys.
+_TIRITH_SUMMARY_I18N: dict[str, str] = {
+    "tirith path unavailable": "approval.tirith_summary.path_unavailable",
+    "tirith path unavailable (fail-closed)": (
+        "approval.tirith_summary.path_unavailable_fail_closed"
+    ),
+    "tirith timed out (fail-closed)": "approval.tirith_summary.timeout_fail_closed",
+    "security issue detected (details unavailable)": (
+        "approval.tirith_summary.details_unavailable"
+    ),
+    "security warning detected (details unavailable)": (
+        "approval.tirith_summary.warning_details_unavailable"
+    ),
+    "Tirith unavailable (fail-closed)": "approval.tirith_summary.import_fail_closed",
+    "tirith disabled (circuit breaker)": "approval.tirith_summary.circuit_breaker",
+}
+
+
+def _tirith_evidence_url(finding: dict) -> str:
+    for item in finding.get("evidence") or []:
+        if isinstance(item, dict) and item.get("type") == "url" and item.get("raw"):
+            return str(item["raw"])
+    return ""
+
+
+def _tirith_evidence_matched(finding: dict) -> str:
+    for item in finding.get("evidence") or []:
+        if (
+            isinstance(item, dict)
+            and item.get("type") == "command_pattern"
+            and item.get("matched")
+        ):
+            return str(item["matched"])
+    return ""
+
+
+def _tirith_evidence_env_name(finding: dict) -> str:
+    for item in finding.get("evidence") or []:
+        if isinstance(item, dict) and item.get("type") == "env_var" and item.get("name"):
+            return str(item["name"])
+    return ""
+
+
+def _tirith_format_template(template: str, **kwargs: str) -> str | None:
+    """Fill ``{placeholders}``; return None if any required value is missing."""
+    needed = set(_RE_PLACEHOLDER_NAMES.findall(template))
+    if not needed:
+        return template
+    values = {k: kwargs.get(k, "") for k in needed}
+    if any(not values[k] for k in needed):
+        return None
+    try:
+        return template.format(**values)
+    except (KeyError, IndexError, ValueError):
+        return None
+
+
+def _localize_tirith_summary(summary: str) -> str:
+    """Map known English tirith summary strings onto locale keys."""
+    text = (summary or "").strip()
+    if not text:
+        return t("approval.tirith_issue_fallback")
+    key = _TIRITH_SUMMARY_I18N.get(text)
+    if key:
+        return t(key)
+    m = _RE_TIRITH_SUMMARY_TIMEOUT.match(text)
+    if m:
+        return t("approval.tirith_summary.timeout", timeout=m.group("timeout"))
+    if text.startswith("tirith unavailable:"):
+        detail = text.split(":", 1)[1].strip()
+        return t("approval.tirith_summary.unavailable", detail=detail)
+    if text.startswith("tirith spawn failed"):
+        return t("approval.tirith_summary.spawn_failed", detail=text)
+    if text.startswith("tirith exit code"):
+        return t("approval.tirith_summary.exit_code", detail=text)
+    return text
+
+
+def _translate_tirith_title(rule_id: str, raw_title: str, finding: dict | None = None) -> str:
+    """Localize a tirith finding title via ``approval.tirith.<rule_id>.title``.
+
+    Catalog titles may include placeholders (``{source}``, ``{var}``, ``{ip}``,
+    …); values are pulled from the English title / evidence.  Missing catalog
+    entries fall back to the raw English title.
+    """
+    raw_title = raw_title or ""
+    finding = finding if isinstance(finding, dict) else {}
+    if not rule_id:
+        return raw_title
+    key = f"approval.tirith.{rule_id}.title"
+    translated = t(key)
+    if translated == key:
+        return raw_title
+
+    needed = set(_RE_PLACEHOLDER_NAMES.findall(translated))
+    if not needed:
+        return translated
+
+    kwargs: dict[str, str] = {}
+    pipe_m = _RE_TIRITH_PIPE_TITLE.search(raw_title)
+    if pipe_m:
+        kwargs["source"] = pipe_m.group("source")
+        kwargs["interpreter"] = pipe_m.group("interpreter")
+
+    suffix_m = _RE_TIRITH_TITLE_SUFFIX.search(raw_title)
+    suffix = suffix_m.group("value") if suffix_m else ""
+    env_name = _tirith_evidence_env_name(finding) or suffix
+    if "var" in needed and env_name:
+        kwargs["var"] = env_name
+    if "ip" in needed:
+        ip_m = _RE_TIRITH_IP.search(raw_title) or _RE_TIRITH_IP.search(
+            _tirith_evidence_url(finding)
+        )
+        if ip_m:
+            kwargs["ip"] = ip_m.group("ip")
+        elif suffix and _RE_TIRITH_IP.fullmatch(suffix):
+            kwargs["ip"] = suffix
+    if "host" in needed and suffix:
+        kwargs["host"] = suffix
+    if "value" in needed and suffix:
+        kwargs["value"] = suffix
+
+    filled = _tirith_format_template(translated, **kwargs)
+    if filled is not None:
+        return filled
+    # Placeholder template but no extractable values — keep raw title rather
+    # than leaking "{var}" into the user-facing card.
+    return raw_title or translated
+
+
+def _extract_tirith_desc_kwargs(template_name: str, finding: dict, raw_desc: str) -> dict[str, str] | None:
+    """Extract placeholder values for a description template. None → fall back."""
+    if template_name == "pipe_to_interpreter":
+        m = _RE_TIRITH_PIPE_DESC.search(raw_desc)
+        if m:
+            return {
+                "source": m.group("source") or "",
+                "interpreter": m.group("interpreter") or "",
+                "url": m.group("url") or _tirith_evidence_url(finding),
+                "vet_home": m.group("vet_home") or "https://getvet.sh",
+            }
+        tm = _RE_TIRITH_PIPE_TITLE.search(finding.get("title") or "")
+        url = _tirith_evidence_url(finding)
+        if tm and url:
+            return {
+                "source": tm.group("source"),
+                "interpreter": tm.group("interpreter"),
+                "url": url,
+                "vet_home": "https://getvet.sh",
+            }
+        return None
+
+    if template_name == "insecure_tls_flags":
+        m = _RE_TIRITH_TLS_DESC.search(raw_desc)
+        flag = (m.group("flag") if m else "") or _tirith_evidence_matched(finding)
+        return {"flag": flag} if flag else None
+
+    if template_name == "plain_http_to_sink":
+        m = _RE_TIRITH_HTTP_DESC.search(raw_desc)
+        url = (m.group("url") if m else "") or _tirith_evidence_url(finding)
+        return {"url": url} if url else None
+
+    if template_name == "raw_ip_url":
+        m = _RE_TIRITH_RAW_IP_DESC.search(raw_desc)
+        ip = (m.group("ip") if m else "") or _tirith_evidence_url(finding)
+        if not ip:
+            ip_m = _RE_TIRITH_IP.search(raw_desc)
+            ip = ip_m.group("ip") if ip_m else ""
+        return {"ip": ip} if ip else None
+
+    if template_name == "shortened_url":
+        m = _RE_TIRITH_SHORTENER_DESC.search(raw_desc)
+        host = m.group("host") if m else ""
+        if not host:
+            raw_url = _tirith_evidence_url(finding)
+            # e.g. https://bit.ly/abc → bit.ly
+            host = re.sub(r"^https?://", "", raw_url).split("/")[0] if raw_url else ""
+        return {"host": host} if host else None
+
+    if template_name == "lookalike_tld":
+        m = _RE_TIRITH_LOOKALIKE_TLD.search(raw_desc)
+        tld = m.group("tld") if m else ""
+        return {"tld": tld} if tld else None
+
+    if template_name == "non_standard_port":
+        m = _RE_TIRITH_NON_STD_PORT.search(raw_desc)
+        if m:
+            return {"domain": m.group("domain"), "port": m.group("port")}
+        raw_url = _tirith_evidence_url(finding)
+        if ":" in raw_url:
+            domain, _, port = raw_url.rpartition(":")
+            if domain and port.isdigit():
+                return {"domain": domain, "port": port}
+        return None
+
+    if template_name == "punycode_domain":
+        m = _RE_TIRITH_PUNYCODE.search(raw_desc)
+        label = m.group("label") if m else ""
+        return {"label": label} if label else None
+
+    if template_name == "userinfo_trick":
+        m = _RE_TIRITH_USERINFO.search(raw_desc)
+        userinfo = m.group("userinfo") if m else ""
+        return {"userinfo": userinfo} if userinfo else None
+
+    if template_name == "metadata_endpoint":
+        m = _RE_TIRITH_METADATA.search(raw_desc)
+        ip = m.group("ip") if m else ""
+        if not ip:
+            ip_m = _RE_TIRITH_IP.search(raw_desc) or _RE_TIRITH_IP.search(
+                _tirith_evidence_url(finding)
+            )
+            ip = ip_m.group("ip") if ip_m else ""
+        return {"ip": ip} if ip else None
+
+    if template_name == "private_network_access":
+        m = _RE_TIRITH_PRIVATE_NET.search(raw_desc)
+        ip = m.group("ip") if m else ""
+        if not ip:
+            ip_m = _RE_TIRITH_IP.search(raw_desc) or _RE_TIRITH_IP.search(
+                _tirith_evidence_url(finding)
+            )
+            ip = ip_m.group("ip") if ip_m else ""
+        return {"ip": ip} if ip else None
+
+    if template_name in {
+        "code_injection_env",
+        "interpreter_hijack_env",
+        "shell_injection_env",
+        "sensitive_env_export",
+    }:
+        m = _RE_TIRITH_SETTING_VAR.match(raw_desc)
+        var = (m.group("var") if m else "") or _tirith_evidence_env_name(finding)
+        if not var:
+            suffix_m = _RE_TIRITH_TITLE_SUFFIX.search(finding.get("title") or "")
+            var = suffix_m.group("value") if suffix_m else ""
+        return {"var": var} if var else None
+
+    if template_name == "base64_decode_execute":
+        m = _RE_TIRITH_BASE64.search(raw_desc)
+        interpreter = m.group("interpreter") if m else ""
+        return {"interpreter": interpreter} if interpreter else None
+
+    if template_name in {"npm_url_install", "pip_url_install"}:
+        m = _RE_TIRITH_PKG_HOST.search(raw_desc)
+        host = m.group("host") if m else ""
+        if not host:
+            raw_url = _tirith_evidence_url(finding)
+            host = re.sub(r"^https?://", "", raw_url).split("/")[0] if raw_url else ""
+        return {"host": host} if host else None
+
+    if template_name == "docker_untrusted_registry":
+        m = _RE_TIRITH_DOCKER_REG.search(raw_desc)
+        if m:
+            return {"image": m.group("image"), "registry": m.group("registry")}
+        return None
+
+    if template_name == "archive_extract":
+        m = _RE_TIRITH_ARCHIVE.search(raw_desc)
+        command = m.group("command") if m else ""
+        return {"command": command} if command else None
+
+    if template_name == "credential_file_sweep":
+        m = _RE_TIRITH_CRED_SWEEP.search(raw_desc)
+        count = m.group("count") if m else ""
+        return {"count": count} if count else None
+
+    # Static templates (no placeholders) — empty kwargs is fine.
+    if template_name in {
+        "dotfile_overwrite",
+        "proc_mem_access",
+        "data_exfiltration",
+        "private_key_exposed",
+        "tirith_import_error",
+    }:
+        return {}
+
+    return None
+
+
+def _translate_tirith_description(rule_id: str, finding: dict) -> str:
+    """Localize a tirith finding description when a template exists.
+
+    Dynamic values are extracted from the English description and/or evidence.
+    Without a template or without successful extraction, the original English
+    description is returned.
+    """
+    raw_desc = (finding.get("description") or "") if isinstance(finding, dict) else ""
+    if not rule_id:
+        return raw_desc
+
+    template_name = _TIRITH_DESC_TEMPLATE_BY_RULE.get(rule_id)
+    if not template_name:
+        return raw_desc
+
+    key = f"approval.tirith_desc.{template_name}"
+    template = t(key)
+    if template == key:
+        return raw_desc
+
+    kwargs = _extract_tirith_desc_kwargs(template_name, finding, raw_desc)
+    if kwargs is None:
+        return raw_desc
+
+    filled = _tirith_format_template(template, **kwargs)
+    return filled if filled is not None else raw_desc
+
+
 def _format_tirith_description(tirith_result: dict) -> str:
     """Build a human-readable description from tirith findings.
 
-    Includes severity, title, and description for each finding so users
-    can make an informed approval decision.
+    Includes severity, localized title, and (when a template exists)
+    localized description for each finding so users can make an informed
+    approval decision.  Framing uses ``approval.scan_prefix``.
     """
+    prefix = t("approval.scan_prefix")
     findings = tirith_result.get("findings") or []
     if not findings:
-        summary = tirith_result.get("summary") or "security issue detected"
-        return f"Security scan: {summary}"
+        summary = _localize_tirith_summary(tirith_result.get("summary") or "")
+        return t("approval.scan_summary", prefix=prefix, summary=summary)
 
     parts = []
     for f in findings:
-        severity = f.get("severity", "")
-        title = f.get("title", "")
-        desc = f.get("description", "")
+        if not isinstance(f, dict):
+            continue
+        severity = f.get("severity", "") or ""
+        rule_id = (f.get("rule_id") or "").strip()
+        title = _translate_tirith_title(rule_id, f.get("title") or "", f)
+        desc = _translate_tirith_description(rule_id, f)
         if title and desc:
-            parts.append(f"[{severity}] {title}: {desc}" if severity else f"{title}: {desc}")
+            parts.append(
+                f"[{severity}] {title}: {desc}" if severity else f"{title}: {desc}"
+            )
         elif title:
             parts.append(f"[{severity}] {title}" if severity else title)
+        elif desc:
+            parts.append(f"[{severity}] {desc}" if severity else desc)
     if not parts:
-        summary = tirith_result.get("summary") or "security issue detected"
-        return f"Security scan: {summary}"
+        summary = _localize_tirith_summary(tirith_result.get("summary") or "")
+        return t("approval.scan_summary", prefix=prefix, summary=summary)
 
-    return "Security scan — " + "; ".join(parts)
+    return t(
+        "approval.scan_findings",
+        prefix=prefix,
+        findings="; ".join(parts),
+    )
 
 
 def _await_gateway_decision(session_key: str, notify_cb, approval_data: dict,
@@ -3683,12 +4118,8 @@ def check_all_command_guards(command: str, env_type: str,
                 if is_dangerous:
                     return {
                         "approved": False,
-                        "message": (
-                            f"BLOCKED: Command flagged as dangerous ({description}) "
-                            "but cron jobs run without a user present to approve it. "
-                            "Find an alternative approach that avoids this command. "
-                            "To allow dangerous commands in cron jobs, set "
-                            "approvals.cron_mode: approve in config.yaml."
+                        "message": t(
+                            "approval.cron_blocked", description=description
                         ),
                     }
                 # Also run tirith check in cron-deny mode so content-level
@@ -3702,12 +4133,9 @@ def check_all_command_guards(command: str, env_type: str,
                         _cron_desc = _format_tirith_description(_cron_tirith)
                         return {
                             "approved": False,
-                            "message": (
-                                f"BLOCKED: {_cron_desc} "
-                                "but cron jobs run without a user present to approve it. "
-                                "Find an alternative approach that avoids this command. "
-                                "To allow dangerous commands in cron jobs, set "
-                                "approvals.cron_mode: approve in config.yaml."
+                            "message": t(
+                                "approval.cron_blocked_tirith",
+                                description=_cron_desc,
                             ),
                         }
                 except ImportError:
@@ -3728,14 +4156,7 @@ def check_all_command_guards(command: str, env_type: str,
                     if not _cron_fail_open:
                         return {
                             "approved": False,
-                            "message": (
-                                "BLOCKED: the Tirith security scanner could not be "
-                                "imported and security.tirith_fail_open is false, "
-                                "so this command cannot be silently allowed — and "
-                                "cron jobs run without a user present to approve it. "
-                                "Find an alternative approach, install tirith, or set "
-                                "approvals.cron_mode: approve in config.yaml."
-                            ),
+                            "message": t("approval.cron_blocked_tirith_import"),
                         }
                     # else: tirith_fail_open is True — allow as before
         return {"approved": True, "message": None}
@@ -3765,6 +4186,8 @@ def check_all_command_guards(command: str, env_type: str,
         except Exception:
             pass
         if not _tirith_fail_open:
+            # English body kept as the internal source; _format_tirith_description
+            # localizes via approval.tirith.tirith-import-error + tirith_desc.
             tirith_result = {
                 "action": "warn",
                 "findings": [
