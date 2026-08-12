@@ -258,11 +258,24 @@ def resolve_wiki_node(client, node_token):
 
 _BITABLE_TABLES_URI = "/open-apis/bitable/v1/apps/:app_token/tables"
 _BITABLE_RECORDS_URI = "/open-apis/bitable/v1/apps/:app_token/tables/:table_id/records"
+_BITABLE_FIELDS_URI = "/open-apis/bitable/v1/apps/:app_token/tables/:table_id/fields"
 # Cap how many records/tables we pull so the tool can't run away on a huge
 # base. 500 records per table and 50 tables is plenty for "give me context".
 _BITABLE_MAX_TABLES = 50
 _BITABLE_PAGE_SIZE = 100
 _BITABLE_MAX_RECORDS_PER_TABLE = 500
+
+# Bitable field type int -> human label (from the bitable fields API).
+# type 19/1005 are real formula fields; type 18/20 are lookup / duplex-link
+# fields (关联/查找引用) which are derived and can bloat output.
+_BITABLE_FIELD_TYPE_NAMES = {
+    1: "文本", 2: "数字", 3: "单选", 4: "多选", 5: "日期", 7: "复选框",
+    11: "人员", 13: "电话号码", 15: "超链接", 17: "附件", 18: "单向关联",
+    19: "公式", 20: "双向关联", 21: "地理位置", 22: "群组", 23: "创建时间",
+    24: "最后更新时间", 25: "创建人", 26: "修改人", 27: "自动编号",
+    1001: "查找引用", 1002: "进度", 1003: "货币", 1004: "评分",
+    1005: "公式",
+}
 
 
 def _stringify_field(value):
@@ -300,14 +313,24 @@ def _stringify_field(value):
     return str(value)
 
 
-def _read_table_records(client, app_token, table_id, max_records):
-    """Page through a table's records. Returns a list of ``{field: value}`` dicts."""
+def _read_table_records(client, app_token, table_id, max_records, filter_expr=None):
+    """Page through a table's records.
+
+    Returns ``(records, total)`` where ``records`` is a list of
+    ``{field: value}`` dicts and ``total`` is the API-reported total record
+    count (or ``None`` when unavailable). ``filter_expr`` is passed through to
+    the records API ``filter`` query when provided (e.g.
+    ``CurrentValue.[GPU]="H800"``).
+    """
     records = []
+    total = None
     page_token = ""
     while True:
         queries = [("page_size", str(_BITABLE_PAGE_SIZE))]
         if page_token:
             queries.append(("page_token", page_token))
+        if filter_expr:
+            queries.append(("filter", filter_expr))
         code, msg, data = do_request(
             client, "GET", _BITABLE_RECORDS_URI,
             paths={"app_token": app_token, "table_id": table_id},
@@ -320,6 +343,8 @@ def _read_table_records(client, app_token, table_id, max_records):
             )
             break
 
+        if total is None:
+            total = data.get("total")
         items = data.get("items") or []
         for rec in items:
             records.append(rec.get("fields", {}) if isinstance(rec, dict) else {})
@@ -332,41 +357,163 @@ def _read_table_records(client, app_token, table_id, max_records):
         page_token = data.get("page_token", "") or ""
         if not has_more or not page_token:
             break
-    return records
+    return records, total
 
 
-def read_bitable_as_text(client, app_token):
-    """Flatten a bitable app into readable plain text.
+def _read_table_fields(client, app_token, table_id):
+    """Return ``[(field_name, type_int, is_formula), ...]`` for a table.
 
-    Lists each table, then each record as ``field: value`` lines. Capped at
-    ``_BITABLE_MAX_TABLES`` tables and ``_BITABLE_MAX_RECORDS_PER_TABLE``
-    records per table so the result stays usable as agent context.
-
-    Note: the tables listing fetches one page of up to 100 tables. Bitables
-    with more than 100 tables will have the excess silently omitted.
+    ``is_formula`` is True for type 19/1005 or when the field property flags
+    ``is_formula``. On API error returns ``[]`` (callers degrade gracefully).
     """
+    fields = []
+    page_token = ""
+    while True:
+        queries = [("page_size", "100")]
+        if page_token:
+            queries.append(("page_token", page_token))
+        code, msg, data = do_request(
+            client, "GET", _BITABLE_FIELDS_URI,
+            paths={"app_token": app_token, "table_id": table_id},
+            queries=queries,
+        )
+        if code != 0:
+            logger.debug(
+                "feishu_client_utils: bitable fields failed app=%s table=%s code=%s msg=%s",
+                app_token, table_id, code, msg,
+            )
+            break
+        for fd in (data.get("items") or []):
+            if not isinstance(fd, dict):
+                continue
+            prop = fd.get("property") or {}
+            ftype = fd.get("type")
+            is_formula = bool(prop.get("is_formula") or fd.get("is_formula")) \
+                or ftype in (19, 1005)
+            fields.append((fd.get("field_name") or "", ftype, is_formula))
+        has_more = data.get("has_more")
+        page_token = data.get("page_token", "") or ""
+        if not has_more or not page_token:
+            break
+    return fields
+
+
+def _table_record_total(client, app_token, table_id, filter_expr=None):
+    """Return the record count for a table (from the records API ``total``).
+
+    Reads a single record (page_size=1) so structure mode can report totals
+    without pulling any row data. Returns ``None`` on API error.
+    """
+    queries = [("page_size", "1")]
+    if filter_expr:
+        queries.append(("filter", filter_expr))
     code, msg, data = do_request(
-        client, "GET", _BITABLE_TABLES_URI,
-        paths={"app_token": app_token},
-        queries=[("page_size", "100")],
+        client, "GET", _BITABLE_RECORDS_URI,
+        paths={"app_token": app_token, "table_id": table_id},
+        queries=queries,
     )
     if code != 0:
-        return f"Failed to read bitable: code={code} msg={msg}"
+        return None
+    return data.get("total")
 
-    tables = data.get("items") or []
+
+def _list_bitable_tables(client, app_token):
+    """List all tables (paginated). Returns ``(tables, total_tables)``."""
+    tables = []
+    total = None
+    page_token = ""
+    while True:
+        queries = [("page_size", "100")]
+        if page_token:
+            queries.append(("page_token", page_token))
+        code, msg, data = do_request(
+            client, "GET", _BITABLE_TABLES_URI,
+            paths={"app_token": app_token},
+            queries=queries,
+        )
+        if code != 0:
+            return None, None, code, msg
+        if total is None:
+            total = data.get("total")
+        tables += data.get("items") or []
+        has_more = data.get("has_more")
+        page_token = data.get("page_token", "") or ""
+        if not has_more or not page_token:
+            break
+    return tables, total, 0, ""
+
+
+def read_bitable_as_text(client, app_token, *, table_index=None, limit=None,
+                         mode="full", filter_expr=None):
+    """Flatten a bitable app into readable plain text.
+
+    ``mode``:
+      - ``"full"`` (default): list each table then each record as
+        ``field: value`` lines (capped per table; reports the true record
+        total when it exceeds the cap).
+      - ``"structure"``: list the table catalogue only — table name,
+        table_id, record total, and field definitions (name + type + formula
+        marker). Reads no record data.
+
+    ``table_index`` (1-based) limits output to a single table.
+    ``limit`` overrides the per-table record cap (default 500).
+    ``filter_expr`` is passed through to the records API ``filter`` query.
+
+    Note: structure mode makes one extra cheap records call per table (a
+    page_size=1 total probe); full mode reuses the total from the first
+    records page, so it does not add a request.
+    """
+    max_records = limit if limit is not None else _BITABLE_MAX_RECORDS_PER_TABLE
+    mode = (mode or "full").lower()
+    if mode not in ("full", "structure"):
+        return (f"mode must be 'full' or 'structure' (got '{mode}')")
+
+    tables, total_tables, code, msg = _list_bitable_tables(client, app_token)
+    if code != 0:
+        return f"Failed to read bitable: code={code} msg={msg}"
     if not tables:
         return f"Bitable {app_token} has no tables"
+    header_total = total_tables if total_tables else len(tables)
 
-    lines = [f"=== 多维表格: {app_token} ==="]
-    for idx, table in enumerate(tables[:_BITABLE_MAX_TABLES]):
+    if table_index is not None:
+        if not (1 <= table_index <= len(tables)):
+            return (f"table_index={table_index} out of range (1..{len(tables)}). "
+                    f"共 {header_total} 张表，索引从 1 开始。")
+        tables = [tables[table_index - 1]]
+
+    lines = [f"=== 多维表格: {app_token} (共 {header_total} 表) ==="]
+    for idx, table in enumerate(tables):
         table_id = table.get("table_id", "")
         table_name = table.get("name", table_id)
         lines.append("")
-        lines.append(f"--- 表 {idx + 1}: {table_name} (table_id={table_id}) ---")
 
-        records = _read_table_records(
-            client, app_token, table_id, _BITABLE_MAX_RECORDS_PER_TABLE,
-        )
+        if mode == "structure":
+            fields = _read_table_fields(client, app_token, table_id)
+            formula_ct = sum(1 for _, _, isf in fields if isf)
+            rec_total = _table_record_total(
+                client, app_token, table_id, filter_expr=filter_expr)
+            header = f"--- 表 {idx + 1}: {table_name} (table_id={table_id}"
+            if rec_total is not None:
+                header += f", 记录数={rec_total}"
+            if fields:
+                header += f", 字段={len(fields)}"
+                if formula_ct:
+                    header += f", 公式字段={formula_ct}"
+            header += ") ---"
+            lines.append(header)
+            if fields:
+                for fname, ftype, isf in fields:
+                    tname = _BITABLE_FIELD_TYPE_NAMES.get(ftype, f"type={ftype}")
+                    mark = " [公式]" if isf else ""
+                    lines.append(f"  - {fname} ({tname}){mark}")
+            else:
+                lines.append("  (无字段或字段读取失败)")
+            continue
+
+        # full mode: read records (request sequence unchanged vs legacy).
+        lines.append(f"--- 表 {idx + 1}: {table_name} (table_id={table_id}) ---")
+        records, rec_total = _read_table_records(
+            client, app_token, table_id, max_records, filter_expr=filter_expr)
         if not records:
             lines.append("(no records)")
             continue
@@ -377,12 +524,15 @@ def read_bitable_as_text(client, app_token):
                     lines.append(f"  {fname}: {_stringify_field(fval)}")
             else:
                 lines.append("  (empty record)")
-        if len(records) >= _BITABLE_MAX_RECORDS_PER_TABLE:
-            lines.append(f"  ...(reached per-table limit of {_BITABLE_MAX_RECORDS_PER_TABLE})")
+        if len(records) >= max_records and rec_total is not None \
+                and rec_total > max_records:
+            lines.append(
+                f"  ...(达到上限 {max_records} 条；该表实际共 {rec_total} 条)"
+            )
 
-    if len(tables) > _BITABLE_MAX_TABLES:
+    if not table_index and header_total > len(tables):
         lines.append("")
-        lines.append(f"...(total {len(tables)} tables, showing first {_BITABLE_MAX_TABLES})")
+        lines.append(f"...(总 {header_total} 表，本次仅展示 {len(tables)})")
 
     return "\n".join(lines)
 

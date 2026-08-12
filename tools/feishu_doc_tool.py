@@ -71,6 +71,41 @@ FEISHU_DOC_READ_SCHEMA = {
                     "https://xxx.feishu.cn/docx/<doc_token>."
                 ),
             },
+            "mode": {
+                "type": "string",
+                "enum": ["full", "structure"],
+                "description": (
+                    "Only applies to bitable (多维表格). 'full' (default) "
+                    "dumps table records. 'structure' returns ONLY the table "
+                    "catalogue (table names, table_ids, record totals, and "
+                    "field definitions with types/formula markers) — use it "
+                    "to see the directory of a bitable without pulling any "
+                    "records. Ignored for docx/sheet."
+                ),
+            },
+            "table_index": {
+                "type": "integer",
+                "description": (
+                    "Only applies to bitable. 1-based index selecting a single "
+                    "table to read (see the table list in 'structure' mode). "
+                    "When omitted, reads up to 50 tables."
+                ),
+            },
+            "limit": {
+                "type": "integer",
+                "description": (
+                    "Only applies to bitable. Max records to read per table "
+                    "(default 500). Ignored in 'structure' mode."
+                ),
+            },
+            "filter": {
+                "type": "string",
+                "description": (
+                    "Only applies to bitable. A Feishu bitable record filter "
+                    "expression passed to the records API, e.g. "
+                    'CurrentValue.[GPU]="H800" — reads only matching records.'
+                ),
+            },
         },
         "required": ["doc_token"],
     },
@@ -162,7 +197,13 @@ def _handle_feishu_doc_read(args: dict, **kwargs) -> str:
             )
 
         if obj_type == "bitable":
-            text = read_bitable_as_text(client, obj_token)
+            text = read_bitable_as_text(
+                client, obj_token,
+                table_index=args.get("table_index"),
+                limit=args.get("limit"),
+                mode=args.get("mode", "full"),
+                filter_expr=args.get("filter"),
+            )
             return tool_result(success=True, content=text)
 
         if obj_type == "sheet":

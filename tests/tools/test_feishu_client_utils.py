@@ -276,6 +276,64 @@ class TestReadBitableAsText(unittest.TestCase):
         self.assertIn("P0, bug", text)
 
 
+class TestReadBitableModes(unittest.TestCase):
+    """New bitable control modes: structure, table_index, limit, filter, totals."""
+
+    def test_structure_mode_lists_tables_fields_and_totals(self):
+        table_resp = _make_response(data={"items": [
+            {"table_id": "tblA", "name": "Tasks"},
+        ]})
+        fields_resp = _make_response(data={"items": [
+            {"field_name": "任务", "type": 1},
+            {"field_name": "日计费率", "type": 20},
+            {"field_name": "序号", "type": 1005},
+        ]})
+        total_resp = _make_response(data={"items": [], "total": 500})
+        client = _StubClient([table_resp, fields_resp, total_resp])
+        text = fcu.read_bitable_as_text(client, "app1", mode="structure")
+        self.assertIn("Tasks", text)
+        self.assertIn("任务 (文本)", text)
+        self.assertIn("日计费率 (双向关联)", text)
+        self.assertIn("序号 (公式) [公式]", text)
+        self.assertIn("记录数=500", text)
+        # structure mode must NOT dump any record data
+        self.assertNotIn("记录 1:", text)
+
+    def test_full_mode_reports_total_when_capped(self):
+        table_resp = _make_response(data={"items": [{"table_id": "t1", "name": "Big"}]})
+        rec_resp = _make_response(data={
+            "items": [{"fields": {"v": str(i)}} for i in range(3)],
+            "total": 999,
+            "has_more": False,
+        })
+        client = _StubClient([table_resp, rec_resp])
+        text = fcu.read_bitable_as_text(client, "app1", limit=3)
+        self.assertIn("实际共 999 条", text)
+
+    def test_table_index_selects_single_table(self):
+        table_resp = _make_response(data={"items": [
+            {"table_id": "t1", "name": "TableA"},
+            {"table_id": "t2", "name": "TableB"},
+        ]})
+        rec_resp = _make_response(data={"items": [{"fields": {"x": "1"}}], "has_more": False})
+        client = _StubClient([table_resp, rec_resp])
+        text = fcu.read_bitable_as_text(client, "app1", table_index=2)
+        self.assertIn("表 1: TableB", text)
+        self.assertNotIn("TableA", text)
+
+    def test_table_index_out_of_range(self):
+        table_resp = _make_response(data={"items": [{"table_id": "t1", "name": "A"}]})
+        client = _StubClient(table_resp)
+        text = fcu.read_bitable_as_text(client, "app1", table_index=5)
+        self.assertIn("out of range", text)
+
+    def test_invalid_mode_rejected_before_network(self):
+        client = _StubClient(_make_response())
+        text = fcu.read_bitable_as_text(client, "app1", mode="bogus")
+        self.assertIn("mode must be", text)
+        self.assertEqual(len(client.calls), 0)
+
+
 class TestDoRequest(unittest.TestCase):
     def test_parses_raw_content_data(self):
         import json as _json
@@ -327,11 +385,36 @@ class TestReadTableRecordsPagination(unittest.TestCase):
             "has_more": False,
         })
         client = _StubClient([page1, page2])
-        records = fcu._read_table_records(client, "app1", "tbl1", max_records=100)
+        records, total = fcu._read_table_records(client, "app1", "tbl1", max_records=100)
         self.assertEqual(len(records), 3)
         self.assertEqual(records[0]["name"], "Alice")
         self.assertEqual(records[2]["name"], "Charlie")
         self.assertEqual(len(client.calls), 2)
+
+    def test_returns_total_from_first_page(self):
+        page1 = _make_response(data={
+            "items": [{"fields": {"name": "Alice"}}],
+            "total": 999,
+            "has_more": False,
+        })
+        client = _StubClient(page1)
+        records, total = fcu._read_table_records(client, "app1", "tbl1", max_records=100)
+        self.assertEqual(total, 999)
+
+    def test_passes_filter_query(self):
+        page1 = _make_response(data={
+            "items": [{"fields": {"GPU": "H800"}}],
+            "total": 1,
+            "has_more": False,
+        })
+        client = _StubClient(page1)
+        _, total = fcu._read_table_records(
+            client, "app1", "tbl1", max_records=100,
+            filter_expr='CurrentValue.[GPU]="H800"')
+        self.assertEqual(total, 1)
+        # the filter must be in the request queries
+        qs = dict(client.calls[0].queries or [])
+        self.assertEqual(qs.get("filter"), 'CurrentValue.[GPU]="H800"')
 
     def test_max_records_truncates_mid_page(self):
         """Reading stops when max_records is reached."""
@@ -345,13 +428,14 @@ class TestReadTableRecordsPagination(unittest.TestCase):
             "page_token": "next",
         })
         client = _StubClient(page1)
-        records = fcu._read_table_records(client, "app1", "tbl1", max_records=2)
+        records, _ = fcu._read_table_records(client, "app1", "tbl1", max_records=2)
         self.assertEqual(len(records), 2)
 
     def test_api_error_breaks_loop(self):
         client = _StubClient(_make_response(code=1254000, msg="err"))
-        records = fcu._read_table_records(client, "app1", "tbl1", max_records=100)
+        records, total = fcu._read_table_records(client, "app1", "tbl1", max_records=100)
         self.assertEqual(records, [])
+        self.assertIsNone(total)
 
 
 class TestReadSheetAsText(unittest.TestCase):
