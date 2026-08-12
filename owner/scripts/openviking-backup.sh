@@ -55,7 +55,7 @@ mkdir -p "$STAGING_DIR" || fail "cannot create staging dir: $STAGING_DIR"
 
 # --- Phase 1: ov backup (inside container) ---
 log "phase 1/3: ov backup"
-docker exec openviking ov backup "/tmp/${ARCHIVE_NAME}" 2>&1 || fail "ov backup failed"
+docker exec openviking ov backup "/tmp/${ARCHIVE_NAME}" >/dev/null 2>&1 || fail "ov backup failed"
 
 # Copy out of container
 docker cp "openviking:/tmp/${ARCHIVE_NAME}" "${OVPACK_PATH}" || fail "docker cp failed"
