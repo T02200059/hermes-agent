@@ -224,14 +224,30 @@ def extract_token(raw):
 
 
 _WIKI_GET_NODE_URI = "/open-apis/wiki/v2/spaces/get_node"
+_WIKI_NODES_URI = "/open-apis/wiki/v2/spaces/:space_id/nodes"
 
 
 def resolve_wiki_node(client, node_token):
-    """Resolve a wiki node token to ``(obj_token, obj_type)``.
+    """Resolve a wiki node token to ``(obj_token, obj_type, node_meta)``.
 
-    Returns ``(None, None)`` when the token is not a wiki node or the API
-    rejects it. ``obj_type`` is one of ``docx`` / ``bitable`` / ``sheet`` /
+    Returns ``(None, None, None)`` when the token is not a wiki node or the
+    API rejects it. ``obj_type`` is one of ``docx`` / ``bitable`` / ``sheet`` /
     ``mindnote`` / ... (anything Feishu reports).
+
+    ``node_meta`` is a dict of node metadata used to tell a real document from
+    a wiki *folder* (which holds child nodes and has no readable body)::
+
+        {
+            "title": str,          # node title
+            "node_token": str,     # node token (== the input)
+            "obj_type": str,       # document type the folder/obj resolves to
+            "has_child": bool,     # True for a folder with children
+            "node_type": str,      # "origin" / "shortcut"
+            "space_id": str,       # wiki space id (needed to list children)
+        }
+
+    ``node_meta`` is ``None`` for a plain (non-folder) document node; callers
+    that don't need folder semantics can ignore it.
     """
     code, msg, data = do_request(
         client, "GET", _WIKI_GET_NODE_URI,
@@ -239,17 +255,78 @@ def resolve_wiki_node(client, node_token):
     )
     if code != 0:
         logger.debug("feishu_client_utils: wiki get_node failed code=%s msg=%s", code, msg)
-        return None, None
+        return None, None, None
 
     node = data.get("node") if isinstance(data, dict) else None
     if not isinstance(node, dict):
-        return None, None
+        return None, None, None
 
     obj_token = node.get("obj_token") or ""
     obj_type = node.get("obj_type") or ""
     if not obj_token or not obj_type:
-        return None, None
-    return obj_token, obj_type
+        return None, None, None
+
+    has_child = bool(node.get("has_child"))
+    meta = None
+    if has_child:
+        meta = {
+            "title": node.get("title") or "",
+            "node_token": node.get("node_token") or node_token,
+            "obj_type": obj_type,
+            "has_child": has_child,
+            "node_type": node.get("node_type") or "",
+            "space_id": node.get("space_id") or "",
+        }
+    return obj_token, obj_type, meta
+
+
+def list_wiki_children(client, space_id, parent_node_token):
+    """List the direct child nodes of a wiki folder as readable text.
+
+    Uses the paged ``nodes`` endpoint (``page_size=50``) rather than
+    ``get_children``, which can return empty for deep sub-folders. Returns a
+    flat one-level listing of child node titles with a type marker
+    (``[文件夹]`` / ``[文档]``) and the node token, or an error string
+    starting with ``Failed to list wiki children``.
+    """
+    if not space_id:
+        return "Failed to list wiki children: missing space_id"
+
+    lines = []
+    page_token = ""
+    while True:
+        queries = [("parent_node_token", parent_node_token), ("page_size", "50")]
+        if page_token:
+            queries.append(("page_token", page_token))
+        code, msg, data = do_request(
+            client, "GET", _WIKI_NODES_URI,
+            paths={"space_id": space_id},
+            queries=queries,
+        )
+        if code != 0:
+            logger.debug("feishu_client_utils: wiki nodes failed code=%s msg=%s", code, msg)
+            return f"Failed to list wiki children: {msg or code}"
+
+        items = data.get("items") if isinstance(data, dict) else None
+        if not isinstance(items, list):
+            return "Failed to list wiki children: unexpected response"
+        for node in items:
+            if not isinstance(node, dict):
+                continue
+            title = node.get("title") or "(untitled)"
+            ntoken = node.get("node_token") or ""
+            marker = "[文件夹]" if node.get("has_child") else "[文档]"
+            suffix = f" node_token={ntoken}" if ntoken else ""
+            lines.append(f"- {marker} {title}{suffix}")
+
+        has_more = data.get("has_more") if isinstance(data, dict) else None
+        page_token = data.get("page_token") or "" if isinstance(data, dict) else ""
+        if not has_more or not page_token:
+            break
+
+    if not lines:
+        return "(empty folder — no child nodes)"
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------

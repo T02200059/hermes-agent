@@ -210,17 +210,83 @@ class TestResolveWikiNode(unittest.TestCase):
         client = _StubClient(_make_response(data={
             "node": {"obj_token": "realDocToken", "obj_type": "docx"}
         }))
-        obj_token, obj_type = fcu.resolve_wiki_node(client, "node123")
+        obj_token, obj_type, meta = fcu.resolve_wiki_node(client, "node123")
         self.assertEqual(obj_token, "realDocToken")
         self.assertEqual(obj_type, "docx")
+        self.assertIsNone(meta)  # plain doc -> no folder metadata
+
+    def test_folder_returns_metadata(self):
+        client = _StubClient(_make_response(data={
+            "node": {
+                "obj_token": "folderObj",
+                "obj_type": "docx",
+                "title": "模型推理能力建设",
+                "node_token": "nodeFolder",
+                "has_child": True,
+                "node_type": "origin",
+                "space_id": "space123",
+            }
+        }))
+        obj_token, obj_type, meta = fcu.resolve_wiki_node(client, "nodeFolder")
+        self.assertEqual(obj_token, "folderObj")
+        self.assertEqual(obj_type, "docx")
+        self.assertIsNotNone(meta)
+        self.assertTrue(meta["has_child"])
+        self.assertEqual(meta["space_id"], "space123")
+        self.assertEqual(meta["title"], "模型推理能力建设")
 
     def test_returns_none_on_api_error(self):
         client = _StubClient(_make_response(code=1254030, msg="no permission"))
-        self.assertEqual(fcu.resolve_wiki_node(client, "node"), (None, None))
+        self.assertEqual(fcu.resolve_wiki_node(client, "node"), (None, None, None))
 
     def test_returns_none_when_node_missing(self):
         client = _StubClient(_make_response(data={}))
-        self.assertEqual(fcu.resolve_wiki_node(client, "node"), (None, None))
+        self.assertEqual(fcu.resolve_wiki_node(client, "node"), (None, None, None))
+
+
+class TestListWikiChildren(unittest.TestCase):
+    def test_lists_child_titles(self):
+        resp = _make_response(data={
+            "items": [
+                {"title": "DGX", "node_token": "ndgx", "has_child": True},
+                {"title": "分布式多机多卡部署大模型", "node_token": "ndoc1", "has_child": False},
+            ],
+            "has_more": False,
+        })
+        client = _StubClient([resp])
+        text = fcu.list_wiki_children(client, "space123", "parent")
+        self.assertIn("[文件夹] DGX", text)
+        self.assertIn("node_token=ndgx", text)
+        self.assertIn("[文档] 分布式多机多卡部署大模型", text)
+        self.assertIn("node_token=ndoc1", text)
+
+    def test_paginates(self):
+        r1 = _make_response(data={
+            "items": [{"title": "A", "node_token": "na", "has_child": False}],
+            "has_more": True, "page_token": "p1",
+        })
+        r2 = _make_response(data={
+            "items": [{"title": "B", "node_token": "nb", "has_child": False}],
+            "has_more": False,
+        })
+        client = _StubClient([r1, r2])
+        text = fcu.list_wiki_children(client, "space123", "parent")
+        self.assertIn("- [文档] A", text)
+        self.assertIn("- [文档] B", text)
+
+    def test_empty_folder(self):
+        client = _StubClient([_make_response(data={"items": [], "has_more": False})])
+        self.assertIn("empty folder", fcu.list_wiki_children(client, "s", "p"))
+
+    def test_missing_space_id(self):
+        self.assertIn(
+            "missing space_id",
+            fcu.list_wiki_children(_StubClient([]), "", "p"),
+        )
+
+    def test_reports_api_error(self):
+        client = _StubClient([_make_response(code=1254000, msg="bad space")])
+        self.assertIn("Failed to list wiki children", fcu.list_wiki_children(client, "s", "p"))
 
 
 class TestReadBitableAsText(unittest.TestCase):

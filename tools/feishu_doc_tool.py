@@ -19,6 +19,7 @@ import threading
 
 from tools.feishu_client_utils import (
     extract_token,
+    list_wiki_children,
     read_bitable_as_text,
     read_docx_with_images,
     read_sheet_as_text,
@@ -149,14 +150,25 @@ def _handle_feishu_doc_read(args: dict, **kwargs) -> str:
     if not token:
         return tool_error("Could not extract a document token from the input")
 
-    obj_token, obj_type = token, (inferred_type or "docx")
+    obj_token, obj_type, node_meta = token, (inferred_type or "docx"), None
     if is_wiki:
-        obj_token, obj_type = resolve_wiki_node(client, token)
+        obj_token, obj_type, node_meta = resolve_wiki_node(client, token)
         if not obj_token:
             return tool_error(
                 f"Could not resolve wiki node token '{token}' "
                 "(check the token is correct and the app has wiki access)"
             )
+
+    # A wiki folder node has no readable body -- list its child titles instead.
+    if node_meta and node_meta.get("has_child"):
+        listing = list_wiki_children(
+            client, node_meta.get("space_id") or "", token
+        )
+        title = node_meta.get("title") or token
+        return tool_result(
+            success=True,
+            content=f"=== 文件夹: {title} ===\n{listing}",
+        )
 
     try:
         if obj_type == "docx":
