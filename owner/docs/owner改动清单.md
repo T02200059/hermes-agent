@@ -839,10 +839,21 @@
 ### 8.4 verify-on-stop 对创意 / 视觉产物抑制 nudge
 
 - **背景**：turn 结束 verify-on-stop 会在「改了代码却无验证证据」时注入 follow-up；`_NON_CODE_VERIFY_EXTENSIONS` 原先只覆盖 prose（`.md`/`.txt` 等），编辑 `.svg`/`.html`/`.png`/`.pptx` 等仍被当成 coding edit，连续 nudge 写 ad-hoc 校验脚本，与 CODING_VERIFY_GUIDANCE「创意 UI/视觉先等用户确认」矛盾。
-- **方案**：`21543bcfc` — 扩展 `_NON_CODE_VERIFY_EXTENSIONS`（svg/html/png/jpg/pdf/pptx/fig/sketch 等），无运行时语义的视觉/文档产物直接 suppress nudge；单测 `tests/agent/test_verification_stop.py`。
+- **方案**：`21543bcfc` - 扩展 `_NON_CODE_VERIFY_EXTENSIONS`（svg/html/png/jpg/pdf/pptx/fig/sketch 等），无运行时语义的视觉/文档产物直接 suppress nudge；单测 `tests/agent/test_verification_stop.py`。
 - **涉及文件**：`agent/verification_stop.py`、`tests/agent/test_verification_stop.py`
 - **侵入类型**：inline（扩展 allowlist 常量）
 - **Commit**：`21543bcfc`
+
+### 8.5 read_file UTF-8 边界误判 binary 修复
+
+- **背景**：`read_file` 偶发把 `.py` 等文本文件当作二进制拒绝读取。根因是 `head -c 1000` 按字节采样，多字节 UTF-8 字符（CJK/emoji）横跨第 1000 字节边界时被切断，残缺尾字节解码成 `U+FFFD`；commit `021a07688` 引入的"样本含 U+FFFD 即判 binary"规则无法区分"真·非法字节"和"采样截断伪影"，导致合法 UTF-8 文件被误判。多字节字符越密命中率越高，表现为偶发。
+- **方案**：运行时 monkey-patch `ShellFileOperations._is_likely_binary`——截断伪影只会出现在解码样本最后一个字符（只切一个字节位），据此剥离尾部 U+FFFD 后重新检查；中部 U+FFFD 仍判 binary（保留 `021a07688` 防 mojibake 意图）。官方源码零改动。
+  - `owner/patches/file_binary_detection_patch.py`：补丁实现（apply/revert）
+  - `owner/owner-extensions/__init__.py`：plugin register 时 apply
+  - `owner/docs/read-file-utf8-boundary-fix.md`：设计文档
+  - `tests/owner/patches/test_file_binary_detection_patch.py`：四场景 E2E 回归（边界截断/中文前缀/真垃圾字节/GBK）+ 幂等 apply/revert
+- **侵入类型**：运行时 patch（官方文件零改动）
+- **Commit**：（待提交）
 
 ---
 

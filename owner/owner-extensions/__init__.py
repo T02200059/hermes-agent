@@ -120,3 +120,13 @@ def register(ctx) -> None:
         logger.debug("owner: queue_cancel_patch applied via plugin register")
     except Exception:
         logger.warning("owner: queue_cancel_patch failed", exc_info=True)
+
+    # §8.5 read_file UTF-8 boundary false-positive fix
+    # head -c 1000 splits multi-byte chars at the boundary -> U+FFFD -> 误判 binary.
+    # See owner/patches/file_binary_detection_patch.py + owner/docs/read-file-utf8-boundary-fix.md
+    try:
+        from owner.patches.file_binary_detection_patch import apply_patch
+        apply_patch()
+        logger.debug("owner: file_binary_detection_patch applied via plugin register")
+    except Exception:
+        logger.warning("owner: file_binary_detection_patch failed", exc_info=True)

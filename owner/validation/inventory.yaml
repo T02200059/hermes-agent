@@ -84,6 +84,27 @@ items:
       - type: file_exists
         path: tests/owner/test_file_tool_timeout.py
 
+  - id: file-binary-detection
+    title: "owner change list 8.5 read_file UTF-8 boundary false-positive fix"
+    category: tools
+    source: owner/docs/owner改动清单.md#85-read-file-utf8-boundary-fix
+    static_checks:
+      - type: module_symbol
+        module: owner.patches.file_binary_detection_patch
+        symbol: apply_patch
+      - type: module_symbol
+        module: owner.patches.file_binary_detection_patch
+        symbol: revert_patch
+      - type: file_contains
+        file: owner/owner-extensions/__init__.py
+        contains:
+          - 'file_binary_detection_patch'
+          - 'apply_patch()'
+      - type: file_exists
+        path: tests/owner/patches/test_file_binary_detection_patch.py
+      - type: file_exists
+        path: owner/docs/read-file-utf8-boundary-fix.md
+
   - id: providers-plugin-command
     title: "owner change list 4.9 /providers plugin command"
     category: commands
