@@ -567,9 +567,11 @@
   - `e5e90f874` — `_DOCX_MAX_IMAGES` / `_DOCX_MAX_VISION_IMAGES` 40→500；共用 `_call_with_rate_limit_retry`（HTTP 429 / Feishu 99991400 / rate-limit 文案，指数退避最多 5 次，上限 60s）
   - `4ca60433a` — `extract_token` 返回 3-tuple `(token, is_wiki, inferred_type)`：`/sheets/`→sheet，`/base|/bitable/`→bitable，`/docx|/doc/`→docx，避免 sheet URL 当 docx 读
   - `749f68abb` — `read_sheet_as_text` 去掉 grid `row_count` 尾部空行填充
+  - `9cceec46f` — bitable 读取增强（防全量拉取 token 爆炸）：`read_bitable_as_text` 新增 `mode=structure`（只看表目录：表名/table_id/记录数/字段定义 + 公式标记，不拉记录）、`table_index`（1-based 单选单表，越界报错）、`limit`（覆盖默认 500 条/表）、`filter`（透传飞书 records API 过滤表达式，服务端过滤）；`_read_table_records` 返回 `(records, total)`，full 模式触顶时报告真实总数。新增 `_read_table_fields` / `_table_record_total` / `_list_bitable_tables`；`feishu_doc_tool.py` schema 加 4 参数（仅 bitable 生效，向后兼容）
+  - `a1b607d2e` — wiki 文件夹节点返回一层子文档标题：`resolve_wiki_node` 改返回 3-tuple `(obj_token, obj_type, node_meta)`，`node_meta` 带 `has_child`/`space_id`/`title`（仅文件夹非 None）；新增 `list_wiki_children`（用 `wiki/v2/spaces/{space_id}/nodes` 分页 page_size=50 列一层子节点，标注 `[文件夹]`/`[文档]` + node_token，不用 `get_children` 因对深层子文件夹返回空）；handler 在 `has_child=true` 时返回 `=== 文件夹: <标题> ===` + 子项列表。普通 docx/bitable/sheet 不受影响；只列一层不递归
 - **涉及文件**：`tools/feishu_client_utils.py`、`tools/feishu_doc_tool.py`、`tests/tools/test_feishu_client_utils.py`
 - **侵入类型**：inline（官方 feishu tools 内扩展读取路径）
-- **Commit**：`7230d71e9`、`e5e90f874`、`4ca60433a`、`749f68abb`
+- **Commit**：`7230d71e9`、`e5e90f874`、`4ca60433a`、`749f68abb`、`9cceec46f`、`a1b607d2e`
 - **附录 E**：2026-07-23 / 2026-07-24 条目与本节省略互补（E 偏时间线，本节钉 hash）
 
 ---
@@ -1448,4 +1450,15 @@ _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请先�
   - §11.8 备份脚本解析 cron `--BACKUP_QUIET`：`8c00a813f`
 - **附录 A/B**：skill_manage_gate / skill_approval_card / skill_manage_bridge；adapter skill_approval_gate；slash_commands 清缓存；verification_stop / models_dev
 - **刻意不记**：纯 docs / 纯 i18n / tips 清理 / merge main / 运维白名单注释配置
+
+### 2026-08-12：feishu_doc_read bitable 读取增强 + wiki 文件夹一层子节点列表
+
+- **类型**：功能增强（现有 §4.13 的后续）
+- **新建正文**：无（挂到已有 §4.13）
+- **已有章节后续**（挂 hash）：
+  - §4.13 bitable 读取增强：`9cceec46f`
+  - §4.13 wiki 文件夹一层子节点列表：`a1b607d2e`
+- **背景**：bitable 无差别全量拉取（23 表×500 条×21 字段≈24 万字段值）token 爆炸/截断；wiki 文件夹节点原只吐标题无法列子文档
+- **验证**：单测 74 passed；实测真实 bitable structure 模式只出目录、真实 wiki 文件夹 24 个子节点全列出（需重启 gateway 生效）
+
 
