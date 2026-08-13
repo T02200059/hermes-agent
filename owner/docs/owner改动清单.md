@@ -23,20 +23,21 @@
 | 改动文件总数 | 172（去重后） |
 | owner/ 纯新增 | ~75 个文件 |
 | 官方文件侵入 | ~70 个文件（含 ~20 个测试文件） |
-| 范围 | 模型归因 / patch.yaml 配置 / 审批安全 / skill 写入审批 / 语义审计 / 飞书深度定制 / TUI 皮肤 / Cron 运维 / Gateway 稳定性 / Checkpoint 预测 / Upstream Sync / Viking 记忆治理 / Desktop 窗口透明度 |
-| 最后更新 | 2026-08-03 |
+| 范围 | 模型归因 / patch.yaml 配置 / 审批安全 / skill 写入审批 / 语义审计 / 飞书深度定制 / TUI 皮肤 / Cron 运维 / Gateway 稳定性 / Checkpoint 预测 / Upstream Sync / Viking 记忆治理 / Desktop 窗口透明度 / output_guard |
+| 最后更新 | 2026-08-13 |
 | 来源 | 从 `owner-v17`（500+ commit）清洗迁移而来；本分支是重新整理后的最小叠加版本 |
 
 ### 0.2 章节索引
 
 | 阅读目标 | 对应章节 |
 |----------|----------|
-| 先判断某个 owner 能力属于哪里 | §1-§13 功能正文 |
+| 先判断某个 owner 能力属于哪里 | §1-§14 功能正文 |
 | 看模型/provider/API 调用链 | §1、§2、§10 |
 | 看审批、安全、自动审批、语义审计、cron 上下文 | §3、§7.4、§11 |
-| 看飞书平台定制 | §4 |
+| 看飞书平台定制 | §4（含 §4.14 @所有人） |
 | 看 TUI / Ctrl+C 退出 | §6 |
 | 看 Desktop 桌面端改动 | §13 |
+| 看 LLM 输出复读/乱码折叠 | §14 |
 | 看 Gateway merge 后最容易丢的胶水 | §7、附录 B、附录 C |
 | 看脚本、cron、备份、Upstream Sync、Viking 记忆治理 | §11 |
 | 看 owner/ 模块到官方侵入点的映射 | 附录 A、附录 B |
@@ -45,7 +46,7 @@
 
 ### 0.3 维护规则
 
-- 新增 owner 能力：先放入 §1-§13 的功能正文，再补附录 A 的模块索引。
+- 新增 owner 能力：先放入 §1-§14 的功能正文，再补附录 A 的模块索引。
 - 修改官方文件：同步更新正文的“涉及文件/侵入类型”，并补附录 B 的侵入点速查。
 - 迁移到 hook/plugin：正文保留能力描述，附录 C 记录迁移结论，附录 E 追加阶段日志。
 - merge 后验证项：能静态检查的放入 `owner/validation/`，再在正文或附录中标出对应 owner 能力。
@@ -265,6 +266,7 @@
 - **涉及文件**：`hermes_cli/model_switch.py` + `tests/hermes_cli/test_model_switch_custom_providers.py`、`tests/hermes_cli/test_user_providers_model_switch.py`
 - **侵入类型**：inline 逻辑修改（`hermes_cli/model_switch.py`）
 - **Commit**：`ee10d6230`
+- **后续**：`84418c339` — `get_compatible_custom_providers()` 把 `providers:<slug>` 转成 legacy list 时带 `provider_key=<slug>`，`_configured_provider_matches()` 再扫 `custom_providers` 会把同一 provider 计成 `'<slug>'` 与 `'custom:<slug>'`，误报 `#switch_multiple_providers`。matches set 已有该 `provider_key` 则跳过。
 
 ### 2.11 provider model 缓存 TTL 延长至 24h + 无变化时不写磁盘
 
@@ -412,6 +414,7 @@
   - 侵入：`plugins/platforms/feishu/adapter.py`（薄胶水 card action 分支）、`owner/owner-extensions` plugin hooks
 - **侵入类型**：plugin hook（主路径零 upstream surface）+ adapter 薄胶水（点击路由）
 - **Commit**：`55b070fd8`（v1 gate）、`cd937b412`（v2 自建卡 + origin 通知 + profile 配置）
+- **后续**：`9ce7369dc` — 审批卡按钮 stamp 的是 UI 文案 `approve`/`deny`，gate 只认 `once`/`session`/`always`。点绿按钮卡片 resolve 了，agent 却当 false deny 硬停。加 `_GATEWAY_CHOICE_MAP` 把 UI label 映射到 gateway token；`handle_card_click` 走 `gateway_choice`；子 profile 按钮 stamp `hermes_profile`；gate 把陈旧 `approve` 归一成 `once`。
 
 ---
 
@@ -490,6 +493,7 @@
   - `912c7af85`（部分）— 补 `/usage` 和 `/insights` 的 ack 消息内容。
   - `ee1e29084` — `bot_menu` 新增 `agents` 菜单项与 ack（映射 `/agents`，与 usage/insights 同模式）。
   - `195996b48` — `bot_menu` 新增 `viking_human_review` 菜单项与 ack（对接 §11.6 Viking 记忆质量人工复核入口）。
+  - `c6156c16f` — `/new` `/stop` 与 `/status` 对齐 `ack: null`，关掉 bot-menu dedup ack（流水线本身已有即时反馈，再 ack 是重复提示）。
 
 ### 4.7 飞书编辑上限轮转 + 进度 dedup
 
@@ -513,6 +517,7 @@
 - **方案**：`owner/commands/providers.py` + `gateway/run.py` 的 `canonical == "providers"` 分支 + 飞书卡片渲染。
 - **侵入类型**：薄胶水（run.py 一处命令分发）
 - **Commit**：`ed20e193d`（§9.1）
+- **后续**：`04387001a` — `list_authenticated_providers` 卸到 `asyncio.to_thread`（对齐 `/model` #41289），只加载一次并用 picker 友好探测，避免 models.dev / 离线自定义端点卡死飞书 inbound。
 
 ### 4.10 Memory write-approval 飞书交互卡片
 
@@ -551,6 +556,7 @@
   - `5b2f8ed74` — `feishu_guide` 引导卡片提交后，合成的 `/steer` `/queue` `/goal` 等命令没有注入到正在运行的 agent，而是被 LLM 当普通消息回复。根因：`bot_menu.py` 的 feishu_guide 快捷路径用 `SimpleNamespace` 构建 source，`chat_type` 字面量 `'p2p'` 未归一化为 `'dm'`，导致合成 event 的 session key 与运行中 agent 的不匹配，gateway runner 的 running-agent fast path 未命中。修复：`steer_card.py::_route_guide_command` 在 `_dispatch` 中重建 source、走 `_resolve_source_chat_type` 归一化路径（与普通 bot menu 命令一致）；`bot_menu.py` 的 `SimpleNamespace` 改用 `adapter.build_source()` 补全缺失字段；`adapter.py` 加 `form_value` JSON string 归一化（防御性）+ 诊断日志。端到端验证：steer 注入成功（chat_type=dm，session key 匹配）。
   - **queue 撤销队列 + 执行后冻结（个人 fork，仅飞书卡）** — `89fa171bc`：queue 提交后 done 卡增加「撤销队列」；FIFO 开始执行时 REST patch 卡片为「▶️ 已开始执行」蓝底终态。**禁止**把 token 写入 `message_id`（会当 reply_to 导致 99992354）。实现：`owner/feishu/steer_card.py` + `owner/patches/queue_cancel_patch.py`（按 prompt 文本匹配入队、`event._owner_queue_token` 打标、包装 `_enqueue_fifo`/`_dequeue_pending_event`、`cancel_queued_by_token`；并 wait 在途 prefetch 以避免 queue 紧接上轮时跳过 openviking 召回卡）。注册于 `owner-extensions`。同 commit 还补：openviking 召回全链路 INFO 诊断；各类飞书卡片发送/点击成功路径统一 `[Feishu card]` 日志。
   - `306fb0be8` — `queue_cancel_patch` 的 `_token_state` 在 cancel/enqueue/freeze 多线程并发读写，加 `_token_lock` 保护全部读写路径。
+  - `354222f43` — **queue 状态卡**：入队后发飞书交互卡（原文 + 三个按钮：steer 进当前轮 / 立刻处理并打断 / 取消）；guide-card 提交的 queue 也变成同一张状态卡。非飞书保持纯文本 ack。实现：`owner/feishu/queue_card.py` + `queue_cancel_patch` 扩展 + adapter 薄胶水。
 
 ### 4.12 飞书文件上传大小守卫
 
@@ -573,6 +579,14 @@
 - **侵入类型**：inline（官方 feishu tools 内扩展读取路径）
 - **Commit**：`7230d71e9`、`e5e90f874`、`4ca60433a`、`749f68abb`、`9cceec46f`、`a1b607d2e`
 - **附录 E**：2026-07-23 / 2026-07-24 条目与本节省略互补（E 偏时间线，本节钉 hash）
+
+### 4.14 禁用 @所有人 自动响应
+
+- **背景**：飞书群里有人 `@所有人` 时，官方 adapter 把 `@_all` 也当成「提到了机器人」，owner 的群聊策略下会自动开一轮回复。运维群、全员通知会被 bot 抢话。
+- **方案**：`plugins/platforms/feishu/adapter.py` 的 `_mentions_self` 不再把 `@_all` 视为提到自己（注释保留原逻辑便于对照）。只响应**明确 @机器人**。同步改官方测试 `test_at_all_still_requires_policy_gate` 断言。
+- **涉及文件**：`plugins/platforms/feishu/adapter.py`、`tests/gateway/test_feishu.py`
+- **侵入类型**：inline（adapter 一处 mention 判定）
+- **Commit**：`470148013`
 
 ---
 
@@ -772,6 +786,9 @@
 - **涉及文件**：`gateway/run.py`、`gateway/delivery_ledger.py`、`locales/*.yaml`、`tests/gateway/test_restart_notification.py`
 - **侵入类型**：inline（gateway 文案解析 helper）+ locale 占位符
 - **Commit**：`8676ad980`
+- **后续**：
+  - `c0d01276f` — 优先读 `HERMES_PROFILE`，再从 `HERMES_HOME` 推断，多 profile 舰队显式设了 env 时标签才对。
+  - `f348617f9` — 再优先 `HERMES_LIFECYCLE_LABEL`，关机/重启文案可用中文或带空格的昵称，不改 `HERMES_PROFILE` 路由 id。
 
 ### 7.15 Codex Responses：避免 reasoning 后空 assistant content
 
@@ -806,6 +823,17 @@
 - **涉及文件**：`owner/gateway/steer_vision.py`（新增）、`gateway/run.py`（3 行薄胶水）、`tests/gateway/test_steer_vision_enrichment.py`（新增）
 - **侵入类型**：薄胶水 / 委托（`[owner]` 标记 + lazy import + 委托到 owner/）
 - **Commit**：`176b387a7`
+
+### 7.19 lifecycle guard 遇二进制路径崩溃
+
+- **背景**：gateway 会话里 `terminal` 执行前会扫命令，并顺着「像脚本的路径」递归打开，防止 `bash helper.sh` 里再藏 `hermes gateway restart`。用户在飞书里跑绝对路径二进制（如 `"/Applications/.../soffice" --version`）时，guard 把 Mach-O/ELF 当脚本读，整次 terminal 以 `ValueError: embedded null byte` 挂掉（2026-08-05 线上复现：soffice + Chrome）。
+- **方案**（`e13cce770`，#76762 follow-up）：
+  1. `_read_referenced_script` 认出 NUL 后返回 `("", False)` 而不是 `(None, False)`。`None` 表示「本地没读到」，会触发 `read_remote_script` fallback，把机器码 decode 后再递归。
+  2. `terminal_tool._read_script_in_env` 自己加 NUL 检查，读到二进制立刻放弃。
+  3. `Path.expanduser` / `os.open` 对带 `\x00` 的假路径吞 `ValueError`，当「不是合法路径」跳过——guard 自己不能把命令打挂。
+- **涉及文件**：`cron/lifecycle_guard.py`、`tools/terminal_tool.py`、`tests/hermes_cli/test_gateway_restart_loop.py`
+- **侵入类型**：inline（官方 guard / terminal 防护路径）
+- **Commit**：`e13cce770`
 
 ---
 
@@ -855,7 +883,7 @@
   - `owner/docs/read-file-utf8-boundary-fix.md`：设计文档
   - `tests/owner/patches/test_file_binary_detection_patch.py`：四场景 E2E 回归（边界截断/中文前缀/真垃圾字节/GBK）+ 幂等 apply/revert
 - **侵入类型**：运行时 patch（官方文件零改动）
-- **Commit**：（待提交）
+- **Commit**：`f457a0fb8`
 
 ---
 
@@ -1029,6 +1057,7 @@
 - **侵入类型**：纯新增（owner 专用验证目录，不放 `scripts/`）
 - **Commit**：`872ffe0ce`、`b5aa55c65`、`b50da840b`、`d6757b656`、`ca80a4957`
 - **补充说明**（`ca80a4957`）：新增 `tests/owner/test_contract_entrypoints.py`（7 个 P1 contract test，验证 owner 逻辑确实接到 upstream entrypoint：gateway inbound session_key 透传、per-chat display override、long-running surface source-aware resolver、build_api_kwargs 透传 owner_provider_name、chat_completions transport extra_body、cron scheduler run_job 设置 HERMES_CRON_SESSION contextvar、owner-extensions plugin apply memory_synthetic_guard patch）；同时 `owner/validation/inventory.yaml` 扩充 11 项 inventory（pool base_url override、credential prefix gate、feishu auto-card、diff card dispatch、approval card、feishu-guide command、cron job args、message token breakdown、qwen thinking debris、damodel prompt cache policy、rate-limit quota classification、gateway restart pycache cleanup）。
+- **后续**：`e21239389` — 新增 `owner/validation/merge_loss_audit.py`（合入后做 volume / glue-loss / arch / orphan 审计）；`anchors.yaml` + `inventory.yaml` 跟上游 main schema split 对齐（DDL 在 `hermes_state_common`，cron ContextVar 已是官方原生）。
 
 ### 12.5 owner/examples 参考文档（base config 模板）
 
@@ -1073,12 +1102,12 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 - **背景**：2026-08-12 `ark-agent-plan-deepseek-v4-flash` 在 git 推送确认场景陷入复读死循环，单条输出 **265,518 字符**（"确认就推。默认不推 upstream。"反复数百遍）刷屏。根因是模型级输出退化 + 未设输出上限（无 `max_tokens` 时落到渠道超大默认值）。已加全局 `model.max_tokens: 16000` 在 API 层兜住膨胀；本功能补**第二道防线**：在响应发送给用户之前识别并修正退化输出。
 - **方案**：owner-extensions 插件注册 `transform_llm_output` 钩子（`agent/turn_finalizer.py:556`，非流式响应发送前最后一环，返回非空字符串即替换最终响应）。多重信号判定（句子级 top-1 重复率 / 独有句占比 / zlib 压缩率 / U+FFFD 乱码占比 / 长度护栏），组合阈值防误伤；命中后段落级去重折叠或截断，并附警告标注（重复次数、占比、原始长度、模型）。fail-safe：任何异常返回 None，保持原样。
 - **涉及文件**：
-  - 纯新增：`owner/owner-extensions/output_guard/__init__.py`（检测 + 折叠 + 钩子注册）、`owner/docs/output-guard-design.md`（设计文档）
+  - 纯新增：`owner/owner-extensions/output_guard/__init__.py`（检测 + 折叠 + 钩子注册）、`owner/owner-extensions/output_guard/selfcheck.py`（策略自检）、`owner/docs/output-guard-design.md`（设计文档）
   - 侵入：`owner/owner-extensions/plugin.yaml`（hooks 列表加 `transform_llm_output`）、`owner/owner-extensions/__init__.py`（register() 聚合注册）——均为 owner-extensions 插件自身，**无官方文件侵入**
 - **侵入类型**：零（P0 hook/plugin 实现，官方源码零改动）
 - **验证**：构造复读/低信息/乱码/超长样本跑策略单测（见设计文档）；`transform_llm_output` 为 VALID_HOOKS 独立钩子，不冲突现有 `post_tool_call` 等
 - **后续（P2）**：检测到复读后 stop 下一轮 LLM 调用（阻断上下文回灌强化）——需核心 1 行桥接（turn_finalizer 钩子 context 传 agent），且须先确认 `_interrupt_requested` 跨轮 reset 语义，避免误伤下一轮正常对话
-- **Commit**：待定（本机未提交）
+- **Commit**：`824c95d5d`
 
 ---
 
@@ -1106,17 +1135,19 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 | `owner/commands/providers.py` | /providers plugin 斜杠命令实现 | owner-extensions plugin |
 | `owner/cron/` | cron session 隔离 + restart scrub + run_job hook + approval helper | cron/* + gateway/run.py |
 | `owner/diff_card/` | diff 卡片平台分发（飞书/QQ） | feishu/adapter.py |
-| `owner/feishu/` | 飞书深度定制（16 模块） | feishu/adapter.py（64 处标记） |
+| `owner/feishu/` | 飞书深度定制（含 queue_card / skill_approval_card 等） | feishu/adapter.py（64+ 处标记） |
 | `owner/gateway/` | inbound_context + hygiene_compression_notice + steer_vision | gateway/run.py |
-| `owner/patches/` | runtime patch（OpenViking recall + memory synthetic guard + pool base_url override + **queue_cancel**） | owner-extensions plugin / hermes_cli/runtime_provider.py |
+| `owner/patches/` | runtime patch（OpenViking recall + memory synthetic guard + pool base_url override + **queue_cancel** + **file_binary_detection**） | owner-extensions plugin / hermes_cli/runtime_provider.py |
 | `owner/providers/credential_helpers.py` | GitHub token 校验等 credential helper | hermes_cli/model_switch.py |
 | `owner/scripts/` | 运维脚本（备份/健康检查/汇率/todo 扫描/**HN Daily**/skill 同步/**Viking 记忆质量**/upstream_sync/周会/swagger） | — |
 | `owner/semantic_audit/` | 工具分发前语义审计门（Tier0/1 + LLM + strike） | `run_agent.py` 1 处薄胶水 |
 | `owner/sync/` | Upstream Sync 流水线（classify/fingerprint/merge/notify/kanban_ticket） | —（运维侧） |
-| `owner/patches/queue_cancel_patch.py` | 飞书 queue 撤销/执行冻结 runtime patch | owner-extensions plugin |
+| `owner/patches/queue_cancel_patch.py` | 飞书 queue 撤销/执行冻结 + 状态卡 runtime patch | owner-extensions plugin |
+| `owner/feishu/queue_card.py` | `/queue` 状态卡（steer / 立刻处理 / 取消） | feishu/adapter.py + queue_cancel_patch |
+| `owner/patches/file_binary_detection_patch.py` | `read_file` UTF-8 边界误判 binary（§8.5） | owner-extensions plugin（零官方侵入） |
 | `owner/skins/` | ruolin 系列皮肤 YAML | — |
 | `owner/tools/schema_patches.py` | 运行时 schema patch（legacy send_message card + image_generate model） | owner-extensions plugin（import/apply） |
-| `owner/validation/` | merge 后健康检查（anchors + inventory + import/patch/marker checks） | — |
+| `owner/validation/` | merge 后健康检查（anchors + inventory + import/patch/marker checks + **merge_loss_audit**） | — |
 
 ## 附录 B：官方文件侵入点速查
 
@@ -1127,7 +1158,7 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 | 文件 | 侵入内容 | owner/ 对应模块 | 相关 commit |
 |------|----------|-----------------|-------------|
 | `gateway/run.py` | cron env scrub ×3、executor-shutdown、inbound context、hygiene notice、auto-card、per-chat display、chained quick command、steer vision enrichment（§7.18） | owner/cron/、owner/gateway/、owner/feishu/、owner/display_overrides.py、owner/gateway/steer_vision.py | 几乎所有 §11/§17 commit |
-| `plugins/platforms/feishu/adapter.py` | 64+ 处 `[owner]` 标记：approval/auto_card/bot_menu/clarify/diff_card/model_picker/profile_routing/resume_card/sender_name/early-typing/**skill_approval_gate** 委托 | owner/feishu/*（含 skill_approval_card） | §4.2/§5.3-5.7/§17.1/§3.11 |
+| `plugins/platforms/feishu/adapter.py` | 64+ 处 `[owner]` 标记：approval/auto_card/bot_menu/clarify/diff_card/model_picker/profile_routing/resume_card/sender_name/early-typing/**skill_approval_gate** / **queue_card** 委托；`_mentions_self` 不再把 `@_all` 当 @机器人（§4.14） | owner/feishu/*（含 skill_approval_card、queue_card） | §4.2/§5.3-5.7/§17.1/§3.11/§4.11/§4.14 |
 | `agent/conversation_loop.py` | MoA 注入（CR-005 已改为独立 message）、content-filter fallback、adaptive backoff、thinking-timeout、attribution 重建、tool_call_id 胶水 | owner/attribution.py、owner/api_error_hints.py | a6dcd6ed8、9a05e50b4、362304bc8 |
 | `tools/approval.py` | home-prefix fold（CR-001 修复）、skill script 自动审批（3 处委托）、patch.yaml allowlist 合并、cron active helper | owner/approval/、owner/patch_config.py、owner/cron/approval_helper.py | 82fe8c962、5dd9580b4、99a374f64 |
 | `gateway/platforms/base.py` | per-profile cache roots、SendResult rotate/retry_after、chained quick command（`[owner-patch]`）、progress dedup code-fence 守卫 | — | 1d908072a、2be0af638 |
@@ -1144,7 +1175,7 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 | `agent/chat_completion_helpers.py` | owner_provider_name 剥离 + extra_body 注入点 | 薄胶水 |
 | `agent/transports/chat_completions.py` | extra_body 注入 | 薄胶水 |
 | `hermes_cli/runtime_provider.py` | pool base_url override ×2（`[owner-patch]`）、env-var template P29 防泄露（`[owner-patch]`） | 薄胶水 |
-| `hermes_cli/model_switch.py` | credential_helpers 薄调用（GitHub token 校验） | 薄胶水 |
+| `hermes_cli/model_switch.py` | credential_helpers 薄调用（GitHub token 校验）；自定义 provider 匹配去重防误报 `switch_multiple_providers`（§2.10） | 薄胶水 + inline |
 | `agent/model_metadata.py` | env-var template P29 防泄露（`[owner-patch]`） | 薄胶水 |
 | `tui_gateway/server.py` | env-var template P29（`[owner-patch]`）、Cmd+C fallback、skin 数据传递 | 薄胶水 |
 | `agent/tool_executor.py` | checkpoint predictor 触发、file tool timeout 接线 | 薄胶水 |
@@ -1176,6 +1207,7 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 | `run_agent.py` | `_execute_tool_calls` 前 `maybe_audit_batch`（§3.9 semantic audit） | 薄胶水（fail-open） |
 | `agent/codex_responses_adapter.py` | reasoning 后跳过/占位空 content（§7.15 方舟严格网关） | inline |
 | `cli.py` / `hermes_cli/main.py` / TUI | Ctrl+C → `app.exit` / gateway drain via stdin EOF（§6.3） | inline |
+| `cron/lifecycle_guard.py` / `tools/terminal_tool.py` | 二进制路径不当脚本扫（NUL → 空文本、fallback 跳过、`ValueError` 吞掉；§7.19） | inline |
 
 ### B.4 与附录 C 的交叉覆盖
 
@@ -1475,5 +1507,24 @@ _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请先�
   - §4.13 wiki 文件夹一层子节点列表：`a1b607d2e`
 - **背景**：bitable 无差别全量拉取（23 表×500 条×21 字段≈24 万字段值）token 爆炸/截断；wiki 文件夹节点原只吐标题无法列子文档
 - **验证**：单测 74 passed；实测真实 bitable structure 模式只出目录、真实 wiki 文件夹 24 个子节点全列出（需重启 gateway 生效）
+
+### 2026-08-13：近 10 天本机 commit 补录（含 output_guard / @所有人 / queue 状态卡）
+
+- **类型**：文档补录（对照 `owner` 本机作者 08-03～08-13 与正文 diff）
+- **新建正文**：
+  - **§4.14** 禁用 @所有人 自动响应：`470148013`
+  - **§7.19** lifecycle guard 遇二进制路径崩溃：`e13cce770`
+  - **§8.5** `read_file` UTF-8 边界误判 binary：补钉 hash `f457a0fb8`
+  - **§14** output_guard：补钉 hash `824c95d5d`
+- **已有章节后续**（一句话挂 hash）：
+  - §2.10 自定义 provider 匹配去重：`84418c339`
+  - §3.11 skill 审批卡 UI → gateway token：`9ce7369dc`
+  - §4.6 `/new` `/stop` 关掉 bot-menu ack：`c6156c16f`
+  - §4.9 `/providers` 库存异步加载：`04387001a`
+  - §4.11 queue 状态卡：`354222f43`
+  - §7.14 `HERMES_PROFILE` / `HERMES_LIFECYCLE_LABEL`：`c0d01276f`、`f348617f9`
+  - §12.4 `merge_loss_audit` + schema-split anchors：`e21239389`
+- **附录 A/B**：queue_card / file_binary_detection_patch；adapter §4.14 + queue_card；model_switch 去重；lifecycle_guard / terminal_tool
+- **刻意不记**：纯 docs / 纯 i18n / tips 清理 / merge main / 运维白名单注释 / 备份脚本静默与 ovpack / compare_skills 运维脚本 / 活 checkout skip update 测试
 
 
