@@ -9,3 +9,4 @@ hooks:
   - pre_gateway_dispatch   # capture gateway → adapter reference (memory / skill gate)
   - pre_tool_call          # skill_manage Feishu write approval
   - post_tool_call         # detect staged memory writes → approval card
+  - transform_llm_output   # output_guard: LLM 输出复读/乱码/超长检测与折叠

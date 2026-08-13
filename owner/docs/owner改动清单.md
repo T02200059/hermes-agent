@@ -1068,6 +1068,20 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 
 ---
 
+## 十四、output_guard：LLM 输出复读/乱码/超长检测与折叠
+
+- **背景**：2026-08-12 `ark-agent-plan-deepseek-v4-flash` 在 git 推送确认场景陷入复读死循环，单条输出 **265,518 字符**（"确认就推。默认不推 upstream。"反复数百遍）刷屏。根因是模型级输出退化 + 未设输出上限（无 `max_tokens` 时落到渠道超大默认值）。已加全局 `model.max_tokens: 16000` 在 API 层兜住膨胀；本功能补**第二道防线**：在响应发送给用户之前识别并修正退化输出。
+- **方案**：owner-extensions 插件注册 `transform_llm_output` 钩子（`agent/turn_finalizer.py:556`，非流式响应发送前最后一环，返回非空字符串即替换最终响应）。多重信号判定（句子级 top-1 重复率 / 独有句占比 / zlib 压缩率 / U+FFFD 乱码占比 / 长度护栏），组合阈值防误伤；命中后段落级去重折叠或截断，并附警告标注（重复次数、占比、原始长度、模型）。fail-safe：任何异常返回 None，保持原样。
+- **涉及文件**：
+  - 纯新增：`owner/owner-extensions/output_guard/__init__.py`（检测 + 折叠 + 钩子注册）、`owner/docs/output-guard-design.md`（设计文档）
+  - 侵入：`owner/owner-extensions/plugin.yaml`（hooks 列表加 `transform_llm_output`）、`owner/owner-extensions/__init__.py`（register() 聚合注册）——均为 owner-extensions 插件自身，**无官方文件侵入**
+- **侵入类型**：零（P0 hook/plugin 实现，官方源码零改动）
+- **验证**：构造复读/低信息/乱码/超长样本跑策略单测（见设计文档）；`transform_llm_output` 为 VALID_HOOKS 独立钩子，不冲突现有 `post_tool_call` 等
+- **后续（P2）**：检测到复读后 stop 下一轮 LLM 调用（阻断上下文回灌强化）——需核心 1 行桥接（turn_finalizer 钩子 context 传 agent），且须先确认 `_interrupt_requested` 跨轮 reset 语义，避免误伤下一轮正常对话
+- **Commit**：待定（本机未提交）
+
+---
+
 ## 附录 A：owner/ 模块职责索引
 
 | 路径 | 职责 | 侵入官方文件 |
@@ -1085,6 +1099,7 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 | `owner/approval/skill_manage_gate.py` | skill_manage 写操作飞书审批门（profile 白名单） | plugin hook + feishu adapter 点击路由 |
 | `owner/feishu/skill_approval_card.py` | skill 审批自建卡 + card action 处理 | feishu/adapter.py（skill_approval_gate） |
 | `owner/owner-extensions/skill_manage_bridge/` | pre_tool_call / gateway 缓存接线 skill 审批门 | owner-extensions plugin |
+| `owner/owner-extensions/output_guard/` | transform_llm_output 复读/乱码/超长检测与折叠 | owner-extensions plugin（零官方侵入） |
 | `owner/checkpoint_predictor/` | terminal 预测式 checkpoint（静态+LLM） | agent/tool_executor.py |
 | `owner/clarify/` | clarify choice 归一化 + gateway helpers | tools/clarify_tool.py / clarify_gateway.py |
 | `owner/cli/yolo.py` | YOLO on/off/status 命令 | — |

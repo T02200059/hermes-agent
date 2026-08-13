@@ -111,6 +111,16 @@ def register(ctx) -> None:
     except Exception:
         logger.warning("owner: skill_manage-bridge hooks registration failed", exc_info=True)
 
+    # § output_guard — LLM 输出复读/乱码/超长检测与折叠 (2026-08-13)
+    # transform_llm_output 钩子：发送前识别退化输出并折叠/截断，防刷屏。
+    # See owner/owner-extensions/output_guard/ + owner/docs/output-guard-design.md
+    try:
+        from .output_guard import register_hooks as _register_output_guard_hooks
+        _register_output_guard_hooks(ctx)
+        logger.debug("owner: output_guard hooks registered via owner-extensions")
+    except Exception:
+        logger.warning("owner: output_guard hooks registration failed", exc_info=True)
+
     # §4.11 Feishu queue lifecycle card (cancel / process_now / freeze)
     # + guide-card morph to status card. Feishu-only; other platforms keep text ack.
     # See owner/patches/queue_cancel_patch.py + owner/feishu/queue_card.py.
