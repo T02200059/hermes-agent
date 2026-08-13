@@ -5162,8 +5162,12 @@ class FeishuAdapter(BasePlatformAdapter):
     def _mentions_self(self, message: Any) -> bool:
         # @_all is Feishu's @everyone placeholder.
         raw_content = getattr(message, "content", "") or ""
-        if "@_all" in raw_content:
-            return True
+        # [owner] 2026-08-13: 不再把 @everyone 当作"提到了机器人"。
+        # 原逻辑：只要消息含 @_all 就判定为提到机器人，导致群里 @所有人 的消息
+        # 也会触发机器人响应。现只响应明确 @机器人 的消息（mentions 里
+        # open_id/user_id/name 精确匹配，见 _message_mentions_bot/_post_mentions_bot）。
+        # if "@_all" in raw_content:
+        #     return True
         mentions = getattr(message, "mentions", None) or []
         if mentions and self._message_mentions_bot(mentions):
             return True
