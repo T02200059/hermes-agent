@@ -1415,3 +1415,15 @@ memory_proposal:
   iteration:
     budget_exhausted: "⚠️ Single-conversation iteration budget exhausted ({used}/{max_total} turns used)"
     budget_exhausted_summary: "⚠️ Iteration budget exhausted ({used}/{max_total}) — requesting summary..."
+
+cron:
+  # Scheduler failure messages -- delivered to chat when a scheduled job fails.
+  # Placeholders: {job_name} is the job's name (localized fallback below);
+  # {details} is the cleaned error text (kept English).
+  fallback_job_name: "cron job"
+  failure_rate_limit: "⚠️ Cron '{job_name}' failed: provider rate limit. Fallback chain was exhausted or unavailable. Full details saved in cron output."
+  failure_weekly_usage_limit: "⚠️ Cron '{job_name}' failed: provider weekly usage limit. Fallback chain was exhausted or unavailable. Full details saved in cron output."
+  failure_quota: "⚠️ Cron '{job_name}' failed: provider quota limit. Fallback chain was exhausted or unavailable. Full details saved in cron output."
+  failure_timeout: "⚠️ Cron '{job_name}' failed: provider timeout. Fallback chain was exhausted or unavailable. Full details saved in cron output."
+  failure_auth: "⚠️ Cron '{job_name}' failed: provider authentication error. Full details saved in cron output."
+  failure_generic: "⚠️ Cron '{job_name}' failed: {details}"

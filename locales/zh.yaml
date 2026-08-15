@@ -1409,3 +1409,14 @@ memory_proposal:
   iteration:
     budget_exhausted: "⚠️ 单次对话迭代轮数耗尽（已用 {used}/{max_total} 轮）"
     budget_exhausted_summary: "⚠️ 迭代预算耗尽（{used}/{max_total}），正在生成进度摘要..."
+
+cron:
+  # 调度器失败消息 —— 定时任务失败时投递到聊天。占位符：{job_name} 为任务名
+  # （本地化兜底见下）；{details} 为清洗后的错误文本（保持英文）。
+  fallback_job_name: "定时任务"
+  failure_rate_limit: "⚠️ Cron '{job_name}' 执行失败：提供商限流。回退链已耗尽或不可用。详细信息已保存到 cron 输出。"
+  failure_weekly_usage_limit: "⚠️ Cron '{job_name}' 执行失败：提供商周用量已达上限。回退链已耗尽或不可用。详细信息已保存到 cron 输出。"
+  failure_quota: "⚠️ Cron '{job_name}' 执行失败：提供商配额已用尽。回退链已耗尽或不可用。详细信息已保存到 cron 输出。"
+  failure_timeout: "⚠️ Cron '{job_name}' 执行失败：提供商响应超时。回退链已耗尽或不可用。详细信息已保存到 cron 输出。"
+  failure_auth: "⚠️ Cron '{job_name}' 执行失败：提供商身份认证错误。详细信息已保存到 cron 输出。"
+  failure_generic: "⚠️ Cron '{job_name}' 执行失败：{details}"

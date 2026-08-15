@@ -40,6 +40,7 @@ from typing import Any, List, Optional
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from hermes_constants import get_hermes_home
+from agent.i18n import t
 from hermes_cli._subprocess_compat import windows_hide_flags
 from hermes_cli.config import (
     _expand_env_vars,
@@ -99,38 +100,26 @@ def _summarize_cron_failure_for_delivery(job: dict, error: str | None) -> str:
     show the operator what broke without dumping provider JSON, retry noise, or
     stack traces into the delivery channel.
     """
-    job_name = job.get("name") or job.get("id") or "cron job"
+    job_name = job.get("name") or job.get("id") or t("cron.fallback_job_name")
     text = (error or "unknown error").strip()
     lower = text.lower()
 
     # Provider/API failures are the common noisy path. Keep these short.
     if "429" in text or "rate limit" in lower or "usage limit" in lower:
-        reason = "rate limit"
         if "weekly usage limit" in lower:
-            reason = "weekly usage limit"
-        elif "quota" in lower:
-            reason = "quota limit"
-        return (
-            f"⚠️ Cron '{job_name}' failed: provider {reason}. "
-            "Fallback chain was exhausted or unavailable. "
-            "Full details saved in cron output."
-        )
+            return t("cron.failure_weekly_usage_limit", job_name=job_name)
+        if "quota" in lower:
+            return t("cron.failure_quota", job_name=job_name)
+        return t("cron.failure_rate_limit", job_name=job_name)
 
     if "readtimeout" in lower or "timed out" in lower or "timeout" in lower:
-        return (
-            f"⚠️ Cron '{job_name}' failed: provider timeout. "
-            "Fallback chain was exhausted or unavailable. "
-            "Full details saved in cron output."
-        )
+        return t("cron.failure_timeout", job_name=job_name)
 
     # Match authentication/authorization wording at a word boundary and the
     # 401/403 status codes as whole tokens, so "oauth", "4015" and similar do
     # not trip a misleading auth message.
     if re.search(r"authenticat|authoriz", lower) or re.search(r"\b(401|403)\b", text):
-        return (
-            f"⚠️ Cron '{job_name}' failed: provider authentication error. "
-            "Full details saved in cron output."
-        )
+        return t("cron.failure_auth", job_name=job_name)
 
     # Strip common exception wrappers and collapse provider payloads. Bound
     # the input first so a multi-KB provider blob cannot slow the
@@ -142,7 +131,7 @@ def _summarize_cron_failure_for_delivery(job: dict, error: str | None) -> str:
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
     if len(cleaned) > 180:
         cleaned = cleaned[:177].rstrip() + "..."
-    return f"⚠️ Cron '{job_name}' failed: {cleaned}"
+    return t("cron.failure_generic", job_name=job_name, details=cleaned)
 
 
 class CronPromptInjectionBlocked(Exception):
