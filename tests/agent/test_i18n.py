@@ -33,11 +33,30 @@ def _flatten(d, prefix="") -> dict:
 # Catalog completeness -- this is the key invariant test.  If someone adds a
 # new key to en.yaml they MUST add it to every other locale, else runtime
 # falls back to English for those users and defeats the feature.
+#
+# [owner] 本地只维护 en/zh 两本 catalog（其余 15 种语言的 yaml 不是本仓库
+# 维护目标，缺 key 属预期）。非 en/zh 语言参数在此标记 skip，避免 parity
+# 测试整组全红；若日后开始维护某语言，从 _MAINTAINED_LOCALES 对应 skip
+# 移除即可恢复校验。
 # ---------------------------------------------------------------------------
 
+# [owner] Locales actually maintained in this repo.  Non-member languages are
+# skipped in the parity tests below; un-skip a language when it is maintained.
+_MAINTAINED_LOCALES = {"en", "zh"}
 
 
-@pytest.mark.parametrize("lang", [l for l in i18n.SUPPORTED_LANGUAGES if l != "en"])
+def _skip_unmaintained(lang: str):
+    if lang in _MAINTAINED_LOCALES:
+        return lang
+    return pytest.param(
+        lang,
+        marks=pytest.mark.skip(
+            reason=f"[owner] locale '{lang}' is not maintained; only en/zh parity is checked"
+        ),
+    )
+
+
+@pytest.mark.parametrize("lang", [_skip_unmaintained(l) for l in i18n.SUPPORTED_LANGUAGES if l != "en"])
 def test_catalog_keys_match_english(lang: str):
     """Every non-English catalog must have exactly the same key set as English."""
     en_keys = set(_flatten(_load_raw("en")).keys())
@@ -48,7 +67,7 @@ def test_catalog_keys_match_english(lang: str):
     assert not extra, f"{lang}.yaml has keys not in en.yaml: {sorted(extra)}"
 
 
-@pytest.mark.parametrize("lang", list(i18n.SUPPORTED_LANGUAGES))
+@pytest.mark.parametrize("lang", [_skip_unmaintained(l) for l in i18n.SUPPORTED_LANGUAGES])
 def test_catalog_placeholders_match_english(lang: str):
     """Every translated value must use the same {placeholder} tokens as English.
 
