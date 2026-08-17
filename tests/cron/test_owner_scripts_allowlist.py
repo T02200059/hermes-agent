@@ -44,11 +44,17 @@ def test_known_basename_in_owner_scripts_is_allowed(cronjob_tools, tmp_path):
     assert err is None
 
 
-def test_new_basename_added_after_startup_is_rejected(cronjob_tools, tmp_path):
-    """WR-03: a script dropped into owner/scripts/ AFTER the allowlist
-    is built is NOT in the allowlist, so a cron job referencing it
-    via the exemption is rejected. To pick up the new file, the
-    operator must restart the gateway."""
+def test_new_basename_added_after_mtime_change_is_accepted(cronjob_tools, tmp_path):
+    """CR-002: the owner/scripts/ allowlist is rebuilt on directory mtime
+    change, so a script dropped in AFTER the allowlist was first built IS
+    picked up on the next cron call (no gateway restart needed).
+
+    [owner] Adapted from the original WR-03 test (commit 01f158e59):
+    WR-03 froze the allowlist at first use; CR-002 (commit 890869693)
+    relaxed it to mtime-based refresh. The allowlist's job is to make the
+    exemption follow the actual contents of owner/scripts/ — new files
+    appear once the directory mtime changes.
+    """
     owner_dir = tmp_path / "owner" / "scripts"
     owner_dir.mkdir(parents=True)
     (owner_dir / "original.sh").write_text("#!/bin/bash\n")
@@ -57,19 +63,18 @@ def test_new_basename_added_after_startup_is_rejected(cronjob_tools, tmp_path):
     cronjob_tools._OWNER_SCRIPTS_ALLOWLIST = None
     cronjob_tools._get_owner_scripts_allowlist()
 
-    # Now drop a NEW file in.
-    (owner_dir / "evil.py").write_text("import os; os.system('rm -rf /')\n")
+    # Now drop a NEW file in — this bumps the directory mtime.
+    (owner_dir / "new_after_startup.py").write_text("# new script\n")
 
     # Set up a symlink so the path validator hits the owner/scripts/ branch.
     scripts_dir = tmp_path / "scripts"
-    link = scripts_dir / "evil.py"
-    link.symlink_to(owner_dir / "evil.py")
+    link = scripts_dir / "new_after_startup.py"
+    link.symlink_to(owner_dir / "new_after_startup.py")
 
-    err = cronjob_tools._validate_cron_script_path("evil.py")
-    # The allowlist doesn't include the newly dropped basename.
-    assert err is not None
-    assert "not in startup allowlist" in err
-    assert "evil.py" in err
+    err = cronjob_tools._validate_cron_script_path("new_after_startup.py")
+    # The mtime change triggers an allowlist rebuild, so the new basename
+    # is now visible to the cron entry-point.
+    assert err is None
 
 
 def test_unknown_basename_outside_allowlist_is_rejected(cronjob_tools, tmp_path):
@@ -102,8 +107,14 @@ def test_unknown_basename_outside_allowlist_is_rejected(cronjob_tools, tmp_path)
 
 
 def test_cron_scheduler_uses_same_allowlist(monkeypatch, tmp_path):
-    """The scheduler's _run_job_script path-validation must also use a
-    cached basename allowlist (mirror of tools/cronjob_tools.py)."""
+    """The scheduler's _run_job_script path-validation must also use the
+    same mtime-rebuilt basename allowlist (mirror of tools/cronjob_tools.py).
+
+    [owner] Adapted from the original WR-03 test (commit 01f158e59):
+    CR-002 (commit 890869693) made the allowlist mtime-based — a new
+    file in owner/scripts/ is picked up once the directory mtime changes,
+    without a gateway restart.
+    """
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     (tmp_path / "scripts").mkdir()
 
@@ -118,7 +129,8 @@ def test_cron_scheduler_uses_same_allowlist(monkeypatch, tmp_path):
         sched._OWNER_SCRIPTS_ALLOWLIST = None
         sched._get_owner_scripts_allowlist()
 
-        # New file added after the allowlist is built.
+        # New file added after the allowlist is built — the mtime change
+        # rebuilds the allowlist so the new basename is admitted.
         (owner_dir / "new_after_startup.sh").write_text("#!/bin/bash\n")
 
         # Set up a symlink in scripts/ so the scheduler's path-resolution
@@ -128,8 +140,9 @@ def test_cron_scheduler_uses_same_allowlist(monkeypatch, tmp_path):
         link.symlink_to(owner_dir / "new_after_startup.sh")
 
         ok, msg = sched._run_job_script("new_after_startup.sh")
-        assert not ok
-        assert "not in startup allowlist" in msg
+        # The mtime rebuild admits the new basename; the allowlist check
+        # must NOT block it. (Downstream may still fail e.g. bash missing.)
+        assert "not in startup allowlist" not in msg
 
         # The known one (in the allowlist) is allowed through the
         # allowlist check. It may still fail downstream (e.g. bash not
