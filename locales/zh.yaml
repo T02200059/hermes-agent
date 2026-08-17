@@ -36,6 +36,7 @@ approval:
   cron_blocked: "已拦截：命令被标记为危险（{description}），但定时任务运行时没有用户在场批准。请寻找替代方案来避免此命令。如需在定时任务中允许危险命令，请在 config.yaml 中设置 approvals.cron_mode: approve。"
   gateway_asking: "⚠️ 此命令具有潜在危险（{description}）。正在请求用户批准。\n\n**命令：**\n```\n{command}\n```"
   gateway_asking_combined: "⚠️ {description}。正在请求用户批准。\n\n**命令：**\n```\n{command}\n```"
+  gateway_asking_target: "⚠️ 此操作具有潜在危险（{description}）。正在请求用户批准。\n\n**目标：**\n```\n{target}\n```"
   user_denied: "已拦截：用户拒绝了此具有潜在危险的命令（匹配 '{description}' 模式）。请勿重试此命令 — 用户已明确拒绝。"
   smart_denied: "智能审批拦截：{description}。此命令被评估为确实危险。请勿重试。"
   gateway_notify_failed: "已拦截：无法向用户发送审批请求。请勿重试。"
@@ -524,6 +525,14 @@ gateway:
   clarify_choices: "❓ {question}\n\n{choices}\n\n回复数字、选项文本，或输入你自己的答案。"
   file_attachment_failed: "⚠️ 无法发送文件附件。"
   file_attachment_failed_with_name: "⚠️ 无法发送文件附件（{file_name}）。"
+  audio_attachment_failed: "⚠️ 无法发送音频附件。"
+  video_attachment_failed: "⚠️ 无法发送视频附件。"
+  image_attachment_failed: "⚠️ 无法发送图片附件。"
+  attachment_failed: "⚠️ 无法发送附件。"
+
+  # 会话停滞看门狗 — 有待处理入站消息但超过 agent.session_stall_timeout 无进展时显示。
+  # {mins} 为向下取整的整分钟数。
+  session_stall: "⚠️ 代理会话似乎已停滞（上次活动在 {mins} 分钟前）。请尝试 /new 重置。"
 
   # 消息处理意外崩溃时向用户显示的通用错误。
   handler_error: "抱歉，发生了错误（{error_type}）。\n{error_detail}\n请重试，或使用 /reset 开始新会话。"
@@ -743,6 +752,14 @@ gateway:
     payload_too_large_compressing: "⚠️ 请求负载过大 (413) — 正在压缩（第 {current}/{total} 次）…"
     context_too_large_compressing: "🗜️ 上下文过大（约 {tokens} 个 token）— 正在压缩（第 {current}/{total} 次）…"
     empty_response_fallback: "↻ 工具调用后返回空响应 — 将使用之前的内容作为最终答案"
+    empty_after_tool_calls: "⚠️ 模型在工具调用后返回空响应 — 正在提示其继续"
+    empty_response_retrying: "⚠️ 模型返回空响应 — 正在重试（{current}/{total}）"
+    empty_response_switching_fallback: "⚠️ 模型持续返回空响应 — 正在切换到 fallback 提供商…"
+    reasoning_no_visible: "⚠️ 模型在全部重试后只产出了推理、没有可见回复。将返回空结果。"
+    reasoning_only_final: "⚠️ 尽管已重试，模型仍只产出了内部推理而没有最终答案。其最后一次推理可能包含答案：\n\n{preview}"
+    reasoning_only_final_with_fallback: "⚠️ 尽管已重试并尝试 fallback，模型仍只产出了内部推理而没有最终答案。其最后一次推理可能包含答案：\n\n{preview}"
+    thinking_budget_exhausted: "⚠️ **思考预算已耗尽**\n\n模型把全部输出 token 都用在了推理上，没有剩余额度生成实际回复。\n\n解决办法：\n→ 降低推理力度：`/thinkon low` 或 `/thinkon minimal`\n→ 或使用 `/model` 切换到更大/非推理模型"
+    kanban_exit_without_complete: "⚠️ Kanban worker 在未调用 kanban_complete/kanban_block 的情况下尝试退出 — 正在提示其完成"
     retrying_in: "⏳ {wait_time} 秒后重试（第 {attempt}/{max} 次尝试）…"
     status_billing_exhausted: "❌ 额度或余额已耗尽 — {summary}"
     status_rate_limited: "❌ 重试 {max_retries} 次后仍触发速率限制 — {summary}"
@@ -798,6 +815,9 @@ gateway:
     capabilities_label:     "能力：{capabilities}"
     prompt_caching_enabled: "提示词缓存：已启用"
     warning_prefix:         "警告：{warning}"
+    expensive_warning_title: "高费用模型警告"
+    expensive_warning_body: "⚠️ **高费用模型警告**\n\n{warning}\n\n_文本备用：回复 `{prefix}approve` 以切换，或 `{prefix}cancel` 以保持当前模型。_"
+    expensive_warning_cancelled: "🟡 已取消模型切换。当前模型未更改（{model}）。"
     saved_global:           "已保存到 config.yaml（`--global`）"
     session_only_hint:      "_（仅本次会话有效 — 添加 `--global` 可永久保存）_"
     current_label:          "当前：`{model}`（{provider}）"
@@ -879,6 +899,7 @@ gateway:
     # 中相关的 agent-result 错误路径）。这些是模型提供方失败时显示的简短
     # 用户安全消息 — 原始错误详情保留在网关日志中，不回显到聊天。
     provider_auth_failed:              "⚠️ 提供方认证失败。请检查配置的凭据；原始提供方详情见网关日志。"
+    provider_auth_failed_detail:       "⚠️ 提供方认证失败：{error}"
     provider_policy_rejected:          "⚠️ 模型提供方拒绝了请求。原始提供方错误已保留在网关日志中，未回显到聊天 — 请查看日志了解详情或尝试重新表述。"
     provider_failed_after_retries:     "⚠️ 模型提供方在重试后仍然失败。原始提供方详情已保留在网关日志中，未回显到聊天 — 请查看日志进行诊断。"
     context_too_large:                 "⚠️ 会话超出模型的上下文窗口。\n使用 /compact 压缩对话，或 /reset 重新开始。"

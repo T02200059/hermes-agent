@@ -78,6 +78,7 @@ from agent.context_compressor import (
     COMPRESSED_SUMMARY_METADATA_KEY,
     ContextCompressor,
 )
+from agent.i18n import t
 from agent.interrupt_compat import request_hard_interrupt
 from tools.approval import (
     reset_hermes_interactive_context,
@@ -2416,7 +2417,7 @@ class HermesACPAgent(acp.Agent):
                     return f"⏩ Steer queued for the active turn: {preview}"
             except Exception as exc:
                 logger.warning("ACP steer failed for session %s: %s", state.session_id, exc)
-                return f"⚠️ Steer failed: {exc}"
+                return t("gateway.steer_failed", error=exc)
 
         with state.runtime_lock:
             state.queued_prompts.append(steer_text)

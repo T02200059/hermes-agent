@@ -4124,7 +4124,7 @@ class BasePlatformAdapter(ABC):
             "[%s] send_voice fallback: native audio send unavailable for %s",
             self.name, audio_path,
         )
-        text = "⚠️ Couldn't deliver the audio attachment."
+        text = t("gateway.audio_attachment_failed")
         if caption:
             text = f"{caption}\n{text}"
         return await self.send(chat_id=chat_id, content=text, reply_to=reply_to, metadata=metadata)
@@ -4265,7 +4265,7 @@ class BasePlatformAdapter(ABC):
             "[%s] send_video fallback: native video send unavailable for %s",
             self.name, video_path,
         )
-        text = "⚠️ Couldn't deliver the video attachment."
+        text = t("gateway.video_attachment_failed")
         if caption:
             text = f"{caption}\n{text}"
         return await self.send(chat_id=chat_id, content=text, reply_to=reply_to, metadata=metadata)
@@ -4322,12 +4322,12 @@ class BasePlatformAdapter(ABC):
         ext = Path(media_path).suffix.lower()
         _VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".3gp"}
         if is_voice or should_send_media_as_audio(self.platform, ext, is_voice=is_voice):
-            text = "⚠️ Couldn't deliver the audio attachment."
+            text = t("gateway.audio_attachment_failed")
         elif ext in _VIDEO_EXTS:
-            text = "⚠️ Couldn't deliver the video attachment."
+            text = t("gateway.video_attachment_failed")
         else:
             file_name = os.path.basename(media_path)
-            text = f"⚠️ Couldn't deliver the file attachment ({file_name})."
+            text = t("gateway.file_attachment_failed_with_name", file_name=file_name)
         try:
             notice = await self.send(chat_id=chat_id, content=text, metadata=metadata)
             if not notice.success:
@@ -4366,7 +4366,7 @@ class BasePlatformAdapter(ABC):
             "[%s] send_image_file fallback: native image send unavailable for %s",
             self.name, image_path,
         )
-        text = "⚠️ Couldn't deliver the image attachment."
+        text = t("gateway.image_attachment_failed")
         if caption:
             text = f"{caption}\n{text}"
         return await self.send(chat_id=chat_id, content=text, reply_to=reply_to, metadata=metadata)

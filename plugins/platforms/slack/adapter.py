@@ -4029,7 +4029,7 @@ class SlackAdapter(BasePlatformAdapter):
                 exc_info=True,
             )
             # image_path is a host-local path; never echo it into chat.
-            text = "⚠️ Couldn't deliver the image attachment."
+            text = t("gateway.image_attachment_failed")
             if caption:
                 text = f"{caption}\n{text}"
             return await self.send(chat_id, text, reply_to=reply_to, metadata=metadata)
@@ -4190,7 +4190,7 @@ class SlackAdapter(BasePlatformAdapter):
                 exc_info=True,
             )
             # video_path is a host-local path; never echo it into chat.
-            text = "⚠️ Couldn't deliver the video attachment."
+            text = t("gateway.video_attachment_failed")
             if caption:
                 text = f"{caption}\n{text}"
             return await self.send(chat_id, text, reply_to=reply_to, metadata=metadata)

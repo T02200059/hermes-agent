@@ -3235,9 +3235,10 @@ def _run_approval_gate(
             "status": "approval_required",
             "command": display_target,
             "description": description,
-            "message": (
-                f"⚠️ This action is potentially dangerous ({description}). "
-                f"Asking the user for approval.\n\n**Target:**\n```\n{display_target}\n```"
+            "message": t(
+                "approval.gateway_asking_target",
+                description=description,
+                target=display_target,
             ),
         }
 
@@ -4433,8 +4434,10 @@ def check_all_command_guards(command: str, env_type: str,
             "approval_pending": True,
             "command": _disp_command,
             "description": _disp_combined_desc,
-            "message": (
-                f"⚠️ {_disp_combined_desc}. Asking the user for approval.\n\n**Command:**\n```\n{_disp_command}\n```"
+            "message": t(
+                "approval.gateway_asking_combined",
+                description=_disp_combined_desc,
+                command=_disp_command,
             ),
         }
         if smart_denied_for_owner:

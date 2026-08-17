@@ -70,6 +70,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Dict, Optional, Set
 
+from agent.i18n import t
 from agent.secret_scope import UnscopedSecretError, get_secret
 
 try:
@@ -2847,8 +2848,8 @@ class MatrixAdapter(BasePlatformAdapter):
                 "[%s] upload fallback: media file not found for %s",
                 self.name, file_path,
             )
-            text = f"{caption}\n⚠️ Couldn't deliver the attachment." if caption \
-                else "⚠️ Couldn't deliver the attachment."
+            notice = t("gateway.attachment_failed")
+            text = f"{caption}\n{notice}" if caption else notice
             return await self.send(room_id, text, reply_to)
         try:
             file_size = p.stat().st_size

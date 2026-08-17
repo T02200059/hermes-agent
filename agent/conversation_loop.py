@@ -3006,14 +3006,7 @@ def run_conversation(
                         # Return a user-friendly message as the response so
                         # CLI (response box) and gateway (chat message) both
                         # display it naturally instead of a suppressed error.
-                        _exhaust_response = (
-                            "⚠️ **Thinking Budget Exhausted**\n\n"
-                            "The model used all its output tokens on reasoning "
-                            "and had none left for the actual response.\n\n"
-                            "To fix this:\n"
-                            "→ Lower reasoning effort: `/thinkon low` or `/thinkon minimal`\n"
-                            "→ Or switch to a larger/non-reasoning model with `/model`"
-                        )
+                        _exhaust_response = t("gateway.runtime.thinking_budget_exhausted")
                         agent._cleanup_task_resources(effective_task_id)
                         agent._persist_session(messages, conversation_history)
                         return {
@@ -6731,8 +6724,7 @@ def run_conversation(
                             "to continue processing"
                         )
                         agent._buffer_status(
-                            "⚠️ Model returned empty after tool calls — "
-                            "nudging to continue"
+                            t("gateway.runtime.empty_after_tool_calls")
                         )
                         # Append the empty assistant message first so the
                         # message sequence stays valid:
@@ -6812,8 +6804,11 @@ def run_conversation(
                             agent._empty_content_retries, agent.model,
                         )
                         agent._buffer_status(
-                            f"⚠️ Empty response from model — retrying "
-                            f"({agent._empty_content_retries}/3)"
+                            t(
+                                "gateway.runtime.empty_response_retrying",
+                                current=agent._empty_content_retries,
+                                total=3,
+                            )
                         )
                         continue
 
@@ -6831,8 +6826,7 @@ def run_conversation(
                             agent.provider,
                         )
                         agent._buffer_status(
-                            "⚠️ Model returning empty responses — "
-                            "switching to fallback provider..."
+                            t("gateway.runtime.empty_response_switching_fallback")
                         )
                         if agent._try_activate_fallback():
                             active_system_prompt = _sync_failover_system_message(
@@ -6876,8 +6870,7 @@ def run_conversation(
                             "Reasoning: %s", reasoning_preview,
                         )
                         agent._emit_status(
-                            "⚠️ Model produced reasoning but no visible "
-                            "response after all retries. Returning empty."
+                            t("gateway.runtime.reasoning_no_visible")
                         )
                     else:
                         logger.warning(
@@ -6906,13 +6899,12 @@ def run_conversation(
                     # (clearly labeled as such) strictly more useful.
                     # Idea credit: PR #48795 (@ligl0325).
                     if reasoning_text:
-                        final_response = (
-                            "⚠️ The model produced only internal reasoning and "
-                            "no final answer, despite retries"
-                            + (" and fallback" if agent._fallback_chain else "")
-                            + ". Its last reasoning, which may contain the "
-                            "answer:\n\n" + reasoning_preview
+                        _reasoning_key = (
+                            "gateway.runtime.reasoning_only_final_with_fallback"
+                            if agent._fallback_chain
+                            else "gateway.runtime.reasoning_only_final"
                         )
+                        final_response = t(_reasoning_key, preview=reasoning_preview)
                     else:
                         final_response = "(empty)"
                     break
@@ -7206,8 +7198,7 @@ def run_conversation(
                         os.environ.get("HERMES_KANBAN_TASK", ""),
                     )
                     agent._emit_status(
-                        "⚠️ Kanban worker tried to exit without "
-                        "kanban_complete/kanban_block — nudging to finish"
+                        t("gateway.runtime.kanban_exit_without_complete")
                     )
                     # Same finalizer contract as verify-on-stop: clear
                     # final_response while continuing so a later budget

@@ -115,6 +115,7 @@ _BLOCK_MARKERS = (
     "BLOCKED: Failed to send approval request",
     "The user has NOT consented",
     "Asking the user for approval",
+    "正在请求用户批准",
     "approval_required",
     "BLOCKED by user deny rule",
 )

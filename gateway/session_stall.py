@@ -23,6 +23,8 @@ from __future__ import annotations
 import math
 from typing import Any, Mapping, Optional
 
+from agent.i18n import t
+
 
 def should_emit_session_stall_notification(
     *,
@@ -63,10 +65,7 @@ def should_clear_session_stall_notification(
 def format_session_stall_notification(idle_seconds: float) -> str:
     """User-facing stall warning (ASCII minutes; matches issue #72016 copy)."""
     mins = max(1, int(idle_seconds // 60))
-    return (
-        f"⚠️ Agent session appears stalled (last activity {mins} min ago). "
-        f"Try /new to reset."
-    )
+    return t("gateway.session_stall", mins=mins)
 
 
 def resolve_session_idle_seconds_from_activity(

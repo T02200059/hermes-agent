@@ -91,6 +91,7 @@ from gateway.platforms.base import (
     is_network_accessible,
     validate_media_delivery_path,
 )
+from agent.i18n import t
 from agent.redact import redact_sensitive_text
 from agent.interrupt_compat import request_hard_interrupt
 from gateway.readiness import collect_runtime_readiness
@@ -6130,7 +6131,9 @@ class APIServerAdapter(BasePlatformAdapter):
                                    session_id or "", exc)
                     return (
                         {
-                            "final_response": f"⚠️ Provider authentication failed: {exc}",
+                            "final_response": t(
+                                "gateway.model.provider_auth_failed_detail", error=exc
+                            ),
                             "messages": [],
                             "api_calls": 0,
                             "tools": [],
@@ -6603,7 +6606,9 @@ class APIServerAdapter(BasePlatformAdapter):
                 # failure, instead of falling through to the generic
                 # except-Exception branch below.
                 logger.warning("Provider authentication failed for run=%s: %s", run_id, exc)
-                error_msg = f"⚠️ Provider authentication failed: {exc}"
+                error_msg = t(
+                    "gateway.model.provider_auth_failed_detail", error=exc
+                )
                 self._set_run_status(
                     run_id,
                     "failed",

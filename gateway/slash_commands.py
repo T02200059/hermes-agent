@@ -2442,9 +2442,9 @@ class GatewaySlashCommandsMixin:
         if _cost_warning is not None:
             async def _on_cost_confirm(choice: str) -> str:
                 if choice == "cancel":
-                    return (
-                        f"🟡 Model switch cancelled. Current model unchanged "
-                        f"({current_model or 'unknown'})."
+                    return t(
+                        "gateway.model.expensive_warning_cancelled",
+                        model=current_model or "unknown",
                     )
                 # "once" and "always" both proceed — there is no persistent
                 # opt-out for the cost guard (each expensive switch should be
@@ -2455,11 +2455,11 @@ class GatewaySlashCommandsMixin:
             return await self._request_slash_confirm(
                 event=event,
                 command="model",
-                title="Expensive Model Warning",
-                message=(
-                    f"⚠️ **Expensive Model Warning**\n\n{_cost_warning.message}\n\n"
-                    f"_Text fallback: reply `{_p}approve` to switch or `{_p}cancel` to keep "
-                    "the current model._"
+                title=t("gateway.model.expensive_warning_title"),
+                message=t(
+                    "gateway.model.expensive_warning_body",
+                    warning=_cost_warning.message,
+                    prefix=_p,
                 ),
                 handler=_on_cost_confirm,
             )

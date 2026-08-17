@@ -4511,7 +4511,9 @@ class TurnRunner:
             )
         except Exception as exc:
             return {
-                "final_response": f"⚠️ Provider authentication failed: {exc}",
+                "final_response": t(
+                    "gateway.model.provider_auth_failed_detail", error=exc
+                ),
                 "messages": [],
                 "api_calls": 0,
                 "tools": [],
