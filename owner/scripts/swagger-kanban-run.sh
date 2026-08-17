@@ -5,6 +5,7 @@
 # 用法:
 #   swagger-kanban-run.sh scan     # T0→T1→T2→T3 全流程
 #   swagger-kanban-run.sh fix      # 只建 T4 自修复卡（依赖已有 T3）
+#   swagger-kanban-run.sh review   # 建 T4 人工门闩卡：worker 整理清单后 block 等人审
 #   swagger-kanban-run.sh status   # 查看当前任务状态
 set -euo pipefail
 
@@ -146,6 +147,52 @@ cmd_fix() {
     echo "自修复卡已创建，完成后查看: ${WS_DIR}/t4-fix-result.json"
 }
 
+cmd_review() {
+    # T4: 人工门闩卡——worker 读 T3 报告整理审核清单后 block 等人审
+    local t3_report="${WS_DIR}/t3-final-report.md"
+    if [[ ! -f "$t3_report" ]]; then
+        echo "ERROR: T3 报告不存在: $t3_report"
+        echo "请先运行 scan 模式"
+        exit 1
+    fi
+
+    # 从报告解析 CONFIRMED 数量（兼容表格行"16 处 CONFIRMED"与统计行"CONFIRMED: 11"）
+    local n
+    n="$(python3 - "$t3_report" <<'PY'
+import re, sys
+from pathlib import Path
+txt = Path(sys.argv[1]).read_text(encoding="utf-8")
+m = re.search(r'(\d+)\s*处\s*CONFIRMED', txt)
+if not m:
+    m = re.search(r'CONFIRMED[:：]\s*(\d+)', txt)
+print(m.group(1) if m else "0")
+PY
+)"
+    n="${n:-0}"
+    if [[ "${n}" -le 0 ]]; then
+        echo "【swagger 人审】T3 报告中无 CONFIRMED 问题，不建审核卡。"
+        echo "报告：${t3_report}"
+        exit 0
+    fi
+
+    local t4_body t4_out t4_id
+    t4_body="$(render "${TPL_DIR}/T4-review.md")"
+    t4_out="$(create_card "swagger-review: 人工门闩 ${DATE_TAG}" "$t4_body" "${IDEM_PREFIX}-review-${DATE_TAG}" "30m" || true)"
+    t4_id="$(echo "$t4_out" | awk '{print $1}')"
+
+    hermes kanban dispatch >/dev/null 2>&1 || true
+
+    echo ""
+    echo "═══════════════════════════════════════════════"
+    echo "  swagger 人审卡已创建（${n} 处 CONFIRMED）"
+    echo "  Assignee: ${ASSIGNEE}"
+    echo "═══════════════════════════════════════════════"
+    echo "task: ${t4_id:-FAILED}"
+    echo "worker 会读 T3 报告整理中文清单后 block 等人审；"
+    echo "审批：评论写 FIX=1 + 范围（如\"只修 error\"），再解阻。"
+    echo "清单: ${WS_DIR}/t3-review-queue.md"
+}
+
 cmd_status() {
     hermes kanban list --assignee "$ASSIGNEE" --tenant "$TENANT" 2>/dev/null | head -20
     echo "--- workspace ---"
@@ -155,6 +202,7 @@ cmd_status() {
 case "$MODE" in
     scan|daily) cmd_scan ;;
     fix) cmd_fix ;;
+    review|human-review) cmd_review ;;
     status) cmd_status ;;
-    *) echo "Unknown mode: $MODE (scan|fix|status)" >&2; exit 1 ;;
+    *) echo "Unknown mode: $MODE (scan|fix|review|status)" >&2; exit 1 ;;
 esac
