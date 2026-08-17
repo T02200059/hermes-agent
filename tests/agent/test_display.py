@@ -242,15 +242,24 @@ class TestEditDiffPreview:
         assert "additional file" in rendered[-1]
 
 
+def _pin_language(monkeypatch, lang: str):
+    from agent import i18n
+    monkeypatch.setenv("HERMES_LANGUAGE", lang)
+    i18n.reset_language_cache()
+
+
 class TestBuildToolLabel:
     """Friendly human-phrased tool labels for built-in tools."""
 
     @pytest.fixture(autouse=True)
-    def _enable_friendly(self):
+    def _enable_friendly(self, monkeypatch):
         from agent.display import set_friendly_tool_labels
+        _pin_language(monkeypatch, "en")
         set_friendly_tool_labels(True)
         yield
         set_friendly_tool_labels(True)
+        from agent.i18n import reset_language_cache
+        reset_language_cache()
 
     def test_web_search_uses_for_connector(self):
         from agent.display import build_tool_label
@@ -283,12 +292,42 @@ class TestBuildToolLabel:
         assert label == build_tool_preview("web_search", args)
         assert "Searching the web" not in (label or "")
 
+    def test_zh_search_files_keeps_pattern(self, monkeypatch):
+        from agent.display import build_tool_label
+        _pin_language(monkeypatch, "zh")
+        label = build_tool_label("search_files", {"pattern": "kanban"})
+        assert label == "正在搜索文件：kanban"
+        assert "{preview}" not in label
+
+    def test_zh_skills_list_drops_preview(self, monkeypatch):
+        from agent.display import build_tool_label
+        _pin_language(monkeypatch, "zh")
+        label = build_tool_label("skills_list", {"category": "github"})
+        assert label == "正在列出技能"
+        assert "github" not in label
+
+    def test_zh_read_file_keeps_name_and_line_range(self, monkeypatch):
+        from agent.display import build_tool_label
+        _pin_language(monkeypatch, "zh")
+        label = build_tool_label(
+            "read_file",
+            {"path": "jobs.json", "offset": 225, "limit": 180},
+        )
+        assert label == "正在读取 jobs.json L225-404"
 
 
 class TestBuildStatusPhrase:
     """build_status_phrase — live working-state text for Slack's status line."""
 
-
+    @pytest.fixture(autouse=True)
+    def _pin_english(self, monkeypatch):
+        from agent.display import set_friendly_tool_labels
+        _pin_language(monkeypatch, "en")
+        set_friendly_tool_labels(True)
+        yield
+        set_friendly_tool_labels(True)
+        from agent.i18n import reset_language_cache
+        reset_language_cache()
 
     def test_verb_only_when_args_none(self):
         # live_status: "verb" mode passes args=None to suppress previews.
@@ -314,3 +353,17 @@ class TestBuildStatusPhrase:
             assert build_status_phrase("terminal", {"command": "ls"}) is None
         finally:
             set_friendly_tool_labels(True)
+
+    def test_zh_verb_only_has_no_english_is(self, monkeypatch):
+        from agent.display import build_status_phrase
+        _pin_language(monkeypatch, "zh")
+        phrase = build_status_phrase("terminal", None)
+        assert phrase == "正在运行…"
+        assert not phrase.startswith("is ")
+
+    def test_zh_unknown_tool_uses_using_template(self, monkeypatch):
+        from agent.display import build_status_phrase
+        _pin_language(monkeypatch, "zh")
+        phrase = build_status_phrase("some_mcp_tool", None)
+        assert phrase == "正在使用 some_mcp_tool…"
+        assert "{tool}" not in phrase

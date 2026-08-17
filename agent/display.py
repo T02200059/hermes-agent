@@ -17,6 +17,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from utils import safe_json_loads
+from agent.i18n import t
 from agent.redact import redact_sensitive_text
 from agent.tool_result_classification import file_mutation_result_landed
 
@@ -600,39 +601,39 @@ def prepare_tool_preview(
 #
 # Turns "web_search <query>" into "Searching the web for <query>" — the
 # ChatGPT-style "Searching…/Reading…" surface.  Curated and built-in only:
-# we know each core tool's semantics, so the verb is fixed, not computed.
-# Custom/plugin/MCP tools have no entry and fall back to the raw preview.
+# we know each core tool's semantics, so the verb is a locale template, not
+# computed.  Custom/plugin/MCP tools have no entry and fall back to the raw
+# preview.  Sentence templates live in locales/*/yaml under display.tool_label
+# so languages can change word order (zh: "正在搜索文件：{preview}").
 # =========================================================================
 
-# Each entry maps a built-in tool name to its present-participle verb phrase.
-# A trailing space-then-preview is appended by build_tool_label() when the
-# tool's argument preview is available (e.g. "Reading docs/api.md").
-_TOOL_VERBS: dict[str, str] = {
-    "web_search": "Searching the web",
-    "web_extract": "Reading",
-    "browser_navigate": "Browsing",
-    "browser_click": "Clicking",
-    "browser_type": "Typing",
-    "read_file": "Reading",
-    "write_file": "Writing",
-    "patch": "Editing",
-    "search_files": "Searching files",
-    "terminal": "Running",
-    "execute_code": "Running code",
-    "image_generate": "Generating image",
-    "video_generate": "Generating video",
-    "text_to_speech": "Generating speech",
-    "vision_analyze": "Looking at the image",
-    "session_search": "Searching past sessions",
-    "skill_view": "Reading skill",
-    "skills_list": "Listing skills",
-    "skill_manage": "Updating skill",
-    "delegate_task": "Delegating",
-    "cronjob": "Scheduling",
-    "clarify": "Asking",
-    "memory": "Updating memory",
-    "todo": "Updating tasks",
-}
+# Built-in tools that have a curated friendly-label template.
+_FRIENDLY_TOOL_LABELS: frozenset[str] = frozenset({
+    "web_search",
+    "web_extract",
+    "browser_navigate",
+    "browser_click",
+    "browser_type",
+    "read_file",
+    "write_file",
+    "patch",
+    "search_files",
+    "terminal",
+    "execute_code",
+    "image_generate",
+    "video_generate",
+    "text_to_speech",
+    "vision_analyze",
+    "session_search",
+    "skill_view",
+    "skills_list",
+    "skill_manage",
+    "delegate_task",
+    "cronjob",
+    "clarify",
+    "memory",
+    "todo",
+})
 
 # Verbs that read better without the raw argument preview appended.
 _TOOL_VERBS_NO_PREVIEW: frozenset[str] = frozenset({
@@ -640,8 +641,9 @@ _TOOL_VERBS_NO_PREVIEW: frozenset[str] = frozenset({
     "session_search",
 })
 
-# Verbs that take a "for" connector before the preview (search-style phrasing):
-# "Searching the web for <query>" reads better than "Searching the web <query>".
+# English-only joiner kept for back-compat callers.  New composition goes
+# through locale templates via compose_tool_label(); do not use this to
+# assemble a cross-language label.
 _TOOL_VERBS_FOR_CONNECTOR: frozenset[str] = frozenset({
     "web_search",
     "search_files",
@@ -661,21 +663,57 @@ def get_friendly_tool_labels() -> bool:
     return _friendly_tool_labels
 
 
-def get_tool_verb(tool_name: str) -> str | None:
-    """Return the friendly verb for a built-in tool, or None.
+def _tool_label_key(tool_name: str, *, with_preview: bool) -> str | None:
+    """Return the locale key for a curated tool, or None if uncurated."""
+    if tool_name not in _FRIENDLY_TOOL_LABELS:
+        return None
+    if tool_name in _TOOL_VERBS_NO_PREVIEW:
+        return f"display.tool_label.{tool_name}"
+    if with_preview:
+        return f"display.tool_label.{tool_name}"
+    return f"display.tool_label.{tool_name}_verb"
 
-    Returns None when friendly labels are disabled or the tool has no curated
-    verb (custom/plugin/MCP tools).  Callers that already hold a computed
-    argument preview can compose ``f"{verb} {preview}"`` themselves; use
-    :func:`tool_verb_connector` to pick the right joiner.
+
+def compose_tool_label(tool_name: str, preview: str | None) -> str | None:
+    """Compose a friendly label around an already-built argument preview.
+
+    Used by the gateway after platform-specific preview formatting (URL
+    links, truncation).  Returns None when friendly labels are off or the
+    tool has no curated template — callers keep the raw
+    ``tool_name: "preview"`` form.
     """
     if not _friendly_tool_labels:
         return None
-    return _TOOL_VERBS.get(tool_name)
+    key = _tool_label_key(tool_name, with_preview=bool(preview))
+    if key is None:
+        return None
+    if tool_name in _TOOL_VERBS_NO_PREVIEW or not preview:
+        return t(key)
+    return t(key, preview=preview)
+
+
+def get_tool_verb(tool_name: str) -> str | None:
+    """Return the friendly verb-only phrase for a built-in tool, or None.
+
+    Returns None when friendly labels are disabled or the tool has no curated
+    template (custom/plugin/MCP tools).  Prefer :func:`compose_tool_label`
+    when a preview is available — do not concatenate this with
+    :func:`tool_verb_connector` across languages.
+    """
+    if not _friendly_tool_labels:
+        return None
+    key = _tool_label_key(tool_name, with_preview=False)
+    if key is None:
+        return None
+    return t(key)
 
 
 def tool_verb_connector(tool_name: str) -> str:
-    """Return the connector between a verb and its preview (" for " or " ")."""
+    """Return the English connector between a verb and its preview.
+
+    English-only back-compat.  New call sites should use
+    :func:`compose_tool_label` so the connector lives in the locale template.
+    """
     return " for " if tool_name in _TOOL_VERBS_FOR_CONNECTOR else " "
 
 
@@ -690,8 +728,9 @@ def build_status_phrase(tool_name: str, args: dict | None, max_len: int = 49) ->
     Used by text-rendering "typing" indicators (Slack's
     ``assistant.threads.setStatus`` line) to show what the agent is doing
     right now: ``is running scripts/run_tests.sh…`` instead of a static
-    ``is thinking...``.  The phrase is phrased to follow the bot's display
-    name ("Hermes is running …"), so it starts lowercase with "is".
+    ``is thinking...``.  English phrases are written to follow the bot's
+    display name ("Hermes is running …"); other languages use a standalone
+    sentence from the catalog.
 
     Pass ``args=None`` for a verb-only phrase (``is running…``) — used when
     ``display.live_status`` is ``verb`` to keep argument previews out of
@@ -707,21 +746,22 @@ def build_status_phrase(tool_name: str, args: dict | None, max_len: int = 49) ->
     if not _friendly_tool_labels:
         return None
 
-    verb = _TOOL_VERBS.get(tool_name)
-    if verb:
-        head = f"is {verb[0].lower()}{verb[1:]}"
+    if tool_name not in _FRIENDLY_TOOL_LABELS:
+        phrase = t("display.tool_status.using", tool=tool_name)
+    elif tool_name in _TOOL_VERBS_NO_PREVIEW:
+        phrase = t(f"display.tool_status.{tool_name}")
     else:
-        # Custom / plugin / MCP tools: generic but still informative.
-        head = f"is using {tool_name}"
-
-    phrase = head
-    if args and verb and tool_name not in _TOOL_VERBS_NO_PREVIEW:
-        preview = build_tool_preview(tool_name, args, max_len=None)
+        preview = None
+        if args:
+            preview = build_tool_preview(tool_name, args, max_len=None)
+            if preview:
+                # Previews can contain newlines (terminal commands); keep the
+                # status to the first line.
+                preview = preview.splitlines()[0].strip()
         if preview:
-            # Previews can contain newlines (terminal commands); keep the
-            # status to the first line.
-            preview = preview.splitlines()[0].strip()
-            phrase = f"{head}{tool_verb_connector(tool_name)}{preview}"
+            phrase = t(f"display.tool_status.{tool_name}", preview=preview)
+        else:
+            phrase = t(f"display.tool_status.{tool_name}_verb")
 
     if len(phrase) > max_len - 1:
         phrase = phrase[: max_len - 2].rstrip() + "…"
@@ -733,28 +773,20 @@ def build_status_phrase(tool_name: str, args: dict | None, max_len: int = 49) ->
 def build_tool_label(tool_name: str, args: dict, max_len: int | None = None) -> str | None:
     """Build a human-phrased status label for a tool call.
 
-    For built-in tools with a known verb (``web_search`` -> "Searching the
-    web for ..."), returns the verb optionally followed by the argument
-    preview.  For everything else (custom/plugin/MCP tools, or when friendly
-    labels are disabled) returns the raw preview, so callers can use this as a
+    For built-in tools with a curated template (``web_search`` ->
+    "Searching the web for ..."), returns the localized sentence.  For
+    everything else (custom/plugin/MCP tools, or when friendly labels are
+    disabled) returns the raw preview, so callers can use this as a
     drop-in replacement for :func:`build_tool_preview`.
     """
     if not _friendly_tool_labels:
         return build_tool_preview(tool_name, args, max_len=max_len)
 
-    verb = _TOOL_VERBS.get(tool_name)
-    if not verb:
-        return build_tool_preview(tool_name, args, max_len=max_len)
-
-    if tool_name in _TOOL_VERBS_NO_PREVIEW:
-        return verb
-
     preview = build_tool_preview(tool_name, args, max_len=max_len)
-    if not preview:
-        return verb
-    if tool_name in _TOOL_VERBS_FOR_CONNECTOR:
-        return f"{verb} for {preview}"
-    return f"{verb} {preview}"
+    composed = compose_tool_label(tool_name, preview)
+    if composed is not None:
+        return composed
+    return preview
 
 
 # =========================================================================

@@ -3951,11 +3951,9 @@ class TurnRunner:
             ctx.last_was_terminal_block[0] = True
         elif preview:
             from agent.display import (
+                compose_tool_label,
                 get_tool_preview_max_len,
-                get_tool_verb,
                 prepare_tool_preview,
-                tool_verb_connector,
-                verb_drops_preview,
             )
             _pl = get_tool_preview_max_len()
             _cap = _pl if _pl > 0 else 40
@@ -3969,17 +3967,15 @@ class TurnRunner:
                 preview = _progress_adapter.format_tool_preview(_prepared_preview)
             else:
                 preview = _prepared_preview.text
-            # Friendly labels: render a human-phrased line for built-in
-            # tools ("🔍 Searching the web for ...") by prefixing the verb
-            # onto the preview the callback already computed (so the
-            # command/url/query is preserved).  Custom/plugin/MCP tools
-            # have no verb and fall back to the raw "tool_name: ..." form.
-            _verb = get_tool_verb(tool_name)
-            if _verb:
-                if verb_drops_preview(tool_name):
-                    msg = f"{emoji} {_verb}"
-                else:
-                    msg = f"{emoji} {_verb}{tool_verb_connector(tool_name)}{preview}"
+            # Friendly labels: whole-sentence locale template so languages
+            # can change word order ("🔍 Searching the web for ..." /
+            # "🔍 正在搜索网页：...").  Preview is the already-formatted
+            # argument summary so platform URL/truncation is preserved.
+            # Custom/plugin/MCP tools have no template and fall back to
+            # the raw "tool_name: ..." form.
+            _label = compose_tool_label(tool_name, preview)
+            if _label:
+                msg = f"{emoji} {_label}"
             else:
                 msg = f"{emoji} {tool_name}: \"{preview}\""
             ctx.last_was_terminal_block[0] = False
