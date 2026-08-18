@@ -450,6 +450,45 @@ def build_tool_preview(tool_name: str, args: dict, max_len: int | None = None) -
         "cronjob": "action",
         "execute_code": "code", "delegate_task": "goal",
         "clarify": "question", "skill_manage": "name",
+        # Deferred catalog bridge tools
+        "tool_search": "query", "tool_describe": "name", "tool_call": "name",
+        # OpenViking tools
+        "viking_search": "query", "viking_read": "uri", "viking_browse": "action",
+        "viking_remember": "content", "viking_forget": "uri",
+        "viking_add_resource": "url",
+        # Feishu tools
+        "feishu_doc_read": "doc_token",
+        "feishu_drive_add_comment": "file_token",
+        "feishu_drive_list_comment_replies": "file_token",
+        "feishu_drive_list_comments": "file_token",
+        "feishu_drive_reply_comment": "file_token",
+        # Browser siblings
+        "browser_console": "expression", "browser_press": "key",
+        "browser_scroll": "direction", "browser_vision": "question",
+        "browser_cdp": "method", "browser_dialog": "action",
+        # Terminal / process / desktop
+        "close_terminal": "process_id", "computer_use": "action",
+        "focus_pane": "pane", "open_preview": "url",
+        "react_to_message": "message_row_id",
+        # Kanban
+        "kanban_show": "task_id", "kanban_block": "task_id",
+        "kanban_unblock": "task_id", "kanban_complete": "task_id",
+        "kanban_comment": "task_id", "kanban_attach": "task_id",
+        "kanban_attach_url": "task_id", "kanban_attachments": "task_id",
+        "kanban_heartbeat": "task_id",
+        # Home Assistant
+        "ha_get_state": "entity_id", "ha_call_service": "service",
+        # Projects
+        "project_create": "name", "project_switch": "project",
+        # Yuanbao (QQ) tools
+        "yb_query_group_info": "group_code", "yb_query_group_members": "group_code",
+        "yb_search_sticker": "query", "yb_send_dm": "message",
+        "yb_send_sticker": "sticker",
+        # Social / misc
+        "discord": "action", "discord_admin": "action",
+        "x_search": "query", "video_analyze": "question",
+        # Video generation tools
+        "xai_video_edit": "prompt", "xai_video_extend": "prompt",
     }
 
     # delegate_task: show goal (single) or individual task goals (batch)
@@ -633,12 +672,106 @@ _FRIENDLY_TOOL_LABELS: frozenset[str] = frozenset({
     "clarify",
     "memory",
     "todo",
+    # Deferred catalog bridge tools
+    "tool_search",
+    "tool_describe",
+    "tool_call",
+    # OpenViking tools
+    "viking_search",
+    "viking_read",
+    "viking_browse",
+    "viking_remember",
+    "viking_forget",
+    "viking_add_resource",
+    # Feishu tools
+    "feishu_doc_read",
+    "feishu_drive_add_comment",
+    "feishu_drive_list_comment_replies",
+    "feishu_drive_list_comments",
+    "feishu_drive_reply_comment",
+    # Browser siblings
+    "browser_back",
+    "browser_cdp",
+    "browser_console",
+    "browser_dialog",
+    "browser_get_images",
+    "browser_press",
+    "browser_scroll",
+    "browser_snapshot",
+    "browser_vision",
+    # Terminal / process / desktop
+    "close_terminal",
+    "computer_use",
+    "focus_pane",
+    "open_preview",
+    "process",
+    "react_to_message",
+    "read_terminal",
+    # Kanban
+    "kanban_attach",
+    "kanban_attach_url",
+    "kanban_attachments",
+    "kanban_block",
+    "kanban_comment",
+    "kanban_complete",
+    "kanban_create",
+    "kanban_heartbeat",
+    "kanban_link",
+    "kanban_list",
+    "kanban_show",
+    "kanban_unblock",
+    # Home Assistant
+    "ha_call_service",
+    "ha_get_state",
+    "ha_list_entities",
+    "ha_list_services",
+    # Projects
+    "project_create",
+    "project_list",
+    "project_switch",
+    # Yuanbao (QQ) tools
+    "yb_query_group_info",
+    "yb_query_group_members",
+    "yb_search_sticker",
+    "yb_send_dm",
+    "yb_send_sticker",
+    # Social / misc
+    "discord",
+    "discord_admin",
+    "x_search",
+    "video_analyze",
+    # Video generation tools
+    "bfl_flux3_get_result",
+    "bfl_flux3_image_to_video",
+    "bfl_flux3_keyframes_to_video",
+    "bfl_flux3_prompting_guide",
+    "bfl_flux3_text_to_video",
+    "bfl_flux3_video_continuation",
+    "xai_video_edit",
+    "xai_video_extend",
 })
 
 # Verbs that read better without the raw argument preview appended.
 _TOOL_VERBS_NO_PREVIEW: frozenset[str] = frozenset({
     "skills_list",
     "session_search",
+    # No single useful argument preview (or no args at all)
+    "browser_back",
+    "browser_get_images",
+    "browser_snapshot",
+    "kanban_create",
+    "kanban_list",
+    "kanban_link",
+    "ha_list_entities",
+    "ha_list_services",
+    "project_list",
+    "read_terminal",
+    "bfl_flux3_get_result",
+    "bfl_flux3_image_to_video",
+    "bfl_flux3_keyframes_to_video",
+    "bfl_flux3_prompting_guide",
+    "bfl_flux3_text_to_video",
+    "bfl_flux3_video_continuation",
 })
 
 # English-only joiner kept for back-compat callers.  New composition goes

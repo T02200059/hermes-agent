@@ -326,6 +326,99 @@ class TestBuildToolLabel:
         assert terminal_block_header_label() == "terminal"
 
 
+class TestBuildToolLabelExtended:
+    """Friendly labels for deferred catalog / viking / feishu / browser siblings.
+
+    Covers the tools added when the friendly-label catalog was expanded to
+    cover the deferred-tool bridge, OpenViking, Feishu and other built-ins.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _enable_friendly(self, monkeypatch):
+        from agent.display import set_friendly_tool_labels
+        _pin_language(monkeypatch, "en")
+        set_friendly_tool_labels(True)
+        yield
+        from agent.i18n import reset_language_cache
+        reset_language_cache()
+
+    def test_tool_search_previews_query(self):
+        from agent.display import build_tool_label
+        label = build_tool_label("tool_search", {"query": "feishu_doc_read"})
+        assert label == "Searching tools for feishu_doc_read"
+
+    def test_tool_call_previews_tool_name(self):
+        from agent.display import build_tool_label
+        label = build_tool_label("tool_call", {"name": "viking_add_resource"})
+        assert label == "Calling tool viking_add_resource"
+
+    def test_viking_search_previews_query(self):
+        from agent.display import build_tool_label
+        label = build_tool_label("viking_search", {"query": "pro 6000d"})
+        assert label == "Searching memory for pro 6000d"
+
+    def test_viking_read_previews_uri(self):
+        from agent.display import build_tool_label
+        label = build_tool_label("viking_read", {"uri": "viking://user/a.md"})
+        assert label == "Reading memory viking://user/a.md"
+
+    def test_viking_add_resource_previews_url(self):
+        from agent.display import build_tool_label
+        label = build_tool_label("viking_add_resource", {"url": "https://example.com/x"})
+        assert label == "Indexing https://example.com/x"
+
+    def test_feishu_doc_read_previews_token(self):
+        from agent.display import build_tool_label
+        label = build_tool_label(
+            "feishu_doc_read", {"doc_token": "https://x.feishu.cn/wiki/N1"}
+        )
+        assert label is not None
+        assert label.startswith("Reading Feishu doc ")
+        assert "wiki/N1" in label
+
+    def test_browser_back_drops_preview(self):
+        from agent.display import build_tool_label
+        assert build_tool_label("browser_back", {}) == "Going back"
+
+    def test_kanban_list_drops_preview(self):
+        from agent.display import build_tool_label
+        label = build_tool_label("kanban_list", {"status": "blocked"})
+        assert label == "Listing kanban tasks"
+        assert "blocked" not in label
+
+    def test_zh_viking_search_keeps_query(self, monkeypatch):
+        from agent.display import build_tool_label
+        _pin_language(monkeypatch, "zh")
+        label = build_tool_label("viking_search", {"query": "Pro 6000D性能分析报告"})
+        assert label == "正在搜索记忆库：Pro 6000D性能分析报告"
+        assert "{preview}" not in label
+
+    def test_zh_tool_search_keeps_query(self, monkeypatch):
+        from agent.display import build_tool_label
+        _pin_language(monkeypatch, "zh")
+        label = build_tool_label("tool_search", {"query": "feishu_doc_read"})
+        assert label == "正在搜索工具：feishu_doc_read"
+
+    def test_zh_feishu_doc_read_keeps_token(self, monkeypatch):
+        from agent.display import build_tool_label
+        _pin_language(monkeypatch, "zh")
+        label = build_tool_label(
+            "feishu_doc_read", {"doc_token": "https://x.feishu.cn/wiki/N1"}
+        )
+        assert label == "正在读取飞书文档 https://x.feishu.cn/wiki/N1"
+
+    def test_zh_browser_back_drops_preview(self, monkeypatch):
+        from agent.display import build_tool_label
+        _pin_language(monkeypatch, "zh")
+        assert build_tool_label("browser_back", {}) == "正在返回上一页"
+
+    def test_uncurated_tool_falls_back_to_preview(self):
+        from agent.display import build_tool_label
+        # A made-up tool name must fall back to the raw preview.
+        label = build_tool_label("totally_custom_tool", {"query": "hello"})
+        assert label == "hello"
+
+
 class TestBuildStatusPhrase:
     """build_status_phrase — live working-state text for Slack's status line."""
 
