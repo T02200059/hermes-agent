@@ -61,6 +61,11 @@ feishu:
     # Profile 白名单：命中才启用严格 skill 审批（空列表 = 全关）。
     profiles:
       - hermesxiyun
+    # Skill 白名单（精确名 或 fnmatch glob，如 xy-*）。
+    # 原则：仅审查这里配置的 skill_manage 写操作；空列表 = 全部不审。
+    # 只 gate skill_manage 等 tool，不 gate terminal 直改 / 手动改。
+    allow_skills:
+      - xy-*
     # 审批卡片固定发到此群，与触发对话所在群无关。
     approval_home_chat_id: oc_f206b3d2a547a12f430593ea44076031
     # Seconds to wait for approve/deny (default 86400 = 24h).

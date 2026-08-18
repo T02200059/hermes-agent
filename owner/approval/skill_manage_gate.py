@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
+import fnmatch
 import logging
 import threading
 from contextlib import contextmanager
@@ -105,6 +106,34 @@ def get_timeout_seconds() -> int:
     except (TypeError, ValueError):
         return DEFAULT_TIMEOUT_SECONDS
     return max(val, 1)
+
+
+def get_allow_skills() -> List[str]:
+    """Skill allow-list from ``feishu.skill_approval.allow_skills``.
+
+    Exact names and fnmatch globs (e.g. ``xy-*``). The gate is whitelist
+    mode: ONLY skill_manage writes whose skill name matches a pattern here
+    are escalated. Empty / absent = nothing is gated (writes flow freely).
+    """
+    cfg = _load_skill_approval_cfg()
+    raw = cfg.get("allow_skills")
+    if not isinstance(raw, list):
+        return []
+    return [str(p).strip() for p in raw if str(p).strip()]
+
+
+def skill_matches_allowlist(name: str, patterns: Sequence[str]) -> bool:
+    """Whether ``name`` matches any exact-name / glob pattern in the list."""
+    name = (name or "").strip()
+    if not name:
+        return False
+    for pat in patterns:
+        pat = (pat or "").strip()
+        if not pat:
+            continue
+        if pat == name or fnmatch.fnmatch(name, pat):
+            return True
+    return False
 
 
 def get_approval_home_chat_id() -> str:
@@ -204,7 +233,15 @@ def should_escalate(tool_name: str, args: Optional[Dict[str, Any]]) -> bool:
     if _is_background_review():
         return True
     action = str((args or {}).get("action") or "").strip()
-    return action in WRITE_ACTIONS
+    if action not in WRITE_ACTIONS:
+        return False
+    # Whitelist mode: ONLY skills matching allow_skills are gated.
+    # Empty allowlist = nothing is gated.
+    allow = get_allow_skills()
+    if not allow:
+        return False
+    name = str((args or {}).get("name") or "").strip()
+    return skill_matches_allowlist(name, allow)
 
 
 def build_approval_message(args: Optional[Dict[str, Any]]) -> str:

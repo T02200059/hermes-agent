@@ -18,7 +18,7 @@ def _reset_patches(monkeypatch):
 
 
 def _patch_cfg(monkeypatch, *, enabled=True, profiles=None, timeout=86400,
-               disable_bg=True, home_chat_id="oc_home"):
+               disable_bg=True, home_chat_id="oc_home", allow_skills=None):
     cfg = {
         "enabled": enabled,
         "profiles": profiles if profiles is not None else ["hermesxiyun"],
@@ -26,13 +26,15 @@ def _patch_cfg(monkeypatch, *, enabled=True, profiles=None, timeout=86400,
         "timeout_seconds": timeout,
         "disable_background_skill_review": disable_bg,
     }
+    if allow_skills is not None:
+        cfg["allow_skills"] = allow_skills
 
     monkeypatch.setattr(gate, "_load_skill_approval_cfg", lambda: cfg)
     return cfg
 
 
 def test_should_escalate_requires_feishu_and_whitelist(monkeypatch):
-    _patch_cfg(monkeypatch, profiles=["hermesxiyun"])
+    _patch_cfg(monkeypatch, profiles=["hermesxiyun"], allow_skills=["*"])
     monkeypatch.setattr(gate, "_current_profile", lambda: "hermesxiyun")
     monkeypatch.setattr(gate, "_session_platform", lambda: "feishu")
     monkeypatch.setattr(gate, "_is_background_review", lambda: False)
@@ -42,6 +44,22 @@ def test_should_escalate_requires_feishu_and_whitelist(monkeypatch):
     assert not gate.should_escalate("skills_list", {})
     assert not gate.should_escalate("write_file", {"path": "a.md"})
     assert not gate.should_escalate("skill_manage", {"action": "list"})
+
+
+def test_should_escalate_whitelist_filters_skills(monkeypatch):
+    _patch_cfg(monkeypatch, profiles=["hermesxiyun"], allow_skills=["xy-*", "hermes-agent"])
+    monkeypatch.setattr(gate, "_current_profile", lambda: "hermesxiyun")
+    monkeypatch.setattr(gate, "_session_platform", lambda: "feishu")
+    monkeypatch.setattr(gate, "_is_background_review", lambda: False)
+
+    # Exact name and glob match -> gated
+    assert gate.should_escalate("skill_manage", {"action": "create", "name": "hermes-agent"})
+    assert gate.should_escalate("skill_manage", {"action": "patch", "name": "xy-damodel"})
+    # Not in whitelist -> not gated
+    assert not gate.should_escalate("skill_manage", {"action": "create", "name": "other-skill"})
+    # Empty allow_skills -> nothing gated
+    _patch_cfg(monkeypatch, profiles=["hermesxiyun"], allow_skills=[])
+    assert not gate.should_escalate("skill_manage", {"action": "create", "name": "xy-damodel"})
 
 
 def test_should_escalate_skips_cli_and_other_profiles(monkeypatch):
