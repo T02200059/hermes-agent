@@ -315,6 +315,16 @@ class TestBuildToolLabel:
         )
         assert label == "正在读取 jobs.json L225-404"
 
+    def test_zh_terminal_names_the_command_line(self, monkeypatch):
+        from agent.display import build_tool_label, terminal_block_header_label
+        _pin_language(monkeypatch, "zh")
+        assert build_tool_label("terminal", {"command": "ls -la"}) == "运行命令 ls -la"
+        assert terminal_block_header_label() == "运行命令"
+
+    def test_en_terminal_block_header_stays_tool_name(self):
+        from agent.display import terminal_block_header_label
+        assert terminal_block_header_label() == "terminal"
+
 
 class TestBuildStatusPhrase:
     """build_status_phrase — live working-state text for Slack's status line."""
@@ -358,7 +368,7 @@ class TestBuildStatusPhrase:
         from agent.display import build_status_phrase
         _pin_language(monkeypatch, "zh")
         phrase = build_status_phrase("terminal", None)
-        assert phrase == "正在运行…"
+        assert phrase == "运行命令…"
         assert not phrase.startswith("is ")
 
     def test_zh_unknown_tool_uses_using_template(self, monkeypatch):

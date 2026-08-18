@@ -1476,6 +1476,9 @@ display:
     search_files_verb: "Searching files"
     terminal: "Running {preview}"
     terminal_verb: "Running"
+    # Fenced-block title on markdown platforms (💻 {header}). English stays
+    # the raw tool name so existing 💻 terminal bubbles stay byte-identical.
+    terminal_header: "terminal"
     execute_code: "Running code {preview}"
     execute_code_verb: "Running code"
     image_generate: "Generating image {preview}"

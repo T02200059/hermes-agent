@@ -3896,13 +3896,17 @@ class TurnRunner:
             and isinstance(args.get("command"), str)
             and args["command"].strip()
         ):
-            from agent.display import get_tool_preview_max_len
+            from agent.display import (
+                get_tool_preview_max_len,
+                terminal_block_header_label,
+            )
             _cmd_full = args["command"].rstrip()
             # Consecutive terminal calls: drop the repeated
-            # "💻 terminal" header so back-to-back commands render as
-            # adjacent code blocks under a single header.
+            # "💻 terminal" / localized header so back-to-back commands
+            # render as adjacent code blocks under a single header.
+            _header_name = terminal_block_header_label()
             _block_header = (
-                "" if ctx.last_was_terminal_block[0] else f"{emoji} {tool_name}\n"
+                "" if ctx.last_was_terminal_block[0] else f"{emoji} {_header_name}\n"
             )
             _code_block_full = f"{_block_header}```\n{_cmd_full}\n```"
             # Single-line, capped preview for non-verbose modes.

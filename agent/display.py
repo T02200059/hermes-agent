@@ -663,6 +663,19 @@ def get_friendly_tool_labels() -> bool:
     return _friendly_tool_labels
 
 
+def terminal_block_header_label() -> str:
+    """Title next to the emoji for a fenced terminal progress block.
+
+    English stays the raw tool name (``terminal``) so existing
+    ``💻 terminal`` bubbles stay byte-identical.  Other languages use
+    ``display.tool_label.terminal_header`` (zh: ``运行命令``).
+    Friendly-labels-off always returns ``terminal``.
+    """
+    if not _friendly_tool_labels:
+        return "terminal"
+    return t("display.tool_label.terminal_header")
+
+
 def _tool_label_key(tool_name: str, *, with_preview: bool) -> str | None:
     """Return the locale key for a curated tool, or None if uncurated."""
     if tool_name not in _FRIENDLY_TOOL_LABELS:
