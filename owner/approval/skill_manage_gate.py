@@ -151,7 +151,10 @@ def get_approval_home_chat_id() -> str:
 
 
 def is_gate_enabled() -> bool:
-    """True when config says enabled AND current profile is on the whitelist."""
+    """True when config says enabled AND current profile is on the whitelist.
+
+    Whitelist supports ``*`` to match every profile.
+    """
     cfg = _load_skill_approval_cfg()
     if not cfg.get("enabled", False):
         return False
@@ -161,6 +164,8 @@ def is_gate_enabled() -> bool:
     allowed = {str(p).strip() for p in profiles if str(p).strip()}
     if not allowed:
         return False
+    if "*" in allowed:
+        return True
     return _current_profile() in allowed
 
 
@@ -174,6 +179,16 @@ def should_suppress_background_skill_review() -> bool:
 
 
 def _current_profile() -> str:
+    """Current profile: prefer HERMES_PROFILE env (Docker container identity),
+    fall back to HERMES_HOME-path inference (local CLI / default)."""
+    try:
+        import os
+
+        env_profile = (os.getenv("HERMES_PROFILE", "") or "").strip()
+        if env_profile:
+            return env_profile
+    except Exception:
+        pass
     try:
         from hermes_cli.profiles import get_active_profile_name
 

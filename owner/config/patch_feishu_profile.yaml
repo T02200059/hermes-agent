@@ -58,9 +58,11 @@ feishu:
   # chat so the user knows the agent is blocked.
   skill_approval:
     enabled: true
-    # Profile 白名单：命中才启用严格 skill 审批（空列表 = 全关）。
+    # Profile 白名单：命中才启用严格 skill 审批（* = 所有 profile / 容器用户）。
+    # 容器场景下每个用户进程都是独立 default，真实身份取 HERMES_PROFILE env，
+    # 白名单写 * 表示所有用户（含主 gateway）都启用审批。
     profiles:
-      - hermesxiyun
+      - "*"
     # Skill 白名单（精确名 或 fnmatch glob，如 xy-*）。
     # 原则：仅审查这里配置的 skill_manage 写操作；空列表 = 全部不审。
     # 只 gate skill_manage 等 tool，不 gate terminal 直改 / 手动改。

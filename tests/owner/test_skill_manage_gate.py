@@ -62,6 +62,27 @@ def test_should_escalate_whitelist_filters_skills(monkeypatch):
     assert not gate.should_escalate("skill_manage", {"action": "create", "name": "xy-damodel"})
 
 
+def test_gate_wildcard_profile_matches_all(monkeypatch):
+    _patch_cfg(monkeypatch, profiles=["*"], allow_skills=["*"])
+    monkeypatch.setattr(gate, "_session_platform", lambda: "feishu")
+    monkeypatch.setattr(gate, "_is_background_review", lambda: False)
+
+    # Any profile name gates, even "default" or a container user name
+    monkeypatch.setattr(gate, "_current_profile", lambda: "default")
+    assert gate.is_gate_enabled()
+    assert gate.should_escalate("skill_manage", {"action": "create", "name": "xy-damodel"})
+    monkeypatch.setattr(gate, "_current_profile", lambda: "yangtianbao")
+    assert gate.should_escalate("skill_manage", {"action": "patch", "name": "xy-gpu"})
+
+
+def test_current_profile_prefers_hermes_profile_env(monkeypatch):
+    monkeypatch.setenv("HERMES_PROFILE", "yangtianbao")
+    assert gate._current_profile() == "yangtianbao"
+    monkeypatch.delenv("HERMES_PROFILE", raising=False)
+    # No env -> HERMES_HOME inference (should fall back without raising)
+    assert isinstance(gate._current_profile(), str)
+
+
 def test_should_escalate_skips_cli_and_other_profiles(monkeypatch):
     _patch_cfg(monkeypatch, profiles=["hermesxiyun"])
     monkeypatch.setattr(gate, "_current_profile", lambda: "hermesxiyun")
