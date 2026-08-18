@@ -18,6 +18,14 @@ owner:
     split_enabled: true
     split_max_chars: 24000
 
+  # ── Diff card (patch/write_file 等文件修改工具的 diff 卡片) ─────────────
+  # 开关：master enabled 总控；feishu / qqbot 按平台单独开关。
+  # 默认关闭；要开某个平台 → 对应开关改 true。
+  diff_card:
+    enabled: false
+    feishu: false
+    qqbot: true
+
   # ── OpenViking memory provider patches ────────────────────────────────────
   # Runtime patches for the OpenViking sync recall + visualization:
   #   - enabled:        master switch for synchronous HTTP recall (replaces OPENVIKING_SYNC_RECALL)

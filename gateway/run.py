@@ -4915,16 +4915,23 @@ class TurnRunner:
         # [owner] Diff card support: wrap tool_start and step callbacks so
         # file-mutating tool calls produce interactive diff cards on Feishu
         # (compact → expand → full) and markdown diffs on QQ.
+        # 开关：owner.diff_card.{enabled, feishu, qqbot} in patch.yaml，默认全开。
         if ctx.source.platform in (Platform.FEISHU, Platform.QQBOT):
             from owner.diff_card.dispatcher import install_diff_card_support
-            agent.tool_start_callback, agent.step_callback = install_diff_card_support(
-                self._runner,
-                ctx.source,
-                agent.tool_start_callback,
-                agent.step_callback,
-                ctx._loop_for_step,
-                agent=agent,
+            from owner.patch_config import load_patch_config
+            _diff_cfg = load_patch_config().get("diff_card", {})
+            _platform_key = (
+                "feishu" if ctx.source.platform == Platform.FEISHU else "qqbot"
             )
+            if _diff_cfg.get("enabled", False) and _diff_cfg.get(_platform_key, True):
+                agent.tool_start_callback, agent.step_callback = install_diff_card_support(
+                    self._runner,
+                    ctx.source,
+                    agent.tool_start_callback,
+                    agent.step_callback,
+                    ctx._loop_for_step,
+                    agent=agent,
+                )
         agent.stream_delta_callback = _stream_delta_cb
         agent.interim_assistant_callback = _interim_assistant_cb if _want_interim_messages else None
         agent.status_callback = ctx._status_callback_sync
