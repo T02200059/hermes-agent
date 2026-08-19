@@ -57,7 +57,7 @@ feishu:
   # A "waiting for approval" text message is sent to the origin conversation
   # chat so the user knows the agent is blocked.
   skill_approval:
-    enabled: true
+    enabled: false
     # Profile 白名单：命中才启用严格 skill 审批（* = 所有 profile / 容器用户）。
     # 容器场景下每个用户进程都是独立 default，真实身份取 HERMES_PROFILE env，
     # 白名单写 * 表示所有用户（含主 gateway）都启用审批。
