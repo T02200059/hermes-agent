@@ -4915,7 +4915,7 @@ class TurnRunner:
         # [owner] Diff card support: wrap tool_start and step callbacks so
         # file-mutating tool calls produce interactive diff cards on Feishu
         # (compact → expand → full) and markdown diffs on QQ.
-        # 开关：owner.diff_card.{enabled, feishu, qqbot} in patch.yaml，默认全开。
+        # 开关：owner.diff_card.{enabled, feishu, qqbot} in patch.yaml，默认关闭。
         if ctx.source.platform in (Platform.FEISHU, Platform.QQBOT):
             from owner.diff_card.dispatcher import install_diff_card_support
             from owner.patch_config import load_patch_config
