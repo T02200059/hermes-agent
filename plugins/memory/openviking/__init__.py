@@ -3728,16 +3728,16 @@ class OpenVikingMemoryProvider(MemoryProvider):
         full_read_limit: int,
     ) -> str:
         abstract = self._recall_abstract(item)
+        uri = str(item.get("uri") or "")
         has_explicit_summary = any(
             isinstance(item.get(key), str) and item.get(key).strip()
             for key in ("abstract", "overview", "text", "content")
         )
         if prefer_abstract and has_explicit_summary:
-            return abstract
-        uri = str(item.get("uri") or "")
+            return _truncate_chatlog_from_recall(abstract, uri)
         if uri and (item.get("level") == 2 or not has_explicit_summary):
             if read_state["full_reads"] >= full_read_limit:
-                return abstract
+                return _truncate_chatlog_from_recall(abstract, uri)
             try:
                 timeout = self._remaining_recall_timeout(deadline, request_timeout)
                 read_state["full_reads"] += 1
@@ -3752,7 +3752,7 @@ class OpenVikingMemoryProvider(MemoryProvider):
                     return _truncate_chatlog_from_recall(content, uri)
             except Exception as e:
                 logger.debug("OpenViking prefetch full read failed for %s: %s", uri, e)
-        return abstract
+        return _truncate_chatlog_from_recall(abstract, uri) if abstract else abstract
 
     def _build_prefetch_entries(
         self,

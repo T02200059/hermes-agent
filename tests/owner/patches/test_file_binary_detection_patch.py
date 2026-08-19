@@ -151,8 +151,14 @@ class TestDirectPatchedMethod:
         apply_patch()
         self.ops = ShellFileOperations(_real_env("/tmp"))
 
-    def test_sample_with_only_tail_replacement_is_text(self):
+    def test_short_sample_with_tail_replacement_is_binary(self):
+        # Whole-file sample (under the head -c 1000 cap): a trailing U+FFFD
+        # is a real illegal byte, not a truncation artifact (P2-10).
         sample = "hello world" + "\ufffd"
+        assert self.ops._is_likely_binary("foo.py", sample) is True
+
+    def test_filled_sample_with_only_tail_replacement_is_text(self):
+        sample = ("a" * 1000) + "\ufffd"
         assert self.ops._is_likely_binary("foo.py", sample) is False
 
     def test_sample_with_middle_replacement_is_binary(self):

@@ -149,7 +149,7 @@ def _build_note(verdict: str, sig: dict, model: str, folded_len: int) -> str:
     if verdict == "mojibake":
         detail = (
             f"疑似乱码（U+FFFD 替换符占比 {sig['fffd_ratio']:.2%}），"
-            f"已折叠重复内容；原始 {sig['chars']} 字符 → {folded_len} 字符"
+            f"已保留首段；原始 {sig['chars']} 字符 → {folded_len} 字符"
         )
     elif verdict == "too_long":
         detail = (
@@ -187,6 +187,13 @@ def _on_transform_llm_output(
 
         if sig["verdict"] == "too_long":
             folded = response_text[:_MAX_CHARS]
+        elif sig["verdict"] == "mojibake":
+            # Keep the first paragraph only — folding does not remove U+FFFD,
+            # so "已保留首段" must be the actual behaviour (P2-3).
+            first = _PARA_SPLIT.split(response_text, maxsplit=1)[0].strip()
+            folded = first or response_text
+            if len(folded) > min(_MAX_CHARS, 2000):
+                folded = folded[: min(_MAX_CHARS, 2000)]
         else:
             folded = _fold_paragraphs(response_text)
             # [owner-patch P2-3] Paragraph folding only splits on blank lines;

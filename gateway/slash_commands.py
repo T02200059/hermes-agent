@@ -227,15 +227,6 @@ class GatewaySlashCommandsMixin:
         except Exception:
             pass
 
-        # [owner P2-9] Also drop the provider-model-id disk cache so a new
-        # session's /model picker reflects newly added/removed models
-        # instead of serving up to 24h of staleness.
-        try:
-            from hermes_cli.models import invalidate_provider_models_cache
-            invalidate_provider_models_cache()
-        except Exception:
-            pass
-
         # Reset the session
         new_entry = await self.async_session_store.reset_session(session_key)
 

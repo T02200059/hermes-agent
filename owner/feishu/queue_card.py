@@ -316,6 +316,44 @@ def build_queue_steer_failed_card(
 
 # ── 回调处理 ───────────────────────────────────────────────────────────────────
 
+def _lark_card_types() -> tuple:
+    """Return ``(P2CardActionTriggerResponse, CallBackCard)`` or ``(None, None)``.
+
+    Profile containers may not have ``lark_oapi`` installed — the click is
+    forwarded over HTTP and the main gateway wraps the returned card JSON.
+    Missing SDK must not swallow the action (P2-6).
+    """
+    try:
+        from lark_oapi.event.callback.model.p2_card_action_trigger import (
+            CallBackCard,
+            P2CardActionTriggerResponse,
+        )
+
+        return P2CardActionTriggerResponse, CallBackCard
+    except ImportError:
+        logger.warning(
+            "[owner queue-card] lark SDK missing; relaying raw card JSON"
+        )
+        return None, None
+
+
+class _RawCard:
+    def __init__(self, data: Optional[Dict[str, Any]]):
+        self.type = "raw"
+        self.data = data
+
+
+class _RawCardResponse:
+    """Duck-typed stand-in for ``P2CardActionTriggerResponse``.
+
+    ``handle_card_action_request`` reads ``response.card.data``; the main
+    gateway then wraps that dict in the real SDK type it owns.
+    """
+
+    def __init__(self, card_data: Optional[Dict[str, Any]] = None):
+        self.card = _RawCard(card_data) if card_data is not None else None
+
+
 def handle_queue_card_action(
     *,
     adapter: Any,
@@ -323,13 +361,7 @@ def handle_queue_card_action(
     event: Any,
 ) -> Any:
     """Process queue status card button clicks (Feishu only)."""
-    try:
-        from lark_oapi.event.callback.model.p2_card_action_trigger import (
-            CallBackCard,
-            P2CardActionTriggerResponse,
-        )
-    except ImportError:
-        return None
+    P2CardActionTriggerResponse, CallBackCard = _lark_card_types()
 
     step = str(action_value.get("hermes_queue_card") or "").strip()
     token = str(action_value.get("queue_token") or "").strip()
@@ -483,12 +515,14 @@ def _handle_process_now(
 
 
 def _empty_response(resp_cls: Any) -> Any:
-    return resp_cls() if resp_cls else None
+    if resp_cls is None:
+        return _RawCardResponse(None)
+    return resp_cls()
 
 
 def _card_response(resp_cls: Any, card_cls: Any, card_data: dict) -> Any:
     if resp_cls is None or card_cls is None:
-        return None
+        return _RawCardResponse(card_data)
     response = resp_cls()
     card = card_cls()
     card.type = "raw"

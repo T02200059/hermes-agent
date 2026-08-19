@@ -501,14 +501,20 @@ def _table_record_total(client, app_token, table_id, filter_expr=None):
     return data.get("total")
 
 
-def _list_bitable_tables(client, app_token):
-    """List tables (paginated), capped at ``_BITABLE_MAX_TABLES``.
+def _list_bitable_tables(client, app_token, *, stop_after=None):
+    """List tables (paginated), stopping after ``stop_after`` items.
 
-    Returns ``(tables, total_tables, code, msg)``. ``tables`` is truncated
-    to the cap so a huge base cannot fan out into unbounded per-table
-    record/field requests; ``total_tables`` keeps the real API total so the
-    caller can report "N tables (first 50 shown)".
+    Default cap is ``_BITABLE_MAX_TABLES`` so a huge base cannot fan out
+    into unbounded per-table record/field requests. Callers that need a
+    specific ``table_index`` pass ``stop_after=table_index`` so table 51+
+    stays addressable without listing the whole base.
+
+    Returns ``(tables, total_tables, code, msg)``. ``total_tables`` keeps
+    the real API total so the caller can report "N tables (first 50 shown)".
     """
+    cap = stop_after if stop_after is not None else _BITABLE_MAX_TABLES
+    if cap < 1:
+        cap = _BITABLE_MAX_TABLES
     tables = []
     total = None
     page_token = ""
@@ -526,8 +532,8 @@ def _list_bitable_tables(client, app_token):
         if total is None:
             total = data.get("total")
         tables += data.get("items") or []
-        if len(tables) >= _BITABLE_MAX_TABLES:
-            tables = tables[:_BITABLE_MAX_TABLES]
+        if len(tables) >= cap:
+            tables = tables[:cap]
             break
         has_more = data.get("has_more")
         page_token = data.get("page_token", "") or ""
@@ -561,13 +567,20 @@ def read_bitable_as_text(client, app_token, *, table_index=None, limit=None,
     if mode not in ("full", "structure"):
         return (f"mode must be 'full' or 'structure' (got '{mode}')")
 
-    tables, total_tables, code, msg = _list_bitable_tables(client, app_token)
+    stop_after = table_index if table_index is not None else _BITABLE_MAX_TABLES
+    tables, total_tables, code, msg = _list_bitable_tables(
+        client, app_token, stop_after=stop_after
+    )
     if code != 0:
         return f"Failed to read bitable: code={code} msg={msg}"
     if not tables:
         return f"Bitable {app_token} has no tables"
     header_total = total_tables if total_tables else len(tables)
-    truncated = total_tables is not None and len(tables) < int(total_tables or 0)
+    truncated = (
+        table_index is None
+        and total_tables is not None
+        and len(tables) < int(total_tables or 0)
+    )
 
     if table_index is not None:
         if not (1 <= table_index <= len(tables)):
@@ -1070,18 +1083,26 @@ def _prune_docx_image_cache() -> None:
         return
     if not files:
         return
-    total_bytes = sum(p.stat().st_size for p in files)
-    if len(files) <= _DOCX_CACHE_MAX_FILES and total_bytes <= _DOCX_CACHE_MAX_BYTES:
-        return
-    files.sort(key=lambda p: p.stat().st_mtime)  # oldest first
-    removed = 0
+    sized = []
     for p in files:
-        if len(files) - removed <= _DOCX_CACHE_MAX_FILES and (
+        try:
+            st = p.stat()
+            sized.append((p, st.st_size, st.st_mtime))
+        except OSError:
+            continue
+    if not sized:
+        return
+    total_bytes = sum(sz for _, sz, _ in sized)
+    if len(sized) <= _DOCX_CACHE_MAX_FILES and total_bytes <= _DOCX_CACHE_MAX_BYTES:
+        return
+    sized.sort(key=lambda item: item[2])  # oldest mtime first
+    removed = 0
+    for p, sz, _mtime in sized:
+        if len(sized) - removed <= _DOCX_CACHE_MAX_FILES and (
             total_bytes <= _DOCX_CACHE_MAX_BYTES
         ):
             break
         try:
-            sz = p.stat().st_size
             p.unlink()
             total_bytes -= sz
             removed += 1
@@ -1092,7 +1113,7 @@ def _prune_docx_image_cache() -> None:
             "feishu_client_utils: pruned %d doc-image cache files "
             "(files=%d bytes=%d)",
             removed,
-            len(files) - removed,
+            len(sized) - removed,
             total_bytes,
         )
 
@@ -1167,7 +1188,10 @@ def download_docx_images(client, doc_token, image_tokens, *, max_bytes=_DOCX_MAX
         results.append(entry)
 
     # [owner-patch] Enforce cache budget once per batch, after all writes.
-    _prune_docx_image_cache()
+    try:
+        _prune_docx_image_cache()
+    except OSError:
+        logger.debug("feishu_client_utils: doc-image cache prune skipped", exc_info=True)
 
     return results
 

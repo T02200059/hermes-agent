@@ -64,6 +64,28 @@ def test_build_queue_status_card_has_three_buttons():
     assert "do the thing" in steer_btn["value"]["user_input"]
 
 
+def test_handle_cancel_without_lark_sdk_still_returns_card(monkeypatch):
+    """P2-6: missing lark SDK must still cancel and return card JSON."""
+    monkeypatch.setattr(queue_card, "_lark_card_types", lambda: (None, None))
+    adapter = SimpleNamespace(_pending_messages={}, _owner_gateway_runner=None)
+    qcp.register_scheduled_token("tok1", text="preview text")
+
+    result = queue_card.handle_queue_card_action(
+        adapter=adapter,
+        action_value={
+            "hermes_queue_card": "cancel",
+            "queue_token": "tok1",
+            "user_input": "preview text",
+            "user_name": "Alice",
+        },
+        event=SimpleNamespace(operator=SimpleNamespace(open_id="ou_1")),
+    )
+    assert result is not None
+    assert result.card is not None
+    assert "已取消" in result.card.data["header"]["title"]["content"]
+    assert qcp._token_state["tok1"]["status"] == "cancelled"
+
+
 def test_handle_cancel_ok(lark_card_stubs):
     adapter = SimpleNamespace(_pending_messages={}, _owner_gateway_runner=None)
     qcp.register_scheduled_token("tok1", text="preview text")

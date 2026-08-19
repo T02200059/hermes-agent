@@ -35,12 +35,13 @@ last character of the decoded sample (only one byte boundary is cut).
    tail) -> genuine illegal bytes -> binary (preserves 021a07688's
    mojibake-prevention intent).
 
-Residual risk: a file whose size is ~1000 bytes with a *real* illegal
-byte exactly at the last sampled character would be misclassified as
-text.  This is astronomically unlikely (the byte must land precisely
-at the boundary) and the downstream read->write path carries its own
-mojibake guards.  Acceptable trade-off vs. the current intermittent
-false-positive on normal UTF-8 files.
+Residual risk: a file whose size is >=1000 bytes with a *real* illegal
+byte exactly at the last sampled character would still be misclassified
+as text.  Files shorter than the head -c cap are no longer in that
+bucket: a tail U+FFFD on a short sample is treated as a real illegal
+byte.  The remaining window is astronomically unlikely (the byte must
+land precisely at the 1000-byte boundary) and the downstream
+read->write path carries its own mojibake guards.
 
 No official source file is modified -- the fix is a runtime
 monkey-patch on ``ShellFileOperations._is_likely_binary``, applied at
@@ -90,7 +91,15 @@ def _patched_is_likely_binary(self, path: str, content_sample: Optional[str] = N
         # decoded sample (one byte boundary cut -> at most one partial
         # sequence -> at most one U+FFFD at the tail).  U+FFFD anywhere
         # else is a genuine illegal byte.
-        if sample.endswith("\ufffd"):
+        #
+        # A short sample is the whole file (head -c 1000 did not fill the
+        # cap). A tail U+FFFD there is a real illegal byte, not a cut
+        # mid-character (P2-10). Only treat the tail as an artifact when
+        # the sample is large enough to have come from a filled byte cap.
+        sample_filled_cap = (
+            len(content_sample.encode("utf-8", "replace")) >= 1000
+        )
+        if sample_filled_cap and sample.endswith("\ufffd"):
             stripped = sample[:-1]
             if "\ufffd" not in stripped:
                 # Tail U+FFFD was the only one -> truncation artifact.

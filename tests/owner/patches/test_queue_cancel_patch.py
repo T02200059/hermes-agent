@@ -131,7 +131,7 @@ def test_cancel_already_running_returns_not_found():
     assert qcp.cancel_queued_by_token(adapter, token) == "not_found"
 
 
-def test_enqueue_wrapper_stamps_token_and_drops_cancelled():
+def test_enqueue_wrapper_retires_cancelled_and_still_queues():
     qcp.apply_patch()
     import gateway.run as gateway_run
 
@@ -143,20 +143,50 @@ def test_enqueue_wrapper_stamps_token_and_drops_cancelled():
     adapter = SimpleNamespace(_app_id="id", _app_secret="sec")
 
     token = "t-drop"
-    qcp.register_scheduled_token(token, text="drop me")
+    qcp.register_scheduled_token(token, text="drop me", session_key="sk")
     qcp._token_state[token]["status"] = "cancelled"
-    gateway_run.GatewayRunner._enqueue_fifo(
-        runner, "sk", SimpleNamespace(text="drop me"), adapter
-    )
-    assert calls == []
+    event = SimpleNamespace(text="drop me")
+    gateway_run.GatewayRunner._enqueue_fifo(runner, "sk", event, adapter)
+    assert calls == [event]
+    assert token not in qcp._token_state
 
     token2 = "t-keep"
-    qcp.register_scheduled_token(token2, text="keep me")
+    qcp.register_scheduled_token(token2, text="keep me", session_key="sk2")
     event2 = SimpleNamespace(text="keep me")
     gateway_run.GatewayRunner._enqueue_fifo(runner, "sk2", event2, adapter)
-    assert len(calls) == 1
+    assert len(calls) == 2
     assert getattr(event2, qcp._EVENT_TOKEN_ATTR) == token2
     assert qcp._token_state[token2]["status"] == "enqueued"
+
+
+def test_prune_drops_abandoned_scheduled_and_terminal_but_keeps_enqueued():
+    now = __import__("time").time()
+    qcp.register_scheduled_token("t-old-sched", text="abandoned")
+    qcp.register_scheduled_token("t-recent-sched", text="soon")
+    qcp.register_scheduled_token("t-old-cancel", text="cancelled")
+    qcp.register_scheduled_token("t-enqueued", text="in fifo")
+    qcp._token_state["t-old-sched"]["updated_at"] = now - 7200
+    qcp._token_state["t-old-cancel"]["status"] = "cancelled"
+    qcp._token_state["t-old-cancel"]["updated_at"] = now - 7200
+    qcp._token_state["t-enqueued"]["status"] = "enqueued"
+    qcp._token_state["t-enqueued"]["updated_at"] = now - 7200
+
+    qcp._prune_stale_tokens()
+
+    assert "t-old-sched" not in qcp._token_state
+    assert "t-old-cancel" not in qcp._token_state
+    assert "t-recent-sched" in qcp._token_state
+    assert "t-enqueued" in qcp._token_state
+
+
+def test_find_scheduled_token_for_text_isolates_sessions():
+    qcp.register_scheduled_token("t-a", text="same", session_key="sess-a")
+    qcp.register_scheduled_token("t-b", text="same", session_key="sess-b")
+    qcp.register_scheduled_token("t-unbound", text="same")
+    assert qcp.find_scheduled_token_for_text("same", session_key="sess-b") == "t-b"
+    assert qcp.find_scheduled_token_for_text("same", session_key="sess-a") == "t-a"
+    assert qcp.find_scheduled_token_for_text("same") == "t-unbound"
+    assert qcp.find_scheduled_token_for_text("same", session_key="") == "t-unbound"
 
 
 def test_dequeue_notifies_started(monkeypatch):

@@ -89,6 +89,18 @@ def _zai_pool_fixture():
 
 
 
+def test_save_env_credential_clears_provider_models_cache(hermes_home, monkeypatch):
+    cleared = []
+    monkeypatch.setattr(
+        "hermes_cli.models.clear_provider_models_cache",
+        lambda provider=None: cleared.append(provider),
+    )
+    from hermes_cli.credential_lifecycle import save_provider_env_credential
+
+    save_provider_env_credential("ZAI_API_KEY", FAKE_ZAI_KEY)
+    assert "zai" in cleared
+
+
 def test_delete_clears_provider_models_cache(hermes_home):
     _write_env(hermes_home, ZAI_API_KEY=FAKE_ZAI_KEY)
     _write_auth(hermes_home, {"zai": [_zai_pool_fixture()["zai"][0]]})

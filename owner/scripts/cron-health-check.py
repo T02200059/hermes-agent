@@ -49,43 +49,45 @@ def parse_log_timestamp(line: str) -> datetime | None:
     return None
 
 
-def get_job_execution_times(job_id: str, cutoff: datetime) -> dict:
+def _line_has_today(line: str, today: str) -> bool:
+    """True only when *line* carries today's date (YYYY-MM-DD or YYYYMMDD).
+
+    Date-less lines are NOT treated as today: tail -30 can span multiple
+    days on a low-frequency log, and a time-only "restore completed" is
+    not evidence the restore ran today (P1-6).
     """
-    Analyze agent.log to find execution times for a specific job.
-    Returns dict with execution_id -> {start, end, duration_seconds}
+    compact_line = line.replace("-", "")
+    compact_today = today.replace("-", "")
+    return compact_today in compact_line
+
+
+def interpret_restore_log(restore_log: str, today: str) -> tuple:
+    """Classify a restore-log tail.
+
+    Returns ``(today_restore_done, has_fail, last_done_line)``. The last
+    matching event wins: a later FAIL after a completed line is a failure;
+    a later completed line after an older FAIL is success — but only when
+    that completed line is dated today.
     """
-    if not AGENT_LOG.exists():
-        return {}
-
-    executions = {}
-
-    with open(AGENT_LOG) as f:
-        for line in f:
-            ts = parse_log_timestamp(line)
-            if ts is None or ts < cutoff:
-                continue
-
-            exec_match = re.search(rf"\[cron_{job_id}_\d+_\d+\]", line)
-            if exec_match:
-                exec_id = exec_match.group(0)[1:-1]
-                if exec_id not in executions:
-                    executions[exec_id] = {"start": ts, "end": ts}
-                else:
-                    executions[exec_id]["end"] = ts
-
-    for exec_id, data in executions.items():
-        data["duration_seconds"] = int((data["end"] - data["start"]).total_seconds())
-
-    return executions
+    last_event = None
+    last_done_line = ""
+    for line in restore_log.split("\n"):
+        if "restore completed" in line:
+            last_event = "done"
+            last_done_line = line
+        elif "FAIL" in line or "ERROR" in line:
+            last_event = "fail"
+    today_restore_done = last_event == "done" and _line_has_today(
+        last_done_line, today
+    )
+    has_fail = last_event == "fail"
+    return today_restore_done, has_fail, last_done_line
 
 
 def scan_all_executions_once(cutoff: datetime) -> dict:
-    """[owner-patch P1-6] Scan agent.log ONCE and group executions by job_id.
+    """Scan agent.log once and group executions by job_id.
 
-    ``analyze_jobs_24h`` used to call ``get_job_execution_times`` per job,
-    re-reading the whole (possibly large) log N times — O(N x log size).
-    This returns ``{job_id: {exec_id: {start, end, duration_seconds}}}``
-    from a single pass.
+    Returns ``{job_id: {exec_id: {start, end, duration_seconds}}}``.
     """
     result: dict = {}
     if not AGENT_LOG.exists():
@@ -470,8 +472,9 @@ ls -lt {backup_dir} | head -5 || echo "__NO_BACKUPS__"
         }
 
     # Check 5: today's restore status from log
-    has_done = "restore completed" in restore_log and today.replace("-", "") in restore_log.replace("-", "")
-    has_fail = "FAIL" in restore_log or "ERROR" in restore_log
+    today_restore_done, has_fail, last_done_line = interpret_restore_log(
+        restore_log, today
+    )
 
     # Extract run time
     run_time = "-"
@@ -480,31 +483,6 @@ ls -lt {backup_dir} | head -5 || echo "__NO_BACKUPS__"
         if time_match:
             run_time = time_match.group(1)
             break
-
-    # Check if "restore completed" line is recent (today).
-    # [owner-patch P1-6] The old `today in line or True` was always true, so
-    # ANY historical "restore completed" line (tail -30 can span days on
-    # low-frequency logs) marked today's restore as done and masked real
-    # failures. Now: use the LAST completed line — if it carries an explicit
-    # date it must be today's; date-less (time-only) lines are accepted as
-    # recent per the tail -30 semantics.
-    today_restore_done = False
-    last_done_line = ""
-    for line in restore_log.split("\n"):
-        if "restore completed" in line:
-            last_done_line = line
-
-    if last_done_line:
-        line_compact = last_done_line.replace("-", "")
-        if today.replace("-", "") in line_compact:
-            today_restore_done = True
-        elif re.search(r"\d{8}", line_compact):
-            # Completed line carries an explicit OLDER date -> not today.
-            today_restore_done = False
-        else:
-            # No date on the completed line (time-only / bare) — the
-            # tail -30 window is recent enough; treat as today.
-            today_restore_done = True
 
     if today_restore_done and not has_fail:
         return {

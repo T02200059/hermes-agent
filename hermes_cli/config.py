@@ -5026,6 +5026,20 @@ def set_config_value(key: str, value: str, force: bool = False):
     print(f"✓ Set {key} = {_display_value} in {config_path}")
     warn_unpinned_cron_jobs_after_model_config_change(key, value, user_config)
 
+    # Model/provider/custom-endpoint writes must not leave the picker on a
+    # 24h-stale catalog (P2-9). Other config keys leave the cache alone.
+    _k = (key or "").strip().lower()
+    if _k == "model" or _k.startswith("model.") or _k.startswith("custom_providers"):
+        try:
+            from hermes_cli.models import clear_provider_models_cache
+
+            if _k == "model.provider" and isinstance(value, str) and value.strip():
+                clear_provider_models_cache(value.strip())
+            else:
+                clear_provider_models_cache()
+        except Exception:
+            pass
+
     # Post-write unknown-key notice (#34067): value IS saved, but tell the
     # user the runtime may never read it and suggest the likely-intended path.
     if not is_known and not force:

@@ -4059,13 +4059,16 @@ class FeishuAdapter(BasePlatformAdapter):
         raw_message_type: str = "",
         raw_content: str = "",
         media_expected: bool = False,
+        defer_media: bool = False,
     ) -> Optional[MessageEvent]:
         """Rebuild a normalized event admitted by the profile RPC transport.
 
-        Preparation is separate from dispatch so the API endpoint can finish
-        media rehydration and validate the event *before* returning 202.  Media
-        is downloaded again from Feishu using resource keys in ``raw_content``;
-        ingress-process cache paths are never assumed to exist in this process.
+        Admission (``defer_media=True``) validates the envelope and resolves
+        chat/sender metadata without downloading media, so the HTTP ack can
+        return before Feishu's ~5 QPS media API runs. Dispatch then calls
+        again with ``defer_media=False`` to rehydrate from resource keys in
+        ``raw_content``. Ingress-process cache paths are never assumed to
+        exist in this process.
         """
         if (not text or not text.strip()) and not media_expected:
             return None
@@ -4138,22 +4141,23 @@ class FeishuAdapter(BasePlatformAdapter):
                     "forwarded Feishu media requires message_id, "
                     "raw_message_type, and raw_content"
                 )
-            media_message = SimpleNamespace(
-                message_id=message_id,
-                message_type=raw_message_type,
-                content=raw_content,
-                mentions=None,
-            )
-            extracted_text, extracted_type, media_urls, media_types, _ = (
-                await self._extract_message_content(media_message)
-            )
-            if not media_urls:
-                raise RuntimeError(
-                    f"failed to rehydrate forwarded Feishu media for {message_id}"
+            if not defer_media:
+                media_message = SimpleNamespace(
+                    message_id=message_id,
+                    message_type=raw_message_type,
+                    content=raw_content,
+                    mentions=None,
                 )
-            resolved_message_type = extracted_type
-            if not text or not text.strip():
-                text = extracted_text
+                extracted_text, extracted_type, media_urls, media_types, _ = (
+                    await self._extract_message_content(media_message)
+                )
+                if not media_urls:
+                    raise RuntimeError(
+                        f"failed to rehydrate forwarded Feishu media for {message_id}"
+                    )
+                resolved_message_type = extracted_type
+                if not text or not text.strip():
+                    text = extracted_text
 
         event = MessageEvent(
             text=text,

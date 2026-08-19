@@ -37,10 +37,12 @@ logger = logging.getLogger(__name__)
 _token_state: Dict[str, Dict[str, Any]] = {}
 _token_lock = threading.Lock()
 
-# [owner-patch] Terminal-state (cancelled/steered/executed) tokens are kept
-# briefly for card-freeze / audit, then pruned so long-lived gateways do not
-# accumulate them unboundedly (P2-1).
-_TOKEN_TERMINAL_STATES = ("cancelled", "steered", "executed")
+# [owner-patch] Idle tokens in these states are pruned after
+# ``_TOKEN_STALE_AFTER`` so long-lived gateways do not accumulate them.
+# ``scheduled`` is pre-enqueue (abandoned /queue cards); the others are
+# terminal. Live FIFO states (``enqueued``, ``process_now``) are kept —
+# cancel/steer still need them.
+_TOKEN_PRUNE_STATES = ("cancelled", "steered", "executed", "scheduled")
 _TOKEN_STALE_AFTER = 3600.0  # seconds after last update before pruning
 
 _originals: Dict[str, Any] = {}
@@ -171,27 +173,28 @@ def register_scheduled_token(
             "source": source,
             "updated_at": time.time(),
         }
+    _prune_stale_tokens()
 
 
 def _prune_stale_tokens() -> None:
-    """[owner-patch] Drop terminal-state tokens idle past ``_TOKEN_STALE_AFTER``.
+    """Drop idle prune-able tokens past ``_TOKEN_STALE_AFTER``.
 
     Callers invoke this opportunistically (not on a timer) at the main
-    mutation entry points; it only runs while the lock is held, so it is
-    cheap and safe against the cancel/freeze threads.
+    mutation entry points. This function acquires ``_token_lock`` itself
+    (a non-reentrant ``threading.Lock``) — callers must NOT hold the lock.
     """
     now = time.time()
     with _token_lock:
         stale = [
             token
             for token, meta in _token_state.items()
-            if meta.get("status") in _TOKEN_TERMINAL_STATES
+            if meta.get("status") in _TOKEN_PRUNE_STATES
             and now - float(meta.get("updated_at") or 0) > _TOKEN_STALE_AFTER
         ]
         for token in stale:
             _token_state.pop(token, None)
     if stale:
-        logger.info("[owner queue-cancel] pruned %d stale terminal tokens", len(stale))
+        logger.info("[owner queue-cancel] pruned %d stale tokens", len(stale))
 
 
 def get_token_meta(token: Optional[str]) -> Dict[str, Any]:
@@ -226,9 +229,16 @@ def token_has_card(token: Optional[str]) -> bool:
         return bool(meta.get("card_message_id"))
 
 
-def find_scheduled_token_for_text(text: str) -> Optional[str]:
-    """Return first scheduled/cancelled token registered for this prompt text."""
-    return _match_token_for_text(text)
+def find_scheduled_token_for_text(
+    text: str, session_key: Optional[str] = None
+) -> Optional[str]:
+    """Return first scheduled/cancelled token registered for this prompt text.
+
+    When ``session_key`` is given, only tokens bound to that session match.
+    When omitted or empty, only *unbound* tokens (empty ``session_key``)
+    match — never steal another session's token.
+    """
+    return _match_token_for_text(text, session_key=session_key)
 
 
 def should_skip_dispatch(token: Optional[str]) -> bool:
@@ -734,20 +744,25 @@ def _interrupt_session(adapter: Any, session_key: str, source: Any = None) -> No
 def _match_token_for_text(text: str, session_key: Optional[str] = None) -> Optional[str]:
     """Return the first scheduled/cancelled token registered for this prompt text.
 
-    [owner-patch P2-6] When ``session_key`` is provided, only tokens bound to
-    that session are eligible — two users queuing identical text in different
-    chats must not share/steal each other's tokens (text alone is ambiguous).
+    Session isolation: a non-empty ``session_key`` only matches tokens bound
+    to that session. Omitting it (or passing empty) only matches *unbound*
+    tokens — never another chat's token with the same text.
     """
     needle = (text or "").strip()
     if not needle:
         return None
+    want = (session_key or "").strip()
     with _token_lock:
         for token, meta in _token_state.items():
             if meta.get("text") != needle:
                 continue
             if meta.get("status") not in ("scheduled", "cancelled"):
                 continue
-            if session_key and meta.get("session_key") != session_key:
+            bound = (meta.get("session_key") or "").strip()
+            if want:
+                if bound != want:
+                    continue
+            elif bound:
                 continue
             return token
     return None
@@ -827,6 +842,7 @@ def notify_queue_started(token: str) -> None:
         meta["status"] = "executed"
         meta["updated_at"] = time.time()
         _token_state[token] = meta
+    _prune_stale_tokens()
     # Don't block the gateway dequeue path on Feishu REST.
     threading.Thread(
         target=_freeze_card_for_token,

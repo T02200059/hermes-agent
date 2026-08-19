@@ -1356,14 +1356,21 @@ def _save_provider_state_to_source(
     if same_store:
         _save_provider_state(auth_store, provider_id, state)
         _save_auth_store(auth_store)
-        return
+    else:
+        _persist_provider_state_to_store(
+            provider_id,
+            state,
+            source_path,
+            set_active=True,
+        )
+    # New/rotated credentials must not wait up to 24h for the picker to
+    # see that provider's live model list (P2-9).
+    try:
+        from hermes_cli.models import clear_provider_models_cache
 
-    _persist_provider_state_to_store(
-        provider_id,
-        state,
-        source_path,
-        set_active=True,
-    )
+        clear_provider_models_cache(provider_id)
+    except Exception:
+        pass
 
 
 def _store_provider_state(

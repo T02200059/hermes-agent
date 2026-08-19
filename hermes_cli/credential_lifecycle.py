@@ -239,6 +239,14 @@ def save_provider_env_credential(env_var: str, value: str) -> Dict[str, Any]:
     except Exception:
         pass
 
+    try:
+        from hermes_cli.models import clear_provider_models_cache
+
+        for provider in _providers_for_env_var(env_var):
+            clear_provider_models_cache(provider)
+    except Exception:
+        pass
+
     return {"ok": True, "key": env_var, "config_updates": config_updates}
 
 

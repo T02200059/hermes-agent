@@ -66,6 +66,7 @@ async def test_forward_payload_preserves_full_event_envelope(monkeypatch):
 
     assert accepted is True
     assert captured["url"].endswith("/v1/feishu/inbound")
+    assert captured["timeout"].total == 20
     body = captured["json"]
     assert body["schema_version"] == 1
     assert body["media_expected"] is True
@@ -212,6 +213,30 @@ async def test_child_rehydrates_media_and_preserves_thread_reply_context():
     media_message = fake._extract_message_content.await_args.args[0]
     assert media_message.message_id == "om_message"
     assert media_message.content == '{"image_key":"img_key"}'
+
+
+@pytest.mark.asyncio
+async def test_child_defer_media_skips_download():
+    fake = _forwarded_event_adapter()
+
+    event = await FeishuAdapter.build_forwarded_inbound_event(
+        fake,
+        text="caption",
+        open_id="ou_open",
+        chat_id="oc_chat",
+        chat_type="group",
+        message_id="om_message",
+        message_type="photo",
+        raw_message_type="image",
+        raw_content='{"image_key":"img_key"}',
+        media_expected=True,
+        defer_media=True,
+    )
+
+    assert event is not None
+    assert event.text == "caption"
+    assert event.media_urls == []
+    fake._extract_message_content.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -383,6 +408,176 @@ async def test_api_does_not_ack_failed_event_preparation(monkeypatch):
     assert response.status == 503
     assert payload["error"]["code"] == "feishu_inbound_admission_failed"
     assert api._background_tasks == set()
+
+
+@pytest.mark.asyncio
+async def test_api_acks_before_media_rehydration(monkeypatch):
+    api = _api_adapter()
+    release = asyncio.Event()
+    admitted = MessageEvent(
+        text="caption",
+        source=SessionSource(
+            platform=Platform.FEISHU, chat_id="oc_chat", user_id="ou_open"
+        ),
+    )
+    hydrated = MessageEvent(
+        text="caption",
+        message_type=MessageType.PHOTO,
+        source=admitted.source,
+        media_urls=["/child/cache/image.jpg"],
+        media_types=["image/jpeg"],
+    )
+    dispatched = []
+
+    class _Feishu:
+        async def build_forwarded_inbound_event(self, **kwargs):
+            if kwargs.get("defer_media"):
+                return admitted
+            await release.wait()
+            return hydrated
+
+        async def _dispatch_inbound_event(self, event):
+            dispatched.append(event)
+
+    monkeypatch.setattr(
+        "gateway.platforms.api_server._owner_import",
+        lambda _module, symbol: (
+            (lambda: _Feishu())
+            if symbol == "_get_inprocess_feishu_adapter"
+            else None
+        ),
+    )
+    api._check_auth = MagicMock(return_value=None)
+    api._read_json_body = AsyncMock(
+        return_value=(
+            {
+                "schema_version": 1,
+                "text": "caption",
+                "open_id": "ou_open",
+                "chat_id": "oc_chat",
+                "message_id": "om_message",
+                "media_expected": True,
+                "raw_message_type": "image",
+                "raw_content": '{"image_key":"img_key"}',
+            },
+            None,
+        )
+    )
+
+    response = await api._handle_feishu_inbound(SimpleNamespace())
+    assert response.status == 202
+    assert dispatched == []
+    release.set()
+    task = next(iter(api._background_tasks))
+    await task
+    await asyncio.sleep(0)
+    assert dispatched == [hydrated]
+
+
+@pytest.mark.asyncio
+async def test_api_media_only_rehydration_failure_does_not_dispatch(monkeypatch):
+    api = _api_adapter()
+    admitted = MessageEvent(
+        text="",
+        source=SessionSource(
+            platform=Platform.FEISHU, chat_id="oc_chat", user_id="ou_open"
+        ),
+    )
+    dispatched = []
+
+    class _Feishu:
+        async def build_forwarded_inbound_event(self, **kwargs):
+            if kwargs.get("defer_media"):
+                return admitted
+            raise RuntimeError("media download failed")
+
+        async def _dispatch_inbound_event(self, event):
+            dispatched.append(event)
+
+    monkeypatch.setattr(
+        "gateway.platforms.api_server._owner_import",
+        lambda _module, symbol: (
+            (lambda: _Feishu())
+            if symbol == "_get_inprocess_feishu_adapter"
+            else None
+        ),
+    )
+    api._check_auth = MagicMock(return_value=None)
+    api._read_json_body = AsyncMock(
+        return_value=(
+            {
+                "schema_version": 1,
+                "text": "",
+                "open_id": "ou_open",
+                "chat_id": "oc_chat",
+                "message_id": "om_message",
+                "media_expected": True,
+                "raw_message_type": "image",
+                "raw_content": '{"image_key":"img_key"}',
+            },
+            None,
+        )
+    )
+
+    response = await api._handle_feishu_inbound(SimpleNamespace())
+    assert response.status == 202
+    task = next(iter(api._background_tasks))
+    await task
+    await asyncio.sleep(0)
+    assert dispatched == []
+
+
+@pytest.mark.asyncio
+async def test_api_caption_survives_media_rehydration_failure(monkeypatch):
+    api = _api_adapter()
+    admitted = MessageEvent(
+        text="caption",
+        source=SessionSource(
+            platform=Platform.FEISHU, chat_id="oc_chat", user_id="ou_open"
+        ),
+    )
+    dispatched = []
+
+    class _Feishu:
+        async def build_forwarded_inbound_event(self, **kwargs):
+            if kwargs.get("defer_media"):
+                return admitted
+            raise RuntimeError("media download failed")
+
+        async def _dispatch_inbound_event(self, event):
+            dispatched.append(event)
+
+    monkeypatch.setattr(
+        "gateway.platforms.api_server._owner_import",
+        lambda _module, symbol: (
+            (lambda: _Feishu())
+            if symbol == "_get_inprocess_feishu_adapter"
+            else None
+        ),
+    )
+    api._check_auth = MagicMock(return_value=None)
+    api._read_json_body = AsyncMock(
+        return_value=(
+            {
+                "schema_version": 1,
+                "text": "caption",
+                "open_id": "ou_open",
+                "chat_id": "oc_chat",
+                "message_id": "om_message",
+                "media_expected": True,
+                "raw_message_type": "image",
+                "raw_content": '{"image_key":"img_key"}',
+            },
+            None,
+        )
+    )
+
+    response = await api._handle_feishu_inbound(SimpleNamespace())
+    assert response.status == 202
+    task = next(iter(api._background_tasks))
+    await task
+    await asyncio.sleep(0)
+    assert dispatched == [admitted]
 
 
 @pytest.mark.asyncio

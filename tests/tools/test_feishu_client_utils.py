@@ -415,6 +415,30 @@ class TestReadBitableModes(unittest.TestCase):
         self.assertIn("mode must be", text)
         self.assertEqual(len(client.calls), 0)
 
+    def test_default_listing_caps_at_max_tables(self):
+        items = [{"table_id": f"t{i}", "name": f"T{i}"} for i in range(60)]
+        client = _StubClient(_make_response(
+            data={"items": items, "total": 60, "has_more": False}
+        ))
+        text = fcu.read_bitable_as_text(client, "app1", mode="structure")
+        self.assertIn("共 60 表", text)
+        self.assertIn("超过上限", text)
+        self.assertIn("T1", text)
+        self.assertNotIn("T59", text)
+
+    def test_table_index_past_default_cap_still_selectable(self):
+        items = [{"table_id": f"t{i}", "name": f"T{i}"} for i in range(60)]
+        table_resp = _make_response(
+            data={"items": items, "total": 60, "has_more": False}
+        )
+        rec_resp = _make_response(
+            data={"items": [{"fields": {"x": "1"}}], "has_more": False}
+        )
+        client = _StubClient([table_resp, rec_resp])
+        text = fcu.read_bitable_as_text(client, "app1", table_index=55)
+        self.assertIn("T54", text)
+        self.assertNotIn("超过上限", text)
+
 
 class TestDoRequest(unittest.TestCase):
     def test_parses_raw_content_data(self):
@@ -882,6 +906,32 @@ class TestRateLimitRetry(unittest.TestCase):
         self.assertEqual(err, "HTTP 403 forbidden")
         self.assertEqual(calls["n"], 1)
         sleep_mock.assert_not_called()
+
+
+class TestPruneDocxImageCache(unittest.TestCase):
+    def test_vanished_file_during_stat_does_not_raise(self):
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as tmp:
+            hermes_home = Path(tmp) / ".hermes"
+            cache = hermes_home / "cache" / "feishu_doc_images" / "doc"
+            cache.mkdir(parents=True)
+            gone = cache / "gone.png"
+            gone.write_bytes(b"x")
+            kept = cache / "kept.png"
+            kept.write_bytes(b"y")
+
+            real_stat = Path.stat
+
+            def flaky_stat(self, *args, **kwargs):
+                if self == gone:
+                    raise FileNotFoundError(str(self))
+                return real_stat(self, *args, **kwargs)
+
+            with mock.patch.dict("os.environ", {"HERMES_HOME": str(hermes_home)}):
+                with mock.patch.object(Path, "stat", flaky_stat):
+                    fcu._prune_docx_image_cache()
 
     def test_download_media_retries_on_429(self):
         err_body = b'{"code": 99991400, "msg": "rate limited"}'

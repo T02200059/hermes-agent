@@ -6944,30 +6944,25 @@ class APIServerAdapter(BasePlatformAdapter):
             "media_expected": media_expected,
         }
 
-        # Rebuild and validate the event (including child-local media download)
-        # before acknowledging it.  Once admitted, keep the dispatch task in
-        # the adapter lifecycle registry so shutdown cancels/awaits it and any
-        # post-admission exception is observed rather than silently discarded.
-        #
-        # [owner-patch P1-5] The sender RPC times out at 90s (see
-        # owner/feishu/profile_routing.py). Media rehydration downloads at
-        # Feishu's ~5 QPS media limit, which can exceed 10s for image-heavy
-        # messages; if we let the ack ride on the media download, the sender
-        # would time out, fall back to local ingress handling, and the SAME
-        # message would be processed twice (profile container + ingress).
-        # So: bound the admission budget, and on timeout/media failure
-        # DEGRADE to a text-only event and still ack 202 — the message is
-        # processed once, just without the media.
-        _ADMISSION_BUDGET = 75.0
+        # Admit on metadata only. Media rehydration (Feishu ~5 QPS) runs
+        # AFTER the 202 so the sender's short RPC timeout cannot fire
+        # while we download. A routed user is never served locally on
+        # the main gateway — a 503 here only produces "子网关暂时不可用",
+        # it does not double-dispatch. Once admitted, keep the dispatch
+        # task in the adapter lifecycle registry so shutdown
+        # cancels/awaits it and any post-admission exception is observed.
+        _ADMISSION_BUDGET = 12.0
         try:
             event = await asyncio.wait_for(
-                adapter.build_forwarded_inbound_event(**forwarded_kwargs),
+                adapter.build_forwarded_inbound_event(
+                    **forwarded_kwargs, defer_media=True
+                ),
                 timeout=_ADMISSION_BUDGET,
             )
         except asyncio.TimeoutError:
             logger.warning(
-                "[api_server] feishu inbound admission exceeded %.0fs budget; "
-                "degrading to text-only (message_id=%s)",
+                "[api_server] feishu inbound admission exceeded %.0fs budget "
+                "(message_id=%s)",
                 _ADMISSION_BUDGET,
                 message_id,
             )
@@ -6981,35 +6976,40 @@ class APIServerAdapter(BasePlatformAdapter):
             event = None
 
         if event is None:
-            # Degrade to a text-only event (no media rehydration) and still
-            # admit it, unless the message is media-only with no text.
+            return web.json_response(
+                _openai_error(
+                    "Feishu inbound admission failed",
+                    code="feishu_inbound_admission_failed",
+                ),
+                status=503,
+            )
+
+        async def _dispatch_admitted() -> None:
+            dispatch_event = event
             if media_expected:
-                degraded = dict(
-                    forwarded_kwargs,
-                    media_expected=False,
-                    raw_message_type="",
-                    raw_content="",
-                )
                 try:
-                    event = await adapter.build_forwarded_inbound_event(
-                        **degraded
+                    hydrated = await asyncio.wait_for(
+                        adapter.build_forwarded_inbound_event(
+                            **forwarded_kwargs
+                        ),
+                        timeout=90.0,
                     )
-                except Exception as exc:
+                    if hydrated is not None:
+                        dispatch_event = hydrated
+                except Exception:
                     logger.warning(
-                        "[api_server] feishu inbound text-only fallback failed: %s",
-                        exc,
+                        "[api_server] feishu inbound media rehydration failed "
+                        "after ack (message_id=%s)",
+                        message_id,
                         exc_info=True,
                     )
-                    event = None
-            if event is None:
-                return web.json_response(
-                    _openai_error(
-                        "Feishu inbound admission failed",
-                        code="feishu_inbound_admission_failed",
-                    ),
-                    status=503,
-                )
-        task = asyncio.create_task(adapter._dispatch_inbound_event(event))
+                    if not str(text).strip():
+                        # Media-only and download failed: do not invent a
+                        # text event and do not dispatch an empty image.
+                        return
+            await adapter._dispatch_inbound_event(dispatch_event)
+
+        task = asyncio.create_task(_dispatch_admitted())
         self._background_tasks.add(task)
 
         def _finish_forwarded_inbound(done_task: "asyncio.Task") -> None:
