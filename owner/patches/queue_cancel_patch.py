@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from collections.abc import Mapping, MutableMapping
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -35,6 +36,12 @@ logger = logging.getLogger(__name__)
 # Guarded by _token_lock: cancel / enqueue / freeze threads all touch this map.
 _token_state: Dict[str, Dict[str, Any]] = {}
 _token_lock = threading.Lock()
+
+# [owner-patch] Terminal-state (cancelled/steered/executed) tokens are kept
+# briefly for card-freeze / audit, then pruned so long-lived gateways do not
+# accumulate them unboundedly (P2-1).
+_TOKEN_TERMINAL_STATES = ("cancelled", "steered", "executed")
+_TOKEN_STALE_AFTER = 3600.0  # seconds after last update before pruning
 
 _originals: Dict[str, Any] = {}
 _applied: bool = False
@@ -162,7 +169,29 @@ def register_scheduled_token(
             "app_secret": app_secret or "",
             "session_key": (session_key or "").strip(),
             "source": source,
+            "updated_at": time.time(),
         }
+
+
+def _prune_stale_tokens() -> None:
+    """[owner-patch] Drop terminal-state tokens idle past ``_TOKEN_STALE_AFTER``.
+
+    Callers invoke this opportunistically (not on a timer) at the main
+    mutation entry points; it only runs while the lock is held, so it is
+    cheap and safe against the cancel/freeze threads.
+    """
+    now = time.time()
+    with _token_lock:
+        stale = [
+            token
+            for token, meta in _token_state.items()
+            if meta.get("status") in _TOKEN_TERMINAL_STATES
+            and now - float(meta.get("updated_at") or 0) > _TOKEN_STALE_AFTER
+        ]
+        for token in stale:
+            _token_state.pop(token, None)
+    if stale:
+        logger.info("[owner queue-cancel] pruned %d stale terminal tokens", len(stale))
 
 
 def get_token_meta(token: Optional[str]) -> Dict[str, Any]:
@@ -346,6 +375,7 @@ def cancel_queued_by_token(adapter: Any, token: str) -> str:
         with _token_lock:
             meta = _token_state.get(token) or {}
             meta["status"] = "cancelled"
+            meta["updated_at"] = time.time()
             _token_state[token] = meta
         return "ok"
 
@@ -356,6 +386,7 @@ def cancel_queued_by_token(adapter: Any, token: str) -> str:
         if meta and status in ("scheduled", "process_now"):
             # process_now that never landed in FIFO — still cancellable.
             meta["status"] = "cancelled"
+            meta["updated_at"] = time.time()
             logger.info(
                 "[owner queue-cancel] armed pre-enqueue cancel token=%s was=%s",
                 token[:8],
@@ -546,9 +577,11 @@ def steer_queued_by_token(adapter: Any, token: str) -> str:
     with _token_lock:
         cur = _token_state.get(token) or {}
         cur["status"] = "steered"
+        cur["updated_at"] = time.time()
         if session_key:
             cur["session_key"] = session_key
         _token_state[token] = cur
+    _prune_stale_tokens()
 
     logger.info(
         "[owner queue] steered token=%s session=%s text_len=%d",
@@ -641,9 +674,11 @@ def process_now_by_token(adapter: Any, token: str) -> str:
         cur = _token_state.get(token) or {}
         if cur.get("status") not in ("cancelled", "executed"):
             cur["status"] = "process_now"
+            cur["updated_at"] = time.time()
             if session_key:
                 cur["session_key"] = session_key
             _token_state[token] = cur
+    _prune_stale_tokens()
 
     # Soft-interrupt running agent WITHOUT clearing pending (unlike /stop).
     _interrupt_session(adapter, session_key, meta.get("source"))
@@ -696,8 +731,13 @@ def _interrupt_session(adapter: Any, session_key: str, source: Any = None) -> No
         )
 
 
-def _match_token_for_text(text: str) -> Optional[str]:
-    """Return the first scheduled/cancelled token registered for this prompt text."""
+def _match_token_for_text(text: str, session_key: Optional[str] = None) -> Optional[str]:
+    """Return the first scheduled/cancelled token registered for this prompt text.
+
+    [owner-patch P2-6] When ``session_key`` is provided, only tokens bound to
+    that session are eligible — two users queuing identical text in different
+    chats must not share/steal each other's tokens (text alone is ambiguous).
+    """
     needle = (text or "").strip()
     if not needle:
         return None
@@ -705,8 +745,11 @@ def _match_token_for_text(text: str) -> Optional[str]:
         for token, meta in _token_state.items():
             if meta.get("text") != needle:
                 continue
-            if meta.get("status") in ("scheduled", "cancelled"):
-                return token
+            if meta.get("status") not in ("scheduled", "cancelled"):
+                continue
+            if session_key and meta.get("session_key") != session_key:
+                continue
+            return token
     return None
 
 
@@ -782,6 +825,7 @@ def notify_queue_started(token: str) -> None:
         if meta.get("status") in ("cancelled", "executed"):
             return
         meta["status"] = "executed"
+        meta["updated_at"] = time.time()
         _token_state[token] = meta
     # Don't block the gateway dequeue path on Feishu REST.
     threading.Thread(
@@ -808,30 +852,40 @@ def _enqueue_fifo(self, session_key: str, queued_event: Any, adapter: Any) -> No
         if isinstance(md, dict):
             token = md.get(_META_TOKEN_KEY)
     if not token:
-        token = _match_token_for_text(text)
+        token = _match_token_for_text(text, session_key=session_key)
     if token:
         with _token_lock:
             meta = _token_state.get(token) or {}
             if meta.get("status") in ("cancelled", "steered"):
+                # [owner-patch] A cancelled/steered token has already served
+                # its purpose (blocking the pre-enqueue dispatch). Re-sending
+                # the same text is a NEW queue request: retire the stale
+                # token instead of silently dropping the message (P1-1), so
+                # the event queues normally below.
                 logger.info(
-                    "[owner queue-cancel] drop enqueue for %s token=%s session=%s",
+                    "[owner queue-cancel] retire %s token=%s session=%s; "
+                    "treat re-send as a fresh queue request",
                     meta.get("status"),
                     token[:8],
                     session_key,
                 )
-                return None
-            _stamp_event(queued_event, token)
-            meta["status"] = "enqueued"
-            meta["session_key"] = session_key
-            # Prefer credentials from the live adapter when available.
-            if adapter is not None:
-                app_id = getattr(adapter, "_app_id", None) or ""
-                app_secret = getattr(adapter, "_app_secret", None) or ""
-                if app_id:
-                    meta["app_id"] = app_id
-                if app_secret:
-                    meta["app_secret"] = app_secret
-            _token_state[token] = meta
+                _token_state.pop(token, None)
+                token = None
+            elif token:
+                _stamp_event(queued_event, token)
+                meta["status"] = "enqueued"
+                meta["session_key"] = session_key
+                meta["updated_at"] = time.time()
+                # Prefer credentials from the live adapter when available.
+                if adapter is not None:
+                    app_id = getattr(adapter, "_app_id", None) or ""
+                    app_secret = getattr(adapter, "_app_secret", None) or ""
+                    if app_id:
+                        meta["app_id"] = app_id
+                    if app_secret:
+                        meta["app_secret"] = app_secret
+                _token_state[token] = meta
+        _prune_stale_tokens()
 
     return _originals["_enqueue_fifo"](self, session_key, queued_event, adapter)
 
@@ -859,7 +913,28 @@ async def _busy_queue_command(self, event: Any, quick_key: str, source: Any) -> 
                 queued_text = queued_text[3:].strip()
         has_media = bool(getattr(event, "media_urls", None))
         # Guide-card path already registered a token + bound the card.
-        existing = _match_token_for_text(queued_text) if queued_text else None
+        existing = (
+            _match_token_for_text(queued_text, session_key=quick_key)
+            if queued_text
+            else None
+        )
+        if existing and token_has_card(existing):
+            with _token_lock:
+                _existing_meta = _token_state.get(existing) or {}
+                _existing_status = _existing_meta.get("status")
+            if _existing_status in ("cancelled", "steered"):
+                # [owner-patch] The card belongs to a cancelled/steered
+                # request — re-issuing /queue with the same text is a NEW
+                # request. Retire the stale token and mint a fresh one so
+                # the new enqueue is not dropped (P1-1).
+                logger.info(
+                    "[owner queue] re-issue /queue after %s token=%s; minting fresh",
+                    _existing_status,
+                    existing[:8],
+                )
+                with _token_lock:
+                    _token_state.pop(existing, None)
+                existing = None
         if existing and token_has_card(existing):
             queue_token = existing
             try:

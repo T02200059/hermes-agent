@@ -79,7 +79,12 @@ def analyze(text: str) -> dict:
     }
 
     try:
-        out["comp_ratio"] = len(zlib.compress(text.encode("utf-8", "replace"))) / max(n, 1)
+        # Compression ratio in BYTES (utf-8), not characters: CJK chars are
+        # 3 bytes each, so a char-based denominator inflated the ratio ~3x
+        # for Chinese and made the comp_belt signal nearly useless there
+        # (P2-2). Byte/byte is language-neutral.
+        _encoded_len = len(text.encode("utf-8", "replace"))
+        out["comp_ratio"] = len(zlib.compress(text.encode("utf-8", "replace"))) / max(_encoded_len, 1)
     except Exception:
         pass
     out["fffd_ratio"] = text.count("\ufffd") / max(n, 1)
@@ -144,7 +149,7 @@ def _build_note(verdict: str, sig: dict, model: str, folded_len: int) -> str:
     if verdict == "mojibake":
         detail = (
             f"疑似乱码（U+FFFD 替换符占比 {sig['fffd_ratio']:.2%}），"
-            f"已保留首段；原始 {sig['chars']} 字符 → {folded_len} 字符"
+            f"已折叠重复内容；原始 {sig['chars']} 字符 → {folded_len} 字符"
         )
     elif verdict == "too_long":
         detail = (
@@ -184,6 +189,13 @@ def _on_transform_llm_output(
             folded = response_text[:_MAX_CHARS]
         else:
             folded = _fold_paragraphs(response_text)
+            # [owner-patch P2-3] Paragraph folding only splits on blank lines;
+            # single-\n-separated repeat loops (the 265k-char incident shape)
+            # collapse to one giant paragraph and folding changes nothing.
+            # Second-stage guard: hard-truncate anything still over budget so
+            # the screen-flood is always bounded.
+            if len(folded) > _MAX_CHARS:
+                folded = folded[:_MAX_CHARS]
 
         note = _build_note(sig["verdict"], sig, model, len(folded))
         logger.warning(

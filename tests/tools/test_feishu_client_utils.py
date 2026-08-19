@@ -278,6 +278,22 @@ class TestListWikiChildren(unittest.TestCase):
         client = _StubClient([_make_response(data={"items": [], "has_more": False})])
         self.assertIn("empty folder", fcu.list_wiki_children(client, "s", "p"))
 
+    def test_caps_at_max_child_nodes(self):
+        # One page of 300 items: the listing must stop at _WIKI_MAX_CHILD_NODES
+        # instead of scanning every node (P2-5).
+        many = [
+            {"title": f"n{i}", "node_token": f"tok{i}", "has_child": False}
+            for i in range(300)
+        ]
+        client = _StubClient(
+            [_make_response(data={"items": many, "has_more": True, "page_token": "p1"})]
+        )
+        text = fcu.list_wiki_children(client, "s", "p")
+        lines = [l for l in text.splitlines() if l.startswith("- ")]
+        self.assertEqual(len(lines), fcu._WIKI_MAX_CHILD_NODES)
+        self.assertIn("超过上限", text)
+        self.assertEqual(len(client.calls), 1)  # no further pagination
+
     def test_missing_space_id(self):
         self.assertIn(
             "missing space_id",

@@ -2362,9 +2362,12 @@ def list_authenticated_providers(
             pool = load_pool(slug)
             if pool.has_credentials():
                 # Owner OAuth pools additionally reject expired entries.
-                if not _owner_check_pool_creds(pool):
-                    return False
-                return pool.has_available() or for_picker
+                if _owner_check_pool_creds(pool):
+                    return pool.has_available() or for_picker
+                # [owner-patch P2-7] Pool exists but is exhausted/expired —
+                # fall through to the anthropic external-files check below
+                # instead of short-circuiting, so users with Claude Code /
+                # Hermes OAuth credentials on disk are still recognized.
         except Exception as exc:
             logger.debug("Credential pool check failed for %s: %s", slug, exc)
 

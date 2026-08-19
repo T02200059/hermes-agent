@@ -17702,6 +17702,19 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                     # KB is the right semantic for those contexts.
                     raise KeyboardInterrupt()
                 _signal.signal(_signal.SIGINT, _sigint_to_app_exit)
+            else:
+                # [owner-patch] Windows: keep the historical SIGINT
+                # absorber. A background thread spawning a .cmd/.bat
+                # child emits spurious CTRL_C_EVENT that would otherwise
+                # hit the default handler and raise KeyboardInterrupt
+                # mid-turn; the TUI key binding handles the real Ctrl+C
+                # (same pattern Claude Code uses). Without this branch the
+                # absorber was silently dropped (300160673).
+                def _sigint_absorb(signum, frame):
+                    # Swallow the spurious signal — real Ctrl+C arrives as
+                    # a TUI keypress, not as a signal, on Windows.
+                    return
+                _signal.signal(_signal.SIGINT, _sigint_absorb)
         except Exception:
             pass  # Signal handlers may fail in restricted environments
         

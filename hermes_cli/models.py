@@ -3286,6 +3286,26 @@ def _save_provider_models_cache(data: dict) -> None:
         pass
 
 
+def invalidate_provider_models_cache() -> None:
+    """[owner-patch P2-9] Drop the provider-model-id disk cache.
+
+    With a 24h TTL, newly added/removed models stay invisible for a long
+    time unless something forces a refresh. This gives /model pickers and
+    switch_multiple_providers detection a manual invalidation hook (wired
+    to the session-reset boundary in gateway/slash_commands.py), so a new
+    conversation immediately re-fetches instead of serving a stale list.
+    Deleting the file is enough: the next read sees a cache miss and the
+    live path repopulates it.
+    """
+    try:
+        path = _provider_models_cache_path()
+        if path.exists():
+            path.unlink()
+            logger.debug("hermes_cli.models: invalidated provider-model cache %s", path)
+    except Exception:
+        pass
+
+
 def cached_provider_model_ids(
     provider: Optional[str],
     *,

@@ -2067,31 +2067,84 @@ def _mask_quoted_newlines(command: str) -> str:
     unclosed quote absorbs following newlines exactly as the shell would
     (the quoted word continues across the line break), so masking them
     cannot hide a runnable command.
+
+    Command-substitution carve-out: inside ``$(...)`` / ``` ... ``` a newline
+    is a REAL command separator for the subshell (``"$(echo hi\\nsudo reboot)"``
+    executes ``sudo reboot``).  Masking it would erase that boundary and let
+    the anchored hardline patterns miss a runnable command, so newlines
+    inside substitutions are preserved verbatim while every other quoted
+    newline stays masked.  ``$(`` nesting is tracked; single quotes are
+    literal and never open a substitution.
     """
     if "\n" not in command:
         return command
     out: list[str] = []
     quote: str | None = None
+    subst_depth = 0  # $( ... ) nesting depth; >0 = inside a subshell
+    backtick = False  # inside ` ... ` command substitution
     i = 0
     while i < len(command):
         ch = command[i]
-        if quote:
-            if ch == "\\" and quote == '"' and i + 1 < len(command):
+        if backtick:
+            if ch == "\\" and i + 1 < len(command):
                 out.append(command[i:i + 2])
                 i += 2
                 continue
-            if ch == quote:
+            if ch == "`":
+                backtick = False
+            # Newline inside a backtick substitution is a real separator —
+            # keep it; other chars pass through unmasked as before.
+            out.append(ch)
+            i += 1
+            continue
+        if quote == "'":
+            # Single-quoted text is literal: no $() expansion, no escapes.
+            if ch == "'":
                 quote = None
             out.append(" " if ch == "\n" else ch)
             i += 1
             continue
-        if ch in ("'", '"'):
-            quote = ch
-        elif ch == "\\" and i + 1 < len(command):
+        # quote is None or '"': backslash escapes, double-quote toggling,
+        # and $() / backtick substitution can all appear (a double-quoted
+        # $() still executes).
+        if ch == "\\" and i + 1 < len(command):
             out.append(command[i:i + 2])
             i += 2
             continue
-        out.append(ch)
+        if ch == "`":
+            backtick = True
+            out.append(ch)
+            i += 1
+            continue
+        if ch == '"':
+            quote = None if quote == '"' else '"'
+            out.append(ch)
+            i += 1
+            continue
+        if ch == "'" and quote is None:
+            quote = "'"
+            out.append(ch)
+            i += 1
+            continue
+        if ch == "$" and i + 1 < len(command) and command[i + 1] == "(":
+            subst_depth += 1
+            out.append("$(")
+            i += 2
+            continue
+        if ch == ")" and subst_depth > 0:
+            subst_depth -= 1
+            out.append(ch)
+            i += 1
+            continue
+        if subst_depth > 0:
+            # Inside $( ... ): newline is a real command separator — keep it.
+            out.append(ch)
+            i += 1
+            continue
+        if quote == '"':
+            out.append(" " if ch == "\n" else ch)
+        else:
+            out.append(ch)
         i += 1
     return "".join(out)
 

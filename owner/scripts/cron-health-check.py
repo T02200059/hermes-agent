@@ -79,6 +79,42 @@ def get_job_execution_times(job_id: str, cutoff: datetime) -> dict:
     return executions
 
 
+def scan_all_executions_once(cutoff: datetime) -> dict:
+    """[owner-patch P1-6] Scan agent.log ONCE and group executions by job_id.
+
+    ``analyze_jobs_24h`` used to call ``get_job_execution_times`` per job,
+    re-reading the whole (possibly large) log N times — O(N x log size).
+    This returns ``{job_id: {exec_id: {start, end, duration_seconds}}}``
+    from a single pass.
+    """
+    result: dict = {}
+    if not AGENT_LOG.exists():
+        return result
+
+    _exec_re = re.compile(r"\[cron_([A-Za-z0-9_-]+)_\d+_\d+\]")
+    with open(AGENT_LOG) as f:
+        for line in f:
+            ts = parse_log_timestamp(line)
+            if ts is None or ts < cutoff:
+                continue
+            m = _exec_re.search(line)
+            if not m:
+                continue
+            job_id = m.group(1)
+            exec_id = m.group(0)[1:-1]
+            per_job = result.setdefault(job_id, {})
+            if exec_id not in per_job:
+                per_job[exec_id] = {"start": ts, "end": ts}
+            else:
+                per_job[exec_id]["end"] = ts
+
+    for per_job in result.values():
+        for data in per_job.values():
+            data["duration_seconds"] = int((data["end"] - data["start"]).total_seconds())
+
+    return result
+
+
 def _parse_sections(output: str) -> dict:
     """Parse === SECTION_NAME === delimited output into dict."""
     sections = {}
@@ -445,15 +481,30 @@ ls -lt {backup_dir} | head -5 || echo "__NO_BACKUPS__"
             run_time = time_match.group(1)
             break
 
-    # Check if "restore completed" line is recent (today)
-    # The log might only contain recent entries; check for today's date in completed line
+    # Check if "restore completed" line is recent (today).
+    # [owner-patch P1-6] The old `today in line or True` was always true, so
+    # ANY historical "restore completed" line (tail -30 can span days on
+    # low-frequency logs) marked today's restore as done and masked real
+    # failures. Now: use the LAST completed line — if it carries an explicit
+    # date it must be today's; date-less (time-only) lines are accepted as
+    # recent per the tail -30 semantics.
     today_restore_done = False
+    last_done_line = ""
     for line in restore_log.split("\n"):
         if "restore completed" in line:
-            # Check if this line references today
-            if today in line or True:  # tail -30 should be recent enough
-                today_restore_done = True
-                break
+            last_done_line = line
+
+    if last_done_line:
+        line_compact = last_done_line.replace("-", "")
+        if today.replace("-", "") in line_compact:
+            today_restore_done = True
+        elif re.search(r"\d{8}", line_compact):
+            # Completed line carries an explicit OLDER date -> not today.
+            today_restore_done = False
+        else:
+            # No date on the completed line (time-only / bare) — the
+            # tail -30 window is recent enough; treat as today.
+            today_restore_done = True
 
     if today_restore_done and not has_fail:
         return {
@@ -512,6 +563,9 @@ def analyze_jobs_24h() -> dict:
         "healthy": []
     }
 
+    # [owner-patch P1-6] Read agent.log exactly once for all jobs.
+    all_execs = scan_all_executions_once(cutoff)
+
     for job in jobs:
         job_id = job.get("id", "?")
         job_name = job.get("name", "Unknown")
@@ -533,8 +587,9 @@ def analyze_jobs_24h() -> dict:
 
         report["executed_count"] += 1
 
-        # Get execution times from log
-        exec_times = get_job_execution_times(job_id, cutoff)
+        # Get execution times from log — [owner-patch P1-6] single scan
+        # shared by all jobs instead of re-reading the whole log per job.
+        exec_times = all_execs.get(job_id, {})
         max_duration = max((e["duration_seconds"] for e in exec_times.values()), default=0)
 
         issue = None

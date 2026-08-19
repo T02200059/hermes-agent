@@ -271,6 +271,12 @@ _QUOTED_NEWLINE_THREATS_BLOCK = [
     # command substitution inside double quotes really executes
     'hermes send -t telegram "$(sudo reboot)"',
     'echo "`shutdown -h now`"',
+    # [owner-patch] a newline INSIDE $(...) is a real subshell separator:
+    # masking it would erase the boundary and bypass the floor. Multi-line
+    # substitutions (and nested ones) must still block.
+    'echo "$(echo hi\nsudo reboot)"',
+    'echo "`echo hi\nsudo reboot`"',
+    'echo "$(outer "$(inner\nsudo reboot)")"',
     # multi-line quoted data followed by a REAL chained command
     'hermes send "line1\nline2" && sudo reboot',
     # a heredoc whose body is data, but the delivery command itself is hardline

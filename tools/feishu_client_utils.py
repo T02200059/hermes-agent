@@ -225,6 +225,9 @@ def extract_token(raw):
 
 _WIKI_GET_NODE_URI = "/open-apis/wiki/v2/spaces/get_node"
 _WIKI_NODES_URI = "/open-apis/wiki/v2/spaces/:space_id/nodes"
+# Cap the one-level folder listing so an oversized wiki folder cannot fan out
+# into unbounded pagination / token bloat.
+_WIKI_MAX_CHILD_NODES = 200
 
 
 def resolve_wiki_node(client, node_token):
@@ -287,7 +290,8 @@ def list_wiki_children(client, space_id, parent_node_token):
     ``get_children``, which can return empty for deep sub-folders. Returns a
     flat one-level listing of child node titles with a type marker
     (``[文件夹]`` / ``[文档]``) and the node token, or an error string
-    starting with ``Failed to list wiki children``.
+    starting with ``Failed to list wiki children``. Pagination is capped at
+    ``_WIKI_MAX_CHILD_NODES`` so an oversized folder cannot run away.
     """
     if not space_id:
         return "Failed to list wiki children: missing space_id"
@@ -313,6 +317,9 @@ def list_wiki_children(client, space_id, parent_node_token):
         for node in items:
             if not isinstance(node, dict):
                 continue
+            if len(lines) >= _WIKI_MAX_CHILD_NODES:
+                lines.append(f"⚠️ 子节点超过上限，仅展示前 {_WIKI_MAX_CHILD_NODES} 个。")
+                return "\n".join(lines)
             title = node.get("title") or "(untitled)"
             ntoken = node.get("node_token") or ""
             marker = "[文件夹]" if node.get("has_child") else "[文档]"
@@ -495,7 +502,13 @@ def _table_record_total(client, app_token, table_id, filter_expr=None):
 
 
 def _list_bitable_tables(client, app_token):
-    """List all tables (paginated). Returns ``(tables, total_tables)``."""
+    """List tables (paginated), capped at ``_BITABLE_MAX_TABLES``.
+
+    Returns ``(tables, total_tables, code, msg)``. ``tables`` is truncated
+    to the cap so a huge base cannot fan out into unbounded per-table
+    record/field requests; ``total_tables`` keeps the real API total so the
+    caller can report "N tables (first 50 shown)".
+    """
     tables = []
     total = None
     page_token = ""
@@ -513,6 +526,9 @@ def _list_bitable_tables(client, app_token):
         if total is None:
             total = data.get("total")
         tables += data.get("items") or []
+        if len(tables) >= _BITABLE_MAX_TABLES:
+            tables = tables[:_BITABLE_MAX_TABLES]
+            break
         has_more = data.get("has_more")
         page_token = data.get("page_token", "") or ""
         if not has_more or not page_token:
@@ -551,6 +567,7 @@ def read_bitable_as_text(client, app_token, *, table_index=None, limit=None,
     if not tables:
         return f"Bitable {app_token} has no tables"
     header_total = total_tables if total_tables else len(tables)
+    truncated = total_tables is not None and len(tables) < int(total_tables or 0)
 
     if table_index is not None:
         if not (1 <= table_index <= len(tables)):
@@ -559,6 +576,8 @@ def read_bitable_as_text(client, app_token, *, table_index=None, limit=None,
         tables = [tables[table_index - 1]]
 
     lines = [f"=== 多维表格: {app_token} (共 {header_total} 表) ==="]
+    if truncated:
+        lines.append(f"⚠️ 表数超过上限，仅展示前 {_BITABLE_MAX_TABLES} 张。")
     for idx, table in enumerate(tables):
         table_id = table.get("table_id", "")
         table_name = table.get("name", table_id)
@@ -736,14 +755,24 @@ _MEDIA_DOWNLOAD_URI = "/open-apis/drive/v1/medias/:file_token/download"
 
 # Caps so a screenshot-heavy doc cannot explode disk / tool latency.
 # Media download is rate-limited at ~5 QPS by Feishu; keep sequential.
-_DOCX_MAX_IMAGES = 500
+# 500 images would be >=100s of sequential downloads (worse with rate-limit
+# retries) and up to ~5 GiB of cache per doc — 100 is plenty for context.
+_DOCX_MAX_IMAGES = 100
 _DOCX_MAX_IMAGE_BYTES = 10 * 1024 * 1024  # 10 MiB per image
 _DOCX_BLOCKS_PAGE_SIZE = 500
+# [owner-patch] Hard budget on how many blocks are scanned for images before
+# giving up (40 pages of 500): bounds pagination on huge block trees.
+_DOCX_MAX_BLOCKS_SCANNED = 20000
 # Vision OCR: concurrent auxiliary calls (each image is one LLM call).
-# Concurrency stays modest; the image cap matches download so large
-# screenshot-heavy docs can still be fully OCR'd in one read.
-_DOCX_MAX_VISION_IMAGES = 500
+# Concurrency stays modest; the cap matches download so large
+# screenshot-heavy docs can still be OCR'd in one read.
+_DOCX_MAX_VISION_IMAGES = 100
 _DOCX_VISION_WORKERS = 3
+# [owner-patch] Cache-budget guard: when the cumulative doc-image cache
+# exceeds these, prune oldest files (by mtime) so long-lived gateways do not
+# accumulate unbounded disk usage.
+_DOCX_CACHE_MAX_FILES = 1000
+_DOCX_CACHE_MAX_BYTES = 2 * 1024 * 1024 * 1024  # 2 GiB total
 _DOCX_VISION_PROMPT = (
     "这是飞书文档中的嵌入图片（多为运维聊天截图、日志、表格或监控面板）。"
     "请完整转录图中全部可见文字（含 UI 标签、表格、代码、聊天记录、时间戳）。"
@@ -881,11 +910,14 @@ def list_docx_image_tokens(client, doc_token, *, max_images=_DOCX_MAX_IMAGES):
 
     Each item is ``{"token": str, "width": int|None, "height": int|None}``.
     Stops after ``max_images`` tokens. Pagination continues until the API
-    reports no more pages (or the cap is hit).
+    reports no more pages (or the cap is hit). A total block budget also
+    bounds pagination so a huge block tree cannot fan out into unbounded
+    requests when images are sparse (P2-4).
     """
     images = []
     page_token = ""
-    while len(images) < max_images:
+    scanned_blocks = 0
+    while len(images) < max_images and scanned_blocks < _DOCX_MAX_BLOCKS_SCANNED:
         queries = [("page_size", str(_DOCX_BLOCKS_PAGE_SIZE))]
         if page_token:
             queries.append(("page_token", page_token))
@@ -902,6 +934,7 @@ def list_docx_image_tokens(client, doc_token, *, max_images=_DOCX_MAX_IMAGES):
             break
 
         items = data.get("items") or []
+        scanned_blocks += len(items)
         for block in items:
             if not isinstance(block, dict):
                 continue
@@ -921,7 +954,7 @@ def list_docx_image_tokens(client, doc_token, *, max_images=_DOCX_MAX_IMAGES):
             if len(images) >= max_images:
                 break
 
-        if len(images) >= max_images:
+        if len(images) >= max_images or scanned_blocks >= _DOCX_MAX_BLOCKS_SCANNED:
             break
         has_more = data.get("has_more")
         page_token = data.get("page_token", "") or ""
@@ -1018,6 +1051,52 @@ def _image_cache_dir(doc_token: str) -> Path:
     return base
 
 
+def _prune_docx_image_cache() -> None:
+    """[owner-patch] Enforce the doc-image cache budget (LRU by mtime).
+
+    Deletes the oldest files (across all docs) until both the file-count and
+    total-bytes ceilings are under budget. Best-effort: failures degrade
+    silently — a cache slightly over budget is not worth crashing a read.
+    """
+    from hermes_constants import get_hermes_home
+
+    base = get_hermes_home() / "cache" / "feishu_doc_images"
+    try:
+        files = [
+            p for p in base.rglob("*")
+            if p.is_file() and not p.name.startswith(".")
+        ]
+    except OSError:
+        return
+    if not files:
+        return
+    total_bytes = sum(p.stat().st_size for p in files)
+    if len(files) <= _DOCX_CACHE_MAX_FILES and total_bytes <= _DOCX_CACHE_MAX_BYTES:
+        return
+    files.sort(key=lambda p: p.stat().st_mtime)  # oldest first
+    removed = 0
+    for p in files:
+        if len(files) - removed <= _DOCX_CACHE_MAX_FILES and (
+            total_bytes <= _DOCX_CACHE_MAX_BYTES
+        ):
+            break
+        try:
+            sz = p.stat().st_size
+            p.unlink()
+            total_bytes -= sz
+            removed += 1
+        except OSError:
+            continue
+    if removed:
+        logger.info(
+            "feishu_client_utils: pruned %d doc-image cache files "
+            "(files=%d bytes=%d)",
+            removed,
+            len(files) - removed,
+            total_bytes,
+        )
+
+
 def download_docx_images(client, doc_token, image_tokens, *, max_bytes=_DOCX_MAX_IMAGE_BYTES):
     """Download image tokens to ``$HERMES_HOME/cache/feishu_doc_images/<doc>/``.
 
@@ -1086,6 +1165,9 @@ def download_docx_images(client, doc_token, image_tokens, *, max_bytes=_DOCX_MAX
         entry["path"] = str(path)
         entry["bytes"] = len(data)
         results.append(entry)
+
+    # [owner-patch] Enforce cache budget once per batch, after all writes.
+    _prune_docx_image_cache()
 
     return results
 

@@ -148,3 +148,52 @@ def test_submit_queue_morphs_to_status_card(lark_card_stubs, monkeypatch):
     buttons = [col["elements"][0] for col in row["columns"]]
     assert any(b["value"].get("hermes_queue_card") == "cancel" for b in buttons)
     assert all(b["value"]["queue_token"] == routed["queue_token"] for b in buttons)
+
+
+def test_requeue_same_text_after_cancel_is_not_dropped():
+    """[owner-patch P1-1] A cancelled token must not swallow a re-sent
+    queue request with identical text: the enqueue hook retires the stale
+    token and lets the event queue normally instead of returning early."""
+    # Simulate: user queued "run later", cancelled it, then re-sends.
+    qcp.register_scheduled_token(
+        "tok-cancelled", text="run later", session_key="sess1"
+    )
+    qcp._token_state["tok-cancelled"]["status"] = "cancelled"
+
+    calls = {}
+
+    class FakeAdapter:
+        pass
+
+    class FakeEvent:
+        def __init__(self):
+            self.text = "run later"
+
+    class FakeRunner:
+        def __init__(self):
+            self.enqueued = []
+
+        def _enqueue_fifo(self, session_key, event, adapter):
+            calls["enqueued"] = True
+            self.enqueued.append((session_key, event, adapter))
+
+    runner = FakeRunner()
+    event = FakeEvent()
+    # monkeypatch the originals so the wrapper calls through to the fake
+    # (unbound method: the wrapper invokes it as original(self, ...)).
+    import owner.patches.queue_cancel_patch as _qcp
+
+    original = _qcp._originals.get("_enqueue_fifo")
+    _qcp._originals["_enqueue_fifo"] = FakeRunner._enqueue_fifo
+    try:
+        _qcp._enqueue_fifo(runner, "sess1", event, FakeAdapter())
+    finally:
+        if original is None:
+            _qcp._originals.pop("_enqueue_fifo", None)
+        else:
+            _qcp._originals["_enqueue_fifo"] = original
+
+    # The stale cancelled token was retired, and the event still queued.
+    assert "tok-cancelled" not in _qcp._token_state
+    assert calls.get("enqueued") is True
+    assert runner.enqueued[0][1] is event

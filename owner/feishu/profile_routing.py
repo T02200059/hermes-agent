@@ -288,7 +288,14 @@ async def _forward_to_profile_container(
                 url,
                 headers=headers,
                 json=body,
-                timeout=aiohttp.ClientTimeout(total=10),
+                # [owner-patch P1-5] The receiving container can spend tens
+                # of seconds rehydrating media before it acks 202 (Feishu
+                # media API ~5 QPS). A 10s timeout made the sender fall back
+                # to local ingress handling while the profile container also
+                # processed the message — the same message handled twice.
+                # Budget is aligned with the receiver's admission budget
+                # (api_server.py _handle_feishu_inbound, 75s) plus slack.
+                timeout=aiohttp.ClientTimeout(total=90),
             ) as resp:
                 if resp.status not in (200, 202):
                     logger.warning(

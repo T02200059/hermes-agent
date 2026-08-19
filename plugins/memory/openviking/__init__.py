@@ -232,8 +232,14 @@ def _preview(value: Any, limit: int = 160) -> str:
 _CHATLOG_RE = re.compile(
     r"\n\s*(?:\d{4}-\d{2}-\d{2}\s*(?:\([^)]+\))?\s*ChatLog:\s*"
     r"|\d{4}-\d{2}-\d{2}\s*(?:\([^)]+\))?\s*Chat记录:\s*"
-    r"|ChatLog:\s*"
-    r"|Chat记录:\s*)",
+    # [owner-patch P2-8] The date-less variants previously matched ANY
+    # line that merely started with "ChatLog:" / "Chat记录:", so a Summary
+    # line discussing the feature by name was falsely truncated. Require
+    # an actual bracketed role line after the heading (the format Viking
+    # stores: "[user]: ..." / "[杨天宝]: ...") — date-less headings that
+    # are not followed by a role line are left alone.
+    r"|ChatLog:\s*(?=\[[^\]]+\]\s*:?\s)"
+    r"|Chat记录:\s*(?=\[[^\]]+\]\s*:?\s))",
     re.IGNORECASE,
 )
 
