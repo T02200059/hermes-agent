@@ -40,7 +40,7 @@ from typing import Any, List, Optional
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from hermes_constants import get_hermes_home
-from agent.i18n import t
+from agent.i18n import get_language, t
 from hermes_cli._subprocess_compat import windows_hide_flags
 from hermes_cli.config import (
     _expand_env_vars,
@@ -1447,6 +1447,87 @@ def _is_channel_dm_topic(
     return is_channel
 
 
+_CRON_WRAP_DIVIDER = "\n-------------\n\n"
+
+
+def _cron_wrap_placeholder_prefix(key: str, placeholder: str, lang: str) -> str:
+    """Return the catalog template up to ``{placeholder}`` (unformatted)."""
+    tmpl = t(key, lang=lang)
+    token = "{" + placeholder + "}"
+    idx = tmpl.find(token)
+    if idx < 0:
+        return tmpl
+    return tmpl[:idx]
+
+
+def _cron_wrap_strip_langs() -> tuple[str, ...]:
+    """Languages whose wrap templates strip_cron_delivery_wrapper should try.
+
+    Owner catalogs are en/zh; other languages fall back to English at format
+    time. Always include the active language so a later catalog still strips.
+    """
+    langs = ["en", "zh"]
+    active = get_language()
+    if active not in langs:
+        langs.append(active)
+    return tuple(langs)
+
+
+def _format_cron_delivery_wrapper(task_name: str, job_id: str, content: str) -> str:
+    """Wrap cron delivery with a localized header/footer."""
+    return (
+        f"{t('cron.wrap_header', task_name=task_name)}\n"
+        f"{t('cron.wrap_job_id', job_id=job_id)}"
+        f"{_CRON_WRAP_DIVIDER}"
+        f"{content}\n\n"
+        f"{t('cron.wrap_footer', task_name=task_name)}"
+    )
+
+
+def strip_cron_delivery_wrapper(content: str) -> str:
+    """Strip wrap_response header/footer if present.
+
+    Matches against en/zh (and the active language) catalog prefixes so a
+    localized wrap still unwraps. Returns *content* unchanged when the wrap
+    shape is not recognized.
+    """
+    if not content:
+        return content
+
+    divider_pos = content.find(_CRON_WRAP_DIVIDER)
+    if divider_pos < 0:
+        return content
+
+    header = content[:divider_pos]
+    header_matched = False
+    job_id_matched = False
+    footer_pos = -1
+    for lang in _cron_wrap_strip_langs():
+        header_prefix = _cron_wrap_placeholder_prefix(
+            "cron.wrap_header", "task_name", lang,
+        )
+        if header_prefix and content.startswith(header_prefix):
+            header_matched = True
+        job_id_prefix = _cron_wrap_placeholder_prefix(
+            "cron.wrap_job_id", "job_id", lang,
+        )
+        if job_id_prefix and job_id_prefix in header:
+            job_id_matched = True
+        footer_prefix = _cron_wrap_placeholder_prefix(
+            "cron.wrap_footer", "task_name", lang,
+        )
+        if footer_prefix:
+            pos = content.rfind("\n\n" + footer_prefix)
+            if pos > divider_pos:
+                footer_pos = pos
+
+    if not header_matched or not job_id_matched or footer_pos < 0:
+        return content
+
+    body = content[divider_pos + len(_CRON_WRAP_DIVIDER):footer_pos].strip()
+    return body or content
+
+
 def _deliver_result(job: dict, content: str, adapters=None, loop=None) -> Optional[str]:
     """
     Deliver job output to the configured target(s) (origin chat, specific platform, etc.).
@@ -1497,13 +1578,7 @@ def _deliver_result(job: dict, content: str, adapters=None, loop=None) -> Option
     if wrap_response:
         task_name = job.get("name", job["id"])
         job_id = job.get("id", "")
-        delivery_content = (
-            f"Cronjob Response: {task_name}\n"
-            f"(job_id: {job_id})\n"
-            f"-------------\n\n"
-            f"{content}\n\n"
-            f"To stop or manage this job, send me a new message (e.g. \"stop reminder {task_name}\")."
-        )
+        delivery_content = _format_cron_delivery_wrapper(task_name, job_id, content)
     else:
         delivery_content = content
 

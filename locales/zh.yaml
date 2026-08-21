@@ -1441,6 +1441,11 @@ cron:
   failure_timeout: "⚠️ Cron '{job_name}' 执行失败：提供商响应超时。回退链已耗尽或不可用。详细信息已保存到 cron 输出。"
   failure_auth: "⚠️ Cron '{job_name}' 执行失败：提供商身份认证错误。详细信息已保存到 cron 输出。"
   failure_generic: "⚠️ Cron '{job_name}' 执行失败：{details}"
+  # 投递包装（cron.wrap_response）。占位符：{task_name} 为任务名；{job_id} 为任务 ID。
+  # 页脚示例是自然语言提示，不是斜杠命令。
+  wrap_header: "Cron 任务回复：{task_name}"
+  wrap_job_id: "(job_id: {job_id})"
+  wrap_footer: "如需停止或管理此任务，请给我发一条新消息（例如「停止提醒 {task_name}」）。"
 
 # 友好工具进度文案（display.friendly_tool_labels）。整句模板，便于中文调整语序/连接词。
 # {preview} 为已生成的参数摘要（文件名、查询、命令）；无 preview 时用 *_verb。

@@ -1448,6 +1448,11 @@ cron:
   failure_timeout: "⚠️ Cron '{job_name}' failed: provider timeout. Fallback chain was exhausted or unavailable. Full details saved in cron output."
   failure_auth: "⚠️ Cron '{job_name}' failed: provider authentication error. Full details saved in cron output."
   failure_generic: "⚠️ Cron '{job_name}' failed: {details}"
+  # Delivery wrap (cron.wrap_response). Placeholders: {task_name} is the job
+  # name; {job_id} is the job id. Footer example is natural language, not a slash command.
+  wrap_header: "Cronjob Response: {task_name}"
+  wrap_job_id: "(job_id: {job_id})"
+  wrap_footer: "To stop or manage this job, send me a new message (e.g. \"stop reminder {task_name}\")."
 
 # Friendly tool-progress labels (display.friendly_tool_labels).
 # Whole-sentence templates so languages can change word order / connectors.

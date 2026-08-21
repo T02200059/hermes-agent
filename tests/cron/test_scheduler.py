@@ -258,8 +258,7 @@ class TestDeliverResultWrapping:
         )
         return media_file.resolve()
 
-    def test_delivery_wraps_content_with_header_and_footer(self):
-        """Delivered content should include task name header and agent-invisible note."""
+    def _send_wrapped(self, job_name, job_id="test-job", body="Here is today's summary."):
         from gateway.config import Platform
 
         pconfig = MagicMock()
@@ -270,20 +269,65 @@ class TestDeliverResultWrapping:
         with patch("gateway.config.load_gateway_config", return_value=mock_cfg), \
              patch("tools.send_message_tool._send_to_platform", new=AsyncMock(return_value={"success": True})) as send_mock:
             job = {
-                "id": "test-job",
-                "name": "daily-report",
+                "id": job_id,
+                "name": job_name,
                 "deliver": "origin",
                 "origin": {"platform": "telegram", "chat_id": "123"},
             }
-            _deliver_result(job, "Here is today's summary.")
+            _deliver_result(job, body)
 
         send_mock.assert_called_once()
-        sent_content = send_mock.call_args.kwargs.get("content") or send_mock.call_args[0][-1]
-        assert "Cronjob Response: daily-report" in sent_content
-        assert "(job_id: test-job)" in sent_content
+        return send_mock.call_args.kwargs.get("content") or send_mock.call_args[0][-1]
+
+    def test_delivery_wraps_content_with_header_and_footer(self, monkeypatch):
+        """Delivered content should include task name header and agent-invisible note."""
+        from agent.i18n import reset_language_cache, t
+
+        monkeypatch.setenv("HERMES_LANGUAGE", "en")
+        reset_language_cache()
+        sent_content = self._send_wrapped("daily-report")
+        assert t("cron.wrap_header", task_name="daily-report") in sent_content
+        assert t("cron.wrap_job_id", job_id="test-job") in sent_content
         assert "-------------" in sent_content
         assert "Here is today's summary." in sent_content
-        assert "To stop or manage this job" in sent_content
+        assert t("cron.wrap_footer", task_name="daily-report") in sent_content
+        assert "{task_name}" not in sent_content
+        assert "{job_id}" not in sent_content
+
+    def test_delivery_wrap_footer_is_localized_zh(self, monkeypatch):
+        """Chinese locale must translate the wrap footer and interpolate the job name."""
+        from agent.i18n import reset_language_cache, t
+
+        monkeypatch.setenv("HERMES_LANGUAGE", "zh")
+        reset_language_cache()
+        try:
+            job_name = "Damodel周报"
+            sent_content = self._send_wrapped(job_name)
+            assert t("cron.wrap_header", lang="zh", task_name=job_name) in sent_content
+            assert t("cron.wrap_footer", lang="zh", task_name=job_name) in sent_content
+            assert job_name in sent_content
+            assert "{task_name}" not in sent_content
+            assert "To stop or manage this job" not in sent_content
+            assert "Cronjob Response:" not in sent_content
+        finally:
+            reset_language_cache()
+
+    def test_strip_cron_delivery_wrapper_en_and_zh(self, monkeypatch):
+        """Yuanbao (and others) must unwrap both English and Chinese wraps."""
+        from agent.i18n import reset_language_cache
+        from cron.scheduler import (
+            _format_cron_delivery_wrapper,
+            strip_cron_delivery_wrapper,
+        )
+
+        body = "payload with\n\nblank lines"
+        for lang in ("en", "zh"):
+            monkeypatch.setenv("HERMES_LANGUAGE", lang)
+            reset_language_cache()
+            wrapped = _format_cron_delivery_wrapper("Damodel周报", "job-1", body)
+            assert strip_cron_delivery_wrapper(wrapped) == body
+        assert strip_cron_delivery_wrapper(body) == body
+        reset_language_cache()
 
 
     def test_relay_fronted_home_uses_relay_config_and_live_adapter(self, monkeypatch, tmp_path):
@@ -1617,9 +1661,11 @@ class TestCronDeliveryMirror:
 
         mirror_mock.assert_called_once()
         mirrored_text = mirror_mock.call_args[0][2]
-        # Clean content, no cron wrapper.
+        from agent.i18n import t
+        # Clean content, no cron wrapper (localized or English).
         assert "Here is today's summary." in mirrored_text
-        assert "Cronjob Response:" not in mirrored_text
+        assert t("cron.wrap_header", task_name="daily-report") not in mirrored_text
+        assert t("cron.wrap_footer", task_name="daily-report") not in mirrored_text
         assert "To stop or manage this job" not in mirrored_text
 
 
