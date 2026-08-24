@@ -4141,12 +4141,17 @@ class TurnRunner:
             if progress_msg_id is not None:
                 result = await _edit_progress_message(progress_msg_id, first_text)
                 if not result.success:
-                    if getattr(result, "retryable", False):
+                    _action = _classify_edit_failure(result)
+                    if _action == "retryable":
                         logger.debug(
                             "[%s] Transient overflow edit failure — keeping can_edit=True",
                             adapter.name,
                         )
                         return True
+                    # [owner] rotate: abandon this bubble, open a fresh one
+                    if _action == "rotate":
+                        progress_msg_id = None
+                        return False
                     can_edit = False
                     # Fall back to the existing non-edit behavior below.
                     return False
@@ -4247,19 +4252,25 @@ class TurnRunner:
                     full_text = "\n".join(progress_lines)
                     result = await _edit_progress_message(progress_msg_id, full_text)
                     if not result.success:
-                        _err = (getattr(result, "error", "") or "").lower()
-                        # Transient network errors (ConnectError, timeouts)
-                        # must not permanently disable progress-message
-                        # editing — the next cycle can catch up.  Only
-                        # permanent failures (flood control, message not
-                        # found, permissions) should set can_edit = False.
-                        if getattr(result, "retryable", False):
+                        # [owner] rotate: delegate to the shared classifier
+                        # so Feishu 230072/230075 (edit cap) opens a fresh
+                        # bubble instead of permanently disabling can_edit.
+                        _action = _classify_edit_failure(result)
+                        if _action == "retryable":
                             logger.debug(
                                 "[%s] Transient edit failure — keeping can_edit=True",
                                 adapter.name,
                             )
                             continue
-                        if "flood" in _err or "retry after" in _err:
+                        if _action == "rotate":
+                            # [owner] Bubble exhausted — abandon it and keep
+                            # can_edit=True so the next tool starts a fresh
+                            # editable bubble below the content.
+                            progress_msg_id = None
+                            progress_lines = [msg]
+                            _last_edit_ts = time.monotonic()
+                            continue
+                        if _action == "flood":
                             # Flood control hit — backoff but keep editing.
                             # Only disable edits for non-recoverable errors.
                             logger.info(
@@ -4350,6 +4361,13 @@ class TurnRunner:
                     full_text = _progress_text(progress_lines)
                     try:
                         await _edit_progress_message(progress_msg_id, full_text)
+                    except Exception:
+                        pass
+                elif can_edit and progress_lines:
+                    # [owner] rotate/reset left no bubble id - deliver buffered
+                    # lines as a fresh message instead of dropping them.
+                    try:
+                        await _send_progress_text(_progress_text(progress_lines))
                     except Exception:
                         pass
                 return
