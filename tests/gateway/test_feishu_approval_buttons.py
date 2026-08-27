@@ -480,8 +480,10 @@ class TestCardActionCallbackResponse:
             response = adapter._on_card_action_trigger(data)
 
         card = response.card.data
-        assert "Old Name" not in card["elements"][0]["content"]
-        assert "ou_expired" in card["elements"][0]["content"]
+        # Fix 2: expired TTL entries fall back to persisted _users.display_name
+        # (stale but better than raw ou_xxx). The raw open_id must never leak.
+        assert "ou_expired" not in card["elements"][0]["content"]
+        assert "Old Name" in card["elements"][0]["content"]
 
     def test_rejects_approval_click_from_unauthorized_user(self, _patch_callback_card_types):
         adapter = _make_adapter()

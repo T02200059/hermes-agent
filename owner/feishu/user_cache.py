@@ -57,15 +57,18 @@ def get_cached_chat_id(
 def get_cached_display_name(
     cache: Dict[str, FeishuUserEntry], open_id: str
 ) -> Optional[str]:
-    """Return cached display_name for open_id if still within TTL."""
+    """Return cached display_name for open_id, including stale entries.
+
+    On TTL expiry the name is still returned as a stale-but-better-than-raw-id
+    fallback. The caller (``_read_ttl_name``) handles hot-cache eviction; this
+    function does **not** destructively clear ``display_name`` so the name
+    survives across multiple reads within the same process lifetime.
+    """
     entry = cache.get(open_id)
     if entry is None:
         return None
-    if entry.display_name_expire_at and time.time() < entry.display_name_expire_at:
+    if entry.display_name:
         return entry.display_name
-    if entry.display_name_expire_at:
-        entry.display_name = ""
-        entry.display_name_expire_at = 0.0
     return None
 
 

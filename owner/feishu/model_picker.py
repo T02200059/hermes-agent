@@ -99,7 +99,7 @@ def build_done_card(provider: str, model: str, user_name: str) -> Dict[str, Any]
                     "content": (
                         f"Provider: **{provider}**\n"
                         f"模型: **{model}**\n\n"
-                        f"由 {user_name} 发起全局切换。"
+                        f"由 {user_name or '用户'} 发起全局切换。"
                     ),
                 },
             ],

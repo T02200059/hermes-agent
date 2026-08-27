@@ -195,7 +195,7 @@ def build_done_card(
             "content": (
                 f"命令: `{action['cmd']}`\n\n"
                 f"内容: {preview}\n\n"
-                f"由 {user_name} 发起。"
+                f"由 {user_name or '用户'} 发起。"
             ),
         },
     ]

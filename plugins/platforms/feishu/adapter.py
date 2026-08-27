@@ -3083,7 +3083,7 @@ class FeishuAdapter(BasePlatformAdapter):
             )
             return P2CardActionTriggerResponse() if P2CardActionTriggerResponse else None
 
-        user_name = self._get_cached_sender_name(open_id) or open_id
+        user_name = self._get_cached_sender_name(open_id) or ""
         if not self._submit_on_loop(
             loop,
             self._resolve_update_prompt(

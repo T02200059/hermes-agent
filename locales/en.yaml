@@ -72,6 +72,7 @@ approval:
   feishu_resolved_deny: "Denied"
   feishu_resolved_default: "Resolved"
   feishu_resolved_body: "by {user_name}\n\n```\n{command}\n```"
+  feishu_resolved_body_no_name: "Resolved\n\n```\n{command}\n```"
   # Approval-card click failure states (CallBackCard — never silent)
   feishu_fail_unauthorized_title: "⚠️ Not authorized"
   feishu_fail_unauthorized_body: "Your account is not allowed to act on this approval. Use an authorized account, or ask an admin to check FEISHU_GROUP_POLICY / allowlists. **The request is still waiting** — unauthorized clicks do not cancel it."

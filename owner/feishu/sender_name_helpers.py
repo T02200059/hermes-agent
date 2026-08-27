@@ -35,12 +35,17 @@ def get_cached_sender_name(adapter: Any, sender_id: Optional[str]) -> Optional[s
 
 
 def operator_display_name(adapter: Any, open_id: str) -> str:
+    """Return a display name for *open_id*, never the raw ``ou_xxx``.
+
+    On cache miss returns ``""`` so callers can use a fallback label
+    instead of leaking the raw open_id.
+    """
     store = get_user_store(adapter)
     if store is not None:
         return store.operator_display_name(open_id)
     if not open_id:
         return ""
-    return _legacy_get_cached_sender_name(adapter, open_id) or open_id
+    return _legacy_get_cached_sender_name(adapter, open_id) or ""
 
 
 async def resolve_sender_name(

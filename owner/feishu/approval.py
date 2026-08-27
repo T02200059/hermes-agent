@@ -354,7 +354,10 @@ def build_resolved_approval_card(
     """
     icon = "❌" if choice == "deny" else "✅"
     label = _get_resolved_label(choice)
-    body = t("approval.feishu_resolved_body", user_name=user_name, command=command)
+    if user_name:
+        body = t("approval.feishu_resolved_body", user_name=user_name, command=command)
+    else:
+        body = t("approval.feishu_resolved_body_no_name", command=command)
 
     return {
         "config": {"wide_screen_mode": True},

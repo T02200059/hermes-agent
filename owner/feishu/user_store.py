@@ -29,7 +29,10 @@ from owner.feishu.user_cache import (
 
 logger = logging.getLogger(__name__)
 
-_FEISHU_SENDER_NAME_TTL_SECONDS = 10 * 60  # 10 minutes
+_FEISHU_SENDER_NAME_TTL_SECONDS = 24 * 60 * 60  # 24 hours (names rarely change)
+# Re-warm a cached name when remaining TTL drops below this threshold so a
+# card sent near the end of a TTL window does not expire before the user clicks.
+_PRE_WARM_REFRESH_THRESHOLD = 30 * 60  # 30 minutes
 
 
 class FeishuUserStore:
@@ -77,6 +80,14 @@ class FeishuUserStore:
                 )
 
     def _read_ttl_name(self, sender_id: Optional[str]) -> Optional[str]:
+        """Read a cached name for *sender_id*.
+
+        On TTL miss the entry is popped from the hot ``_name_ttl`` dict (so a
+        subsequent ``resolve_name`` re-fetches), but the persisted
+        ``_users.display_name`` is **not** destroyed — it survives as a
+        stale-but-better-than-raw-id fallback so callers like
+        ``operator_display_name`` never degrade to ``ou_xxx``.
+        """
         if not sender_id:
             return None
         cached = self._name_ttl.get(sender_id)
@@ -87,12 +98,13 @@ class FeishuUserStore:
         name, expire_at = cached
         if time.time() < expire_at:
             return name
+        # TTL expired — evict from hot cache so resolve_name re-fetches,
+        # but do NOT clear _users.display_name (it's still a usable fallback).
         self._name_ttl.pop(sender_id, None)
         if sender_id.startswith("ou_"):
             entry = self._users.get(sender_id)
-            if entry is not None:
-                entry.display_name = ""
-                entry.display_name_expire_at = 0.0
+            if entry is not None and entry.display_name:
+                return entry.display_name  # stale but better than raw ou_xxx
         return None
 
     def _store_resolved_name(
@@ -115,9 +127,15 @@ class FeishuUserStore:
         return self._read_ttl_name(sender_id)
 
     def operator_display_name(self, open_id: str) -> str:
+        """Return a display name for *open_id*, never the raw ``ou_xxx``.
+
+        On cache miss returns ``""`` so callers can distinguish "name not
+        available" from a real ID and use a fallback label instead of
+        leaking the raw open_id to end users.
+        """
         if not open_id:
             return ""
-        return self.get_cached_name(open_id) or open_id
+        return self.get_cached_name(open_id) or ""
 
     async def resolve_name(
         self,
@@ -198,8 +216,21 @@ class FeishuUserStore:
         *,
         is_bot: bool = False,
     ) -> None:
-        if not sender_id or self.get_cached_name(sender_id) is not None:
+        """Fire-and-forget name resolve if the cached entry is missing or stale.
+
+        Re-warms when the remaining TTL drops below ``_PRE_WARM_REFRESH_THRESHOLD``
+        so a card sent near the end of a TTL window does not expire before the
+        user clicks.
+        """
+        if not sender_id:
             return
+        cached = self._name_ttl.get(sender_id)
+        if cached is not None:
+            name, expire_at = cached
+            remaining = expire_at - time.time()
+            if remaining > _PRE_WARM_REFRESH_THRESHOLD:
+                return  # plenty of life left, no need to re-warm
+            # TTL almost expired — fall through and re-warm
         if not self._client:
             return
         try:
