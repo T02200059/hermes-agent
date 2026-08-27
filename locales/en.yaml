@@ -53,10 +53,31 @@ approval:
   gateway_timeout_denied: "BLOCKED: Command {reason}. The user has NOT consented to this action. Do NOT retry this command, do NOT rephrase it, and do NOT attempt the same outcome via a different command. Stop the current workflow and wait for the user to respond before taking any further destructive or irreversible action.{timeout_addendum}"
   cli_denied: "BLOCKED: User denied this command. The user has NOT consented to this action. Do NOT retry this command, do NOT rephrase it, and do NOT attempt the same outcome via a different command. Stop the current workflow and wait for the user to respond before taking any further destructive or irreversible action."
   execute_code_smart_denied: "BLOCKED by smart approval: execute_code script execution was assessed as genuinely dangerous. Do NOT retry."
+  execute_code_description: "execute_code script execution. The script can spawn subprocesses or mutate files without passing through terminal command approval; approval is one-shot for this run."
+  execute_code_cron_blocked: "BLOCKED: execute_code runs arbitrary local Python (including subprocess calls that bypass shell-string approval checks). Cron jobs run without a user present to approve it. Use normal tools instead, or set approvals.cron_mode: approve only if this cron profile is intentionally trusted."
   execute_code_gateway_asking: "⚠️ {description}. Asking the user for approval.\n\n**Code:**\n```python\n{code}\n```"
   execute_code_notify_failed: "BLOCKED: Failed to send execute_code approval request to user. Do NOT retry."
   execute_code_timeout_denied: "BLOCKED: execute_code script timed out without user response. The user has NOT consented to running this code. Do NOT retry, do NOT rephrase the script, and do NOT attempt the same outcome via a different tool. Silence is not consent."
   execute_code_user_denied: "BLOCKED: execute_code script denied by user. The user has NOT consented to running this code. Do NOT retry, do NOT rephrase the script, and do NOT attempt the same outcome via a different tool."
+
+  # Block-result messages — returned to the agent in tool results.
+  user_deny_blocked: "BLOCKED: this command matches the user-defined deny rule '{pattern}' (approvals.deny in config.yaml). It cannot be executed via the agent — not even with --yolo, /yolo, or approvals.mode=off. Do NOT retry or rephrase this command; the user has explicitly forbidden it."
+  hardline_blocked: "BLOCKED (hardline): {description}. This command is on the unconditional blocklist and cannot be executed via the agent — not even with --yolo, /yolo, approvals.mode=off, or cron approve mode. If you genuinely need to run it, run it yourself in a terminal outside the agent."
+  hardline_recovery_saved: " RECOVERY: this block fires on oversized/unparseable inline command payloads (heredocs, giant one-liners), not on the operation itself. Your command was saved to {saved} — review it, then run: terminal(command=\"bash {saved}\"). Do not retry inline."
+  hardline_recovery_manual: " RECOVERY: this block fires on oversized/unparseable inline command payloads (heredocs, giant one-liners), not on the operation itself. Write the script to a file with write_file, then run it: terminal(command=\"bash /path/script.sh\") or \"python3 /path/script.py\". Do not retry inline."
+  circuit_breaker: " CIRCUIT BREAKER: {count} consecutive commands were blocked by the security reviewer. STOP attempting variations of this operation. Report the blocked operation to the user and either ask them to run it manually or use /approve."
+  no_human_present: "BLOCKED: approval required ({description}) but no interactive user or gateway is present to approve it."
+  no_human_present_tool: "BLOCKED: Tool '{tool_name}' requires approval ({description}) but no interactive user or gateway is present to approve it. A plugin flagged this action for human confirmation."
+  cron_blocked_tool: "BLOCKED: Tool '{tool_name}' requires approval ({description}) but cron jobs run without a user present to approve it. Find an alternative approach. To allow flagged actions in cron jobs, set approvals.cron_mode: approve in config.yaml."
+  plugin_requires_approval: "Plugin requires approval for {tool_name}"
+  reason_timeout: "timed out without user response"
+  reason_denied_by_user: "denied by user"
+  silence_not_consent: " Silence is not consent."
+  reason_user_given: ' Reason given by the user: "{deny_reason}".'
+  gateway_action_blocked: "BLOCKED: Action {reason}.{reason_addendum} The user has NOT consented to this action. Do NOT retry it, do NOT rephrase it, and do NOT attempt the same outcome via a different path.{timeout_addendum}"
+  cli_timeout_action: "BLOCKED: Action timed out without user response. The user has NOT consented to this action. Do NOT retry it, do NOT rephrase it, and do NOT attempt the same outcome via a different path. Silence is not consent."
+  cli_denied_action: "BLOCKED: User denied this potentially dangerous action (matched '{description}'). Do NOT retry — the user has explicitly rejected it."
+  cli_timeout_command: "BLOCKED: Command timed out without user response. The user has NOT consented to this action. Do NOT retry this command, do NOT rephrase it, and do NOT attempt the same outcome via a different command. Stop the current workflow and wait for the user to respond before taking any further destructive or irreversible action. Silence is not consent."
 
   # Feishu approval card — interactive card UI text.
   feishu_card_title: "⚠️ Command Approval Required"
@@ -529,6 +550,21 @@ gateway:
   # Session stall watchdog — shown when a turn has pending inbound but no
   # progress for agent.session_stall_timeout. {mins} is a whole-minute floor.
   session_stall: "⚠️ Agent session appears stalled (last activity {mins} min ago). Try /new to reset."
+
+  # Platform delivery messages — shown when messages are sent to messaging platforms.
+  busy_redirect_ack: "↪ Redirected current run{status_detail}. I'll adjust using your correction."
+  home_channel_notice: "📬 No home channel is set for {platform}. A home channel is where Hermes delivers cron job results and cross-platform messages.\n\nType {sethome_cmd} to make this chat your home channel, or ignore to skip."
+  aux_model_fallback: "ℹ️ Configured compression model `{model}` failed ({error}). Recovered using your main model — context is intact — but you may want to check `auxiliary.compression.model` in config.yaml."
+  blueprint_failed: "Cron blueprint command failed: {error}"
+  session_restored: "Session restored: {title}"
+  session_restored_last: "\n\nLast Hermes message:\n{last_assistant}"
+  no_proxy_response: "(No response from remote agent)"
+  telegram_topic_lobby: "This main chat is reserved for system commands.\n\nTo start a new Hermes chat, open the All Messages topic at the top of this bot interface and send any message there. Telegram will create a new topic for that message; each topic works as an independent Hermes session."
+  telegram_topic_new: "To start a new parallel Hermes chat, open the All Messages topic at the top of this bot interface and send a message there. Telegram will create a new topic for it.\n\nEach topic is an independent Hermes session. Use /new inside an existing topic only if you want to replace that topic's current session."
+  telegram_topic_header: "Started a new Hermes session in this topic.\n\nTip: for parallel work, open All Messages and send a message there to create a separate topic instead of using /new here. /new replaces the session attached to the current topic."
+  telegram_topic_default: "Hermes Chat"
+  bg_process_finished: "[Background process {session_id} finished with exit code {exit_code}~ Here's the final output:\n{output}]"
+  bg_process_running: "[Background process {session_id} is still running~ New output:\n{output}]"
 
   # Generic error shown to the user when message processing crashes unexpectedly.
   handler_error: "Sorry, I encountered an error ({error_type}).\n{error_detail}\nTry again or use /reset to start a fresh session."
@@ -1392,6 +1428,31 @@ toolguard:
 # remove) and the current_entries field name literal so the model can act on them.
 memory:
   add_exceeds_limit: "Memory at {current}/{limit} chars. Adding this entry ({entry_chars} chars) would exceed the limit. Consolidate now: use 'replace' to merge overlapping entries into shorter ones or 'remove' stale or less important entries (see current_entries below), then retry this add — all in this turn."
+  content_empty: "Content cannot be empty."
+  entry_already_exists: "Entry already exists (no duplicate added)."
+  entry_added: "Entry added."
+  old_text_empty: "old_text cannot be empty."
+  new_content_empty: "new_content cannot be empty. Use 'remove' to delete entries."
+  no_match_replace: "No entry matched '{old_text}'. Check current_entries below and retry with the exact text of the entry you want to replace."
+  multiple_matches: "Multiple entries matched '{old_text}'. Be more specific."
+  replace_exceeds_limit: "Replacement would put memory at {new_total}/{limit} chars. Shorten the new content, or 'remove' other stale or less important entries to make room (see current_entries below), then retry — all in this turn."
+  entry_replaced: "Entry replaced."
+  no_match_remove: "No entry matched '{old_text}'. Check current_entries below and retry with the exact text of the entry you want to remove."
+  entry_removed: "Entry removed."
+  batch_empty: "operations list is empty."
+  batch_op_scan_error: "Operation {index}: {error}"
+  batch_op_pos: "Operation {index} ({action})"
+  batch_content_required: "content is required."
+  batch_old_text_required: "old_text is required."
+  batch_content_required_remove: "content is required (use action='remove' to delete)."
+  batch_no_match: "no entry matched '{old_text}'."
+  batch_multiple_matches: "'{old_text}' matched multiple distinct entries -- be more specific."
+  batch_unknown_action: "unknown action. Use add, replace, or remove."
+  batch_nothing_applied: "No operations were applied (batch is all-or-nothing)."
+  drift_error: "Refusing to write {file}: file on disk has content that wouldn't round-trip through the memory tool (likely added by the patch tool, a shell append, a manual edit, or a concurrent session). A snapshot was saved to {backup}. Resolve the drift first — either rewrite the file as a clean §-delimited list of entries, or move the extra content out — then retry. This guard exists to prevent silent data loss (issue #26045)."
+  drift_remediation: "Open the .bak file, integrate the missing entries into the memory tool one at a time via memory(action=add, content=...), then remove or rewrite the original file to a clean state."
+  read_failed: "Refusing to write {file}: the file exists on disk but could not be read right now (temporarily locked by another program, a permission change, invalid/corrupt text encoding, or a filesystem error). Treating an unreadable file as empty and saving would wipe existing memory, so the write is refused. Nothing was changed — retry in a moment."
+  unknown_action: "Unknown staged action '{action}'."
 
 memory_proposal:
   action_add: "Add"
@@ -1793,3 +1854,118 @@ display:
     bfl_flux3_get_result: "is fetching generation result"
     bfl_flux3_prompting_guide: "is viewing prompting guide"
     using: "is using {tool}"
+
+# Tool user-facing "message" strings (not schema descriptions, not log lines, not error fields).
+tools:
+  skills_list:
+    no_skills_dir_created: "No skills found. Skills directory created at {home}/skills/"
+    no_skills_in_directory: "No skills found in skills/ directory."
+
+  skill_manage:
+    created: "Skill '{name}' created."
+    updated_full_rewrite: "Skill '{name}' updated (full rewrite)."
+    patched: "Patched {target} in skill '{name}' ({count} replacement{plural})."
+    file_written: "File '{file_path}' written to skill '{name}'."
+    file_removed: "File '{file_path}' removed from skill '{name}'."
+
+  session_search:
+    browse_hint: "Showing {count} most recent sessions. Pass a query= to search, or session_id+around_message_id to scroll."
+    no_matches: "No matching sessions found."
+
+  cronjob:
+    removed: "Cron job '{name}' removed."
+
+  discord:
+    message_pinned: "Message {message_id} pinned."
+    message_unpinned: "Message {message_id} unpinned."
+    message_deleted: "Message {message_id} deleted."
+    role_added: "Role {role_id} added to user {user_id}."
+    role_removed: "Role {role_id} removed from user {user_id}."
+
+  process_registry:
+    watch_disabled: "Watch patterns disabled for process {session_id} — {limit} consecutive rate-limit windows triggered (min spacing {min_spacing}s). Falling back to notify_on_complete semantics; you'll get exactly one notification when the process exits."
+    watch_overflow_released: "Watch-pattern notifications resumed. {suppressed} match event(s) were suppressed during the flood."
+    watch_overflow_tripped: "Watch-pattern overflow: >{max_per_window} notifications in {window_seconds}s across all processes. Suppressing further watch_match events for {cooldown_seconds}s."
+    eof_sent: "EOF sent"
+    stdin_closed: "stdin closed"
+
+  doctor:
+    platform_supported: "platform={plat}"
+    session_not_probed: "not probed (doctor does not open a cua session)"
+    accessibility_granted: "Accessibility is granted."
+    accessibility_not_granted: "Accessibility is not granted."
+    accessibility_hint: "Grant Accessibility to CuaDriver in System Settings → Privacy & Security."
+    accessibility_absent: "accessibility field absent from check_permissions"
+    screen_recording_granted_not_capturable: "Screen Recording granted but not capturable."
+    screen_recording_hint: "Screen Recording permission may need a restart of CuaDriver or a re-grant in System Settings."
+    screen_recording_granted: "Screen Recording is granted."
+    screen_recording_not_granted: "Screen Recording is not granted."
+    screen_recording_grant_hint: "Grant Screen Recording to CuaDriver in System Settings → Privacy & Security."
+    screen_recording_absent: "screen_recording field absent from check_permissions"
+    screen_recording_not_applicable: "not applicable on {plat}"
+    check_permissions_unavailable: "check_permissions unavailable"
+    list_apps_succeeded: "list_apps succeeded{count_msg}"
+    list_apps_failed_despite_grant: "list_apps failed despite accessibility grant"
+    list_apps_failed: "list_apps failed"
+    ax_inferred_from_grant: "inferred from accessibility grant (list_apps not probed)"
+    not_probed: "not probed"
+    health_report_unavailable: "health_report unavailable"
+    health_report_fallback: "fallback composite (cua-driver 0.10 unclassified health_report); cause: {reason}"
+
+  backend:
+    no_typed_browser_route: "This computer-use backend has no typed browser route; use native capture/input."
+
+  website_policy:
+    blocked: "Blocked by website policy: '{host}' matched rule '{pattern}' from {source}"
+
+  computer_use:
+    hint_dangerous_type_pattern: "Dangerous shell patterns cannot be typed via computer_use."
+    hint_destructive_shortcuts_blocked: "Destructive system shortcuts are hard-blocked."
+    hint_backend_unavailable: "If the cua-driver binary is missing, run `hermes computer-use install`. If a Python dependency is missing, the error above shows the exact install command."
+
+# Terminal tool user-facing error strings (return dict "error" fields).
+terminal_tool:
+  invalid_command_type: "Invalid command: expected string, got {type_name}"
+  env_creation_failed: "Terminal tool disabled: environment creation failed ({error})"
+  bg_process_start_failed: "Failed to start background process: {error}"
+  command_timeout: "Command timed out after {seconds} seconds"
+  execution_failed: "Command execution failed: {error_type}: {error}"
+  execute_command_failed: "Failed to execute command: {error}"
+
+# Browser tool user-facing strings (return dict "error"/"reason"/"warning" fields).
+browser:
+  interrupted: "Interrupted"
+  blocked_api_key_in_url: "Blocked: URL contains what appears to be an API key or token. Secrets must not be sent in URLs."
+  blocked_credential_query_param: "Blocked: URL contains a credential-like query parameter ({param}). Cloud browser backends are third-party readers; use a local browser/CDP session or remove the sensitive query parameter before navigating."
+  blocked_metadata_endpoint: "Blocked: URL targets a cloud metadata endpoint"
+  blocked_private_address: "Blocked: URL targets a private or internal address"
+  blocked_redirect_metadata: "Blocked: redirect landed on a cloud metadata endpoint"
+  blocked_redirect_private: "Blocked: redirect landed on a private/internal address"
+  blocked_private_page_jsnav: "Blocked: page URL targets a private or internal address ({url}). This may have been caused by a JavaScript navigation via browser_console."
+  blocked_private_page_back: "Blocked: page URL targets a private or internal address ({url}). Browser history navigation (back) landed on this address."
+  blocked_private_page_action: "Blocked: page URL targets a private or internal address ({url}). Refusing to {action} on this page in this browser mode."
+  blocked_eval_private_url: "Blocked: JavaScript expression targets a private or internal address ({url}). Reading internal endpoints via browser_console is not permitted in this browser mode."
+  blocked_sensitive_eval: "Blocked: browser_console(expression=...) tried to use sensitive browser JavaScript primitive ({reason}) while browser.restrict_evaluate is enabled. Use browser_snapshot/browser_get_images/browser_console without expression for normal inspection, or set browser.restrict_evaluate: false in config.yaml to allow programmatic evaluation."
+  eval_unsupported_backend: "JavaScript evaluation is not supported by this browser backend. {error}"
+  eval_dom_node_unserializable: "Expression returned a live DOM node / NodeList / Window, which can't be serialized. Extract a primitive value (e.g. .innerText, .href, .src, .value) or use JSON.stringify() / a snapshot tool instead."
+  camofox_eval_unsupported: "JavaScript evaluation is not supported by this Camofox server. Use browser_snapshot or browser_vision to inspect page state."
+  chrome_fallback_no_url: "Chrome fallback failed: could not determine current URL"
+  chrome_fallback_timeout: "Chrome fallback '{command}' timed out"
+  chrome_fallback_failed: "Chrome fallback '{command}' failed"
+  chrome_fallback_navigate_failed: "Chrome fallback navigate failed: {error}"
+  session_create_failed: "Failed to create browser session: {error}"
+  command_no_output: "Browser command '{command}' returned no output"
+  non_json_output: "Non-JSON output from agent-browser for '{command}': {raw}"
+  navigation_failed: "Navigation failed"
+  snapshot_failed: "Failed to get snapshot"
+  click_failed: "Failed to click {ref}"
+  type_failed: "Failed to type into {ref}"
+  scroll_failed: "Failed to scroll {direction}"
+  invalid_scroll_direction: "Invalid direction '{direction}'. Use 'up' or 'down'."
+  back_failed: "Failed to go back"
+  press_failed: "Failed to press {key}"
+  get_images_failed: "Failed to get images"
+  image_data_parse_failed: "Could not parse image data"
+  screenshot_failed: "Failed to take screenshot ({mode} mode): {error}"
+  vision_analysis_failed: "Error during vision analysis: {error}"
+  lightpanda_no_renderer_vision: "Lightpanda has no graphical renderer for screenshots; used Chrome for vision capture."

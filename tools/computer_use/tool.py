@@ -49,6 +49,8 @@ import sys
 import threading
 from typing import Any, Dict, List, Optional, Tuple
 
+from agent.i18n import t
+
 from tools.computer_use.backend import (
     ActionResult,
     CaptureResult,
@@ -457,7 +459,7 @@ def handle_computer_use(args: Dict[str, Any], **kwargs) -> Any:
         if pat:
             return json.dumps({
                 "error": f"blocked pattern in type text: {pat!r}",
-                "hint": "Dangerous shell patterns cannot be typed via computer_use.",
+                "hint": t("tools.computer_use.hint_dangerous_type_pattern"),
             })
 
     if action == "key":
@@ -467,7 +469,7 @@ def handle_computer_use(args: Dict[str, Any], **kwargs) -> Any:
             if blocked.issubset(combo) and len(blocked) <= len(combo):
                 return json.dumps({
                     "error": f"blocked key combo: {sorted(blocked)}",
-                    "hint": "Destructive system shortcuts are hard-blocked.",
+                    "hint": t("tools.computer_use.hint_destructive_shortcuts_blocked"),
                 })
 
     if args.get("bring_to_front") and args.get("delivery_mode") != "foreground":
@@ -497,8 +499,7 @@ def handle_computer_use(args: Dict[str, Any], **kwargs) -> Any:
     except Exception as e:
         return json.dumps({
             "error": f"computer_use backend unavailable: {e}",
-            "hint": "If the cua-driver binary is missing, run `hermes computer-use install`. "
-                    "If a Python dependency is missing, the error above shows the exact install command.",
+            "hint": t("tools.computer_use.hint_backend_unavailable"),
         })
 
     try:

@@ -33,6 +33,8 @@ import json
 import logging
 from typing import Any, Dict, List, Optional, Union
 
+from agent.i18n import t
+
 # Sources that are excluded from session browsing/searching by default.
 # Third-party integrations tag their sessions with HERMES_SESSION_SOURCE=tool;
 # delegate subagent runs are tagged "subagent"; kanban dispatcher workers are
@@ -453,7 +455,7 @@ def _list_recent_sessions(db, limit: int, current_session_id: str = None, link_p
             "mode": "browse",
             "results": results,
             "count": len(results),
-            "message": f"Showing {len(results)} most recent sessions. Pass a query= to search, or session_id+around_message_id to scroll.",
+            "message": t("tools.session_search.browse_hint", count=len(results)),
         }, ensure_ascii=False)
     except Exception as e:
         logging.error("Error listing recent sessions: %s", e, exc_info=True)
@@ -711,7 +713,7 @@ def _discover(
             "query": query,
             "results": [],
             "count": 0,
-            "message": "No matching sessions found.",
+            "message": t("tools.session_search.no_matches"),
         }
         _annotate_rebuild_status(db, _empty_payload)
         return json.dumps(_empty_payload, ensure_ascii=False)

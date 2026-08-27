@@ -18,6 +18,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
+from agent.i18n import t
+
 from hermes_constants import get_hermes_home
 
 logger = logging.getLogger(__name__)
@@ -275,9 +277,11 @@ def check_website_access(url: str, config_path: Optional[Path] = None) -> Option
                 "host": host,
                 "rule": pattern,
                 "source": rule.get("source", "config"),
-                "message": (
-                    f"Blocked by website policy: '{host}' matched rule '{pattern}'"
-                    f" from {rule.get('source', 'config')}"
+                "message": t(
+                    "tools.website_policy.blocked",
+                    host=host,
+                    pattern=pattern,
+                    source=rule.get("source", "config"),
                 ),
             }
     return None

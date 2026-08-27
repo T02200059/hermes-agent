@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 from hermes_constants import display_hermes_home
+from agent.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -960,7 +961,7 @@ def cronjob(
             return json.dumps(
                 {
                     "success": True,
-                    "message": f"Cron job '{job['name']}' removed.",
+                    "message": t("tools.cronjob.removed", name=job['name']),
                     "removed_job": {
                         "id": job_id,
                         "name": job["name"],

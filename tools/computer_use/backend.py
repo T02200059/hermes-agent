@@ -11,6 +11,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
+from agent.i18n import t
+
 
 @dataclass
 class UIElement:
@@ -219,7 +221,7 @@ class ComputerUseBackend(ABC):
             "ok": False,
             "status": "refused",
             "code": "typed_browser_unavailable",
-            "message": "This computer-use backend has no typed browser route; use native capture/input.",
+            "message": t("tools.backend.no_typed_browser_route"),
             "native_fallback_required": True,
         }
 

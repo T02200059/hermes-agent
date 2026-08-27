@@ -50,6 +50,7 @@ from pathlib import Path
 from typing import Optional, Dict, Any, List
 
 from utils import env_var_enabled
+from agent.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -2274,7 +2275,7 @@ def terminal_tool(
             return json.dumps({
                 "output": "",
                 "exit_code": -1,
-                "error": f"Invalid command: expected string, got {type(command).__name__}",
+                "error": t("terminal_tool.invalid_command_type", type_name=type(command).__name__),
                 "status": "error",
             }, ensure_ascii=False)
 
@@ -2463,7 +2464,7 @@ def terminal_tool(
                         return json.dumps({
                             "output": "",
                             "exit_code": -1,
-                            "error": f"Terminal tool disabled: environment creation failed ({e})",
+                            "error": t("terminal_tool.env_creation_failed", error=str(e)),
                             "status": "disabled"
                         }, ensure_ascii=False)
 
@@ -2895,7 +2896,7 @@ def terminal_tool(
                 return json.dumps({
                     "output": "",
                     "exit_code": -1,
-                    "error": f"Failed to start background process: {str(e)}"
+                    "error": t("terminal_tool.bg_process_start_failed", error=str(e))
                 }, ensure_ascii=False)
         else:
             # Run foreground command with retry logic
@@ -2938,7 +2939,7 @@ def terminal_tool(
                         return json.dumps({
                             "output": "",
                             "exit_code": 124,
-                            "error": f"Command timed out after {effective_timeout} seconds"
+                            "error": t("terminal_tool.command_timeout", seconds=effective_timeout)
                         }, ensure_ascii=False)
                     
                     # Retry on transient errors
@@ -2955,7 +2956,7 @@ def terminal_tool(
                     return json.dumps({
                         "output": "",
                         "exit_code": -1,
-                        "error": f"Command execution failed: {type(e).__name__}: {str(e)}"
+                        "error": t("terminal_tool.execution_failed", error_type=type(e).__name__, error=str(e))
                     }, ensure_ascii=False)
                 
                 # Got a result
@@ -3164,7 +3165,7 @@ def terminal_tool(
         return json.dumps({
             "output": "",
             "exit_code": -1,
-            "error": f"Failed to execute command: {str(e)}",
+            "error": t("terminal_tool.execute_command_failed", error=str(e)),
             "traceback": tb_str,
             "status": "error"
         }, ensure_ascii=False)

@@ -618,13 +618,7 @@ def _user_deny_block_result(pattern: str) -> dict:
     return {
         "approved": False,
         "user_deny": True,
-        "message": (
-            f"BLOCKED: this command matches the user-defined deny rule "
-            f"'{pattern}' (approvals.deny in config.yaml). It cannot be "
-            "executed via the agent — not even with --yolo, /yolo, or "
-            "approvals.mode=off. Do NOT retry or rephrase this command; "
-            "the user has explicitly forbidden it."
-        ),
+        "message": t("approval.user_deny_blocked", pattern=pattern),
     }
 
 
@@ -675,14 +669,7 @@ def _save_blocked_payload(command: str) -> Optional[str]:
 
 def _hardline_block_result(description: str, command: str = "") -> dict:
     """Build the standard block result for a hardline match."""
-    message = (
-        f"BLOCKED (hardline): {description}. "
-        "This command is on the unconditional blocklist and cannot "
-        "be executed via the agent — not even with --yolo, /yolo, "
-        "approvals.mode=off, or cron approve mode. If you genuinely "
-        "need to run it, run it yourself in a terminal outside the "
-        "agent."
-    )
+    message = t("approval.hardline_blocked", description=description)
     # The parser-limit block is almost always a giant inline payload
     # (heredoc script, base64 blob, one-line python -c program) — not a
     # genuinely forbidden operation. 198 occurrences in a 250k-call
@@ -692,21 +679,9 @@ def _hardline_block_result(description: str, command: str = "") -> dict:
     if description in (_PARSER_LIMIT_DESCRIPTION, _MALFORMED_EXEC_DESCRIPTION):
         saved = _save_blocked_payload(command) if command else None
         if saved:
-            message += (
-                " RECOVERY: this block fires on oversized/unparseable inline "
-                "command payloads (heredocs, giant one-liners), not on the "
-                f"operation itself. Your command was saved to {saved} — "
-                f"review it, then run: terminal(command=\"bash {saved}\"). "
-                "Do not retry inline."
-            )
+            message += t("approval.hardline_recovery_saved", saved=saved)
         else:
-            message += (
-                " RECOVERY: this block fires on oversized/unparseable inline "
-                "command payloads (heredocs, giant one-liners), not on the "
-                "operation itself. Write the script to a file with write_file, "
-                "then run it: terminal(command=\"bash /path/script.sh\") or "
-                "\"python3 /path/script.py\". Do not retry inline."
-            )
+            message += t("approval.hardline_recovery_manual")
     return {
         "approved": False,
         "hardline": True,
@@ -2380,12 +2355,7 @@ def _denial_breaker_addendum(session_key: str) -> str:
         "%d consecutive denials (threshold %d)",
         session_key, count, threshold,
     )
-    return (
-        f" CIRCUIT BREAKER: {count} consecutive commands were blocked by "
-        "the security reviewer. STOP attempting variations of this "
-        "operation. Report the blocked operation to the user and either "
-        "ask them to run it manually or use /approve."
-    )
+    return t("approval.circuit_breaker", count=count)
 
 # =========================================================================
 # Blocking gateway approval (mirrors CLI's synchronous input() flow)
@@ -3195,9 +3165,8 @@ def _run_approval_gate(
             )
             return {
                 "approved": False,
-                "message": no_human_block_message or (
-                    f"BLOCKED: approval required ({description}) but no "
-                    "interactive user or gateway is present to approve it."
+                "message": no_human_block_message or t(
+                    "approval.no_human_present", description=description
                 ),
                 "pattern_key": pattern_key,
                 "description": description,
@@ -3236,7 +3205,7 @@ def _run_approval_gate(
             if decision.get("notify_failed"):
                 return {
                     "approved": False,
-                    "message": "BLOCKED: Failed to send approval request to user. Do NOT retry.",
+                    "message": t("approval.gateway_notify_failed"),
                     "pattern_key": pattern_key,
                     "description": description,
                 }
@@ -3246,21 +3215,23 @@ def _run_approval_gate(
 
             if not resolved or choice is None or choice == "deny":
                 if not resolved:
-                    reason = "timed out without user response"
-                    timeout_addendum = " Silence is not consent."
+                    reason = t("approval.reason_timeout")
+                    timeout_addendum = t("approval.silence_not_consent")
                 else:
-                    reason = "denied by user"
+                    reason = t("approval.reason_denied_by_user")
                     timeout_addendum = ""
                 reason_addendum = ""
                 if resolved and deny_reason:
-                    reason_addendum = f' Reason given by the user: "{deny_reason}".'
+                    reason_addendum = t(
+                        "approval.reason_user_given", deny_reason=deny_reason
+                    )
                 return {
                     "approved": False,
-                    "message": (
-                        f"BLOCKED: Action {reason}.{reason_addendum} The user "
-                        f"has NOT consented to this action. Do NOT retry it, "
-                        f"do NOT rephrase it, and do NOT attempt the same "
-                        f"outcome via a different path.{timeout_addendum}"
+                    "message": t(
+                        "approval.gateway_action_blocked",
+                        reason=reason,
+                        reason_addendum=reason_addendum,
+                        timeout_addendum=timeout_addendum,
                     ),
                     "pattern_key": pattern_key,
                     "description": description,
@@ -3301,12 +3272,7 @@ def _run_approval_gate(
     if choice == "timeout":
         return {
             "approved": False,
-            "message": (
-                f"BLOCKED: Action timed out without user response. The user "
-                f"has NOT consented to this action. Do NOT retry it, do NOT "
-                f"rephrase it, and do NOT attempt the same outcome via a "
-                f"different path. Silence is not consent."
-            ),
+            "message": t("approval.cli_timeout_action"),
             "pattern_key": pattern_key,
             "description": description,
             "outcome": "timeout",
@@ -3316,11 +3282,7 @@ def _run_approval_gate(
     if choice == "deny":
         return {
             "approved": False,
-            "message": (
-                f"BLOCKED: User denied this potentially dangerous action "
-                f"(matched '{description}'). Do NOT retry — the user has "
-                "explicitly rejected it."
-            ),
+            "message": t("approval.cli_denied_action", description=description),
             "pattern_key": pattern_key,
             "description": description,
             "outcome": "denied",
@@ -3464,7 +3426,7 @@ def request_tool_approval(
     (a bare script with no ``HERMES_INTERACTIVE``) fails CLOSED — a plugin-
     flagged action never runs ungated without a human.
     """
-    description = reason or f"Plugin requires approval for {tool_name}"
+    description = reason or t("approval.plugin_requires_approval", tool_name=tool_name)
     # Allowlist grain: an explicit plugin rule_key wins; otherwise derive from
     # tool + a short hash of the reason so distinct reasons on the same tool
     # get independent [a]lways entries (Finding: rule_key=tool_name alone was
@@ -3487,21 +3449,18 @@ def request_tool_approval(
         description=description,
         display_target=display_target,
         approval_callback=approval_callback,
-        cron_deny_message=(
-            f"BLOCKED: Tool '{tool_name}' requires approval ({description}) "
-            "but cron jobs run without a user present to approve it. Find an "
-            "alternative approach. To allow flagged actions in cron jobs, set "
-            "approvals.cron_mode: approve in config.yaml."
+        cron_deny_message=t(
+            "approval.cron_blocked_tool",
+            tool_name=tool_name, description=description,
         ),
         autoapprove_log_prefix=(
             f"plugin-escalated tool call '{tool_name}' in "
             "non-interactive non-gateway context"
         ),
         fail_closed_when_no_human=True,
-        no_human_block_message=(
-            f"BLOCKED: Tool '{tool_name}' requires approval ({description}) "
-            "but no interactive user or gateway is present to approve it. "
-            "A plugin flagged this action for human confirmation."
+        no_human_block_message=t(
+            "approval.no_human_present_tool",
+            tool_name=tool_name, description=description,
         ),
     )
 
@@ -4531,13 +4490,8 @@ def check_all_command_guards(command: str, env_type: str,
         return {
             "approved": False,
             "message": (
-                "BLOCKED: Command timed out without user response. The user "
-                "has NOT consented to this action. Do NOT retry this "
-                "command, do NOT rephrase it, and do NOT attempt the same "
-                "outcome via a different command. Stop the current workflow "
-                "and wait for the user to respond before taking any further "
-                "destructive or irreversible action. Silence is not "
-                f"consent.{breaker_addendum}"
+                t("approval.cli_timeout_command")
+                + breaker_addendum
             ),
             "pattern_key": primary_key,
             "description": combined_desc,
@@ -4595,11 +4549,7 @@ def check_execute_code_guard(code: str, env_type: str,
     require approval).
     """
     pattern_key = "execute_code"
-    description = (
-        "execute_code script execution. The script can spawn subprocesses or "
-        "mutate files without passing through terminal command approval; "
-        "approval is one-shot for this run."
-    )
+    description = t("approval.execute_code_description")
 
     # Isolated backends already sandbox the child — matches the container skip
     # in check_all_command_guards / check_dangerous_command. Docker stops
@@ -4624,12 +4574,7 @@ def check_execute_code_guard(code: str, env_type: str,
             return {
                 "approved": False,
                 "message": (
-                    "BLOCKED: execute_code runs arbitrary local Python "
-                    "(including subprocess calls that bypass shell-string "
-                    "approval checks). Cron jobs run without a user present "
-                    "to approve it. Use normal tools instead, or set "
-                    "approvals.cron_mode: approve only if this cron profile "
-                    "is intentionally trusted."
+                    t("approval.execute_code_cron_blocked")
                 ),
                 "pattern_key": pattern_key,
                 "description": description,

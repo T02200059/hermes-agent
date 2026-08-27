@@ -41,6 +41,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from hermes_constants import get_hermes_home, display_hermes_home
+from agent.i18n import t
 from utils import atomic_write_text, is_truthy_value
 from hermes_cli.config import cfg_get
 from agent.skill_utils import (
@@ -959,7 +960,7 @@ def _create_skill(name: str, content: str, category: str = None) -> Dict[str, An
 
     result = {
         "success": True,
-        "message": f"Skill '{name}' created.",
+        "message": t("tools.skill_manage.created", name=name),
         "path": str(skill_dir.relative_to(_skills_dir())),
         "skill_md": str(skill_md),
         "_change": {"description": _desc},
@@ -1024,7 +1025,7 @@ def _edit_skill(name: str, content: str) -> Dict[str, Any]:
 
     result = {
         "success": True,
-        "message": f"Skill '{name}' updated (full rewrite).",
+        "message": t("tools.skill_manage.updated_full_rewrite", name=name),
         "path": str(existing["path"]),
         "_change": {"description": _desc},
     }
@@ -1142,7 +1143,7 @@ def _patch_skill(
 
     result = {
         "success": True,
-        "message": f"Patched {'SKILL.md' if not file_path else file_path} in skill '{name}' ({match_count} replacement{'s' if match_count > 1 else ''}).",
+        "message": t("tools.skill_manage.patched", target=file_path or 'SKILL.md', name=name, count=match_count, plural='s' if match_count > 1 else ''),
     }
     # Include change previews for verbose notifications
     result["_change"] = {
@@ -1324,7 +1325,7 @@ def _write_file(name: str, file_path: str, file_content: str) -> Dict[str, Any]:
 
     result = {
         "success": True,
-        "message": f"File '{file_path}' written to skill '{name}'.",
+        "message": t("tools.skill_manage.file_written", file_path=file_path, name=name),
         "path": str(target),
     }
     org_note = _maybe_auto_propose_org_edit(name, existing["path"])
@@ -1383,7 +1384,7 @@ def _remove_file(name: str, file_path: str) -> Dict[str, Any]:
 
     return {
         "success": True,
-        "message": f"File '{file_path}' removed from skill '{name}'.",
+        "message": t("tools.skill_manage.file_removed", file_path=file_path, name=name),
     }
 
 

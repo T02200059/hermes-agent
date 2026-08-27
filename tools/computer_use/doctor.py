@@ -31,6 +31,8 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from hermes_cli._subprocess_compat import windows_hide_flags
 
+from agent.i18n import t
+
 
 # Match the ALLOWED_STATUS_VALUES + ALLOWED_OVERALL_VALUES the cua-driver
 # integration test pins. If health_report widens its vocabulary, add here.
@@ -488,14 +490,14 @@ def _compose_fallback_report(
     checks.append({
         "name": "platform_supported",
         "status": "pass" if supported else "fail",
-        "message": f"platform={plat}" + ("" if supported else " (unsupported)"),
+        "message": t("tools.doctor.platform_supported", plat=plat) + ("" if supported else " (unsupported)"),
     })
 
     # session_active — we don't start a session in doctor; mark skip
     checks.append({
         "name": "session_active",
         "status": "skip",
-        "message": "not probed (doctor does not open a cua session)",
+        "message": t("tools.doctor.session_not_probed"),
     })
 
     perms = probes.get("permissions") if isinstance(probes.get("permissions"), dict) else None
@@ -510,33 +512,30 @@ def _compose_fallback_report(
             checks.append({
                 "name": "tcc_accessibility",
                 "status": "pass",
-                "message": "Accessibility is granted.",
+                "message": t("tools.doctor.accessibility_granted"),
                 "data": {"accessibility": True},
             })
         elif ax is False:
             checks.append({
                 "name": "tcc_accessibility",
                 "status": "fail",
-                "message": "Accessibility is not granted.",
-                "hint": "Grant Accessibility to CuaDriver in System Settings → Privacy & Security.",
+                "message": t("tools.doctor.accessibility_not_granted"),
+                "hint": t("tools.doctor.accessibility_hint"),
                 "data": {"accessibility": False},
             })
         else:
             checks.append({
                 "name": "tcc_accessibility",
                 "status": "skip",
-                "message": "accessibility field absent from check_permissions",
+                "message": t("tools.doctor.accessibility_absent"),
             })
 
         if scr is True and capturable is False:
             checks.append({
                 "name": "tcc_screen_recording",
                 "status": "fail",
-                "message": "Screen Recording granted but not capturable.",
-                "hint": (
-                    "Screen Recording permission may need a restart of CuaDriver "
-                    "or a re-grant in System Settings."
-                ),
+                "message": t("tools.doctor.screen_recording_granted_not_capturable"),
+                "hint": t("tools.doctor.screen_recording_hint"),
                 "data": {
                     "screen_recording": True,
                     "screen_recording_capturable": False,
@@ -546,7 +545,7 @@ def _compose_fallback_report(
             checks.append({
                 "name": "tcc_screen_recording",
                 "status": "pass",
-                "message": "Screen Recording is granted.",
+                "message": t("tools.doctor.screen_recording_granted"),
                 "data": {
                     "screen_recording": True,
                     "screen_recording_capturable": capturable,
@@ -556,8 +555,8 @@ def _compose_fallback_report(
             checks.append({
                 "name": "tcc_screen_recording",
                 "status": "fail",
-                "message": "Screen Recording is not granted.",
-                "hint": "Grant Screen Recording to CuaDriver in System Settings → Privacy & Security.",
+                "message": t("tools.doctor.screen_recording_not_granted"),
+                "hint": t("tools.doctor.screen_recording_grant_hint"),
                 "data": {"screen_recording": False},
             })
         else:
@@ -566,24 +565,24 @@ def _compose_fallback_report(
                 checks.append({
                     "name": "tcc_screen_recording",
                     "status": "skip",
-                    "message": "screen_recording field absent from check_permissions",
+                    "message": t("tools.doctor.screen_recording_absent"),
                 })
             else:
                 checks.append({
                     "name": "tcc_screen_recording",
                     "status": "skip",
-                    "message": f"not applicable on {plat}",
+                    "message": t("tools.doctor.screen_recording_not_applicable", plat=plat),
                 })
     else:
         checks.append({
             "name": "tcc_accessibility",
             "status": "fail" if perm_err else "skip",
-            "message": perm_err or "check_permissions unavailable",
+            "message": perm_err or t("tools.doctor.check_permissions_unavailable"),
         })
         checks.append({
             "name": "tcc_screen_recording",
             "status": "fail" if perm_err else "skip",
-            "message": perm_err or "check_permissions unavailable",
+            "message": perm_err or t("tools.doctor.check_permissions_unavailable"),
         })
 
     # ax_capability — infer from list_apps success or accessibility grant
@@ -596,7 +595,7 @@ def _compose_fallback_report(
         checks.append({
             "name": "ax_capability",
             "status": "pass",
-            "message": f"list_apps succeeded{count_msg}",
+            "message": t("tools.doctor.list_apps_succeeded", count_msg=count_msg),
         })
     elif list_ok is False:
         checks.append({
@@ -605,9 +604,9 @@ def _compose_fallback_report(
             "message": (
                 list_err
                 or (
-                    "list_apps failed despite accessibility grant"
+                    t("tools.doctor.list_apps_failed_despite_grant")
                     if ax_granted
-                    else "list_apps failed"
+                    else t("tools.doctor.list_apps_failed")
                 )
             ),
         })
@@ -615,25 +614,25 @@ def _compose_fallback_report(
         checks.append({
             "name": "ax_capability",
             "status": "pass",
-            "message": "inferred from accessibility grant (list_apps not probed)",
+            "message": t("tools.doctor.ax_inferred_from_grant"),
         })
     else:
         checks.append({
             "name": "ax_capability",
             "status": "skip",
-            "message": "not probed",
+            "message": t("tools.doctor.not_probed"),
         })
 
     # Annotate that we used the fallback path
-    reason_short = (reason or "health_report unavailable").strip()
+    reason_short = (reason or t("tools.doctor.health_report_unavailable")).strip()
     if len(reason_short) > 160:
         reason_short = reason_short[:157] + "..."
     checks.append({
         "name": "health_report_path",
         "status": "skip",
-        "message": (
-            "fallback composite (cua-driver 0.10 unclassified health_report); "
-            f"cause: {reason_short}"
+        "message": t(
+            "tools.doctor.health_report_fallback",
+            reason=reason_short,
         ),
     })
 

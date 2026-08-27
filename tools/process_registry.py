@@ -41,6 +41,8 @@ import threading
 import time
 import uuid
 
+from agent.i18n import t
+
 _IS_WINDOWS = platform.system() == "Windows"
 from tools.environments.local import _find_shell, _resolve_safe_cwd, _sanitize_subprocess_env
 from hermes_cli._subprocess_compat import windows_hide_flags
@@ -327,11 +329,10 @@ class ProcessRegistry:
                     "thread_id": session.watcher_thread_id,
                     "message_id": session.watcher_message_id,
                     "message": (
-                        f"Watch patterns disabled for process {session.id} — "
-                        f"{WATCH_STRIKE_LIMIT} consecutive rate-limit windows triggered "
-                        f"(min spacing {WATCH_MIN_INTERVAL_SECONDS}s). "
-                        f"Falling back to notify_on_complete semantics; you'll get "
-                        f"exactly one notification when the process exits."
+                        t("tools.process_registry.watch_disabled",
+                          session_id=session.id,
+                          limit=WATCH_STRIKE_LIMIT,
+                          min_spacing=WATCH_MIN_INTERVAL_SECONDS)
                     ),
                 })
             return
@@ -389,8 +390,8 @@ class ProcessRegistry:
                         "type": "watch_overflow_released",
                         "suppressed": suppressed,
                         "message": (
-                            f"Watch-pattern notifications resumed. "
-                            f"{suppressed} match event(s) were suppressed during the flood."
+                            t("tools.process_registry.watch_overflow_released",
+                              suppressed=suppressed)
                         ),
                         "platform": "",
                         "chat_id": "",
@@ -435,10 +436,10 @@ class ProcessRegistry:
                 "command": "",
                 "type": "watch_overflow_tripped",
                 "message": (
-                    f"Watch-pattern overflow: >{WATCH_GLOBAL_MAX_PER_WINDOW} "
-                    f"notifications in {WATCH_GLOBAL_WINDOW_SECONDS}s across all processes. "
-                    f"Suppressing further watch_match events for "
-                    f"{WATCH_GLOBAL_COOLDOWN_SECONDS}s."
+                    t("tools.process_registry.watch_overflow_tripped",
+                      max_per_window=WATCH_GLOBAL_MAX_PER_WINDOW,
+                      window_seconds=WATCH_GLOBAL_WINDOW_SECONDS,
+                      cooldown_seconds=WATCH_GLOBAL_COOLDOWN_SECONDS)
                 ),
                 "platform": "",
                 "chat_id": "",
@@ -1808,7 +1809,7 @@ class ProcessRegistry:
         if hasattr(session, '_pty') and session._pty:
             try:
                 session._pty.sendeof()
-                return {"status": "ok", "message": "EOF sent"}
+                return {"status": "ok", "message": t("tools.process_registry.eof_sent")}
             except Exception as e:
                 return {"status": "error", "error": str(e)}
 
@@ -1816,7 +1817,7 @@ class ProcessRegistry:
             return {"status": "error", "error": "Process stdin not available (non-local backend or stdin closed)"}
         try:
             session.process.stdin.close()
-            return {"status": "ok", "message": "stdin closed"}
+            return {"status": "ok", "message": t("tools.process_registry.stdin_closed")}
         except Exception as e:
             return {"status": "error", "error": str(e)}
 

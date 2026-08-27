@@ -43,10 +43,31 @@ approval:
   gateway_timeout_denied: "已拦截：命令{reason}。用户未同意此操作。请勿重试此命令，请勿改写它，也请勿通过其他命令尝试实现相同结果。停止当前工作流，并在采取任何进一步破坏性或不可逆操作之前等待用户回应。{timeout_addendum}"
   cli_denied: "已拦截：用户拒绝了此命令。用户未同意此操作。请勿重试此命令，请勿改写它，也请勿通过其他命令尝试实现相同结果。停止当前工作流，并在采取任何进一步破坏性或不可逆操作之前等待用户回应。"
   execute_code_smart_denied: "智能审批拦截：execute_code 脚本执行被评估为确实危险。请勿重试。"
+  execute_code_description: "execute_code 脚本执行。该脚本可生成子进程或修改文件，且不经过终端命令审批；本次批准仅对本次运行有效。"
+  execute_code_cron_blocked: "已拦截：execute_code 运行任意本地 Python（包括绕过 shell 字符串审批检查的子进程调用）。定时任务运行时没有用户在场批准。请使用其他工具替代，或仅在有意信任此 cron 配置时设置 approvals.cron_mode: approve。"
   execute_code_gateway_asking: "⚠️ {description}。正在请求用户批准。\n\n**代码：**\n```python\n{code}\n```"
   execute_code_notify_failed: "已拦截：无法向用户发送 execute_code 审批请求。请勿重试。"
   execute_code_timeout_denied: "已拦截：execute_code 脚本因用户未响应而超时。用户未同意运行此代码。请勿重试，请勿改写脚本，也请勿通过其他工具尝试实现相同结果。沉默不等于同意。"
   execute_code_user_denied: "已拦截：execute_code 脚本已被用户拒绝。用户未同意运行此代码。请勿重试，请勿改写脚本，也请勿通过其他工具尝试实现相同结果。"
+
+  # 拦截结果消息 — 返回给 agent 的工具结果。
+  user_deny_blocked: "已拦截：此命令匹配用户自定义的拒绝规则 '{pattern}'（config.yaml 中的 approvals.deny）。无法通过 agent 执行 — 即使使用 --yolo、/yolo 或 approvals.mode=off 也不行。请勿重试或改写此命令；用户已明确禁止它。"
+  hardline_blocked: "已拦截（硬拦截）：{description}。此命令位于无条件拦截列表中，无法通过 agent 执行 — 即使使用 --yolo、/yolo、approvals.mode=off 或 cron 批准模式也不行。如果你确实需要运行它，请在 agent 外的终端中手动运行。"
+  hardline_recovery_saved: " 恢复：此拦截针对超大/无法解析的内联命令载荷（heredoc、巨型单行命令），而非操作本身。你的命令已保存到 {saved} — 检查后运行：terminal(command=\"bash {saved}\")。请勿内联重试。"
+  hardline_recovery_manual: " 恢复：此拦截针对超大/无法解析的内联命令载荷（heredoc、巨型单行命令），而非操作本身。请用 write_file 将脚本写入文件，然后运行：terminal(command=\"bash /path/script.sh\") 或 \"python3 /path/script.py\"。请勿内联重试。"
+  circuit_breaker: " 熔断器：{count} 条连续命令被安全审查拦截。停止尝试此操作的变体。向用户报告被拦截的操作，并请用户手动运行或使用 /approve。"
+  no_human_present: "已拦截：需要审批（{description}），但没有交互式用户或网关在场批准。"
+  no_human_present_tool: "已拦截：工具 '{tool_name}' 需要审批（{description}），但没有交互式用户或网关在场批准。插件标记此操作需要人工确认。"
+  cron_blocked_tool: "已拦截：工具 '{tool_name}' 需要审批（{description}），但定时任务运行时没有用户在场批准。请寻找替代方案。如需在定时任务中允许标记操作，请在 config.yaml 中设置 approvals.cron_mode: approve。"
+  plugin_requires_approval: "插件需要审批：{tool_name}"
+  reason_timeout: "因用户未响应而超时"
+  reason_denied_by_user: "被用户拒绝"
+  silence_not_consent: " 沉默不等于同意。"
+  reason_user_given: ' 用户给出的理由："{deny_reason}"。'
+  gateway_action_blocked: "已拦截：操作{reason}。{reason_addendum}用户未同意此操作。请勿重试，请勿改写，也请勿通过其他路径尝试实现相同结果。{timeout_addendum}"
+  cli_timeout_action: "已拦截：操作因用户未响应而超时。用户未同意此操作。请勿重试，请勿改写，也请勿通过其他路径尝试实现相同结果。沉默不等于同意。"
+  cli_denied_action: "已拦截：用户拒绝了此具有潜在危险的操作（匹配 '{description}'）。请勿重试 — 用户已明确拒绝。"
+  cli_timeout_command: "已拦截：命令因用户未响应而超时。用户未同意此操作。请勿重试此命令，请勿改写它，也请勿通过其他命令尝试实现相同结果。停止当前工作流，并在采取任何进一步破坏性或不可逆操作之前等待用户回应。沉默不等于同意。"
 
   # 飞书审批卡片 — 交互式卡片 UI 文案。
   feishu_card_title: "⚠️ 命令需要审批"
@@ -534,6 +555,21 @@ gateway:
   # 会话停滞看门狗 — 有待处理入站消息但超过 agent.session_stall_timeout 无进展时显示。
   # {mins} 为向下取整的整分钟数。
   session_stall: "⚠️ 代理会话似乎已停滞（上次活动在 {mins} 分钟前）。请尝试 /new 重置。"
+
+  # 平台交付消息 — 发送到消息平台时向用户显示的内容。
+  busy_redirect_ack: "↪ 已重定向当前运行{status_detail}。我会根据你的修正进行调整。"
+  home_channel_notice: "📬 {platform} 未设置主频道。主频道是 Hermes 发送定时任务结果和跨平台消息的地方。\n\n输入 {sethome_cmd} 将此聊天设为主频道，或忽略跳过。"
+  aux_model_fallback: "ℹ️ 配置的压缩模型 `{model}` 失败（{error}）。已使用主模型恢复 — 上下文完整 — 但建议检查 config.yaml 中的 `auxiliary.compression.model`。"
+  blueprint_failed: "定时任务蓝图命令失败：{error}"
+  session_restored: "会话已恢复：{title}"
+  session_restored_last: "\n\nHermes 上一条消息：\n{last_assistant}"
+  no_proxy_response: "（远程代理无响应）"
+  telegram_topic_lobby: "此主聊天专用于系统命令。\n\n要开始新的 Hermes 聊天，请打开此机器人界面顶部的「所有消息」话题，在其中发送任意消息。Telegram 会为该消息创建新话题；每个话题都是独立的 Hermes 会话。"
+  telegram_topic_new: "要开始新的并行 Hermes 聊天，请打开此机器人界面顶部的「所有消息」话题，在其中发送消息。Telegram 会为其创建新话题。\n\n每个话题都是独立的 Hermes 会话。仅在现有话题内使用 /new 替换该话题的当前会话。"
+  telegram_topic_header: "已在此话题中开始新的 Hermes 会话。\n\n提示：如需并行工作，请打开「所有消息」并发送消息来创建单独的话题，而非在此使用 /new。/new 会替换当前话题关联的会话。"
+  telegram_topic_default: "Hermes 聊天"
+  bg_process_finished: "[后台进程 {session_id} 已完成，退出码 {exit_code}~ 最终输出：\n{output}]"
+  bg_process_running: "[后台进程 {session_id} 仍在运行~ 新输出：\n{output}]"
 
   # 消息处理意外崩溃时向用户显示的通用错误。
   handler_error: "抱歉，发生了错误（{error_type}）。\n{error_detail}\n请重试，或使用 /reset 开始新会话。"
@@ -1386,6 +1422,31 @@ toolguard:
 # 便于模型按工具协议直接操作。
 memory:
   add_exceeds_limit: "内存已用 {current}/{limit} 字符。新增此条目（{entry_chars} 字符）将超出上限。请立即整理：使用 'replace' 将重叠条目合并为更短内容，或使用 'remove' 删除过时或不太重要的条目（见下方 current_entries），然后在本回合内重试本次 add。"
+  content_empty: "内容不能为空。"
+  entry_already_exists: "条目已存在（未添加重复条目）。"
+  entry_added: "条目已添加。"
+  old_text_empty: "old_text 不能为空。"
+  new_content_empty: "new_content 不能为空。使用 'remove' 删除条目。"
+  no_match_replace: "没有条目匹配 '{old_text}'。请查看下方 current_entries，使用要替换的条目的确切文本重试。"
+  multiple_matches: "多个条目匹配 '{old_text}'。请更具体一些。"
+  replace_exceeds_limit: "替换后内存将达到 {new_total}/{limit} 字符。请缩短新内容，或使用 'remove' 删除其他过时或不太重要的条目以腾出空间（见下方 current_entries），然后在本回合内重试。"
+  entry_replaced: "条目已替换。"
+  no_match_remove: "没有条目匹配 '{old_text}'。请查看下方 current_entries，使用要删除的条目的确切文本重试。"
+  entry_removed: "条目已删除。"
+  batch_empty: "操作列表为空。"
+  batch_op_scan_error: "操作 {index}：{error}"
+  batch_op_pos: "操作 {index}（{action}）"
+  batch_content_required: "content 为必填项。"
+  batch_old_text_required: "old_text 为必填项。"
+  batch_content_required_remove: "content 为必填项（使用 action='remove' 可删除）。"
+  batch_no_match: "没有条目匹配 '{old_text}'。"
+  batch_multiple_matches: "'{old_text}' 匹配了多个不同条目 -- 请更具体一些。"
+  batch_unknown_action: "未知操作。请使用 add、replace 或 remove。"
+  batch_nothing_applied: "未应用任何操作（批量操作为全有或全无模式）。"
+  drift_error: "拒绝写入 {file}：磁盘上的文件包含无法通过内存工具往返的内容（可能由 patch 工具、shell 追加、手动编辑或并发会话添加）。已将快照保存到 {backup}。请先解决偏移问题——将文件重写为干净的 § 分隔条目列表，或将额外内容移出——然后重试。此保护机制旨在防止静默数据丢失（issue #26045）。"
+  drift_remediation: "打开 .bak 文件，通过 memory(action=add, content=...) 将缺失的条目逐一整合到内存工具中，然后删除或重写原始文件至干净状态。"
+  read_failed: "拒绝写入 {file}：文件在磁盘上存在但当前无法读取（可能被其他程序临时锁定、权限更改、文本编码无效/损坏或文件系统错误）。将无法读取的文件视为空并保存会清除现有内存，因此写入被拒绝。未做任何更改——请稍后重试。"
+  unknown_action: "未知的暂存操作 '{action}'。"
 
 memory_proposal:
   action_add: "添加"
@@ -1779,3 +1840,118 @@ display:
     bfl_flux3_get_result: "正在查询视频生成结果"
     bfl_flux3_prompting_guide: "正在查看提示词指南"
     using: "正在使用 {tool}"
+
+# 工具面向用户的 "message" 字符串（非 schema 描述、非日志、非 error 字段）。
+tools:
+  skills_list:
+    no_skills_dir_created: "未找到技能。已在 {home}/skills/ 创建技能目录。"
+    no_skills_in_directory: "在 skills/ 目录中未找到技能。"
+
+  skill_manage:
+    created: "技能 '{name}' 已创建。"
+    updated_full_rewrite: "技能 '{name}' 已更新（完整重写）。"
+    patched: "已修补技能 '{name}' 中的 {target}（{count} 处替换{plural}）。"
+    file_written: "文件 '{file_path}' 已写入技能 '{name}'。"
+    file_removed: "文件 '{file_path}' 已从技能 '{name}' 中移除。"
+
+  session_search:
+    browse_hint: "显示最近 {count} 个会话。传入 query= 进行搜索，或传入 session_id+around_message_id 进行滚动。"
+    no_matches: "未找到匹配的会话。"
+
+  cronjob:
+    removed: "定时任务 '{name}' 已移除。"
+
+  discord:
+    message_pinned: "消息 {message_id} 已置顶。"
+    message_unpinned: "消息 {message_id} 已取消置顶。"
+    message_deleted: "消息 {message_id} 已删除。"
+    role_added: "已为用户 {user_id} 添加角色 {role_id}。"
+    role_removed: "已移除用户 {user_id} 的角色 {role_id}。"
+
+  process_registry:
+    watch_disabled: "进程 {session_id} 的监视模式已禁用 — 连续 {limit} 个限流窗口被触发（最小间隔 {min_spacing} 秒）。将回退到 notify_on_complete 语义；进程退出时你将收到恰好一条通知。"
+    watch_overflow_released: "监视模式通知已恢复。洪泛期间已抑制 {suppressed} 个匹配事件。"
+    watch_overflow_tripped: "监视模式溢出：所有进程在 {window_seconds} 秒内产生 >{max_per_window} 条通知。将在 {cooldown_seconds} 秒内抑制后续 watch_match 事件。"
+    eof_sent: "已发送 EOF"
+    stdin_closed: "已关闭 stdin"
+
+  doctor:
+    platform_supported: "platform={plat}"
+    session_not_probed: "未探测（doctor 不打开 cua 会话）"
+    accessibility_granted: "辅助功能已授权。"
+    accessibility_not_granted: "辅助功能未授权。"
+    accessibility_hint: "请在系统设置 → 隐私与安全性中为 CuaDriver 授予辅助功能权限。"
+    accessibility_absent: "check_permissions 中缺少 accessibility 字段"
+    screen_recording_granted_not_capturable: "屏幕录制已授权但无法捕获。"
+    screen_recording_hint: "屏幕录制权限可能需要重启 CuaDriver 或在系统设置中重新授权。"
+    screen_recording_granted: "屏幕录制已授权。"
+    screen_recording_not_granted: "屏幕录制未授权。"
+    screen_recording_grant_hint: "请在系统设置 → 隐私与安全性中为 CuaDriver 授予屏幕录制权限。"
+    screen_recording_absent: "check_permissions 中缺少 screen_recording 字段"
+    screen_recording_not_applicable: "在 {plat} 上不适用"
+    check_permissions_unavailable: "check_permissions 不可用"
+    list_apps_succeeded: "list_apps 成功{count_msg}"
+    list_apps_failed_despite_grant: "list_apps 失败（尽管已授权辅助功能）"
+    list_apps_failed: "list_apps 失败"
+    ax_inferred_from_grant: "由辅助功能授权推断（未探测 list_apps）"
+    not_probed: "未探测"
+    health_report_unavailable: "health_report 不可用"
+    health_report_fallback: "回退复合报告（cua-driver 0.10 未分类的 health_report）；原因：{reason}"
+
+  backend:
+    no_typed_browser_route: "此 computer-use 后端没有类型化浏览器路由；请使用原生捕获/输入。"
+
+  website_policy:
+    blocked: "已被网站策略阻止：'{host}' 匹配规则 '{pattern}'（来源 {source}）"
+
+  computer_use:
+    hint_dangerous_type_pattern: "无法通过 computer_use 输入危险的 shell 模式。"
+    hint_destructive_shortcuts_blocked: "破坏性系统快捷键已被硬性阻止。"
+    hint_backend_unavailable: "如果缺少 cua-driver 二进制文件，请运行 `hermes computer-use install`。如果缺少 Python 依赖，上方错误信息会显示确切的安装命令。"
+
+# 终端工具用户可见错误字符串（返回字典 "error" 字段）。
+terminal_tool:
+  invalid_command_type: "无效命令：期望字符串，得到 {type_name}"
+  env_creation_failed: "终端工具已禁用：环境创建失败（{error}）"
+  bg_process_start_failed: "启动后台进程失败：{error}"
+  command_timeout: "命令在 {seconds} 秒后超时"
+  execution_failed: "命令执行失败：{error_type}：{error}"
+  execute_command_failed: "执行命令失败：{error}"
+
+# 浏览器工具用户可见字符串（返回字典 "error"/"reason"/"warning" 字段）。
+browser:
+  interrupted: "已中断"
+  blocked_api_key_in_url: "已拦截：URL 包含疑似 API 密钥或令牌。密钥不得通过 URL 传递。"
+  blocked_credential_query_param: "已拦截：URL 包含疑似凭据的查询参数（{param}）。云浏览器后端是第三方读取者；请使用本地浏览器/CDP 会话，或在导航前移除该敏感查询参数。"
+  blocked_metadata_endpoint: "已拦截：URL 指向云元数据端点"
+  blocked_private_address: "已拦截：URL 指向私有或内部地址"
+  blocked_redirect_metadata: "已拦截：重定向跳转到了云元数据端点"
+  blocked_redirect_private: "已拦截：重定向跳转到了私有/内部地址"
+  blocked_private_page_jsnav: "已拦截：页面 URL 指向私有或内部地址（{url}）。这可能是由 browser_console 的 JavaScript 导航引起的。"
+  blocked_private_page_back: "已拦截：页面 URL 指向私有或内部地址（{url}）。浏览器历史导航（后退）跳转到了此地址。"
+  blocked_private_page_action: "已拦截：页面 URL 指向私有或内部地址（{url}）。在此浏览器模式下拒绝在该页面上执行 {action} 操作。"
+  blocked_eval_private_url: "已拦截：JavaScript 表达式指向私有或内部地址（{url}。在此浏览器模式下不允许通过 browser_console 读取内部端点。"
+  blocked_sensitive_eval: "已拦截：browser_console(expression=...) 尝试使用敏感浏览器 JavaScript 原语（{reason}），且 browser.restrict_evaluate 已启用。请使用不带 expression 参数的 browser_snapshot/browser_get_images/browser_console 进行常规检查，或在 config.yaml 中设置 browser.restrict_evaluate: false 以允许程序化求值。"
+  eval_unsupported_backend: "此浏览器后端不支持 JavaScript 求值。{error}"
+  eval_dom_node_unserializable: "表达式返回了活跃的 DOM 节点 / NodeList / Window，无法序列化。请提取原始值（如 .innerText、.href、.src、.value）或使用 JSON.stringify() / 快照工具替代。"
+  camofox_eval_unsupported: "此 Camofox 服务器不支持 JavaScript 求值。请使用 browser_snapshot 或 browser_vision 检查页面状态。"
+  chrome_fallback_no_url: "Chrome 回退失败：无法确定当前 URL"
+  chrome_fallback_timeout: "Chrome 回退 '{command}' 超时"
+  chrome_fallback_failed: "Chrome 回退 '{command}' 失败"
+  chrome_fallback_navigate_failed: "Chrome 回退导航失败：{error}"
+  session_create_failed: "创建浏览器会话失败：{error}"
+  command_no_output: "浏览器命令 '{command}' 未返回输出"
+  non_json_output: "agent-browser 对 '{command}' 返回了非 JSON 输出：{raw}"
+  navigation_failed: "导航失败"
+  snapshot_failed: "获取快照失败"
+  click_failed: "点击 {ref} 失败"
+  type_failed: "向 {ref} 输入文本失败"
+  scroll_failed: "向 {direction} 滚动失败"
+  invalid_scroll_direction: "无效方向 '{direction}'。请使用 'up' 或 'down'。"
+  back_failed: "后退失败"
+  press_failed: "按键 {key} 失败"
+  get_images_failed: "获取图片失败"
+  image_data_parse_failed: "无法解析图片数据"
+  screenshot_failed: "截图失败（{mode} 模式）：{error}"
+  vision_analysis_failed: "视觉分析时出错：{error}"
+  lightpanda_no_renderer_vision: "Lightpanda 没有图形渲染器用于截图；已使用 Chrome 进行视觉捕获。"

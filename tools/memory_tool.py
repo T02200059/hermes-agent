@@ -100,22 +100,9 @@ def _drift_error(path: "Path", bak_path: str) -> Dict[str, Any]:
     """
     return {
         "success": False,
-        "error": (
-            f"Refusing to write {path.name}: file on disk has content that "
-            f"wouldn't round-trip through the memory tool (likely added by "
-            f"the patch tool, a shell append, a manual edit, or a "
-            f"concurrent session). A snapshot was saved to {bak_path}. "
-            f"Resolve the drift first — either rewrite the file as a clean "
-            f"§-delimited list of entries, or move the extra content out — "
-            f"then retry. This guard exists to prevent silent data loss "
-            f"(issue #26045)."
-        ),
+        "error": t("memory.drift_error", file=path.name, backup=bak_path),
         "drift_backup": bak_path,
-        "remediation": (
-            "Open the .bak file, integrate the missing entries into the "
-            "memory tool one at a time via memory(action=add, content=...), "
-            "then remove or rewrite the original file to a clean state."
-        ),
+        "remediation": t("memory.drift_remediation"),
     }
 
 
@@ -135,14 +122,7 @@ def _read_failed_error(path: "Path") -> Dict[str, Any]:
     """
     return {
         "success": False,
-        "error": (
-            f"Refusing to write {path.name}: the file exists on disk but could "
-            f"not be read right now (temporarily locked by another program, a "
-            f"permission change, invalid/corrupt text encoding, or a filesystem "
-            f"error). Treating an unreadable file as empty and saving would wipe "
-            f"existing memory, so the write is refused. Nothing was changed — "
-            f"retry in a moment."
-        ),
+        "error": t("memory.read_failed", file=path.name),
     }
 
 
@@ -392,7 +372,7 @@ class MemoryStore:
         """Append a new entry. Returns error if it would exceed the char limit."""
         content = content.strip()
         if not content:
-            return {"success": False, "error": "Content cannot be empty."}
+            return {"success": False, "error": t("memory.content_empty")}
 
         # Scan for injection/exfiltration before accepting
         scan_error = _scan_memory_content(content)
@@ -420,7 +400,7 @@ class MemoryStore:
 
             # Reject exact duplicates
             if content in entries:
-                return self._success_response(target, "Entry already exists (no duplicate added).")
+                return self._success_response(target, t("memory.entry_already_exists"))
 
             # Calculate what the new total would be
             new_entries = entries + [content]
@@ -444,16 +424,16 @@ class MemoryStore:
             self._set_entries(target, entries)
             self.save_to_disk(target)
 
-        return self._success_response(target, "Entry added.")
+        return self._success_response(target, t("memory.entry_added"))
 
     def replace(self, target: str, old_text: str, new_content: str) -> Dict[str, Any]:
         """Find entry containing old_text substring, replace it with new_content."""
         old_text = old_text.strip()
         new_content = new_content.strip()
         if not old_text:
-            return {"success": False, "error": "old_text cannot be empty."}
+            return {"success": False, "error": t("memory.old_text_empty")}
         if not new_content:
-            return {"success": False, "error": "new_content cannot be empty. Use 'remove' to delete entries."}
+            return {"success": False, "error": t("memory.new_content_empty")}
 
         # Scan replacement content for injection/exfiltration
         scan_error = _scan_memory_content(new_content)
@@ -473,7 +453,7 @@ class MemoryStore:
             if not matches:
                 return self._consolidation_failure({
                     "success": False,
-                    "error": f"No entry matched '{old_text}'. Check current_entries below and retry with the exact text of the entry you want to replace.",
+                    "error": t("memory.no_match_replace", old_text=old_text),
                     "current_entries": entries,
                 })
 
@@ -484,7 +464,7 @@ class MemoryStore:
                     previews = self._previews([e for _, e in matches])
                     return {
                         "success": False,
-                        "error": f"Multiple entries matched '{old_text}'. Be more specific.",
+                        "error": t("memory.multiple_matches", old_text=old_text),
                         "matches": previews,
                     }
                 # All identical -- safe to replace just the first
@@ -501,12 +481,7 @@ class MemoryStore:
                 current = self._char_count(target)
                 return self._consolidation_failure({
                     "success": False,
-                    "error": (
-                        f"Replacement would put memory at {new_total:,}/{limit:,} chars. "
-                        f"Shorten the new content, or 'remove' other stale or less important "
-                        f"entries to make room (see current_entries below), then retry — all "
-                        f"in this turn."
-                    ),
+                    "error": t("memory.replace_exceeds_limit", new_total=f"{new_total:,}", limit=f"{limit:,}"),
                     "current_entries": entries,
                     "usage": f"{current:,}/{limit:,}",
                 })
@@ -515,13 +490,13 @@ class MemoryStore:
             self._set_entries(target, entries)
             self.save_to_disk(target)
 
-        return self._success_response(target, "Entry replaced.")
+        return self._success_response(target, t("memory.entry_replaced"))
 
     def remove(self, target: str, old_text: str) -> Dict[str, Any]:
         """Remove the entry containing old_text substring."""
         old_text = old_text.strip()
         if not old_text:
-            return {"success": False, "error": "old_text cannot be empty."}
+            return {"success": False, "error": t("memory.old_text_empty")}
 
         with self._file_lock(self._path_for(target)):
             bak = self._reload_target(target)
@@ -536,7 +511,7 @@ class MemoryStore:
             if not matches:
                 return self._consolidation_failure({
                     "success": False,
-                    "error": f"No entry matched '{old_text}'. Check current_entries below and retry with the exact text of the entry you want to remove.",
+                    "error": t("memory.no_match_remove", old_text=old_text),
                     "current_entries": entries,
                 })
 
@@ -547,7 +522,7 @@ class MemoryStore:
                     previews = self._previews([e for _, e in matches])
                     return {
                         "success": False,
-                        "error": f"Multiple entries matched '{old_text}'. Be more specific.",
+                        "error": t("memory.multiple_matches", old_text=old_text),
                         "matches": previews,
                     }
                 # All identical -- safe to remove just the first
@@ -557,7 +532,7 @@ class MemoryStore:
             self._set_entries(target, entries)
             self.save_to_disk(target)
 
-        return self._success_response(target, "Entry removed.")
+        return self._success_response(target, t("memory.entry_removed"))
 
     def apply_batch(self, target: str, operations: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Apply a sequence of add/replace/remove ops to one target atomically.
@@ -573,7 +548,7 @@ class MemoryStore:
         error is returned describing the first failure plus the live state.
         """
         if not operations:
-            return {"success": False, "error": "operations list is empty."}
+            return {"success": False, "error": t("memory.batch_empty")}
 
         # Scan every add/replace content for injection/exfil BEFORE touching
         # disk -- a single poisoned op rejects the whole batch.
@@ -583,7 +558,7 @@ class MemoryStore:
             if act in {"add", "replace"} and new_content:
                 scan_error = _scan_memory_content(new_content)
                 if scan_error:
-                    return {"success": False, "error": f"Operation {i + 1}: {scan_error}"}
+                    return {"success": False, "error": t("memory.batch_op_scan_error", index=i+1, error=scan_error)}
 
         with self._file_lock(self._path_for(target)):
             bak = self._reload_target(target)
@@ -601,50 +576,50 @@ class MemoryStore:
                 act = op.get("action")
                 content = (op.get("content") or "").strip()
                 old_text = (op.get("old_text") or "").strip()
-                pos = f"Operation {i + 1} ({act or 'unknown'})"
+                pos = t("memory.batch_op_pos", index=i+1, action=act or 'unknown')
 
                 if act == "add":
                     if not content:
-                        return self._batch_error(target, f"{pos}: content is required.")
+                        return self._batch_error(target, f"{pos}: " + t("memory.batch_content_required"))
                     if content in working:
                         continue  # idempotent -- skip duplicate, don't fail the batch
                     working.append(content)
 
                 elif act == "replace":
                     if not old_text:
-                        return self._batch_error(target, f"{pos}: old_text is required.")
+                        return self._batch_error(target, f"{pos}: " + t("memory.batch_old_text_required"))
                     if not content:
                         return self._batch_error(
                             target,
-                            f"{pos}: content is required (use action='remove' to delete).",
+                            f"{pos}: " + t("memory.batch_content_required_remove"),
                         )
                     matches = [j for j, e in enumerate(working) if old_text in e]
                     if not matches:
-                        return self._batch_error(target, f"{pos}: no entry matched '{old_text}'.")
+                        return self._batch_error(target, f"{pos}: " + t("memory.batch_no_match", old_text=old_text))
                     if len({working[j] for j in matches}) > 1:
                         return self._batch_error(
                             target,
-                            f"{pos}: '{old_text}' matched multiple distinct entries -- be more specific.",
+                            f"{pos}: " + t("memory.batch_multiple_matches", old_text=old_text),
                         )
                     working[matches[0]] = content
 
                 elif act == "remove":
                     if not old_text:
-                        return self._batch_error(target, f"{pos}: old_text is required.")
+                        return self._batch_error(target, f"{pos}: " + t("memory.batch_old_text_required"))
                     matches = [j for j, e in enumerate(working) if old_text in e]
                     if not matches:
-                        return self._batch_error(target, f"{pos}: no entry matched '{old_text}'.")
+                        return self._batch_error(target, f"{pos}: " + t("memory.batch_no_match", old_text=old_text))
                     if len({working[j] for j in matches}) > 1:
                         return self._batch_error(
                             target,
-                            f"{pos}: '{old_text}' matched multiple distinct entries -- be more specific.",
+                            f"{pos}: " + t("memory.batch_multiple_matches", old_text=old_text),
                         )
                     working.pop(matches[0])
 
                 else:
                     return self._batch_error(
                         target,
-                        f"{pos}: unknown action. Use add, replace, or remove.",
+                        f"{pos}: " + t("memory.batch_unknown_action"),
                     )
 
             # Budget check against the FINAL state only.
@@ -674,7 +649,7 @@ class MemoryStore:
         limit = self._char_limit(target)
         return self._consolidation_failure({
             "success": False,
-            "error": message + " No operations were applied (batch is all-or-nothing).",
+            "error": message + " " + t("memory.batch_nothing_applied"),
             "current_entries": self._entries_for(target),
             "usage": f"{current:,}/{limit:,}",
         })
@@ -1145,7 +1120,7 @@ def apply_memory_pending(payload: Dict[str, Any], store: "MemoryStore") -> Dict[
         return store.replace(target, old_text, content)
     if action == "remove":
         return store.remove(target, old_text)
-    return {"success": False, "error": f"Unknown staged action '{action}'."}
+    return {"success": False, "error": t("memory.unknown_action", action=action)}
 # OpenAI Function-Calling Schema
 # =============================================================================
 
