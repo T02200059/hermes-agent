@@ -116,15 +116,24 @@ cmd_scan() {
     t3_id="$(echo "$t3_out" | awk '{print $1}')"
     echo "T3 (report): ${t3_id:-FAILED}"
 
+    # T4: 自修复卡（T3 子卡，T3 完成后自动执行）
+    local t4_body t4_out t4_id
+    t4_body="$(render "${TPL_DIR}/T4-fix.md")"
+    local idem4="${IDEM_PREFIX}-fix-${DATE_TAG}"
+    t4_out="$(create_card "swagger-fix: 自修复 ${DATE_TAG}" "$t4_body" "$idem4" "30m" "parent:${t3_id}" || true)"
+    t4_id="$(echo "$t4_out" | awk '{print $1}')"
+    echo "T4 (fix): ${t4_id:-FAILED}"
+
     hermes kanban dispatch >/dev/null 2>&1 || true
 
     echo ""
     echo "═══════════════════════════════════════════════"
-    echo "  Swagger 检查流水线已创建"
+    echo "  Swagger 检查+自修复流水线已创建"
     echo "  Assignee: ${ASSIGNEE}"
     echo "═══════════════════════════════════════════════"
-    echo "T0 → T1a-e → T2a-e → T3"
+    echo "T0 → T1a-e → T2a-e → T3 → T4(fix)"
     echo "报告: ${WS_DIR}/t3-final-report.md"
+    echo "修复结果: ${WS_DIR}/t4-fix-result.json"
 }
 
 cmd_fix() {
