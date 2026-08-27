@@ -205,6 +205,14 @@ owner:
       model_pro: "/model mimo-v2.5-pro --provider xiaomi"
       model_flash: "/model mimo-v2.5 --provider xiaomi"
       model_mimo: "/model mimo-v2.5-pro --provider xiaomi --global"
+      model_xy_damodel_session: "/model xy-damodel --provider damodel --session"
+      model_xy_flash_session: "/model xy-flash --provider damodel --session"
+      model_xy_max_session: "/model xy-max --provider damodel --session"
+      model_xy_pro_session: "/model xy-pro --provider damodel --session"
+      model_xy_damodel_global: "/model xy-damodel --provider damodel --global"
+      model_xy_flash_global: "/model xy-flash --provider damodel --global"
+      model_xy_max_global: "/model xy-max --provider damodel --global"
+      model_xy_pro_global: "/model xy-pro --provider damodel --global"
       list_models: "/providers"
       feishu_guide: "/feishu-guide"
       yolo_on: "/yolo on"
@@ -250,6 +258,22 @@ owner:
           ack: "🤖 切换模型…"
         model_mimo:
           ack: "🤖 切换 mimo-v2.5-pro…"
+        model_xy_damodel_session:
+          ack: "🤖 切换 xy-damodel（当前会话）…"
+        model_xy_flash_session:
+          ack: "🤖 切换 xy-flash（当前会话）…"
+        model_xy_max_session:
+          ack: "🤖 切换 xy-max（当前会话）…"
+        model_xy_pro_session:
+          ack: "🤖 切换 xy-pro（当前会话）…"
+        model_xy_damodel_global:
+          ack: "🤖 切换 xy-damodel（全局）…"
+        model_xy_flash_global:
+          ack: "🤖 切换 xy-flash（全局）…"
+        model_xy_max_global:
+          ack: "🤖 切换 xy-max（全局）…"
+        model_xy_pro_global:
+          ack: "🤖 切换 xy-pro（全局）…"
         inspect_gpu_cluster:
           ack: "🔍 启动 GPU 集群巡检流程中…"
         resume:
