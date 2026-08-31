@@ -80,36 +80,43 @@ def _load_routing_config() -> Dict[str, Any]:
 def resolve_profile_route(
     chat_id: str,
     open_id: str,
+    chat_type: str = "p2p",
 ) -> Optional[Tuple[str, str, str]]:
     """Return ``(profile_name, endpoint_url, api_key)`` for an inbound message.
 
     Resolution priority:
-        1. ``whitelist`` open_ids → main gateway (return None)
+        1. ``whitelist`` open_ids → main gateway (return None), **DM only**
         2. ``chat_profile_routes`` by chat_id
         3. ``user_profile_routes`` by open_id
         4. ``default_profile``
         5. no route → main gateway (return None)
 
-    If a profile is resolved but has no entry in ``profile_endpoints``,
-    a warning is logged and None is returned.
+    In group chats, whitelist is skipped so the message falls through to
+    ``user_profile_routes`` then ``default_profile`` — the whitelist concept
+    only applies to DM (a user's p2p chat with the bot).
     """
     routing_cfg = _load_routing_config()
     if not routing_cfg:
         return None
 
-    # Defensive: whitelist must be a list-like collection.
-    whitelist = routing_cfg.get("whitelist", [])
-    if isinstance(whitelist, (list, tuple, set, frozenset)):
-        if open_id in whitelist:
-            return None
-    elif isinstance(whitelist, str):
-        if open_id == whitelist:
-            return None
-    else:
-        logger.warning(
-            "[Feishu] user_routing.whitelist has invalid type %s; expected list",
-            type(whitelist).__name__,
-        )
+    is_dm = (chat_type or "p2p").strip().lower() in ("p2p", "dm")
+
+    # Whitelist only applies in DM: a user whitelisted in their p2p chat gets
+    # the main gateway.  In group chats, whitelist is skipped so the message
+    # falls through to user_profile_routes → default_profile.
+    if is_dm:
+        whitelist = routing_cfg.get("whitelist", [])
+        if isinstance(whitelist, (list, tuple, set, frozenset)):
+            if open_id in whitelist:
+                return None
+        elif isinstance(whitelist, str):
+            if open_id == whitelist:
+                return None
+        else:
+            logger.warning(
+                "[Feishu] user_routing.whitelist has invalid type %s; expected list",
+                type(whitelist).__name__,
+            )
 
     profile: Optional[str] = None
     chat_routes = routing_cfg.get("chat_profile_routes")
@@ -521,7 +528,7 @@ async def try_route_inbound_message(
     if not _should_route_text(text):
         return False
 
-    route = resolve_profile_route(chat_id, open_id)
+    route = resolve_profile_route(chat_id, open_id, chat_type)
     if route is None:
         return False
 
@@ -669,7 +676,7 @@ async def try_route_bot_menu_command(
     if not _should_route_text(synthetic_text):
         return False
 
-    route = resolve_profile_route(chat_id, open_id)
+    route = resolve_profile_route(chat_id, open_id, chat_type)
     if route is None:
         return False
 
