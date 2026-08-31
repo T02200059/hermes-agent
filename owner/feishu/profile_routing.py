@@ -209,6 +209,37 @@ def resolve_profile_route_by_name(profile_name: str) -> Optional[Tuple[str, str,
     return (profile_name, str(url), str(api_key))
 
 
+
+
+def resolve_api_identity_route(
+    identity: str,
+) -> Optional[Tuple[str, str, str]]:
+    """Resolve a profile by API identity string (LDAP uid, etc.).
+
+    Reads ``identity_routes`` from the routing config, maps the identity to a
+    profile name, then delegates to ``resolve_profile_route_by_name`` for the
+    endpoint URL and API key.
+
+    Returns (profile_name, endpoint_url, api_key) or None if the identity
+    is unknown or the profile has no endpoint.
+    """
+    if not identity:
+        return None
+
+    routing_cfg = _load_routing_config()
+    if not routing_cfg:
+        return None
+
+    identity_routes = routing_cfg.get("identity_routes", {})
+    if not isinstance(identity_routes, dict):
+        return None
+
+    profile_name = identity_routes.get(identity)
+    if not profile_name:
+        return None
+
+    return resolve_profile_route_by_name(str(profile_name))
+
 async def _forward_to_profile_container(
     *,
     endpoint: str,

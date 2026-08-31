@@ -1946,6 +1946,100 @@ class APIServerAdapter(BasePlatformAdapter):
 
         return profile_prefix_middleware
 
+    def _make_identity_routing_middleware(self):
+        """Forward requests with X-Hermes-Identity header to the sub-profile container.
+
+        When a request carries X-Hermes-Identity, resolves it via
+        identity_routes in patch_feishu_profile.yaml, then reverse-proxies
+        the request to the matching sub-profile's API Server endpoint.
+
+        No identity header or unknown identity → pass through to the next
+        middleware (normal handling).
+        """
+
+        @web.middleware
+        async def identity_routing_middleware(request: "web.Request", handler):
+            identity = request.headers.get("X-Hermes-Identity", "").strip()
+            if not identity:
+                return await handler(request)
+
+            _resolve = _owner_import(
+                "owner.feishu.profile_routing", "resolve_api_identity_route"
+            )
+            if _resolve is None:
+                return await handler(request)
+
+            route = _resolve(identity)
+            if route is None:
+                logger.warning(
+                    "[API] X-Hermes-Identity=%r is unknown; falling through to default",
+                    identity,
+                )
+                return await handler(request)
+
+            profile_name, endpoint_url, api_key = route
+
+            # Build target URL: same path + query string
+            path = request.path
+            query = request.query_string
+            target = f"{endpoint_url.rstrip('/')}{path}"
+            if query:
+                target = f"{target}?{query}"
+
+            body = await request.read()
+
+            # Forward headers: strip hop-by-hop, add auth
+            import aiohttp
+
+            headers = {
+                k: v
+                for k, v in request.headers.items()
+                if k.lower() not in ("host", "transfer-encoding", "content-length")
+            }
+            headers["Authorization"] = f"Bearer {api_key}"
+            headers["X-Forwarded-For"] = getattr(request, "remote", "") or ""
+
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.request(
+                        method=request.method,
+                        url=target,
+                        headers=headers,
+                        data=body,
+                        timeout=aiohttp.ClientTimeout(total=120),
+                    ) as resp:
+                        response_body = await resp.read()
+                        # Copy response headers (strip hop-by-hop)
+                        resp_headers = {
+                            k: v
+                            for k, v in resp.headers.items()
+                            if k.lower()
+                            not in (
+                                "transfer-encoding",
+                                "content-encoding",
+                                "content-length",
+                                "connection",
+                            )
+                        }
+                        return web.Response(
+                            status=resp.status,
+                            headers=resp_headers,
+                            body=response_body,
+                        )
+            except Exception as exc:
+                logger.error(
+                    "[API] Identity proxy to %s (%s) failed: %s",
+                    profile_name,
+                    endpoint_url,
+                    exc,
+                )
+                return web.json_response(
+                    {"error": f"Sub-gateway '{profile_name}' unavailable"},
+                    status=503,
+                )
+
+        return identity_routing_middleware
+
     def _http_route_table(self) -> List[tuple]:
         """Return (method, path, handler) rows registered by ``connect()``.
 
@@ -7201,6 +7295,7 @@ class APIServerAdapter(BasePlatformAdapter):
             mws = [
                 mw
                 for mw in (
+                    self._make_identity_routing_middleware(),
                     self._make_profile_prefix_middleware(),
                     cors_middleware,
                     body_limit_middleware,
