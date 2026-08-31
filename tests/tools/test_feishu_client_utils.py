@@ -820,7 +820,8 @@ class TestDownloadDocxImages(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             hermes_home = Path(tmp) / ".hermes"
             hermes_home.mkdir()
-            with mock.patch.dict("os.environ", {"HERMES_HOME": str(hermes_home)}):
+            with mock.patch.dict("os.environ", {"HERMES_HOME": str(hermes_home)}), \
+                 mock.patch.object(fcu, "_rate_limit_sleep", return_value=0.0):
                 results = fcu.download_docx_images(
                     client, "doc", [{"token": "badTok"}]
                 )
@@ -999,6 +1000,216 @@ class TestAnalyzeDocxImages(unittest.TestCase):
         self.assertIn("capped", out[3].get("vision_error", ""))
 
 
+class TestListDocxBitableBlocks(unittest.TestCase):
+    """Extract embedded bitable blocks (block_type=18) from docx blocks."""
+
+    def test_extracts_bitable_blocks_in_order(self):
+        blocks = _make_response(data={
+            "items": [
+                {"block_type": 1, "text": {"elements": []}},
+                {
+                    "block_type": 18,
+                    "block_id": "blkA",
+                    "bitable": {"token": "appTok1_tblAAA"},
+                },
+                {"block_type": 2},
+                {
+                    "block_type": 18,
+                    "block_id": "blkB",
+                    "bitable": {"token": "appTok2_tblBBB"},
+                },
+            ],
+            "has_more": False,
+        })
+        client = _StubClient(blocks)
+        bitables = fcu.list_docx_bitable_blocks(client, "doc123")
+        self.assertEqual(len(bitables), 2)
+        self.assertEqual(bitables[0]["token"], "appTok1_tblAAA")
+        self.assertEqual(bitables[0]["app_token"], "appTok1")
+        self.assertEqual(bitables[1]["token"], "appTok2_tblBBB")
+        self.assertEqual(bitables[1]["app_token"], "appTok2")
+
+    def test_paginates_blocks(self):
+        page1 = _make_response(data={
+            "items": [
+                {"block_type": 18, "bitable": {"token": "app1_tblT1"}},
+            ],
+            "has_more": True,
+            "page_token": "p2",
+        })
+        page2 = _make_response(data={
+            "items": [
+                {"block_type": 18, "bitable": {"token": "app2_tblT2"}},
+            ],
+            "has_more": False,
+        })
+        client = _StubClient([page1, page2])
+        bitables = fcu.list_docx_bitable_blocks(client, "doc123")
+        self.assertEqual([b["token"] for b in bitables], ["app1_tblT1", "app2_tblT2"])
+        self.assertEqual(len(client.calls), 2)
+
+    def test_skips_bitable_blocks_without_token(self):
+        blocks = _make_response(data={
+            "items": [
+                {"block_type": 18, "bitable": {}},
+                {"block_type": 18, "bitable": {"token": "ok_tblX"}},
+            ],
+            "has_more": False,
+        })
+        client = _StubClient(blocks)
+        bitables = fcu.list_docx_bitable_blocks(client, "doc")
+        self.assertEqual([b["token"] for b in bitables], ["ok_tblX"])
+
+    def test_token_without_tbl_suffix_uses_whole_token(self):
+        """A token without _tbl degrades to using itself as app_token."""
+        blocks = _make_response(data={
+            "items": [{"block_type": 18, "bitable": {"token": "plainToken"}}],
+            "has_more": False,
+        })
+        client = _StubClient(blocks)
+        bitables = fcu.list_docx_bitable_blocks(client, "doc")
+        self.assertEqual(len(bitables), 1)
+        self.assertEqual(bitables[0]["app_token"], "plainToken")
+
+    def test_api_error_returns_empty(self):
+        client = _StubClient(_make_response(code=999, msg="fail"))
+        self.assertEqual(fcu.list_docx_bitable_blocks(client, "doc"), [])
+
+    def test_no_bitable_blocks(self):
+        blocks = _make_response(data={
+            "items": [{"block_type": 1}, {"block_type": 2}, {"block_type": 27, "image": {"token": "t"}}],
+            "has_more": False,
+        })
+        client = _StubClient(blocks)
+        self.assertEqual(fcu.list_docx_bitable_blocks(client, "doc"), [])
+
+
+class TestReadDocxEmbeddedBitables(unittest.TestCase):
+    def test_deduplicates_by_app_token(self):
+        """Multiple blocks referencing the same bitable app read only once."""
+        blocks = _make_response(data={
+            "items": [
+                {"block_type": 18, "bitable": {"token": "appX_tblT1"}},
+                {"block_type": 18, "bitable": {"token": "appX_tblT2"}},
+                {"block_type": 18, "bitable": {"token": "appX_tblT3"}},
+            ],
+            "has_more": False,
+        })
+        table_resp = _make_response(data={
+            "items": [{"table_id": "t1", "name": "TableX"}]
+        })
+        rec_resp = _make_response(data={
+            "items": [{"fields": {"k": "v"}}], "has_more": False,
+        })
+        client = _StubClient([blocks, table_resp, rec_resp])
+        text = fcu.read_docx_embedded_bitables(client, "doc")
+        self.assertIn("TableX", text)
+        self.assertIn("k: v", text)
+        # blocks(1) + tables-list(1) + records(1) = 3 calls; if dedup
+        # failed we would see 6 calls (2 per block).
+        self.assertEqual(len(client.calls), 3)
+
+    def test_no_bitables_returns_empty(self):
+        blocks = _make_response(data={
+            "items": [{"block_type": 1}], "has_more": False,
+        })
+        client = _StubClient(blocks)
+        self.assertEqual(fcu.read_docx_embedded_bitables(client, "doc"), "")
+
+    def test_read_failure_degrades_to_empty(self):
+        """A bitable read failure doesn't crash the docx read."""
+        blocks = _make_response(data={
+            "items": [{"block_type": 18, "bitable": {"token": "appBad_tblT"}}],
+            "has_more": False,
+        })
+        # tables API fails for this app_token
+        client = _StubClient([blocks, _make_response(code=1254000, msg="not found")])
+        text = fcu.read_docx_embedded_bitables(client, "doc")
+        self.assertEqual(text, "")
+
+
+class TestReadDocxWithImagesBitable(unittest.TestCase):
+    """End-to-end: docx with embedded bitables gets table data appended."""
+
+    def test_bitable_content_appended(self):
+        raw = _make_response(data={"content": "正文文本"})
+        # list_docx_image_tokens scans blocks first (finds no images),
+        # then list_docx_bitable_blocks scans blocks (finds bitable).
+        img_blocks = _make_response(data={
+            "items": [{"block_type": 1}, {"block_type": 18, "bitable": {"token": "appEmb_tblT1"}}],
+            "has_more": False,
+        })
+        bitable_blocks = _make_response(data={
+            "items": [{"block_type": 18, "bitable": {"token": "appEmb_tblT1"}}],
+            "has_more": False,
+        })
+        table_resp = _make_response(data={
+            "items": [{"table_id": "t1", "name": "面试安排"}]
+        })
+        rec_resp = _make_response(data={
+            "items": [{"fields": {"候选人": "张三", "时间": "9月1日 14:00"}}],
+            "has_more": False,
+        })
+        client = _StubClient([raw, img_blocks, bitable_blocks, table_resp, rec_resp])
+        content, err, images = fcu.read_docx_with_images(client, "DocEmb")
+        self.assertIsNone(err)
+        self.assertIn("正文文本", content)
+        self.assertIn("面试安排", content)
+        self.assertIn("候选人: 张三", content)
+        self.assertIn("时间: 9月1日 14:00", content)
+        self.assertEqual(images, [])
+
+    def test_only_bitables_no_text(self):
+        """A doc whose raw_content is empty still returns bitable data."""
+        raw = _make_response(data={"content": ""})
+        img_blocks = _make_response(data={
+            "items": [{"block_type": 18, "bitable": {"token": "appOnly_tblT"}}],
+            "has_more": False,
+        })
+        bitable_blocks = _make_response(data={
+            "items": [{"block_type": 18, "bitable": {"token": "appOnly_tblT"}}],
+            "has_more": False,
+        })
+        table_resp = _make_response(data={
+            "items": [{"table_id": "t1", "name": "表1"}]
+        })
+        rec_resp = _make_response(data={
+            "items": [{"fields": {"a": "1"}}], "has_more": False,
+        })
+        client = _StubClient([raw, img_blocks, bitable_blocks, table_resp, rec_resp])
+        content, err, images = fcu.read_docx_with_images(client, "DocOnlyTable")
+        self.assertIsNone(err)
+        self.assertIn("表1", content)
+        self.assertIn("a: 1", content)
+        self.assertNotIn("No content returned", content)
+
+    def test_bitable_limit_capped(self):
+        """Embedded bitable reads use the per-table record cap."""
+        raw = _make_response(data={"content": "text"})
+        img_blocks = _make_response(data={
+            "items": [{"block_type": 18, "bitable": {"token": "appLim_tblT"}}],
+            "has_more": False,
+        })
+        bitable_blocks = _make_response(data={
+            "items": [{"block_type": 18, "bitable": {"token": "appLim_tblT"}}],
+            "has_more": False,
+        })
+        table_resp = _make_response(data={
+            "items": [{"table_id": "t1", "name": "Big"}]
+        })
+        rec_resp = _make_response(data={
+            "items": [{"fields": {"v": str(i)}} for i in range(3)],
+            "total": 500,
+            "has_more": False,
+        })
+        client = _StubClient([raw, img_blocks, bitable_blocks, table_resp, rec_resp])
+        content, err, images = fcu.read_docx_with_images(client, "DocCap")
+        self.assertIsNone(err)
+        # 3 records returned but cap is 50, so no truncation notice
+        self.assertIn("记录 3:", content)
+        self.assertNotIn("达到上限", content)
+
+
 class TestReadDocxWithImages(unittest.TestCase):
     def test_end_to_end_replaces_placeholders_and_ocr(self):
         import tempfile
@@ -1077,7 +1288,9 @@ class TestReadDocxWithImages(unittest.TestCase):
     def test_no_images_returns_raw_text(self):
         raw = _make_response(data={"content": "just text"})
         blocks = _make_response(data={"items": [{"block_type": 1}], "has_more": False})
-        client = _StubClient([raw, blocks])
+        # list_docx_bitable_blocks also scans blocks and finds no bitables.
+        bitable_blocks = _make_response(data={"items": [{"block_type": 1}], "has_more": False})
+        client = _StubClient([raw, blocks, bitable_blocks])
         content, err, images = fcu.read_docx_with_images(client, "DocNoImg")
         self.assertIsNone(err)
         self.assertEqual(content, "just text")

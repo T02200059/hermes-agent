@@ -918,6 +918,116 @@ def _call_with_rate_limit_retry(fn, *, label: str, max_retries: int = _RATE_LIMI
     return last
 
 
+# Bitable block type in the docx blocks API (block_type=18 → embedded bitable).
+_BITABLE_BLOCK_TYPE = 18
+# Cap records per embedded bitable table to avoid token explosion on docs
+# with many large tables (e.g. a recruitment daily with 7 tables).
+_DOCX_EMBEDDED_BITABLE_MAX_RECORDS = 50
+
+
+def list_docx_bitable_blocks(client, doc_token, *, max_blocks=_DOCX_MAX_BLOCKS_SCANNED):
+    """Return ordered bitable block tokens from a docx document's blocks.
+
+    Each item is ``{"block_id": str, "token": str, "app_token": str}``.
+    The ``app_token`` is derived by splitting the token on ``_tbl`` so it
+    can be used directly with the bitable tables API. Stops after
+    ``max_blocks`` blocks scanned (bounds pagination on huge block trees).
+
+    Returns ``[]`` on API error or when no bitable blocks are found.
+    """
+    bitables = []
+    page_token = ""
+    scanned = 0
+    while len(bitables) < 100 and scanned < max_blocks:
+        queries = [("page_size", str(_DOCX_BLOCKS_PAGE_SIZE))]
+        if page_token:
+            queries.append(("page_token", page_token))
+        code, msg, data = do_request(
+            client, "GET", _DOCX_BLOCKS_URI,
+            paths={"document_id": doc_token},
+            queries=queries,
+        )
+        if code != 0:
+            logger.debug(
+                "feishu_client_utils: list blocks (bitable) failed doc=%s code=%s msg=%s",
+                doc_token, code, msg,
+            )
+            break
+
+        items = data.get("items") or []
+        scanned += len(items)
+        for block in items:
+            if not isinstance(block, dict):
+                continue
+            if block.get("block_type") != _BITABLE_BLOCK_TYPE:
+                continue
+            bt = block.get("bitable") or {}
+            if not isinstance(bt, dict):
+                continue
+            token = bt.get("token") or ""
+            if not token:
+                continue
+            # Token format: {app_token}_tbl{table_id}; split to get app_token.
+            app_token = token.split("_tbl")[0] if "_tbl" in token else token
+            bitables.append({
+                "block_id": block.get("block_id") or "",
+                "token": token,
+                "app_token": app_token,
+            })
+
+        if scanned >= max_blocks:
+            break
+        has_more = data.get("has_more")
+        page_token = data.get("page_token", "") or ""
+        if not has_more or not page_token:
+            break
+    return bitables
+
+
+def read_docx_embedded_bitables(client, doc_token):
+    """Read all embedded bitable blocks in a docx and return flattened text.
+
+    Scans the docx block tree for ``block_type=18`` blocks, deduplicates
+    by ``app_token`` (multiple blocks may reference the same bitable app),
+    and calls :func:`read_bitable_as_text` for each unique app with a
+    modest record limit (``_DOCX_EMBEDDED_BITABLE_MAX_RECORDS``) to avoid
+    token explosion on docs with many tables.
+
+    Returns a concatenated string of all bitable table data, or ``""``
+    when no embedded bitables are found or all reads fail.
+    """
+    blocks = list_docx_bitable_blocks(client, doc_token)
+    if not blocks:
+        return ""
+
+    # Deduplicate by app_token — multiple blocks may point to the same app.
+    seen = set()
+    app_tokens = []
+    for b in blocks:
+        at = b["app_token"]
+        if at not in seen:
+            seen.add(at)
+            app_tokens.append(at)
+
+    parts = []
+    for app_token in app_tokens:
+        try:
+            text = read_bitable_as_text(
+                client, app_token,
+                limit=_DOCX_EMBEDDED_BITABLE_MAX_RECORDS,
+            )
+            if text and not text.startswith("Failed"):
+                parts.append(text)
+        except Exception:
+            logger.debug(
+                "feishu_client_utils: embedded bitable read failed app=%s",
+                app_token,
+                exc_info=True,
+            )
+
+    return "\n\n".join(parts) if parts else ""
+
+
 def list_docx_image_tokens(client, doc_token, *, max_images=_DOCX_MAX_IMAGES):
     """Return ordered image descriptors from a docx document's blocks.
 
@@ -1404,6 +1514,10 @@ def read_docx_with_images(
     ``images_list`` is always a list (empty on failure / no images). When
     ``analyze_images`` is True (default), each downloaded image is passed
     through auxiliary vision and the transcript is embedded in ``content``.
+
+    Embedded bitable blocks (block_type=18) are also extracted and their
+    table data is appended to ``content`` so the agent sees the tables
+    without a second tool call.
     """
     code, msg, data = do_request(
         client, "GET",
@@ -1419,26 +1533,31 @@ def read_docx_with_images(
     if not content and hasattr(data, "content"):
         content = getattr(data, "content", "") or ""
     if not content:
-        return None, "No content returned from document API", []
+        # raw_content may return empty for docs that are mostly bitable blocks;
+        # don't early-exit so embedded bitables still get read.
+        content = ""
 
     image_tokens = list_docx_image_tokens(
         client, doc_token, max_images=max_images,
     )
-    if not image_tokens:
-        return content, None, []
+    images = []
+    if image_tokens:
+        images = download_docx_images(client, doc_token, image_tokens)
+        if analyze_images:
+            images = analyze_docx_images(images)
+        content = inject_image_paths_into_content(content, images)
 
-    images = download_docx_images(client, doc_token, image_tokens)
-    if analyze_images:
-        images = analyze_docx_images(images)
+        # Note truncation so the agent knows more images may exist.
+        if len(image_tokens) >= max_images:
+            content = (
+                content.rstrip()
+                + f"\n\n...(image download capped at {max_images}; "
+                "later images were not fetched)"
+            )
 
-    content = inject_image_paths_into_content(content, images)
-
-    # Note truncation so the agent knows more images may exist.
-    if len(image_tokens) >= max_images:
-        content = (
-            content.rstrip()
-            + f"\n\n...(image download capped at {max_images}; "
-            "later images were not fetched)"
-        )
+    # Extract embedded bitable blocks (block_type=18) and append their data.
+    bitable_text = read_docx_embedded_bitables(client, doc_token)
+    if bitable_text:
+        content = (content.rstrip() + "\n\n" + bitable_text) if content else bitable_text
 
     return content, None, images
