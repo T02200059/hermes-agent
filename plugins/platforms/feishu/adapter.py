@@ -1594,8 +1594,13 @@ class FeishuAdapter(BasePlatformAdapter):
         # already held when send()→try_auto_card runs) — re-acquiring that one
         # here would deadlock asyncio.Lock.
         self._card_send_locks: "collections.OrderedDict[str, asyncio.Lock]" = collections.OrderedDict()
-        # [owner] bot-menu: dedup + bot_menu_dedup_lock (see owner/feishu/bot_menu.py)
-        self._bot_menu_dedup: Dict[Tuple[str, str], float] = {}
+        # [owner] bot-menu: 三层去重状态（see owner/feishu/bot_menu.py）
+        # _bot_menu_dedup: (open_id, event_key) → _BotMenuEntry 状态机
+        #   第 2 层 in-flight 合并：上一次点击未生效期间合并后续同类点击
+        # _bot_menu_event_ids: event_id → 首见时间戳
+        #   第 1 层精确去重：防飞书服务器对未 ACK 事件的重投递
+        self._bot_menu_dedup: Dict[Tuple[str, str], Any] = {}
+        self._bot_menu_event_ids: Dict[str, float] = {}
         self._bot_menu_dedup_lock = threading.Lock()
         self._sent_message_ids_to_chat: Dict[str, str] = {}  # message_id → chat_id (for reaction routing)
         self._sent_message_id_order: List[str] = []  # LRU order for _sent_message_ids_to_chat
