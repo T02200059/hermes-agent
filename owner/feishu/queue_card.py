@@ -16,7 +16,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from owner.feishu.sender_name_helpers import operator_display_name
 
@@ -201,6 +201,58 @@ def build_queue_executed_card(user_input: str, user_name: str) -> Dict[str, Any]
             ],
         },
     }
+
+
+_NOTIFY_PREVIEW_LIMIT = 200
+_REMAINING_PREVIEW_LIMIT = 60
+_REMAINING_SHOWN_MAX = 3
+
+
+def build_queue_started_notify_card(
+    user_input: str,
+    user_name: str,
+    *,
+    remaining: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """精简「已开始执行」通知卡（无按钮），补发到消息流底部。
+
+    原状态卡被 REST patch 原地冻结，但通常已被流式输出顶上去看不见；
+    本卡在用户当前视野补发一条，并列出仍在等待的后续队列。
+    ``remaining`` 为截断后的原文预览列表。
+    """
+    preview = _preview_text(user_input, limit=_NOTIFY_PREVIEW_LIMIT)
+    content = f"排队项已开始执行。\n\n**原文：**\n{preview}"
+
+    remaining_clean = [r for r in (remaining or []) if r]
+    if remaining_clean:
+        shown = remaining_clean[:_REMAINING_SHOWN_MAX]
+        content += f"\n\n⏳ 队列中还有 **{len(remaining_clean)}** 条等待："
+        for idx, item in enumerate(shown, 1):
+            content += f"\n{idx}. {item}"
+        if len(remaining_clean) > len(shown):
+            content += f"\n…及其他 {len(remaining_clean) - len(shown)} 条。"
+
+    content += f"\n\n由 {user_name or '用户'} 发起。"
+
+    return {
+        "schema": "2.0",
+        "config": {"wide_screen_mode": True},
+        "header": {
+            "title": {"content": "▶️ 已开始执行", "tag": "plain_text"},
+            "template": "blue",
+        },
+        "body": {
+            "elements": [{"tag": "markdown", "content": content}],
+        },
+    }
+
+
+def queue_item_preview(text: str, limit: int = _REMAINING_PREVIEW_LIMIT) -> str:
+    """Short single-line preview for queue-list rendering (newlines flattened)."""
+    flat = " ".join((text or "").split())
+    if len(flat) <= limit:
+        return flat
+    return flat[:limit] + "..."
 
 
 def build_queue_process_now_card(user_input: str, user_name: str) -> Dict[str, Any]:

@@ -206,7 +206,9 @@ def test_dequeue_notifies_started(monkeypatch):
     setattr(event, qcp._EVENT_TOKEN_ATTR, token)
 
     notified = []
-    monkeypatch.setattr(qcp, "notify_queue_started", lambda t: notified.append(t))
+    monkeypatch.setattr(
+        qcp, "notify_queue_started", lambda t, adapter=None: notified.append(t)
+    )
 
     qcp._originals["_dequeue_pending_event"] = lambda adapter, sk: event
     out = gateway_run._dequeue_pending_event(SimpleNamespace(), "sess")
@@ -312,6 +314,158 @@ def test_apply_patch_idempotent():
     assert qcp._applied is True
     qcp.revert_patch()
     assert qcp._applied is False
+
+
+def test_queue_item_preview_truncates_and_flattens():
+    from owner.feishu.queue_card import queue_item_preview
+
+    assert queue_item_preview("hello") == "hello"
+    assert queue_item_preview("a\n b\tc") == "a b c"
+    long_text = "x" * 200
+    out = queue_item_preview(long_text, limit=60)
+    assert out.endswith("...")
+    assert len(out) == 63  # 60 + "..."
+
+
+def test_build_queue_started_notify_card_basic():
+    from owner.feishu.queue_card import build_queue_started_notify_card
+
+    card = build_queue_started_notify_card("do the thing", "Alice")
+    assert card["header"]["title"]["content"] == "▶️ 已开始执行"
+    assert card["header"]["template"] == "blue"
+    body_md = card["body"]["elements"][0]["content"]
+    assert "do the thing" in body_md
+    assert "Alice" in body_md
+    # no buttons, no remaining list
+    assert not any(el.get("tag") == "button" for el in card["body"]["elements"])
+    assert "队列中还有" not in body_md
+
+
+def test_build_queue_started_notify_card_with_remaining():
+    from owner.feishu.queue_card import build_queue_started_notify_card
+
+    card = build_queue_started_notify_card(
+        "first", "Bob", remaining=["second", "third"]
+    )
+    body_md = card["body"]["elements"][0]["content"]
+    assert "队列中还有 **2** 条等待" in body_md
+    assert "1. second" in body_md
+    assert "2. third" in body_md
+
+
+def test_build_queue_started_notify_card_truncates_remaining_list():
+    from owner.feishu.queue_card import build_queue_started_notify_card
+
+    card = build_queue_started_notify_card(
+        "first", "Bob", remaining=["a", "b", "c", "d", "e"]
+    )
+    body_md = card["body"]["elements"][0]["content"]
+    assert "队列中还有 **5** 条等待" in body_md
+    assert "3. c" in body_md
+    assert "4. d" not in body_md
+    assert "…及其他 2 条。" in body_md
+
+
+def test_remaining_queue_previews_reads_overflow():
+    token = "t-rem"
+    qcp.register_scheduled_token(token, text="running", session_key="sess-a")
+    qcp._token_state[token]["status"] = "enqueued"
+
+    waiting1 = SimpleNamespace(text="second")
+    waiting2 = SimpleNamespace(text="third")
+    state = SimpleNamespace(
+        conversation=SimpleNamespace(queued_events=[waiting1, waiting2])
+    )
+    runner = SimpleNamespace(
+        _queued_events={"sess-a": [waiting1, waiting2]},
+        _peek_session_state=lambda sk: state if sk == "sess-a" else None,
+    )
+    adapter = SimpleNamespace(_owner_gateway_runner=runner)
+
+    previews = qcp._remaining_queue_previews(adapter, "sess-a")
+    assert previews == ["second", "third"]
+
+
+def test_notify_queue_started_passes_adapter_and_remaining(monkeypatch):
+    token = "t-notify"
+    qcp.register_scheduled_token(
+        token,
+        text="run me",
+        card_message_id="om_card_1",
+        chat_id="oc_x",
+        user_input="run me",
+        user_name="Alice",
+        session_key="sess-a",
+    )
+    qcp._token_state[token]["status"] = "enqueued"
+
+    waiting = SimpleNamespace(text="next item")
+    state = SimpleNamespace(conversation=SimpleNamespace(queued_events=[waiting]))
+    runner = SimpleNamespace(
+        _queued_events={"sess-a": [waiting]},
+        _peek_session_state=lambda sk: state if sk == "sess-a" else None,
+    )
+    adapter = SimpleNamespace(_owner_gateway_runner=runner)
+
+    captured = {}
+
+    def fake_freeze(tok, *, adapter=None, remaining=None):
+        captured["token"] = tok
+        captured["adapter"] = adapter
+        captured["remaining"] = remaining
+
+    monkeypatch.setattr(qcp, "_freeze_card_for_token", fake_freeze)
+
+    class _FakeThread:
+        def __init__(self, *, target=None, args=(), kwargs=None, **kw):
+            self._target = target
+            self._args = args
+            self._kwargs = kwargs or {}
+
+        def start(self):
+            assert self._target is not None
+            self._target(*self._args, **self._kwargs)
+
+    monkeypatch.setattr(qcp.threading, "Thread", _FakeThread)
+
+    qcp.notify_queue_started(token, adapter=adapter)
+
+    assert qcp._token_state[token]["status"] == "executed"
+    assert captured["token"] == token
+    assert captured["adapter"] is adapter
+    assert captured["remaining"] == ["next item"]
+
+
+def test_notify_queue_started_no_adapter_skips_notify(monkeypatch):
+    token = "t-noadapter"
+    qcp.register_scheduled_token(
+        token, text="run me", card_message_id="om_card_2", session_key="sess-a"
+    )
+    qcp._token_state[token]["status"] = "enqueued"
+
+    captured = {}
+
+    def fake_freeze(tok, *, adapter=None, remaining=None):
+        captured["adapter"] = adapter
+        captured["remaining"] = remaining
+
+    monkeypatch.setattr(qcp, "_freeze_card_for_token", fake_freeze)
+
+    class _FakeThread:
+        def __init__(self, *, target=None, args=(), kwargs=None, **kw):
+            self._target = target
+            self._args = args
+            self._kwargs = kwargs or {}
+
+        def start(self):
+            assert self._target is not None
+            self._target(*self._args, **self._kwargs)
+
+    monkeypatch.setattr(qcp.threading, "Thread", _FakeThread)
+
+    qcp.notify_queue_started(token)
+    assert captured["adapter"] is None
+    assert captured["remaining"] == []
 
 
 def test_prefetch_provider_waits_for_inflight(monkeypatch):

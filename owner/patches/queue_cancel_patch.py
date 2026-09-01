@@ -768,8 +768,18 @@ def _match_token_for_text(text: str, session_key: Optional[str] = None) -> Optio
     return None
 
 
-def _freeze_card_for_token(token: str) -> None:
-    """Best-effort REST update of the Feishu guide card to「已执行」."""
+def _freeze_card_for_token(
+    token: str,
+    *,
+    adapter: Any = None,
+    remaining: Optional[List[str]] = None,
+) -> None:
+    """Best-effort REST update of the Feishu guide card to「已执行」.
+
+    When ``adapter`` is given (busy-FIFO dequeue path), also sends a fresh
+    compact notice card at the bottom of the message stream — the frozen
+    status card is usually scrolled off by then.
+    """
     # Snapshot under lock so freeze daemon races safely with cancel/enqueue.
     with _token_lock:
         meta = dict(_token_state.get(token) or {})
@@ -818,6 +828,10 @@ def _freeze_card_for_token(token: str) -> None:
                 message_id[:16],
                 ok,
             )
+            if adapter is not None:
+                await _send_started_notify(
+                    adapter, meta, remaining=remaining or []
+                )
 
         # This runs on a dedicated daemon thread (no running loop).
         asyncio.run(_patch())
@@ -829,8 +843,58 @@ def _freeze_card_for_token(token: str) -> None:
         )
 
 
-def notify_queue_started(token: str) -> None:
-    """Mark token executed and freeze the guide card (non-blocking)."""
+async def _send_started_notify(
+    adapter: Any,
+    meta: Dict[str, Any],
+    *,
+    remaining: List[str],
+) -> None:
+    """Send the compact "started" notice card to the bottom of the stream."""
+    try:
+        from owner.feishu.card_sender import send_card_via_rest
+        from owner.feishu.queue_card import build_queue_started_notify_card
+
+        chat_id = str(meta.get("chat_id") or "").strip()
+        if not chat_id:
+            logger.info("[owner queue] notify skipped: no chat_id in token meta")
+            return
+
+        card = build_queue_started_notify_card(
+            str(meta.get("user_input") or meta.get("text") or ""),
+            str(meta.get("user_name") or "用户"),
+            remaining=remaining,
+        )
+        # DM sends need chat_type + open_id in metadata (see _resolve_receive_target).
+        source = meta.get("source")
+        metadata = None
+        if source is not None:
+            chat_type = str(getattr(source, "chat_type", "") or "").strip()
+            open_id = str(getattr(source, "user_id", "") or "").strip()
+            if chat_type or open_id:
+                metadata = {"chat_type": chat_type, "open_id": open_id}
+        result = await send_card_via_rest(adapter, chat_id, card, metadata)
+        logger.info(
+            "[owner queue] started-notice sent chat_id=%s ok=%s remaining=%d",
+            chat_id,
+            bool(getattr(result, "success", False)),
+            len(remaining),
+        )
+    except Exception:
+        logger.warning(
+            "[owner queue] started-notice send failed (non-fatal)",
+            exc_info=True,
+        )
+
+
+def notify_queue_started(token: str, adapter: Any = None) -> None:
+    """Mark token executed; freeze the guide card + send bottom-of-stream notice.
+
+    ``adapter`` is present on the busy-FIFO dequeue path, where the status card
+    has usually been pushed up by streaming output — a fresh compact notice is
+    sent at the bottom of the message stream (with remaining queue items).
+    It is absent on the idle guide-dispatch path: the frozen card is already
+    visible at the bottom there, so no extra notice is needed.
+    """
     if not token:
         return
     with _token_lock:
@@ -841,15 +905,55 @@ def notify_queue_started(token: str) -> None:
             return
         meta["status"] = "executed"
         meta["updated_at"] = time.time()
+        session_key = str(meta.get("session_key") or "").strip()
         _token_state[token] = meta
     _prune_stale_tokens()
+    # Snapshot remaining queue NOW: overflow[0] is promoted into the pending
+    # slot only AFTER the dequeue wrapper returns, so overflow still contains
+    # every item still waiting.
+    remaining: List[str] = []
+    if adapter is not None:
+        remaining = _remaining_queue_previews(adapter, session_key)
     # Don't block the gateway dequeue path on Feishu REST.
     threading.Thread(
         target=_freeze_card_for_token,
         args=(token,),
+        kwargs={"adapter": adapter, "remaining": remaining},
         daemon=True,
         name=f"owner-queue-freeze-{token[:8]}",
     ).start()
+
+
+def _remaining_queue_previews(adapter: Any, session_key: str) -> List[str]:
+    """Preview texts of items still waiting in the session FIFO (best-effort)."""
+    if not session_key:
+        return []
+    runner = resolve_runner_from_adapter(adapter)
+    if runner is None:
+        return []
+    try:
+        peek = getattr(runner, "_peek_session_state", None)
+        state = peek(session_key) if callable(peek) else None
+        overflow = getattr(
+            getattr(state, "conversation", None), "queued_events", None
+        )
+        if not overflow:
+            return []
+        from owner.feishu.queue_card import queue_item_preview
+
+        previews = []
+        for event in list(overflow):
+            text = (getattr(event, "text", None) or "").strip()
+            if text:
+                previews.append(queue_item_preview(text))
+        return previews
+    except Exception:
+        logger.debug(
+            "[owner queue] remaining snapshot failed session=%s",
+            session_key,
+            exc_info=True,
+        )
+        return []
 
 
 def _enqueue_fifo(self, session_key: str, queued_event: Any, adapter: Any) -> None:
@@ -1058,7 +1162,7 @@ def _dequeue_pending_event(adapter: Any, session_key: str) -> Any:
         token = getattr(event, _EVENT_TOKEN_ATTR, None)
         if token:
             try:
-                notify_queue_started(token)
+                notify_queue_started(token, adapter=adapter)
             except Exception:
                 logger.debug(
                     "[owner queue-cancel] notify_queue_started failed",
