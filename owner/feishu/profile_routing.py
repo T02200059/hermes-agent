@@ -707,7 +707,11 @@ async def try_route_bot_menu_command(
     if not _should_route_text(synthetic_text):
         return False
 
-    route = resolve_profile_route(chat_id, open_id, chat_type)
+    # Bot-menu commands are always DM-context synthetic messages (see the
+    # chat_type="p2p" below), so the route resolves in DM mode.  The
+    # chat_type parameter has a "p2p" default but is NOT in this function's
+    # signature — passing it through was a NameError (2026-09-01 node010 log).
+    route = resolve_profile_route(chat_id, open_id)
     if route is None:
         return False
 
