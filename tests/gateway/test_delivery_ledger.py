@@ -125,6 +125,136 @@ class TestSchemaMigration:
 
         assert "adapter_profile" in columns
 
+    def test_adds_platform_message_id_to_existing_ledger(self):
+        """Every installed state.db predates the column, so the ALTER path —
+        not the CREATE TABLE path — is the one that has to work."""
+        conn = sqlite3.connect(dl._db_path())
+        try:
+            conn.execute(
+                """CREATE TABLE delivery_obligations (
+                    obligation_id TEXT PRIMARY KEY,
+                    session_key TEXT NOT NULL,
+                    platform TEXT NOT NULL,
+                    chat_id TEXT NOT NULL,
+                    thread_id TEXT,
+                    content TEXT NOT NULL,
+                    state TEXT NOT NULL,
+                    attempts INTEGER NOT NULL DEFAULT 0,
+                    created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL,
+                    owner_pid INTEGER,
+                    owner_started_at INTEGER,
+                    last_error TEXT,
+                    adapter_profile TEXT
+                )"""
+            )
+            # A pre-existing row must survive the ALTER untouched.
+            conn.execute(
+                """INSERT INTO delivery_obligations
+                   (obligation_id, session_key, platform, chat_id, content,
+                    state, attempts, created_at, updated_at)
+                   VALUES ('legacy-1', 'agent:main:feishu:dm:oc_x', 'feishu',
+                           'oc_x', 'old row', 'delivered', 0, 1, 1)"""
+            )
+            conn.commit()
+
+            dl._initialize_schema(conn)
+
+            columns = {
+                row[1] for row in conn.execute("PRAGMA table_info(delivery_obligations)")
+            }
+            survived = conn.execute(
+                "SELECT COUNT(*) FROM delivery_obligations WHERE obligation_id='legacy-1'"
+            ).fetchone()[0]
+        finally:
+            conn.close()
+
+        assert "platform_message_id" in columns
+        assert survived == 1
+
+    def test_schema_init_is_idempotent(self):
+        """Re-running init (every gateway boot, every cron process) must not
+        raise on the already-added column or the already-created index."""
+        for _ in range(3):
+            conn = dl._connect()
+            conn.close()
+
+
+class TestPlatformMessageId:
+    """The delivered row must remember WHAT the platform handed back.
+
+    Without this, a successful send is a dead end: the message_id the adapter
+    already extracted exists only in a log line, so nothing downstream can
+    recall, edit or react to the artifact that was actually sent.
+    """
+
+    def _message_id(self, oid):
+        with dl._connect() as conn:
+            r = conn.execute(
+                "SELECT platform_message_id FROM delivery_obligations "
+                "WHERE obligation_id=?",
+                (oid,),
+            ).fetchone()
+        return None if r is None else r[0]
+
+    def test_delivered_row_stores_the_platform_message_id(self):
+        _record(oid="ob-mid", platform="feishu", chat_id="oc_abc")
+        dl.mark_attempting("ob-mid")
+        assert self._message_id("ob-mid") is None
+
+        dl.mark_delivered("ob-mid", "om_x100b664ef7c9c0a4de24a374d394b26")
+
+        assert _row("ob-mid")["state"] == "delivered"
+        assert self._message_id("ob-mid") == "om_x100b664ef7c9c0a4de24a374d394b26"
+
+    def test_a_later_transition_without_an_id_does_not_clobber_it(self):
+        """Passing no id must mean 'leave it alone', not 'erase it'.
+
+        Rows legitimately transition more than once (delivered → re-marked on
+        a repeated send path), and an unconditional SET would wipe the only
+        handle we have on the already-sent message.
+        """
+        _record(oid="ob-clobber")
+        dl.mark_delivered("ob-clobber", "om_original")
+        dl.mark_delivered("ob-clobber")
+        assert self._message_id("ob-clobber") == "om_original"
+
+    def test_failure_after_delivery_keeps_the_id(self):
+        _record(oid="ob-mixed")
+        dl.mark_delivered("ob-mixed", "om_kept")
+        dl.mark_failed("ob-mixed", "later rejection")
+        assert self._message_id("ob-mixed") == "om_kept"
+
+    def test_mark_delivered_without_an_id_still_transitions(self):
+        """Back-compat: adapters that surface no id must not break."""
+        _record(oid="ob-noid")
+        dl.mark_delivered("ob-noid")
+        assert _row("ob-noid")["state"] == "delivered"
+        assert self._message_id("ob-noid") is None
+
+    def test_re_recording_an_obligation_resets_it_including_the_id(self):
+        """record_obligation() is INSERT OR REPLACE — re-registering the SAME
+        obligation_id starts a fresh delivery, so the old handle goes away.
+
+        Locked in deliberately: obligation_id is derived from
+        (session, inbound message id, content), so a repeat means the turn is
+        being re-delivered from scratch and the previous platform_message_id
+        refers to an artifact this new attempt does not own. The recovery path
+        (sweep) never re-records — it re-marks rows that already exist — so
+        the id survives the path that actually matters. If someone later makes
+        record_obligation() preserve the column, this test should be updated
+        together with the sweep contract, not silently.
+        """
+        _record(oid="ob-replace")
+        dl.mark_delivered("ob-replace", "om_first")
+        assert self._message_id("ob-replace") == "om_first"
+
+        _record(oid="ob-replace")
+
+        row = _row("ob-replace")
+        assert row["state"] == "pending", row
+        assert self._message_id("ob-replace") is None
+
 
 class TestStateMachine:
     def test_record_starts_pending(self):

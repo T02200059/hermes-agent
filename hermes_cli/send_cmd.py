@@ -121,10 +121,18 @@ def _emit_result(
             print(f"hermes send: {payload['error']}", file=sys.stderr)
         elif payload.get("success"):
             note = payload.get("note")
+            # Surface the platform-assigned message id on both branches. It is
+            # the only handle for recalling / editing / reacting to the message
+            # afterward, and dropping it here made CLI- and cron-driven sends
+            # untraceable — only --json exposed it, and cron callers never
+            # parse JSON. Adapters that don't return one still print bare
+            # "sent" so existing log-scrapers keep matching.
+            mid = payload.get("message_id")
+            suffix = f" message_id={mid}" if mid else ""
             if note:
-                print(note)
+                print(f"{note}{suffix}")
             else:
-                print("sent")
+                print(f"sent{suffix}")
         else:
             # Unknown shape — dump it so nothing is silently dropped.
             print(json.dumps(payload, indent=2))

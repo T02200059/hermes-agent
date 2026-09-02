@@ -6869,7 +6869,20 @@ class BasePlatformAdapter(ABC):
                             )
 
                             if getattr(result, "success", False):
-                                await asyncio.to_thread(mark_delivered, _obligation_id)
+                                # Persist the platform-assigned message id so
+                                # the delivered row can be traced to the exact
+                                # artifact (needed for recall / edit / react,
+                                # and the only durable record of what we sent).
+                                _delivered_message_id = getattr(
+                                    result, "message_id", None
+                                )
+                                await asyncio.to_thread(
+                                    mark_delivered,
+                                    _obligation_id,
+                                    str(_delivered_message_id)
+                                    if _delivered_message_id
+                                    else None,
+                                )
                             else:
                                 _delivery_error = str(
                                     getattr(result, "error", "") or ""

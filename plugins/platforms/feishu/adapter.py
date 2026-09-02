@@ -1626,8 +1626,15 @@ class FeishuAdapter(BasePlatformAdapter):
         self._bot_menu_dedup: Dict[Tuple[str, str], Any] = {}
         self._bot_menu_event_ids: Dict[str, float] = {}
         self._bot_menu_dedup_lock = threading.Lock()
-        self._sent_message_ids_to_chat: Dict[str, str] = {}  # message_id → chat_id (for reaction routing)
-        self._sent_message_id_order: List[str] = []  # LRU order for _sent_message_ids_to_chat
+        # NOTE: an outbound message_id → chat_id map used to be declared here
+        # (``_sent_message_ids_to_chat`` + an LRU order list) for reaction
+        # routing. It was never written to or read — pure scaffolding. The
+        # need it gestured at is now served by the durable record in
+        # ``delivery_obligations.platform_message_id`` (see
+        # gateway/delivery_ledger.mark_delivered) plus the
+        # "[Feishu] Sent chat_id=… message_id=…" log line emitted from
+        # ``_finalize_send_result``. Prefer those over re-adding an in-memory
+        # map: this one would silently stay empty across restarts.
         self._chat_info_cache: Dict[str, Dict[str, Any]] = {}
         self._message_text_cache: "OrderedDict[str, Optional[str]]" = OrderedDict()
         self._app_lock_identity: Optional[str] = None
@@ -2130,7 +2137,9 @@ class FeishuAdapter(BasePlatformAdapter):
                     )
                 last_response = response
 
-            return self._finalize_send_result(last_response, "send failed")
+            return self._finalize_send_result(
+                last_response, "send failed", chat_id=chat_id
+            )
         except Exception as exc:
             logger.error("[Feishu] Send error: %s", exc, exc_info=True)
             return SendResult(success=False, error=str(exc))
@@ -2153,7 +2162,9 @@ class FeishuAdapter(BasePlatformAdapter):
             body = self._build_update_message_body(msg_type=msg_type, content=payload)
             request = self._build_update_message_request(message_id=message_id, request_body=body)
             response = await self._run_blocking(self._client.im.v1.message.update, request)
-            result = self._finalize_send_result(response, "update failed")
+            result = self._finalize_send_result(
+                response, "update failed", chat_id=chat_id
+            )
             if not result.success and msg_type == "post" and _POST_CONTENT_INVALID_RE.search(result.error or ""):
                 logger.warning("[Feishu] Invalid post update payload rejected by API; falling back to plain text")
                 fallback_body = self._build_update_message_body(
@@ -2162,7 +2173,9 @@ class FeishuAdapter(BasePlatformAdapter):
                 )
                 fallback_request = self._build_update_message_request(message_id=message_id, request_body=fallback_body)
                 fallback_response = await self._run_blocking(self._client.im.v1.message.update, fallback_request)
-                result = self._finalize_send_result(fallback_response, "update failed")
+                result = self._finalize_send_result(
+                    fallback_response, "update failed", chat_id=chat_id
+                )
             # [owner] 飞书对单条消息有 ~20 次编辑上限（错误码 230072 / 230075）。
             # 这是 message_id 维度的永久上限（post→text 降级无法绕过），
             # 通知 gateway 轮转到新 bubble 继续编辑，而不是永久关闭 can_edit。
@@ -2235,7 +2248,9 @@ class FeishuAdapter(BasePlatformAdapter):
                 metadata=metadata,
             )
 
-            result = self._finalize_send_result(response, "send_exec_approval failed")
+            result = self._finalize_send_result(
+                response, "send_exec_approval failed", chat_id=chat_id
+            )
             if result.success:
                 # [owner] approval: store command so resolved CallBackCard can show what was executed
                 self._approval_ctx.register(
@@ -2312,7 +2327,9 @@ class FeishuAdapter(BasePlatformAdapter):
                 metadata=metadata,
             )
 
-            result = self._finalize_send_result(response, "send_update_prompt failed")
+            result = self._finalize_send_result(
+                response, "send_update_prompt failed", chat_id=chat_id
+            )
             if result.success:
                 self._update_prompt_state[prompt_id] = {
                     "session_key": session_key,
@@ -2510,7 +2527,9 @@ class FeishuAdapter(BasePlatformAdapter):
                     reply_to=reply_to,
                     metadata=metadata,
                 )
-            return self._finalize_send_result(message_response, "image send failed")
+            return self._finalize_send_result(
+                message_response, "image send failed", chat_id=chat_id
+            )
         except Exception as exc:
             logger.error("[Feishu] Failed to send image %s: %s", image_path, exc, exc_info=True)
             # [owner] media guard: 图片上传异常翻译成用户可见提示并发到 DM。
@@ -3188,7 +3207,9 @@ class FeishuAdapter(BasePlatformAdapter):
                 reply_to=None,
                 metadata=metadata,
             )
-            result = self._finalize_send_result(response, "card send failed")
+            result = self._finalize_send_result(
+                response, "card send failed", chat_id=chat_id
+            )
             if result.success:
                 logger.info(
                     "[Feishu card] send_card OK chat_id=%s message_id=%s",
@@ -5566,7 +5587,9 @@ class FeishuAdapter(BasePlatformAdapter):
                             reply_to=None,
                             metadata=None,
                         )
-            return self._finalize_send_result(message_response, "file send failed")
+            return self._finalize_send_result(
+                message_response, "file send failed", chat_id=chat_id
+            )
         except Exception as exc:
             logger.error("[Feishu] Failed to send file %s: %s", file_path, exc, exc_info=True)
             # [owner] media guard: SDK 崩溃（空响应体/JSONDecodeError 等）翻译成
@@ -5677,12 +5700,41 @@ class FeishuAdapter(BasePlatformAdapter):
         msg = getattr(response, "msg", default_message)
         return SendResult(success=False, error=f"[{code}] {msg}", raw_response=response)
 
-    def _finalize_send_result(self, response: Any, default_message: str) -> SendResult:
+    def _finalize_send_result(
+        self,
+        response: Any,
+        default_message: str,
+        *,
+        chat_id: Optional[str] = None,
+    ) -> SendResult:
+        """Single choke point where an outbound Feishu call becomes a SendResult.
+
+        Every send path funnels through here — plain text/post, edit, card,
+        image, file, approval and update-prompt cards — which makes it the one
+        place that can log the platform-assigned ``message_id`` for all of them
+        at once.
+
+        Before this logging existed, only the card path recorded its id (in its
+        own success log); text, edits and file sends were delivered with no
+        durable trace of what was actually sent, so a message could not be
+        recalled or edited afterward even though the API had returned an id all
+        along.
+        """
         if not self._response_succeeded(response):
             return self._response_error_result(response, default_message=default_message)
+        message_id = self._extract_response_field(response, "message_id")
+        # Callers that know the target thread it through; otherwise fall back
+        # to the response body, which echoes chat_id on im/v1/messages replies.
+        # Keeps the log useful for call sites that weren't updated.
+        resolved_chat_id = chat_id or self._extract_response_field(response, "chat_id")
+        logger.info(
+            "[Feishu] Sent chat_id=%s message_id=%s",
+            resolved_chat_id or "(none)",
+            message_id or "(none)",
+        )
         return SendResult(
             success=True,
-            message_id=self._extract_response_field(response, "message_id"),
+            message_id=message_id,
             raw_response=response,
         )
 
