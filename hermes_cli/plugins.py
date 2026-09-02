@@ -4232,47 +4232,59 @@ class PluginManager:
         changes or newly-added bundled backends become visible in long-lived
         sessions without requiring a full agent restart.
         """
-        with self._discovery_lock, _plugin_home_scope(self.home_path):
-            if self._discovered and not force:
-                return
-            if force:
-                # The ledger owns teardown.  Clearing manager-local containers by
-                # itself leaves process-global tools/platforms/providers installed.
-                self.unload()
-            if env_var_enabled("HERMES_SAFE_MODE"):
-                logger.info("HERMES_SAFE_MODE=1 — plugin discovery skipped")
-                self._discovered = True
-                return
-            # Set the flag up front as a re-entrancy guard (a plugin's register()
-            # can transitively trigger discovery again), but reset it if the sweep
-            # raises so a failed scan is NOT cached as "discovered with an empty
-            # registry" — callers swallow the exception and would otherwise be
-            # permanently stranded on the early-return above (the "No web provider
-            # configured" class of failures).
-            self._discovered = True
-            try:
-                self._discover_and_load_inner()
-                # Persistent registrations deliberately survived the
-                # unload-all above (#91701). Now that plugins have had their
-                # chance to re-register, dispose the ones whose plugin did
-                # not come back (disabled, removed, or omitted from this
-                # discovery pass) so e.g. a disabled auth plugin's provider
-                # does not stay live process-wide until restart.
-                self._evict_stale_persistent_registrations()
-                # Plugin secret sources register during discover; the initial
-                # load_hermes_dotenv() already ran at import time. Re-pull so the
-                # first process sees plugin backends (tracking #64177).
-                self._refresh_secret_sources_after_discovery()
+        # [owner] Timed acquire: after _join_background_discovery times out,
+        # the daemon thread may still hold this RLock. Blocking forever here
+        # is the "hermes opens to a blank screen until Ctrl+C" hang.
+        if not self._discovery_lock.acquire(timeout=15.0):
+            logger.warning(
+                "plugin discovery lock busy after 15s; "
+                "leaving the background scan to finish"
+            )
+            return
+        try:
+            with _plugin_home_scope(self.home_path):
+                if self._discovered and not force:
+                    return
                 if force:
-                    # config.yaml shell hooks live in ``_hooks`` but are
-                    # config-owned, not plugin-owned — the ledger-driven
-                    # unload() above wiped them and cannot restore them.
-                    # Re-register so force-reload is symmetric (#60036;
-                    # tracking #64178 — salvaged from PR #64188).
-                    self._re_register_shell_hooks_after_force()
-            except BaseException:
-                self._discovered = False
-                raise
+                    # The ledger owns teardown.  Clearing manager-local containers by
+                    # itself leaves process-global tools/platforms/providers installed.
+                    self.unload()
+                if env_var_enabled("HERMES_SAFE_MODE"):
+                    logger.info("HERMES_SAFE_MODE=1 — plugin discovery skipped")
+                    self._discovered = True
+                    return
+                # Set the flag up front as a re-entrancy guard (a plugin's register()
+                # can transitively trigger discovery again), but reset it if the sweep
+                # raises so a failed scan is NOT cached as "discovered with an empty
+                # registry" — callers swallow the exception and would otherwise be
+                # permanently stranded on the early-return above (the "No web provider
+                # configured" class of failures).
+                self._discovered = True
+                try:
+                    self._discover_and_load_inner()
+                    # Persistent registrations deliberately survived the
+                    # unload-all above (#91701). Now that plugins have had their
+                    # chance to re-register, dispose the ones whose plugin did
+                    # not come back (disabled, removed, or omitted from this
+                    # discovery pass) so e.g. a disabled auth plugin's provider
+                    # does not stay live process-wide until restart.
+                    self._evict_stale_persistent_registrations()
+                    # Plugin secret sources register during discover; the initial
+                    # load_hermes_dotenv() already ran at import time. Re-pull so the
+                    # first process sees plugin backends (tracking #64177).
+                    self._refresh_secret_sources_after_discovery()
+                    if force:
+                        # config.yaml shell hooks live in ``_hooks`` but are
+                        # config-owned, not plugin-owned — the ledger-driven
+                        # unload() above wiped them and cannot restore them.
+                        # Re-register so force-reload is symmetric (#60036;
+                        # tracking #64178 — salvaged from PR #64188).
+                        self._re_register_shell_hooks_after_force()
+                except BaseException:
+                    self._discovered = False
+                    raise
+        finally:
+            self._discovery_lock.release()
 
     def _re_register_shell_hooks_after_force(self) -> None:
         """Restore config.yaml shell hooks wiped by force-clear of ``_hooks``."""
@@ -6297,11 +6309,27 @@ def discover_plugins(force: bool = False) -> None:
     for it instead of racing a second scan.
     """
     _join_background_discovery()
+    t = _background_discovery_thread
+    # [owner] If the background scan is still alive after the join timeout,
+    # do not block on the same RLock — that deadlocks the CLI on a blank screen.
+    if (
+        not force
+        and _background_discovery_join_timed_out
+        and t is not None
+        and t.is_alive()
+        and t is not threading.current_thread()
+    ):
+        logger.warning(
+            "background plugin discovery still running after join timeout; "
+            "not blocking the caller"
+        )
+        return
     get_plugin_manager().discover_and_load(force=force)
 
 
 _background_discovery_thread: Optional[threading.Thread] = None
 _background_discovery_lock = threading.Lock()
+_background_discovery_join_timed_out = False
 
 
 def start_background_plugin_discovery() -> None:
@@ -6338,10 +6366,18 @@ def start_background_plugin_discovery() -> None:
 
 def _join_background_discovery(timeout: float = 30.0) -> None:
     """Wait for an in-flight background discovery (no-op from its own thread)."""
+    global _background_discovery_join_timed_out
     t = _background_discovery_thread
     if t is None or not t.is_alive() or t is threading.current_thread():
         return
+    if _background_discovery_join_timed_out:
+        return
     t.join(timeout=timeout)
+    if t.is_alive():
+        _background_discovery_join_timed_out = True
+        logger.warning(
+            "background plugin discovery still running after %.1fs", timeout
+        )
 
 
 def _plugin_toolset_keys_cache_path():

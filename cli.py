@@ -18181,6 +18181,18 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             _detect_light_mode()
         except Exception:
             pass
+        # [owner] Finish plugin discovery before blanking the terminal.
+        # After a large checkout update the banner snapshot is invalid, so
+        # show_banner() takes the cold import of model_tools → discover_plugins.
+        # If we scroll/clear first, that wait is a blank screen and Ctrl+C
+        # looks like a hang (join timeout then RLock deadlock on the
+        # background discovery thread).
+        try:
+            from hermes_cli.plugins import discover_plugins
+            print("Starting Hermes…", flush=True)
+            discover_plugins()
+        except Exception:
+            pass
         # Push the entire TUI to the bottom of the terminal so the banner,
         # responses, and prompt all appear pinned to the bottom — empty
         # space stays above, not below.  This prints enough blank lines to
