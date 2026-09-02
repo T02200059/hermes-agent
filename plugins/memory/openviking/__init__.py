@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import atexit
 import errno
+import hashlib
 import json
 import logging
 import math
@@ -2346,46 +2347,76 @@ class OpenVikingMemoryProvider(MemoryProvider):
     def name(self) -> str:
         return "openviking"
 
-    # -- Display label resolution for Viking session payloads -------------
+    # Display label resolution for Viking session payloads -------------# [owner] display-label: peer_id slug 化 (see owner/openviking/README-peer-id-slug.md)
     # These produce human-readable peer_ids so Viking-stored ChatLog uses
-    # e.g. [杨天宝] instead of [user], preventing recall confusion with
+    # e.g. [yangtianbao] instead of [user], preventing recall confusion with
     # live conversation turns.  Verified incident 2026-07-28.
+    # [owner] 2026-09-02: peer_id 是 viking URI 路径段+提取 speaker 标签，服务端
+    # 强校验 ^[a-zA-Z0-9_.@-]+$，中文人名 400 → 结构化同步降级文本 3 周。
+    # 改为 ASCII slug；中文人名唯一锚点在 entities 实体文件，正文天然带中文名。
 
     _USER_NAME_RE = re.compile(r"user_name:\s*`([^`]+)`")
+
+    # [owner] 已知人名 → 合法 slug（新增人名在此登记，或走 OPENVIKING_USER 兜底）
+    _KNOWN_USER_SLUGS = {
+        "杨天宝": "yangtianbao",
+        "孙启飞": "sunqifei",
+    }
+
+    @classmethod
+    def _ascii_peer_slug(cls, value: str) -> str:
+        """[owner] 把任意显示名转成 viking 合法 peer_id slug.
+
+        非 ASCII/非法字符回退 ext-<sha1 前 10 位>（对齐 viking
+        ingest/peer.py safe_external_peer 的外部对端惯例）。
+        """
+        if not value:
+            return ""
+        slug = value.strip().lower()
+        if re.fullmatch(r"[a-z0-9_.@-]+", slug):
+            return slug
+        mapped = cls._KNOWN_USER_SLUGS.get(value.strip())
+        if mapped and re.fullmatch(r"[a-z0-9_.@-]+", mapped):
+            return mapped
+        digest = hashlib.sha1(value.encode("utf-8")).hexdigest()[:10]
+        return f"ext-{digest}"
 
     def _resolve_user_display_label(self, user_content: str) -> str:
         """User display label for Viking payloads.
 
         Priority:
         1. Feishu Chinese name from Inbound context ``user_name: `xxx` ``
-        2. Fallback to the fixed prefix ``过去的用户``
+        2. Fallback to ``OPENVIKING_USER`` env (ASCII owner identity)
         """
         if user_content:
             match = self._USER_NAME_RE.search(user_content)
             if match:
                 name = match.group(1).strip()
                 if name:
-                    return name
-        return "过去的用户"
+                    return self._ascii_peer_slug(name)
+        env_user = _clean_config_value(os.environ.get("OPENVIKING_USER"))
+        if env_user:
+            return self._ascii_peer_slug(env_user)
+        return "unknown-user"
 
     def _resolve_assistant_display_label(self) -> str:
         """Assistant display label for Viking payloads.
 
         Priority:
         1. Active profile name (``hermesxiyun`` / ``sunqifei``), with ``default`` mapped to ``hermes``
-        2. Fallback to the fixed prefix ``过去的助手``
+        2. Fallback to ``_agent`` / fixed ASCII label
         """
         try:
             from hermes_cli.profiles import get_active_profile_name
             profile = get_active_profile_name()
             if profile and profile not in ("", "custom"):
-                return "hermes" if profile == "default" else profile
+                return "hermes" if profile == "default" else self._ascii_peer_slug(profile)
         except Exception:
             pass
         agent = getattr(self, "_agent", "") or _DEFAULT_AGENT
         if agent and agent != "hermes":
-            return agent
-        return "过去的助手"
+            return self._ascii_peer_slug(agent)
+        return "hermes"
 
     def is_available(self) -> bool:
         """Check if OpenViking endpoint is configured. No network calls."""

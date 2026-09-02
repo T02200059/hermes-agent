@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import socket
@@ -1874,7 +1875,7 @@ def _long_structured_turn(assistant_count=204):
         "/api/v1/sessions/sid-structured/messages/batch",
         {
             "messages": [
-                {"role": "user", "parts": [{"type": "text", "text": "u"}], "peer_id": "过去的用户"},
+                {"role": "user", "parts": [{"type": "text", "text": "u"}], "peer_id": "unknown-user"},
                 {"role": "assistant", "parts": [{"type": "text", "text": "Looking."}], "peer_id": "hermes"},
                 {
                     "role": "assistant",
@@ -1894,6 +1895,40 @@ def _long_structured_turn(assistant_count=204):
             ]
         },
     )]
+
+
+def _peer_slug_cases():  # [owner] peer_id slug 化契约测试
+    return [
+        ("杨天宝", "yangtianbao"),          # 已知人名 → 登记表 slug
+        ("孙启飞", "sunqifei"),
+        ("庭威", "ext-" + hashlib.sha1("庭威".encode()).hexdigest()[:10]),  # 未登记中文 → ext-hash
+        ("John.Doe@ex-1", "john.doe@ex-1"),  # 天然合法 → 原样小写
+        ("  yangtb ", "yangtb"),             # 空白清洗
+        ("", ""),                            # 空值
+    ]
+
+
+@pytest.mark.parametrize("raw,expected", _peer_slug_cases())
+def test_ascii_peer_slug_contract(raw, expected):
+    from plugins.memory.openviking import OpenVikingMemoryProvider
+
+    assert OpenVikingMemoryProvider._ascii_peer_slug(raw) == expected
+
+
+def test_resolve_user_label_slug_and_env_fallback(monkeypatch):
+    # [owner] Inbound 人名 → slug；无人名 → OPENVIKING_USER 兜底；两者皆无 → unknown-user
+    from plugins.memory.openviking import OpenVikingMemoryProvider
+
+    provider = object.__new__(OpenVikingMemoryProvider)
+    monkeypatch.delenv("OPENVIKING_USER", raising=False)
+
+    assert provider._resolve_user_display_label(
+        "...\nuser_name: `杨天宝`\n..."
+    ) == "yangtianbao"
+    assert provider._resolve_user_display_label("no name here") == "unknown-user"
+
+    monkeypatch.setenv("OPENVIKING_USER", "YangTB")
+    assert provider._resolve_user_display_label("no name here") == "yangtb"
 
 
 def test_sync_turn_noop_when_session_id_blank():
