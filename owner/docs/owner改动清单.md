@@ -18,13 +18,13 @@
 | 项目 | 值 |
 |------|-----|
 | 分支 | `owner` |
-| 基点 | `upstream/main` @ `f53ba9bb5`（`fix(s6): dot-prefix gateway staging dir`，2026-06-29） |
+| 基点 | `upstream/main` @ `00b2e03c80`（`fix(tui): a collapsed paste resolves before the slash command runs`，2026-09-01） |
 | Commit 数 | 1573（基点后累计，含上游 merge commits + owner commits） |
 | 改动文件总数 | 172（去重后） |
 | owner/ 纯新增 | ~75 个文件 |
 | 官方文件侵入 | ~70 个文件（含 ~20 个测试文件） |
 | 范围 | 模型归因 / patch.yaml 配置 / 审批安全 / skill 写入审批 / 语义审计 / 飞书深度定制 / TUI 皮肤 / Cron 运维 / Gateway 稳定性 / Checkpoint 预测 / Upstream Sync / Viking 记忆治理 / Desktop 窗口透明度 / output_guard |
-| 最后更新 | 2026-08-13 |
+| 最后更新 | 2026-09-02 |
 | 来源 | 从 `owner-v17`（500+ commit）清洗迁移而来；本分支是重新整理后的最小叠加版本 |
 
 ### 0.2 章节索引
@@ -1275,6 +1275,15 @@ _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请先�
 ---
 
 ## 附录 E：变更日志
+
+
+### 2026-09-02：合入 upstream/main @ 00b2e03c80
+
+- **类型**：sync fork + owner 解冲
+- **Commit**：`3155512347`（merge main）、`7768ec4b26`（锚点适配 batch row dict）
+- **策略**：70 个冲突文件按改动清单解冲；locales 非 en/zh 取官方；bugfix 官方已覆盖则取官方（models_dev 24h TTL、terminal NUL/二进制、anthropic adapter 抽模块、Layer1 `_probe_live`）；各自解决一部分则手合（§2.2.2）；owner 独有能力回贴胶水（api_key_prefixes、damodel `${VAR}`、Feishu 全套、归因链）。
+- **验证**：`merge_health_check.py` 6 passed / 0 failed / 1 warning；`merge_loss_audit.py` FAIL=0 WARN=3（官方已覆盖的旧 marker / cron ContextVar 原生实现 / owner.utils 孤儿）。
+
 
 ### 2026-07-02：§9.3 Memory Synthetic Guard → owner-extensions plugin 迁移
 
