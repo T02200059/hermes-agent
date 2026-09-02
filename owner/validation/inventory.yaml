@@ -613,8 +613,9 @@ items:
       - type: file_contains
         file: run_agent.py
         contains:
-          - 'input_tokens=msg.get("input_tokens")'
-          - 'cache_write_tokens=msg.get("cache_write_tokens")'
+          # Upstream flush path is now a batch row dict, not append_message kwargs.
+          - '"input_tokens": msg.get("input_tokens")'
+          - '"cache_write_tokens": msg.get("cache_write_tokens")'
       - type: file_contains
         file: agent/chat_completion_helpers.py
         contains:

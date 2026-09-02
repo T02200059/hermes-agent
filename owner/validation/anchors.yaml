@@ -42,7 +42,8 @@ anchors:
     contains:
       - 'owner_provider_name: str = None'
       - 'owner_provider_name=self.owner_provider_name'
-      - 'owner_provider_name=msg.get("owner_provider_name")'
+      # Upstream flush path is now a batch row dict, not append_message kwargs.
+      - '"owner_provider_name": msg.get("owner_provider_name")'
 
   - id: message-token-breakdown-db
     # Upstream extracted CREATE TABLE DDL into hermes_state_common.py;
