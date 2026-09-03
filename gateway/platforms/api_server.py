@@ -2257,6 +2257,49 @@ class APIServerAdapter(BasePlatformAdapter):
 
             profile_name, endpoint_url, api_key = route
 
+            # [owner] LDAP second-factor gate — only failures reject.
+            # Rejects land before any proxying; an absent owner/ module is
+            # fail-open (matches the _owner_import contract elsewhere).
+            _ldap_gate = _owner_import("owner.gateway.ldap_auth", "ldap_gate")
+            if _ldap_gate is not None:
+                password = request.headers.get(
+                    "X-Hermes-Identity-Password", ""
+                ).strip() or None
+                verdict = await _ldap_gate(identity, password)
+                if verdict == "deny_bad_credentials":
+                    return web.json_response(
+                        {
+                            "error": {
+                                "message": "LDAP authentication failed for the given identity",
+                                "type": "gateway_auth_error",
+                                "code": "ldap_auth_failed",
+                            }
+                        },
+                        status=401,
+                    )
+                if verdict in ("deny_reauth_required", "deny_empty_password"):
+                    return web.json_response(
+                        {
+                            "error": {
+                                "message": "LDAP re-authentication required (send X-Hermes-Identity-Password)",
+                                "type": "gateway_auth_error",
+                                "code": "ldap_auth_required",
+                            }
+                        },
+                        status=401,
+                    )
+                if verdict == "deny_invalid_login":
+                    return web.json_response(
+                        {
+                            "error": {
+                                "message": "X-Hermes-Identity failed LDAP login validation",
+                                "type": "gateway_auth_error",
+                                "code": "ldap_identity_invalid",
+                            }
+                        },
+                        status=401,
+                    )
+
             # Build target URL: same path + query string
             path = request.path
             query = request.query_string
@@ -2266,13 +2309,20 @@ class APIServerAdapter(BasePlatformAdapter):
 
             body = await request.read()
 
-            # Forward headers: strip hop-by-hop, add auth
+            # Forward headers: strip hop-by-hop, add auth. The LDAP password
+            # header never crosses the proxy boundary.
             import aiohttp
 
             headers = {
                 k: v
                 for k, v in request.headers.items()
-                if k.lower() not in ("host", "transfer-encoding", "content-length")
+                if k.lower()
+                not in (
+                    "host",
+                    "transfer-encoding",
+                    "content-length",
+                    "x-hermes-identity-password",
+                )
             }
             headers["Authorization"] = f"Bearer {api_key}"
             headers["X-Forwarded-For"] = getattr(request, "remote", "") or ""
