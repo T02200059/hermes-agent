@@ -2090,7 +2090,22 @@ def get_active_profile_name() -> str:
     Returns ``"default"`` if HERMES_HOME is not set or points to ``~/.hermes``.
     Returns the profile name if HERMES_HOME points into ``~/.hermes/profiles/<name>``.
     Returns ``"custom"`` if HERMES_HOME is set to an unrecognized path.
+
+    [owner] ``HERMES_PROFILE`` env wins when set to a valid profile id:
+    containerized deployments (node010 sub-profile containers) mount the
+    user's ``~/.hermes`` at ``/root/.hermes``, so path inference can only
+    yield ``default`` there, while the container's identity is declared
+    explicitly via ``HERMES_PROFILE=<profile>`` in its environment. This
+    mirrors the env-first pattern already used by gateway lifecycle labels
+    (``gateway/run.py`` ``_profile_label``) and by the skill approval gate.
+    The regex gate keeps ambient pollution (pytest ``-p no:xdist`` etc.)
+    from being read as a profile name; invalid/empty values fall through
+    to path inference unchanged.
     """
+    env_profile = (os.getenv("HERMES_PROFILE", "") or "").strip()
+    if env_profile and _PROFILE_ID_RE.match(env_profile):
+        return env_profile
+
     from hermes_constants import get_hermes_home
     hermes_home = get_hermes_home()
     resolved = hermes_home.resolve()

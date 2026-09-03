@@ -64,6 +64,10 @@ def profile_env(tmp_path, monkeypatch):
     default_home = tmp_path / ".hermes"
     default_home.mkdir(exist_ok=True)
     monkeypatch.setenv("HERMES_HOME", str(default_home))
+    # [owner] HERMES_PROFILE now wins in get_active_profile_name() — clear any
+    # ambient value (CI shells, exported envs) so path-inference assertions
+    # stay deterministic.
+    monkeypatch.delenv("HERMES_PROFILE", raising=False)
     return tmp_path
 
 
@@ -573,6 +577,28 @@ class TestGetActiveProfileName:
         # With Docker-aware roots, a custom HERMES_HOME is the default —
         # not "custom".  The user is on the default profile of their
         # custom deployment.
+        assert get_active_profile_name() == "default"
+
+    def test_hermes_profile_env_wins_over_path(self, profile_env, monkeypatch):
+        """[owner] HERMES_PROFILE env takes precedence over path inference.
+
+        Containerized deployments mount the user's ~/.hermes at /root/.hermes
+        (path inference → "default") while declaring identity via
+        HERMES_PROFILE=<name>; the env must win.
+        """
+        monkeypatch.setenv("HERMES_PROFILE", "yangtianbao")
+        assert get_active_profile_name() == "yangtianbao"
+
+    def test_hermes_profile_env_invalid_falls_back_to_path(self, profile_env, monkeypatch):
+        """[owner] A malformed HERMES_PROFILE value is ignored (ambient
+        pollution like pytest's ``-p no:xdist`` must not masquerade as a
+        profile name); path inference applies as before."""
+        monkeypatch.setenv("HERMES_PROFILE", "no:xdist")
+        assert get_active_profile_name() == "default"
+
+    def test_hermes_profile_env_empty_falls_back_to_path(self, profile_env, monkeypatch):
+        """[owner] An empty/whitespace HERMES_PROFILE is ignored."""
+        monkeypatch.setenv("HERMES_PROFILE", "   ")
         assert get_active_profile_name() == "default"
 
 
