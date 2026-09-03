@@ -171,7 +171,10 @@ class TestLdapGate:
             await ldap_auth.ldap_gate("yangtb", "secret")
         # Force expiry: rewrite the state file with a past timestamp.
         state = ldap_home / "ldap_identity_cache.json"
-        state.write_text('{"version": 1, "entries": {"yangtb": 1000}}', encoding="utf-8")
+        state.write_text(
+            '{"version": 2, "entries": {"yangtb": 1000}, "seen": ["yangtb"]}',
+            encoding="utf-8",
+        )
         ldap_auth.reset_for_tests()
 
         _write_ldap_section(
@@ -230,6 +233,34 @@ class TestLdapGate:
             await ldap_auth.ldap_gate("yangtb", "rotated")
         second_expiry = ldap_auth._cache_get("yangtb")
         assert second_expiry is not None and second_expiry >= first_expiry
+
+    @pytest.mark.asyncio
+    async def test_wrong_password_eviction_preserves_seen_marker(self, ldap_home):
+        """P0 regression: password-rotation eviction must NOT destroy the
+        ``seen`` marker.  Otherwise an attacker who knows a uid can send a
+        wrong password, wait out the negative cache, and then request
+        without a password under enforce=seen — which must still DENY."""
+        # A user authenticates once (becomes 'seen', cached 72h).
+        with _fake_bind(FakeBind({YANGTB_DN: True})):
+            assert await ldap_auth.ldap_gate("yangtb", "secret") == ldap_auth.ALLOW
+        assert ldap_auth._cache_get("yangtb") is not None
+
+        # An attacker fires a wrong password for the same uid.
+        with _fake_bind(FakeBind({})):
+            assert await ldap_auth.ldap_gate("yangtb", "wrongguess") == ldap_auth.DENY_BAD_CREDENTIALS
+        # Eviction cleared the valid-cache window but the login stays 'seen'.
+        assert ldap_auth._cache_get("yangtb") is None
+        assert ldap_auth._has_seen("yangtb") is True
+
+        # After the negative window lapses, a password-less request under
+        # enforce=seen must still be denied (reauth required).
+        real_now = ldap_auth._now
+        try:
+            ldap_auth._now = lambda: real_now() + 11
+            with _fake_bind(FakeBind(raise_for_unknown=True)):
+                assert await ldap_auth.ldap_gate("yangtb", None) == ldap_auth.DENY_REAUTH_REQUIRED
+        finally:
+            ldap_auth._now = real_now
 
     @pytest.mark.asyncio
     async def test_cache_survives_module_state_reset(self, ldap_home):
@@ -375,7 +406,8 @@ class TestMiddleware:
         middleware, _ = _make_middleware()
         # Expired-but-seen login → reauth required.
         (routing_home / "ldap_identity_cache.json").write_text(
-            '{"version": 1, "entries": {"yangtb": 1000}}', encoding="utf-8"
+            '{"version": 2, "entries": {"yangtb": 1000}, "seen": ["yangtb"]}',
+            encoding="utf-8",
         )
         req = _FakeRequest({"X-Hermes-Identity": "yangtb"})
         with _fake_bind(FakeBind(raise_for_unknown=True)):

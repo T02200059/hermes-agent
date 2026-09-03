@@ -49,6 +49,12 @@ _LOGIN_RE = re.compile(r"^[a-zA-Z0-9._-]+$")
 # module-level state (mirrors owner/patch_config cache style); tests reset via _reset_for_tests
 _positive_cache: Dict[str, float] = {}
 _negative_cache: Dict[str, float] = {}
+# Logins that have ever successfully authenticated. Distinct from the
+# positive cache: ``_cache_evict`` (password rotation) clears the valid
+# window but MUST NOT clear this marker, or enforce=seen would be downgraded
+# to "allow" for a known uid (attacker sends a wrong password, waits out the
+# negative cache, then requests without a password).
+_seen_logins: set = set()
 _cache_lock = threading.Lock()
 _state_file_mtime: Optional[float] = None
 
@@ -118,8 +124,9 @@ def _persist_positive_cache() -> None:
     global _state_file_mtime
     try:
         payload = {
-            "version": 1,
+            "version": 2,
             "entries": dict(_positive_cache),
+            "seen": sorted(_seen_logins),
         }
         directory = os.path.dirname(path) or "."
         fd, tmp = tempfile.mkstemp(prefix=".ldap_cache.", dir=directory)
@@ -146,11 +153,26 @@ def _load_state_file_locked() -> None:
             return
         with open(path, encoding="utf-8") as fh:
             data = json.load(fh)
-        if isinstance(data, dict) and isinstance(data.get("entries"), dict):
-            now = _now()
-            for login, expires in data["entries"].items():
-                if isinstance(login, str) and isinstance(expires, (int, float)) and expires > now:
-                    _positive_cache[login] = float(expires)
+        if isinstance(data, dict):
+            if isinstance(data.get("entries"), dict):
+                now = _now()
+                for login, expires in data["entries"].items():
+                    if (
+                        isinstance(login, str)
+                        and isinstance(expires, (int, float))
+                        and expires > now
+                    ):
+                        _positive_cache[login] = float(expires)
+            if isinstance(data.get("seen"), list):
+                for login in data["seen"]:
+                    if isinstance(login, str):
+                        _seen_logins.add(login)
+            elif data.get("version") != 2:
+                # v1 state files (pre-seen split): any previously cached login
+                # was authenticated at least once — treat it as seen so the
+                # enforce=seen policy keeps denying after the window lapses.
+                for login in list(_positive_cache):
+                    _seen_logins.add(login)
         _state_file_mtime = mtime
     except Exception as exc:
         logger.debug("[LDAP] load cache file failed: %s", exc)
@@ -166,11 +188,14 @@ def _cache_get(login: str) -> Optional[float]:
 def _cache_put(login: str, ttl_seconds: float) -> None:
     with _cache_lock:
         _positive_cache[login] = _now() + ttl_seconds
+        _seen_logins.add(login)
         _negative_cache.pop(login, None)
         _persist_positive_cache()
 
 
 def _cache_evict(login: str) -> None:
+    # Clears the valid window only. The ``seen`` marker is intentionally
+    # preserved: password rotation must not silently downgrade enforce=seen.
     with _cache_lock:
         _positive_cache.pop(login, None)
         _persist_positive_cache()
@@ -189,20 +214,10 @@ def _negative_active(login: str) -> bool:
 
 
 def _has_seen(login: str) -> bool:
-    """True when a state file entry exists for the login, even if expired."""
-    path = _state_file_path()
-    if path is None:
-        return False
+    """True when the login has ever successfully authenticated."""
     with _cache_lock:
         _load_state_file_locked()
-        if login in _positive_cache:
-            return True
-    try:
-        with open(path, encoding="utf-8") as fh:
-            data = json.load(fh)
-        return isinstance(data, dict) and login in (data.get("entries") or {})
-    except Exception:
-        return False
+        return login in _seen_logins or login in _positive_cache
 
 
 # ---------------------------------------------------------------------------
@@ -366,4 +381,5 @@ def reset_for_tests() -> None:
     with _cache_lock:
         _positive_cache.clear()
         _negative_cache.clear()
+        _seen_logins.clear()
         _state_file_mtime = None
