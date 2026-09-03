@@ -7062,7 +7062,26 @@ def _apply_live_compression_config(agent: Any, cfg: dict | None) -> None:
     except (TypeError, ValueError):
         pass
 
+    # [owner-patch] tui-live-ctx-override-resolve: 顶层 model.context_length 缺省时，
+    # 回退到 providers.<provider>.models.<model>.context_length（get_custom_provider_context_length
+    # 是 per-model override 的唯一权威源）。否则新版 providers.*.models 结构下的
+    # context_length 会被本函数清空，compressor 下次 resolve 落到 256K fallback。
     raw_ctx = model_cfg.get("context_length")
+    if raw_ctx is None:
+        try:
+            from hermes_cli.config import (
+                get_compatible_custom_providers,
+                get_custom_provider_context_length,
+            )
+            _live_cp_ctx = get_custom_provider_context_length(
+                model=getattr(agent, "model", "") or "",
+                base_url=getattr(agent, "base_url", "") or "",
+                custom_providers=get_compatible_custom_providers(cfg),
+            )
+            if _live_cp_ctx:
+                raw_ctx = _live_cp_ctx
+        except Exception:
+            raw_ctx = None
     if raw_ctx is not None:
         try:
             new_ctx = int(raw_ctx)

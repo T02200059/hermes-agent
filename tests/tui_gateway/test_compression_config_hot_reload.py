@@ -281,3 +281,69 @@ def test_removing_codex_native_threshold_restores_default(monkeypatch):
     session["agent"].codex_responses_compact_threshold = 120_000
     _sync_with_cfg(monkeypatch, session, {"compression": {}})
     assert session["agent"].codex_responses_compact_threshold == 200_000
+
+
+# ── [owner-patch] tui-live-ctx-override-resolve (2026-09-03) ─────────────
+# 回归: _apply_live_compression_config 只读顶层 model.context_length，而新版
+# providers.<provider>.models.<model>.context_length 结构下 per-model override
+# 会被误清空 → compressor 下次 resolve 落到 256K fallback。修复后必须从
+# providers.*.models 回退解析当前运行模型的 override，且不能误清。
+def _provider_override_session(**compression_ctor):
+    compressor = ContextCompressor(
+        model="xy-pro",
+        threshold_percent=0.75,
+        config_context_length=1_000_000,
+        quiet_mode=True,
+        **compression_ctor,
+    )
+    agent = SimpleNamespace(
+        model="xy-pro",
+        provider="damodel",
+        base_url="https://genai.damodel.com/v1",
+        context_compressor=compressor,
+        compression_enabled=True,
+        compression_idle_compact_after_seconds=0,
+        codex_responses_native_compaction=False,
+        codex_responses_compact_threshold=200_000,
+    )
+    return {"agent": agent, "session_key": "session-ctx-resolve"}, compressor
+
+
+def test_provider_model_context_length_kept_when_top_level_model_has_none(monkeypatch):
+    session, compressor = _provider_override_session()
+    cfg = {
+        "model": {"default": "xy-max", "provider": "damodel"},
+        "providers": {
+            "damodel": {
+                "base_url": "https://genai.damodel.com/v1",
+                "models": {"xy-pro": {"context_length": 1_000_000}},
+            }
+        },
+        "compression": {},
+    }
+    _sync_with_cfg(monkeypatch, session, cfg)
+    assert compressor._config_context_length == 1_000_000
+    assert compressor.context_length == 1_000_000
+
+
+def test_provider_model_context_length_not_applied_to_other_provider_model(monkeypatch):
+    # 同 provider 下多个模型各有 override：xy-pro 用 1m，不被 xy-damodel 的
+    # 262144 串值（base_url 匹配 + model 精确过滤）。
+    session, compressor = _provider_override_session()
+    cfg = {
+        "model": {"default": "xy-max", "provider": "damodel"},
+        "providers": {
+            "damodel": {
+                "base_url": "https://genai.damodel.com/v1",
+                "models": {
+                    "xy-pro": {"context_length": 1_000_000},
+                    "xy-damodel": {"context_length": 262_144},
+                },
+            }
+        },
+        "compression": {},
+    }
+    _sync_with_cfg(monkeypatch, session, cfg)
+    assert compressor._config_context_length == 1_000_000
+    assert compressor.context_length == 1_000_000
+    assert compressor.context_length != 262_144
