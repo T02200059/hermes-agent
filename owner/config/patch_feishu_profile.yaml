@@ -72,5 +72,59 @@ feishu:
     approval_home_chat_id: oc_f206b3d2a547a12f430593ea44076031
     # Seconds to wait for approve/deny (default 86400 = 24h).
     timeout_seconds: 86400
-    # When true (default), profile-level disable of bg skill evolution.
+    # When true (default), profile-level disable of bg skill review.
     disable_background_skill_review: true
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# LDAP 二次认证（api_server 的 X-Hermes-Identity 流量）
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# 作用面：携带 ``X-Hermes-Identity``（LDAP uid）请求头的 api_server 流量 ——
+# 即经 identity_routes 选 profile、反代到子容器的这条链路。
+#
+# 认证方式：请求头 ``X-Hermes-Identity-Password`` 携带该用户的 LDAP 密码，
+# 网关用模板 DN 直接 bind（bind 成功 = 账号存在 + 密码正确，一步完成）。
+#
+#   - bind 成功   → 该 login 免验 72h（内存 + 状态文件，网关重启不丢）
+#   - bind 失败   → 401 拒绝 + 短负缓存防爆破（只有这种"失败"才拒绝）
+#   - 无密码请求  → 按 enforce 策略（见下），默认 seen：认证过一次的账号
+#                   在缓存过期且无新密码时才 401；从未认证过的账号放行
+#                   （api_key 仍是第一信任边界，部署期天然灰度）
+#   - LDAP 不可达 → 默认放行并告警（fail_open_on_error 可改为拒绝）
+#
+# 安全要点（实现侧遵守）：
+#   - 密码头在反代转发前剥离，且永不写入日志；
+#   - login 值经字符白名单 + RFC4514 转义后才拼入 DN（防 DN 注入）；
+#   - 空密码直接 401（LDAP 空密码 = 匿名 bind，会假成功）；
+#   - DN 模板锚定 cn=people，cn=deleted 离职账号天然无法通过。
+#
+# identity 的值须与 identity_routes 的 key（即 LDAP uid）一致。
+ldap:
+  enabled: true
+  host: "10.10.100.150"
+  port: 389                      # 636 (LDAPS) 未开放，走内网明文 389
+  use_ssl: false
+  timeout_seconds: 5
+  # 用户 bind DN 模板；{login} = X-Hermes-Identity 的值（须为 LDAP uid）
+  user_dn_template: "cn={login},cn=people,dc=westhpc,dc=com"
+  # 管理账号（可选，bind 校验主路径不依赖）：用于区分「用户不存在 vs
+  # 密码错误」的日志定位，以及后续可能的 group 成员校验。
+  admin_dn: "cn=admin,dc=westhpc,dc=com"
+  admin_password: "xysl123456"
+  # web 管理: https://ldapadmin.westhpc.net/
+  # 服务维护: 10.10.100.150 上 cd /app/ldap_docker_compose/ && docker-compose up -d
+  #           （配置 /app/ldap_docker_compose/docker-compose.yaml）
+  #
+  # enforce 三档:
+  #   off   - 只验带密码的请求；无密码一律放行（纯增强，无防伪造力）
+  #   seen  - 认证过一次的账号：缓存有效或带新密码才放行（默认，匹配
+  #           "一次成功维持 72h，失败才拒绝"；从未认证过的账号放行 →
+  #           前端没上线密码头之前不会破坏任何现有流量）
+  #   always- 所有带 identity 的请求都必须有有效缓存或密码
+  enforce: "seen"
+  # 一次认证成功后的免验时长（小时）
+  cache_ttl_hours: 72
+  # 认证失败后的负缓存秒数（同一账号连续错密码时防爆破/防打爆 LDAP）
+  negative_cache_seconds: 10
+  # LDAP 不可达 / ldap3 未安装时: true=放行(api_key 仍是边界) / false=拒绝
+  fail_open_on_error: true
