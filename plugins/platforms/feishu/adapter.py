@@ -3196,9 +3196,26 @@ class FeishuAdapter(BasePlatformAdapter):
         auto-card's retry/fallback chain: retries never fired, the
         ``return None`` fallback was skipped, and ``already_sent`` sealed the
         plain-text safety net.
+
+        [owner] multi-profile routing: buttons are tagged with this
+        container's profile name (``hermes_profile``) before serialization
+        so a click on the only WebSocket (held by the main gateway) routes
+        back here (``try_route_card_action``). Gated on ``send_only`` mode —
+        the main gateway's websocket adapter is a no-op. Fail-open: without
+        ``owner/feishu/card_sender`` the card is sent untagged (legacy
+        behaviour). Fixes /providers picker + clarify cards for routed
+        profiles ("会话已过期" — state lived in the container, click handled
+        on the main gateway).
         """
         import json as _json
         try:
+            # [owner] tag buttons before serialization — after this point the
+            # card is a JSON string and can no longer be walked/mutated.
+            _tag_card = _owner_import(
+                "owner.feishu.card_sender", "_maybe_tag_card_profile"
+            )
+            if _tag_card is not None:
+                _tag_card(self, card)
             payload = _json.dumps(card, ensure_ascii=False)
             response = await self._send_raw_message(
                 chat_id=chat_id,
