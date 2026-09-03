@@ -120,6 +120,9 @@ dependencies = [
   # (which is a silent killer on Windows — see CONTRIBUTING.md) and
   # `os.killpg` (which doesn't exist on Windows).
   "psutil==7.2.2",
+  # [owner] LDAP bind auth for api_server X-Hermes-Identity requests
+  # (owner/gateway/ldap_auth.py). Fail-open ImportError when absent.
+  "ldap3==2.9.1",
   # Browser CDP supervisor + browser_dialog import this directly. Keep core
   # so browser tool discovery doesn't fail on lean installs.
   "websockets==15.0.1",
