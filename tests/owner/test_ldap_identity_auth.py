@@ -416,7 +416,7 @@ class TestMiddleware:
         assert "ldap_auth_required" in resp.text
 
     @pytest.mark.asyncio
-    async def test_allowed_request_proxies_without_password_header(self, routing_home):
+    async def test_allowed_request_proxies_without_identity_headers(self, routing_home):
         middleware, _ = _make_middleware()
         handler = _RecordingHandler()
         recorder = _ProxyRecorder()
@@ -429,6 +429,12 @@ class TestMiddleware:
                 resp = await middleware(req, handler)
         assert resp.status == 200
         assert "x-hermes-identity-password" not in {
+            k.lower() for k in recorder.forwarded_headers
+        }
+        # The identity header must also be stripped: sub-profile gateways run
+        # the same identity_routes config, so forwarding it makes the
+        # sub-gateway proxy the request to itself (loop → 503).
+        assert "x-hermes-identity" not in {
             k.lower() for k in recorder.forwarded_headers
         }
         # DenyHandler proxy path — handler not called (request was proxied).

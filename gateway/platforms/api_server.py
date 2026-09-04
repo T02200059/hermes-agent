@@ -2310,7 +2310,12 @@ class APIServerAdapter(BasePlatformAdapter):
             body = await request.read()
 
             # Forward headers: strip hop-by-hop, add auth. The LDAP password
-            # header never crosses the proxy boundary.
+            # header never crosses the proxy boundary. The identity header is
+            # stripped too: sub-profile containers run the same routing config
+            # (identity_routes + profile_endpoints), so forwarding it would
+            # make the sub-gateway re-resolve and proxy the request to itself
+            # in an infinite loop until aiohttp's 120s timeout / recursion
+            # kills the chain with a 503 ("Sub-gateway unavailable").
             import aiohttp
 
             headers = {
@@ -2322,6 +2327,7 @@ class APIServerAdapter(BasePlatformAdapter):
                     "transfer-encoding",
                     "content-length",
                     "x-hermes-identity-password",
+                    "x-hermes-identity",
                 )
             }
             headers["Authorization"] = f"Bearer {api_key}"
