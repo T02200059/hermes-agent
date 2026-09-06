@@ -107,6 +107,21 @@ FEISHU_DOC_READ_SCHEMA = {
                     'CurrentValue.[GPU]="H800" — reads only matching records.'
                 ),
             },
+            "offset": {
+                "type": "integer",
+                "description": (
+                    "Only applies to merge_forward messages (doc_token=om_...). "
+                    "Skip the first N child messages — use the offset shown in "
+                    "the truncation hint to page through long forwards."
+                ),
+            },
+            "mf_limit": {
+                "type": "integer",
+                "description": (
+                    "Only applies to merge_forward messages (doc_token=om_...). "
+                    "Max child messages to render in this call (default 100)."
+                ),
+            },
         },
         "required": ["doc_token"],
     },
@@ -141,6 +156,23 @@ def _handle_feishu_doc_read(args: dict, **kwargs) -> str:
             "Feishu client not available (set FEISHU_APP_ID and "
             "FEISHU_APP_SECRET, or run from a Feishu comment context)"
         )
+
+    # [owner-patch] merge_forward: doc_token om_... → read forwarded chat log
+    # via GET /im/v1/messages/{id} (parent + N children). Supports offset /
+    # limit paging so long forwards are never silently truncated.
+    raw_token_stripped = raw_token.strip()
+    if raw_token_stripped.startswith("om_"):
+        from tools.feishu_client_utils import read_merge_forward_as_text
+
+        text, err = read_merge_forward_as_text(
+            client,
+            raw_token_stripped,
+            offset=int(args.get("offset", 0) or 0),
+            limit=args.get("mf_limit"),
+        )
+        if err:
+            return tool_error(err)
+        return tool_result(success=True, content=text)
 
     # Extract the token and decide whether it needs wiki node resolution.
     # inferred_type comes from the URL path (/sheets/ → sheet, /base/ →

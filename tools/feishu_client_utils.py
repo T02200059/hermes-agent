@@ -1561,3 +1561,36 @@ def read_docx_with_images(
         content = (content.rstrip() + "\n\n" + bitable_text) if content else bitable_text
 
     return content, None, images
+
+
+# ---------------------------------------------------------------------------
+# [owner-patch] merge_forward reading: GET /im/v1/messages/{id} returns the
+# parent merge_forward message plus N children (upper_message_id = parent).
+# Used by feishu_doc_read when doc_token looks like a message id (om_...).
+# ---------------------------------------------------------------------------
+
+
+def read_merge_forward_as_text(client, message_id, *, offset=0, limit=None):
+    """Fetch a merge_forward parent and render its children as text.
+
+    ``offset`` / ``limit`` slice the child list so the agent can page through
+    long forwards instead of losing entries to truncation. Children are kept
+    in the order returned by the API (ascending create_time).
+    """
+    code, msg, data = do_request(
+        client, "GET", "/open-apis/im/v1/messages/:message_id",
+        paths={"message_id": message_id},
+    )
+    if code not in (0, None):
+        return None, f"Failed to fetch message {message_id}: [{code}] {msg}"
+    items = (data or {}).get("items") or []
+    children = [i for i in items if str(i.get("upper_message_id", "") or "") == message_id]
+    if not children:
+        return None, f"No merge_forward children found for {message_id}"
+
+    # Shared renderer lives in plugins/platforms/feishu/adapter.py to keep a
+    # single rendering path; import lazily to avoid import cycles at module load.
+    from plugins.platforms.feishu.adapter import _render_merge_forward_entries
+    return _render_merge_forward_entries(
+        message_id, children, offset=offset, limit=limit
+    ), None
