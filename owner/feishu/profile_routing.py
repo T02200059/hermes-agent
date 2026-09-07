@@ -240,6 +240,41 @@ def resolve_api_identity_route(
 
     return resolve_profile_route_by_name(str(profile_name))
 
+
+def is_api_identity_whitelisted(identity: str) -> bool:
+    """Return True if an API identity (LDAP uid) is whitelisted to the root gateway.
+
+    Mirrors the feishu ``user_routing.whitelist`` semantics for api_server
+    identity traffic: whitelisted identities skip sub-profile container
+    routing and are handled by the root gateway itself (same trust level as
+    the feishu main-gateway whitelist — the whitelisted uid chats with the
+    root instance's memory/sessions, not a per-user docker container).
+
+    Reads ``identity_whitelist`` from the same routing config section as
+    ``identity_routes``. Takes priority over ``identity_routes``: an entry
+    in both lists resolves to the root gateway (dormant identity_routes
+    entry, exactly like a feishu open_id present in both whitelist and
+    user_profile_routes).
+    """
+    if not identity:
+        return False
+
+    routing_cfg = _load_routing_config()
+    if not routing_cfg:
+        return False
+
+    whitelist = routing_cfg.get("identity_whitelist", [])
+    if isinstance(whitelist, (list, tuple, set, frozenset)):
+        return identity in whitelist
+    if isinstance(whitelist, str):
+        return identity == whitelist
+    logger.warning(
+        "[Feishu] user_routing.identity_whitelist has invalid type %s; "
+        "expected list; treating as empty",
+        type(whitelist).__name__,
+    )
+    return False
+
 async def _forward_to_profile_container(
     *,
     endpoint: str,

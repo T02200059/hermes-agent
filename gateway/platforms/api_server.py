@@ -2241,6 +2241,16 @@ class APIServerAdapter(BasePlatformAdapter):
             if not identity:
                 return await handler(request)
 
+            # [owner] LDAP identity whitelist — 与飞书 user_routing.whitelist
+            # 同语义：白名单内的 LDAP 身份不反代到子容器，直接由 root
+            # gateway 本体处理（对话落在 root 实例的 memory/会话）。
+            # 优先级高于 identity_routes；owner/ 模块缺失时 fail-open 跳过。
+            _whitelisted = _owner_import(
+                "owner.feishu.profile_routing", "is_api_identity_whitelisted"
+            )
+            if _whitelisted is not None and _whitelisted(identity):
+                return await handler(request)
+
             _resolve = _owner_import(
                 "owner.feishu.profile_routing", "resolve_api_identity_route"
             )
@@ -2433,6 +2443,10 @@ class APIServerAdapter(BasePlatformAdapter):
             ("GET", "/v1/models", self._handle_models),
             ("GET", "/api/model/options", self._handle_model_options),
             ("GET", "/v1/capabilities", self._handle_capabilities),
+            # [owner] LDAP 身份准入查询（只读）：外部消费方（智能巡检
+            # xy-portal 等）据此决定是否放行一个 LDAP 用户的对话入口，
+            # 避免双端各自维护白名单。
+            ("GET", "/v1/ldap/identity/{identity}/access", self._handle_ldap_identity_access),
             # Authenticated browser-control surface: POST registration
             # mints a short-lived ticket; the controller then opens the WS with
             # that ticket. Both are gated on browser.extension_control.enabled
@@ -3731,6 +3745,10 @@ class APIServerAdapter(BasePlatformAdapter):
             "endpoints": {
                 "health": {"method": "GET", "path": "/health"},
                 "health_detailed": {"method": "GET", "path": "/health/detailed"},
+                "ldap_identity_access": {
+                    "method": "GET",
+                    "path": "/v1/ldap/identity/{identity}/access",
+                },
                 "models": {"method": "GET", "path": "/v1/models"},
                 "model_options": {"method": "GET", "path": "/api/model/options"},
                 "chat_completions": {"method": "POST", "path": "/v1/chat/completions"},
@@ -3762,6 +3780,104 @@ class APIServerAdapter(BasePlatformAdapter):
                 },
             },
         })
+
+    # ------------------------------------------------------------------
+    # [owner] LDAP identity access query (read-only)
+    # ------------------------------------------------------------------
+
+    async def _handle_ldap_identity_access(self, request: "web.Request") -> "web.Response":
+        """GET /v1/ldap/identity/{identity}/access — LDAP 身份准入查询（只读）。
+
+        外部消费方（智能巡检 xy-portal 等）据此判断一个 LDAP 登录名是否
+        配置了专属子 profile 容器（patch_feishu_profile.yaml 的
+        identity_routes），从而决定放行/拒绝该用户的对话入口 —— 单一真源，
+        避免双端各自维护白名单。
+
+        语义要点（tri-state，whitelist 优先于 identity_routes）：
+          - whitelisted=true → LDAP 白名单身份，不反代子容器，由 root
+            gateway 本体处理；此时 routed=false / profile=null（与飞书
+            user_routing.whitelist → 主网关同构）。调用方应放行对话，
+            且无需携带 X-Hermes-Identity 头（root 直达）；
+          - routed=true  → 该身份有专属容器，聊天请求会被
+            identity_routing_middleware 代理到对应子 profile；
+          - 两者皆 false → 未知身份，聊天请求会 fall through 到
+            default_profile（共享实例）。消费方必须据此**拒绝**对话入口，
+            绝不能"试探式"发聊天请求来探测（那样会真的和共享 bot 聊上）；
+          - allowed = routed || whitelisted；绝不返回 endpoint_url /
+            api_key，仅返回 profile 名。
+        Bearer 鉴权与其他 API 路由一致（API_SERVER_KEY / profile-scoped key）。
+        """
+        auth_err = self._check_auth(request)
+        if auth_err:
+            return auth_err
+
+        identity = (request.match_info.get("identity") or "").strip()
+        if not identity:
+            return web.json_response(
+                {
+                    "error": {
+                        "message": "Missing LDAP identity in request path",
+                        "type": "invalid_request_error",
+                    }
+                },
+                status=400,
+            )
+
+        _resolve = _owner_import(
+            "owner.feishu.profile_routing", "resolve_api_identity_route"
+        )
+        _is_whitelisted = _owner_import(
+            "owner.feishu.profile_routing", "is_api_identity_whitelisted"
+        )
+        if _resolve is None:
+            # owner/ 路由模块缺失：无法判定。明确告知不可用（503），让
+            # 消费方按自己的失败策略处理，而不是误判为"无权限"。
+            logger.warning(
+                "[API] ldap identity access: owner.feishu.profile_routing "
+                "unavailable; cannot resolve identity %r",
+                identity,
+            )
+            return web.json_response(
+                {
+                    "error": {
+                        "message": "Identity routing module unavailable on this gateway",
+                        "type": "gateway_unavailable",
+                    }
+                },
+                status=503,
+            )
+
+        try:
+            # whitelist 优先：命中即视为 root gateway 直达，不再解析
+            # identity_routes（其条目休眠，同飞书双列表语义）。
+            whitelisted = bool(_is_whitelisted(identity)) if _is_whitelisted else False
+            route = None if whitelisted else _resolve(identity)
+        except Exception:
+            logger.exception(
+                "[API] ldap identity access lookup failed for %r", identity
+            )
+            return web.json_response(
+                {
+                    "error": {
+                        "message": "Identity lookup failed",
+                        "type": "server_error",
+                    }
+                },
+                status=500,
+            )
+
+        # route = (profile_name, endpoint_url, api_key) —— 只取 profile 名，
+        # endpoint_url / api_key 永不出网关。
+        return web.json_response(
+            {
+                "object": "hermes.api_server.ldap_identity_access",
+                "ldap_identity": identity,
+                "routed": route is not None,
+                "profile": route[0] if route else None,
+                "whitelisted": whitelisted,
+                "allowed": route is not None or whitelisted,
+            }
+        )
 
     # ------------------------------------------------------------------
     # Browser-extension control (authenticated local/VPS API)
