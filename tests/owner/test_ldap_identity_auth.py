@@ -20,6 +20,7 @@ Contract asserted here (behavior, not source shape):
    13. verdict deny_*  → 401 with distinguishable error code, nothing proxied
    14. allow           → request proxied WITHOUT X-Hermes-Identity-Password
    15. no ldap section → pass-through (fail-open when owner config absent)
+   16. SSE response    → streamed chunk-by-chunk (never buffered wholesale)
 """
 
 from __future__ import annotations
@@ -358,6 +359,7 @@ class _ProxyRecorder:
 
     def __init__(self):
         self.forwarded_headers: dict = {}
+        self.forwarded_timeout = None
 
     def patch(self):
         import aiohttp
@@ -383,6 +385,7 @@ class _ProxyRecorder:
 
         def fake_request(*args, **kwargs):
             recorder.forwarded_headers.update(kwargs.get("headers") or {})
+            recorder.forwarded_timeout = kwargs.get("timeout")
             return _Ctx(_Resp())
 
         return patch.object(aiohttp.ClientSession, "request", fake_request)
@@ -459,4 +462,139 @@ class TestMiddleware:
             resp = await middleware(req, handler)
         assert resp.status == 200
         assert recorder.forwarded_headers, "request must have been proxied"
+
+
+class _SSEProxyRecorder:
+    """Like _ProxyRecorder, but the fake upstream answers with an SSE stream
+    and records the requested timeout so tests can assert the streaming
+    contract (no wholesale buffering, unbounded total timeout).
+    """
+
+    def __init__(self, chunks=4):
+        self.forwarded_headers: dict = {}
+        self.forwarded_timeout = None
+        self._chunks = chunks
+
+    def patch(self):
+        import aiohttp
+
+        recorder = self
+
+        class _Ctx:
+            def __init__(self, resp):
+                self._resp = resp
+
+            async def __aenter__(self):
+                return self._resp
+
+            async def __aexit__(self, *a):
+                return False
+
+        class _Content:
+            async def iter_any(self):
+                for i in range(recorder._chunks):
+                    yield f"data: chunk-{i}\n\n".encode()
+
+        class _Resp:
+            status = 200
+            headers = {"Content-Type": "text/event-stream"}
+            content = _Content()
+
+        def fake_request(*args, **kwargs):
+            recorder.forwarded_headers.update(kwargs.get("headers") or {})
+            recorder.forwarded_timeout = kwargs.get("timeout")
+            return _Ctx(_Resp())
+
+        return patch.object(aiohttp.ClientSession, "request", fake_request)
+
+
+class TestSSEProxyStreaming:
+    """SSE passthrough must go through a real aiohttp request/response cycle
+    (StreamResponse.prepare() needs a genuine transport), so these tests run
+    the middleware inside an aiohttp test server and fake only the upstream
+    leg.
+    """
+
+    @staticmethod
+    def _upstream_app(chunks: int):
+        from aiohttp import web
+
+        upstream_hits: dict = {"count": 0}
+
+        async def handler(request):
+            upstream_hits["count"] += 1
+            resp = web.StreamResponse(
+                status=200,
+                headers={"Content-Type": "text/event-stream", "Cache-Control": "no-cache"},
+            )
+            await resp.prepare(request)
+            for i in range(chunks):
+                await resp.write(f"data: chunk-{i}\n\n".encode())
+            await resp.write_eof()
+            return resp
+
+        return web.Application(), handler, upstream_hits
+
+    @pytest.mark.asyncio
+    async def test_sse_response_streams_chunk_by_chunk(self, routing_home, unused_tcp_port):
+        from aiohttp import web
+        from aiohttp.test_utils import TestServer, TestClient
+
+        app, handler, upstream_hits = self._upstream_app(chunks=4)
+        app.router.add_route("POST", "/v1/chat/completions", handler)
+        upstream = TestServer(app, port=unused_tcp_port)
+        await upstream.start_server()
+
+        routed = routing_home / "patch_feishu_profile.yaml"
+        routed.write_text(
+            ROUTING_YAML.replace(
+                "http://localhost:26026", f"http://127.0.0.1:{unused_tcp_port}"
+            ),
+            encoding="utf-8",
+        )
+        from owner.patch_config import invalidate_patch_feishu_profile_config_cache
+
+        invalidate_patch_feishu_profile_config_cache()
+
+        middleware, _ = _make_middleware()
+
+        async def passthrough(request):
+            raise AssertionError("routed identity must be proxied, not handled locally")
+
+        proxy_app = web.Application(middlewares=[middleware])
+        proxy_app.router.add_route("POST", "/v1/chat/completions", passthrough)
+        proxy = TestServer(proxy_app)
+        await proxy.start_server()
+
+        client = TestClient(proxy)
+        async with client:
+            resp = await client.post(
+                "/v1/chat/completions",
+                json={"messages": [], "stream": True},
+                headers={"X-Hermes-Identity": "yangtb"},
+            )
+            assert resp.status == 200
+            assert "text/event-stream" in resp.headers["Content-Type"]
+            text = await resp.text()
+            for i in range(4):
+                assert f"data: chunk-{i}" in text
+        assert upstream_hits["count"] == 1
+
+        await proxy.close()
+        await upstream.close()
+
+    @pytest.mark.asyncio
+    async def test_non_stream_request_keeps_bounded_timeout(self, routing_home):
+        middleware, _ = _make_middleware()
+        handler = _RecordingHandler()
+        recorder = _ProxyRecorder()
+
+        req = _FakeRequest({"X-Hermes-Identity": "yangtb"})
+        with recorder.patch():
+            resp = await middleware(req, handler)
+
+        assert resp.status == 200
+        # _FakeRequest._body is b"{}" — no "stream" key → buffered path.
+        assert recorder.forwarded_timeout is not None
+        assert recorder.forwarded_timeout.total == 120
         assert handler.requests == []

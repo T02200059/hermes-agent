@@ -2308,6 +2308,17 @@ class APIServerAdapter(BasePlatformAdapter):
                 target = f"{target}?{query}"
 
             body = await request.read()
+            try:
+                parsed_body = json.loads(body) if body else None
+            except (ValueError, TypeError):
+                parsed_body = None
+            is_sse_request = request.method == "POST" and (
+                request.path.endswith("/chat/stream")
+                or (
+                    isinstance(parsed_body, dict)
+                    and bool(parsed_body.get("stream"))
+                )
+            )
 
             # Forward headers: strip hop-by-hop, add auth. The LDAP password
             # header never crosses the proxy boundary. The identity header is
@@ -2333,6 +2344,17 @@ class APIServerAdapter(BasePlatformAdapter):
             headers["Authorization"] = f"Bearer {api_key}"
             headers["X-Forwarded-For"] = getattr(request, "remote", "") or ""
 
+            # Long-lived SSE agent turns (tool loops, big generations) can run
+            # far past 120s while staying alive: the old ``total=120`` hard
+            # cap killed legitimately long streams mid-flight. Keep total
+            # unbounded for streaming (the client's disconnect propagates via
+            # connection reset); for buffered JSON replies a connect/read
+            # budget still applies.
+            timeout = (
+                aiohttp.ClientTimeout(total=None, sock_read=600, connect=10)
+                if is_sse_request
+                else aiohttp.ClientTimeout(total=120)
+            )
             try:
                 async with aiohttp.ClientSession() as session:
                     async with session.request(
@@ -2340,8 +2362,32 @@ class APIServerAdapter(BasePlatformAdapter):
                         url=target,
                         headers=headers,
                         data=body,
-                        timeout=aiohttp.ClientTimeout(total=120),
+                        timeout=timeout,
                     ) as resp:
+                        content_type = (resp.headers.get("Content-Type") or "").lower()
+                        if "text/event-stream" in content_type:
+                            # SSE must stream chunk-by-chunk: buffering the
+                            # whole response delayed the first byte by the
+                            # full agent turn.
+                            resp_headers = {
+                                k: v
+                                for k, v in resp.headers.items()
+                                if k.lower()
+                                not in (
+                                    "transfer-encoding",
+                                    "content-encoding",
+                                    "content-length",
+                                    "connection",
+                                )
+                            }
+                            stream_resp = web.StreamResponse(
+                                status=resp.status, headers=resp_headers
+                            )
+                            await stream_resp.prepare(request)
+                            async for chunk in resp.content.iter_any():
+                                await stream_resp.write(chunk)
+                            await stream_resp.write_eof()
+                            return stream_resp
                         response_body = await resp.read()
                         # Copy response headers (strip hop-by-hop)
                         resp_headers = {
