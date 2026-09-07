@@ -5906,6 +5906,11 @@ class APIServerAdapter(BasePlatformAdapter):
                     "error": err_msg,
                     "error_code": "output_truncated" if finish_reason == "length" else "agent_error",
                 }
+            # Compression can rotate the agent's session mid-turn; expose the
+            # effective id so long-lived clients can keep following context.
+            _effective_sid = result.get("session_id") if isinstance(result, dict) else None
+            if _effective_sid and _effective_sid != session_id:
+                finish_chunk.setdefault("hermes", {})["session_id"] = _effective_sid
             await response.write(_sse_frame(finish_chunk))
             await response.write(b"data: [DONE]\n\n")
         except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError):
