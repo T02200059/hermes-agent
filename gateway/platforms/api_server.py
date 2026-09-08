@@ -22,6 +22,7 @@ Exposes an HTTP server with endpoints:
 - POST /v1/runs/{run_id}/stop       — interrupt a running agent
 - GET  /health                     — health check
 - GET  /health/detailed            — rich status for cross-container dashboard probing
+- GET  /v1/media/{media_id}        — download a file the agent tagged with MEDIA:<path> (opaque id; never a filesystem path)
 
 Any OpenAI-compatible frontend (Open WebUI, LobeChat, LibreChat,
 AnythingLLM, NextChat, ChatBox, etc.) can connect to hermes-agent
@@ -151,6 +152,12 @@ from gateway.platforms.base import (
 from agent.i18n import t
 # Re-exported here for existing imports and constructor monkeypatches.
 from gateway.platforms.api_server_run_idempotency import RunIdempotencyStore
+from gateway.platforms.api_server_media import (
+    ApiMediaStore,
+    attach_hermes_files,
+    content_disposition,
+    finalize_api_media,
+)
 from agent.redact import redact_sensitive_text
 from agent.interrupt_compat import request_hard_interrupt
 from gateway.readiness import collect_runtime_readiness
@@ -1626,6 +1633,15 @@ class APIServerAdapter(BasePlatformAdapter):
         # _inject_browser_control_artifacts().
         self._browser_control_artifacts: Dict[str, ArtifactStore] = {}
         self._browser_control_artifact_limiter: Optional[ArtifactRateLimiter] = None
+        # Agent-produced MEDIA:<path> files for remote API frontends. Opaque
+        # ids only — raw paths never leave the process (see api_server_media).
+        self._media_store = ApiMediaStore()
+
+    def _finalize_api_media(
+        self, text: str, *, session_id: str = ""
+    ) -> tuple[str, List[Dict[str, Any]]]:
+        """Inline image MEDIA tags, register remaining files, strip raw paths."""
+        return finalize_api_media(text or "", self._media_store, session_id=session_id or "")
 
     def active_agent_work_count(self) -> int:
         """Return all live agent work owned by this API adapter.
@@ -2459,6 +2475,10 @@ class APIServerAdapter(BasePlatformAdapter):
             # key) plus per-principal rate limits.
             ("POST", "/v1/artifacts/upload", self._handle_artifact_upload),
             ("GET", "/v1/artifacts/download/{artifact_id}", self._handle_artifact_download),
+            # Conversation attachments (MEDIA:<path> in the agent reply).
+            # Distinct from browser-control artifacts: this is the Feishu
+            # extract_media equivalent for OpenAI-compatible frontends.
+            ("GET", "/v1/media/{media_id}", self._handle_media_download),
             ("GET", "/v1/skills", self._handle_skills),
             ("GET", "/v1/toolsets", self._handle_toolsets),
             ("GET", "/api/sessions", self._handle_list_sessions),
@@ -3699,6 +3719,7 @@ class APIServerAdapter(BasePlatformAdapter):
                 "run_steer": True,
                 "run_approval_response": True,
                 "tool_progress_events": True,
+                "media_download": True,
                 "approval_events": True,
                 "session_resources": True,
                 "model_options": True,
@@ -3777,6 +3798,10 @@ class APIServerAdapter(BasePlatformAdapter):
                 "artifact_download": {
                     "method": "GET",
                     "path": "/v1/artifacts/download/{artifact_id}",
+                },
+                "media_download": {
+                    "method": "GET",
+                    "path": "/v1/media/{media_id}",
                 },
             },
         })
@@ -4433,6 +4458,46 @@ class APIServerAdapter(BasePlatformAdapter):
         return web.json_response(
             receipt.to_dict(download_path=f"/v1/artifacts/download/{receipt.artifact_id}"),
             status=201,
+        )
+
+    async def _handle_media_download(self, request: "web.Request") -> "web.Response":
+        """GET /v1/media/{media_id} — download an agent-produced MEDIA file.
+
+        Authenticated with the same Bearer key as chat completions. The id is
+        minted at turn-end from a ``MEDIA:<path>`` tag; the raw path never
+        crosses the HTTP boundary. The path is re-validated on download so a
+        later overwrite/move cannot serve a denylisted location.
+        """
+        auth_err = self._check_auth(request)
+        if auth_err:
+            return auth_err
+        media_id = request.match_info.get("media_id", "")
+        rec = self._media_store.get(media_id)
+        if rec is None:
+            return web.json_response(
+                _openai_error("Unknown or expired media id", code="media_not_found"),
+                status=404,
+            )
+        safe = validate_media_delivery_path(rec.path)
+        if not safe:
+            return web.json_response(
+                _openai_error("Media path is no longer deliverable", code="media_forbidden"),
+                status=404,
+            )
+        p = Path(safe)
+        if not p.is_file():
+            return web.json_response(
+                _openai_error("Media file is gone", code="media_gone"),
+                status=410,
+            )
+        return web.FileResponse(
+            path=str(p),
+            headers={
+                "Content-Type": rec.mime,
+                "Content-Disposition": content_disposition(rec.name),
+                "Cache-Control": "private, max-age=300",
+                "X-Content-Type-Options": "nosniff",
+            },
         )
 
     async def _handle_artifact_download(self, request: "web.Request") -> "web.Response":
@@ -5133,7 +5198,10 @@ class APIServerAdapter(BasePlatformAdapter):
             **agent_overrides,
         )
         effective_session_id = result.get("session_id") if isinstance(result, dict) else session_id
-        final_response = _resolve_media_to_data_urls(result.get("final_response", "") if isinstance(result, dict) else "")
+        final_response, media_files = self._finalize_api_media(
+            result.get("final_response", "") if isinstance(result, dict) else "",
+            session_id=effective_session_id or session_id or "",
+        )
         headers = {"X-Hermes-Session-Id": effective_session_id or session_id}
         if gateway_session_key:
             headers["X-Hermes-Session-Key"] = gateway_session_key
@@ -5155,13 +5223,16 @@ class APIServerAdapter(BasePlatformAdapter):
             ),
         )
         return web.json_response(
-            {
-                "object": "hermes.session.chat.completion",
-                "session_id": effective_session_id or session_id,
-                "message": {"role": "assistant", "content": final_response},
-                "usage": usage,
-                "runtime": runtime,
-            },
+            attach_hermes_files(
+                {
+                    "object": "hermes.session.chat.completion",
+                    "session_id": effective_session_id or session_id,
+                    "message": {"role": "assistant", "content": final_response},
+                    "usage": usage,
+                    "runtime": runtime,
+                },
+                media_files,
+            ),
             headers=headers,
         )
 
@@ -5305,8 +5376,11 @@ class APIServerAdapter(BasePlatformAdapter):
                     confirmed_runtime_lock=lock_active,
                     **agent_overrides,
                 )
-                final_response = _resolve_media_to_data_urls(result.get("final_response", "") if isinstance(result, dict) else "")
                 effective_session_id = result.get("session_id", session_id) if isinstance(result, dict) else session_id
+                final_response, media_files = self._finalize_api_media(
+                    result.get("final_response", "") if isinstance(result, dict) else "",
+                    session_id=effective_session_id or session_id or "",
+                )
                 turn_messages = self._turn_transcript_messages(history, user_message, result) if isinstance(result, dict) else []
                 effective_runtime = {}
                 if isinstance(result, dict):
@@ -5325,7 +5399,7 @@ class APIServerAdapter(BasePlatformAdapter):
                         else ""
                     ),
                 )
-                await queue.put(_event_payload("assistant.completed", {
+                completed_event = {
                     "session_id": effective_session_id,
                     "message_id": message_id,
                     "content": final_response,
@@ -5333,7 +5407,10 @@ class APIServerAdapter(BasePlatformAdapter):
                     "partial": False,
                     "interrupted": False,
                     "runtime": effective_runtime,
-                }))
+                }
+                if media_files:
+                    completed_event["files"] = media_files
+                await queue.put(_event_payload("assistant.completed", completed_event))
                 # A steer accepted after the final assistant response is drained
                 # into result["pending_steer"] by the turn finalizer instead of
                 # being consumed; surface it so clients can replay it as the
@@ -5787,7 +5864,10 @@ class APIServerAdapter(BasePlatformAdapter):
                     status=500,
                 )
 
-        final_response = _resolve_media_to_data_urls(result.get("final_response") or "")
+        final_response, media_files = self._finalize_api_media(
+            result.get("final_response") or "",
+            session_id=result.get("session_id") or session_id or "",
+        )
         is_partial = bool(result.get("partial"))
         is_failed = bool(result.get("failed"))
         completed = bool(result.get("completed", True))
@@ -5865,6 +5945,7 @@ class APIServerAdapter(BasePlatformAdapter):
             if err_msg:
                 response_headers["X-Hermes-Error"] = _redact_api_error_text(err_msg, limit=200)
 
+        attach_hermes_files(response_data, media_files)
         return web.json_response(response_data, headers=response_headers)
 
     async def _write_sse_chat_completion(
@@ -6027,6 +6108,18 @@ class APIServerAdapter(BasePlatformAdapter):
             _effective_sid = result.get("session_id") if isinstance(result, dict) else None
             if _effective_sid and _effective_sid != session_id:
                 finish_chunk.setdefault("hermes", {})["session_id"] = _effective_sid
+            # Register MEDIA:<path> files from the assembled final reply.
+            # Streamed delta.content still contains the raw tags (already
+            # flushed); clients strip them using hermes.files on this chunk.
+            if isinstance(result, dict):
+                _media_text = result.get("final_response") or ""
+                if "MEDIA:" in _media_text:
+                    _cleaned, _media_files = self._finalize_api_media(
+                        _media_text,
+                        session_id=_effective_sid or session_id or "",
+                    )
+                    if _media_files:
+                        finish_chunk.setdefault("hermes", {})["files"] = _media_files
             await response.write(_sse_frame(finish_chunk))
             await response.write(b"data: [DONE]\n\n")
         except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError):
@@ -6946,7 +7039,10 @@ class APIServerAdapter(BasePlatformAdapter):
                     status=500,
                 )
 
-        final_response = _resolve_media_to_data_urls(result.get("final_response", ""))
+        final_response, media_files = self._finalize_api_media(
+            result.get("final_response", ""),
+            session_id=result.get("session_id") or "",
+        )
         if not final_response:
             final_response = _redact_api_error_text(result.get("error", "(No response generated)"))
 
@@ -7012,6 +7108,7 @@ class APIServerAdapter(BasePlatformAdapter):
         response_headers = {"X-Hermes-Session-Id": _effective_session_id}
         if gateway_session_key:
             response_headers["X-Hermes-Session-Key"] = gateway_session_key
+        attach_hermes_files(response_data, media_files)
         return web.json_response(response_data, headers=response_headers)
 
     # ------------------------------------------------------------------
