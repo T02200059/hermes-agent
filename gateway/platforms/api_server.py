@@ -323,6 +323,88 @@ class ThreadSafeAsyncQueue(asyncio.Queue):
         self._loop_ref = asyncio.get_running_loop()
 
 
+_TOOL_ARGS_MAX_CHARS = 6000
+_TOOL_ARG_VALUE_MAX = 2500
+_TOOL_OUTPUT_MAX = 1500
+_TOOL_ARG_PRIMARY_KEYS = (
+    "command", "code", "path", "query", "url", "pattern",
+    "name", "prompt", "goal", "file_path", "content",
+)
+
+
+def _clip_jsonable_value(value: Any, max_chars: int) -> Any:
+    """Coerce a tool arg to a JSON-safe scalar/object, truncated."""
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    if isinstance(value, str):
+        return value if len(value) <= max_chars else value[: max_chars - 1] + "…"
+    if isinstance(value, bytes):
+        text = value.decode("utf-8", "replace")
+        return text if len(text) <= max_chars else text[: max_chars - 1] + "…"
+    try:
+        encoded = json.dumps(value, ensure_ascii=False, default=str)
+    except Exception:
+        encoded = str(value)
+    if len(encoded) <= max_chars:
+        try:
+            return json.loads(encoded)
+        except Exception:
+            return encoded
+    return encoded[: max_chars - 1] + "…"
+
+
+def _clip_tool_args_for_sse(args: Any) -> dict:
+    """Redact-ready args for ``hermes.tool.progress``; always JSON-serializable."""
+    if not isinstance(args, dict):
+        return {}
+    out: Dict[str, Any] = {}
+    for key, value in args.items():
+        if not isinstance(key, str):
+            continue
+        out[key[:64]] = _clip_jsonable_value(value, _TOOL_ARG_VALUE_MAX)
+        if len(out) >= 24:
+            break
+    try:
+        encoded = json.dumps(out, ensure_ascii=False, default=str)
+    except Exception:
+        encoded = ""
+    if len(encoded) <= _TOOL_ARGS_MAX_CHARS:
+        return out
+    slim: Dict[str, Any] = {}
+    for key in _TOOL_ARG_PRIMARY_KEYS:
+        if key in args:
+            slim[key] = _clip_jsonable_value(args[key], 4000)
+    return slim
+
+
+def _clip_tool_output_for_sse(result: Any) -> str:
+    """Short, JSON-safe tool result preview for the completed progress event."""
+    if result is None:
+        return ""
+    if isinstance(result, bytes):
+        result = result.decode("utf-8", "replace")
+    if isinstance(result, str):
+        text = result
+    elif isinstance(result, dict):
+        text = ""
+        for key in ("output", "content", "stdout", "text", "result"):
+            val = result.get(key)
+            if isinstance(val, str) and val.strip():
+                text = val
+                break
+        if not text:
+            try:
+                text = json.dumps(result, ensure_ascii=False, default=str)
+            except Exception:
+                text = str(result)
+    else:
+        text = str(result)
+    text = text.replace("\x00", "")
+    if len(text) > _TOOL_OUTPUT_MAX:
+        return text[: _TOOL_OUTPUT_MAX - 1] + "…"
+    return text
+
+
 def _sse_frame(data: Any, *, event: str = None, ensure_ascii: bool = True) -> bytes:
     """Encode one SSE frame: optional ``event:`` line, then ``data: <json>\n\n``.
 
@@ -5752,12 +5834,18 @@ class APIServerAdapter(BasePlatformAdapter):
                 if not tool_call_id or function_name.startswith("_"):
                     return
                 _started_tool_call_ids.add(tool_call_id)
-                from agent.display import build_tool_preview, get_tool_emoji
+                from agent.display import (
+                    build_tool_preview,
+                    get_tool_emoji,
+                    redact_tool_args_for_display,
+                )
                 label = build_tool_preview(function_name, function_args) or function_name
+                safe_args = redact_tool_args_for_display(function_name, function_args) or function_args
                 _stream_q.put_threadsafe(("__tool_progress__", {
                     "tool": function_name,
                     "emoji": get_tool_emoji(function_name),
                     "label": label,
+                    "args": _clip_tool_args_for_sse(safe_args),
                     "toolCallId": tool_call_id,
                     "status": "running",
                 }))
@@ -5772,11 +5860,15 @@ class APIServerAdapter(BasePlatformAdapter):
                 if not tool_call_id or tool_call_id not in _started_tool_call_ids:
                     return
                 _started_tool_call_ids.discard(tool_call_id)
-                _stream_q.put_threadsafe(("__tool_progress__", {
+                output = _clip_tool_output_for_sse(function_result)
+                payload = {
                     "tool": function_name,
                     "toolCallId": tool_call_id,
                     "status": "completed",
-                }))
+                }
+                if output:
+                    payload["output"] = output
+                _stream_q.put_threadsafe(("__tool_progress__", payload))
 
             # Start agent in background.  agent_ref is a mutable container
             # so the SSE writer can interrupt the agent on client disconnect.

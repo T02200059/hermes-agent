@@ -1238,6 +1238,7 @@ class TestChatCompletionsEndpoint:
             # an event missing ``toolCallId`` would not pass even if a
             # different event happens to carry the right id.
             pairs: list[tuple[str | None, str | None]] = []
+            payloads: list[dict] = []
             lines = body.splitlines()
             for i, line in enumerate(lines):
                 if line.strip() != "event: hermes.tool.progress":
@@ -1249,6 +1250,7 @@ class TestChatCompletionsEndpoint:
                         except _json.JSONDecodeError:
                             break
                         pairs.append((payload.get("status"), payload.get("toolCallId")))
+                        payloads.append(payload)
                         break
 
             # Each tool start must emit exactly one event (no duplicate
@@ -1258,6 +1260,8 @@ class TestChatCompletionsEndpoint:
             assert len(pairs) == 2, f"expected 2 events (running+completed), got {pairs}"
             assert pairs[0] == ("running", "call_terminal_1"), pairs
             assert pairs[1] == ("completed", "call_terminal_1"), pairs
+            assert payloads[0].get("args", {}).get("command") == "ls -la", payloads[0]
+            assert payloads[1].get("output") == "ok", payloads[1]
 
     @pytest.mark.asyncio
     async def test_stream_tool_lifecycle_skips_internal_and_orphan_completes(self, adapter):
