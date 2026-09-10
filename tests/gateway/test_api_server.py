@@ -3089,3 +3089,76 @@ class TestCreateAgentModelRecovery:
         )
         adapter._create_agent(session_id="s2", gateway_session_key="ch")
         assert captured[1]["model"] == "anthropic/claude-opus-4.6"
+
+
+class TestChatCompletionsOversizedAttachment:
+    """A dropped attachment must be announced, never silently omitted.
+
+    The streaming path has already flushed its ``delta.content`` by the time the
+    reply is finalized, so the notice has to travel as one more text frame —
+    otherwise the user reads a complete-looking report and believes every
+    attachment arrived with it.
+    """
+
+    @pytest.mark.asyncio
+    async def test_stream_announces_oversized_attachment(self, adapter, tmp_path):
+        from gateway.platforms.api_server_media import ApiMediaStore
+
+        report = tmp_path / "huge-cluster-report.md"
+        report.write_bytes(b"x" * 2048)
+        adapter._media_store = ApiMediaStore(root=tmp_path / "store", max_bytes=1024)
+
+        async def _mock_run_agent(**kwargs):
+            return (
+                {
+                    "final_response": f"巡检完成，报告如下。\n\nMEDIA:{report}\n",
+                    "messages": [],
+                    "api_calls": 1,
+                },
+                {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2},
+            )
+
+        app = _create_app(adapter)
+        async with TestClient(TestServer(app)) as cli:
+            with patch.object(adapter, "_run_agent", side_effect=_mock_run_agent):
+                resp = await cli.post(
+                    "/v1/chat/completions",
+                    json={"messages": [{"role": "user", "content": "hi"}], "stream": True},
+                )
+                assert resp.status == 200
+                body = await resp.text()
+
+        # The notice names the file and both sizes (2 KB actual vs 1 KB cap).
+        assert "huge-cluster-report.md" in body
+        assert "2.0 KB" in body
+        assert "1.0 KB" in body
+        # Nothing was ingested, so no download card may be advertised.
+        assert "/v1/media/med_" not in body
+
+    @pytest.mark.asyncio
+    async def test_stream_silent_when_everything_fits(self, adapter, tmp_path):
+        from gateway.platforms.api_server_media import ApiMediaStore
+
+        report = tmp_path / "small-report.md"
+        report.write_bytes(b"# ok\n")
+        adapter._media_store = ApiMediaStore(root=tmp_path / "store", max_bytes=1024)
+
+        async def _mock_run_agent(**kwargs):
+            return (
+                {"final_response": f"完成。\n\nMEDIA:{report}\n", "messages": [], "api_calls": 1},
+                {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2},
+            )
+
+        app = _create_app(adapter)
+        async with TestClient(TestServer(app)) as cli:
+            with patch.object(adapter, "_run_agent", side_effect=_mock_run_agent):
+                resp = await cli.post(
+                    "/v1/chat/completions",
+                    json={"messages": [{"role": "user", "content": "hi"}], "stream": True},
+                )
+                assert resp.status == 200
+                body = await resp.text()
+
+        assert "/v1/media/med_" in body
+        assert "delivery limit" not in body
+        assert "投递上限" not in body

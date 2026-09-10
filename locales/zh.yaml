@@ -551,6 +551,8 @@ gateway:
   video_attachment_failed: "⚠️ 无法发送视频附件。"
   image_attachment_failed: "⚠️ 无法发送图片附件。"
   attachment_failed: "⚠️ 无法发送附件。"
+  # API server 产物媒体：agent 产出的附件超过受管存储的单文件上限，无法生成下载卡片。
+  media_too_large: "⚠️ 附件「{file_name}」（{size}）超过 {limit} 的投递上限，未提供下载。"
 
   # 会话停滞看门狗 — 有待处理入站消息但超过 agent.session_stall_timeout 无进展时显示。
   # {mins} 为向下取整的整分钟数。

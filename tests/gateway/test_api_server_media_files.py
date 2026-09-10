@@ -18,6 +18,7 @@ from gateway.platforms.api_server_media import (
     attach_hermes_files,
     finalize_api_media,
     guess_media_mime,
+    media_owner_token,
 )
 
 
@@ -120,6 +121,18 @@ class TestApiMediaStore(_StoreCase):
     def test_oversized_file_rejected(self):
         p = self._write("big.md", b"0123456789")
         store = self._store(max_bytes=4)
+        rejected: list = []
+        self.assertIsNone(store.register(str(p), rejected=rejected))
+        self.assertEqual(list(store.root.iterdir()), [])
+        # Reported back so the caller can tell the user instead of dropping it.
+        self.assertEqual(len(rejected), 1)
+        self.assertEqual(rejected[0]["name"], "big.md")
+        self.assertEqual(rejected[0]["size"], 10)
+        self.assertEqual(rejected[0]["limit"], 4)
+
+    def test_rejected_is_optional(self):
+        p = self._write("big.md", b"0123456789")
+        store = self._store(max_bytes=4)
         self.assertIsNone(store.register(str(p)))
         self.assertEqual(list(store.root.iterdir()), [])
 
@@ -158,8 +171,11 @@ class TestApiMediaStore(_StoreCase):
         store.sweep(now=1000.0 + 10)
         survivors = sorted(p.name for p in store.root.iterdir())
         self.assertEqual(len(survivors), 2)
-        self.assertTrue(survivors[0].startswith(ids[3]))
-        self.assertTrue(survivors[1].startswith(ids[4]))
+        # Entry names carry a random id, so compare as a set — sorting the names
+        # of two random ids says nothing about which was evicted.
+        self.assertEqual(
+            {name.split("__", 1)[0] for name in survivors}, {ids[3], ids[4]}
+        )
 
     def test_sweep_leaves_foreign_files_alone(self):
         """Only files this store minted are ever candidates for deletion."""
@@ -254,9 +270,10 @@ class TestFinalizeApiMedia(_StoreCase):
         p = self._write("gpu-inspect-report.md", b"# cluster\n")
         store = self._store()
         text = f"摘要如下。\n\nMEDIA:{p}\n"
-        cleaned, files = finalize_api_media(text, store, session_id="web-1")
+        cleaned, files, notices = finalize_api_media(text, store, session_id="web-1")
         self.assertNotIn("MEDIA:", cleaned)
         self.assertNotIn(str(p), cleaned)
+        self.assertEqual(notices, [])
         self.assertEqual(len(files), 1)
         self.assertEqual(files[0]["name"], "gpu-inspect-report.md")
         self.assertTrue(files[0]["download"].startswith("/v1/media/med_"))
@@ -272,6 +289,67 @@ class TestFinalizeApiMedia(_StoreCase):
         empty: dict = {}
         attach_hermes_files(empty, [])
         self.assertNotIn("hermes", empty)
+
+    def test_owner_is_recorded_and_returned(self):
+        p = self._write("report.md")
+        store = self._store()
+        _, files, _ = finalize_api_media(f"MEDIA:{p}\n", store, owner="sess-abc")
+        self.assertEqual(len(files), 1)
+        rec = store.get(files[0]["id"])
+        assert rec is not None
+        self.assertEqual(rec.owner, media_owner_token("sess-abc"))
+
+    def test_owner_token_is_stable_and_never_the_raw_id(self):
+        token = media_owner_token("sess-abc")
+        self.assertEqual(token, media_owner_token("sess-abc"))
+        self.assertEqual(len(token), 16)
+        self.assertNotIn("sess", token)
+        self.assertNotEqual(token, media_owner_token("sess-abd"))
+        self.assertEqual(media_owner_token(""), "")
+        self.assertEqual(media_owner_token("   "), "")
+
+    def test_owner_absent_leaves_legacy_name_shape(self):
+        p = self._write("report.md")
+        store = self._store()
+        _, files, _ = finalize_api_media(f"MEDIA:{p}\n", store)
+        blob = self._blob(store, files[0]["id"])
+        self.assertEqual(blob.name, f"{files[0]['id']}__report.md")
+        rec = store.get(files[0]["id"])
+        assert rec is not None
+        self.assertEqual(rec.owner, "")
+
+    def test_display_name_containing_double_underscore_survives(self):
+        """Only the owner segment may be consumed; the name keeps its own ``__``."""
+        p = self._write("gpu__inspect__report.md")
+        store = self._store()
+        _, files, _ = finalize_api_media(f"MEDIA:{p}\n", store, owner="sess-1")
+        self.assertEqual(files[0]["name"], "gpu__inspect__report.md")
+        rec = store.get(files[0]["id"])
+        assert rec is not None
+        self.assertEqual(rec.name, "gpu__inspect__report.md")
+
+    def test_oversized_file_is_named_in_the_reply(self):
+        p = self._write("huge.csv", b"0123456789")
+        store = self._store(max_bytes=4)
+        cleaned, files, notices = finalize_api_media(
+            f"巡检完成。\n\nMEDIA:{p}\n", store, owner="sess-1"
+        )
+        self.assertEqual(files, [])
+        self.assertEqual(len(notices), 1)
+        self.assertIn("huge.csv", notices[0])
+        # The notice also lands in the display text (non-streaming transports
+        # only ever see this string).
+        self.assertIn("huge.csv", cleaned)
+        self.assertNotIn("MEDIA:", cleaned)
+        self.assertEqual(list(store.root.iterdir()), [])
+
+    def test_oversized_notice_reports_size_and_limit(self):
+        p = self._write("huge.bin", b"x" * 2048)
+        store = self._store(max_bytes=1024)
+        _, _, notices = finalize_api_media(f"MEDIA:{p}\n", store)
+        self.assertEqual(len(notices), 1)
+        self.assertIn("2.0 KB", notices[0])
+        self.assertIn("1.0 KB", notices[0])
 
 
 if __name__ == "__main__":

@@ -10,7 +10,10 @@ registration time.
 The store directory *is* the index. An entry is a single file named
 ``<media_id>__<original name>``, so the id, the download filename and the MIME
 type are all recoverable from the directory listing — there is no in-memory
-table and no separate manifest. Two consequences follow:
+table and no separate manifest. When the caller supplies an owner token the
+name becomes ``<media_id>__o<owner>__<original name>``, which keeps the
+ownership assertion a property of the filename rather than of a sidecar that
+could drift out of sync. Two consequences follow:
 
 * A gateway restart loses nothing. The catalogue is whatever is on disk, so
   the store lives exactly as long as the session DB it feeds and cannot drift
@@ -20,11 +23,16 @@ table and no separate manifest. Two consequences follow:
   the container, a scratch directory the agent cleans up later, or a path that
   drifts into a denylisted prefix can no longer break an already-issued card.
 
+Legacy entries (written before the owner field existed) simply carry no owner
+and stay deliverable to any authenticated caller — the check is a
+defence-in-depth layer, never a gate on already-issued cards.
+
 Callers attach the public file list to the OpenAI ``hermes.files`` extra so
 streaming clients (xy-portal) can render download cards after the finish chunk.
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 import mimetypes
 import os
@@ -45,6 +53,12 @@ _MEDIA_ID_RE = re.compile(r"^med_[A-Za-z0-9_-]{8,64}$")
 _STORE_FILE_RE = re.compile(r"^med_[A-Za-z0-9_-]{8,64}__")
 _NAME_SEP = "__"
 _PART_SUFFIX = ".part"
+# Owner segment: ``o`` + 16 hex chars, delimited by ``__``. A legacy entry
+# (``<id>__<name>``) is only misread as owned if its name literally begins with
+# that exact shape, which no real deliverable filename does.
+_OWNER_TOKEN_RE = re.compile(r"^o([0-9a-f]{16})$")
+_OWNER_PREFIX = "o"
+
 
 # Lives under ``cache/documents`` — an unconditionally trusted root in
 # ``gateway.platforms.base.MEDIA_DELIVERY_SAFE_ROOTS`` — so downloads keep
@@ -108,6 +122,21 @@ def _safe_filename(path: str) -> str:
     for ch in ('"', "\r", "\n", "\\", "/"):
         name = name.replace(ch, "")
     return name[:180] or "download"
+
+
+def media_owner_token(raw: str) -> str:
+    """Digest an owner identifier into the fixed-width token kept in the name.
+
+    Registration and download must derive the token the same way, so this is the
+    single definition of "same owner". A digest rather than the raw identifier
+    keeps session ids out of directory listings and access logs, and the fixed
+    width keeps the name parseable. Returns ``""`` when nothing was asserted,
+    which both call sites read as "no ownership claim".
+    """
+    text = str(raw or "").strip()
+    if not text:
+        return ""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
 
 def default_store_dir() -> Path:
@@ -174,6 +203,9 @@ class MediaRecord:
     size: int
     created_at: float
     session_id: str = ""
+    # Digest of the owner asserted at registration time (empty when none was).
+    # Carried in the entry filename; see module docstring.
+    owner: str = ""
 
     def to_public_dict(self) -> Dict[str, Any]:
         return {
@@ -250,12 +282,29 @@ class ApiMediaStore:
     def root(self) -> Path:
         return self._root
 
-    def register(self, path: str, *, session_id: str = "") -> Optional[Dict[str, Any]]:
+    @property
+    def max_file_bytes(self) -> int:
+        """Per-file ingest cap (for user-facing "too large" notices)."""
+        return self._max_bytes
+
+    def register(
+        self,
+        path: str,
+        *,
+        session_id: str = "",
+        owner: str = "",
+        rejected: Optional[List[Dict[str, Any]]] = None,
+    ) -> Optional[Dict[str, Any]]:
         """Ingest ``path`` under a fresh opaque id and return its public view.
 
         Returns ``None`` when the path is not deliverable, is not a regular
         file, exceeds the per-file cap, or cannot be ingested. The returned id
         is the only handle the client gets — the store path stays internal.
+
+        ``owner`` is digested into the entry filename so downloads can assert
+        the same caller (see :func:`media_owner_token`). Oversized files are
+        reported through ``rejected`` so the caller can tell the user instead
+        of dropping the attachment silently.
         """
         from gateway.platforms.base import validate_media_delivery_path
 
@@ -271,12 +320,23 @@ class ApiMediaStore:
             return None
         if st.st_size > self._max_bytes:
             logger.warning("API media skipped (too large): %s (%s bytes)", src.name, st.st_size)
+            if rejected is not None:
+                rejected.append({
+                    "name": _safe_filename(str(src)),
+                    "size": int(st.st_size),
+                    "limit": int(self._max_bytes),
+                })
             return None
 
         media_id = "med_" + secrets.token_urlsafe(12)
         name = _safe_filename(str(src))
+        token = media_owner_token(owner)
         now = time.time()
-        dest = self._root / f"{media_id}{_NAME_SEP}{name}"
+        dest = self._root / (
+            f"{media_id}{_NAME_SEP}{_OWNER_PREFIX}{token}{_NAME_SEP}{name}"
+            if token
+            else f"{media_id}{_NAME_SEP}{name}"
+        )
         try:
             self._ingest_bytes(src, dest)
             # Stamp the registration time: ``copyfile`` leaves whatever mtime
@@ -297,6 +357,7 @@ class ApiMediaStore:
             size=size,
             created_at=now,
             session_id=session_id or "",
+            owner=token,
         )
         self._maybe_sweep(now=now)
         return rec.to_public_dict()
@@ -308,7 +369,7 @@ class ApiMediaStore:
         found = self._find(media_id)
         if found is None:
             return None
-        dest, name = found
+        dest, name, token = found
         try:
             st = dest.stat()
         except OSError:
@@ -323,6 +384,7 @@ class ApiMediaStore:
             mime=guess_media_mime(name),
             size=int(st.st_size),
             created_at=st.st_mtime,
+            owner=token,
         )
 
     def sweep(self, *, now: Optional[float] = None) -> int:
@@ -359,11 +421,16 @@ class ApiMediaStore:
     # Internals
     # ------------------------------------------------------------------
 
-    def _find(self, media_id: str) -> Optional[Tuple[Path, str]]:
-        """Resolve an id to ``(blob path, display name)`` via directory scan.
+    def _find(self, media_id: str) -> Optional[Tuple[Path, str, str]]:
+        """Resolve an id to ``(blob path, display name, owner token)``.
 
         The id is regex-validated by the caller, so the prefix carries no glob
         or path separators — a traversal can never reach the filesystem.
+
+        The remainder is either ``<name>`` (legacy / no owner asserted) or
+        ``o<owner>__<name>``. Only the first ``__`` is consumed when an owner
+        segment is recognised, so a display name that itself contains ``__``
+        survives intact.
         """
         prefix = f"{media_id}{_NAME_SEP}"
         try:
@@ -374,10 +441,16 @@ class ApiMediaStore:
             if not entry.name.startswith(prefix):
                 continue
             try:
-                if entry.is_file():
-                    return entry, entry.name[len(prefix):]
+                if not entry.is_file():
+                    continue
             except OSError:
                 continue
+            rest = entry.name[len(prefix):]
+            head, sep, tail = rest.partition(_NAME_SEP)
+            match = _OWNER_TOKEN_RE.match(head) if sep else None
+            if match:
+                return entry, tail, match.group(1)
+            return entry, rest, ""
         return None
 
     def _ingest_bytes(self, src: Path, dest: Path) -> None:
@@ -424,30 +497,80 @@ def finalize_api_media(
     store: ApiMediaStore,
     *,
     session_id: str = "",
-) -> Tuple[str, List[Dict[str, Any]]]:
+    owner: str = "",
+) -> Tuple[str, List[Dict[str, Any]], List[str]]:
     """Inline small images, ingest remaining MEDIA files, strip tags.
 
-    Returns ``(display_text, public_file_list)``. ``display_text`` has image
-    tags replaced with markdown data URLs and remaining ``MEDIA:`` tags
-    removed so they never leak raw paths to the client. The file list is
-    empty when the reply had no deliverable attachments.
+    Returns ``(display_text, public_file_list, notices)``. ``display_text`` has
+    image tags replaced with markdown data URLs and remaining ``MEDIA:`` tags
+    removed so they never leak raw paths to the client. The file list is empty
+    when the reply had no deliverable attachments.
+
+    ``notices`` carries the same "could not hand this over" lines separately,
+    because the streaming path never sends ``display_text`` — it has already
+    flushed ``delta.content`` and must deliver the notice as its own frame.
+
+    Files dropped by the per-file cap are named instead of disappearing
+    silently: the user asked for a report and must learn that one of its
+    attachments could not be delivered.
     """
     from gateway.platforms.api_server import _resolve_media_to_data_urls
     from gateway.platforms.base import BasePlatformAdapter
 
     raw = text or ""
     if "MEDIA:" not in raw:
-        return raw, []
+        return raw, [], []
 
     inlined = _resolve_media_to_data_urls(raw)
     pairs, cleaned = BasePlatformAdapter.extract_media(inlined)
     safe = BasePlatformAdapter.filter_media_delivery_paths(pairs)
     files: List[Dict[str, Any]] = []
+    rejected: List[Dict[str, Any]] = []
     for path, _is_voice in safe:
-        public = store.register(path, session_id=session_id)
+        public = store.register(
+            path, session_id=session_id, owner=owner, rejected=rejected
+        )
         if public:
             files.append(public)
-    return cleaned, files
+    notices = _oversize_notices(rejected)
+    if notices:
+        note = "\n".join(notices)
+        cleaned = f"{cleaned.rstrip()}\n\n{note}" if cleaned.strip() else note
+    return cleaned, files, notices
+
+
+def _format_size(num_bytes: int) -> str:
+    if num_bytes < 1024:
+        return f"{num_bytes} B"
+    if num_bytes < 1024 * 1024:
+        return f"{num_bytes / 1024:.1f} KB"
+    if num_bytes < 1024 * 1024 * 1024:
+        return f"{num_bytes / (1024 * 1024):.1f} MB"
+    return f"{num_bytes / (1024 * 1024 * 1024):.2f} GB"
+
+
+def _oversize_notices(rejected: List[Dict[str, Any]]) -> List[str]:
+    """Localised lines naming each attachment the store declined to hand over."""
+    if not rejected:
+        return []
+    try:
+        from agent.i18n import t
+    except Exception:  # noqa: BLE001 - a missing i18n layer must not eat the reply
+        t = None
+
+    lines: List[str] = []
+    for item in rejected:
+        name = str(item.get("name") or "attachment")
+        size = _format_size(int(item.get("size") or 0))
+        limit = _format_size(int(item.get("limit") or 0))
+        if t is None:
+            lines.append(
+                f"Attachment {name} ({size}) exceeds the {limit} delivery limit "
+                "and was not offered for download."
+            )
+        else:
+            lines.append(t("gateway.media_too_large", file_name=name, size=size, limit=limit))
+    return [line for line in lines if line]
 
 
 def attach_hermes_files(payload: Dict[str, Any], files: List[Dict[str, Any]]) -> Dict[str, Any]:

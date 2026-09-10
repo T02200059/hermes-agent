@@ -157,6 +157,7 @@ from gateway.platforms.api_server_media import (
     attach_hermes_files,
     content_disposition,
     finalize_api_media,
+    media_owner_token,
 )
 from agent.redact import redact_sensitive_text
 from agent.interrupt_compat import request_hard_interrupt
@@ -1722,10 +1723,20 @@ class APIServerAdapter(BasePlatformAdapter):
         self._media_store = ApiMediaStore.from_config()
 
     def _finalize_api_media(
-        self, text: str, *, session_id: str = ""
-    ) -> tuple[str, List[Dict[str, Any]]]:
-        """Inline image MEDIA tags, register remaining files, strip raw paths."""
-        return finalize_api_media(text or "", self._media_store, session_id=session_id or "")
+        self, text: str, *, session_id: str = "", owner: str = ""
+    ) -> tuple[str, List[Dict[str, Any]], List[str]]:
+        """Inline image MEDIA tags, register remaining files, strip raw paths.
+
+        ``owner`` is the calling session's own identifier (not the possibly
+        rotated ``session_id``): it is digested into the stored entry so the
+        download endpoint can assert the same caller later. Returns
+        ``(display_text, files, notices)``; ``notices`` exists for the streaming
+        path, which has already flushed its text and must send the "attachment
+        too large" lines as their own frame.
+        """
+        return finalize_api_media(
+            text or "", self._media_store, session_id=session_id or "", owner=owner or ""
+        )
 
     def active_agent_work_count(self) -> int:
         """Return all live agent work owned by this API adapter.
@@ -4544,6 +4555,24 @@ class APIServerAdapter(BasePlatformAdapter):
             status=201,
         )
 
+    @staticmethod
+    def _media_owner_matches(request: "web.Request", owner: str) -> bool:
+        """True when the request proves it is the entry's owning session.
+
+        A routed caller carries both the session-continuation header and the
+        LDAP identity header, so either is accepted. A request that asserts
+        neither is allowed through: those are infrastructure callers holding the
+        API key (the trust boundary), and legacy entries carry no owner at all.
+        """
+        tokens = {
+            media_owner_token(request.headers.get(header, ""))
+            for header in ("X-Hermes-Session-Id", "X-Hermes-Identity")
+        }
+        tokens.discard("")
+        if not tokens:
+            return True
+        return owner in tokens
+
     async def _handle_media_download(self, request: "web.Request") -> "web.Response":
         """GET /v1/media/{media_id} — download an agent-produced MEDIA file.
 
@@ -4551,6 +4580,11 @@ class APIServerAdapter(BasePlatformAdapter):
         minted at turn-end from a ``MEDIA:<path>`` tag; the raw path never
         crosses the HTTP boundary. The path is re-validated on download so a
         later overwrite/move cannot serve a denylisted location.
+
+        Rate limiting is deliberately not applied: this gateway serves a small
+        internal deployment, the caller is an authenticated proxy rather than
+        the open internet, and the API key is already the trust boundary. Add a
+        limiter only if the surface is ever exposed more widely.
         """
         auth_err = self._check_auth(request)
         if auth_err:
@@ -4562,6 +4596,19 @@ class APIServerAdapter(BasePlatformAdapter):
                 _openai_error("Unknown or expired media id", code="media_not_found"),
                 status=404,
             )
+        # Ownership: the entry name carries a digest of the session that
+        # registered it. A caller identifies itself with the same session header
+        # it used on the chat turn (routed callers also carry the LDAP identity
+        # header). Reported as 404 rather than 403 so the response cannot be
+        # used to confirm that someone else's id exists.
+        if rec.owner and not self._media_owner_matches(request, rec.owner):
+            logger.warning("API media owner mismatch for %s", media_id)
+            return web.json_response(
+                _openai_error(
+                    "Media belongs to a different session", code="media_account_mismatch"
+                ),
+                status=404,
+            )
         safe = validate_media_delivery_path(rec.path)
         if not safe:
             return web.json_response(
@@ -4570,9 +4617,16 @@ class APIServerAdapter(BasePlatformAdapter):
             )
         p = Path(safe)
         if not p.is_file():
+            # Directory-as-index: a missing blob *is* "unknown or expired", so it
+            # reports the same code as the lookup miss above. The former 410
+            # ``media_gone`` branch became unreachable once the catalogue moved
+            # to the directory listing (``get`` already rejects a vanished file),
+            # leaving only the race between resolving the record and opening it —
+            # which callers cannot act on differently anyway. The proxy layer
+            # maps this single code to its own "产物已过期" contract.
             return web.json_response(
-                _openai_error("Media file is gone", code="media_gone"),
-                status=410,
+                _openai_error("Unknown or expired media id", code="media_not_found"),
+                status=404,
             )
         return web.FileResponse(
             path=str(p),
@@ -5282,9 +5336,10 @@ class APIServerAdapter(BasePlatformAdapter):
             **agent_overrides,
         )
         effective_session_id = result.get("session_id") if isinstance(result, dict) else session_id
-        final_response, media_files = self._finalize_api_media(
+        final_response, media_files, _media_notices = self._finalize_api_media(
             result.get("final_response", "") if isinstance(result, dict) else "",
             session_id=effective_session_id or session_id or "",
+            owner=session_id or "",
         )
         headers = {"X-Hermes-Session-Id": effective_session_id or session_id}
         if gateway_session_key:
@@ -5461,9 +5516,10 @@ class APIServerAdapter(BasePlatformAdapter):
                     **agent_overrides,
                 )
                 effective_session_id = result.get("session_id", session_id) if isinstance(result, dict) else session_id
-                final_response, media_files = self._finalize_api_media(
+                final_response, media_files, _media_notices = self._finalize_api_media(
                     result.get("final_response", "") if isinstance(result, dict) else "",
                     session_id=effective_session_id or session_id or "",
+                    owner=session_id or "",
                 )
                 turn_messages = self._turn_transcript_messages(history, user_message, result) if isinstance(result, dict) else []
                 effective_runtime = {}
@@ -5958,9 +6014,10 @@ class APIServerAdapter(BasePlatformAdapter):
                     status=500,
                 )
 
-        final_response, media_files = self._finalize_api_media(
+        final_response, media_files, _media_notices = self._finalize_api_media(
             result.get("final_response") or "",
             session_id=result.get("session_id") or session_id or "",
+            owner=session_id or "",
         )
         is_partial = bool(result.get("partial"))
         is_failed = bool(result.get("failed"))
@@ -6208,10 +6265,17 @@ class APIServerAdapter(BasePlatformAdapter):
             if isinstance(result, dict):
                 _media_text = result.get("final_response") or ""
                 if "MEDIA:" in _media_text:
-                    _cleaned, _media_files = self._finalize_api_media(
+                    _cleaned, _media_files, _media_notices = self._finalize_api_media(
                         _media_text,
                         session_id=_effective_sid or session_id or "",
+                        owner=session_id or "",
                     )
+                    if _media_notices:
+                        # The streamed deltas are already out (still carrying raw
+                        # MEDIA: tags, which clients strip). A notice about a
+                        # dropped attachment has to travel the same way — as text
+                        # — or the user would believe it was delivered.
+                        await _emit("\n\n" + "\n".join(_media_notices))
                     if _media_files:
                         finish_chunk.setdefault("hermes", {})["files"] = _media_files
             await response.write(_sse_frame(finish_chunk))
@@ -7133,9 +7197,10 @@ class APIServerAdapter(BasePlatformAdapter):
                     status=500,
                 )
 
-        final_response, media_files = self._finalize_api_media(
+        final_response, media_files, _media_notices = self._finalize_api_media(
             result.get("final_response", ""),
             session_id=result.get("session_id") or "",
+            owner=session_id or "",
         )
         if not final_response:
             final_response = _redact_api_error_text(result.get("error", "(No response generated)"))

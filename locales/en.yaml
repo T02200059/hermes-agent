@@ -546,6 +546,9 @@ gateway:
   video_attachment_failed: "⚠️ Couldn't deliver the video attachment."
   image_attachment_failed: "⚠️ Couldn't deliver the image attachment."
   attachment_failed: "⚠️ Couldn't deliver the attachment."
+  # API-server media: an agent-produced attachment was larger than the managed
+  # store's per-file cap, so no download card could be issued for it.
+  media_too_large: "⚠️ Attachment {file_name} ({size}) exceeds the {limit} delivery limit and was not offered for download."
 
   # Session stall watchdog — shown when a turn has pending inbound but no
   # progress for agent.session_stall_timeout. {mins} is a whole-minute floor.
