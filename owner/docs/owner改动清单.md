@@ -19,13 +19,15 @@
 |------|-----|
 | 分支 | `owner` |
 | 基点 | `upstream/main` @ `00b2e03c80`（`fix(tui): a collapsed paste resolves before the slash command runs`，2026-09-01） |
-| Commit 数 | 1573（基点后累计，含上游 merge commits + owner commits） |
-| 改动文件总数 | 172（去重后） |
-| owner/ 纯新增 | ~75 个文件 |
-| 官方文件侵入 | ~70 个文件（含 ~20 个测试文件） |
-| 范围 | 模型归因 / patch.yaml 配置 / 审批安全 / skill 写入审批 / 语义审计 / 飞书深度定制 / TUI 皮肤 / Cron 运维 / Gateway 稳定性 / Checkpoint 预测 / Upstream Sync / Viking 记忆治理 / Desktop 窗口透明度 / output_guard |
-| 最后更新 | 2026-09-02 |
+| Commit 数 | 358（`00b2e03c80..HEAD`；含 6 个 merge commit，本机作者 355 = `杨天宝` 248 + `yangtb` 107） |
+| 改动文件总数 | 415（去重后） |
+| owner/ 纯新增 | 160 个文件（基点时 `owner/` 目录为空） |
+| 官方文件侵入 | 120 个文件（不含 tests；另计 `tests/` 135 个，其中新增 61） |
+| 范围 | 模型归因 / patch.yaml 配置 / 审批安全 / skill 写入审批 / 语义审计 / 飞书深度定制 / TUI 皮肤 / Cron 运维 / Gateway 稳定性 / Checkpoint 预测 / Upstream Sync / Viking 记忆治理 / Desktop 窗口透明度 / output_guard / API Server LDAP 身份准入 / 产物媒体与流式契约 |
+| 最后更新 | 2026-09-10 |
 | 来源 | 从 `owner-v17`（500+ commit）清洗迁移而来；本分支是重新整理后的最小叠加版本 |
+
+_元数据统计口径：范围取「基点后未出现在上游 `00b2e03c80` 中的 owner 侧改动」，即 `git rev-list --count 00b2e03c80..HEAD`；文件数按 NUL 分隔去重统计（`git diff --name-only -z … | tr '\0' '\n' | sort -u`），避免含中文的路径被 git 加引号后漏计。数值截至 2026-09-10。_
 
 ### 0.2 章节索引
 
@@ -38,6 +40,8 @@
 | 看 TUI / Ctrl+C 退出 | §6 |
 | 看 Desktop 桌面端改动 | §13 |
 | 看 LLM 输出复读/乱码折叠 | §14 |
+| 看 API Server identity 路由、LDAP 认证、准入查询 | §15 |
+| 看 API Server 产物媒体下载、流式事件契约 | §16 |
 | 看 Gateway merge 后最容易丢的胶水 | §7、附录 B、附录 C |
 | 看脚本、cron、备份、Upstream Sync、Viking 记忆治理 | §11 |
 | 看 owner/ 模块到官方侵入点的映射 | 附录 A、附录 B |
@@ -300,6 +304,7 @@
 - **侵入类型**：薄胶水 + try-import（adapter 从 ~250 行审批逻辑压到 ~20-30 行委托）
 - **Commit**：`fa6995bc9`（§4.2）、`4a4b13226`（补 [owner] 标记到 sender_name TTL 注释行）、`d7c487275`（fix tests: group_policy=allowlist 显式设置）
 - **后续**：`cd11a5ff8` — 点击失败路径（unauthorized / already_resolved / chat_mismatch / missing_id / submit_failed）改为返回冻结错误 CallBackCard + i18n 文案，不再空响应让客户端卡 loading；仅成功 resolve 才放行 agent。
+- **后续**：`191e5a3287` — **审批卡 operator 中文名缓存中途失效**：卡片发送时预热 `ou_id → 中文名` 缓存，但 TTL 仅 10 分钟。用户超时点击时，`_read_ttl_name` 的过期路径会**破坏性清除**两层缓存（`pop _name_ttl` + 清空 `_users.display_name`），`operator_display_name` 随即 fallback 到原始 `open_id`，卡片显示「由 ou_xxx 操作」。症状是「启动正常、后续变 ou_xxx」，即 10 分钟 TTL 到期叠加破坏性清除；另有三处放大因素（`pre_warm` 对临近过期缓存直接跳过、回调同步路径无重试、`get_cached_display_name` 的二次 TTL 检查同样破坏性清除）。修复把 TTL 从 10 分钟提到 24 小时（用户名极少变化）并消除这三处放大因素。
 
 ### 3.2 飞书 inbound context 用户身份注入
 
@@ -365,7 +370,7 @@
 | CR-003 | `_auth_pool_refresh_counts` 在 per-turn prologue 初始化而非 `__init__`，delegated subagent 首次 401 触发 AttributeError | `init_agent` 中加 `agent._auth_pool_refresh_counts = {}` | `agent/agent_init.py` | `02a0c02b5` |
 | CR-004 | `_GATEWAY_RAW_TEXT_PLATFORMS` 含 api_server/webhook/msgraph_webhook，扩大了 redaction 旁路 | 缩减为只含 `{"local"}` | `gateway/run.py` | `eb49d3b18` |
 | CR-005 | MoA context 注入修改 user message body，破坏 prompt cache | 改为插入独立 user message（system prompt 之后） | `agent/conversation_loop.py` | `362304bc8` |
-| CR-006 | skill-script 自动审批可被含 `;`/`&`/`|` 的复合命令绕过 | 加两个 quote-aware 安全门（unquoted compound operator + quoted metachar） | `owner/approval/skill_script_approval.py` | `010186818` |
+| CR-006 | skill-script 自动审批可被含 `;`/`&`/`\|` 的复合命令绕过 | 加两个 quote-aware 安全门（unquoted compound operator + quoted metachar） | `owner/approval/skill_script_approval.py` | `010186818` |
 
 - **报告**：`f4e82eba5`（docs(00): add code review fix report）、`f160dd359`（owner(§review): code review REPORT.md）
 
@@ -415,6 +420,39 @@
 - **侵入类型**：plugin hook（主路径零 upstream surface）+ adapter 薄胶水（点击路由）
 - **Commit**：`55b070fd8`（v1 gate）、`cd937b412`（v2 自建卡 + origin 通知 + profile 配置）
 - **后续**：`9ce7369dc` — 审批卡按钮 stamp 的是 UI 文案 `approve`/`deny`，gate 只认 `once`/`session`/`always`。点绿按钮卡片 resolve 了，agent 却当 false deny 硬停。加 `_GATEWAY_CHOICE_MAP` 把 UI label 映射到 gateway token；`handle_card_click` 走 `gateway_choice`；子 profile 按钮 stamp `hermes_profile`；gate 把陈旧 `approve` 归一成 `once`。
+- **后续**：`5e9d88bc79` — gate 增加 `allow_skills` 白名单（精确名 + fnmatch glob，如 `xy-*`）。原则：仅审查**配置了的** `skill_manage` 写操作，空列表 = 全部不审；只 gate `skill_manage` 等 tool，不 gate terminal 直改或手动改文件。
+- **后续**：`7515dd7e03` — **容器场景 profile 匹配修复**：每个用户进程的 `HERMES_HOME` 都是挂载的 `/root/.hermes`，`get_active_profile_name()` 全部推断为 `default`，`profiles` 白名单永远匹配不上。改动：`_current_profile()` 优先读 `HERMES_PROFILE` env（容器真实身份）、fallback 到路径推断；`is_gate_enabled()` 支持 `profiles` 通配 `*`（匹配所有 profile / 用户）；`patch_feishu_profile.yaml` 的 `profiles` 改 `*` 覆盖全部用户。
+- **默认值调整**：`d7d4a0fd43` — 默认关闭人审门闩，`skill_manage` 写操作不再默认发卡等人审，需要时再把 `enabled` 改回 `true`。配套 `fa44610162` 修正 diff card 注释与该默认值一致。
+
+### 3.12 2026-08-19 代码审查修复（P0/P1/P2）
+
+第二次代码审查（基线 2026-08-19）的修复集，跨安全、稳定性、性能三类，共 2 个 commit、40 个文件。
+
+| 级别 | 问题 | 修复 | 文件 | Commit |
+|------|------|------|------|--------|
+| P0 | `_mask_quoted_newlines` 未跟踪 `$(` 嵌套与反引号替换，命令替换内的换行（真实分隔符）被掩码，可绕过硬黑名单 | 跟踪嵌套层级；补 3 个回归测试 | `tools/approval.py` | `0c48c2a8b6` |
+| P1 | queue token 被消费后未 retire，同文本重新排队被静默吞掉 | 消费后 retire | `owner/patches/queue_cancel_patch.py` | `0c48c2a8b6` |
+| P1 | bitable 50 表上限是死代码，未真正截断 | `_BITABLE_MAX_TABLES` 变为强制截断并在 header 提示 | `tools/feishu_client_utils.py` | `0c48c2a8b6` |
+| P1 | docx 图片 cap 500 过高且无缓存预算 | cap 500→100 + 缓存预算 LRU 清理 | `tools/feishu_client_utils.py` | `0c48c2a8b6` / `56fa158790` |
+| P1 | Windows SIGINT absorber 被 merge 冲掉 | 恢复 | `cli.py` | `0c48c2a8b6` |
+| P1 | inbound 准入无预算、媒体失败路径吞吐差；转发超时 10s 导致双进程重复处理 | 准入加 75s 预算、媒体失败降级文本仍返 202、转发超时 10s→90s；follow-up 进一步拆为「准入只建元数据（12s）后 202，媒体在 dispatch 再下（90s）」，发送端超时 90s→20s，纯图片失败不 dispatch | `gateway/platforms/api_server.py`、`owner/feishu/profile_routing.py` | `0c48c2a8b6` / `56fa158790` |
+| P1 | `cron-health-check.py` 用 `or True` 恒真条件判断今日状态 | 去掉恒真条件，按最后一条 `completed` 行精确判断；单次扫描按 `job_id` 分组（O(N×体积)→O(N)）；`table_index` 不被 50 表帽挡住；恢复日志无日期不算今天 | `owner/scripts/cron-health-check.py` | `0c48c2a8b6` / `56fa158790` |
+| P2 | queue 终态 token 无超时清理、文本匹配未按 session 隔离 | 终态 token 1h 清理 + 文本匹配按 session 隔离 | `owner/patches/queue_cancel_patch.py` | `0c48c2a8b6` / `56fa158790` |
+| P2 | output_guard 压缩率用字符口径致中文失效；折叠后未二次截断；mojibake 文案不符 | 改字节口径 + 折叠后二次截断 + 文案对齐；mojibake 只留首段 | `owner/owner-extensions/output_guard/__init__.py` | `0c48c2a8b6` / `56fa158790` |
+| P2 | docx blocks 扫描无上限、wiki 子文档无上限 | blocks 2 万块硬上限、wiki 子文档 200 上限 | `tools/feishu_client_utils.py` | `0c48c2a8b6` |
+| P2 | 凭据池过期后短路了 anthropic 外部凭据检查 | 不再短路 | `hermes_cli/model_switch.py` | `0c48c2a8b6` |
+| P2 | `_CHATLOG_RE` 无日期分支会误截断 Summary 正文 | 要求后跟 `[角色]:` 行；abstract 路径同样截 ChatLog | `plugins/memory/openviking/__init__.py` | `0c48c2a8b6` / `56fa158790` |
+| P2 | provider 模型缓存无主动失效入口 | 挂到 session reset；follow-up 删除挂在 `/new` 上的错误钩子，凭证写入与 model/custom_providers 配置变更改走既有 `clear_provider_models_cache` | `hermes_cli/models.py`、`gateway/slash_commands.py` | `0c48c2a8b6` / `56fa158790` |
+| P2 | lark SDK 缺失时队列卡点击后静默无响应 | 仍处理队列卡并回传 raw card | `owner/feishu/queue_card.py`、`plugins/platforms/feishu/adapter.py` | `56fa158790` |
+| P2 | `find_scheduled_token_for_text` 省略 `session_key` 时匹配到已绑定 token | 只匹配未绑定 token | `owner/patches/queue_cancel_patch.py` | `56fa158790` |
+| P2 | 短文件尾部 U+FFFD 被误判为非法字节 | 按真非法字节处理 | `owner/patches/file_binary_detection_patch.py` | `56fa158790` |
+
+- **涉及文件**（官方树 intrude）：`tools/approval.py`、`tools/feishu_client_utils.py`、`cli.py`、`gateway/platforms/api_server.py`、`gateway/slash_commands.py`、`hermes_cli/model_switch.py`、`hermes_cli/models.py`、`plugins/memory/openviking/__init__.py`、`plugins/platforms/feishu/adapter.py`
+- **涉及文件**（owner 侧）：`owner/patches/queue_cancel_patch.py`、`owner/patches/file_binary_detection_patch.py`、`owner/owner-extensions/output_guard/__init__.py`、`owner/feishu/profile_routing.py`、`owner/feishu/queue_card.py`、`owner/scripts/cron-health-check.py`
+- **侵入类型**：inline（安全/边界修复）+ owner/ 内部
+- **验证**：hardline 186 / queue 13 / feishu 73 / profile transport 8 / openviking 5 全部通过；改动文件 `py_compile` 全过
+- **未纳入**：`gateway/run.py` 与 `patch_feishu_profile.yaml` 的无关本地改动
+- **Commit**：`0c48c2a8b6`（P0/P1/P2 首轮）、`56fa158790`（follow-up 收口）
 
 ---
 
@@ -435,6 +473,9 @@
 - **后续修复**：
   - `fc6f2fbc4` — merge 冲突解决时同时保留了 owner 的 `setdefault(connection_mode)` 和上游 `.update()` 中的 `connection_mode`，`.update()` 无条件覆盖 `setdefault`，导致 `config.yaml` 中 `connection_mode: send_only` 的子 profile 容器被改写为 `websocket`。修复：从 `.update()` 中移除 `connection_mode`，仅靠 `setdefault` 维持 config.yaml > env 优先级。
   - `bc1feb536` — **harden Feishu profile transport**：加固多 profile 下消息/卡片往返传输路径。`gateway/platforms/api_server.py` 端点校验与错误路径、`owner/feishu/profile_routing.py` 路由边界、`plugins/platforms/feishu/adapter.py` 接线同步加固；新增 `tests/owner/test_feishu_profile_transport.py`（约 400 行）锁定 transport 契约，防止 merge 后子 profile 投递丢 `chat_type`/`open_id` 或错误落到 default profile。
+  - `31a8005791` — **`send_card` 序列化前补 `hermes_profile` 标签**：`send_model_picker_card`（`/providers` 选择器）与 clarify 卡片走 `send_card` → lark SDK 路径，而该标签此前只在 REST 路径（`send_card_via_rest`）打上。`send_only` 容器的卡片因此未带标签到达用户，点击落在主网关（唯一 WebSocket）上，其 adapter 没有对应 `_model_picker_state` 条目 → 报「会话已过期，请重新执行 /providers」。修复：把打标签动作移入 `send_card` 本体（**序列化之前**，之后 card 已成 JSON 字符串无法再遍历/修改），门控 `_connection_mode == "send_only"`（主网关上为 no-op）；`owner/feishu/card_sender` 缺失时 fail-open，卡片照发（不带标签，旧行为）。新增 `tests/owner/test_feishu_send_card_profile_tag.py`（约 220 行）。
+
+    该修复依赖 §7.14 的 `get_active_profile_name()` env 优先修正——容器内路径推断恒为 `default` 时，标签本身也是错的。
 
 ### 4.2 长文本自动卡片（auto-card）
 
@@ -466,6 +507,7 @@
 - **侵入类型**：薄胶水 + try-import
 - **Commit**：`e927a6adf`（§5.5）
 - **后续修复**：`21004e4c3` - diff card 重复弹出 + terminal progress 被错误包装成 auto card
+- **后续**：`c27120b97e` — diff card 增加 patch.yaml 开关（master + 平台级），可在配置层整体关闭而不改代码。
 
 ### 4.5 Clarify 交互卡片
 
@@ -494,6 +536,10 @@
   - `ee1e29084` — `bot_menu` 新增 `agents` 菜单项与 ack（映射 `/agents`，与 usage/insights 同模式）。
   - `195996b48` — `bot_menu` 新增 `viking_human_review` 菜单项与 ack（对接 §11.6 Viking 记忆质量人工复核入口）。
   - `c6156c16f` — `/new` `/stop` 与 `/status` 对齐 `ack: null`，关掉 bot-menu dedup ack（流水线本身已有即时反馈，再 ack 是重复提示）。
+  - `b83d1da12c` — `bot_menu` 新增 xy-damodel 系列模型切换菜单：8 个菜单项覆盖 `xy-damodel` / `xy-flash` / `xy-max` / `xy-pro` × session/global，配套 ack 文本。
+  - `a1604a1b20` — `new` 键补 ack 文案：`/new` 重置会话耗时较长，原 `ack: null` 无即时反馈，改为 `🆕 重置会话中…` 让用户点击后立即看到响应（对 `c6156c16f` 的反向调整）。
+  - `78269d5972` — **三层去重，修复网络卡死恢复后连续触发**：(1) `event_id` 精确去重（TTL 600s）拦飞书服务器对未 ACK 事件的重投递；(2) in-flight 状态机合并同 `(open_id, event_key)` 的后续点击，PENDING 超 120s 强制放行 + ERROR 日志兼作卡死探测器；(3) 保留 3s TTL 防手抖双击。`handle_bot_menu_event` 主体拆出 `_process_bot_menu_click`，`try/finally` 覆盖全部 early-return 释放 PENDING；release 带 `admit_ts` 属主校验防误释放；PENDING 条目不参与过期清理/容量驱逐；ack/fallback/guide 卡片包 `asyncio.wait_for` 15s 超时——DNS 挂起时放弃发消息但继续路由命令。背景：Clash Verge Rev TUN/fake-ip DNS 间歇抽风 → ack 网络挂起 → 用户重复点击。
+  - `7c759411d9` — `bot menu` 路由 `NameError`：`try_route_bot_menu_command` 未定义 `chat_type`。
 
 ### 4.7 飞书编辑上限轮转 + 进度 dedup
 
@@ -503,6 +549,7 @@
   - `gateway/platforms/base.py`：progress dedup 计数器改为只在代码块外插入
 - **侵入类型**：inline（base.py 的 dedup 计数器逻辑）+ 薄胶水（adapter）
 - **Commit**：`f6d0c6030`（§11.9 编辑上限轮转）、`2be0af638`（§11.8 progress dedup 避免污染 code fence）、`add176e9b`（§11.10 extract_local_files 跳过双反引号 inline code）
+- **后续修复**：`d510908961` — **接通 `_classify_edit_failure`，修复编辑上限后 tool progress 散列**。飞书 230072/230075 触发后适配器设置 `result.rotate=True`，但 `send_progress_messages` 的内联分类逻辑不检查 `rotate`，直接走到 `can_edit=False` 永久关闭编辑；AI 穿插文本回复后 `__reset__` 只清 `progress_msg_id`/`progress_lines` 而不重置 `can_edit`，导致后续 tool progress 全部散成独立消息。修复：主循环 + overflow 滚动的内联分类替换为调用已有的 `_classify_edit_failure`，新增 `rotate` 分支（丢弃旧 bubble、保持 `can_edit=True` 开新 bubble）；`CancelledError` drain 补 `progress_msg_id is None` 时的兜底发送，防止 rotate/reset 后 buffer 里的行被静默丢弃。
 
 ### 4.8 飞书 context-compression 中文摘要
 
@@ -557,6 +604,7 @@
   - **queue 撤销队列 + 执行后冻结（个人 fork，仅飞书卡）** — `89fa171bc`：queue 提交后 done 卡增加「撤销队列」；FIFO 开始执行时 REST patch 卡片为「▶️ 已开始执行」蓝底终态。**禁止**把 token 写入 `message_id`（会当 reply_to 导致 99992354）。实现：`owner/feishu/steer_card.py` + `owner/patches/queue_cancel_patch.py`（按 prompt 文本匹配入队、`event._owner_queue_token` 打标、包装 `_enqueue_fifo`/`_dequeue_pending_event`、`cancel_queued_by_token`；并 wait 在途 prefetch 以避免 queue 紧接上轮时跳过 openviking 召回卡）。注册于 `owner-extensions`。同 commit 还补：openviking 召回全链路 INFO 诊断；各类飞书卡片发送/点击成功路径统一 `[Feishu card]` 日志。
   - `306fb0be8` — `queue_cancel_patch` 的 `_token_state` 在 cancel/enqueue/freeze 多线程并发读写，加 `_token_lock` 保护全部读写路径。
   - `354222f43` — **queue 状态卡**：入队后发飞书交互卡（原文 + 三个按钮：steer 进当前轮 / 立刻处理并打断 / 取消）；guide-card 提交的 queue 也变成同一张状态卡。非飞书保持纯文本 ack。实现：`owner/feishu/queue_card.py` + `queue_cancel_patch` 扩展 + adapter 薄胶水。
+  - `7ce75a8df5` — **队首开始执行时补发底栏通知**：冻结态状态卡（REST patch）在流式输出推进后通常已被滚出可视区，队首真正开始执行时用户看不到。保留原冻结行为不变，额外在消息流底部发一张紧凑无按钮通知，列出剩余队列项。实现：`queue_card.build_queue_started_notify_card` + `queue_item_preview`；`queue_cancel_patch.notify_queue_started(adapter=)` 挂在 busy-FIFO dequeue 路径上，剩余快照在 overflow 提升**之前**取；idle 的 guide-dispatch 路径保持静默（卡片本就可见）；DM 发送时从存储的 `SessionSource` 解析 `open_id`。
 
 ### 4.12 飞书文件上传大小守卫
 
@@ -575,9 +623,10 @@
   - `749f68abb` — `read_sheet_as_text` 去掉 grid `row_count` 尾部空行填充
   - `9cceec46f` — bitable 读取增强（防全量拉取 token 爆炸）：`read_bitable_as_text` 新增 `mode=structure`（只看表目录：表名/table_id/记录数/字段定义 + 公式标记，不拉记录）、`table_index`（1-based 单选单表，越界报错）、`limit`（覆盖默认 500 条/表）、`filter`（透传飞书 records API 过滤表达式，服务端过滤）；`_read_table_records` 返回 `(records, total)`，full 模式触顶时报告真实总数。新增 `_read_table_fields` / `_table_record_total` / `_list_bitable_tables`；`feishu_doc_tool.py` schema 加 4 参数（仅 bitable 生效，向后兼容）
   - `a1b607d2e` — wiki 文件夹节点返回一层子文档标题：`resolve_wiki_node` 改返回 3-tuple `(obj_token, obj_type, node_meta)`，`node_meta` 带 `has_child`/`space_id`/`title`（仅文件夹非 None）；新增 `list_wiki_children`（用 `wiki/v2/spaces/{space_id}/nodes` 分页 page_size=50 列一层子节点，标注 `[文件夹]`/`[文档]` + node_token，不用 `get_children` 因对深层子文件夹返回空）；handler 在 `has_child=true` 时返回 `=== 文件夹: <标题> ===` + 子项列表。普通 docx/bitable/sheet 不受影响；只列一层不递归
+  - `c5e0f9beda` — **读取 docx 内嵌的多维表格块**：`feishu_doc_read` 会丢掉嵌在 docx 文档里的 bitable（多维表格）块——docx `raw_content` API 静默丢弃 `block_type=18`，而 `list_docx_image_tokens` 只扫图片。新增 `list_docx_bitable_blocks()`（从 block tree 提取 bitable token）与 `read_docx_embedded_bitables()`（按 `app_token` 去重，每表 50 条上限防 token 爆炸）；`read_docx_with_images()` 不再在 `raw_content` 为空时提前退出，并把内嵌 bitable 数据追加到返回文本。
 - **涉及文件**：`tools/feishu_client_utils.py`、`tools/feishu_doc_tool.py`、`tests/tools/test_feishu_client_utils.py`
 - **侵入类型**：inline（官方 feishu tools 内扩展读取路径）
-- **Commit**：`7230d71e9`、`e5e90f874`、`4ca60433a`、`749f68abb`、`9cceec46f`、`a1b607d2e`
+- **Commit**：`7230d71e9`、`e5e90f874`、`4ca60433a`、`749f68abb`、`9cceec46f`、`a1b607d2e`、`c5e0f9beda`
 - **附录 E**：2026-07-23 / 2026-07-24 条目与本节省略互补（E 偏时间线，本节钉 hash）
 
 ### 4.14 禁用 @所有人 自动响应
@@ -587,6 +636,22 @@
 - **涉及文件**：`plugins/platforms/feishu/adapter.py`、`tests/gateway/test_feishu.py`
 - **侵入类型**：inline（adapter 一处 mention 判定）
 - **Commit**：`470148013`
+
+### 4.15 合并转发消息展开（merge_forward）+ 消息分页读取
+
+- **背景**：飞书「合并转发」消息在 adapter 里只被当作普通富文本处理，`_extract_message_content` 拿不到正文——官方行为是 `merge_forward` 类型消息需**二次拉取** `GET /im/v1/messages/{id}`（返回父消息 + N 条子消息，子消息带 `upper_message_id`）。工具侧 `feishu_doc_read` 也只认 docx/wiki/sheet/bitable token，无法读合并转发内容。
+- **方案**（`2079a79fab`）：
+  - **P1 接收侧**：`plugins/platforms/feishu/adapter.py` 的 `_extract_message_content` 对 `merge_forward` 消息二次拉取上述接口，用共享 renderer 渲染成可读聊天记录；失败静默回退占位文本。
+  - **P2 工具侧**：`feishu_doc_read` 的 `doc_token` 支持 `om_` 前缀消息 ID，走同一 `GET` 接口拉取合并转发内容，支持 `offset` / `mf_limit` 分页；`tools/feishu_client_utils.py` 补对应读取函数。
+- **共享渲染约定**（`adapter.py::_render_merge_forward_entries`）：
+  - 格式 `[时间] sender短码: 正文`；`@用户名` 从 `mentions` 解析（key 与 `user_id`/`open_id` 双索引，post 的 `at` 段按 `user_id` 命中）
+  - 截断上限 **100 条 / 40000 字符**，截断时保留 `message_id` + offset 续读提示（**不静默丢弃**）；分页窗口未覆盖全量时同样提示剩余
+  - `image`/`file` 显示占位，嵌套合并转发显示 `[嵌套合并转发 om_xxx]`
+  - dict 与 lark SDK 对象两种 `children` 形态均支持
+- **涉及文件**：`plugins/platforms/feishu/adapter.py`（+202）、`tools/feishu_client_utils.py`（+33）、`tools/feishu_doc_tool.py`（+32）、`tests/owner/test_merge_forward_expansion.py`（新增 192）
+- **侵入类型**：inline（adapter 接收路径 + 官方 feishu tools 扩展读取路径）
+- **验证**：11 个用例（渲染 / mentions / post / 占位 / SDK 对象 / 截断续读 / 分页 / mock client 三态）；真实消息 E2E 已验证（5 条子消息全文 + `offset=3 limit=2` 分页 + 小字符上限截断提示）
+- **Commit**：`2079a79fab`
 
 ---
 
@@ -643,6 +708,15 @@
 - **侵入类型**：inline（退出/中断路径）+ 纯新增测试
 - **Commit**：`300160673`、`5d1539c99`
 
+### 6.4 live compression sync 误清 providers per-model context_length
+
+- **背景**（`efb42e6e39`）：`_apply_live_compression_config` 只读顶层 `model.context_length`。当 config 使用新版 `providers.<provider>.models.<model>.context_length` 结构、且顶层 `model` 段没有该字段时，**每轮 turn 的 sync 会把 compressor 的 override 清成 `None`**，下次 resolve 落到 256K fallback（`DEFAULT_FALLBACK_CONTEXT`）。症状：TUI statusbar 首次 resolve 显示 1m，`/new` 后欢迎信息显示 256k。
+- **方案**：顶层 `model.context_length` 缺省时回退 `get_custom_provider_context_length`（按 agent 当前 model + base_url 精确匹配 `providers.*.models`），保留 per-model override；其他模型不被串值（如 `xy-damodel` 的 262144）。
+- **涉及文件**：`tui_gateway/server.py`（+19）、`tests/tui_gateway/test_compression_config_hot_reload.py`（+66）
+- **侵入类型**：薄胶水（TUI gateway 配置热重载路径）
+- **验证**：新增 2 例（override 保留 + 多模型不串值），20/20 passed
+- **Commit**：`efb42e6e39`
+
 ---
 
 ## 七、运行稳定性：Gateway / Cron / Memory / Merge 修复
@@ -686,6 +760,7 @@
   - `7733cabf7` — **`viking_add_resource` 超时 UX**：默认 HTTP timeout 提到 120s，client 尊重 wait timeout；超时返回可操作 payload，避免模型把 `wait=true` 超时当成硬写失败而重试/幻觉。
   - `89fa171bc`（部分）— openviking 召回全链路 INFO 诊断日志（与 §4.11 queue 撤销同 commit；见 steer_card / recall patch 侧）。
   - `2da7512f4` — 召回卡 header emoji 🧠→📚，蓝底上对比度更好。
+  - `eb6a97beb2` — **peer_id slug 化，修复结构化同步 3 周降级**。根因：`2587260ca` 引入的 display label 把中文人名当 `peer_id` 发送，而 viking 服务端 `identifiers.py` 强校验 `^[a-zA-Z0-9_.@-]+$`（`peer_id` 是 peers 目录 URI 路径段 + 提取 speaker 标签）→ 每轮 batch 400 → 结构化同步降级到文本通道，自 2026-08-14 起持续（`errors.log` 日 8~52 次）。修复（对齐 viking `ingest/peer.py::safe_external_peer` 惯例）：新增 `_ascii_peer_slug()` —— 天然合法则小写原样、已知人名走登记表（杨天宝 → `yangtianbao`）、未登记非 ASCII → `ext-<sha1前10>`；user 侧 fallback 链 `Inbound 人名 → OPENVIKING_USER → unknown-user`，assistant 侧 `profile → _agent → hermes`（全 ASCII）；删除中文 fallback 值「过去的用户」/「过去的助手」（400 的另一半来源）。中文人名唯一锚点保留在 entities 实体文件，正文天然带中文名。
 
 ### 7.4 Cron env 隔离（ContextVar + restart scrub）
 
@@ -789,6 +864,7 @@
 - **后续**：
   - `c0d01276f` — 优先读 `HERMES_PROFILE`，再从 `HERMES_HOME` 推断，多 profile 舰队显式设了 env 时标签才对。
   - `f348617f9` — 再优先 `HERMES_LIFECYCLE_LABEL`，关机/重启文案可用中文或带空格的昵称，不改 `HERMES_PROFILE` 路由 id。
+- **后续修复**：`98236ad2ed` — **`get_active_profile_name` 改读 `HERMES_PROFILE` env 优先，修复容器化部署身份判定**。根因：node010 子 profile 容器把用户 `~/.hermes` 挂载为 `/root/.hermes`，路径推断恒返回 `default`，而容器身份由 compose 注入的 `HERMES_PROFILE` 声明；卡片按钮 `hermes_profile` 打标（card_sender）、skill gate、MCP identity、docker 环境标签等 **110 个调用点**全部拿到假 `default`。修法：env 值经 `_PROFILE_ID_RE` 白名单校验后直接返回（与 `gateway/run.py` 的 `_profile_label` 及 `skill_manage_gate` 既有 env-first 模式对齐）；空值 / 非法值（如 `pytest -p no:xdist` 类污染）回落路径推断，主网关 / CLI / Mac（无 env）行为逐字节不变。session key namespace 不受影响（`multiplex_profiles` 未开，`default`/`None` 均映射 `agent:main` 兼容键）。回归 936 项通过（profiles / feishu card tag / skill gate / mcp identity / docker env / kanban / gateway restart loop）。
 
 ### 7.15 Codex Responses：避免 reasoning 后空 assistant content
 
@@ -834,6 +910,33 @@
 - **涉及文件**：`cron/lifecycle_guard.py`、`tools/terminal_tool.py`、`tests/hermes_cli/test_gateway_restart_loop.py`
 - **侵入类型**：inline（官方 guard / terminal 防护路径）
 - **Commit**：`e13cce770`
+
+### 7.20 后台插件发现超时死锁（启动空白屏）
+
+- **背景**（`211614adf2`）：`_join_background_discovery()` 超时返回后，守护线程仍持有 `_discovery_lock`（RLock）；`discover_plugins()` 紧接着同步调用 `discover_and_load()`，在 `with self._discovery_lock` 上无限阻塞。表现为 hermes 启动后停在**空白屏**，只有 Ctrl+C 能退出——看起来像卡死，实为锁等待。
+- **方案**：
+  - `hermes_cli/plugins.py`：`discover_plugins()` 在 join 超时且后台线程仍存活时**直接返回，不抢锁**；`discover_and_load()` 改为 `acquire(timeout=15)` 限时等待，抢不到就让后台扫描自己跑完，不阻塞调用方（原 `with` 语句无超时）
+  - `cli.py`：在滚动 / 清屏之前先打印 `Starting Hermes…` 并完成插件发现，让冷启动（checkout 大更新后 banner 快照失效）的等待有可见反馈
+- **涉及文件**：`hermes_cli/plugins.py`（+116/-40）、`cli.py`（+12）、`tests/hermes_cli/test_plugin_discovery_join_timeout.py`（新增）
+- **侵入类型**：inline（plugin 发现锁语义 + CLI 启动顺序）
+- **验证**：新增测试覆盖「超时跳过」与「后台已结束则正常加载」两条分支
+- **Commit**：`211614adf2`
+
+### 7.21 出站 message_id 落库 + 全路径日志
+
+- **背景**（`d74762a04e`）：发送成功后平台返回的 `message_id` 此前只存在于内存——日志不打、库里不存，想撤回 / 编辑 / 加表情回应都拿不到那个 ID，只能靠翻代码猜。
+- **方案**：
+  - `gateway/delivery_ledger.py`：`delivery_obligations` 加 `platform_message_id` 列 + 部分索引；`mark_delivered(oid, message_id=None)` 落库，传 `None` 表示「不覆盖已有值」（**两条 UPDATE，非 COALESCE**，语义不同）
+  - **新列必须同时写进 `CREATE TABLE` 与 ALTER 对账循环** —— 只改 DDL 的话，`CREATE TABLE IF NOT EXISTS` 在已存在的 `state.db` 上是 no-op，列永远加不上
+  - `gateway/platforms/base.py`：把 `SendResult.message_id` 透传给 `mark_delivered`
+  - `plugins/platforms/feishu/adapter.py`：`_finalize_send_result` 统一打 `[Feishu] Sent chat_id=… message_id=…`，一处覆盖 text/post/edit/file 全部路径；8 个调用点透传 `chat_id`；删除死变量 `_sent_message_ids_to_chat` / `_sent_message_id_order`
+  - `hermes_cli/send_cmd.py`：非 json 模式输出 `sent message_id=om_xxx`；无 id 时仍打 `sent`，向后兼容
+- **迁移**：随代码自动生效（`_connect` 每次跑 schema 对账），其他环境 pull 后重启 gateway 即可，**无需手工 ALTER**；旧代码读已迁移的库不受影响
+- **已知边界**：`_prune()` 只留 7 天 / 500 行——这是崩溃恢复账本不是审计日志；cron/CLI 的 `_standalone_send` 绕开 gateway，日志有 id 但库里没有
+- **涉及文件**：`gateway/delivery_ledger.py`（+99）、`gateway/platforms/base.py`、`hermes_cli/send_cmd.py`、`plugins/platforms/feishu/adapter.py`（+76）、`tests/gateway/test_delivery_ledger.py`、`tests/plugins/platforms/feishu/test_finalize_send_result_logging.py`
+- **侵入类型**：inline 列扩展 + schema 对账 + 薄胶水
+- **验证**：feishu 日志 12 例 + ledger 8 例（含迁移、幂等、不覆盖、以及 `INSERT OR REPLACE` 会重置行的既有语义），本组 72 passed
+- **Commit**：`d74762a04e`
 
 ---
 
@@ -1023,9 +1126,12 @@
   - `3d53da788` — `owner/scripts/feishu_weekly_ops.py`：读飞书 wiki 周会表，按列抽取指定周（`--col` / `--list` / `--dump-json`）
   - `8ee7ca57d`（部分）— Swagger 变更采集与拆分：`swagger-change-collector.sh`、`swagger-split-blocks.sh`、`swagger-kanban-run.sh`；配合 §11.7 `kanban_ticket`
   - `8ee7ca57d`（部分）— `owner/config/patch.yaml` **image_gen 预设**：`qwen-pro`（dashscope qwen-pro）、`wan2-pro`（Wan 2.7 Pro）、`image-edit`（qwen-image-edit-plus，支持 mask/instruction 编辑）
-- **涉及文件**：`owner/scripts/feishu_weekly_ops.py`、`owner/scripts/swagger-*.sh`、`owner/config/patch.yaml`
+  - `fde14c096d` — `swagger-kanban` scan 流水线增加 **T4 自修复卡**：T3 报告完成后自动创建 T4 fix 子卡（`parent: t3_id`），流水线从 T0→T1→T2→T3 扩展为 T0→T1→T2→T3→T4(fix)。
+  - `ac1a3b9f4a` — `swagger-kanban-run.sh` 增加 **review 人审门闩模式**：从 T3 报告解析 `CONFIRMED` 数量，有问题才建 T4 人工门闩卡，worker 整理中文清单后 block 等人审；无 `CONFIRMED` 则跳过。
+  - `61375e20c5` — 新增 `owner/scripts/token_cost_estimate.py`：从 `state.db` 统计近 N 天 token 用量，按北京时间高峰（9-12、14-18）/ 空闲分时计价估算费用。计价口径：`input_tokens` → 输入未命中，`cache_read_tokens` → 输入命中（独立计数），`output_tokens` → 输出；支持 `--assume-ark-cache`——ark 套餐渠道不返回缓存命中字段，按其他渠道平均命中率（94%）重算。实测 30 天：按原始口径命中率 79.3% / ¥452，重算后 94% / ¥191。
+- **涉及文件**：`owner/scripts/feishu_weekly_ops.py`、`owner/scripts/swagger-*.sh`、`owner/scripts/token_cost_estimate.py`、`owner/config/patch.yaml`
 - **侵入类型**：纯新增（脚本 + 配置）
-- **Commit**：`3d53da788`、`8ee7ca57d`
+- **Commit**：`3d53da788`、`8ee7ca57d`、`fde14c096d`、`ac1a3b9f4a`、`61375e20c5`
 
 ---
 
@@ -1111,6 +1217,159 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 
 ---
 
+## 十五、API Server：LDAP 身份准入与多 profile 路由
+
+本节记录 `gateway/platforms/api_server.py` 上形成的完整身份准入体系：从「按 `X-Hermes-Identity` 头反代到子 profile 容器」起步，依次加上 LDAP bind 二次认证、seen 灰度语义、代理转发加固与对外准入查询端点。此前该文件的 owner 改动只有附录 B 的一行记载，现独立成章。
+
+### 15.1 API Server identity routing（能力起点）
+
+- **背景**：多 profile 部署下每个 profile 跑独立容器的 API Server（`profile_endpoints` 已存在），但外部 OpenAI 兼容客户端不知道该打哪个端口——需要网关侧按调用者身份自动路由。
+- **方案**（`6177923b26`）：
+  - `owner/feishu/profile_routing.py` 新增 `resolve_api_identity_route(identity)`：在 `patch_feishu_profile.yaml` 的 `identity_routes` 段查找 LDAP uid → profile 映射，复用既有 `profile_endpoints` 解析出 `(profile_name, endpoint_url, api_key)`
+  - `gateway/platforms/api_server.py` 新增 `_make_identity_routing_middleware`：读请求头 `X-Hermes-Identity`，命中后把请求 HTTP 反向代理到对应子容器的 API Server；不命中或身份未知则透传，行为不变
+- **配置样例**：
+
+  ```yaml
+  identity_routes:
+    yangtianbao: yangtianbao
+    wangtingwei: wangtingwei
+  ```
+
+- **涉及文件**：`gateway/platforms/api_server.py`（+95）、`owner/feishu/profile_routing.py`（+31）
+- **侵入类型**：薄胶水（中间件注册）+ 路由逻辑全在 owner/
+- **Commit**：`6177923b26`
+
+### 15.2 LDAP bind 二次认证（一次成功免验 72h）
+
+- **背景**：`X-Hermes-Identity` 是纯声明式头，任何人都能伪造，等于把 profile 选择权交给调用方。需要第二信任锚：拿密码去 LDAP 做 bind，验证该 uid 真实存在且密码正确。
+- **方案**（`531508e317`）：在反代转发前过 `ldap_gate`（`owner/gateway/ldap_auth.py`）；接线走 `_owner_import` 惰性加载 —— owner/ 模块缺失即 fail-open（与既有架构惯例一致，`API_SERVER_KEY` 仍是第一信任边界）。
+- **决策表（6 态）**：
+
+  | verdict | 触发条件 | 网关行为 |
+  |---|---|---|
+  | `allow` | 密码 bind 成功；或无密码但 72h 缓存有效 | 放行（后者零 LDAP 调用，用户无感） |
+  | `deny_bad_credentials` | bind 失败 | 401 `ldap_auth_failed`，清正缓存 |
+  | `deny_reauth_required` | 无密码、`enforce=seen` 下缓存已过期但曾认证过 | 401 `ldap_auth_required` |
+  | `deny_empty_password` | 空密码 | 401 `ldap_auth_required` |
+  | `deny_invalid_login` | login 未过字符白名单 | 401 `ldap_identity_invalid` |
+  | fail-open | LDAP 不可达且 `fail_open_on_error=true` | 放行 |
+
+  `deny_bad_credentials` 与 `deny_reauth_required` 用不同 error code，调用方可区分「密码错」与「需要重新认证」。
+- **缓存与驱逐**：正缓存 72h（内存 + `~/.hermes/ldap_identity_cache.json`，重启不丢）；负缓存 10s 防爆破；密码轮换时清正缓存，使旧密码「下个请求即失效」。
+- **安全要点**：
+  - login 经字符白名单（`^[a-zA-Z0-9._-]+$`）+ RFC4514 转义后构建 DN，防 DN 注入
+  - 空密码先拒 —— LDAP 空密码等价匿名 bind，会「假成功」
+  - DN 模板锚定 `cn=people`；离职账号（`cn=deleted`）天然被拒
+  - `X-Hermes-Identity-Password` 在转发前从头上剥离，且永不落日志
+- **配置**（`db78cdd871`，`owner/config/patch_feishu_profile.yaml`）：新增顶层 `ldap:` 节，与 `feishu:` **平级**——认证的是 api_server identity 流量，不与 `FEISHU_APP_ID` 耦合的 `user_routing` 混在一起。
+
+  | 键 | 值 | 说明 |
+  |---|---|---|
+  | `host` | `10.10.100.150:389` | LDAPS 636 实测未开放 |
+  | `user_dn_template` | 锚定 `cn=people` | 见上 |
+  | `admin` | 凭据 | 供后续 group 校验，bind 主路径不用 |
+  | `enforce` | `seen` | 灰度：从未认证过的账号放行，认证过的账号缓存过期后 401 |
+  | `cache_ttl_hours` | 72 | 正缓存窗口 |
+  | `negative_cache_seconds` | 10 | 负缓存窗口 |
+  | `fail_open_on_error` | `true` | LDAP 不可达时放行 |
+
+- **依赖**（`6790f1ba6c`）：新增 `ldap3==2.9.1`，运行时惰性 import —— 缺包时 `ImportError` → fail-open，lean 安装不受影响；按仓库 pinning 规范 exact-pin + uv lock 重生成。
+- **涉及文件**：`owner/gateway/ldap_auth.py`（新增，369 行）、`gateway/platforms/api_server.py`、`owner/config/patch_feishu_profile.yaml`、`pyproject.toml`、`uv.lock`、`tests/owner/test_ldap_identity_auth.py`（新增，424 行）
+- **侵入类型**：薄胶水 + try-import（`api_server.py` 的 `_owner_import` 调用）；认证逻辑全在 owner/
+- **验证**：16 个回归测试覆盖决策表全矩阵 / 缓存持久化 / 负缓存 / 中间件集成 / 密码头剥离；另对生产 LDAP（`10.10.100.150:389`）做真实 bind E2E（错密码 → `deny_bad_credentials`，不可达 → fail-open）
+- **Commit**：`531508e317`、`6790f1ba6c`、`db78cdd871`
+
+### 15.3 seen 语义与缓存状态机（权限提升修复）
+
+- **背景**（`8f533aaa0c`）：`seen`（曾认证）标记原与 72h 有效窗口耦合在同一份 state file 条目里。`_cache_evict`（密码轮换驱逐）会把整条删除，**连带销毁 `seen`** —— 攻击者只要知道 uid，发一次错误密码触发驱逐，等 10s 负缓存过期后，无密码请求即可在 `enforce=seen` 下被放行，实现零密码完整冒充。
+- **方案**：把 `seen` 与有效窗口解耦为独立的 `_seen_logins` 集合：
+  - state file 升级 `version 2`：`{version, entries, seen}`；加载 v1 文件时把历史 `entries` 迁移进 `seen`，已部署缓存不降级
+  - `_cache_put` 认证成功时写 `seen`；`_cache_evict` **只清有效窗口、保留 `seen`**
+  - `_has_seen` 改查 `_seen_logins`（内存优先，不再重读文件）
+- **涉及文件**：`owner/gateway/ldap_auth.py`、`tests/owner/test_ldap_identity_auth.py`
+- **侵入类型**：纯 owner/ 内部（**零官方侵入**）
+- **验证**：新增 `test_wrong_password_eviction_preserves_seen_marker` 覆盖完整攻击链（认证一次 → 错密码驱逐 → 负缓存过期 → 无密码请求仍 DENY）；2 个既有夹具升级 v2 格式；LDAP 17 项 + feishu profile 路由/传输 41 项通过
+- **Commit**：`8f533aaa0c`
+
+### 15.4 代理转发加固：头剥离 + SSE 逐 chunk 透传
+
+- **自循环 503**（`311f553550`）：root 网关 identity 中间件转发时保留了 `X-Hermes-Identity`，而子 profile 容器 home 挂载同一份 `patch_feishu_profile.yaml`（`identity_routes` + `profile_endpoints` 齐全），子网关收到后再次按 identity 解析路由，把请求代理回自己 → 自循环直至超时/递归上限，对外表现为 `503 Sub-gateway unavailable`。实测：直打 26027 带 identity 头 → 503，容器日志单请求 6 条 503 爆发；不带 → 200。修复：转发头剥离列表加入 `x-hermes-identity`（与密码头同列）。
+- **SSE 透传**（`4b6d187a2b`）：代理转发原把上游响应整段读完后一次性返回，SSE 长回合的首字节被推迟整轮 agent 时长；`total=120` 硬超时还会把合法长流中途杀掉。修复：SSE 请求（path 以 `/chat/stream` 结尾，或 body 带 `stream:true`）改走 `web.StreamResponse` 逐 chunk 转发，`total` 不设上限（`sock_read=600`、`connect=10`），客户端断连经连接重置自然传播；非流式 JSON 回复保留 120s 连接/读取预算。
+- **涉及文件**：`gateway/platforms/api_server.py`、`tests/owner/test_ldap_identity_auth.py`
+- **侵入类型**：inline（中间件转发路径）
+- **验证**：`test_allowed_request_proxies_without_identity_headers` 断言 identity + password 双头均不出现在转发头中（17 项通过）；SSE 契约测试 16 项断言逐 chunk 不整段缓冲、非流式 timeout 仍为 120
+- **Commit**：`311f553550`、`4b6d187a2b`
+
+### 15.5 LDAP 身份准入查询端点 + identity_whitelist
+
+- **背景**：外部消费方（智能巡检 `xy-portal`）需要在放行某个 LDAP 用户的对话入口之前，知道该身份是否被配置了专属容器；若双端各自维护白名单必然漂移。
+- **方案**（`b14892be7c`）：新增 `GET /v1/ldap/identity/{identity}/access` 只读三态查询，白名单单一真源化；`identity_routing_middleware` 增加 `identity_whitelist` 短路；`owner/feishu/profile_routing.py` 新增 `is_api_identity_whitelisted()`；capabilities 端点广告新路由。
+- **三态语义**：
+
+  | 返回 | 含义 | 消费方应做 |
+  |---|---|---|
+  | `whitelisted=true` | LDAP 白名单身份，不反代子容器，由 root gateway 本体处理 | 放行对话；无需携带 `X-Hermes-Identity` 头（root 直达） |
+  | `routed=true` | 该身份有专属容器，聊天请求会被 `identity_routing_middleware` 代理到对应子 profile | 放行对话 |
+  | 两者皆 false | 未知身份，聊天请求会 fall through 到 `default_profile`（共享实例） | **必须拒绝** —— 绝不能「试探式」发聊天请求来探测（那样会真的和共享 bot 聊上） |
+
+- **约束**：`allowed = routed || whitelisted`；**绝不返回** `endpoint_url` / `api_key`，仅返回 profile 名；owner/ 路由模块缺失时返回 503（明确告知不可用，而非误判为「无权限」）；Bearer 鉴权与其他 API 路由一致。
+- **白名单优先级**：命中 `identity_whitelist` 者不反代子容器，由 root gateway 本体处理（对话落在 root 实例的 memory/会话），与飞书 `user_routing.whitelist` → 主网关同构，**优先级高于 `identity_routes`**——后者条目随之休眠，同飞书双列表语义。
+- **涉及文件**：`gateway/platforms/api_server.py`（+116）、`owner/feishu/profile_routing.py`（+35）
+- **侵入类型**：薄胶水（路由注册 + 端点）+ 路由逻辑全在 owner/
+- **Commit**：`b14892be7c`
+
+### 15.6 流式 finish chunk 附带有效 session_id
+
+- **背景**（`8d42e4c199`）：上下文压缩可在回合中途轮换 agent 会话代号，长连接客户端拿不到新代号就会跟丢上下文。
+- **方案**：`chat/stream` 的 finish chunk `hermes` 段在 effective id 与请求 `session_id` 不一致时回传，客户端据此切换跟踪。
+- **涉及文件**：`gateway/platforms/api_server.py`（+5）
+- **侵入类型**：薄胶水
+- **Commit**：`8d42e4c199`
+
+---
+
+## 十六、API Server：产物媒体与流式事件契约
+
+### 16.1 MEDIA 附件下载 + finish chunk `hermes.files`
+
+- **背景**（`3d9a9ceed4`）：agent 产出图片/文件时输出 `MEDIA:<path>` 标记，但远程 OpenAI 兼容前端（xy-portal 等）读不到网关本机路径。
+- **方案**：
+  - 图片仍内联为 data URL（保持既有行为）
+  - 其余 `MEDIA:<path>` 登记为**不透明 id**，经 `GET /v1/media/{id}` 下载；注册与下载都走 `validate_media_delivery_path` 校验，原始路径不出网关
+  - 流式 finish chunk 附带 `hermes.files`，供前端渲染附件卡
+  - 新增 `gateway/platforms/api_server_media.py`（`ApiMediaStore`）
+- **涉及文件**：`gateway/platforms/api_server.py`（+123）、`gateway/platforms/api_server_media.py`（新增 208）、`tests/gateway/test_api_server_media_files.py`（新增 97）
+- **侵入类型**：inline（媒体端点）+ 官方树内新增模块
+- **Commit**：`3d9a9ceed4`
+
+### 16.2 媒体存储改为「接管字节 + 目录即索引」
+
+- **背景**（`9df4372591`）：原 `ApiMediaStore` 是纯进程内存字典，且只登记产出方路径。两个独立失效源：
+  1. 进程退出即清空索引 —— 网关一重启，磁盘上所有既有产物 id 立刻 404 `media_not_found`
+  2. 文件本体留在产出方目录（线上实测为 `/tmp/hermes-inspect`），而 profile 容器并未挂载 `/tmp`，容器重建即丢；生产者的清理同样会让已下发的卡片失效
+- **方案**：注册时把字节快照进受管目录，让目录本身充当索引：
+  - 受管目录 `<HERMES_HOME>/cache/documents/api-media` —— 现成的无条件受信根，与 `state.db` 同卷同寿命，因此下载侧的 `validate_media_delivery_path` 照旧通过，`api_server.py` 除构造那一行外零改动
+  - 条目名 `<media_id>__<原始文件名>`：id、下载文件名、MIME 全部可从目录列表推出 —— **没有内存表、没有 manifest、没有 schema 迁移**，重启后自愈
+  - 注册经 `.part` 暂存 + `os.replace` 原子落位；**总是拷贝而非硬链** —— 硬链共享 inode，`os.utime` 会改到产出方文件的 mtime（扰动 `trust_recent_files` 的 recency 判定），且产出方后续原地改写会改掉已下发卡片的字节
+  - 保留策略：TTL 24h → **30 天**，新增总量上限 **2GB / 4096 条**，按 mtime 最旧优先淘汰；节流用「每 32 次注册扫一次」的计数而非定时器 —— 注册是唯一的增长来源，容量上限在固定次数内必然收敛，空转时也不会无限堆积
+  - 清扫只处理本店铸造的文件（`med_<id>__*` 与 `*.part`），目录内其它内容一律不动
+- **配置**（可选）：`gateway.api_server.media_store.{dir,ttl_hours,max_entries,max_file_mb,max_total_mb}`；env `HERMES_API_MEDIA_STORE_DIR` / `HERMES_API_MEDIA_STORE_TTL_HOURS` 优先于 `config.yaml`，沿用 `gateway/media_policy.py` 的既有优先级约定。
+- **破坏性变更**：部署后**既有 `med_` id 一律失效**（原映射是进程内存里的随机 id，无法迁移）；此后重启不再影响下载。
+- **涉及文件**：`gateway/platforms/api_server_media.py`（+339）、`gateway/platforms/api_server.py`（构造一行）、`tests/gateway/test_api_server_media_files.py`
+- **侵入类型**：inline（媒体存储实现）
+- **验证**：21 项通过，含重启回归（同一 root 新建 store 仍解析既有 id）、删源文件不影响下载、过期/超容/孤儿暂存清理、目录内外部文件不被误删
+- **Commit**：`9df4372591`
+
+### 16.3 `tool.progress` 附带参数与输出摘要
+
+- **背景**（`943b6bf1ac`）：前端 hover 详情卡无法区分连续的多条终端命令。
+- **方案**：`chat/completions` 的 `hermes.tool.progress` 在 `running` 时带脱敏参数，`completed` 时带截断输出。
+- **涉及文件**：`gateway/platforms/api_server.py`（+98）、`tests/gateway/test_api_server.py`
+- **侵入类型**：inline（流式事件字段扩展）
+- **Commit**：`943b6bf1ac`
+
+---
+
 ## 附录 A：owner/ 模块职责索引
 
 | 路径 | 职责 | 侵入官方文件 |
@@ -1135,8 +1394,8 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 | `owner/commands/providers.py` | /providers plugin 斜杠命令实现 | owner-extensions plugin |
 | `owner/cron/` | cron session 隔离 + restart scrub + run_job hook + approval helper | cron/* + gateway/run.py |
 | `owner/diff_card/` | diff 卡片平台分发（飞书/QQ） | feishu/adapter.py |
-| `owner/feishu/` | 飞书深度定制（含 queue_card / skill_approval_card 等） | feishu/adapter.py（64+ 处标记） |
-| `owner/gateway/` | inbound_context + hygiene_compression_notice + steer_vision | gateway/run.py |
+| `owner/feishu/` | 飞书深度定制（含 queue_card / skill_approval_card 等）；另承载 API Server 侧 `resolve_api_identity_route` / `is_api_identity_whitelisted`（§15.1、§15.5，复用 `profile_endpoints`） | feishu/adapter.py（64+ 处标记）、gateway/platforms/api_server.py |
+| `owner/gateway/` | inbound_context + hygiene_compression_notice + steer_vision + **ldap_auth**（LDAP bind 认证门：决策表 6 态 / 72h 正缓存 + 10s 负缓存 + `seen` 集合 / fail-open / RFC4514 转义，§15.2–§15.3） | gateway/run.py、gateway/platforms/api_server.py |
 | `owner/patches/` | runtime patch（OpenViking recall + memory synthetic guard + pool base_url override + **queue_cancel** + **file_binary_detection**） | owner-extensions plugin / hermes_cli/runtime_provider.py |
 | `owner/providers/credential_helpers.py` | GitHub token 校验等 credential helper | hermes_cli/model_switch.py |
 | `owner/scripts/` | 运维脚本（备份/健康检查/汇率/todo 扫描/**HN Daily**/skill 同步/**Viking 记忆质量**/upstream_sync/周会/swagger） | — |
@@ -1148,6 +1407,7 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 | `owner/skins/` | ruolin 系列皮肤 YAML | — |
 | `owner/tools/schema_patches.py` | 运行时 schema patch（legacy send_message card + image_generate model） | owner-extensions plugin（import/apply） |
 | `owner/validation/` | merge 后健康检查（anchors + inventory + import/patch/marker checks + **merge_loss_audit**） | — |
+| `gateway/platforms/api_server_media.py` | 产物媒体存储（接管字节 + 目录即索引，TTL / 容量淘汰，§16.1–§16.2） | **官方树内 owner 新增文件**（非 owner/ 目录） |
 
 ## 附录 B：官方文件侵入点速查
 
@@ -1158,12 +1418,13 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 | 文件 | 侵入内容 | owner/ 对应模块 | 相关 commit |
 |------|----------|-----------------|-------------|
 | `gateway/run.py` | cron env scrub ×3、executor-shutdown、inbound context、hygiene notice、auto-card、per-chat display、chained quick command、steer vision enrichment（§7.18） | owner/cron/、owner/gateway/、owner/feishu/、owner/display_overrides.py、owner/gateway/steer_vision.py | 几乎所有 §11/§17 commit |
-| `plugins/platforms/feishu/adapter.py` | 64+ 处 `[owner]` 标记：approval/auto_card/bot_menu/clarify/diff_card/model_picker/profile_routing/resume_card/sender_name/early-typing/**skill_approval_gate** / **queue_card** 委托；`_mentions_self` 不再把 `@_all` 当 @机器人（§4.14） | owner/feishu/*（含 skill_approval_card、queue_card） | §4.2/§5.3-5.7/§17.1/§3.11/§4.11/§4.14 |
+| `plugins/platforms/feishu/adapter.py` | 64+ 处 `[owner]` 标记：approval/auto_card/bot_menu/clarify/diff_card/model_picker/profile_routing/resume_card/sender_name/early-typing/**skill_approval_gate** / **queue_card** 委托；`_mentions_self` 不再把 `@_all` 当 @机器人（§4.14）；**merge_forward 二次拉取渲染**（§4.15）；`send_card` 内补 `hermes_profile` 标签（§4.1）；`_finalize_send_result` 全路径 message_id 日志（§7.21） | owner/feishu/*（含 skill_approval_card、queue_card、card_sender） | §4.2/§5.3-5.7/§17.1/§3.11/§4.1/§4.11/§4.14/§4.15/§7.21 |
 | `agent/conversation_loop.py` | MoA 注入（CR-005 已改为独立 message）、content-filter fallback、adaptive backoff、thinking-timeout、attribution 重建、tool_call_id 胶水 | owner/attribution.py、owner/api_error_hints.py | a6dcd6ed8、9a05e50b4、362304bc8 |
 | `tools/approval.py` | home-prefix fold（CR-001 修复）、skill script 自动审批（3 处委托）、patch.yaml allowlist 合并、cron active helper | owner/approval/、owner/patch_config.py、owner/cron/approval_helper.py | 82fe8c962、5dd9580b4、99a374f64 |
 | `gateway/platforms/base.py` | per-profile cache roots、SendResult rotate/retry_after、chained quick command（`[owner-patch]`）、progress dedup code-fence 守卫 | — | 1d908072a、2be0af638 |
 | `tools/cronjob_tools.py` | owner/scripts allowlist（mtime-based）、cron job args 三处 `[owner-patch]` | — | 8a8f42455、3163d17e8、890869693 |
 | `cron/jobs.py` / `cron/scheduler.py` | cron job args `[owner-patch]` 参数 normalize + map | — | 3163d17e8 |
+| `gateway/platforms/api_server.py` | identity routing 中间件（`X-Hermes-Identity` → 子 profile 反代，§15.1）、LDAP bind 二次认证门 + 三态 401（§15.2–§15.3）、转发头剥离 + SSE 逐 chunk 透传（§15.4）、`GET /v1/ldap/identity/{identity}/access` + identity_whitelist 短路（§15.5）、finish chunk effective `session_id`（§15.6）、`GET /v1/media/{id}` + `hermes.files`（§16.1）、`ApiMediaStore.from_config()`（§16.2）、`tool.progress` 字段扩展（§16.3） | owner/gateway/ldap_auth.py、owner/feishu/profile_routing.py、gateway/platforms/api_server_media.py | 6177923b26、531508e317、311f553550、4b6d187a2b、b14892be7c、8d42e4c199、3d9a9ceed4、943b6bf1ac、9df4372591 |
 
 ### B.2 中度侵入（薄胶水 + 列扩展，sync 冲突中）
 
@@ -1177,12 +1438,16 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 | `hermes_cli/runtime_provider.py` | pool base_url override ×2（`[owner-patch]`）、env-var template P29 防泄露（`[owner-patch]`） | 薄胶水 |
 | `hermes_cli/model_switch.py` | credential_helpers 薄调用（GitHub token 校验）；自定义 provider 匹配去重防误报 `switch_multiple_providers`（§2.10） | 薄胶水 + inline |
 | `agent/model_metadata.py` | env-var template P29 防泄露（`[owner-patch]`） | 薄胶水 |
-| `tui_gateway/server.py` | env-var template P29（`[owner-patch]`）、Cmd+C fallback、skin 数据传递 | 薄胶水 |
+| `tui_gateway/server.py` | env-var template P29（`[owner-patch]`）、Cmd+C fallback、skin 数据传递；live compression sync 回退 `get_custom_provider_context_length`（§6.4） | 薄胶水 |
 | `agent/tool_executor.py` | checkpoint predictor 触发、file tool timeout 接线 | 薄胶水 |
 | `agent/tool_guardrails.py` | warn/block/halt 消息增强（计数器/阈值/路径） | inline（字符串） |
 | `tools/clarify_tool.py` / `clarify_gateway.py` | normalize_choices 薄调用 + stop sentinel | 薄胶水 |
 | `tools/skills_tool.py` | track_session_skill_view 薄调用 | 薄胶水 |
 | `gateway/platforms/qqbot/adapter.py` + `constants.py` | WS 重连链（heartbeat/timeout/stop_retry/rebuild） | inline |
+| `gateway/delivery_ledger.py` | `delivery_obligations` 加 `platform_message_id` 列 + 部分索引；`CREATE TABLE` 与 ALTER 对账循环双写；`mark_delivered` 非覆盖语义（§7.21） | inline 列扩展 + schema 对账 |
+| `hermes_cli/plugins.py` | 后台插件发现锁超时语义（join 超时直接返回 + `acquire(timeout=15)`），修复启动空白屏（§7.20） | inline |
+| `hermes_cli/profiles.py` | `get_active_profile_name` 读 `HERMES_PROFILE` env 优先 + `_PROFILE_ID_RE` 校验 + 回落路径推断（§7.14） | inline |
+| `plugins/memory/openviking/__init__.py` | `_ascii_peer_slug()` peer_id slug 化 + user/assistant fallback 链（§7.3） | inline |
 
 ### B.3 轻度侵入（import 编排 / 单行，sync 冲突小）
 
@@ -1196,10 +1461,11 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 | `agent/verification_stop.py` | 创意/视觉扩展名 suppress verify-on-stop（§8.4） | inline（allowlist） |
 | `agent/models_dev.py` | models.dev 缓存 TTL 24h（§2.11）+ fetch 超时 5s | inline |
 | `gateway/session_context.py` | cron session 隔离接线 | 薄胶水 |
-| `gateway/platforms/api_server.py` | `_owner_import` helper + 多 profile 路由端点 + send_only config | 薄胶水 + try-import |
+| `tools/feishu_client_utils.py` / `tools/feishu_doc_tool.py` | `om_` 消息 ID 支持 + `offset`/`mf_limit` 分页读取合并转发（§4.15）；docx 内嵌 bitable 块读取（§4.13） | 薄胶水 |
+| `pyproject.toml` / `uv.lock` | 新增 `ldap3==2.9.1`（exact-pin + uv lock 重生成，§15.2） | 依赖声明 |
 | `plugins/platforms/discord/adapter.py` | clarify button `get_choice_display` | 薄胶水 |
 | `plugins/platforms/telegram/adapter.py` | （sender 签名相关） | 薄胶水 |
-| `cli.py` | owner_provider_name 透传 + chained quick command | 薄胶水 |
+| `cli.py` | owner_provider_name 透传 + chained quick command；冷启动先打印 `Starting Hermes…` 并完成插件发现（§7.20） | 薄胶水 |
 | `hermes_cli/oneshot.py` | extra_body 透传 | 薄胶水 |
 | `agent/usage_pricing.py` | attribution helper for billing | 薄胶水 |
 | `agent/background_review.py` | 多行 bullet 格式 | inline（字符串） |
@@ -1236,9 +1502,10 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 | `tools/clarify_tool.py` / `clarify_gateway.py` | 中度 | ❌ 未单项评估 | 间接覆盖：归 §4.5 clarify 交互卡片（薄胶水 + try-import 已规范）|
 | `tools/skills_tool.py` | 中度 | ❌ 未单项评估 | 间接覆盖：归 §3.6 skill 脚本自动审批（1 行 track 调用，无迁移价值）|
 | `gateway/platforms/qqbot/adapter.py` | 中度 | ❌ 未单项评估 | 未评估：WS 重连链是 inline 逻辑，但属平台适配器内部实现，无 plugin hook 可迁；保持现状 |
+| `gateway/platforms/api_server.py` | 重度 | ❌ 未单项评估 | **待评估**：本批新增侵入量最大的文件（identity middleware + LDAP gate + 媒体端点 + 路由注册 + capabilities 广告 + 流式事件字段）。评估问题：identity middleware 与 LDAP gate 是否可迁入 owner-extensions plugin，或至少收敛为 `owner/gateway/` 内的单一委托入口 |
 | 轻度侵入全部（13 文件）| 轻度 | ❌ 未单项评估 | 无需评估：均为 1-3 行 import / 透传 / 字符串，迁移收益为零 |
 
-**结论**：附录 B 列出的 ~35 个侵入文件中，附录 C 单独评估了 10 项主线；剩余文件要么被间接覆盖（归因链、extra_body、clarify 等已归入对应章节），要么是 1-3 行薄胶水 / 字符串 / 平台适配器内部逻辑，迁移收益为零，无需单独评估。**附录 B 无遗留未决项。**
+**结论**：附录 B 列出的侵入文件中，附录 C 单独评估了主线项；剩余文件要么被间接覆盖（归因链、extra_body、clarify 等已归入对应章节），要么是 1-3 行薄胶水 / 字符串 / 平台适配器内部逻辑，迁移收益为零，无需单独评估。**唯一遗留未决项是 `gateway/platforms/api_server.py`** —— 它从轻度侵入升为重度的过程中没有伴随过迁移评估，已作为附录 C 第 11 项登记待评。
 
 ---
 
@@ -1258,6 +1525,7 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 8. **`/providers` command**（`owner/commands/providers.py`）— 已迁入 `owner-extensions` plugin command。Hermes plugin slash command API 已扩展 opt-in `hermes_ctx`（event/adapters/runner/platform），保留 Feishu interactive provider picker；`gateway/run.py` 的 `canonical == "providers"` 分支和 `gateway/slash_commands.py::_handle_providers_command()` shim 已删除。
 9. **cron job args / owner/scripts allowlist** — **已评估（2026-07-03）：部分可迁移，人工决定维持现状。** args 链（4 处 `[owner-patch]`）可迁移但收益低（需 monkey-patch 3 个 core 函数：`cronjob`、`create_job`、`_run_job_script`，跨 tool 期/存储期/执行期 3 个生命周期；且 args 是通用功能更应提 upstream）；allowlist（2 处副本）不可迁移（cron 运行时零 hook——`invoke_hook` 在 scheduler/jobs 出现 0 次——加上安全边界 WR-03）。评估发现 CR-002 修复遗漏了 scheduler 副本 2（`scheduler.py:1556`，process-lifetime cache 永不刷新），已修复为 mtime re-scan 与副本 1 一致。评估报告：`/tmp/zcode-cron-args-eval-result.md`（291 行，每条结论附行号引用）。
 10. **chained quick command（;;）** — 4 处 Python + 3 处 TS inline，是全平台语法增强，不适合 hook 化，建议保持。
+11. **`gateway/platforms/api_server.py`** — **待评估。** 该文件的 owner 侵入在 §15/§16 落地后已从轻度升为重度（identity routing 中间件、LDAP bind 认证门、转发头剥离 + SSE 透传、两个新增只读端点、路由注册与 capabilities 广告、`ApiMediaStore` 接线、流式事件字段扩展）。评估问题：identity 中间件与 LDAP gate 是否可迁入 `owner-extensions` plugin（`pre_gateway_dispatch` 类钩子能否覆盖中间件时机），或至少把转发路径收敛为 `owner/gateway/` 内的单一委托入口，避免每次 merge 都要逐行解冲中间件内部逻辑。注意 `owner/gateway/ldap_auth.py` 与 `owner/feishu/profile_routing.py` 本身已在 owner/ 内，可迁移的只是接线与转发骨架。
 
 ---
 
@@ -1275,6 +1543,33 @@ _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请先�
 ---
 
 ## 附录 E：变更日志
+
+### 2026-09-10：本机 commit 补录（09-02～09-10 全量 + 08-14～09-01 窗口）
+
+- **类型**：文档补录（对照 `owner` 本机作者提交与正文 diff）
+- **新建正文**：
+  - **§15** API Server：LDAP 身份准入与多 profile 路由（8 commit）：`6177923b26`（能力起点，09-01）、`531508e317` / `6790f1ba6c` / `db78cdd871`（LDAP bind 二次认证 + 依赖 + 配置）、`8f533aaa0c`（seen 语义权限提升修复）、`311f553550` / `4b6d187a2b`（转发头剥离 + SSE 透传）、`b14892be7c`（准入查询端点 + identity_whitelist）、`8d42e4c199`（finish chunk session_id）
+  - **§16** API Server：产物媒体与流式事件契约（3 commit）：`3d9a9ceed4`（MEDIA 下载 + `hermes.files`）、`9df4372591`（媒体存储接管字节 + 目录即索引，**含破坏性变更**）、`943b6bf1ac`（`tool.progress` 参数与摘要）
+  - **§3.12** 2026-08-19 代码审查修复（P0/P1/P2）：`0c48c2a8b6`、`56fa158790`
+  - **§4.15** 合并转发消息展开 + 消息分页读取：`2079a79fab`
+  - **§6.4** live compression sync 误清 per-model `context_length`：`efb42e6e39`
+  - **§7.20** 后台插件发现超时死锁（启动空白屏）：`211614adf2`
+  - **§7.21** 出站 message_id 落库 + 全路径日志：`d74762a04e`
+- **已有章节后续**（一句话挂 hash）：
+  - §3.1 审批卡 operator 中文名缓存：`191e5a3287`
+  - §3.11 skill 审批 `allow_skills` 白名单 / `HERMES_PROFILE` env + `profiles: *` / 默认关闭门闩：`5e9d88bc79`、`7515dd7e03`、`d7d4a0fd43`、`fa44610162`
+  - §4.1 `send_card` 补 `hermes_profile` 标签：`31a8005791`
+  - §4.4 diff card patch.yaml 开关：`c27120b97e`
+  - §4.6 bot menu xy-damodel 菜单 / `/new` ack / 三层去重 / 路由 NameError：`b83d1da12c`、`a1604a1b20`、`78269d5972`、`7c759411d9`
+  - §4.7 接通 `_classify_edit_failure`：`d510908961`
+  - §4.11 队首开始执行补发底栏通知：`7ce75a8df5`
+  - §4.13 docx 内嵌 bitable 块读取：`c5e0f9beda`
+  - §7.3 Viking peer_id slug 化（修复 3 周结构化同步降级）：`eb6a97beb2`
+  - §7.14 `HERMES_PROFILE` env 优先（110 个调用点）：`98236ad2ed`
+  - §11.9 swagger-kanban T4 自修复卡 / review 人审门闩 / `token_cost_estimate.py`：`fde14c096d`、`ac1a3b9f4a`、`61375e20c5`
+- **附录 A/B**：新增 `owner/gateway/ldap_auth.py`、`gateway/platforms/api_server_media.py`（官方树内 owner 新增文件单列）；`owner/gateway/` 与 `owner/feishu/` 行扩写；`gateway/platforms/api_server.py` 由 **B.3 轻度升 B.1 重度**；新增 delivery_ledger / plugins / profiles / openviking / feishu tools / tui_gateway / cli / ldap3 依赖等侵入行；附录 B.4 结论改写（api_server.py 列为唯一待评估项）
+- **元数据**（§0.1）：Commit 数 / 改动文件总数 / owner/ 纯新增 / 官方文件侵入 四行按实测值回填，并新增统计口径脚注
+- **刻意不记**：纯 i18n、纯 docs、merge main、test-only
 
 
 ### 2026-09-02：合入 upstream/main @ 00b2e03c80
