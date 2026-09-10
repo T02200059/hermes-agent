@@ -1717,7 +1717,9 @@ class APIServerAdapter(BasePlatformAdapter):
         self._browser_control_artifact_limiter: Optional[ArtifactRateLimiter] = None
         # Agent-produced MEDIA:<path> files for remote API frontends. Opaque
         # ids only — raw paths never leave the process (see api_server_media).
-        self._media_store = ApiMediaStore()
+        # The store ingests the bytes into a managed directory that doubles as
+        # the index, so issued ids survive a gateway restart.
+        self._media_store = ApiMediaStore.from_config()
 
     def _finalize_api_media(
         self, text: str, *, session_id: str = ""
