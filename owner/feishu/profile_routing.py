@@ -534,26 +534,11 @@ def _forward_card_action_sync(
 # Local-only command guard
 # ---------------------------------------------------------------------------
 
-# Commands that must be handled by the main gateway process, never forwarded
-# to a profile container. They affect gateway-level state (process lifecycle,
-# platform connections) rather than a single conversation session.
-_LOCAL_ONLY_COMMANDS: frozenset[str] = frozenset({"restart"})
-
-
-def _should_route_text(text: Optional[str]) -> bool:
-    """Return False when ``text`` is a local-only slash command.
-
-    Strips the leading ``/`` and any ``@botname`` suffix before comparing.
-    Non-command text always returns True.
-    """
-    if not text or not isinstance(text, str):
-        return True
-    stripped = text.strip()
-    if not stripped.startswith("/"):
-        return True
-    parts = stripped.split(maxsplit=1)
-    cmd = parts[0][1:].lower().split("@", 1)[0]
-    return cmd not in _LOCAL_ONLY_COMMANDS
+# [owner §17.2] /restart no longer local-only: route resolution now runs FIRST
+# in try_route_inbound_message / try_route_bot_menu_command, so a user bound to
+# a sub-profile gets /restart forwarded to that container (restarting THEIR
+# gateway), while whitelist / unrouted users still restart the main gateway.
+# _should_route_text and _LOCAL_ONLY_COMMANDS were removed with that reordering.
 
 
 # ---------------------------------------------------------------------------
@@ -589,11 +574,10 @@ async def try_route_inbound_message(
     notice + drop, never a silent fallback to the main gateway.
 
     Returns False only when the message legitimately belongs to the main
-    gateway: a local-only command, or no route resolved for this user.
+    gateway: no route resolved for this user. [owner §17.2] /restart is no
+    longer local-only — a routed user's /restart restarts THEIR sub-profile
+    gateway, not the main one.
     """
-    if not _should_route_text(text):
-        return False
-
     route = resolve_profile_route(chat_id, open_id, chat_type)
     if route is None:
         return False
@@ -737,11 +721,9 @@ async def try_route_bot_menu_command(
 
     Returns True when the caller must stop local processing — true for any
     routed user, even if the forward failed (no silent fallback to the main
-    gateway). Returns False only for local-only commands or unrouted users.
+    gateway). Returns False only for unrouted users. [owner §17.2] local-only
+    command filtering was removed with the /restart routing fix.
     """
-    if not _should_route_text(synthetic_text):
-        return False
-
     # Bot-menu commands are always DM-context synthetic messages (see the
     # chat_type="p2p" below), so the route resolves in DM mode.  The
     # chat_type parameter has a "p2p" default but is NOT in this function's

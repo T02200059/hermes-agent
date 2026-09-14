@@ -117,27 +117,34 @@ class TestResolveProfileRouteByName:
             assert resolve_profile_route_by_name("nobody") is None
 
 
-class TestShouldRouteText:
-    def test_normal_text_routes(self):
-        from owner.feishu.profile_routing import _should_route_text
+class TestRestartRoutingOwnerS172:
+    """[owner §17.2] /restart follows the profile route: routed user → forward
+    to their container; whitelist / unrouted user → main gateway restarts."""
 
-        assert _should_route_text("hello") is True
-        assert _should_route_text("/new") is True
-        assert _should_route_text("/model gpt-4") is True
+    def _patch_home(self, home: Path):
+        return patch("hermes_constants.get_hermes_home", return_value=home)
 
-    def test_restart_command_does_not_route(self):
-        from owner.feishu.profile_routing import _should_route_text
+    def test_restart_resolves_route_for_routed_user(self, hermes_home_with_profile_config):
+        # A user with a user_profile_routes entry (or default_profile) gets a
+        # route even when the text is /restart — routing no longer inspects text.
+        from owner.feishu.profile_routing import resolve_profile_route
 
-        assert _should_route_text("/restart") is False
-        assert _should_route_text("/restart@mybot") is False
-        assert _should_route_text("  /Restart  ") is False
+        with self._patch_home(hermes_home_with_profile_config):
+            route = resolve_profile_route("oc_x", "ou_alice")
+            assert route is not None
 
-    def test_empty_and_non_command_text_routes(self):
-        from owner.feishu.profile_routing import _should_route_text
+    def test_restart_still_local_for_whitelist_user(self, hermes_home_with_profile_config):
+        from owner.feishu.profile_routing import resolve_profile_route
 
-        assert _should_route_text("") is True
-        assert _should_route_text(None) is True
-        assert _should_route_text("plain text") is True
+        with self._patch_home(hermes_home_with_profile_config):
+            assert resolve_profile_route("oc_x", "ou_whitelist") is None
+
+    def test_local_only_symbols_removed(self):
+        # _should_route_text / _LOCAL_ONLY_COMMANDS are gone; importing them fails.
+        import owner.feishu.profile_routing as pr
+
+        assert not hasattr(pr, "_should_route_text")
+        assert not hasattr(pr, "_LOCAL_ONLY_COMMANDS")
 
 
 class TestPatchFeishuProfileLoader:
