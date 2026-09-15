@@ -3362,24 +3362,24 @@ class FeishuAdapter(BasePlatformAdapter):
         plain-text safety net.
 
         [owner] multi-profile routing: buttons are tagged with this
-        container's profile name (``hermes_profile``) before serialization
-        so a click on the only WebSocket (held by the main gateway) routes
-        back here (``try_route_card_action``). Gated on ``send_only`` mode —
-        the main gateway's websocket adapter is a no-op. Fail-open: without
-        ``owner/feishu/card_sender`` the card is sent untagged (legacy
-        behaviour). Fixes /providers picker + clarify cards for routed
-        profiles ("会话已过期" — state lived in the container, click handled
-        on the main gateway).
+        container's profile name (``hermes_profile``) at the
+        ``_send_raw_message`` choke point (all interactive payloads, not just
+        this path) so a click on the only WebSocket (held by the main
+        gateway) routes back here (``try_route_card_action``). Gated on
+        ``send_only`` mode — the main gateway's websocket adapter is a no-op.
+        Fail-open: without ``owner/feishu/card_sender`` the card is sent
+        untagged (legacy behaviour). Fixes /providers picker + clarify cards
+        for routed profiles ("会话已过期" — state lived in the container,
+        click handled on the main gateway).
         """
         import json as _json
         try:
-            # [owner] tag buttons before serialization — after this point the
-            # card is a JSON string and can no longer be walked/mutated.
-            _tag_card = _owner_import(
-                "owner.feishu.card_sender", "_maybe_tag_card_profile"
-            )
-            if _tag_card is not None:
-                _tag_card(self, card)
+            # [owner] multi-profile routing: the hermes_profile button tag is
+            # stamped in _send_raw_message (single choke point over every
+            # interactive payload — see owner/feishu/card_sender.py
+            # _maybe_tag_interactive_payload), which this path funnels into.
+            # The pre-serialization tagging that used to live here moved there
+            # so approval/update-prompt style bypasses cannot regress it.
             payload = _json.dumps(card, ensure_ascii=False)
             response = await self._send_raw_message(
                 chat_id=chat_id,
@@ -5849,6 +5849,22 @@ class FeishuAdapter(BasePlatformAdapter):
         reply_to: Optional[str],
         metadata: Optional[Dict[str, Any]],
     ) -> Any:
+        # [owner] multi-profile routing root fix (2026-09-15): single choke
+        # point for the hermes_profile button tag. Every interactive payload
+        # serialized into a message — whether it came from send_card (already
+        # tagged pre-serialization), send_exec_approval, send_update_prompt,
+        # or any future path — is (re-)tagged here. No-op on the main
+        # gateway (websocket mode) and for non-interactive payloads; idempotent
+        # setdefault semantics preserve existing tags; fail-open on errors.
+        # Without this, buttons sent via bypasses of send_card carry no tag and
+        # their clicks are handled on the main gateway, which has none of the
+        # sub-profile's correlation state (approval → "已处理", update prompt
+        # → silent drop).
+        _tag_payload = _owner_import(
+            "owner.feishu.card_sender", "_maybe_tag_interactive_payload"
+        )
+        if _tag_payload is not None:
+            payload = _tag_payload(self, msg_type, payload)
         effective_reply_to = reply_to
         if not effective_reply_to and metadata and metadata.get("thread_id"):
             effective_reply_to = metadata.get("reply_to_message_id")

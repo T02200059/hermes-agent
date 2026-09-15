@@ -100,6 +100,42 @@ def _maybe_tag_card_profile(adapter: "FeishuAdapter", card: Dict[str, Any]) -> N
         logger.debug("[Feishu] hermes_profile tag injection skipped", exc_info=True)
 
 
+def _maybe_tag_interactive_payload(adapter: "FeishuAdapter", msg_type: str, payload: str) -> str:
+    """Serialize-time universal tag choke point for interactive payloads.
+
+    [owner] Multi-profile routing root fix (2026-09-15): every interactive card
+    MUST carry ``hermes_profile`` on its button values when sent from a
+    sub-profile (send_only) container — the main gateway, which holds the only
+    WebSocket, routes button clicks back to the container solely by that tag
+    (``try_route_card_action``). Two historical sends bypassed
+    ``send_card``/``send_card_via_rest`` (where tagging lived) and serialized
+    their cards straight into ``_send_raw_message``:
+
+      * ``send_exec_approval``  → click showed「已处理」(approval_id unknown to
+        the main gateway, state lives in the sub-profile process)
+      * ``send_update_prompt``  → click was silently dropped (empty response)
+
+    This helper runs inside ``_send_raw_message`` on every ``interactive``
+    payload — parse, walk, tag, re-serialize — so no future send path can
+    regress the routing contract, regardless of how it builds its card.
+    Idempotent (``setdefault`` semantics, see ``_inject_profile_tag``);
+    fail-open on any error (payload returned unchanged, legacy behaviour);
+    non-interactive payloads and main-gateway (non-send_only) adapters pass
+    through untouched.
+    """
+    try:
+        if msg_type != "interactive" or not payload:
+            return payload
+        card = json.loads(payload)
+        if not isinstance(card, dict):
+            return payload
+        _maybe_tag_card_profile(adapter, card)
+        return json.dumps(card, ensure_ascii=False)
+    except Exception:
+        logger.debug("[Feishu] interactive payload profile tagging skipped", exc_info=True)
+        return payload
+
+
 async def send_card_via_rest(
     adapter: "FeishuAdapter",
     chat_id: str,
