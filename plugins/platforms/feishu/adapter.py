@@ -3735,6 +3735,48 @@ class FeishuAdapter(BasePlatformAdapter):
         action = "added" if "created" in event_type else "removed"
         synthetic_text = f"reaction:{action}:{emoji_type}"
 
+        # [owner] multi-profile routing: a reaction on this bot's message by a
+        # routed user belongs to the sub-profile container that owns that
+        # conversation — forward the synthetic reaction text there (same
+        # contract as _process_inbound_message: a hit means the main gateway
+        # must never serve the user locally). Runs BEFORE the sender-profile
+        # lookup / synthetic-event build so a routed reaction skips all local
+        # pipeline work. Reaction events reuse the reacted-to message's
+        # message_id; the container-side inject_inbound path does not dedup by
+        # message_id (dedup lives in the main gateway's WebSocket handler), so
+        # repeated reactions on the same message still each dispatch.
+        _try_msg_route = _owner_import(
+            "owner.feishu.profile_routing", "try_route_inbound_message"
+        )
+        if _try_msg_route is not None:
+            _reactor_open_id = str(getattr(user_id_obj, "open_id", "") or "").strip()
+            _routed = await _try_msg_route(
+                self,
+                chat_id=chat_id,
+                open_id=_reactor_open_id,
+                chat_type=chat_type_raw,
+                text=synthetic_text,
+                message_id=message_id,
+                message_type="text",
+                user_id=str(getattr(user_id_obj, "user_id", "") or "").strip(),
+                union_id=str(getattr(user_id_obj, "union_id", "") or "").strip(),
+                is_bot=False,
+                thread_id=None,
+                reply_to_message_id=None,
+                reply_to_text=None,
+                raw_message_type="",
+                raw_content="",
+                media_expected=False,
+            )
+            if _routed:
+                logger.info(
+                    "[Feishu] Routed reaction %s:%s on message %s to profile container",
+                    action,
+                    emoji_type,
+                    message_id,
+                )
+                return
+
         sender_profile = await self._resolve_sender_profile(user_id_obj)
         chat_info = await self.get_chat_info(chat_id)
         source = self.build_source(
