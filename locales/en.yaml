@@ -741,6 +741,18 @@ Install it with: `hermes skills install {path}`"
     error_near_max_iterations: "an error occurred near the iteration limit before a final answer. Check the tool output above, then send `continue`."
     pending_tool_result: "the turn stopped while a tool result was still pending and the model produced no follow-up text. Send `continue` to let it summarize."
 
+  # Session turn-lease messages — shown while another Hermes process holds the
+  # session lock (Desktop / CLI / gateway sharing state.db) and this turn queues.
+  turn_lease:
+    waiting: "⏳ Another Hermes process is using this session; waiting for it to finish before starting your turn..."
+    still_waiting: "⏳ Still waiting for the other Hermes process on this session ({seconds}s)..."
+    free: "Session is free; loading the latest transcript..."
+    interrupted: "Stopped waiting for another Hermes process on this session. Your message was not processed."
+    timeout: "⏳ Another Hermes process kept this session busy too long. Your message was not processed - wait for the other process to finish, then send it again."
+    # Gateway-side lease timeout (in-process registry) — the message was
+    # rejected before transcript load; the user must resend.
+    gateway_timeout: "⏳ Another turn is still running on this session. To protect the transcript, this message was not processed. Wait for the active turn to finish, then resend it."
+
   # User-facing error messages assigned to _final_response when a turn fails
   # terminally (API errors, payload/context limits, billing exhaustion, etc.).
   error:

@@ -19975,9 +19975,7 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     exc.session_id,
                 )
                 return (
-                    "⏳ Another turn is still running on this session. To "
-                    "protect the transcript, this message was not processed. "
-                    "Wait for the active turn to finish, then resend it."
+                    t("gateway.turn_lease.gateway_timeout")
                 )
             try:
                 await self._run_post_turn_hooks(

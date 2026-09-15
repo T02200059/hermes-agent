@@ -741,6 +741,17 @@ gateway:
     error_near_max_iterations: "在接近迭代上限时发生错误，未能给出最终答复。请检查上方的工具输出，然后发送 `continue` 继续。"
     pending_tool_result: "轮次在工具结果仍挂起时停止，且模型未产生后续文本。请发送 `continue` 让其总结。"
 
+  # 会话轮次锁消息 —— 当另一个 Hermes 进程（Desktop / CLI / 网关共享
+  # state.db）持有会话锁、本轮需要排队等待时显示。
+  turn_lease:
+    waiting: "⏳ 另一个 Hermes 进程正在使用此会话；正在等待其结束后再开始本轮..."
+    still_waiting: "⏳ 仍在等待此会话上的另一个 Hermes 进程（{seconds} 秒）..."
+    free: "会话已空闲；正在加载最新会话记录..."
+    interrupted: "已停止等待此会话上的另一个 Hermes 进程。你的消息未被处理。"
+    timeout: "⏳ 另一个 Hermes 进程占用此会话时间过长。你的消息未被处理——请等待该进程结束后重新发送。"
+    # 网关侧租约超时（进程内注册表）——消息在加载会话记录前已被拒绝，需重新发送。
+    gateway_timeout: "⏳ 此会话上仍有另一轮对话在运行。为保护会话记录，你的消息未被处理。请等待当前轮次结束后重新发送。"
+
   # 终端错误消息 —— 当轮次最终失败时赋值给 _final_response（API 错误、
   # 负载/上下文超限、额度耗尽等）。
   error:
