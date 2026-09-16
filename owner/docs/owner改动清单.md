@@ -24,7 +24,7 @@
 | owner/ 纯新增 | 160 个文件（基点时 `owner/` 目录为空） |
 | 官方文件侵入 | 120 个文件（不含 tests；另计 `tests/` 135 个，其中新增 61） |
 | 范围 | 模型归因 / patch.yaml 配置 / 审批安全 / skill 写入审批 / 语义审计 / 飞书深度定制 / TUI 皮肤 / Cron 运维 / Gateway 稳定性 / Checkpoint 预测 / Upstream Sync / Viking 记忆治理 / Desktop 窗口透明度 / output_guard / API Server LDAP 身份准入 / 产物媒体与流式契约 |
-| 最后更新 | 2026-09-10 |
+| 最后更新 | 2026-09-16 |
 | 来源 | 从 `owner-v17`（500+ commit）清洗迁移而来；本分支是重新整理后的最小叠加版本 |
 
 _元数据统计口径：范围取「基点后未出现在上游 `00b2e03c80` 中的 owner 侧改动」，即 `git rev-list --count 00b2e03c80..HEAD`；文件数按 NUL 分隔去重统计（`git diff --name-only -z … | tr '\0' '\n' | sort -u`），避免含中文的路径被 git 加引号后漏计。数值截至 2026-09-10。_
@@ -938,6 +938,17 @@ _元数据统计口径：范围取「基点后未出现在上游 `00b2e03c80` �
 - **验证**：feishu 日志 12 例 + ledger 8 例（含迁移、幂等、不覆盖、以及 `INSERT OR REPLACE` 会重置行的既有语义），本组 72 passed
 - **Commit**：`d74762a04e`
 
+### 7.22 Skills 索引 LRU 命中按磁盘 manifest 复验（手动落盘 skill 免重启可见）
+
+- **背景**（`48f8a6e6f8`）：系统提示里的 `<available_skills>` 索引有进程级 LRU（key 只含配置态：目录路径/工具集/平台/禁用集/compact 类别，**不含任何磁盘状态**），命中直接返回——磁盘快照层（`.skills_prompt_snapshot.json`，manifest 校验本来能抓住文件变化）永远没机会执行。scp / git pull 手动落盘的 skill（node010 实例：kuaidi100-skill 10:37 落盘，11:09 新会话索引无此 skill，agent 自由发挥撞反爬）对长活网关内所有**新会话**不可见，只能重启。官方安装路径（skill_manage / skills_hub / web 面板 / Bot Chat 能力刷新）都主动调 `clear_skills_system_prompt_cache()`，所以上游自身没有这个盲区。
+- **方案**：
+  - `agent/prompt_builder.py` 3 处：`_SKILLS_PROMPT_CACHE` 值 `str` → `(manifest, prompt)`；LRU 命中时重建 manifest 比对——磁盘未变返回缓存对象（保留 `is` 同对象语义），磁盘变化弃缓存走快照/冷路径重建；写入时随 prompt 存 manifest
+  - 成本：每次**新会话**建 prompt 多一次 os.walk + per-file stat（~200 skills 个位数毫秒）；延续会话不走此路径（逐字恢复存储的 prompt 字节），prompt cache 前缀不变量不破
+- **侵入类型**：inline（缓存数据结构 + 读写点 3 处，均带 `[owner-patch]` 标记，无缩进重排）
+- **涉及文件**：`agent/prompt_builder.py`（+32/-4）、`tests/agent/test_prompt_builder.py`（+36：scp 语义落盘不清缓存 → 索引可见；磁盘未变 → 同对象复用）
+- **验证**：`tests/agent/test_prompt_builder.py` 69 passed 1 skipped（含新用例）；node010 部署重启后实测：磁盘快照 137 → 138（恰好 +kuaidi100-skill），`build_skills_system_prompt()` 索引含该 skill，网关 active 无异常
+- **Commit**：`48f8a6e6f8`
+
 ---
 
 ## 八、工具链：Diff / Patch / Checkpoint
@@ -1830,5 +1841,13 @@ _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请先�
   - §12.4 `merge_loss_audit` + schema-split anchors：`e21239389`
 - **附录 A/B**：queue_card / file_binary_detection_patch；adapter §4.14 + queue_card；model_switch 去重；lifecycle_guard / terminal_tool
 - **刻意不记**：纯 docs / 纯 i18n / tips 清理 / merge main / 运维白名单注释 / 备份脚本静默与 ovpack / compare_skills 运维脚本 / 活 checkout skip update 测试
+
+### 2026-09-16：skills 索引手动落盘可见性修复
+
+- **类型**：bug 修复（新建正文 §7.22）
+- **新建正文**：**§7.22** Skills 索引 LRU 命中按磁盘 manifest 复验（手动落盘 skill 免重启可见）：`48f8a6e6f8`
+- **背景**：node010 手动 scp 部署的 kuaidi100-skill 在新会话的 `<available_skills>` 索引里不可见，agent 无视 skill 自行 curl 撞反爬；根因是 LRU 命中短路了磁盘快照校验层，缓存 key 不含磁盘状态
+- **部署**：node010 pull + restart-all-gateways.sh（13 进程 0 失败）；部署后磁盘快照 137→138 条，实测索引含新 skill。此后手动落盘 skill 新会话即入索引，无需重启网关
+- **附带修正**：viking 事件「kuaidi100-skill 同步部署」中「gateway 无需重启，新会话自动发现」的旧结论被本次案例证伪（当时只验证了 md5 + 手动跑脚本，未验证索引可见性）
 
 
