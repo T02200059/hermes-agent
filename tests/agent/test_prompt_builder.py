@@ -387,6 +387,42 @@ class TestBuildSkillsSystemPrompt:
         second = build_skills_system_prompt()
         assert "cached-skill" not in second
 
+    def test_out_of_band_skill_install_visible_without_cache_clear(
+        self, monkeypatch, tmp_path
+    ):
+        """[owner-patch] skills-visibility: a skill installed out-of-band
+        (scp/git pull) after the cache was warmed becomes visible on the next
+        build WITHOUT clear_skills_system_prompt_cache — the LRU hit is
+        re-validated against the disk manifest. Unchanged disk keeps serving
+        the exact same cached prompt object.
+        """
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+        skills_dir = tmp_path / "skills" / "tools" / "cached-skill"
+        skills_dir.mkdir(parents=True)
+        (skills_dir / "SKILL.md").write_text(
+            "---\nname: cached-skill\ndescription: Cached skill\n---\n"
+        )
+
+        first = build_skills_system_prompt()
+        assert "cached-skill" in first
+        assert "drop-in-skill" not in first
+
+        # Simulate an out-of-band install: new SKILL.md lands on disk with
+        # NO cache clear and NO snapshot removal (scp / git pull semantics).
+        drop_in = tmp_path / "skills" / "tools" / "drop-in-skill"
+        drop_in.mkdir()
+        (drop_in / "SKILL.md").write_text(
+            "---\nname: drop-in-skill\ndescription: Drop in via scp\n---\n"
+        )
+
+        second = build_skills_system_prompt()
+        assert "drop-in-skill" in second
+        assert "Cached skill" in second
+
+        # Unchanged disk → LRU hit returns the same prompt object.
+        third = build_skills_system_prompt()
+        assert third is second
+
 
 # =========================================================================
 # Context files prompt builder

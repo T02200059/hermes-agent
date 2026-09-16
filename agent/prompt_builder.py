@@ -1509,7 +1509,11 @@ def drain_truncation_warnings() -> list:
 # miss = full os.walk manifest rebuild). ~32 costs low single-digit MB worst
 # case.
 _SKILLS_PROMPT_CACHE_MAX = 32
-_SKILLS_PROMPT_CACHE: OrderedDict[tuple, str] = OrderedDict()
+# [owner-patch] skills-visibility: cache value is (manifest, prompt) so an LRU
+# hit can be re-validated against disk — hand-installed skills (scp/git pull)
+# previously stayed invisible to NEW sessions in long-lived gateways until a
+# restart, because only skill_manage/skills_hub callers cleared this cache.
+_SKILLS_PROMPT_CACHE: OrderedDict[tuple, tuple] = OrderedDict()
 _SKILLS_PROMPT_CACHE_LOCK = threading.Lock()
 # v2: entries gained org provenance fields (org_id/org_author/rel_dir) for M2
 # org-shared skills; older snapshots are discarded and rebuilt.
@@ -1848,11 +1852,25 @@ def _build_skills_system_prompt_inner(
         tuple(sorted(disabled)),
         tuple(sorted(compact_categories or ())),
     )
+    # [owner-patch] skills-visibility: re-validate an LRU hit against the disk
+    # manifest so skills dropped in out-of-band (scp/git pull) become visible
+    # to NEW sessions without a gateway restart. One os.walk per lookup;
+    # continuing sessions never reach this path (they restore their stored
+    # prompt bytes verbatim), so prompt-cache prefixes are unaffected.
     with _SKILLS_PROMPT_CACHE_LOCK:
         cached = _SKILLS_PROMPT_CACHE.get(cache_key)
         if cached is not None:
-            _SKILLS_PROMPT_CACHE.move_to_end(cache_key)
-            return cached
+            _stored_manifest, _cached_prompt = cached
+            try:
+                _current_manifest = _build_skills_manifest(skills_dir)
+            except OSError:
+                _current_manifest = None
+            if _current_manifest is not None and _current_manifest == _stored_manifest:
+                _SKILLS_PROMPT_CACHE.move_to_end(cache_key)
+                return _cached_prompt
+            # Disk changed (new/removed/edited SKILL.md) → drop the entry and
+            # fall through to the snapshot/cold path for a rebuild.
+            _SKILLS_PROMPT_CACHE.pop(cache_key, None)
 
     # ── Layer 2: disk snapshot ────────────────────────────────────────
     snapshot = _load_skills_snapshot(skills_dir)
@@ -2137,8 +2155,14 @@ def _build_skills_system_prompt_inner(
         )
 
     # ── Store in LRU cache ────────────────────────────────────────────
+    # [owner-patch] skills-visibility: persist the manifest alongside the
+    # rendered prompt so later lookups can detect out-of-band disk changes.
+    try:
+        _store_manifest = _build_skills_manifest(skills_dir)
+    except OSError:
+        _store_manifest = None
     with _SKILLS_PROMPT_CACHE_LOCK:
-        _SKILLS_PROMPT_CACHE[cache_key] = result
+        _SKILLS_PROMPT_CACHE[cache_key] = (_store_manifest, result)
         _SKILLS_PROMPT_CACHE.move_to_end(cache_key)
         while len(_SKILLS_PROMPT_CACHE) > _SKILLS_PROMPT_CACHE_MAX:
             _SKILLS_PROMPT_CACHE.popitem(last=False)
