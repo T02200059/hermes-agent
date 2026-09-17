@@ -1226,6 +1226,21 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 - **后续（P2）**：检测到复读后 stop 下一轮 LLM 调用（阻断上下文回灌强化）——需核心 1 行桥接（turn_finalizer 钩子 context 传 agent），且须先确认 `_interrupt_requested` 跨轮 reset 语义，避免误伤下一轮正常对话
 - **Commit**：`824c95d5d`
 
+### 14.1 v2：degenerate 判定 + transcript 同步（切断乱码反馈环）
+
+- **背景**（2026-09-01 事故）：xy-max 一次修图诊断回复后 2/3 内容崩坏——模板 token 泄漏（`<|im_end|>`/`<|im_start|>`/`[/CoT]`）+ 多语种语料乱拼 + 词级复读（`usually`×54）。v1 三检测器全漏判（无 U+FFFD、非复读形态、7819 字符 < 50000 截断线），且 `finish_reason=stop`（模型"正常"结束乱码，非超长截断）。更关键的结构性缺口：transform 钩子执行时 assistant 行已落库，**钩子只修发送文本，原始乱码留在历史里，下一轮作为上下文再污染模型**——诊断本次事故的会话亲历了这个正反馈（助手自身工具调用出现同款退化症状）。
+- **方案**：
+  - 插件侧新增第四类 `verdict="degenerate"`：**连续脏块**（200 字符/块，块内命中模板标记或垃圾模式 `</div>..`/`(</){3,}`/`\end{g` 为脏块，**连续**脏块 ≥3 判退化——核心特征是"连续"而非总数：事故本体 run=5，引用/讨论乱码的合法回复是散点 run=1，天然不误伤）+ **词级复读** `(\S+)( \1){5,}`；<400 字符不判；处理为截断到最早信号（`first_offense`）之前（区别于 v1 复读的折叠保留首段），事故样本 7819→323 字符，保住前段有效诊断。
+  - 核心补丁 `agent/turn_finalizer.py`：钩子替换发生后（`_response_transformed` 为真且尾行内容仍为替换前原文）同步回写 transcript 尾行，落库与下一轮上下文拿到干净文本。仅在退化事件触发，正常回复零影响（hook 返回 None 时本补丁不生效）。
+  - 判定先于 v1 repeat/mojibake 执行（degenerate 形态判定门槛更早）；真实样本回归 3/3（1 条事故本体 + 2 条合法引用）。
+  - 部署事实：`~/.hermes/plugins/owner-extensions` 是仓内 `owner/owner-extensions/` 的**符号链接**（同 inode），改仓内即生效，无需拷贝同步；网关 launchd `ai.hermes.gateway` 重启需手动。
+- **涉及文件**：
+  - 修改：`owner/owner-extensions/output_guard/__init__.py`（+67）、`agent/turn_finalizer.py`（+14，[owner] 加法）、`owner/docs/output-guard-design.md`（§6.5）
+  - 新增：`tests/agent/test_turn_finalizer_transform_transcript_sync.py`（2 用例）、`samples/` 真实样本 fixture（gitignored，fork 有公开镜像不进 git）
+- **侵入类型**：薄胶水（turn_finalizer 钩子块后 14 行加法，[owner] 标注）+ 插件纯新增逻辑
+- **验证**：selfcheck 9 场景全绿（含事故样本截断断言 + 合成连续脏块 + 散点标记不误伤）；定向 pytest 9 passed（`tests/owner/test_output_guard.py` 3 + transcript 同步 2 + cleanup_guard 回归 4）
+- **Commit**：`9649e49275`（测试+样本）/ `6f042b3aac`（检测+截断）/ `ffc196ff8b`（transcript 同步）/ `57a886171e`（设计文档）
+
 ---
 
 ## 十五、API Server：LDAP 身份准入与多 profile 路由
@@ -1851,3 +1866,11 @@ _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请先�
 - **附带修正**：viking 事件「kuaidi100-skill 同步部署」中「gateway 无需重启，新会话自动发现」的旧结论被本次案例证伪（当时只验证了 md5 + 手动跑脚本，未验证索引可见性）
 
 
+
+### 2026-09-17：output_guard v2（degenerate 判定 + transcript 同步）
+
+- **类型**：功能增强（新建正文 §14.1）
+- **新建正文**：**§14.1** v2：degenerate 判定 + transcript 同步（切断乱码反馈环）：`9649e49275` / `6f042b3aac` / `ffc196ff8b` / `57a886171e`
+- **背景**：2026-09-01 xy-max 乱码输出事故复盘；v1 三检测器全漏判（模板 token 泄漏/语料乱拼形态不在 v1 语义内），且 transform 钩子只修发送层、乱码落库后继续污染后续上下文
+- **验证**：selfcheck 9 场景全绿 + 定向 pytest 9 passed + 真实样本回归 3/3（事故本体判退化、两条合法引用不误伤）
+- **部署**：插件目录是仓内 owner-extensions 的符号链接，改仓内即生效；网关重启需手动（launchd ai.hermes.gateway）
