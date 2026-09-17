@@ -44,6 +44,19 @@ _MOJIBAKE_MAX_RATIO = 0.005
 # 长度护栏：超过此字符数且未触发其他判定时截断
 _MAX_CHARS = 50000
 
+# --- v2: 生成退化（degenerate）判定（2026-09-01 乱码事故形态）---
+# 实测：事故本体 dirty_run=5 / word_repeat=2；合法引用 run=1 / 0。
+_DEGENERATE_MIN_CHARS = 400
+_BLOCK_SIZE = 200
+_DIRTY_RUN_MIN = 3
+_WORD_REPEAT = re.compile(r"(\S+)( \1){5,}")
+_TEMPLATE_MARKERS = ("<|im_end|>", "<|im_start|>", "[/CoT]")
+_JUNK_PATTERNS = (
+    re.compile(r"</div>\.{2,}"),
+    re.compile(r"(</){3,}"),
+    re.compile(r"\\end\{g"),
+)
+
 # 中文/英文句子边界：句号、问号、感叹号、分号 + 换行
 _SENT_SPLIT = re.compile(r"(?<=[。！？!?；;])\s*|\n+")
 # 归一化用：剥离空白与非单词字符（含中文标点）
@@ -61,10 +74,37 @@ def _split_sentences(text: str) -> list[str]:
     return [s.strip() for s in _SENT_SPLIT.split(text) if s.strip()]
 
 
+def _block_score(block: str) -> int:
+    """单块（_BLOCK_SIZE 字符）内模板标记 + 乱码模式命中数。"""
+    hits = sum(block.count(m) for m in _TEMPLATE_MARKERS)
+    hits += sum(len(p.findall(block)) for p in _JUNK_PATTERNS)
+    return hits
+
+
+def _degenerate_scan(text: str) -> dict:
+    """v2 信号扫描：dirty_run / word_repeat / first_offense（最早信号位置）。"""
+    n = len(text)
+    scores = [_block_score(text[i : i + _BLOCK_SIZE]) for i in range(0, n, _BLOCK_SIZE)]
+    run = best = 0
+    first_dirty = None
+    for idx, s in enumerate(scores):
+        run = run + 1 if s > 0 else 0
+        best = best if best >= run else run
+        if s > 0 and first_dirty is None:
+            first_dirty = idx * _BLOCK_SIZE
+    rep = _WORD_REPEAT.search(text)
+    offenses = [p for p in (first_dirty, rep.start() if rep else None) if p is not None]
+    return {
+        "dirty_run": best,
+        "word_repeat": 1 if rep else 0,
+        "first_offense": min(offenses) if offenses else None,
+    }
+
+
 def analyze(text: str) -> dict:
     """统计输出信号并给出判定。
 
-    verdict ∈ {"ok", "repeat", "mojibake", "too_long"}
+    verdict ∈ {"ok", "repeat", "mojibake", "too_long", "degenerate"}
     """
     n = len(text)
     out: dict = {
@@ -88,6 +128,15 @@ def analyze(text: str) -> dict:
     except Exception:
         pass
     out["fffd_ratio"] = text.count("\ufffd") / max(n, 1)
+
+    # v2 生成退化判定（先于 v1：模板标记泄漏/复读循环门槛更低，任何
+    # ≥ _DEGENERATE_MIN_CHARS 的文本都扫，避免被 _MIN_CHARS 早返回吞掉）
+    if n >= _DEGENERATE_MIN_CHARS:
+        _scan = _degenerate_scan(text)
+        if _scan["dirty_run"] >= _DIRTY_RUN_MIN or _scan["word_repeat"] >= 1:
+            out["verdict"] = "degenerate"
+            out.update(_scan)
+            return out
 
     sents = _split_sentences(text)
     if sents:
@@ -184,6 +233,23 @@ def _on_transform_llm_output(
         sig = analyze(response_text)
         if sig["verdict"] == "ok":
             return None
+
+        if sig["verdict"] == "degenerate":
+            cut = sig.get("first_offense")
+            if cut is None or cut < 50:
+                cut = 50
+            kept = response_text[:cut].rstrip()
+            logger.warning(
+                "output_guard degenerate session=%s model=%s chars=%s→%s "
+                "dirty_run=%s word_repeat=%s first_offense=%s",
+                session_id, model or "-", sig["chars"], len(kept),
+                sig.get("dirty_run"), sig.get("word_repeat"), sig.get("first_offense"),
+            )
+            return (
+                kept
+                + "\n\n---\n[output-guard] 检测到生成退化（模板标记泄漏/复读循环），"
+                "已截断后续内容。本次输出不可信，建议让我重新生成。"
+            )
 
         if sig["verdict"] == "too_long":
             folded = response_text[:_MAX_CHARS]
