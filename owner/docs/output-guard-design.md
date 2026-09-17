@@ -118,6 +118,39 @@ print("output_guard 策略验证全部通过 ✓")
 EOF
 ```
 
+## 6.5 v2（2026-09-17）：degenerate 判定与 transcript 同步
+
+**新增第四类判定 `verdict == "degenerate"`**（2026-09-01 乱码事故形态：模板 token
+泄漏 + 语料乱拼 + 词级复读，v1 三检测器全部漏判——见 §1 事故记录与
+`selfcheck.py` 用例 5/5b/5c）。
+
+判定（任一命中即判，实测事故样本 dirty_run=5 / 合法引用 run=1）：
+- **连续脏块**：文本按 200 字符切块；块内命中任一模板标记（`<|im_end|>` /
+  `<|im_start|>` / `[/CoT]`）或垃圾模式（`</div>..` / `(</){3,}` / `\end{g`）为脏块；
+  连续脏块 ≥ 3 判退化。**核心特征是"连续"而非"总数"**：引用/讨论乱码的合法回复
+  是散点脏块（run=1），天然不触发。
+- **词级复读**：`(\S+)( \1){5,}`（同一词连续出现 ≥ 6 次）。
+- 最短门槛 400 字符，低于此长度不判。
+
+处理（区别于 v1 复读的"折叠保留首段"）：**截断到最早可检测信号之前**
+（`first_offense`）+ 末尾 `[output-guard]` 警告。事故样本实测 7819→323 字符，
+保住了前段有效诊断内容。
+
+**核心补丁（切断反馈环）**：`agent/turn_finalizer.py` 在 transform_llm_output
+钩子替换后同步回写 transcript 尾行（`_last["content"] = final_response`，[owner]
+加法补丁 ffc196ff8b）。v1 缺口：钩子只修发送文本，落库历史仍存原始乱码，下一轮
+作为上下文再次污染模型。新测试
+`tests/agent/test_turn_finalizer_transform_transcript_sync.py`（2 用例）。
+
+真实样本回归（3/3）：仓库外 fixture `samples/`（gitignored）存
+state.db 导出的 3 条真实消息；selfcheck 对缺失文件 skip。
+相关 commit：9649e49275（测试+样本）、6f042b3aac（检测+截断）、
+ffc196ff8b（transcript 同步补丁）。
+
+**v2 验证新证据**：判定过程中亲历正反馈——诊断会话的上下文含乱码原文后，
+助手自身工具调用出现同款退化症状（幻影注释、字符串损坏），实测「本体」
+（连脏 run=5）与「引用」（散点 run=1）可分。history 隔离的必要性有一手实证。
+
 ## 7. 后续（P2，未实现）
 
 - **stop 下一轮**：检测到复读后 `agent.interrupt()`，阻断上下文回灌强化（事故放大器
