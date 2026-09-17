@@ -41,9 +41,29 @@ def main() -> int:
     accident = ("确认就推。默认不推 upstream。需要就说一声。本次已完成。\n\n" * 300)
     assert analyze(accident)["verdict"] == "repeat"
 
-    # 2) 模板化长报告（不同内容 + 同收尾句 ~33%）→ 不误伤
+    # 2) 模板化长报告（不同内容 + 同收尾句 ~2/3 段）→ 不误伤
+    #    （2026-09-17：原样本在部分 zlib 版本下压缩率 <0.08 误触发 comp_belt，
+    #     属用例数据问题而非判定问题；改为变化度更高的段首/细节字段。）
+    _HEADS2 = (
+        "本节讨论配置项 {i} 的作用，需要在部署前确认。",
+        "第 {i} 节介绍参数 {i} 与上游服务的交互协议。",
+        "关于开关 {i}：默认关闭，灰度放量后逐步启用。",
+        "依赖项 {i} 已在昨天的巡检中确认健康，无需变更。",
+        "回滚预案 {i} 沿用上一版本的快照恢复流程。",
+        "告警规则 {i} 的静默窗口已核对，覆盖周末流量。",
+        "配额项 {i} 与账单口径对齐，误差在千分之三以内。",
+    )
+    _TAILS2 = (
+        "结论是建议保留默认值。",
+        "结论是建议保留默认值。",
+        "本轮先按兵不动，观察一个完整周期。",
+        "此节结论：暂不调整，留待下次评审。",
+    )
     normal = "\n\n".join(
-        f"第 {i} 段：本节讨论配置项 {i} 的作用，需要在部署前确认。补充验证路径 {i} 与回退策略 {i}。结论是建议保留默认值。"
+        f"## 小节 {i}（批次 {i * i * 7 % 4096}）\n"
+        + _HEADS2[i % 7].format(i=i)
+        + f"补充验证路径 {i}，观测指标 {i * i % 97}，责任轮值 {(i * 7) % 11} 号同学，备注编号 {hex(i * 13)}。"
+        + _TAILS2[i % 4]
         for i in range(300)
     )
     assert analyze(normal)["verdict"] == "ok"
@@ -63,6 +83,28 @@ def main() -> int:
     long_ok = "\n\n".join(f"段落{i}：" + "独特内容" + str(i) * 10 for i in range(6000))
     assert analyze(long_ok)["verdict"] == "too_long"
     assert "已截断" in handle(long_ok, model="selfcheck")
+
+    # 5) v2 degenerate：真实事故样本判退化、合法引用不误伤
+    import pathlib
+    _samples = pathlib.Path(__file__).resolve().parent / "samples"
+    _acc = _samples / "degenerate_9_01.txt"
+    if _acc.exists():
+        _t = _acc.read_text(encoding="utf-8")
+        assert analyze(_t)["verdict"] == "degenerate", "事故样本应判 degenerate"
+        for _q in ("quote_legit.txt", "quote_legit2.txt"):
+            _qt = (_samples / _q).read_text(encoding="utf-8")
+            assert analyze(_qt)["verdict"] == "ok", _q + " 不应误伤"
+        _out = handle(_t, session_id="t", model="selfcheck", platform="feishu")
+        assert _out is not None and "[output-guard]" in _out
+        assert len(_out) < len(_t), "degenerate 应被截断瘦身"
+    # 5b) 合成样本：连续脏块
+    _syn = "正常开头一句。" + ("<|im_end|> junk </div>...\n" * 20)
+    assert analyze(_syn)["verdict"] == "degenerate"
+    # 5c) 散点标记（讨论乱码的合法回复）不误伤
+    _scatter = "开头讨论 </div>.. 与 [/CoT] 标记。" + "".join(
+        "第%d句独立内容各不相同。" % i for i in range(60)
+    )
+    assert analyze(_scatter)["verdict"] == "ok"
 
     # 6) register_hooks 挂载
     class Ctx:

@@ -235,3 +235,6 @@ owner/feishu_profile/hermesxiyun/.env
 
 # Disposable profile created by scripts/probe_active_session_exclusivity.py
 .probe-home/
+
+# output_guard real incident samples (contain user conversation content)
+owner/owner-extensions/output_guard/samples/
