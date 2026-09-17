@@ -640,6 +640,20 @@ def finalize_turn(
         except Exception as exc:
             logger.warning("transform_llm_output hook failed: %s", exc)
 
+    # [owner] output_guard v2 — sync the transcript tail with the
+    # hook-replaced final_response. Without this, transform_llm_output only
+    # fixes what the user sees while the raw (possibly degenerated) text
+    # stays in history and feeds back into the next turn's context
+    # (2026-09-01 incident: garbled output persisted and re-polluted).
+    if _response_transformed and messages:
+        _last = messages[-1]
+        if (
+            isinstance(_last, dict)
+            and _last.get("role") == "assistant"
+            and _last.get("content") == _pre_transform_response
+        ):
+            _last["content"] = final_response
+
     # Plugin hook: post_llm_call
     # Fired once per turn after the tool-calling loop completes.
     # Plugins can use this to persist conversation data (e.g. sync
