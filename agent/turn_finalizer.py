@@ -285,6 +285,14 @@ def finalize_turn(
     # killing the turn.
     _cleanup_errors = []
 
+    # [owner] transform_llm_output bookkeeping — initialised OUTSIDE the
+    # persistence try/except below because the hook was moved INTO it (see the
+    # C2 note further down): if an earlier step in that block raises, the
+    # except arm skips the hook region entirely, and the result dict assembled
+    # at the end of this function reads both names unconditionally.
+    _response_transformed = False
+    _pre_transform_response = None
+
     # Save trajectory if enabled.  ``user_message`` may be a multimodal
     # list of parts; the trajectory format wants a plain string.
     try:
@@ -404,6 +412,71 @@ def finalize_turn(
                 # appending, so the durable turn ends with the answer without
                 # creating an assistant→assistant pair.
                 _fill_assistant_tail_content(agent, _tail, final_response)
+
+        # ── [owner] transform_llm_output (C1/C2, 2026-09-17) ──────────────
+        # Plugin hook: transform_llm_output
+        # Fired once per turn after the tool-calling loop completes.
+        # Plugins can transform the LLM's output text before it's returned.
+        # First hook to return a string wins; None/empty return leaves text
+        # unchanged.
+        #
+        # This invocation used to sit after ``_persist_session`` and was gated
+        # on ``not interrupted``. Both were wrong for the exact failure this
+        # hook exists to catch (a runaway thinking/output loop): such a
+        # generation is almost always ended BY an interrupt, so the gate
+        # skipped the guard precisely when it was needed, and a hook firing
+        # after the persist could only rewrite the in-memory transcript —
+        # state.db kept the raw degenerate text and re-polluted the next
+        # session load. The block now runs BEFORE ``_persist_session`` (and
+        # before micro-compaction), so the durable row is the transformed
+        # text by construction.
+        # See owner/docs/degenerate-stream-guard-design.md §5 (C1/C2).
+        if final_response:
+            try:
+                from agent.agent_runtime_helpers import extract_last_turn_reasoning
+                from hermes_cli.lifecycle import invoke_hook as _invoke_hook
+                _transform_results = _invoke_hook(
+                    "transform_llm_output",
+                    response_text=final_response,
+                    # C3: hand the reasoning channel to the hook too. On the
+                    # providers that stream thinking, a pure-thinking loop
+                    # leaves ``content`` healthy while the reasoning text
+                    # degenerates — without this the guard is blind to it.
+                    reasoning_text=extract_last_turn_reasoning(messages) or "",
+                    session_id=agent.session_id or "",
+                    model=agent.model,
+                    platform=getattr(agent, "platform", None) or "",
+                    interrupted=bool(interrupted),
+                )
+                for _hook_result in _transform_results:
+                    if isinstance(_hook_result, str) and _hook_result:
+                        _pre_transform_response = final_response
+                        final_response = _hook_result
+                        _response_transformed = True
+                        break  # First non-empty string wins
+            except Exception as exc:
+                logger.warning("transform_llm_output hook failed: %s", exc)
+
+            # [owner] Keep the live transcript tail in sync with whatever the
+            # hook replaced. Running this before the persist (instead of after,
+            # as upstream did) is the whole point of C2: only here does the
+            # flush below write the corrected content. The marker pop +
+            # cursor invalidation mirror ``_fill_assistant_tail_content``, so a
+            # tail row that a mid-turn flush already wrote BLANK is repaired in
+            # place. A non-blank row already on disk cannot be rewritten by the
+            # append-only flush (transcript_repair adopts the canonical content
+            # without overwrite) — that residual gap is logged by the guard's
+            # own warning line and tracked in the design doc §5 (C2).
+            if _response_transformed and messages:
+                _last = messages[-1]
+                if (
+                    isinstance(_last, dict)
+                    and _last.get("role") == "assistant"
+                    and _last.get("content") == _pre_transform_response
+                ):
+                    _last["content"] = final_response
+                    _last.pop(_DB_PERSISTED_MARKER, None)
+                    agent._db_flush_scan_prefix = None
 
         # The model has completed its request, so replace API-local
         # voice/model/skill guidance with the clean user input before writing the
@@ -614,45 +687,14 @@ def finalize_turn(
         except Exception as _exp_err:
             logger.debug("turn-completion explainer failed: %s", _exp_err)
 
-    _response_transformed = False
-    _pre_transform_response = None
-
-    # Plugin hook: transform_llm_output
-    # Fired once per turn after the tool-calling loop completes.
-    # Plugins can transform the LLM's output text before it's returned.
-    # First hook to return a string wins; None/empty return leaves text unchanged.
-    if final_response and not interrupted:
-        try:
-            from hermes_cli.lifecycle import invoke_hook as _invoke_hook
-            _transform_results = _invoke_hook(
-                "transform_llm_output",
-                response_text=final_response,
-                session_id=agent.session_id or "",
-                model=agent.model,
-                platform=getattr(agent, "platform", None) or "",
-            )
-            for _hook_result in _transform_results:
-                if isinstance(_hook_result, str) and _hook_result:
-                    _pre_transform_response = final_response
-                    final_response = _hook_result
-                    _response_transformed = True
-                    break  # First non-empty string wins
-        except Exception as exc:
-            logger.warning("transform_llm_output hook failed: %s", exc)
-
-    # [owner] output_guard v2 — sync the transcript tail with the
-    # hook-replaced final_response. Without this, transform_llm_output only
-    # fixes what the user sees while the raw (possibly degenerated) text
-    # stays in history and feeds back into the next turn's context
-    # (2026-09-01 incident: garbled output persisted and re-polluted).
-    if _response_transformed and messages:
-        _last = messages[-1]
-        if (
-            isinstance(_last, dict)
-            and _last.get("role") == "assistant"
-            and _last.get("content") == _pre_transform_response
-        ):
-            _last["content"] = final_response
+    # Plugin hook: transform_llm_output — MOVED (owner, C1/C2, 2026-09-17).
+    # The invocation and the transcript-tail sync that accompanies it now run
+    # earlier in this function, inside the persistence try-block and before
+    # ``_persist_session`` / micro-compaction, so that the durable row is the
+    # transformed text. Their former position here — after the persist, gated
+    # on ``not interrupted`` — is what let today's runaway stream land raw
+    # text in state.db and escape the guard entirely.
+    # See owner/docs/degenerate-stream-guard-design.md §5 (C1/C2).
 
     # Plugin hook: post_llm_call
     # Fired once per turn after the tool-calling loop completes.

@@ -7390,7 +7390,73 @@ class AIAgent:
             "model": self.model or "",
             "provider": self.provider or "",
             "surface": self.platform or "cli",
+            # [owner] Stream observers are fire-and-forget — agent/
+            # plugin_stream_hooks.py drops their return values — so an observer
+            # that detects a degenerate generation has no way to act on it.
+            # This is that missing channel; the guard just calls it.
+            # See _request_stream_stop below and owner/docs/
+            # degenerate-stream-guard-design.md §4.3 (route B).
+            "request_stop": self._request_stream_stop,
         }
+
+    def _request_stream_stop(self, reason: str = "", *, turn_id: str = "") -> bool:
+        """[owner] Abort the live turn on behalf of a stream observer.
+
+        The plugin stream-observer hooks fire asynchronously off the token path
+        and their return values are discarded, so a plugin that recognises a
+        runaway generation (a thinking/output boundary loop, a repeat cascade)
+        can currently only watch it. This method is the missing channel: it is
+        handed to every ``on_stream_delta`` / ``on_stream_start`` callback as
+        the ``request_stop`` payload key, and invoking it aborts the turn.
+
+        Contract:
+
+        * ``turn_id`` is the turn id the observer saw in its payload. A
+          per-consumer queue can lag the token path under load, so a stale
+          observation must never abort the *next* turn: when both ids are
+          present and differ, the call is refused. An empty id on either side
+          skips the fence rather than guessing.
+        * At most one stop per turn (latched on ``turn_id``), so a guard that
+          keeps tripping cannot pile up interrupts. The latch re-arms naturally
+          on the next turn's id.
+        * If an interrupt is already live (user Ctrl-C, ``/stop``, the turn
+          liveness watchdog) the call is refused without claiming the latch, so
+          the existing reason/message wins.
+        * The stop is published through the ``_interrupt_requested`` flag the
+          streaming consumers already poll once per chunk, so an abort lands
+          within one chunk.
+
+        Returns True only when this call actually latched and published a stop.
+        """
+        current = getattr(self, "_current_turn_id", "") or ""
+        if turn_id and current and turn_id != current:
+            return False
+        if getattr(self, "_interrupt_requested", False):
+            # Someone already asked for the stop — keep their reason.
+            return False
+
+        key = turn_id or current
+        if key:
+            if getattr(self, "_stream_stop_latched_turn", None) == key:
+                return False
+            self._stream_stop_latched_turn = key
+        # No turn identity available anywhere (defensive: embedded / mocked
+        # agents). The `_interrupt_requested` pre-check above already caps this
+        # at one stop per interrupt cycle, and re-arms once the loop clears it.
+
+        self._stream_stop_reason = reason or ""
+        self._interrupt_requested = True
+        try:
+            logger.warning(
+                "stream stop requested: session=%s turn=%s model=%s reason=%s",
+                self.session_id or "none",
+                key or "-",
+                self.model or "-",
+                self._stream_stop_reason or "-",
+            )
+        except Exception:
+            pass
+        return True
 
     def _emit_stream_start(self) -> None:
         try:

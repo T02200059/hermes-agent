@@ -5,8 +5,17 @@
 2026-08-12 `ark-agent-plan-deepseek-v4-flash` 在 git 推送确认场景陷入复读
 死循环，单条输出 265,518 字符刷屏（见 owner/docs/output-guard-design.md）。
 `model.max_tokens` 已在 API 层兜住膨胀，本模块做第二道防线：在响应发送给用户
-**之前**（transform_llm_output 钩子，agent/turn_finalizer.py:556）识别退化输出
+**之前**（transform_llm_output 钩子）识别退化输出
 （复读 / 低信息 / 乱码 / 超长），折叠或截断并附警告标注。
+
+2026-09-17 增补（C1/C2/C3，见 owner/docs/degenerate-stream-guard-design.md §5）
+------------------------------------------------------------------------
+- **C1** 钩子调用不再带 `not interrupted` 门槛（`agent/turn_finalizer.py`）。
+  失控生成的典型结局就是被人工打断，原门槛让护栏恰在最需要时失效。
+- **C2** 钩子与 transcript 尾行回写前移到 `_persist_session` 之前，落库即为
+  干净文本（原先只改内存，state.db 保留退化原文并在下次会话加载时二次污染）。
+- **C3** 新增 `reasoning_text` 入参：思考通道单独扫描。当正文健康而思考退化
+  （纯 thinking 循环）时**保留正文**、只追加告警注解，不替换正文。
 
 契约
 ----
@@ -56,6 +65,14 @@ _JUNK_PATTERNS = (
     re.compile(r"(</){3,}"),
     re.compile(r"\\end\{g"),
 )
+
+# --- C3: reasoning（思考）通道扫描（2026-09-17）---
+# 思考天然比正文长，且合法思考里出现重复短语是常态，因此只在「远超正常思考
+# 长度 + 命中退化形态」时才判定。门槛取 8000 字符（正常长思考 ~2–6K）。
+# 今日事故（msg 108360）的 reasoning_content 为 NULL，属纯 content 退化——
+# 本通道是为 thinking-heavy provider（Claude thinking / DeepSeek v4 /
+# GLM thinking）未来"正文健康但思考空转"的形态补盲，而非复现今日样本。
+_REASONING_MIN_CHARS = 8000
 
 # 中文/英文句子边界：句号、问号、感叹号、分号 + 换行
 _SENT_SPLIT = re.compile(r"(?<=[。！？!?；;])\s*|\n+")
@@ -175,6 +192,25 @@ def analyze(text: str) -> dict:
     return out
 
 
+def _scan_reasoning(text: str) -> dict | None:
+    """C3：思考通道扫描。
+
+    返回信号 dict（命中退化）或 None（未达门槛 / 形态正常）。思考文本从不被
+    替换或截断 —— 它不直接面向用户，只有正文才需要裁剪；本函数只负责"发现
+    并报告"，动作由调用方决定。
+    """
+    if not isinstance(text, str) or len(text) < _REASONING_MIN_CHARS:
+        return None
+    try:
+        sig = analyze(text)
+    except Exception:
+        logger.exception("output_guard reasoning scan failed")
+        return None
+    if sig.get("verdict") in ("degenerate", "repeat"):
+        return sig
+    return None
+
+
 def _fold_paragraphs(text: str) -> str:
     """段落级去重（保留首现），复读刷屏 → 一份完整信息。
 
@@ -219,20 +255,63 @@ def _build_note(verdict: str, sig: dict, model: str, folded_len: int) -> str:
     )
 
 
+def _reasoning_note(sig: dict) -> str:
+    """C3：思考通道退化时的告警后缀（正文始终保留）。"""
+    return (
+        "\n\n---\n"
+        f"⚠️ [output-guard] 思考通道检测到退化（{sig.get('verdict')}，"
+        f"{sig.get('chars')} 字符，压缩率 {sig.get('comp_ratio', 1.0):.2f}）："
+        "正文已保留，但本轮推理过程不可信，建议重新提问或换模型。"
+    )
+
+
 def _on_transform_llm_output(
     response_text: str,
     session_id: str = "",
     model: str = "",
     platform: str = "",
+    reasoning_text: str = "",
+    interrupted: bool = False,
     **kwargs,
 ):
-    """transform_llm_output 钩子 handler。返回 None 保持原样，返回 str 替换。"""
+    """transform_llm_output 钩子 handler。返回 None 保持原样，返回 str 替换。
+
+    C1：调用方已不再用 ``not interrupted`` 过滤本钩子 —— 被中断的轮次恰恰是
+        失控生成的主场，必须照样判定。
+    C3：``reasoning_text`` 是思考通道。正文健康而思考退化时只追加注解、不替换
+        正文（思考不面向用户，裁剪它没有意义）。
+    """
     if not response_text or not isinstance(response_text, str):
         return None
     try:
+        _rsig = _scan_reasoning(reasoning_text or "")
         sig = analyze(response_text)
         if sig["verdict"] == "ok":
-            return None
+            if _rsig is None:
+                return None
+            # 正文正常、思考退化：只报告，不裁剪。
+            logger.warning(
+                "output_guard reasoning-degenerate session=%s model=%s "
+                "interrupted=%s reason_chars=%s reason_verdict=%s "
+                "top_count=%s top_ratio=%.2f comp=%.2f",
+                session_id, model or "-", bool(interrupted),
+                _rsig.get("chars"), _rsig.get("verdict"),
+                _rsig.get("top_count", 0), _rsig.get("top_ratio", 0.0),
+                _rsig.get("comp_ratio", 1.0),
+            )
+            return response_text + _reasoning_note(_rsig)
+
+        # 正文判定非 ok。思考通道的退化若同时存在，用后缀一并说明（正文动作
+        # 仍由上面的 verdict 决定）。
+        _reason_suffix = ""
+        if _rsig is not None:
+            logger.warning(
+                "output_guard reasoning-degenerate (alongside %s) session=%s "
+                "model=%s reason_chars=%s reason_verdict=%s",
+                sig["verdict"], session_id, model or "-",
+                _rsig.get("chars"), _rsig.get("verdict"),
+            )
+            _reason_suffix = _reasoning_note(_rsig)
 
         if sig["verdict"] == "degenerate":
             cut = sig.get("first_offense")
@@ -240,15 +319,18 @@ def _on_transform_llm_output(
                 cut = 50
             kept = response_text[:cut].rstrip()
             logger.warning(
-                "output_guard degenerate session=%s model=%s chars=%s→%s "
-                "dirty_run=%s word_repeat=%s first_offense=%s",
-                session_id, model or "-", sig["chars"], len(kept),
+                "output_guard degenerate session=%s model=%s interrupted=%s "
+                "chars=%s→%s dirty_run=%s word_repeat=%s first_offense=%s",
+                session_id, model or "-", bool(interrupted),
+                sig["chars"], len(kept),
                 sig.get("dirty_run"), sig.get("word_repeat"), sig.get("first_offense"),
             )
             return (
                 kept
                 + "\n\n---\n[output-guard] 检测到生成退化（模板标记泄漏/复读循环），"
                 "已截断后续内容。本次输出不可信，建议让我重新生成。"
+                + ("（本轮生成已被中止。）" if interrupted else "")
+                + _reason_suffix
             )
 
         if sig["verdict"] == "too_long":
@@ -277,7 +359,7 @@ def _on_transform_llm_output(
             sig.get("top_count", 0), sig.get("top_ratio", 0.0),
             sig["comp_ratio"], sig["fffd_ratio"],
         )
-        return folded + note
+        return folded + note + _reason_suffix
     except Exception:
         # fail-safe：任何异常都不破坏原始响应
         logger.exception("output_guard transform failed")

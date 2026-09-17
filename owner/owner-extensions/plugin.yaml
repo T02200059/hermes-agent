@@ -10,3 +10,4 @@ hooks:
   - pre_tool_call          # skill_manage Feishu write approval
   - post_tool_call         # detect staged memory writes → approval card
   - transform_llm_output   # output_guard: LLM 输出复读/乱码/超长检测与折叠
+  - on_stream_delta        # stream_guard: 生成中退化（思考/输出边界循环）检测与中止

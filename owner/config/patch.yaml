@@ -315,3 +315,37 @@ owner:
         thinking:
           type: enabled
           clear_thinking: false
+
+  # ── §14.2 stream_guard：生成中退化闸门（thinking / 输出阶段边界循环）───────
+  # 消费 on_stream_delta 观察钩子，在每个 4096 字符流式窗口上做三信号投票：
+  #   S1 阶段终止语密度（END OF THINKING / WRITING RESPONSE / 思考结束 / (stop)）
+  #   S2 风格签名密度相对基线的倍数
+  #   S3 零进展：窗口被判为复读主导（复用官方 repetition_guard）
+  # S1/S2 需互证（vote_threshold=2）；S3 精度实测 100%，单独即可触发（s3_solo）。
+  # 命中后：action=interrupt 中止本轮 | warn_only 只告警。两者都会告知用户。
+  #
+  # 阈值标定（2026-09-17，事故样本 + 全库 318 条真实长回复）：
+  #   marker_rate_per_kb  事故峰值 4.15/KB，负样本峰值 2.41/KB → 取 3.0
+  #                        （负样本峰值那条恰好是讨论本次事故、引用了这些字样的回复）
+  #   signature_rate_multiple  事故 ×21.97–25.88，负样本全部 ×0.00 → 取 8.0
+  #   min_stream_chars / grace_seconds  短回复与长思考的正常区间
+  # 离线回放：318 条正常长回复 0 误伤；8 条正例（今日事故 + 6 条历史失控）全命中。
+  # 取证、根因与设计：owner/docs/degenerate-stream-guard-design.md
+  #
+  # ⚠️ 先跑 warn_only 一周，收集 agent.log 里 "stream_guard trip" 行的 signals
+  #    分布与误伤数，再切 interrupt。
+  stream_guard:
+    enabled: true
+    action: warn_only
+    min_stream_chars: 1200
+    grace_seconds: 20
+    window_chars: 4096
+    eval_interval_chars: 512
+    vote_threshold: 2
+    s3_solo: true
+    marker_rate_per_kb: 3.0
+    signature_rate_multiple: 8.0
+    signature_baseline_per_kb: 1.0
+    signature_tokens:
+      - "ฅ"
+    max_actions_per_turn: 1

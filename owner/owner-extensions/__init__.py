@@ -121,6 +121,19 @@ def register(ctx) -> None:
     except Exception:
         logger.warning("owner: output_guard hooks registration failed", exc_info=True)
 
+    # §14.2 stream_guard — 生成中退化闸门（thinking / 输出阶段边界循环）
+    # on_stream_delta 观察钩子：三信号（阶段终止语密度 / 风格签名密度 / 零进展）
+    # 投票判定，命中则按配置中止本轮并告知用户。防的是"整轮生成结束之后"才
+    # 判定的 output_guard 与"空闲"型 TurnLivenessWatchdog 都覆盖不到的、
+    # 持续吐 token 但零进展的循环。
+    # See owner/owner-extensions/stream_guard/ + owner/docs/degenerate-stream-guard-design.md
+    try:
+        from .stream_guard import register_hooks as _register_stream_guard_hooks
+        _register_stream_guard_hooks(ctx)
+        logger.debug("owner: stream_guard hooks registered via owner-extensions")
+    except Exception:
+        logger.warning("owner: stream_guard hooks registration failed", exc_info=True)
+
     # §4.11 Feishu queue lifecycle card (cancel / process_now / freeze)
     # + guide-card morph to status card. Feishu-only; other platforms keep text ack.
     # See owner/patches/queue_cancel_patch.py + owner/feishu/queue_card.py.

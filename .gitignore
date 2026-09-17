@@ -238,3 +238,5 @@ owner/feishu_profile/hermesxiyun/.env
 
 # output_guard real incident samples (contain user conversation content)
 owner/owner-extensions/output_guard/samples/
+# stream_guard real incident samples (contain user conversation content)
+owner/owner-extensions/stream_guard/samples/
