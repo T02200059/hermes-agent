@@ -164,3 +164,77 @@ def test_transform_hook_none_keeps_transcript(monkeypatch):
     assert result["response_transformed"] is False
     assert messages[-1]["role"] == "assistant"
     assert messages[-1]["content"] == "RAW_DEGENERATE_TEXT"
+
+
+def test_transform_hook_runs_before_persist(monkeypatch):
+    """C2 (owner, 2026-09-17): the replacement must reach the durable write.
+
+    Regression for the ordering bug behind the 2026-09-17 runaway stream: the
+    hook ran *after* ``_persist_session``, so a transformed response only fixed
+    the in-memory transcript while state.db kept the raw degenerate text and
+    re-polluted the next session load. The finalizer must now apply the hook
+    before it persists, and hand the flush a tail that no longer carries the
+    ``_db_persisted`` marker (so a mid-turn blank row is repaired in place).
+    """
+    agent = _StubAgent()
+    captured = {}
+
+    def _capture(messages, conversation_history=None):
+        captured["messages"] = [dict(m) for m in messages]
+
+    agent._persist_session = _capture
+    _install_hook(monkeypatch, {"transform_llm_output": ["CLEANED_TEXT"]})
+    messages, result = _run(agent)
+
+    assert result["final_response"] == "CLEANED_TEXT"
+    assert captured.get("messages"), "_persist_session must have run"
+    assert captured["messages"][-1]["content"] == "CLEANED_TEXT"
+    assert not captured["messages"][-1].get("_db_persisted")
+
+
+def test_transform_hook_runs_on_interrupted_turn(monkeypatch):
+    """C1 (owner, 2026-09-17): an interrupted turn must still be inspected.
+
+    A runaway thinking/output loop is normally ended *by* an interrupt, so the
+    old ``not interrupted`` gate skipped the guard exactly in the scenario it
+    exists to catch (the 2026-09-17 incident persisted 30,742 chars of loop and
+    was only ever stopped by Ctrl-C). The hook must fire on interrupted turns
+    and receive the interrupt flag — plus the reasoning channel — in its
+    payload.
+    """
+    import hermes_cli.lifecycle as lifecycle
+
+    agent = _StubAgent()
+    seen = {}
+
+    def _fake_invoke_hook(hook_name, **kwargs):
+        seen[hook_name] = kwargs
+        return ["CLEANED_TEXT"] if hook_name == "transform_llm_output" else []
+
+    monkeypatch.setattr(lifecycle, "invoke_hook", _fake_invoke_hook)
+
+    messages = [
+        {"role": "user", "content": "do a thing"},
+        {"role": "assistant", "content": "RAW_DEGENERATE_TEXT"},
+    ]
+    result = finalize_turn(
+        agent,
+        final_response="RAW_DEGENERATE_TEXT",
+        api_call_count=1,
+        interrupted=True,
+        failed=False,
+        messages=messages,
+        conversation_history=None,
+        effective_task_id="task-1",
+        turn_id="turn-1",
+        user_message="do a thing",
+        original_user_message="do a thing",
+        _should_review_memory=False,
+        _turn_exit_reason="interrupted_during_api_call",
+    )
+
+    assert "transform_llm_output" in seen, "hook must fire on an interrupted turn"
+    assert seen["transform_llm_output"]["interrupted"] is True
+    assert "reasoning_text" in seen["transform_llm_output"]
+    assert result["final_response"] == "CLEANED_TEXT"
+    assert messages[-1]["content"] == "CLEANED_TEXT"
