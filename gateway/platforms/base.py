@@ -4383,13 +4383,23 @@ class BasePlatformAdapter(ABC):
     # keep their historical, platform-specific wording byte-identical while
     # sharing the assembly logic (header → fenced command preview → reason →
     # optional smart-deny note).
-    _EA_HEADER: str = "⚠️ Command Approval Required\n\n"
+    # Localized at call time so a non-English session gets its own wording.
+    # Adapters can still shadow these with a plain class attribute.
+    @property
+    def _EA_HEADER(self) -> str:
+        return t("approval.card_title_exec") + "\n\n"
+
     _EA_CODE_OPEN: str = "```\n"
     _EA_CODE_CLOSE: str = "\n```\n"
-    _EA_REASON_LABEL: str = "Reason: "
-    _EA_SMART_DENY_LINE: str = (
-        "\n\nSmart DENY: owner override applies to this one operation only."
-    )
+
+    @property
+    def _EA_REASON_LABEL(self) -> str:
+        return t("approval.card_reason_prefix")
+
+    @property
+    def _EA_SMART_DENY_LINE(self) -> str:
+        return "\n\n" + t("approval.card_smart_deny_note")
+
     _EA_CMD_BUDGET: int = 3000
 
     @staticmethod

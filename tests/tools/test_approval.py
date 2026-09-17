@@ -2217,6 +2217,132 @@ class TestTirithDescriptionI18n:
         assert "无法导入 Tirith" in text
         assert "tirith_fail_open is false" not in text
 
+    def _confusable_findings(self):
+        return [
+            {
+                "rule_id": "confusable_text",
+                "severity": "HIGH",
+                "title": "Confusable Unicode characters in text",
+                "description": (
+                    "Content contains Unicode characters visually identical "
+                    "to ASCII (math alphanumerics, Cyrillic/Greek lookalikes) "
+                    "appearing near ASCII text, which may indicate a homoglyph "
+                    "attack"
+                ),
+            },
+            {
+                "rule_id": "non_ascii_hostname",
+                "severity": "HIGH",
+                "title": "Non-ASCII characters in hostname",
+                "description": (
+                    "Hostname 'exаmple.com' contains non-ASCII characters "
+                    "which may be a homograph attack"
+                ),
+                "evidence": [
+                    {
+                        "type": "homoglyph_analysis",
+                        "raw": "exаmple.com",
+                        "escaped": "xn--exmple-4nf.com",
+                    }
+                ],
+            },
+        ]
+
+    def test_zh_localizes_content_and_hostname_descriptions(self, monkeypatch):
+        """Second-wave templates: content/hostname findings must not leak
+        the English description (the confusable-text card body was the
+        original report)."""
+        from agent.i18n import reset_language_cache
+
+        monkeypatch.setenv("HERMES_LANGUAGE", "zh")
+        reset_language_cache()
+        try:
+            text = approval_module._format_tirith_description(
+                {"findings": self._confusable_findings(), "summary": ""}
+            )
+        finally:
+            monkeypatch.delenv("HERMES_LANGUAGE", raising=False)
+            reset_language_cache()
+
+        assert "Unicode 易混淆文本" in text
+        assert "同形字（homoglyph）攻击" in text
+        assert "非 ASCII 字符" in text
+        # Dynamic hostname stays verbatim.
+        assert "exаmple.com" in text
+        # No English description body survives.
+        assert "homoglyph attack" not in text
+        assert "visually identical to ASCII" not in text
+
+    def test_zh_threat_package_description_keeps_placeholders(self, monkeypatch):
+        """Placeholder values come from the English description, never
+        hard-coded, and never render as a literal ``{placeholder}``."""
+        from agent.i18n import reset_language_cache
+
+        monkeypatch.setenv("HERMES_LANGUAGE", "zh")
+        reset_language_cache()
+        try:
+            text = approval_module._format_tirith_description(
+                {
+                    "findings": [
+                        {
+                            "rule_id": "threat_package_similar_name",
+                            "severity": "MEDIUM",
+                            "title": "Package name similar to popular package",
+                            "description": (
+                                "Package 'crossenv' in npm is within edit "
+                                "distance 1 of popular package 'cross-env'. "
+                                "This could indicate a typosquatting attempt."
+                            ),
+                            "evidence": [
+                                {
+                                    "type": "threat_intel",
+                                    "source": "popular package names",
+                                    "threat_type": "similar_name",
+                                }
+                            ],
+                        }
+                    ],
+                    "summary": "",
+                }
+            )
+        finally:
+            monkeypatch.delenv("HERMES_LANGUAGE", raising=False)
+            reset_language_cache()
+
+        assert "包 'crossenv'（npm）" in text
+        assert "'cross-env'" in text
+        assert "编辑距离为 1" in text
+        assert "within edit distance" not in text
+        assert "{package}" not in text and "{distance}" not in text
+
+    def test_zh_placeholder_miss_falls_back_to_english(self, monkeypatch):
+        """When a dynamic value cannot be extracted, keep the raw English
+        description rather than leaking ``{placeholders}``."""
+        from agent.i18n import reset_language_cache
+
+        monkeypatch.setenv("HERMES_LANGUAGE", "zh")
+        reset_language_cache()
+        try:
+            text = approval_module._format_tirith_description(
+                {
+                    "findings": [
+                        {
+                            "rule_id": "threat_package_similar_name",
+                            "severity": "MEDIUM",
+                            "title": "Package name similar to popular package",
+                            "description": "Reworded upstream description.",
+                        }
+                    ],
+                    "summary": "",
+                }
+            )
+        finally:
+            monkeypatch.delenv("HERMES_LANGUAGE", raising=False)
+            reset_language_cache()
+
+        assert "Reworded upstream description." in text
+        assert "{package}" not in text
+
 
 # launchd verbs that stop, unload or deregister a running gateway. `disable`
 # does not stop a live job on its own, but it is what makes an unload survive

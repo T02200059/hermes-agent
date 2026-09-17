@@ -187,6 +187,33 @@ approval:
     data_exfiltration: "curl command uploads sensitive data (credentials, keys, or private files) to a remote server"
     private_key_exposed: "A PEM-encoded private key header was found in the input. Private keys should never be pasted into a terminal or used inline."
     tirith_import_error: "The Tirith security scanner could not be imported. Because security.tirith_fail_open is false, this command cannot be silently allowed. Approve only if you have verified the command is safe."
+    # Second wave — descriptions verified against the tirith binary's runtime
+    # finding payloads (tirith check --json). Dynamic values stay placeholders
+    # and are extracted in tools/approval.py::_extract_tirith_desc_kwargs.
+    non_ascii_hostname: "Hostname '{host}' contains non-ASCII characters which may be a homograph attack"
+    mixed_script_in_label: "Label '{label}' mixes multiple Unicode scripts ({scripts}), potential homograph"
+    confusable_domain: "Domain '{domain}' is visually similar to known domain '{known}'"
+    invalid_host_chars: "Hostname '{host}' contains characters that are never valid in DNS names"
+    trailing_dot_whitespace: "Hostname '{host}' has trailing dot or whitespace"
+    non_ascii_path: "URL path contains non-ASCII characters which may indicate homoglyph substitution"
+    homoglyph_in_path: "Path segment '{segment}' looks similar to '{keyword}' but contains non-ASCII characters"
+    double_encoding: "URL path contains percent-encoded percent signs (%25XX) indicating double encoding, which may be used to bypass security filters"
+    bidi_controls: "Content contains Unicode bidi override characters that can make text appear to read in a different order than it actually executes"
+    zero_width_chars: "Content contains invisible zero-width characters that could be used to obfuscate URLs or commands"
+    unicode_tags: "Content contains Unicode Tag characters (U+E0000–U+E007F) that encode hidden ASCII text invisible to the user"
+    invisible_math_operator: "Content contains invisible Unicode math operators (U+2061–U+2064) that could be used to obfuscate content"
+    variation_selector: "Content contains Unicode variation selectors (VS1-256). These are commonly used in emoji sequences but may indicate steganographic encoding or obfuscation"
+    invisible_whitespace: "Content contains unusual Unicode whitespace variants (en space, em space, figure space, etc.) that could be used for steganographic encoding or command obfuscation"
+    hangul_filler: "Content contains invisible Hangul Filler characters (U+3164, U+115F, U+1160) that could be used to hide content or obfuscate commands"
+    confusable_text: "Content contains Unicode characters visually identical to ASCII (math alphanumerics, Cyrillic/Greek lookalikes) appearing near ASCII text, which may indicate a homoglyph attack"
+    docker_remote_priv_esc: "Command targets a remote Docker daemon with privileged access or host root mount, enabling full host compromise"
+    schemeless_to_sink: "URL without explicit scheme passed to a command that downloads/executes content"
+    git_typosquat: "Repository '{repo}' is one edit from popular repo '{popular}'"
+    credential_in_text: "A credential matching a known provider pattern was found in the input. Credentials should not appear in commands or pasted text."
+    threat_malicious_package: "Package '{package}' in {ecosystem} is flagged as malicious by {source}. All versions are affected."
+    threat_package_typosquat: "Package '{package}' in {ecosystem} is a confirmed typosquat of '{official}' (source: {source})."
+    threat_package_similar_name: "Package '{package}' in {ecosystem} is within edit distance {distance} of popular package '{popular}'. This could indicate a typosquatting attempt."
+    threat_malicious_url: "Hostname '{host}' appears in threat intelligence feed ({source})."
 
   # Slash-command confirmation prompts (prompt_toolkit UI).
   # Used by _confirm_destructive_slash (/clear /new /reset /undo) and
@@ -522,6 +549,51 @@ approval:
   feishu_update_no: "No"
   feishu_update_title: "Update prompt answered: {label}"
   feishu_update_body: "Answered by **{user_name}**"
+
+  # ── Gate block messages: single-query (-q) / unattended / transport tails ───
+  # Mirrors the cron_blocked* family; callers fill the placeholders.
+  transport_failed: "BLOCKED: Selected approval transport failed ({failure}); the user has NOT consented to this action. Do NOT retry this command or attempt the same outcome through another route."
+  single_query_blocked: "BLOCKED: Command flagged as dangerous ({description}) but single-query mode (-q) runs without a user present to approve it. Find an alternative approach that avoids this command. To allow dangerous commands in single-query mode, set approvals.single_query_mode: approve in config.yaml."
+  single_query_blocked_tirith: "BLOCKED: {description} but single-query mode (-q) runs without a user present to approve it. Find an alternative approach that avoids this command. To allow dangerous commands in single-query mode, set approvals.single_query_mode: approve in config.yaml."
+  single_query_blocked_tirith_import: "BLOCKED: the Tirith security scanner could not be imported and security.tirith_fail_open is false, so this command cannot be silently allowed — and single-query mode (-q) runs without a user present to approve it. Find an alternative approach, install tirith, or set approvals.single_query_mode: approve in config.yaml."
+  single_query_blocked_tool: "BLOCKED: Tool '{tool_name}' requires approval ({description}) but single-query mode (-q) runs without a user present to approve it. Find an alternative approach. To allow flagged actions in single-query mode, set approvals.single_query_mode: approve in config.yaml."
+  unattended_blocked: "BLOCKED: approval required ({description}) but this session runs on an unattended platform ({platform}) with no user present to approve it. Find an alternative approach that avoids this action. To allow flagged actions on unattended platforms, set approvals.unattended_mode: approve in config.yaml."
+  unattended_blocked_command: "BLOCKED: Command flagged as dangerous ({description}) but this session runs on an unattended platform ({platform}) with no user present to approve it. Find an alternative approach that avoids this command. To allow dangerous commands on unattended platforms, set approvals.unattended_mode: approve in config.yaml."
+  unattended_blocked_tirith: "BLOCKED: {description} but this session runs on an unattended platform ({platform}) with no user present to approve it. Find an alternative approach that avoids this command. To allow dangerous commands on unattended platforms, set approvals.unattended_mode: approve in config.yaml."
+  unattended_blocked_tirith_import: "BLOCKED: the Tirith security scanner could not be imported and security.tirith_fail_open is false, so this command cannot be silently allowed — and this session runs on an unattended platform ({platform}) with no user present to approve it. Find an alternative approach, install tirith, or set approvals.unattended_mode: approve in config.yaml."
+  transport_denied: "BLOCKED: User denied this command through the selected approval transport. The user has NOT consented to this action. Do NOT retry or attempt the same outcome through another route."
+  execute_code_single_query_blocked: "BLOCKED: execute_code runs arbitrary local Python (including subprocess calls that bypass shell-string approval checks). Single-query mode (-q) runs without a user present to approve it. Use normal tools instead, or set approvals.single_query_mode: approve only if this single-query run is intentionally trusted."
+  execute_code_unattended_blocked: "BLOCKED: execute_code runs arbitrary local Python (including subprocess calls that bypass shell-string approval checks). This session runs on an unattended platform ({platform}) with no user present to approve it. Use normal tools instead, or set approvals.unattended_mode: approve only if sessions on this surface are intentionally trusted."
+  execute_code_transport_denied: "BLOCKED: User denied execute_code through the selected approval transport. The user has NOT consented."
+  execute_code_cli_denied: "BLOCKED: User denied execute_code script execution (matched '{description}'). Do NOT retry — the user has explicitly rejected it."
+
+  # ─── Approval prompt cards (shared adapter core, WhatsApp, relay) ───
+  card_title_exec: "⚠️ Command Approval Required"
+  card_title_exec_md: "⚠️ *Command Approval Required*"
+  card_title_exec_md_strong: "⚠️ **Command Approval Required**"
+  card_reason_prefix: "Reason: "
+  card_smart_deny_note: "Smart DENY: owner override applies to this one operation only."
+  relay_btn_once: "Allow Once"
+  relay_btn_session: "Allow Session"
+  relay_btn_always: "Always Allow"
+  relay_btn_deny: "Deny"
+  whatsapp_btn_approve: "✅ Approve"
+  whatsapp_btn_deny: "❌ Deny"
+  relay_smart_deny_note: "**Smart DENY:** owner override applies to this one operation only."
+
+  # ─── Protected-file / SSH-config write gates (tools/file_tools.py) ───
+  protected_file_blocked: "BLOCKED: write to protected agent-instruction file(s) ({targets}) {why} The user has NOT consented to this write. Do NOT retry it or attempt the same edit via another path (terminal, execute_code, etc.)."
+  protected_file_request: "Write to protected agent-instruction file(s): {targets}. These files steer future agent behavior; approval is always required (not bypassed by auto-approve)."
+  ssh_config_blocked: "BLOCKED: write to SSH config file(s) ({targets}) {why} Do NOT retry it via another path (terminal, execute_code) without the user's explicit consent."
+  ssh_config_request: "Write to SSH client config file(s): {targets}. The SSH config can carry ProxyCommand / Match exec directives that run commands, so writes require your approval."
+  gate_why_approval_unavailable: "requires approval but the approval subsystem is unavailable."
+  gate_why_not_delivered: "requires approval but the approval request could not be delivered."
+  gate_why_timed_out: "approval prompt timed out without a user response. Silence is not consent."
+  gate_why_denied_by_user: "was denied by the user."
+  gate_why_no_human: "requires approval but no interactive user or gateway is present to approve it."
+  gate_why_cron_denied: "requires approval but this cron session denies it."
+  gate_why_single_query_denied: "requires approval but single-query (-q) sessions run without a user present to approve it. To allow flagged actions in single-query mode, set approvals.single_query_mode: approve in config.yaml."
+  gate_why_denied: "was denied."
 
 gateway:
   # Messenger replies to slash commands and implicit state changes.

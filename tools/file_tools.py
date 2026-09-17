@@ -12,6 +12,7 @@ import threading
 from pathlib import Path, PurePosixPath
 
 from agent.file_safety import get_read_block_error
+from agent.i18n import t
 from tools.binary_extensions import (
     has_binary_extension,
     has_opaque_document_extension,
@@ -851,24 +852,17 @@ def _request_protected_instruction_approval(
     and no yolo bypass. Fail-closed when no human channel exists.
     """
     targets = ", ".join(dict.fromkeys(reasons))
-    description = (
-        f"Write to protected agent-instruction file(s): {targets}. "
-        "These files steer future agent behavior; approval is always "
-        "required (not bypassed by auto-approve)."
-    )
+    description = t("approval.protected_file_request", targets=targets)
     display = f"<write to {targets}>"
-    blocked = (
-        f"BLOCKED: write to protected agent-instruction file(s) ({targets}) "
-        "{why} The user has NOT consented to this write. Do NOT retry it or "
-        "attempt the same edit via another path (terminal, execute_code, "
-        "etc.)."
-    )
+
+    def _blocked(why: str) -> str:
+        """Localized BLOCKED text for this gate."""
+        return t("approval.protected_file_blocked", targets=targets, why=why)
 
     try:
         import tools.approval as _approval
     except Exception:
-        return blocked.format(why="requires approval but the approval "
-                                  "subsystem is unavailable.")
+        return _blocked(t("approval.gate_why_approval_unavailable"))
 
     # Gateway surface: block on the button round-trip when a notify callback
     # is registered for this session (Telegram/Discord/Slack). One-operation
@@ -894,19 +888,15 @@ def _request_protected_instruction_approval(
             session_key, notify_cb, approval_data, surface="gateway",
         )
         if decision.get("notify_failed"):
-            return blocked.format(
-                why="requires approval but the approval request could not "
-                    "be delivered.")
+            return _blocked(t("approval.gate_why_not_delivered"))
         choice = decision.get("choice")
         if decision.get("resolved") and choice in {"once", "session", "always"}:
             # One-operation grant regardless of the tapped scope — nothing
             # is persisted for this gate.
             return None
         if not decision.get("resolved"):
-            return blocked.format(
-                why="approval prompt timed out without a user response. "
-                    "Silence is not consent.")
-        return blocked.format(why="was denied by the user.")
+            return _blocked(t("approval.gate_why_timed_out"))
+        return _blocked(t("approval.gate_why_denied_by_user"))
 
     # CLI surface: per-thread approval callback (prompt_toolkit panel).
     callback = None
@@ -927,16 +917,12 @@ def _request_protected_instruction_approval(
             # One-operation grant; never persisted (see docstring).
             return None
         if choice == "timeout":
-            return blocked.format(
-                why="approval prompt timed out without a user response. "
-                    "Silence is not consent.")
-        return blocked.format(why="was denied by the user.")
+            return _blocked(t("approval.gate_why_timed_out"))
+        return _blocked(t("approval.gate_why_denied_by_user"))
 
     # No human channel at all (script, cron, background thread): fail
     # closed. Auto-approving here would recreate the persistence vector.
-    return blocked.format(
-        why="requires approval but no interactive user or gateway is "
-            "present to approve it.")
+    return _blocked(t("approval.gate_why_no_human"))
 
 
 def _check_protected_instruction_write(paths: list[str],
@@ -990,43 +976,32 @@ def _check_approval_required_write(paths: list[str],
         return None
 
     display_targets = ", ".join(dict.fromkeys(targets))
-    description = (
-        f"Write to SSH client config file(s): {display_targets}. "
-        "The SSH config can carry ProxyCommand / Match exec directives that "
-        "run commands, so writes require your approval."
-    )
-    blocked = (
-        f"BLOCKED: write to SSH config file(s) ({display_targets}) "
-        "{why} Do NOT retry it via another path (terminal, execute_code) "
-        "without the user's explicit consent."
-    )
+    description = t("approval.ssh_config_request", targets=display_targets)
+
+    def _blocked(why: str) -> str:
+        """Localized BLOCKED text for this gate."""
+        return t("approval.ssh_config_blocked", targets=display_targets, why=why)
 
     try:
         import tools.approval as _approval
     except Exception:
-        return blocked.format(why="requires approval but the approval "
-                                  "subsystem is unavailable.")
+        return _blocked(t("approval.gate_why_approval_unavailable"))
 
     result = _approval._run_approval_gate(
         pattern_key="ssh_config_write",
         description=description,
         display_target=f"<write to {display_targets}>",
-        cron_deny_message=blocked.format(
-            why="requires approval but this cron session denies it."),
-        single_query_deny_message=blocked.format(
-            why="requires approval but single-query (-q) sessions run "
-                "without a user present to approve it. To allow flagged "
-                "actions in single-query mode, set approvals.single_query_mode: "
-                "approve in config.yaml."),
+        cron_deny_message=_blocked(t("approval.gate_why_cron_denied")),
+        single_query_deny_message=_blocked(
+            t("approval.gate_why_single_query_denied")
+        ),
         autoapprove_log_prefix="ssh_config_write",
         fail_closed_when_no_human=True,
-        no_human_block_message=blocked.format(
-            why="requires approval but no interactive user or gateway is "
-                "present to approve it."),
+        no_human_block_message=_blocked(t("approval.gate_why_no_human")),
     )
     if result.get("approved"):
         return None
-    return result.get("message") or blocked.format(why="was denied.")
+    return result.get("message") or _blocked(t("approval.gate_why_denied"))
 
 
 def _get_container_mirror_prefix_for_task(task_id: str = "default") -> str | None:

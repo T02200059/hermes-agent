@@ -28,6 +28,7 @@ from typing import Any, Callable, Dict, Optional, Tuple, cast
 
 from gateway.config import Platform, PlatformConfig
 from gateway.platforms.base import BasePlatformAdapter, MessageEvent, SendResult
+from agent.i18n import t
 from gateway.relay.descriptor import CapabilityDescriptor
 from gateway.relay.media import RelayMediaClient
 from gateway.relay.transport import RelayTransport
@@ -2916,26 +2917,32 @@ class RelayAdapter(BasePlatformAdapter):
         button→text fallback takes over (same contract as a native adapter's
         failed button send).
         """
-        options: list = [{"id": "once", "label": "Allow Once", "style": "primary"}]
+        options: list = [{
+            "id": "once",
+            "label": t("approval.relay_btn_once"),
+            "style": "primary",
+        }]
         if not smart_denied and allow_session:
-            options.append({"id": "session", "label": "Allow Session"})
+            options.append({
+                "id": "session", "label": t("approval.relay_btn_session"),
+            })
             if allow_permanent:
                 options.append({
                     "id": "always",
-                    "label": "Always Allow",
+                    "label": t("approval.relay_btn_always"),
                 })
-        options.append({"id": "deny", "label": "Deny", "style": "danger"})
+        options.append({
+            "id": "deny", "label": t("approval.relay_btn_deny"), "style": "danger",
+        })
 
         cmd_preview = command if len(command) <= 1500 else command[:1500] + "..."
         text = (
-            "⚠️ **Command Approval Required**\n\n"
+            t("approval.card_title_exec_md_strong") + "\n\n"
             f"```\n{cmd_preview}\n```\n"
-            f"Reason: {description}"
+            + t("approval.reason_label", description=description)
         )
         if smart_denied:
-            text += (
-                "\n\n**Smart DENY:** owner override applies to this one operation only."
-            )
+            text += "\n\n" + t("approval.relay_smart_deny_note")
 
         prompt_id = self._mint_prompt(
             "exec_approval",

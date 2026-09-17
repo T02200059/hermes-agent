@@ -78,6 +78,7 @@ from gateway.platforms.base import (
     SendResult,
 )
 from gateway.platforms.whatsapp_common import WhatsAppBehaviorMixin, _get_wsecret
+from agent.i18n import t
 from gateway.platforms.media_cache import ext_for_mime
 from gateway import rich_sent_store
 from hermes_constants import get_hermes_dir
@@ -871,10 +872,13 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
         cmd = command or ""
         cmd_preview = cmd if len(cmd) <= 800 else cmd[:800] + "..."
         body_text = self._truncate_body(
-            f"⚠️ *Command Approval Required*\n\n"
+            t("approval.card_title_exec_md") + "\n\n"
             f"```\n{cmd_preview}\n```\n\n"
-            f"Reason: {description}"
-            + ("\n\nSmart DENY: owner override applies to this one operation only." if smart_denied else "")
+            + t("approval.reason_label", description=description)
+            + (
+                "\n\n" + t("approval.card_smart_deny_note")
+                if smart_denied else ""
+            )
         )
 
         approval_id = uuid.uuid4().hex[:12]
@@ -887,11 +891,17 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
                 "buttons": [
                     {
                         "type": "reply",
-                        "reply": {"id": f"appr:{approval_id}:approve", "title": "✅ Approve"},
+                        "reply": {
+                            "id": f"appr:{approval_id}:approve",
+                            "title": t("approval.whatsapp_btn_approve"),
+                        },
                     },
                     {
                         "type": "reply",
-                        "reply": {"id": f"appr:{approval_id}:deny", "title": "❌ Deny"},
+                        "reply": {
+                            "id": f"appr:{approval_id}:deny",
+                            "title": t("approval.whatsapp_btn_deny"),
+                        },
                     },
                 ],
             },

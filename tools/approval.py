@@ -3968,14 +3968,10 @@ def _run_approval_gate(
             if _get_unattended_approval_mode() == "deny":
                 return {
                     "approved": False,
-                    "message": unattended_deny_message or (
-                        f"BLOCKED: approval required ({description}) but this "
-                        "session runs on an unattended platform "
-                        f"({_get_session_platform()}) with no user present to "
-                        "approve it. Find an alternative approach that avoids "
-                        "this action. To allow flagged actions on unattended "
-                        "platforms, set approvals.unattended_mode: approve in "
-                        "config.yaml."
+                    "message": unattended_deny_message or t(
+                        "approval.unattended_blocked",
+                        description=description,
+                        platform=_get_session_platform(),
                     ),
                     "pattern_key": pattern_key,
                     "description": description,
@@ -4240,12 +4236,8 @@ def check_dangerous_command(command: str, env_type: str,
         display_target=command,
         approval_callback=approval_callback,
         cron_deny_message=t("approval.cron_blocked", description=description),
-        single_query_deny_message=(
-            f"BLOCKED: Command flagged as dangerous ({description}) but "
-            "single-query mode (-q) runs without a user present to approve "
-            "it. Find an alternative approach that avoids this command. "
-            "To allow dangerous commands in single-query mode, set "
-            "approvals.single_query_mode: approve in config.yaml."
+        single_query_deny_message=t(
+            "approval.single_query_blocked", description=description
         ),
 
         autoapprove_log_prefix=(
@@ -4325,12 +4317,9 @@ def request_tool_approval(
             "approval.cron_blocked_tool",
             tool_name=tool_name, description=description,
         ),
-        single_query_deny_message=(
-            f"BLOCKED: Tool '{tool_name}' requires approval ({description}) "
-            "but single-query mode (-q) runs without a user present to "
-            "approve it. Find an alternative approach. To allow flagged "
-            "actions in single-query mode, set "
-            "approvals.single_query_mode: approve in config.yaml."
+        single_query_deny_message=t(
+            "approval.single_query_blocked_tool",
+            tool_name=tool_name, description=description,
         ),
         autoapprove_log_prefix=(
             f"plugin-escalated tool call '{tool_name}' in "
@@ -4388,6 +4377,33 @@ _TIRITH_DESC_TEMPLATE_BY_RULE: dict[str, str] = {
     "proc_mem_access": "proc_mem_access",
     "data_exfiltration": "data_exfiltration",
     "private_key_exposed": "private_key_exposed",
+    # Content / hostname / threat-intel rules — templates added after the
+    # second i18n sweep (descriptions verified against real tirith finding
+    # payloads; each placeholder is filled in _extract_tirith_desc_kwargs).
+    "non_ascii_hostname": "non_ascii_hostname",
+    "mixed_script_in_label": "mixed_script_in_label",
+    "confusable_domain": "confusable_domain",
+    "invalid_host_chars": "invalid_host_chars",
+    "trailing_dot_whitespace": "trailing_dot_whitespace",
+    "non_ascii_path": "non_ascii_path",
+    "homoglyph_in_path": "homoglyph_in_path",
+    "double_encoding": "double_encoding",
+    "bidi_controls": "bidi_controls",
+    "zero_width_chars": "zero_width_chars",
+    "unicode_tags": "unicode_tags",
+    "invisible_math_operator": "invisible_math_operator",
+    "variation_selector": "variation_selector",
+    "invisible_whitespace": "invisible_whitespace",
+    "hangul_filler": "hangul_filler",
+    "confusable_text": "confusable_text",
+    "docker_remote_priv_esc": "docker_remote_priv_esc",
+    "schemeless_to_sink": "schemeless_to_sink",
+    "git_typosquat": "git_typosquat",
+    "credential_in_text": "credential_in_text",
+    "threat_malicious_package": "threat_malicious_package",
+    "threat_package_typosquat": "threat_package_typosquat",
+    "threat_package_similar_name": "threat_package_similar_name",
+    "threat_malicious_url": "threat_malicious_url",
     # synthetic fail-closed import error
     "tirith-import-error": "tirith_import_error",
 }
@@ -4457,6 +4473,42 @@ _RE_TIRITH_ARCHIVE = re.compile(
 _RE_TIRITH_CRED_SWEEP = re.compile(
     r"Command accesses (?P<count>\d+) known credential file paths"
 )
+# --- Second-wave desc templates: hostname / path / content / threat-intel ---
+# Dynamic values are pulled from the English description first (exact runtime
+# wording) and fall back to structured evidence where the description omits it.
+_RE_TIRITH_HOSTNAME_DESC = re.compile(r"Hostname '(?P<host>[^']+)'")
+_RE_TIRITH_MIXED_SCRIPT_DESC = re.compile(
+    r"Label '(?P<label>[^']+)' mixes multiple Unicode scripts "
+    r"\(\{(?P<scripts>[^}]+)\}\)"
+)
+_RE_TIRITH_CONFUSABLE_DOMAIN_DESC = re.compile(
+    r"Domain '(?P<domain>[^']+)' is visually similar to known domain "
+    r"'(?P<known>[^']+)'"
+)
+_RE_TIRITH_HOMOGLYPH_PATH_DESC = re.compile(
+    r"Path segment '(?P<segment>[^']+)' looks similar to "
+    r"'(?P<keyword>[^']+)'"
+)
+_RE_TIRITH_GIT_TYPOSQUAT_DESC = re.compile(
+    r"Repository '(?P<repo>[^']+)' is one edit from popular repo "
+    r"'(?P<popular>[^']+)'"
+)
+_RE_TIRITH_THREAT_PKG_MALICIOUS_DESC = re.compile(
+    r"Package '(?P<package>[^']+)' in (?P<ecosystem>\S+) is flagged as "
+    r"malicious by (?P<source>[^.]+)\."
+)
+_RE_TIRITH_THREAT_PKG_TYPOSQUAT_DESC = re.compile(
+    r"Package '(?P<package>[^']+)' in (?P<ecosystem>\S+) is a confirmed "
+    r"typosquat of '(?P<official>[^']+)' \(source: (?P<source>[^)]+)\)"
+)
+_RE_TIRITH_THREAT_PKG_SIMILAR_DESC = re.compile(
+    r"Package '(?P<package>[^']+)' in (?P<ecosystem>\S+) is within edit "
+    r"distance (?P<distance>\d+) of popular package '(?P<popular>[^']+)'"
+)
+_RE_TIRITH_THREAT_HOST_DESC = re.compile(
+    r"Hostname '(?P<host>[^']+)' appears in threat intelligence feed "
+    r"\((?P<source>[^)]+)\)"
+)
 _RE_TIRITH_SUMMARY_TIMEOUT = re.compile(
     r"^tirith timed out \((?P<timeout>\d+)s\)$"
 )
@@ -4502,6 +4554,32 @@ def _tirith_evidence_env_name(finding: dict) -> str:
     for item in finding.get("evidence") or []:
         if isinstance(item, dict) and item.get("type") == "env_var" and item.get("name"):
             return str(item["name"])
+    return ""
+
+
+def _tirith_evidence_host(finding: dict) -> str:
+    """Hostname from structured evidence (``homoglyph_analysis`` / ``url``)."""
+    for item in finding.get("evidence") or []:
+        if not isinstance(item, dict):
+            continue
+        if item.get("type") == "homoglyph_analysis" and item.get("raw"):
+            return str(item["raw"]).strip()
+        if item.get("type") == "url" and item.get("raw"):
+            raw = str(item["raw"]).strip()
+            raw = re.sub(r"^[a-zA-Z][a-zA-Z0-9+.\-]*://", "", raw)
+            return raw.split("/")[0].strip()
+    return ""
+
+
+def _tirith_evidence_threat_source(finding: dict) -> str:
+    """Threat-intelligence feed name from structured evidence."""
+    for item in finding.get("evidence") or []:
+        if (
+            isinstance(item, dict)
+            and item.get("type") == "threat_intel"
+            and item.get("source")
+        ):
+            return str(item["source"])
     return ""
 
 
@@ -4729,6 +4807,69 @@ def _extract_tirith_desc_kwargs(template_name: str, finding: dict, raw_desc: str
         count = m.group("count") if m else ""
         return {"count": count} if count else None
 
+    # Second-wave templates — dynamic values from the English description,
+    # with structured-evidence fallbacks.  None → keep the raw English text.
+    if template_name in {
+        "non_ascii_hostname",
+        "invalid_host_chars",
+        "trailing_dot_whitespace",
+    }:
+        m = _RE_TIRITH_HOSTNAME_DESC.search(raw_desc)
+        host = (m.group("host") if m else "") or _tirith_evidence_host(finding)
+        return {"host": host} if host else None
+
+    if template_name == "mixed_script_in_label":
+        m = _RE_TIRITH_MIXED_SCRIPT_DESC.search(raw_desc)
+        if m:
+            return {"label": m.group("label"), "scripts": m.group("scripts")}
+        return None
+
+    if template_name == "confusable_domain":
+        m = _RE_TIRITH_CONFUSABLE_DOMAIN_DESC.search(raw_desc)
+        if m:
+            return {"domain": m.group("domain"), "known": m.group("known")}
+        for item in finding.get("evidence") or []:
+            if isinstance(item, dict) and item.get("type") == "host_comparison":
+                domain = str(item.get("raw_host") or "")
+                known = str(item.get("similar_to") or "")
+                if domain and known:
+                    return {"domain": domain, "known": known}
+        return None
+
+    if template_name == "homoglyph_in_path":
+        m = _RE_TIRITH_HOMOGLYPH_PATH_DESC.search(raw_desc)
+        if m:
+            return {"segment": m.group("segment"), "keyword": m.group("keyword")}
+        return None
+
+    if template_name == "git_typosquat":
+        m = _RE_TIRITH_GIT_TYPOSQUAT_DESC.search(raw_desc)
+        if m:
+            return {"repo": m.group("repo"), "popular": m.group("popular")}
+        return None
+
+    if template_name in {
+        "threat_malicious_package",
+        "threat_package_typosquat",
+        "threat_package_similar_name",
+        "threat_malicious_url",
+    }:
+        pattern = {
+            "threat_malicious_package": _RE_TIRITH_THREAT_PKG_MALICIOUS_DESC,
+            "threat_package_typosquat": _RE_TIRITH_THREAT_PKG_TYPOSQUAT_DESC,
+            "threat_package_similar_name": _RE_TIRITH_THREAT_PKG_SIMILAR_DESC,
+            "threat_malicious_url": _RE_TIRITH_THREAT_HOST_DESC,
+        }[template_name]
+        m = pattern.search(raw_desc)
+        if not m:
+            return None
+        kwargs = {k: v for k, v in m.groupdict().items() if v}
+        if not kwargs.get("source"):
+            source = _tirith_evidence_threat_source(finding)
+            if source:
+                kwargs["source"] = source
+        return kwargs
+
     # Static templates (no placeholders) — empty kwargs is fine.
     if template_name in {
         "dotfile_overwrite",
@@ -4761,6 +4902,10 @@ def _translate_tirith_description(rule_id: str, finding: dict) -> str:
     template = t(key)
     if template == key:
         return raw_desc
+
+    # Static template (no placeholders) — nothing to extract, use it as-is.
+    if not _RE_PLACEHOLDER_NAMES.search(template):
+        return template
 
     kwargs = _extract_tirith_desc_kwargs(template_name, finding, raw_desc)
     if kwargs is None:
@@ -4958,10 +5103,7 @@ def _transport_denied_result(
     return {
         "approved": False,
         "message": (
-            f"BLOCKED: Selected approval transport failed ({failure}); the user "
-            "has NOT consented to this action. Do NOT retry this command or "
-            "attempt the same outcome through another route."
-            f"{breaker_addendum}"
+            t("approval.transport_failed", failure=failure) + breaker_addendum
         ),
         "pattern_key": pattern_key,
         "description": description,
@@ -5345,13 +5487,8 @@ def check_all_command_guards(command: str, env_type: str,
                 if is_dangerous:
                     return {
                         "approved": False,
-                        "message": (
-                            f"BLOCKED: Command flagged as dangerous ({description}) "
-                            "but single-query mode (-q) runs without a user "
-                            "present to approve it. Find an alternative approach "
-                            "that avoids this command. To allow dangerous "
-                            "commands in single-query mode, set "
-                            "approvals.single_query_mode: approve in config.yaml."
+                        "message": t(
+                            "approval.single_query_blocked", description=description
                         ),
                         "pattern_key": _pk,
                         "description": description,
@@ -5367,13 +5504,9 @@ def check_all_command_guards(command: str, env_type: str,
                         _sq_desc = _format_tirith_description(_sq_tirith)
                         return {
                             "approved": False,
-                            "message": (
-                                f"BLOCKED: {_sq_desc} "
-                                "but single-query mode (-q) runs without a user "
-                                "present to approve it. Find an alternative "
-                                "approach that avoids this command. To allow "
-                                "dangerous commands in single-query mode, set "
-                                "approvals.single_query_mode: approve in config.yaml."
+                            "message": t(
+                                "approval.single_query_blocked_tirith",
+                                description=_sq_desc,
                             ),
                         }
                 except ImportError:
@@ -5394,14 +5527,8 @@ def check_all_command_guards(command: str, env_type: str,
                     if not _sq_fail_open:
                         return {
                             "approved": False,
-                            "message": (
-                                "BLOCKED: the Tirith security scanner could not be "
-                                "imported and security.tirith_fail_open is false, "
-                                "so this command cannot be silently allowed — and "
-                                "single-query mode (-q) runs without a user "
-                                "present to approve it. Find an alternative "
-                                "approach, install tirith, or set "
-                                "approvals.single_query_mode: approve in config.yaml."
+                            "message": t(
+                                "approval.single_query_blocked_tirith_import"
                             ),
                         }
                     # else: tirith_fail_open is True — allow as before
@@ -5465,13 +5592,9 @@ def check_all_command_guards(command: str, env_type: str,
                 if is_dangerous:
                     return {
                         "approved": False,
-                        "message": (
-                            f"BLOCKED: Command flagged as dangerous ({description}) "
-                            f"but this session runs on an unattended platform "
-                            f"({_ua_platform}) with no user present to approve it. "
-                            "Find an alternative approach that avoids this command. "
-                            "To allow dangerous commands on unattended platforms, "
-                            "set approvals.unattended_mode: approve in config.yaml."
+                        "message": t(
+                            "approval.unattended_blocked_command",
+                            description=description, platform=_ua_platform,
                         ),
                     }
                 # Tirith parity with the cron branch: content-level threats
@@ -5483,13 +5606,9 @@ def check_all_command_guards(command: str, env_type: str,
                         _ua_desc = _format_tirith_description(_ua_tirith)
                         return {
                             "approved": False,
-                            "message": (
-                                f"BLOCKED: {_ua_desc} "
-                                f"but this session runs on an unattended platform "
-                                f"({_ua_platform}) with no user present to approve it. "
-                                "Find an alternative approach that avoids this command. "
-                                "To allow dangerous commands on unattended platforms, "
-                                "set approvals.unattended_mode: approve in config.yaml."
+                            "message": t(
+                                "approval.unattended_blocked_tirith",
+                                description=_ua_desc, platform=_ua_platform,
                             ),
                         }
                 except ImportError:
@@ -5504,14 +5623,9 @@ def check_all_command_guards(command: str, env_type: str,
                     if not _ua_fail_open:
                         return {
                             "approved": False,
-                            "message": (
-                                "BLOCKED: the Tirith security scanner could not be "
-                                "imported and security.tirith_fail_open is false, "
-                                "so this command cannot be silently allowed — and "
-                                f"this session runs on an unattended platform "
-                                f"({_ua_platform}) with no user present to approve it. "
-                                "Find an alternative approach, install tirith, or set "
-                                "approvals.unattended_mode: approve in config.yaml."
+                            "message": t(
+                                "approval.unattended_blocked_tirith_import",
+                                platform=_ua_platform,
                             ),
                         }
                     # else: tirith_fail_open is True — allow as before
@@ -5691,10 +5805,7 @@ def check_all_command_guards(command: str, env_type: str,
                 return {
                     "approved": False,
                     "message": (
-                        "BLOCKED: User denied this command through the selected "
-                        "approval transport. The user has NOT consented to this "
-                        "action. Do NOT retry or attempt the same outcome through "
-                        f"another route.{breaker_addendum}"
+                        t("approval.transport_denied") + breaker_addendum
                     ),
                     "pattern_key": primary_key,
                     "description": combined_desc,
@@ -6000,13 +6111,8 @@ def check_execute_code_guard(code: str, env_type: str,
         if _get_single_query_approval_mode() == "deny":
             return {
                 "approved": False,
-                "message": (
-                    "BLOCKED: execute_code runs arbitrary local Python "
-                    "(including subprocess calls that bypass shell-string "
-                    "approval checks). Single-query mode (-q) runs without a "
-                    "user present to approve it. Use normal tools instead, or "
-                    "set approvals.single_query_mode: approve only if this "
-                    "single-query run is intentionally trusted."
+                "message": t(
+                    "approval.execute_code_single_query_blocked"
                 ),
                 "pattern_key": pattern_key,
                 "description": description,
@@ -6037,14 +6143,9 @@ def check_execute_code_guard(code: str, env_type: str,
         if _get_unattended_approval_mode() == "deny":
             return {
                 "approved": False,
-                "message": (
-                    "BLOCKED: execute_code runs arbitrary local Python "
-                    "(including subprocess calls that bypass shell-string "
-                    "approval checks). This session runs on an unattended "
-                    f"platform ({_get_session_platform()}) with no user "
-                    "present to approve it. Use normal tools instead, or set "
-                    "approvals.unattended_mode: approve only if sessions on "
-                    "this surface are intentionally trusted."
+                "message": t(
+                    "approval.execute_code_unattended_blocked",
+                    platform=_get_session_platform(),
                 ),
                 "pattern_key": pattern_key,
                 "description": description,
@@ -6165,10 +6266,7 @@ def check_execute_code_guard(code: str, env_type: str,
                 _record_denial(session_key)
                 return {
                     "approved": False,
-                    "message": (
-                        "BLOCKED: User denied execute_code through the selected "
-                        "approval transport. The user has NOT consented."
-                    ),
+                    "message": t("approval.execute_code_transport_denied"),
                     "pattern_key": pattern_key,
                     "description": description,
                     "outcome": "denied",
@@ -6238,11 +6336,7 @@ def check_execute_code_guard(code: str, env_type: str,
                 return {
                     "approved": False,
                     "message": (
-                        "BLOCKED: Action timed out without user response. The "
-                        "user has NOT consented to this action. Do NOT retry "
-                        "it, do NOT rephrase it, and do NOT attempt the same "
-                        "outcome via a different path. Silence is not "
-                        f"consent.{breaker_addendum}"
+                        t("approval.cli_timeout_action") + breaker_addendum
                     ),
                     "pattern_key": pattern_key,
                     "description": description,
@@ -6260,9 +6354,11 @@ def check_execute_code_guard(code: str, env_type: str,
                 return {
                     "approved": False,
                     "message": (
-                        "BLOCKED: User denied execute_code script execution "
-                        f"(matched '{description}'). Do NOT retry — the user "
-                        f"has explicitly rejected it.{breaker_addendum}"
+                        t(
+                            "approval.execute_code_cli_denied",
+                            description=description,
+                        )
+                        + breaker_addendum
                     ),
                     "pattern_key": pattern_key,
                     "description": description,
