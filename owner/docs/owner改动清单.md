@@ -1241,6 +1241,45 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 - **验证**：selfcheck 9 场景全绿（含事故样本截断断言 + 合成连续脏块 + 散点标记不误伤）；定向 pytest 9 passed（`tests/owner/test_output_guard.py` 3 + transcript 同步 2 + cleanup_guard 回归 4）
 - **Commit**：`9649e49275`（测试+样本）/ `6f042b3aac`（检测+截断）/ `ffc196ff8b`（transcript 同步）/ `57a886171e`（设计文档）
 
+### 14.2 生成中退化闸门：stream_guard + 三处收口（thinking / 输出边界循环）
+
+- **背景**（2026-09-17 事故）：会话 `20260917_122148_57701e`（cli / xy-max）单轮生成 30,742 字符不收敛，形态是**思考→输出阶段边界循环**——反复宣告"思考结束、现在输出"而永不输出，尾部 8% 全是 `END OF THINKING`(×49) / `THINKING`(×88) / `WRITING RESPONSE` / `(stop)(stop)(stop)`。生成持续 4 分 16 秒，最终由**人工 Ctrl-C** 结束（`agent.log`: `Turn ended: reason=interrupted_during_api_call ... response_len=30742`）。
+  四道既有防线全部落空，且原因是结构性的：
+  - `output_guard` 只在**整轮生成结束之后**判定（`transform_llm_output`）；
+  - `_thinking_exhausted` / `is_repetition_dominated` 只在 `finish_reason=length` 的续写边界生效 —— 本轮从未到该边界；
+  - `TurnLivenessWatchdog` 是**空闲**看门狗，而流式每 chunk 都 `_touch_activity("receiving stream response")`，活动时钟永远新鲜 → **永不触发**；
+  - 钩子门槛 `if final_response and not interrupted:` —— 失控生成的典型结局就是被打断，**护栏恰在此失效**。
+  缺的不是"活性（liveness）看门狗"，而是"进展（progress）看门狗"。
+- **方案**：分 P0（三处收口）/ P1（闸门本体）两步。
+  - **P0-C1**：`agent/turn_finalizer.py` 钩子门槛改为 `if final_response:`，载荷补 `interrupted`。
+  - **P0-C2**：把"钩子调用 + transcript 尾行回写"整块**前移到 `_persist_session` 之前**。原先钩子在后，替换只改内存，state.db 保留退化原文并在下次会话加载时二次污染。（"弹 `_db_persisted` 标记后重跑 flush"这条路走不通：`_flush_messages_to_session_db` 是 append-only，`agent/transcript_repair.py` 对非空已落库行既不覆盖也不插入。）
+  - **P0-C3**：载荷补 `reasoning_text`；`output_guard` 新增 `_scan_reasoning()` —— 正文健康而思考退化时**只追加告警、不替换正文**（思考不面向用户，裁它没有意义），门槛 8000 字符（正常长思考 2–6K）。
+  - **P1-a（薄 seam）**：`run_agent.py::_stream_hook_base_payload()` 增加 `request_stop` 键；新增 `_request_stream_stop(reason, *, turn_id)` —— 轮次围栏（跨轮迟到观测不得误伤下一轮）+ 每轮一次 latch（按 `turn_id` 重挂）+ 已有中断时不抢 latch，然后置位 `_interrupt_requested`（流式消费循环每 chunk 已检查，**一个 chunk 内即中断**）。
+  - **P1-b（插件）**：新增 `owner/owner-extensions/stream_guard/`，消费 `on_stream_delta`（正文 + 思考两通道），在 4096 字符滑窗上做三信号判定：**S1 阶段终止语密度**（`END OF THINKING`/`WRITING RESPONSE`/`思考结束`/`(stop)` 等"宣布即将输出"的元话语）、**S2 风格签名密度**（画像签名 token 如 `ฅ` 的密度相对静态基线的倍数）、**S3 零进展**（复用官方 `agent/repetition_guard.is_repetition_dominated`）。S1/S2 需互证（`vote_threshold=2`），S3 命中即触发。命中后按 `action` 中止本轮，并复用 `_emit_warning` 主动告知用户（CLI 立即可见 + 网关转平台消息）；agent 句柄经 `request_stop.__self__` 回溯（载荷里没有 agent，这是 route B 的唯一通道，且只在绑定方法名为 `_request_stream_stop` 时才认，否则安静降级）。
+  - **P1-c（配置）**：`owner/config/patch.yaml` 新增 `owner.stream_guard` 段；`plugin.yaml` 声明 `on_stream_delta`；`owner-extensions/__init__.py` 聚合注册。
+- **阈值标定**（真实数据，非先验）：**8 条正例** = 今日事故 + 5 条逐条核实的历史复读失控（`msg 93635` 265,518 / `93633` 262,157 / `33260` 12,180 / `33236` 12,159 / `33222` 11,813）+ `degenerate_9_01` 模板泄漏样本；**318 条负例** = `state.db` 中全部 >2000 字符的真实 assistant 正文（剔除上述已核实的历史失控）+ 2 条合法引用样本。
+
+  | 信号 | 阈值 | 事故实测 | 负样本峰值 |
+  |---|---|---|---|
+  | S1 阶段终止语密度 | ≥3.0/KB | 3.17（首个命中窗口）→ 4.15 峰值 | 2.41（恰好是一条讨论本次事故、引用了这些字样的回复） |
+  | S2 签名密度倍数 | ≥×8.0 | ×21.97 → ×25.88 | ×0.00（318 条中无一条出现 `ฅ`） |
+  | S3 零进展 | 命中即触发 | 6/6 历史复读事故命中 | 0 |
+
+  **结果：8/8 正例命中、0 误伤**。今日事故在**生成到 50%（15,360 字符）**处命中 —— 按该轮实测速率（30,742 字符 / 256 秒 ≈ 120 字符/秒）折算，比人工 Ctrl-C 早约 **2 分钟**。
+- **涉及文件**：
+  - 修改：`agent/turn_finalizer.py`（C1/C2/C3）、`run_agent.py`（[owner] 一个新方法 + 一个载荷键）、`owner/owner-extensions/output_guard/__init__.py`（C3）、`owner/owner-extensions/__init__.py`、`owner/owner-extensions/plugin.yaml`、`owner/config/patch.yaml`、`.gitignore`
+  - 新增：`owner/owner-extensions/stream_guard/__init__.py`、`.../selfcheck.py`、`.../samples/`（gitignored）、`owner/docs/degenerate-stream-guard-design.md`、`tests/owner/test_stream_guard.py`、`tests/run_agent/test_request_stream_stop.py`
+- **侵入类型**：薄 seam（`run_agent.py` 一个新方法 + 一个载荷键；放宽到此处的原因：流式观察钩子的返回值被 `agent/plugin_stream_hooks.py` 丢弃、载荷里也没有 agent，无 hook 级替代方案）+ 薄胶水（`turn_finalizer.py` 钩子块前移）+ 插件纯新增逻辑
+- **部署事实**：`~/.hermes/plugins/owner-extensions` 是仓内 `owner/owner-extensions/` 的**符号链接**，新增子目录**改仓内即生效**、无需拷贝；但插件代码与 `max_tokens` 一样**只对新启动的 agent 进程生效**，网关/CLI 需重启。
+- **验证**：
+  - `tests/owner/test_stream_guard.py` 14 项通过（含事故原文端到端回放、grace/min_chars/warn_only/latch/跨轮重挂/异常吞掉/外部绑定方法不误认 agent）
+  - `tests/run_agent/test_request_stream_stop.py` 7 项通过（载荷暴露、轮次围栏、latch、已有中断不抢）
+  - `tests/agent/test_turn_finalizer_transform_transcript_sync.py` 4 项通过（新增 2 项：落库顺序、中断轮次仍触发）
+  - `stream_guard/selfcheck.py` + `output_guard/selfcheck.py` 均通过；`tests/owner/` + 两个流式钩子测试文件合计 **630 passed / 1 failed**，该 failed 为**既有基线失败**（`test_contract_entrypoints.py::test_cron_run_job_sets_cron_contextvar_on_real_agent_path`，与本改动无关，已用 `git stash` 回退改动对照确认）
+  - `tests/run_agent/` 全量 **8 failed / 2050 passed**；已把这 8 条逐个在**回退改动后的基线**上重跑，**同样 8 条失败**，确认全部为既有失败（`test_66267_multimodal_interim`、`test_deepseek_reasoning_content_echo`×2、`test_reasoning_echo_resolver_e2e`、`test_run_agent.py` 4 条），无一由本改动引入
+- **后续（P2）**：先跑 `action: warn_only` 一周，收集 `agent.log` 中 `stream_guard trip` 行的 `signals` 分布与误伤数，零误伤后再切 `interrupt`；若要覆盖"纯思考空转"形态需同时开 `plugins.stream_reasoning_deltas: true`（每-delta 插件开销未实测）。P2 前置项：`_turn_exit_reason` 目前对"闸门中断"与"用户 Ctrl-C"**同样**记为 `interrupted_during_api_call`，精确归因需再接一处。
+- **Commit**：`dd4ab46bfb`（P0 三处收口 + P1 闸门/配置）/ `1411019452`（测试）/ `8bed0660f8`（设计稿）
+
 ---
 
 ## 十五、API Server：LDAP 身份准入与多 profile 路由
@@ -1874,3 +1913,13 @@ _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请先�
 - **背景**：2026-09-01 xy-max 乱码输出事故复盘；v1 三检测器全漏判（模板 token 泄漏/语料乱拼形态不在 v1 语义内），且 transform 钩子只修发送层、乱码落库后继续污染后续上下文
 - **验证**：selfcheck 9 场景全绿 + 定向 pytest 9 passed + 真实样本回归 3/3（事故本体判退化、两条合法引用不误伤）
 - **部署**：插件目录是仓内 owner-extensions 的符号链接，改仓内即生效；网关重启需手动（launchd ai.hermes.gateway）
+
+### 2026-09-17：stream_guard（生成中退化闸门 + output_guard 三处收口）
+
+- **类型**：功能增强（新建正文 §14.2）+ 核心薄 seam
+- **新建正文**：**§14.2** 生成中退化闸门：stream_guard + 三处收口（thinking / 输出边界循环）：`dd4ab46bfb` / `1411019452` / `8bed0660f8`
+- **背景**：2026-09-17 xy-max 单轮生成 30,742 字符的思考→输出阶段边界循环，持续 4 分 16 秒后由**人工 Ctrl-C** 结束。四道既有防线全落空：output_guard 事后判定、续写护栏未到边界、TurnLivenessWatchdog 被流式活动时钟喂饱而永不触发、钩子门槛 `not interrupted` **恰在被打断时失效**。缺的是进展（progress）看门狗。
+- **方案**：C1 去掉钩子 `not interrupted` 门槛；C2 钩子与 transcript 回写前移到落库之前（append-only flush 无法改写已落库的非空行，故必须前移）；C3 钩子载荷补 `reasoning_text`、思考通道只告警不替换；P1 新增 `run_agent.py::_request_stream_stop` 薄 seam + `owner-extensions/stream_guard/` 插件（三信号滑窗投票，命中则中止本轮 + 告警）。
+- **验证**：**8 条正例全命中 / 318 条真实长回复零误伤**；今日事故在生成到 50%（15,360 字符）即命中，早于人工打断约 2 分钟。pytest 14 + 7 + 4 全通过，selfcheck 通过。
+- **部署**：`~/.hermes/plugins/owner-extensions` 是仓内符号链接，新增子目录即生效；插件仅对**新启动**的 agent 进程生效，需重启。
+- **灰度**：`action: warn_only` 先行一周，按 `agent.log` 中 `stream_guard trip` 行的 `signals` 分布与误伤数决定是否切 `interrupt`。
