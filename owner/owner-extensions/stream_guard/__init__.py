@@ -152,6 +152,8 @@ _STATE: dict = {}
 _ACTIONS: dict = {}
 _LOCK = threading.Lock()
 _CFG_CACHE: dict = {"data": None, "loaded_at": 0.0}
+# S3 失能只告警一次（见 evaluate_window 内注释）
+_S3_DEGRADED_WARNED = False
 
 
 # ---------------------------------------------------------------------------
@@ -245,8 +247,17 @@ def evaluate_window(buf: str, cfg: dict) -> dict:
         if is_repetition_dominated(buf):
             out["s3_no_progress"] = 1
             votes += 1
-    except Exception:
-        logger.debug("stream_guard: repetition guard unavailable", exc_info=True)
+    except Exception as exc:
+        # 单次告警而非逐窗口 debug：S3 不可用是**永久性**失能（上游改名/移动模块），
+        # 且它承载的是本仓历史事故里最常见的一类（纯复读，实测精度 100%）。
+        # 静默 fail-open 会让这一整类失去唯一防线且毫无信号，故必须留痕一次。
+        global _S3_DEGRADED_WARNED
+        if not _S3_DEGRADED_WARNED:
+            _S3_DEGRADED_WARNED = True
+            logger.warning(
+                "stream_guard: S3 (repetition guard) UNAVAILABLE — 纯复读型失控"
+                " 本轮起无防线，仅剩 S1/S2 投票：%s", exc,
+            )
 
     out["votes"] = votes
     try:

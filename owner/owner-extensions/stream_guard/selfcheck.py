@@ -21,6 +21,14 @@ import pathlib
 import sys
 
 _HERE = pathlib.Path(__file__).resolve().parent
+# 仓库根必须进 sys.path：`python path/to/selfcheck.py` 时 sys.path[0] 是脚本
+# 所在目录，而 S3 依赖官方 `agent.repetition_guard`。不补这一条，该 import 会
+# 静默失败（被 evaluate_window 的 fail-open 吞掉），S3 恒为 0、"纯复读"用例
+# 永久漏判 —— 本脚本曾在仓库根执行时报 AssertionError，正是这个原因。
+_REPO_ROOT = _HERE.parents[2]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
 _WINDOW = 4096
 _STEP = 512
 
@@ -47,6 +55,16 @@ def _first_trip(mod, text: str, cfg: dict):
 
 
 def main() -> int:
+    # S3 依赖官方 repetition_guard；一旦导入不可用，"纯复读"这一类会永久漏判，
+    # 因此这里显式报错而不是静默降级（静默降级正是本脚本此前的缺陷）。
+    try:
+        from agent.repetition_guard import is_repetition_dominated  # noqa: F401
+    except Exception as exc:
+        raise SystemExit(
+            f"stream_guard selfcheck: 无法导入 agent.repetition_guard（{exc}）；"
+            " 请在仓库根执行本脚本"
+        )
+
     mod = _load()
     cfg = dict(mod.DEFAULTS)
     cfg["window_chars"] = _WINDOW
