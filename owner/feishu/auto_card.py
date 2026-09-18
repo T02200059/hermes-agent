@@ -195,6 +195,105 @@ def estimate_auto_card_json_bytes(markdown_text: str, footer: str = "") -> int:
 
 
 # ---------------------------------------------------------------------------
+# [owner] Notice cards — 状态类告警的「带标题」卡片
+# ---------------------------------------------------------------------------
+# 背景：状态告警（`agent._emit_warning` → status_callback → adapter.send）会
+# 命中下面的 try_auto_card，于是被包成 interactive card。但 make_auto_card 只
+# 有 body，没有 header —— 告警和普通长回复长得一样，用户扫一眼分不出来。
+#
+# 这里按「正文前缀」匹配一组规则，命中的正文改用带 header 的卡片：
+#   header.title  = 规则的 title（一眼可辨的告警名）
+#   header.template = orange（告警色；飞书模板色 blue/green/red/orange/...）
+#   strip_prefix  = 是否把前缀从正文里摘掉（避免标题与正文首行重复）
+#
+# 规则表可用 patch.yaml 覆盖：owner.feishu_card.notice_titles
+#   notice_titles:
+#     - prefix: "⚠️ [stream-guard]"
+#       title: "⚠️ [stream-guard] 生成退化告警"
+#       template: orange
+#       strip_prefix: true
+# 传空列表即可整体关闭（所有消息退回无标题的 make_auto_card）。
+_DEFAULT_NOTICE_RULES: Tuple[Dict[str, Any], ...] = (
+    {
+        "prefix": "⚠️ [stream-guard]",
+        "title": "⚠️ [stream-guard] 生成退化告警",
+        "template": "orange",
+        "strip_prefix": True,
+    },
+)
+
+
+def get_notice_rules() -> List[Dict[str, Any]]:
+    """告警卡规则表：patch.yaml 的 ``owner.feishu_card.notice_titles`` 覆盖内置。
+
+    缺省 / 非法 / 读取失败 → 内置默认规则（fail-open，绝不阻断发送）。
+    """
+    try:
+        patch = _load_patch_owner_config()
+        raw = patch.get("feishu_card", {}).get("notice_titles")
+    except Exception:
+        raw = None
+    if not isinstance(raw, list):
+        return [dict(rule) for rule in _DEFAULT_NOTICE_RULES]
+
+    rules: List[Dict[str, Any]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        prefix = str(item.get("prefix") or "")
+        if not prefix:
+            continue
+        rules.append(
+            {
+                "prefix": prefix,
+                "title": str(item.get("title") or prefix),
+                "template": str(item.get("template") or "orange"),
+                "strip_prefix": bool(item.get("strip_prefix", True)),
+            }
+        )
+    return rules
+
+
+def match_notice_rule(text: str) -> Optional[Dict[str, Any]]:
+    """正文（lstrip 后）以某条规则的前缀开头 → 返回该规则；否则 None。"""
+    head = (text or "").lstrip()
+    if not head:
+        return None
+    for rule in get_notice_rules():
+        if head.startswith(rule["prefix"]):
+            return rule
+    return None
+
+
+def _strip_notice_prefix(text: str, prefix: str) -> str:
+    """摘掉正文开头的告警前缀及其后的分隔符（``：``/``:``/空白）。"""
+    body = (text or "").lstrip()
+    if body.startswith(prefix):
+        body = body[len(prefix):].lstrip("：: \t")
+    return body
+
+
+def make_notice_card(markdown_text: str, rule: Dict[str, Any]) -> Dict[str, Any]:
+    """带 header 的告警卡：标题取自规则，正文为告警原文。"""
+    if rule.get("strip_prefix"):
+        body = _strip_notice_prefix(markdown_text, rule["prefix"])
+    else:
+        body = markdown_text
+    if not body.strip():
+        # 正文只有前缀本身时不能把 body 掏空（空 markdown 元素渲染成空卡）。
+        body = markdown_text
+    return {
+        "schema": "2.0",
+        "config": {"wide_screen_mode": True},
+        "header": {
+            "title": {"content": rule["title"], "tag": "plain_text"},
+            "template": rule["template"],
+        },
+        "body": {"elements": [{"tag": "markdown", "content": body}]},
+    }
+
+
+# ---------------------------------------------------------------------------
 # Feasibility pre-check
 # ---------------------------------------------------------------------------
 
@@ -557,7 +656,14 @@ async def try_auto_card(
                 card_text = body
             # [owner] auto-card: footer + hr only on the last chunk
             card_footer = footer if idx == n_chunks - 1 else ""
-            card = make_auto_card(card_text, footer=card_footer)
+            # [owner] notice card: 整条命中告警前缀的单块正文，改用带 header 的
+            # 卡片。多块（正文超预算被拆分）不参与 —— 告警文案本身很短，拆分
+            # 只发生在长回复路径上，那里不该冒出告警标题。
+            notice_rule = match_notice_rule(card_text) if n_chunks == 1 else None
+            if notice_rule is not None:
+                card = make_notice_card(card_text, notice_rule)
+            else:
+                card = make_auto_card(card_text, footer=card_footer)
 
             card_result = None
             for attempt in range(_MAX_CARD_SEND_ATTEMPTS):
