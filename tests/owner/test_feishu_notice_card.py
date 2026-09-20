@@ -49,6 +49,24 @@ def test_plain_text_does_not_match():
     assert auto_card.match_notice_rule("") is None
 
 
+def test_progress_explainer_notice_rule_pins_prefix():
+    """[owner] progress_explainer 旁白前缀与本规则表防漂移锚点。
+
+    dispatcher 投递文案 = prompt.PREFIX + 旁白正文；本规则的 prefix 须与
+    PREFIX 字面一致，否则旁白在飞书上静默退回无标题卡片（fail-open，
+    无报错——唯一护栏就是这条测试）。
+    """
+    from owner.progress_explainer.prompt import PREFIX
+
+    rule = auto_card.match_notice_rule(PREFIX + "正在检索日志，稍候。")
+    assert rule is not None
+    assert rule["prefix"] == PREFIX
+    assert rule["title"] == "🧭 进度旁白"
+    assert rule["template"] == "blue"
+    # 完整投递形态（含 fact_line）也应命中
+    assert auto_card.match_notice_rule(PREFIX + "正文\nterminal — iteration 3/8") is not None
+
+
 def test_embedded_prefix_mid_body_does_not_match():
     """前缀必须在**开头** —— 正文里引用告警文案的正常回复不该被套告警标题。"""
     quoted = "下面是我对这条告警的解读：\n⚠️ [stream-guard] 检测到生成退化 ...\n以上。"

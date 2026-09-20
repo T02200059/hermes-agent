@@ -220,6 +220,17 @@ _DEFAULT_NOTICE_RULES: Tuple[Dict[str, Any], ...] = (
         "template": "orange",
         "strip_prefix": True,
     },
+    {
+        # [owner] progress_explainer 沉默期进度旁白（§7.24）：投递文案由
+        # dispatcher 拼上 owner/progress_explainer/prompt.py 的 PREFIX 再走
+        # adapter.send → try_auto_card。此处 prefix 须与 PREFIX 字面一致——
+        # test_progress_explainer_notice_rule_pins_prefix 钉死防漂移。
+        # template=blue：信息性旁白，区别于 orange 的告警色。
+        "prefix": "🧭 系统提示：",
+        "title": "🧭 进度旁白",
+        "template": "blue",
+        "strip_prefix": True,
+    },
 )
 
 
