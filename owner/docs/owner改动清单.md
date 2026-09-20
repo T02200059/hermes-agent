@@ -982,6 +982,20 @@ _元数据统计口径：范围取「基点后未出现在上游 `00b2e03c80` �
 
 ---
 
+### 7.25 审批卡命令解说（approval_explainer）
+
+- **背景**：hermes 触发 approval 时审批卡上只有命令原文 + 官方规则 description，不懂具体命令的用户无从判断该不该批准；进度旁白（§7.24）解决了「过程零信息」，本功能解决「决策零信息」
+- **方案**：审批卡投递时刻（两端 `send_exec_approval` 内、建卡前）调辅助模型生成 2-3 句「这条命令做什么 / 风险特征（是否删除/覆盖/杀进程、可不可逆、影响面）/ 批准前注意什么」，嵌入卡内 `📖 命令解读` 段（飞书 md 追加 + QQ `ApprovalRequest.explanation` 渲染）。**触发时机严格与 approvals 卡片 1:1**（并发相同命令由 `_await_gateway_decision` coalescing 保证单卡）——不是定时器、不是每条命令；审批不发卡的三条路径（纯文本 fallback / submit_pending 队列 / CLI）不在范围。prompt 硬约束：**绝不输出批准/拒绝建议**（决策权留用户）、绝不编造、≤3 句、temperature=0。输入已双重脱敏（`redact_sensitive_text` + `_redact_approval_command`），不含会话上下文
+- **模块**：`owner/approval_explainer/`（config/prompt/explain/__init__ 4 模块，无 tick 无 tracker——比 progress_explainer 简单得多）；同命令 TTL 缓存（600s/128 条）；`explain_command` 永不抛（fail-open：超时/失败 → 空串 → 卡片照发无解说段）
+- **侵入类型**：薄胶水（`plugins/platforms/feishu/adapter.py` +22 行、`gateway/platforms/qqbot/adapter.py` +19 行、`gateway/platforms/qqbot/keyboards.py` +10 行，全部 `[owner]` 标记 + fail-open try/except；`tools/approval.py` / `gateway/run.py` **零改动**）；飞书建卡复用既有 `owner/feishu/approval.py`（`build_approval_card` 加 `explanation` 参数，空串时卡片与原行为字节一致）
+- **配置**：`patch.yaml → owner.approval_explainer.*`（enabled 代码默认 **false**，本机实配 true；timeout_ms 默认 30000；platforms feishu/qqbot；三级查找同 diff_card）。**模型（2026-09-20 定稿，与 progress_explainer 统一语义）**：provider/model 空（或 `auto`）→ 传 None → `call_llm(task="approval_explainer")` 走 auxiliary auto 链——config.yaml `auxiliary.approval_explainer` 任务段有配置按其生效，否则回落主聊天模型（承接 hermes 配置体系）；显式值直连最高优先
+- **同批对齐 §7.24**（progress_explainer 顺手改）：`_DEFAULT_TIMEOUT_MS` 15000→30000；config 默认段加 provider/model（"auto"→空归一）；patch.yaml `provider/model: auto` + `explainer_timeout_ms: 30000`——旁白模型同样默认 auxiliary auto
+- **涉及文件**：`owner/approval_explainer/`（新增 4 模块）、上述 3 个官方文件胶水、`owner/feishu/approval.py`（+explanation）、`locales/zh.yaml` / `locales/en.yaml`（各 +2 key：`feishu_explanation_label` / `qqbot_explanation_label`）、`owner/config/patch.yaml`（§7.25 段 + §7.24 修订）、`tests/owner/test_approval_explainer.py`（新增 20 例）、`owner/docs/design/approval-command-explainer/approval-explainer.md`（新增）、`owner/progress_explainer/{config,explain}.py`（对齐改动）
+- **验证**：`tests/owner/test_approval_explainer.py` 20 passed（三级查找/auto 归一/非法回落/fail-open 异常+超时/缓存命中+不命中+TTL 过期/引号剥离/飞书卡嵌入+空串字节一致/QQ 渲染+空串跳过/i18n zh+en key 存在性）。回归全绿：`tests/tools/test_approval.py` 128、progress_explainer 25、`tests/owner/` 审批卡系列（fail_card/notice_card/patch_allowlist/skill_script 16/memory routing/send_card_profile/skill_manage_gate 93）、`tests/plugins/platforms/feishu/` 12、`test_slack_approval_buttons` 20。`tests/gateway/test_feishu_approval_buttons.py` 4 例为存量环境性失败（`git stash` 后同样失败，与本功能无关）。E2E（真网关触发一次审批观察 📖 段）[未验证]，生效需网关重启
+- **回滚**：删 3 处 `[owner]` 胶水即完全回滚；或 patch.yaml `enabled: false` 秒关（卡片回到原样）
+
+---
+
 ## 八、工具链：Diff / Patch / Checkpoint
 
 ### 8.1 Checkpoint Mutation Predictor（terminal 预测式快照）
@@ -1639,6 +1653,12 @@ _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请先�
 ---
 
 ## 附录 E：变更日志
+
+### 2026-09-20：新增 §7.25 approval_explainer（审批卡命令解说）
+
+- **新建正文**：**§7.25**：owner/approval_explainer/ 新增 4 模块、feishu/qqbot adapter + keyboards 三处 `[owner]` 胶水、locales zh/en 各 +2 key、patch.yaml §7.25 段、tests/owner/test_approval_explainer.py 20 例、设计稿 owner/docs/design/approval-command-explainer/
+- **同批对齐**：§7.24 progress_explainer 模型改 auxiliary auto 语义 + timeout 30s（config/explain/patch.yaml）
+- **验证**：20 例新测 + 回归（approval 128/审批卡系列/qqbot keyboards 无既有测试）全绿；4 例存量环境性失败与本功能无关
 
 ### 2026-09-20：新增 §7.24 progress_explainer（沉默期进度旁白）
 

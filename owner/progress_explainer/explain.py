@@ -18,7 +18,8 @@ logger = logging.getLogger(__name__)
 
 # 输出上限：max_tokens≈200 生成的中文通常 ≤400 字符；防御性截断更宽。
 _MAX_OUTPUT_CHARS = 600
-_DEFAULT_TIMEOUT_MS = 15000
+# [owner] 2026-09-20 定稿: 默认 30s (原 15s), 与 approval_explainer 对齐。
+_DEFAULT_TIMEOUT_MS = 30000
 
 
 def _extract_content(response: object) -> Optional[str]:
@@ -76,10 +77,12 @@ async def explain(state: dict, cfg: dict, user_message: str, language: str) -> O
         hard_facts = raw_hard if isinstance(raw_hard, dict) else {}
         messages = prompt_mod.build_messages(user_message, digest, hard_facts, language)
 
-        # 模型收拢在 patch.yaml owner.progress_explainer.provider/model（不进
-        # config.yaml auxiliary.*）。未配置 → 两个都不传 → call_llm 走 auto 链
-        # 回落主聊天模型。这正是「默认主模型」的实现路径（设计稿 §7 模型侧
-        # 仍写 auxiliary 段，本实现改为全配置收拢在 patch.yaml）。
+        # [owner] 模型解析 (2026-09-20 定稿, 与 approval_explainer 同语义):
+        # patch.yaml owner.progress_explainer.provider/model 空 (或 "auto")
+        # → 两个都传 None → call_llm(task=...) 走 auxiliary auto 链 ——
+        # config.yaml auxiliary.progress_explainer 任务段有配置则按其生效,
+        # 否则回落主聊天模型 (承接 hermes 自己的配置体系)。
+        # 显式 provider/model → 直连最高优先。
         _provider = str(cfg.get("provider", "") or "").strip() or None
         _model = str(cfg.get("model", "") or "").strip() or None
         if _model and _model.lower() == "auto":

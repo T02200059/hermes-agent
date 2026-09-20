@@ -83,6 +83,8 @@ approval:
   feishu_card_title: "⚠️ Command Approval Required"
   feishu_card_title_smart_deny: "⚠️ Smart DENY — Allow Once Only"
   feishu_reason_label: "**Reason:** {description}"
+  # [owner] approval_explainer — command explanation block on approval cards
+  feishu_explanation_label: "📖 **What this does:**\n{explanation}"
   feishu_btn_once: "✅ Allow Once"
   feishu_btn_session: "✅ Session"
   feishu_btn_always: "✅ Always"
@@ -123,6 +125,8 @@ approval:
   qqbot_plugin_title: "**Approval Request**"
   qqbot_cwd_label: "📁 Directory: {cwd}"
   qqbot_reason_label: "📝 {description}"
+  # [owner] approval_explainer — command explanation block on approval cards
+  qqbot_explanation_label: "📖 **What this does:**\n{explanation}"
   qqbot_tool_label: "🔧 Tool: {tool_name}"
   qqbot_timeout_label: "⏱️ Timeout: {timeout} seconds"
   qqbot_btn_once: "✅ Allow Once"

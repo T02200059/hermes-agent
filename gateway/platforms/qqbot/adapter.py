@@ -2816,6 +2816,25 @@ class QQAdapter(BasePlatformAdapter):
         # Smart DENY: one-shot override only — hide Always and use i18n explain
         # copy (see approval.qqbot_smart_deny_note). Do not append English
         # prose into description; build_approval_text renders the note.
+        # [owner] approval_explainer: 审批卡附命令解说 (触发时机与审批卡严格
+        # 一致 —— 生成嵌在卡 send 前; fail-open, 超时/失败 → 空串, 卡照发)。
+        # 见 owner/approval_explainer/。
+        _explanation = ""
+        try:  # [owner]
+            from owner.approval_explainer import explain_command
+
+            from agent.i18n import get_language
+
+            _explanation = await explain_command(
+                command,
+                description,
+                get_language(),
+                platform="qqbot",
+                chat_id=chat_id,
+            ) or ""
+        except Exception:  # [owner]
+            logger.debug("approval_explainer failed", exc_info=True)
+
         req = ApprovalRequest(
             session_key=session_key,
             title=t("approval.qqbot_exec_subtitle"),
@@ -2824,6 +2843,7 @@ class QQAdapter(BasePlatformAdapter):
             timeout_sec=self._APPROVAL_TIMEOUT_SECONDS,
             allow_permanent=allow_permanent and not smart_denied,
             smart_denied=smart_denied,
+            explanation=_explanation,
         )
         return await self.send_approval_request(
             chat_id, req, reply_to=msg_id,

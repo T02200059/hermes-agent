@@ -73,6 +73,8 @@ approval:
   feishu_card_title: "⚠️ 命令需要审批"
   feishu_card_title_smart_deny: "⚠️ 智能审批拦截 — 仅可允许一次"
   feishu_reason_label: "**原因：** {description}"
+  # [owner] approval_explainer — 审批卡命令解说段 (owner/approval_explainer/)
+  feishu_explanation_label: "📖 **命令解读：**\n{explanation}"
   feishu_btn_once: "✅ 允许一次"
   feishu_btn_session: "✅ 本次会话"
   feishu_btn_always: "✅ 永久允许"
@@ -112,6 +114,8 @@ approval:
   qqbot_plugin_title: "**审批请求**"
   qqbot_cwd_label: "📁 目录：{cwd}"
   qqbot_reason_label: "📝 {description}"
+  # [owner] approval_explainer — 审批卡命令解说段 (owner/approval_explainer/)
+  qqbot_explanation_label: "📖 **命令解读：**\n{explanation}"
   qqbot_tool_label: "🔧 工具：{tool_name}"
   qqbot_timeout_label: "⏱️ 超时：{timeout} 秒"
   qqbot_btn_once: "✅ 允许一次"

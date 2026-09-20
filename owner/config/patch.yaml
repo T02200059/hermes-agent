@@ -374,14 +374,41 @@ owner:
   # （工具名/迭代数）取自 get_activity_summary()，不由模型生成。
   # 触发节奏：静默 60s 起报，同轮两次之间 ≥120s，每轮最多 5 条；stream_guard
   # tripped 时静默让位。设计稿 owner/docs/design/silent-progress-narration/。
-  # 模型：provider/model 在本段配置，不进 config.yaml auxiliary.*；
-  #       未配置 → 回落主聊天模型（默认主模型）。
+  # 模型（2026-09-20 定稿）：provider/model 写 auto（或留空）→ 走 auxiliary
+  #   auto 链——config.yaml auxiliary.progress_explainer 任务段有配置按其生效，
+  #   否则回落主聊天模型（承接 hermes 自己的配置体系）；显式值直连。
+  #   辅助调用默认 timeout 30s（本段可覆盖 explainer_timeout_ms）。
   # enabled: false 秒级关闭（改本文件即生效，无需重启 tick 判定）。
   progress_explainer:
     enabled: true
-    provider: damodel
-    model: xy-pro
+    provider: auto
+    model: auto
+    explainer_timeout_ms: 30000
     platforms:
       feishu: true
       qqbot: true
       telegram: false
+
+  # ── §7.25 approval_explainer：审批卡命令解说 ─────────────────────────────────
+  # hermes 执行命令触发 approval 时（飞书/QQ 审批卡投递时刻），调辅助模型
+  # 生成 2-3 句「这条命令做什么 / 有什么风险」的人话解说，嵌入审批卡，
+  # 帮不懂命令的用户判断该不该批准。触发时机严格与 approvals 一致（生成
+  # 嵌在 send_exec_approval 卡 send 前），不是定时器、不是每条命令。
+  # fail-open：解说超时/失败 → 卡片照发（无解说段）。
+  # 设计稿 owner/docs/design/approval-command-explainer/。
+  # 模型（与 progress_explainer 同语义）：provider/model 写 auto → 走
+  #   auxiliary auto 链（config.yaml auxiliary.approval_explainer 任务段
+  #   可选承接，未配置回落主聊天模型）；显式值直连。
+  # timeout_ms：卡片等待解说的上限，超时→无解说段照发（默认 30s）。
+  # 代码默认 enabled: false；本机实配 true。缓存：同命令短 TTL 复用
+  # （once 审批后同命令再来 → 零延迟命中）。
+  approval_explainer:
+    enabled: true
+    provider: auto
+    model: auto
+    timeout_ms: 30000
+    cache_ttl_seconds: 600
+    platforms:
+      feishu: true
+      qqbot: true
+

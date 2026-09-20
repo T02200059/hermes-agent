@@ -62,11 +62,17 @@ def build_approval_card(
     approval_id: int,
     allow_permanent: Optional[bool] = None,
     smart_denied: bool = False,
+    explanation: str = "",
 ) -> Dict[str, Any]:
     """Build the interactive approval card JSON (header + markdown preview + action buttons).
 
     Truncates long commands.  Conditionally includes "Always" button + hint text
     based on get_allow_permanent().  All user-visible strings via i18n.
+
+    [owner] approval_explainer: ``explanation`` (可选) 为命令解说正文,
+    由 adapter 胶水在 send 前调 owner/approval_explainer/ 生成; 缺席时
+    卡片与原行为完全一致 (fail-open)。见
+    owner/docs/design/approval-command-explainer/。
     """
     configured_permanent = get_allow_permanent()
     allow_permanent = configured_permanent and allow_permanent is not False
@@ -91,6 +97,12 @@ def build_approval_card(
     md_content = f"```\n{cmd_preview}\n```\n" + t(
         "approval.feishu_reason_label", description=description
     )
+    # [owner] approval_explainer: 命令解说段 (理由行之后、提示文案之前)。
+    # 缺席时跳过 —— 卡片与原行为完全一致。
+    if explanation:
+        md_content += "\n\n" + t(
+            "approval.feishu_explanation_label", explanation=explanation
+        )
     if smart_denied:
         # Upstream design (d48bf743f): Smart DENY owner override is one-shot only.
         # Session / Always are hidden so a single override cannot re-open a

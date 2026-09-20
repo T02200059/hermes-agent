@@ -2393,6 +2393,28 @@ class FeishuAdapter(BasePlatformAdapter):
 
             approval_id = self._approval_ctx.next_id()
 
+            # [owner] approval_explainer: 审批卡附命令解说 (触发时机与审批卡
+            # 严格一致 —— 生成嵌在卡 send 前; fail-open, 超时/失败 → 空串,
+            # 卡片照发)。见 owner/approval_explainer/ + 设计稿
+            # owner/docs/design/approval-command-explainer/。
+            _explanation = ""
+            try:  # [owner]
+                _explain_fn = _owner_import(
+                    "owner.approval_explainer", "explain_command"
+                )
+                if _explain_fn is not None:
+                    from agent.i18n import get_language
+
+                    _explanation = await _explain_fn(
+                        command,
+                        description,
+                        get_language(),
+                        platform="feishu",
+                        chat_id=chat_id,
+                    ) or ""
+            except Exception:  # [owner]
+                logger.debug("[Feishu] approval_explainer failed", exc_info=True)
+
             # [owner] approval: build full interactive card (preview, buttons, title, reason, permanent note)
             # via owner helper (see owner/feishu/approval.py). Keeps official file diff minimal.
             card = _owner_import("owner.feishu.approval", "build_approval_card")(
@@ -2401,6 +2423,7 @@ class FeishuAdapter(BasePlatformAdapter):
                 approval_id=approval_id,
                 allow_permanent=allow_permanent,
                 smart_denied=smart_denied,
+                explanation=_explanation,
             )
 
             payload = json.dumps(card, ensure_ascii=False)

@@ -284,6 +284,8 @@ class ApprovalRequest:
     :param timeout_sec: Seconds until the approval expires.
     :param allow_permanent: When False, hide Always Allow on the keyboard.
     :param smart_denied: Smart DENY owner override — once/deny only + explain copy.
+    :param explanation: [owner] approval_explainer — command explanation prose
+        (empty = feature disabled/failed; rendering skips it entirely).
     """
     session_key: str
     title: str
@@ -295,6 +297,7 @@ class ApprovalRequest:
     timeout_sec: int = 120
     allow_permanent: bool = True
     smart_denied: bool = False
+    explanation: str = ""
 
 
 def build_approval_text(req: ApprovalRequest) -> str:
@@ -320,6 +323,10 @@ def _build_exec_text(req: ApprovalRequest) -> str:
         lines.append(f"📋 {req.title}")
     if req.description:
         lines.append(t("approval.qqbot_reason_label", description=req.description))
+    # [owner] approval_explainer: 命令解说段 (理由行之后)。空串跳过,
+    # 渲染结果与原行为完全一致。见 owner/approval_explainer/。
+    if req.explanation:
+        lines.append(t("approval.qqbot_explanation_label", explanation=req.explanation))
     if req.smart_denied:
         # Upstream design: Smart DENY override is one-shot only (always/session
         # unavailable). Mirror Feishu card copy so users understand the reduced
