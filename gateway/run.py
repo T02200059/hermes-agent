@@ -31490,13 +31490,16 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         # [owner] progress_explainer: silent-period progress narration for the
         # gateway (design: owner/docs/design/silent-progress-narration/). Installs
         # tick task + callback wrappers; disabled unless patch.yaml enables it.
+        # [owner] 方案①: agent 在 executor 线程里才 spin-up（此 holder 现为 [None]），
+        # 传容器本体而非快照值——模块侧 tick 惰性解出（同 executor_ref 惯例）。
         _pe_explainer = None  # [owner]
         try:  # [owner]
             from owner.progress_explainer.dispatcher import install_progress_explainer  # [owner]
             _pe_explainer = install_progress_explainer(  # [owner]
-                runner=self, agent=agent_holder[0], source=source,
+                runner=self, source=source,
                 session_key=session_key, turn_ctx=turn_ctx,
                 executor_ref=lambda: _executor_task,
+                agent_holder=agent_holder,
             )
         except Exception:  # [owner]
             logger.debug("progress_explainer install failed", exc_info=True)

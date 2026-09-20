@@ -111,8 +111,13 @@ def _build(**overrides: Any):
 
 
 async def _drive(expl: ProgressExplainer, rounds: int, monkeypatch_llm=True) -> None:
-    """事件循环内: install + 驱动 N 轮 tick（不 stop——由调用方控制）。"""
+    """事件循环内: install + 驱动 N 轮 tick（不 stop——由调用方控制）。
+
+    方案①后回调包装延迟到 agent 解出：install 后先同步一次（幂等），
+    保证打点类测试能直接调用包装后的回调。
+    """
     expl.install()
+    expl._sync_identity_and_callbacks()
     for _ in range(rounds):
         await expl._tick_once()
 
@@ -392,6 +397,8 @@ class TestLifecycle:
             )
             expl._cfg = _full_cfg()
             expl.install()
+            # 方案①：回调包装延迟到 agent 解出（install 后手动同步一次，幂等）
+            expl._sync_identity_and_callbacks()
             assert agent.tool_progress_callback is not None
             assert agent.tool_gen_callback is not None
             task = expl._tick_task
@@ -493,3 +500,164 @@ class TestConfig:
         cfg = pe_config.load_config()
         assert cfg["enabled"] is True
         assert cfg["silence_seconds"] == 60  # 非法回落默认
+
+
+# ---------------------------------------------------------------------------
+# 方案①回归（2026-09-20）：agent_holder 惰性解出
+# 事故根因：安装点同步读 agent_holder[0]（此刻 None）→ install 返回 None →
+# tick 从未启动，上线首日 0 旁白。以下用例锁死 holder 生命周期行为。
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _clear_pe_trackers():
+    """清模块级 tracker 表：_register_tracker 是进程级单例，跨用例残留
+    会让 _rekey_tracker 撞「新 key 已占用」而保守放弃迁移（单跑过、
+    全跑挂的根因）。"""
+    import owner.progress_explainer.dispatcher as _disp
+
+    _disp._TRACKERS.clear()
+    yield
+    _disp._TRACKERS.clear()
+
+
+class TestLazyAgentHolder:
+    def _build_lazy(self, holder: Any, agent: Any = None):
+        """构造惰性 expl：模拟网关安装点（agent=None + holder 容器）。"""
+        expl = ProgressExplainer(
+            runner=FakeRunner(agent),
+            agent=agent,
+            source=_source(),
+            session_key="sess-1",
+            turn_ctx=SimpleNamespace(message="跑个长任务", _cleanup_msg_ids=[]),
+            executor_ref=lambda: None,
+            agent_holder=holder,
+        )
+        # 惰性场景：session slot 跟着 holder 走（网关 track_agent 提升后
+        # _peek_session_state().turn.agent 就是解出的 agent）
+        expl._runner._peek_session_state = lambda key: SimpleNamespace(
+            turn=SimpleNamespace(agent=holder[0] if isinstance(holder, list) else agent)
+        )
+        expl._cfg = _full_cfg(tick_seconds=1, silence_seconds=1, min_interval_seconds=1)
+        return expl
+
+    def test_install_returns_instance_with_none_agent(self):
+        """安装点 agent=None + holder=[None] → 返回实例（不是 None）。"""
+        async def _case():
+            expl = self._build_lazy([None])
+            await _drive(expl, rounds=0)
+            return expl
+        expl = asyncio.run(_case())
+        assert expl is not None
+        assert expl._agent is None
+        assert expl._resolve_agent() is None
+
+    def test_tick_resolves_agent_and_wraps_callbacks(self):
+        """holder 从 [None] 变 [agent] 后 tick 解出 → 重键 + 包装回调。"""
+        async def _case():
+            holder = [None]
+            expl = self._build_lazy(holder)
+            await _drive(expl, rounds=0)
+            # 安装时按占位 identity 注册
+            assert expl._session_id == "sess-1"
+            agent = FakeAgent()
+            holder[0] = agent
+            await expl._tick_once()
+            return expl, agent
+        expl, agent = asyncio.run(_case())
+        # 重键到真 identity
+        assert expl._session_id == "sess-1" and expl._turn_id == "turn-1"
+        assert expl._identity_resolved is True
+        # 回调已包装
+        assert agent.tool_progress_callback is not None
+        assert agent.tool_gen_callback is not None
+        assert agent.interim_assistant_callback is not None
+        # 模块级表按新 key 命中（占位 key 已迁移）
+        from owner.progress_explainer.dispatcher import _tracker_for
+        assert _tracker_for("sess-1", "turn-1") is expl._tracker
+
+    def test_holder_as_callable(self):
+        """holder 也支持 callable 形式（网关 executor_ref 同款惯例）。"""
+        async def _case():
+            agent = FakeAgent()
+            expl = self._build_lazy(lambda: agent)
+            await _drive(expl, rounds=0)
+            await expl._tick_once()
+            return expl, agent
+        expl, agent = asyncio.run(_case())
+        assert expl._identity_resolved is True
+        assert agent.tool_progress_callback is not None
+
+    def test_send_fires_after_late_agent_resolution(self, monkeypatch):
+        """端到端：agent 晚解出 + 静默足够 → 旁白发出。"""
+        monkeypatch.setattr("agent.auxiliary_client.call_llm", _fake_llm_ok)
+
+        async def _case():
+            holder = [None]
+            expl = self._build_lazy(holder)
+            expl._runner.adapter = FakeAdapter()
+            await _drive(expl, rounds=0)
+            expl._tracker._last_content_ts = time.time() - 500
+            holder[0] = FakeAgent()
+            await expl._tick_once()
+            return expl
+        expl = asyncio.run(_case())
+        adapter = expl._runner.adapter
+        assert adapter.sent, "agent 晚解出后旁白应发出"
+        assert adapter.sent[0]["text"].startswith("🧭")
+
+    def test_install_entry_none_agent_without_holder_returns_none(self):
+        """install 入口：agent=None 且无 holder → None（旧行为兼容）。"""
+        ret = install_progress_explainer(
+            runner=FakeRunner(None),
+            agent=None,
+            source=_source(),
+            session_key="s",
+            turn_ctx=SimpleNamespace(message="m"),
+        )
+        assert ret is None
+
+    def test_install_entry_with_holder_succeeds(self, monkeypatch):
+        """install 入口：agent=None + holder → 安装成功（事故场景回归）。
+
+        须在事件循环内安装（install 里 create_task）；无循环时 create_task
+        抛 RuntimeError 被 fail-open 吞掉返回 None——与旧行为一致。
+        resolve_enabled 钉 True：conftest 把 HERMES_HOME 重定向到临时目录，
+        真读 patch.yaml 必为 disabled（同 test_install_disabled 的隔离现实）。
+        """
+
+        async def _case():
+            runner = FakeRunner(None)
+            runner.adapter = FakeAdapter()
+            return install_progress_explainer(
+                runner=runner,
+                agent=None,
+                source=_source(),
+                session_key="s",
+                turn_ctx=SimpleNamespace(message="m", _cleanup_msg_ids=[]),
+                agent_holder=[None],
+            )
+
+        # dispatcher 用 from .config import resolve_enabled（名字已绑定进
+        # dispatcher 命名空间）→ 须 patch dispatcher 侧引用，patch pe_config 够不着
+        import owner.progress_explainer.dispatcher as _disp
+        monkeypatch.setattr(_disp, "resolve_enabled", lambda *a, **k: True)
+        ret = asyncio.run(_case())
+        assert ret is not None
+        stop(ret)
+
+    def test_stop_after_late_resolution_restores(self):
+        """stop 在 agent 晚解出后调用：回调还原到原值。"""
+        async def _case():
+            holder = [None]
+            expl = self._build_lazy(holder)
+            await _drive(expl, rounds=0)
+            agent = FakeAgent()
+            orig_progress = agent.tool_progress_callback
+            holder[0] = agent
+            await expl._tick_once()
+            assert agent.tool_progress_callback is not None
+            expl.stop()
+            return agent, orig_progress
+        agent, orig_progress = asyncio.run(_case())
+        assert agent.tool_progress_callback is orig_progress
