@@ -354,3 +354,17 @@ owner:
     signature_tokens:
       - "ฅ"
     max_actions_per_turn: 1
+
+  # ── §7.24 progress_explainer：沉默期进度旁白 ──────────────────────────────────
+  # 网关 turn 内连续 silence_seconds 无用户可读内容 → 调辅助模型生成三段式
+  # 进度说明（在做什么/依据/接下来），以 🧭 独立消息投递；第二行实时事实
+  # （工具名/迭代数）取自 get_activity_summary()，不由模型生成。
+  # 触发节奏：静默 60s 起报，同轮两次之间 ≥120s，每轮最多 5 条；stream_guard
+  # tripped 时静默让位。设计稿 owner/docs/design/silent-progress-narration/。
+  # enabled: false 秒级关闭（改本文件即生效，无需重启 tick 判定）。
+  progress_explainer:
+    enabled: true
+    platforms:
+      feishu: true
+      qqbot: true
+      telegram: false
