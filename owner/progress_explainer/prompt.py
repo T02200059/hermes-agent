@@ -1,7 +1,7 @@
 """提示词模板与输出约束（设计稿 §11）。
 
 三段式输出要求：① 现在在做什么 ② 依据（读了什么/跑了什么）
-③ 接下来打算做什么 + 粗估（允许"不确定"，禁止硬承诺）。
+③ 接下来打算做什么 + 时间取决于什么（不给具体时长，禁止裸"不确定"收尾）。
 
 硬约束（写进 system，模型必须遵守）：
 - 只输出自然语言概述，绝不引用思考原文（防 CoT 泄漏进群聊）；
@@ -34,7 +34,7 @@ and you must tell them, in a few words of natural language, what is happening ri
 Write EXACTLY three parts, in this order:
 1. What the agent is doing right now.
 2. The evidence for that (which tool ran / what was read / what the stream counters show).
-3. What the agent plans to do next, with a rough estimate. Saying "how much longer is unclear" is fine; NEVER make hard promises about timing or success.
+3. What the agent plans to do next, plus a dependency note: state what the remaining time depends on (e.g. how much output the current generation still has to produce, how many files/steps remain, how large the pending tool result is) instead of estimating a duration. NEVER give a specific time figure, and NEVER end with a bare "timing is unclear" — always name at least one concrete factor that the time depends on.
 
 Hard constraints (violations are discarded):
 - Natural-language prose only. NEVER quote or paraphrase the raw reasoning excerpt verbatim; use it only to understand what is being pondered (no chain-of-thought leakage).
