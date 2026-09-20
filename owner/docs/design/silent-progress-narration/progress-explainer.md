@@ -1,6 +1,8 @@
 # progress-explainer 设计稿（沉默进度说明）
 
 > 状态：**已实现（2026-09-20）**，代码在 `owner/progress_explainer/`（7 模块），官方胶水在 `gateway/run.py` 心跳创建点（`[owner]` 标记）；`on_stream_delta` 经 owner-extensions 聚合器注册（`plugin.yaml` 声明 + 聚合器调用）。单测 `tests/owner/test_progress_explainer.py` 18 项全绿。默认 `enabled: false`（patch.yaml `owner.progress_explainer`）；模型配置也在 patch.yaml 本段（provider/model），未配置回落主聊天模型——**不使用 config.yaml auxiliary.\*（与 §7 原稿的 auxiliary 段设计不同，实现时收拢）**。E2E（真网关 + 临时 HERMES_HOME）尚未跑 [未验证]。
+>
+> **方案①修订（2026-09-20 晚）**：安装时序 bug 修复——原实现在安装点同步读 `agent_holder[0]` 传值，而该点在 agent spin-up 之前（必为 None）→ `install` 直接返回 None，tick 从未启动，上线首日 0 旁白。修正为传 holder 容器本体，模块侧 tick 惰性解出（对齐 `executor_ref=lambda` 惯例）+ tracker 重键（占位 identity → agent 解出后的真 identity）+ 幂等回调包装。单测增至 25 项（+7 惰性生命周期）。见 §3 修订与 §10 修订。
 > 起草：2026-09-17
 > 存放约定：设计稿统一放 `owner/docs/design/<功能短名>/`，一个功能一个目录。
 > 本功能目录：**`silent-progress-narration`**（静默期进度旁白），与代码模块 `owner/progress_explainer/` 对号。
@@ -81,6 +83,8 @@ owner/progress_explainer/
 ```
 
 官方胶水（预计 ≤8 行，全部 `# [owner]` 标记）：`gateway/run.py` 心跳任务创建点（`31480` 附近）安装本模块，并在 `32204` / `32260` 的 cancel 列表追加一个任务名。
+
+**§3 修订（方案①，2026-09-20 晚）**：安装点早于 agent spin-up（`agent_holder` 此刻是 `[None]`），**必须传 holder 容器本体而非 `agent_holder[0]` 快照值**。`install_progress_explainer(runner, source, session_key, turn_ctx, executor_ref, agent_holder=agent_holder)`；模块侧 tick 每轮惰性解出 agent：解出后做一次 tracker 重键（占位 key `session_key|` → 真 key `session_id|turn_id`，与 `on_stream_delta` payload 对齐）+ 幂等回调包装（`id(agent)` 锚定，同实例只包一次）。原稿「安装时包装回调」的写法在 agent=None 阶段无事可包。
 
 `install_progress_explainer(runner, ctx, agent, loop)` 做三件事：
 1. 包装 `agent.tool_progress_callback`、`agent.tool_gen_callback`（原值可 None）→ 打点；
@@ -236,6 +240,8 @@ auxiliary:
 | `agent/*`、`gateway/display_config.py` | **不动** | 0 |
 
 `agent/tool_executor.py` 也不需要动：`tool_progress_callback` 已携带全部所需数据。
+
+**§10 修订（方案①，2026-09-20 晚）**：网关胶水的实际侵入**更小**——安装调用传 `agent_holder=agent_holder`（容器本体），不再读 `agent_holder[0]`；官方源码零新增逻辑（惰性解出/重键/包装全在 `owner/progress_explainer/dispatcher.py`）。教训入档：**在官方异步 spin-up 模型（holder 轮询等 agent）旁边安装观察者时，禁止做值快照——一律传引用**（同 `executor_ref=lambda: _executor_task` 惯例）。
 
 ---
 
