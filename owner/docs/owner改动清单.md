@@ -24,7 +24,7 @@
 | owner/ 纯新增 | 160 个文件（基点时 `owner/` 目录为空） |
 | 官方文件侵入 | 120 个文件（不含 tests；另计 `tests/` 135 个，其中新增 61） |
 | 范围 | 模型归因 / patch.yaml 配置 / 审批安全 / skill 写入审批 / 语义审计 / 飞书深度定制 / TUI 皮肤 / Cron 运维 / Gateway 稳定性 / Checkpoint 预测 / Upstream Sync / Viking 记忆治理 / Desktop 窗口透明度 / output_guard / API Server LDAP 身份准入 / 产物媒体与流式契约 |
-| 最后更新 | 2026-09-16 |
+| 最后更新 | 2026-09-20 |
 | 来源 | 从 `owner-v17`（500+ commit）清洗迁移而来；本分支是重新整理后的最小叠加版本 |
 
 _元数据统计口径：范围取「基点后未出现在上游 `00b2e03c80` 中的 owner 侧改动」，即 `git rev-list --count 00b2e03c80..HEAD`；文件数按 NUL 分隔去重统计（`git diff --name-only -z … | tr '\0' '\n' | sort -u`），避免含中文的路径被 git 加引号后漏计。数值截至 2026-09-10。_
@@ -951,6 +951,23 @@ _元数据统计口径：范围取「基点后未出现在上游 `00b2e03c80` �
 
 ---
 
+### 7.23 /stop 打在 runner 构造窗口期留下「孤儿轮次」（stop-orphan-run）
+
+- **背景**：`/stop` 落在「槽位=sentinel、真 agent 还在后台线程异步构造」的窗口期时，`_interrupt_and_clear_session` 对 sentinel 只做「清槽 + bump generation」（`run.py:29168` 的 `is not _AGENT_PENDING_SENTINEL` 守卫），随后 `track_agent()` 因 generation 不匹配**只打一行日志就跳过提升**（`run.py:31285-31293`，`b7bdf32d4e` 引入，Closes #11016）——被跳过的那个 run 没人中止，继续在 executor 里跑 `run_conversation`，并在轮次开头就持有 durable session turn lease（`state.db::session_turn_leases`，TTL 300s / 等待上限 1800s）。于是同时出现：**内存槽空**（后续消息被判「会话不忙」→ 走冷路径起新轮次）+ **租约被占**（新轮次抢不到 → 排队，每 15s 一条「⏳ 仍在等待此会话上的另一个 Hermes 进程」）。单一飞书会话下整个 DM 被堵住（node010 2026-09-20 15:24 实测，holder `pid=3174368…platform=feishu` 就是网关自己）。
+- **方案**：
+  - `gateway/run.py::track_agent()` stale 分支：+8 行（3 行 `[owner]` 注释 + 5 行 try/except 委托），**不改动任何既有行**
+  - `owner/patches/stop_orphan_run.py`（新增）：`cancel_stale_run()` = 判开关 → 去重（同一 `(session_key, run_generation)` 只补一次）→ `agent.interrupt_compat.request_hard_interrupt(agent, "Stop requested (stale run cancelled)")`（与 `/stop` 同一条 API）→ 孤儿在下一个检查点退出，轮次 finally 释放租约；全程 fail-open
+  - 行为开关：`patch.yaml → owner.gateway_stop_orphan.enabled`（缺省 `true`，缺 section 也按 true）
+- **为什么不是零源码改动（P1）**：判「这个 run 是不是孤儿」需要同时拿到「generation 已过期」和「agent 对象」，两者在 `track_agent()` 里都是闭包局部量（`run_generation` / `agent_holder`），外部拿不到；「/stop 时按 session_key 打标记、轮次入口消费」的替代方案会误伤 `/stop` 后紧接着发来的正常消息（用户常见操作），故在唯一精确位置做 5 行委托
+- **上游状态**：`upstream/main @ 9573f44ca5`（2026-09-19）**未修** —— `gateway/run_turn.py::_run_agent_track_agent` 照样 skip+return；`gateway/run_agent_cache.py::_interrupt_running_turn` 照样对 sentinel 跳过中断（注释 "the pending-sentinel /stop has no in-flight work"）；`agent/` 全目录 0 处 `run_generation` 引用（run 自身无法感知过时）
+- **涉及文件**：`gateway/run.py`（+8）、`owner/patches/stop_orphan_run.py`（新增）、`tests/owner/patches/test_stop_orphan_run.py`（新增 11 例）、`owner/docs/design/gateway-stop-orphan-run/stop-orphan-run.md`（新增）
+- **侵入类型**：薄胶水 / 委托（`[owner]` 标记 + 全部实现在 `owner/`，**非 monkey-patch**）
+- **验证**：`tests/owner/patches/test_stop_orphan_run.py` 11 passed；连同既有 `tests/owner/patches/` + `tests/owner/test_contract_entrypoints.py` 共 102 passed（1 failed 为既有失败 `test_cron_run_job_sets_cron_contextvar_on_real_agent_path`，已 `git stash` 复现确认与本改动无关）；契约测试 `test_gateway_glue_is_wired` 断言 5 行胶水仍在（merge 丢失立即红）。**生效需重启 gateway**：2026-09-20 只同步代码到 node010，未重启
+- **回滚**：删除那 5 行 `[owner]` 委托即完全回滚；或 `patch.yaml` 开关秒级关闭
+- **Commit**：`2110ea27eb`
+
+---
+
 ## 八、工具链：Diff / Patch / Checkpoint
 
 ### 8.1 Checkpoint Mutation Predictor（terminal 预测式快照）
@@ -1482,7 +1499,7 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 
 | 文件 | 侵入内容 | owner/ 对应模块 | 相关 commit |
 |------|----------|-----------------|-------------|
-| `gateway/run.py` | cron env scrub ×3、executor-shutdown、inbound context、hygiene notice、auto-card、per-chat display、chained quick command、steer vision enrichment（§7.18） | owner/cron/、owner/gateway/、owner/feishu/、owner/display_overrides.py、owner/gateway/steer_vision.py | 几乎所有 §11/§17 commit |
+| `gateway/run.py` | cron env scrub ×3、executor-shutdown、inbound context、hygiene notice、auto-card、per-chat display、chained quick command、steer vision enrichment（§7.18）、**stale-run cancel（§7.23：/stop 后跳过提升的孤儿轮次补硬中断）** | owner/cron/、owner/gateway/、owner/feishu/、owner/display_overrides.py、owner/gateway/steer_vision.py | 几乎所有 §11/§17 commit |
 | `plugins/platforms/feishu/adapter.py` | 64+ 处 `[owner]` 标记：approval/auto_card/bot_menu/clarify/diff_card/model_picker/profile_routing/resume_card/sender_name/early-typing/**skill_approval_gate** / **queue_card** 委托；`_mentions_self` 不再把 `@_all` 当 @机器人（§4.14）；**merge_forward 二次拉取渲染**（§4.15）；`send_card` 内补 `hermes_profile` 标签（§4.1）；`_finalize_send_result` 全路径 message_id 日志（§7.21） | owner/feishu/*（含 skill_approval_card、queue_card、card_sender） | §4.2/§5.3-5.7/§17.1/§3.11/§4.1/§4.11/§4.14/§4.15/§7.21 |
 | `agent/conversation_loop.py` | MoA 注入（CR-005 已改为独立 message）、content-filter fallback、adaptive backoff、thinking-timeout、attribution 重建、tool_call_id 胶水 | owner/attribution.py、owner/api_error_hints.py | a6dcd6ed8、9a05e50b4、362304bc8 |
 | `tools/approval.py` | home-prefix fold（CR-001 修复）、skill script 自动审批（3 处委托）、patch.yaml allowlist 合并、cron active helper | owner/approval/、owner/patch_config.py、owner/cron/approval_helper.py | 82fe8c962、5dd9580b4、99a374f64 |
@@ -1608,6 +1625,12 @@ _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请先�
 ---
 
 ## 附录 E：变更日志
+
+### 2026-09-20：新增 §7.23 stop-orphan-run（/stop 打在 runner 构造窗口期的「孤儿轮次」）
+
+- **类型**：代码修复（gateway 薄胶水 + owner patch）+ 设计文档
+- **新建正文**：**§7.23**：`2110ea27eb`（`gateway/run.py` +8 行 `[owner]` 委托、`owner/patches/stop_orphan_run.py` 新增、`tests/owner/patches/test_stop_orphan_run.py` 11 例、`owner/docs/design/gateway-stop-orphan-run/stop-orphan-run.md`）
+- **同步状态**：代码已推 origin + gitlab 并 pull 到 node010；**未重启任何 gateway**（生效需下次重启）
 
 ### 2026-09-10：本机 commit 补录（09-02～09-10 全量 + 08-14～09-01 窗口）
 
