@@ -13,6 +13,11 @@
 # ═══════════════════════════════════════════════════════════════════════════════
 
 owner:
+  # [owner] stop-orphan-run（§7.23）：/stop 打在 runner 构造窗口期时，对「跳过提升但仍在跑、
+  # 且持有 session turn lease」的孤儿轮次补一次硬中断，避免它堵住整个会话。
+  # false = 关闭该补丁（秒级回滚，无需改源码）。
+  gateway_stop_orphan:
+    enabled: true
   feishu_card:
     auto_card_threshold: 57
     split_enabled: true

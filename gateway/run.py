@@ -31290,6 +31290,14 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                     session_key or "",
                     run_generation,
                 )
+                # [owner] stop-orphan-run: 这个 run 被跳过提升，但它的执行线程已经在跑并持有
+                # session turn lease → 补一次硬中断，否则它会挡住该会话的后续消息。
+                # 实现见 owner/patches/stop_orphan_run.py（fail-open）。
+                try:
+                    from owner.patches.stop_orphan_run import cancel_stale_run
+                    cancel_stale_run(self, session_key, run_generation, agent_holder[0])
+                except Exception:
+                    pass
                 return
             self._session_state(session_key).turn.agent = agent_holder[0]
             if self._draining:
