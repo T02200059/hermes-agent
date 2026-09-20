@@ -76,6 +76,15 @@ async def explain(state: dict, cfg: dict, user_message: str, language: str) -> O
         hard_facts = raw_hard if isinstance(raw_hard, dict) else {}
         messages = prompt_mod.build_messages(user_message, digest, hard_facts, language)
 
+        # 模型收拢在 patch.yaml owner.progress_explainer.provider/model（不进
+        # config.yaml auxiliary.*）。未配置 → 两个都不传 → call_llm 走 auto 链
+        # 回落主聊天模型。这正是「默认主模型」的实现路径（设计稿 §7 模型侧
+        # 仍写 auxiliary 段，本实现改为全配置收拢在 patch.yaml）。
+        _provider = str(cfg.get("provider", "") or "").strip() or None
+        _model = str(cfg.get("model", "") or "").strip() or None
+        if _model and _model.lower() == "auto":
+            _model = None
+
         def _call() -> object:
             from agent.auxiliary_client import call_llm  # 延迟导入，避免 import 期副作用
 
@@ -85,6 +94,8 @@ async def explain(state: dict, cfg: dict, user_message: str, language: str) -> O
                 temperature=0,
                 max_tokens=200,
                 timeout=timeout_s,
+                provider=_provider,
+                model=_model,
             )
 
         response = await asyncio.wait_for(asyncio.to_thread(_call), timeout=timeout_s)

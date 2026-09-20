@@ -361,9 +361,13 @@ owner:
   # （工具名/迭代数）取自 get_activity_summary()，不由模型生成。
   # 触发节奏：静默 60s 起报，同轮两次之间 ≥120s，每轮最多 5 条；stream_guard
   # tripped 时静默让位。设计稿 owner/docs/design/silent-progress-narration/。
+  # 模型：provider/model 在本段配置，不进 config.yaml auxiliary.*；
+  #       未配置 → 回落主聊天模型（默认主模型）。
   # enabled: false 秒级关闭（改本文件即生效，无需重启 tick 判定）。
   progress_explainer:
     enabled: true
+    provider: damodel
+    model: xy-pro
     platforms:
       feishu: true
       qqbot: true
