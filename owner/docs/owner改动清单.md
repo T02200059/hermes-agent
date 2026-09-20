@@ -968,6 +968,20 @@ _元数据统计口径：范围取「基点后未出现在上游 `00b2e03c80` �
 
 ---
 
+### 7.24 沉默期进度旁白（progress_explainer）
+
+- **背景**：网关长任务运行时用户「零信息」——工具面包屑在 QQ 上直接丢弃（无 `edit_message`）、reasoning 只在最终回复出现、心跳 `⏳` 间隔本机 600s 且优先原地编辑不弹新消息；上一对话跑 10 分钟全程静默即此因（progress-explainer 只提交了设计稿 `bfc514db0c`，未实现）
+- **方案**：per-turn 装一个 tick 任务（默认 5s 周期）：连续 `silence_seconds`（60）无用户可读内容 → 调辅助模型（`auxiliary.progress_explainer`，未配置回落主模型）生成三段式说明（在做什么/依据/接下来），以独立消息投递（`🧭 系统提示：` 前缀 + 第二行实时事实，事实取 `get_activity_summary()` 不由模型生成）；四分支判定（工具型/生成型·有推理流/生成型·无推理流/停滞型）+ stream_guard tripped 让位 + digest 哈希去重 + `max_per_turn` 封顶
+- **模块**：`owner/progress_explainer/`（config/tracker/digest/prompt/explain/dispatcher/__init__ 7 模块）；证据源 4 条：tool_progress 回调包装、`on_stream_delta`（经 owner-extensions 聚合器注册，同 stream_guard 模式）、tool_gen 回调（「正在生成 write_file 参数」）、interim 散文（重置静默计时）
+- **侵入类型**：薄胶水（`gateway/run.py` 心跳创建点 +21 行安装 / finally +6 行停止，全部 `[owner]` 标记 + fail-open try/except；官方字面 diff 中注释占 10 行）
+- **配置**：`patch.yaml → owner.progress_explainer.*`（enabled 默认 **false**，落地不改变现有行为）；三级查找 chats.platforms→platforms→enabled；`silence/stall/min_interval/max_per_turn/tick/events_in_digest/chars_per_event/reasoning_tail_chars/explainer_timeout_ms`；`config.yaml plugins.stream_reasoning_deltas: true` 为推理流证据源前置（本机已开，2026-09-17）
+- **stream_guard 协作**：新增公开只读 `snapshot(session_id, turn_id)`（`_STATE` 锁内聚合 total_chars/tripped/signals），progress_explainer tick 时读，tripped → 静默让位不发
+- **涉及文件**：`owner/progress_explainer/`（新增 7 模块 1249 行）、`gateway/run.py`（+27）、`owner/owner-extensions/__init__.py`（+14 聚合器接线）、`owner/owner-extensions/plugin.yaml`（+1 hooks 声明）、`owner/owner-extensions/stream_guard/__init__.py`（+34 snapshot）、`tests/owner/test_progress_explainer.py`（新增 18 例）、`owner/docs/design/silent-progress-narration/progress-explainer.md`（状态行改已实现）
+- **验证**：`tests/owner/test_progress_explainer.py` 18 passed（打点/阈值边界 59-60-61/让位/静默失败/生命周期/三级查找）；`tests/owner/test_stream_guard.py` 20 passed（snapshot 无回归）；`gateway/run.py` py_compile 通过。E2E（真网关 + 临时 HERMES_HOME）未跑 [未验证]；启用需 patch.yaml + 网关重启
+- **回滚**：删 run.py 两处 `[owner]` 胶水即完全回滚；或 patch.yaml `enabled: false` 秒关
+
+---
+
 ## 八、工具链：Diff / Patch / Checkpoint
 
 ### 8.1 Checkpoint Mutation Predictor（terminal 预测式快照）
@@ -1625,6 +1639,12 @@ _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请先�
 ---
 
 ## 附录 E：变更日志
+
+### 2026-09-20：新增 §7.24 progress_explainer（沉默期进度旁白）
+
+- **新建正文**：**§7.24**：gateway/run.py +27 行 `[owner]` 胶水、owner/progress_explainer/ 新增 7 模块、tests/owner/test_progress_explainer.py 18 例、stream_guard snapshot() +34 行、设计稿状态行更新
+- **背景**：长任务 10 分钟用户零信息（QQ 面包屑丢弃/reasoning 不流式可见/心跳 600s 且原地编辑）；设计稿 2026-09-17 已 commit 未实现
+- **验证**：18+20 passed；run.py py_compile ok；默认 enabled=false 零行为变化
 
 ### 2026-09-20：新增 §7.23 stop-orphan-run（/stop 打在 runner 构造窗口期的「孤儿轮次」）
 

@@ -1,6 +1,6 @@
 # progress-explainer 设计稿（沉默进度说明）
 
-> 状态：**设计稿，未实现**
+> 状态：**已实现（2026-09-20）**，代码在 `owner/progress_explainer/`（7 模块），官方胶水在 `gateway/run.py` 心跳创建点（`[owner]` 标记）；`on_stream_delta` 经 owner-extensions 聚合器注册（`plugin.yaml` 声明 + 聚合器调用）。单测 `tests/owner/test_progress_explainer.py` 18 项全绿。默认 `enabled: false`（patch.yaml `owner.progress_explainer`）。E2E（真网关 + 临时 HERMES_HOME）尚未跑 [未验证]。
 > 起草：2026-09-17
 > 存放约定：设计稿统一放 `owner/docs/design/<功能短名>/`，一个功能一个目录。
 > 本功能目录：**`silent-progress-narration`**（静默期进度旁白），与代码模块 `owner/progress_explainer/` 对号。

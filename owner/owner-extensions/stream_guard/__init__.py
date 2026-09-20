@@ -479,6 +479,40 @@ def register_hooks(ctx) -> None:
     logger.debug("stream_guard: on_stream_delta hook registered")
 
 
+def snapshot(session_id: str = "", turn_id: str = "") -> dict:
+    """公开只读快照（progress_explainer 让位判定用，设计稿 §8）。
+
+    返回 ``{"total_chars": int, "tripped": bool, "signals": dict|None,
+    "kinds": {kind: chars}}``。session/turn 为空时聚合所有窗口。
+    只读 ``_STATE``，不加动作、不触发评估；任何异常 → 空 dict。
+    """
+    try:
+        sid = session_id or "-"
+        tid = turn_id or "-"
+        total = 0
+        tripped = False
+        signals = None
+        kinds: dict = {}
+        with _LOCK:
+            for win in _STATE.values():
+                if win.session_id != sid or win.turn_id != tid:
+                    continue
+                total += win.total_chars
+                kinds[win.kind] = kinds.get(win.kind, 0) + win.total_chars
+                if win.tripped:
+                    tripped = True
+                    if signals is None:
+                        signals = dict(win.signals) if win.signals else {}
+        return {
+            "total_chars": total,
+            "tripped": tripped,
+            "signals": signals or {},
+            "kinds": kinds,
+        }
+    except Exception:
+        return {}
+
+
 def reset_state() -> None:
     """清空窗口/动作表（自检与测试用）。"""
     with _LOCK:

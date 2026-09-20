@@ -134,6 +134,20 @@ def register(ctx) -> None:
     except Exception:
         logger.warning("owner: stream_guard hooks registration failed", exc_info=True)
 
+    # silent-progress-narration — progress_explainer（沉默期进度旁白，设计稿
+    # owner/docs/design/silent-progress-narration/progress-explainer.md）。
+    # on_stream_delta 观察者：kind=text/reasoning 增量喂 per-turn tracker；
+    # 判定/辅助模型调用/投递由网关侧 install_progress_explainer 的 tick 任务
+    # 负责（gateway/run.py 心跳创建点旁的 [owner] 行安装）。
+    # 开关：patch.yaml owner.progress_explainer.{enabled, platforms, chats}，
+    # 默认 false —— 未启用时只挂一个轻量观察者，零投递零模型调用。
+    try:
+        from owner.progress_explainer.dispatcher import register_hooks as _register_pe_hooks
+        _register_pe_hooks(ctx)
+        logger.debug("owner: progress_explainer hooks registered via owner-extensions")
+    except Exception:
+        logger.warning("owner: progress_explainer hooks registration failed", exc_info=True)
+
     # §4.11 Feishu queue lifecycle card (cancel / process_now / freeze)
     # + guide-card morph to status card. Feishu-only; other platforms keep text ack.
     # See owner/patches/queue_cancel_patch.py + owner/feishu/queue_card.py.

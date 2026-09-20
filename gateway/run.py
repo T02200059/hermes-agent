@@ -31487,6 +31487,21 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
 
         _notify_task = asyncio.create_task(_notify_long_running())
 
+        # [owner] progress_explainer: silent-period progress narration for the
+        # gateway (design: owner/docs/design/silent-progress-narration/). Installs
+        # tick task + callback wrappers; disabled unless patch.yaml enables it.
+        _pe_explainer = None  # [owner]
+        try:  # [owner]
+            from owner.progress_explainer.dispatcher import install_progress_explainer  # [owner]
+            _pe_explainer = install_progress_explainer(  # [owner]
+                runner=self, agent=agent_holder[0], source=source,
+                session_key=session_key, turn_ctx=turn_ctx,
+                executor_ref=lambda: _executor_task,
+            )
+        except Exception:  # [owner]
+            logger.debug("progress_explainer install failed", exc_info=True)
+
+
         def _stream_confirmed_final_delivery(
             consumer,
             final_text: str,
@@ -32210,6 +32225,12 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 log_task.cancel()
             interrupt_monitor.cancel()
             _notify_task.cancel()
+            # [owner] progress_explainer: stop tick task + restore callbacks
+            try:  # [owner]
+                from owner.progress_explainer.dispatcher import stop as _pe_stop  # [owner]
+                _pe_stop(_pe_explainer)
+            except Exception:  # [owner]
+                logger.debug("progress_explainer stop failed", exc_info=True)
 
             # Wait for stream consumer to finish its final edit
             if stream_task:
