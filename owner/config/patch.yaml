@@ -22,6 +22,19 @@ owner:
     auto_card_threshold: 57
     split_enabled: true
     split_max_chars: 24000
+    # [owner] notice-card 规则表：运行时覆盖源码默认表（替换不是追加），
+    # 须把内置规则全量写齐。mtime 变化即时重读（零重启生效）。
+    # 🧭 进度旁白：progress_explainer 旁白前缀须与
+    # owner/progress_explainer/prompt.py 的 PREFIX 字面一致。
+    notice_titles:
+      - prefix: "⚠️ [stream-guard]"
+        title: "⚠️ [stream-guard] 生成退化告警"
+        template: orange
+        strip_prefix: true
+      - prefix: "🧭 系统提示："
+        title: "🧭 进度旁白"
+        template: blue
+        strip_prefix: true
 
   # ── Diff card (patch/write_file 等文件修改工具的 diff 卡片) ─────────────
   # 开关：master enabled 总控；feishu / qqbot 按平台单独开关。
