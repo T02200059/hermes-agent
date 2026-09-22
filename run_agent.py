@@ -7230,6 +7230,12 @@ class AIAgent:
         visible = self._strip_think_blocks(text).strip()
         if visible:
             visible = redact_sensitive_text(visible)
+        # [owner] strip leaked DeepSeek BOS/EOS before interim outbound
+        try:
+            from owner.outbound_special_token_scrub import scrub_outbound_text as _owner_scrub_specials
+            visible = _owner_scrub_specials(visible)
+        except Exception:
+            pass
         if not visible or visible == "(empty)" or self._interim_text_was_delivered(visible):
             return
         try:
@@ -7271,6 +7277,12 @@ class AIAgent:
             if commentary_parts
             else self._interim_assistant_visible_text(assistant_msg)
         )
+        # [owner] strip leaked DeepSeek BOS/EOS before interim outbound
+        try:
+            from owner.outbound_special_token_scrub import scrub_outbound_text as _owner_scrub_specials
+            visible = _owner_scrub_specials(visible)
+        except Exception:
+            pass
         if (
             not visible
             or visible == "(empty)"

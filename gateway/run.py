@@ -1040,6 +1040,13 @@ def _sanitize_gateway_final_response(platform: Any, text: str) -> str:
 
     text = _sanitize_surrogates(str(text))
 
+    # [owner] strip leaked DeepSeek BOS/EOS literals (see owner/outbound_special_token_scrub.py)
+    try:
+        from owner.outbound_special_token_scrub import scrub_outbound_text as _owner_scrub_specials
+        text = _owner_scrub_specials(text)
+    except Exception:
+        pass
+
     # Cancellation metadata, not assistant prose. ACP/TUI already suppress
     # this sentinel; chat surfaces should too (#7921).
     if str(text).strip().startswith(INTERRUPT_WAITING_FOR_MODEL_PREFIX):

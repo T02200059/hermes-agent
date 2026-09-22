@@ -1010,6 +1010,20 @@ _元数据统计口径：范围取「基点后未出现在上游 `00b2e03c80` �
 
 ---
 
+
+### 7.27 出站剥 DeepSeek BOS/EOS 泄漏（outbound_special_token_scrub）
+
+- **背景**：damodel/`xy-pro` 等偶发把 DeepSeek 词表 BOS/EOS（`<｜begin▁of▁sentence｜>` / `<｜end▁of▁sentence｜>`）decode 成可见正文；本机 `interim_assistant_messages: true` 时会进飞书旁白。同根因还曾出现空工具名拒收、terminal 参数 JSON 漏进正文（JSON 另案，不在本条）
+- **方案**：出站边界按**字面量**剥 BOS/EOS（全 provider，不限模型 id——该字形序列足够特异，且避免为 damodel 门控在出站链路补传 provider）；整段仅特殊符 → 空串不投递；夹在正文中 → 只删控制符
+- **模块**：`owner/outbound_special_token_scrub.py`（`scrub_outbound_text`）
+- **侵入类型**：薄胶水 fail-open（`gateway/run.py` `_sanitize_gateway_final_response` +1 委托；`run_agent.py` interim 两条出站路径各 +1 委托，全部 `[owner]`）
+- **配置**：无（字面匹配即生效；无需 patch.yaml）
+- **涉及文件**：`owner/outbound_special_token_scrub.py`（新增）、`gateway/run.py`、`run_agent.py`、`tests/owner/test_outbound_special_token_scrub.py`、`owner/docs/design/outbound-special-token-scrub/`
+- **验证**：`tests/owner/test_outbound_special_token_scrub.py` 8 passed（纯 BOS/EOS→空、前缀剥留正文、sanitize 飞书面）。E2E（真网关再打出裸 BOS）[未验证]；需网关重启加载胶水
+- **回滚**：删三处 `[owner]` 委托即回滚
+
+---
+
 ## 八、工具链：Diff / Patch / Checkpoint
 
 ### 8.1 Checkpoint Mutation Predictor（terminal 预测式快照）
@@ -1513,6 +1527,7 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 | `owner/owner-extensions/skill_manage_bridge/` | pre_tool_call / gateway 缓存接线 skill 审批门 | owner-extensions plugin |
 | `owner/owner-extensions/output_guard/` | transform_llm_output 复读/乱码/超长检测与折叠 | owner-extensions plugin（零官方侵入） |
 | `owner/english_explainer/` | 英文终局回复中文解说旁白（§7.26，同 progress_explainer 形态） | owner-extensions plugin（零官方侵入） |
+| `owner/outbound_special_token_scrub.py` | 出站剥 DeepSeek BOS/EOS 泄漏（§7.27） | gateway/run.py + run_agent.py 薄胶水 |
 | `owner/progress_explainer/` | 沉默期进度旁白（§7.24） | gateway/run.py 薄胶水 |
 | `owner/approval_explainer/` | 审批卡命令解说（§7.25，飞书+QQ） | feishu/qqbot adapter 薄胶水 |
 | `owner/checkpoint_predictor/` | terminal 预测式 checkpoint（静态+LLM） | agent/tool_executor.py |
@@ -1670,6 +1685,10 @@ _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请先�
 ---
 
 ## 附录 E：变更日志
+
+### 2026-09-23：新增 §7.27 outbound_special_token_scrub（出站剥 BOS/EOS）
+
+- **新建正文**：**§7.27**：`owner/outbound_special_token_scrub.py` + `gateway/run.py` / `run_agent.py` 三处 fail-open 薄胶水；全 provider 字面剥；tests 8 例
 
 ### 2026-09-22：新增 §7.26 english_explainer（英文回复中文解说）
 
