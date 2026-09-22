@@ -231,6 +231,14 @@ _DEFAULT_NOTICE_RULES: Tuple[Dict[str, Any], ...] = (
         "template": "blue",
         "strip_prefix": True,
     },
+    {
+        # [owner] english_explainer 英文回复解说（§7.26）：PREFIX 须与
+        # owner/english_explainer/prompt.py 字面一致。
+        "prefix": "🔤 系统提示：",
+        "title": "🔤 英文解说",
+        "template": "blue",
+        "strip_prefix": True,
+    },
 )
 
 

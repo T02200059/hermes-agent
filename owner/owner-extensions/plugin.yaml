@@ -10,5 +10,7 @@ hooks:
   - pre_tool_call          # skill_manage Feishu write approval
   - post_tool_call         # detect staged memory writes → approval card
   - transform_llm_output   # output_guard: LLM 输出复读/乱码/超长检测与折叠
+  - transform_llm_output   # english_explainer: 英文回复中文解说旁白
+  - pre_gateway_dispatch   # english_explainer: 缓存 adapter/chat 路由
   - on_stream_delta        # stream_guard: 生成中退化（思考/输出边界循环）检测与中止
   - on_stream_delta        # progress_explainer: 沉默期进度旁白的流增量观察

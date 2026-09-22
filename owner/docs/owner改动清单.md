@@ -982,6 +982,16 @@ _元数据统计口径：范围取「基点后未出现在上游 `00b2e03c80` �
 
 ---
 
+
+### 7.26 英文回复中文解说（english_explainer）
+
+- **背景**：`display.language: zh` 时 agent 偶发整段英文终局回复，用户需要与进度旁白同形态的中文解说旁白（飞书 notice 卡）
+- **方案**：`transform_llm_output` 钩子（不改原文，始终 return None）+ 语气词密度判定整段英文 → 后台 `call_llm(task="english_explainer")` 翻译 → `adapter.send("🔤 系统提示："+译文)`；顶级约束 `get_language()` 须 zh；配置仅 `patch.yaml`
+- **模块**：`owner/english_explainer/`（config/detect/prompt/explain/hook/__init__）
+- **配置**：代码默认 `enabled: false`；本机实配 `enabled: true`、`provider: damodel`、`model: xy-flash`；空/auto → auxiliary auto。三级查找同旁白。`feishu_card.notice_titles` 增英文解说规则（热读）
+- **涉及文件**：`owner/english_explainer/*`（新增）、`owner/owner-extensions/{__init__.py,plugin.yaml}`、`owner/feishu/auto_card.py`（默认 notice）、`owner/config/patch.yaml`、`tests/owner/test_english_explainer.py`、`owner/docs/design/english-reply-explainer/english-explainer.md`
+- **验证**：单测覆盖判定/配置/前缀钉死/hook 不改原文；E2E [未验证]；全新 hook 需进程加载 owner-extensions 后生效（本次按约定不重启 gateway）
+
 ### 7.25 审批卡命令解说（approval_explainer）
 
 - **背景**：hermes 触发 approval 时审批卡上只有命令原文 + 官方规则 description，不懂具体命令的用户无从判断该不该批准；进度旁白（§7.24）解决了「过程零信息」，本功能解决「决策零信息」
@@ -1653,6 +1663,10 @@ _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请先�
 ---
 
 ## 附录 E：变更日志
+
+### 2026-09-22：新增 §7.26 english_explainer（英文回复中文解说）
+
+- **新建正文**：**§7.26**：owner/english_explainer/ 新增、owner-extensions 接线、auto_card/patch notice、tests、设计稿
 
 ### 2026-09-20：新增 §7.25 approval_explainer（审批卡命令解说）
 

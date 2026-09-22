@@ -24,8 +24,7 @@ owner:
     split_max_chars: 24000
     # [owner] notice-card 规则表：运行时覆盖源码默认表（替换不是追加），
     # 须把内置规则全量写齐。mtime 变化即时重读（零重启生效）。
-    # 🧭 进度旁白：progress_explainer 旁白前缀须与
-    # owner/progress_explainer/prompt.py 的 PREFIX 字面一致。
+    # 🧭 进度旁白 / 🔤 英文解说：前缀须与对应 prompt.py 的 PREFIX 字面一致。
     notice_titles:
       - prefix: "⚠️ [stream-guard]"
         title: "⚠️ [stream-guard] 生成退化告警"
@@ -33,6 +32,10 @@ owner:
         strip_prefix: true
       - prefix: "🧭 系统提示："
         title: "🧭 进度旁白"
+        template: blue
+        strip_prefix: true
+      - prefix: "🔤 系统提示："
+        title: "🔤 英文解说"
         template: blue
         strip_prefix: true
 
@@ -411,4 +414,23 @@ owner:
     platforms:
       feishu: true
       qqbot: true
+
+  # ── §7.26 english_explainer：英文回复中文解说 ────────────────────────────────
+  # display.language 为中文时，若终局回复被判定为整段英文（语气词密度启发式，
+  # 区分「夹术语」vs「整段英文」），侧路调辅助模型译成中文，另发一条
+  # 「🔤 系统提示：…」旁白；飞书命中 notice 卡。不改写原英文回复。
+  # 代码默认 enabled: false；本机实配 true + model xy-flash。
+  # provider/model 空或 auto → auxiliary auto 链（config.yaml
+  #   auxiliary.english_explainer 可选承接，未配置回落主聊天模型）；显式值直连。
+  # 不污染 config.yaml。改本段 mtime 热读，无需为开关重启 tick（模块挂载
+  # 仍需进程已加载 owner-extensions；全新代码需下次进程加载后生效）。
+  english_explainer:
+    enabled: true
+    provider: damodel
+    model: xy-flash
+    explainer_timeout_ms: 30000
+    platforms:
+      feishu: true
+      qqbot: true
+      telegram: false
 

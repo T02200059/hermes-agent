@@ -148,6 +148,16 @@ def register(ctx) -> None:
     except Exception:
         logger.warning("owner: progress_explainer hooks registration failed", exc_info=True)
 
+    # english-reply-explainer — english_explainer（英文回复中文解说，§7.26）
+    # transform_llm_output 检测整段英文 → 侧路翻译旁白；pre_gateway_dispatch
+    # 缓存 adapter/chat 路由。开关：patch.yaml owner.english_explainer.*
+    try:
+        from owner.english_explainer.hook import register_hooks as _register_ee_hooks
+        _register_ee_hooks(ctx)
+        logger.debug("owner: english_explainer hooks registered via owner-extensions")
+    except Exception:
+        logger.warning("owner: english_explainer hooks registration failed", exc_info=True)
+
     # §4.11 Feishu queue lifecycle card (cancel / process_now / freeze)
     # + guide-card morph to status card. Feishu-only; other platforms keep text ack.
     # See owner/patches/queue_cancel_patch.py + owner/feishu/queue_card.py.
