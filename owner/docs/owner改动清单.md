@@ -982,16 +982,6 @@ _元数据统计口径：范围取「基点后未出现在上游 `00b2e03c80` �
 
 ---
 
-
-### 7.26 英文回复中文解说（english_explainer）
-
-- **背景**：`display.language: zh` 时 agent 偶发整段英文终局回复，用户需要与进度旁白同形态的中文解说旁白（飞书 notice 卡）
-- **方案**：`transform_llm_output` 钩子（不改原文，始终 return None）+ 语气词密度判定整段英文 → 后台 `call_llm(task="english_explainer")` 翻译 → `adapter.send("🔤 系统提示："+译文)`；顶级约束 `get_language()` 须 zh；配置仅 `patch.yaml`
-- **模块**：`owner/english_explainer/`（config/detect/prompt/explain/hook/__init__）
-- **配置**：代码默认 `enabled: false`；本机实配 `enabled: true`、`provider: damodel`、`model: xy-flash`；空/auto → auxiliary auto。三级查找同旁白。`feishu_card.notice_titles` 增英文解说规则（热读）
-- **涉及文件**：`owner/english_explainer/*`（新增）、`owner/owner-extensions/{__init__.py,plugin.yaml}`、`owner/feishu/auto_card.py`（默认 notice）、`owner/config/patch.yaml`、`tests/owner/test_english_explainer.py`、`owner/docs/design/english-reply-explainer/english-explainer.md`
-- **验证**：单测覆盖判定/配置/前缀钉死/hook 不改原文；E2E [未验证]；全新 hook 需进程加载 owner-extensions 后生效（本次按约定不重启 gateway）
-
 ### 7.25 审批卡命令解说（approval_explainer）
 
 - **背景**：hermes 触发 approval 时审批卡上只有命令原文 + 官方规则 description，不懂具体命令的用户无从判断该不该批准；进度旁白（§7.24）解决了「过程零信息」，本功能解决「决策零信息」
@@ -1003,6 +993,20 @@ _元数据统计口径：范围取「基点后未出现在上游 `00b2e03c80` �
 - **涉及文件**：`owner/approval_explainer/`（新增 4 模块）、上述 3 个官方文件胶水、`owner/feishu/approval.py`（+explanation）、`locales/zh.yaml` / `locales/en.yaml`（各 +2 key：`feishu_explanation_label` / `qqbot_explanation_label`）、`owner/config/patch.yaml`（§7.25 段 + §7.24 修订）、`tests/owner/test_approval_explainer.py`（新增 20 例）、`owner/docs/design/approval-command-explainer/approval-explainer.md`（新增）、`owner/progress_explainer/{config,explain}.py`（对齐改动）
 - **验证**：`tests/owner/test_approval_explainer.py` 20 passed（三级查找/auto 归一/非法回落/fail-open 异常+超时/缓存命中+不命中+TTL 过期/引号剥离/飞书卡嵌入+空串字节一致/QQ 渲染+空串跳过/i18n zh+en key 存在性）。回归全绿：`tests/tools/test_approval.py` 128、progress_explainer 25、`tests/owner/` 审批卡系列（fail_card/notice_card/patch_allowlist/skill_script 16/memory routing/send_card_profile/skill_manage_gate 93）、`tests/plugins/platforms/feishu/` 12、`test_slack_approval_buttons` 20。`tests/gateway/test_feishu_approval_buttons.py` 4 例为存量环境性失败（`git stash` 后同样失败，与本功能无关）。E2E（真网关触发一次审批观察 📖 段）[未验证]，生效需网关重启
 - **回滚**：删 3 处 `[owner]` 胶水即完全回滚；或 patch.yaml `enabled: false` 秒关（卡片回到原样）
+
+---
+
+### 7.26 英文回复中文解说（english_explainer）
+
+- **背景**：`display.language: zh` 时 agent 偶发整段英文终局回复，用户需要与进度旁白（§7.24）同形态的中文解说旁白（飞书 notice 卡）；中文里夹英文术语不应误触发
+- **方案**：经 owner-extensions 的 `transform_llm_output` + `pre_gateway_dispatch` 接线（不改原文，始终 `return None`，避免抢 `output_guard` first-wins）；剥离代码块后用英文虚词/语气词密度 + 低中文占比判定整段英文 → 后台线程 `call_llm(task="english_explainer")` 带上下文翻译 → `adapter.send("🔤 系统提示："+译文)`；顶级约束 `get_language()` 须 `zh*`；配置仅 `patch.yaml`
+- **模块**：`owner/english_explainer/`（config/detect/prompt/explain/hook/__init__ 6 模块）
+- **侵入类型**：零官方源码侵入（仅 owner-extensions hook + `owner/feishu/auto_card.py` 默认 notice 规则）
+- **配置**：`patch.yaml → owner.english_explainer.*`（enabled 代码默认 **false**，本机实配 true；provider/model 本机 `damodel` / `xy-flash`）；空/`auto` → `call_llm(task="english_explainer")` auxiliary auto 链（承接 hermes 配置体系）；三级查找同旁白；`feishu_card.notice_titles` 增英文解说规则（热读）
+- **涉及文件**：`owner/english_explainer/`（新增 6 模块）、`owner/owner-extensions/{__init__.py,plugin.yaml}`、`owner/feishu/auto_card.py`（默认 notice）、`owner/config/patch.yaml`、`tests/owner/test_english_explainer.py`（新增 11 例）、`owner/docs/design/english-reply-explainer/english-explainer.md`
+- **验证**：`tests/owner/test_english_explainer.py` 11 passed（判定/配置三级查找/前缀钉死/hook 不改原文）。E2E（真网关偶发英文回复观察 🔤 旁白）[未验证]；全新 hook 需进程加载 owner-extensions 后生效（本次按约定不重启 gateway）
+- **回滚**：patch.yaml `enabled: false` 秒关；或撤 owner-extensions 两处 hook 声明/接线
+- **Commit**：`9d4f17a6a1`
 
 ---
 
@@ -1508,6 +1512,9 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 | `owner/feishu/skill_approval_card.py` | skill 审批自建卡 + card action 处理 | feishu/adapter.py（skill_approval_gate） |
 | `owner/owner-extensions/skill_manage_bridge/` | pre_tool_call / gateway 缓存接线 skill 审批门 | owner-extensions plugin |
 | `owner/owner-extensions/output_guard/` | transform_llm_output 复读/乱码/超长检测与折叠 | owner-extensions plugin（零官方侵入） |
+| `owner/english_explainer/` | 英文终局回复中文解说旁白（§7.26，同 progress_explainer 形态） | owner-extensions plugin（零官方侵入） |
+| `owner/progress_explainer/` | 沉默期进度旁白（§7.24） | gateway/run.py 薄胶水 |
+| `owner/approval_explainer/` | 审批卡命令解说（§7.25，飞书+QQ） | feishu/qqbot adapter 薄胶水 |
 | `owner/checkpoint_predictor/` | terminal 预测式 checkpoint（静态+LLM） | agent/tool_executor.py |
 | `owner/clarify/` | clarify choice 归一化 + gateway helpers | tools/clarify_tool.py / clarify_gateway.py |
 | `owner/cli/yolo.py` | YOLO on/off/status 命令 | — |
@@ -1666,7 +1673,7 @@ _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请先�
 
 ### 2026-09-22：新增 §7.26 english_explainer（英文回复中文解说）
 
-- **新建正文**：**§7.26**：owner/english_explainer/ 新增、owner-extensions 接线、auto_card/patch notice、tests、设计稿
+- **新建正文**：**§7.26**：`9d4f17a6a1`（`owner/english_explainer/` 新增 6 模块、owner-extensions `transform_llm_output` + `pre_gateway_dispatch` 接线、`auto_card`/patch notice、`tests/owner/test_english_explainer.py` 11 例、设计稿 `owner/docs/design/english-reply-explainer/`）
 
 ### 2026-09-20：新增 §7.25 approval_explainer（审批卡命令解说）
 
