@@ -574,13 +574,14 @@ def _gateway_compression_progress_notices_enabled() -> bool:
         pass
     return False
 
-# CR-004 [owner]: only the local CLI/TUI surface keeps raw status/error text.
-# api_server, webhook, and msgraph_webhook were removed because they accept
-# external traffic and an attacker could intentionally trigger an error to
-# elicit un-redacted credentials. Widens #28533's Telegram-only filter to
-# all chat gateways (#39293). Fail-closed: unknown/empty platform -> redacted.
-# Keep main's hygiene/cooldown helpers above; only the allowlist is tightened.
-_GATEWAY_RAW_TEXT_PLATFORMS = frozenset({"local"})
+# [owner] CR-004: raw-text allowlist tightened to the local surface only
+# (rationale + upstream comparison: owner/gateway/raw_text_policy.py).
+# Fail-closed: if the delegate is unavailable, keep the tight set — never
+# fall back to upstream's wider set.
+try:
+    from owner.gateway.raw_text_policy import OWNER_RAW_TEXT_PLATFORMS as _GATEWAY_RAW_TEXT_PLATFORMS
+except Exception:
+    _GATEWAY_RAW_TEXT_PLATFORMS = frozenset({"local"})
 
 
 def _gateway_surface_passes_raw_text(platform: Any) -> bool:
@@ -4813,9 +4814,6 @@ def _escape_code_fences_for_inline_block(text: str) -> str:
         lambda m: m.group(1) + "'" * len(m.group(2)) + m.group(3),
         text,
     )
-
-
-# [owner] §17.2 executor-shutdown RuntimeError → friendly restart message
 
 
 # Max seconds between platform reconnect retries (primary watcher and

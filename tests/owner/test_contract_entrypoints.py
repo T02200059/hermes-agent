@@ -408,3 +408,34 @@ def test_owner_extension_register_applies_memory_synthetic_guard(monkeypatch):
     assert "post_tool_call" in ctx.hooks
     assert memory_manager.MemoryManager.prefetch_all is not original_prefetch
     assert memory_manager.MemoryManager.prefetch_all.__name__ == "_prefetch_all"
+
+
+def test_gateway_raw_text_allowlist_delegates_to_owner_module():
+    """CR-004: the gateway raw-text allowlist must come from the owner module.
+
+    Upstream lets four surfaces keep un-redacted status/error text; owner
+    tightens that to the local surface only. ``gateway/run.py`` resolves the
+    set through a fail-closed delegate — but *both* branches of that delegate
+    yield ``{"local"}``, so a broken import would be indistinguishable from a
+    working one by value alone. Identity is therefore asserted explicitly: it
+    is the only signal that separates a live delegate from the inline
+    fallback.
+    """
+    import gateway.run as gateway_run
+    from owner.gateway import raw_text_policy
+
+    assert gateway_run._GATEWAY_RAW_TEXT_PLATFORMS is (
+        raw_text_policy.OWNER_RAW_TEXT_PLATFORMS
+    ), "gateway/run.py fell back to its inline literal — owner delegate is not live"
+
+    # The tightening must be real, and strictly narrower than upstream's set.
+    assert raw_text_policy.OWNER_RAW_TEXT_PLATFORMS == frozenset({"local"})
+    assert raw_text_policy.OWNER_RAW_TEXT_PLATFORMS < (
+        raw_text_policy.UPSTREAM_RAW_TEXT_PLATFORMS
+    )
+
+    # Externally-reachable surfaces must never receive raw text (CR-004:
+    # an attacker could otherwise trigger an error to elicit credentials).
+    for surface in ("api_server", "webhook", "msgraph_webhook"):
+        assert gateway_run._gateway_surface_passes_raw_text(surface) is False
+    assert gateway_run._gateway_surface_passes_raw_text("local") is True
