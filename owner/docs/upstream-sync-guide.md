@@ -232,6 +232,50 @@ flock -n /tmp/hermes-upstream-sync.lock
 
 执行前检查 `git status --porcelain`，不干净则跳过本轮并通知。
 
+### 7.6 解冲后置校验（强制）
+
+**每一次 sync 的解冲（conflict resolution）提交后，必须执行本校验，并把结果写进 commit message。**
+
+理由：解冲不完整是本仓库已知的单一高发缺陷模式——某一期 11 个红测试的根因就是一次解冲不完整，而该缺陷 **26 天后才被发现**：因为既有流水线只跑 `tests/owner`（`HealthChecker.run_tests` 的 `config.test_command`），而逃逸的用例在 `tests/plugins/memory/` 下，不在固定范围内。
+
+```bash
+cd ~/.hermes/hermes-agent
+
+# 解冲提交已提交后（默认 HEAD，自动推导 base = 第一父）
+./owner/scripts/check-merge-residue.sh
+
+# 指定解冲提交与基线
+./owner/scripts/check-merge-residue.sh <merge-commit> <base-commit>
+
+# 只看目标、不执行
+./owner/scripts/check-merge-residue.sh --list
+```
+
+脚本做三件事：
+
+1. **固定项**：`tests/owner` 全量；
+2. **动态项**：本次范围（`base..target`）内**改动过的全部测试文件**（`git diff --diff-filter=AM`，跳过已删除文件）——这是覆盖逃逸路径的关键；
+3. **产出**：`owner/logs/merge-residue/<sha>.log` + 一段**可直接粘贴进 commit message** 的校验记录。
+
+退出码：`0` 全绿 · `1` 有用例失败（**发布门槛未过，不得 push**）· `2` 环境/参数错误。
+
+解冲提交的 message 建议形态：
+
+```
+Merge upstream/main (<upstream-sha>) into owner — conflict resolution
+
+<解冲要点：逐文件说明采纳了哪一侧、owner 定制落在哪里>
+
+merge-residue-check: PASS
+  base=<base-sha> target=<merge-sha> elapsed=Ns
+  targets=tests/owner + N changed test file(s)
+  result=<N passed> in <N>s
+```
+
+> **配套方法学**：owner 分支的窗口前基线必须取 **owner 分支自身的提交**，不能取上游提交。
+> 取法：`BASE=$(git log --since="<窗口起>" --author="杨天宝" --format='%h %p' | tail -1 | awk '{print $2}')`
+> 校验：`git merge-base --is-ancestor <疑似原因提交> $BASE` —— 若不是祖先，说明该基线不含 owner 改动，比较无效。
+
 ---
 
 ## 8. 常见问题
@@ -316,7 +360,8 @@ owner/
 │   └── upstream_sync.yaml          # 同步配置
 ├── scripts/
 │   ├── upstream_sync.py            # 主编排器 + CLI
-│   └── upstream_sync_cron.sh       # cron wrapper
+│   ├── upstream_sync_cron.sh       # cron wrapper
+│   └── check-merge-residue.sh      # 解冲后置校验（见 §7.6）
 ├── sync/                           # 同步包
 │   ├── __init__.py                 # 包初始化
 │   ├── models.py                   # 数据结构
@@ -335,12 +380,14 @@ owner/
 │   ├── inventory.yaml              # 模块清单（复用）
 │   └── fix_fingerprints.yaml       # Bug 修复指纹库
 ├── logs/
-│   └── upstream-sync/              # 日志目录
-│       ├── <date>.log
-│       ├── <date>-auto.md
-│       ├── <date>-manual-review.md
-│       ├── <date>.jsonl
-│       └── .sync_state.json
+│   ├── upstream-sync/              # 日志目录
+│   │   ├── <date>.log
+│   │   ├── <date>-auto.md
+│   │   ├── <date>-manual-review.md
+│   │   ├── <date>.jsonl
+│   │   └── .sync_state.json
+│   └── merge-residue/              # 解冲后置校验日志（见 §7.6）
+│       └── <merge-sha>.log
 └── docs/
     └── upstream-sync-guide.md      # 本文档
 ```
