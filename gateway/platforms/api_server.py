@@ -4702,9 +4702,26 @@ class APIServerAdapter(BasePlatformAdapter):
         """True when the request proves it is the entry's owning session.
 
         A routed caller carries both the session-continuation header and the
-        LDAP identity header, so either is accepted. A request that asserts
-        neither is allowed through: those are infrastructure callers holding the
-        API key (the trust boundary), and legacy entries carry no owner at all.
+        LDAP identity header, so either is accepted.
+
+        A request that asserts neither is **allowed through**. That is an
+        accepted decision, not an oversight — it is recorded together with its
+        residual risk in ``owner/docs/owner改动清单.md`` §16.4, and pinned by
+        ``tests/gateway/test_api_server_media_owner.py``. The bound being
+        accepted: for an unattributed download the media id is the only
+        ownership credential, so API key + knowledge of the id is sufficient.
+        The id is 96 bits of ``secrets.token_urlsafe`` and is handed only to the
+        registering client, so the practical exposure is "the id leaked"
+        (frontend log, screenshot, forwarded link) rather than "the id was
+        guessed". The alternative — rejecting unattributed downloads — would
+        lock out callers that hold the API key (the trust boundary) and do not
+        echo the session header on the download leg.
+
+        Note this function is only half of the ownership story: entries
+        registered by a chat turn that carried no ``X-Hermes-Session-Id`` are
+        stored with an empty owner, and ``_handle_media_download`` then skips
+        this check **entirely** (``if rec.owner and ...``). Tightening this
+        function alone would not close that path — both must change together.
         """
         tokens = {
             media_owner_token(request.headers.get(header, ""))
@@ -4722,6 +4739,18 @@ class APIServerAdapter(BasePlatformAdapter):
         minted at turn-end from a ``MEDIA:<path>`` tag; the raw path never
         crosses the HTTP boundary. The path is re-validated on download so a
         later overwrite/move cannot serve a denylisted location.
+
+        Ownership model — accepted decision, recorded in owner改动清单 §16.4:
+        an entry that carries an owner requires the caller to present the same
+        session (or the LDAP identity it was routed by); a caller presenting
+        neither is let through, and an entry registered by a turn with no
+        session header carries no owner at all — in which case this check is
+        skipped by the condition below rather than by ``_media_owner_matches``.
+        So two entry points in code, one boundary in practice: the API key plus
+        knowledge of the id. Note the sibling ``/v1/artifacts/download/{id}``
+        resolves a *server-derived* scope instead (profile principal +
+        loopback-derived transport family) and is therefore fail-closed; that
+        asymmetry is known and deliberate, not accidental.
 
         Rate limiting is deliberately not applied: this gateway serves a small
         internal deployment, the caller is an authenticated proxy rather than
