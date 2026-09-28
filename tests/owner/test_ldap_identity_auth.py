@@ -8,13 +8,20 @@ Contract asserted here (behavior, not source shape):
     3. password + bind fail     → deny_bad_credentials + cache evicted
     4. empty password           → deny_empty_password (never an anon bind)
     5. no password + valid cache → allow (the invisible path, zero binds)
-    6. no password, never seen  → enforce=off allows / seen allows / always denies
-    7. no password, seen+expired → enforce=seen denies / off allows
+    6. no password, never seen  → enforce=off allows; seen and always deny
+                                   (T2-4: ``seen`` is a fail-closed alias of
+                                   ``always`` — it used to allow a
+                                   never-authenticated login, which let an
+                                   attacker pass by picking a uid that never
+                                   logged in)
+    7. no password, seen+expired → enforce=seen (and always) denies / off allows
     8. LDAP down                → fail_open allows; fail_open=false denies
     9. negative cache window    → bind-fail login denied even under enforce=off
    10. invalid login chars      → deny_invalid_login (DN-injection guard)
    11. password rotation        → a successful rebind refreshes the 72h window
    12. persistence              → cache survives module reset (state file reload)
+   13. unrecognized enforce     → fails closed (treated as ``always``), not
+                                   silently downgraded to ``off``
 
   Middleware integration (identity_routing_middleware):
    13. verdict deny_*  → 401 with distinguishable error code, nothing proxied
@@ -72,6 +79,25 @@ def _reload_config(home: Path):
     from owner.patch_config import invalidate_patch_feishu_profile_config_cache
 
     invalidate_patch_feishu_profile_config_cache()
+
+
+_FAR_FUTURE_EXPIRY = 4102444800.0  # 2100-01-01, comfortably inside cache_ttl semantics
+
+
+def _seed_valid_cache(home: Path, login: str) -> None:
+    """Seed the state file so ``login`` has a valid (non-expired) cache entry.
+
+    Tests that assert *transport* behaviour (proxy forwarding, SSE streaming)
+    need the gate's "invisible path" — a valid cache lets them proceed with no
+    password header. They must not depend on the enforce policy, which since
+    T2-4 rejects every unauthenticated request without a valid cache even under
+    ``enforce=seen``.
+    """
+    (home / "ldap_identity_cache.json").write_text(
+        '{"version": 2, "entries": {"%s": %r}, "seen": ["%s"]}'
+        % (login, _FAR_FUTURE_EXPIRY, login),
+        encoding="utf-8",
+    )
 
 
 class FakeBind:
@@ -152,9 +178,16 @@ class TestLdapGate:
 
     @pytest.mark.asyncio
     async def test_unseen_login_enforce_matrix(self, tmp_path, monkeypatch, ldap_home):
+        """T2-4: a never-authenticated login must not be spared by ``seen``.
+
+        The old matrix allowed it under ``seen``, so with no password header
+        deployed every identity passed with zero authentication — ``seen`` and
+        ``off`` were behaviourally identical in production. Only ``off`` may
+        now allow, and it says so explicitly.
+        """
         for enforce, expected in (
             ("off", ldap_auth.ALLOW),
-            ("seen", ldap_auth.ALLOW),
+            ("seen", ldap_auth.DENY_REAUTH_REQUIRED),
             ("always", ldap_auth.DENY_REAUTH_REQUIRED),
         ):
             ldap_auth.reset_for_tests()
@@ -165,6 +198,53 @@ class TestLdapGate:
             _reload_config(ldap_home)
             with _fake_bind(FakeBind(raise_for_unknown=True)):
                 assert await ldap_auth.ldap_gate("freshuser", None) == expected
+
+    @pytest.mark.asyncio
+    async def test_unrecognized_enforce_value_fails_closed(self, ldap_home):
+        """A typo in ``enforce`` must not silently disable the gate.
+
+        ``enforce: "alway"`` used to fall through every branch and land on
+        ALLOW — the gate would be off with no signal, the same silent-failure
+        class as a dormant routing config (T2-3).
+        """
+        _write_ldap_section(
+            ldap_home, base=LDAP_YAML.replace('enforce: "seen"', 'enforce: "alway"')
+        )
+        _reload_config(ldap_home)
+        with _fake_bind(FakeBind(raise_for_unknown=True)):
+            assert (
+                await ldap_auth.ldap_gate("freshuser", None)
+                == ldap_auth.DENY_REAUTH_REQUIRED
+            )
+
+    @pytest.mark.asyncio
+    async def test_enforce_seen_and_always_share_one_verdict(self, ldap_home):
+        """``seen`` is a legacy alias: both strict modes must agree everywhere.
+
+        Guards against re-introducing a divergence between the two names, which
+        is what made the old ``seen`` semantics look like a security mode.
+        """
+        cases = (
+            ("freshuser", None),      # never authenticated, no password
+            ("freshuser", "wrong"),   # never authenticated, bad password
+            ("yangtb", None),         # expired cache, no password
+        )
+        for enforce in ("seen", "always"):
+            verdicts = []
+            for login, password in cases:
+                ldap_auth.reset_for_tests()
+                _write_ldap_section(
+                    ldap_home,
+                    base=LDAP_YAML.replace('enforce: "seen"', f'enforce: "{enforce}"'),
+                )
+                _reload_config(ldap_home)
+                with _fake_bind(FakeBind({})):
+                    verdicts.append(await ldap_auth.ldap_gate(login, password))
+            assert verdicts == [
+                ldap_auth.DENY_REAUTH_REQUIRED,
+                ldap_auth.DENY_BAD_CREDENTIALS,
+                ldap_auth.DENY_REAUTH_REQUIRED,
+            ], f"enforce={enforce} 的判定与 always 不一致：{verdicts}"
 
     @pytest.mark.asyncio
     async def test_seen_then_expired_denies_under_seen(self, ldap_home):
@@ -556,6 +636,10 @@ class TestSSEProxyStreaming:
 
         invalidate_patch_feishu_profile_config_cache()
 
+        # Transport assertion, not an auth assertion: use the gate's invisible
+        # path (valid cache, no password) so the enforce policy is out of scope.
+        _seed_valid_cache(routing_home, "yangtb")
+
         middleware, _ = _make_middleware()
 
         async def passthrough(request):
@@ -588,6 +672,9 @@ class TestSSEProxyStreaming:
         middleware, _ = _make_middleware()
         handler = _RecordingHandler()
         recorder = _ProxyRecorder()
+        # Transport assertion, not an auth assertion: use the gate's invisible
+        # path (valid cache, no password) so the enforce policy is out of scope.
+        _seed_valid_cache(routing_home, "yangtb")
 
         req = _FakeRequest({"X-Hermes-Identity": "yangtb"})
         with recorder.patch():

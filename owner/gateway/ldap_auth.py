@@ -12,9 +12,14 @@ Contract (patch_feishu_profile.yaml ``ldap:`` section):
     takes effect on the very next request), short negative cache
   - no password + valid cache → allow (the "user-invisible" path; zero
     LDAP calls)
-  - no password + no/expired cache → enforce policy: ``off`` allows all,
-    ``seen`` rejects only previously-authenticated logins (deployment
-    gray-release), ``always`` rejects every unauthenticated request
+  - no password + no/expired cache → enforce policy: ``off`` allows (the
+    explicit rollout mode — it provides no anti-forgery force), ``always``
+    rejects every unauthenticated request, and ``seen`` is a **legacy alias
+    of ``always``**. ``seen`` used to spare never-authenticated logins, which
+    inverted the protection: the gate denied only users who had already
+    proved their identity, so an attacker merely picked a uid that never
+    logged in and passed with no password. An unrecognized ``enforce`` value
+    is likewise treated as ``always`` rather than silently as ``off``
   - LDAP unreachable / ldap3 missing → ``fail_open_on_error`` decides
     (default: allow — API_SERVER_KEY remains the first trust boundary)
 
@@ -49,11 +54,14 @@ _LOGIN_RE = re.compile(r"^[a-zA-Z0-9._-]+$")
 # module-level state (mirrors owner/patch_config cache style); tests reset via _reset_for_tests
 _positive_cache: Dict[str, float] = {}
 _negative_cache: Dict[str, float] = {}
-# Logins that have ever successfully authenticated. Distinct from the
-# positive cache: ``_cache_evict`` (password rotation) clears the valid
-# window but MUST NOT clear this marker, or enforce=seen would be downgraded
-# to "allow" for a known uid (attacker sends a wrong password, waits out the
-# negative cache, then requests without a password).
+# Logins that have ever successfully authenticated. Since T2-4 made
+# ``enforce=seen`` fail closed, this marker **no longer participates in the
+# allow/deny decision** (every unauthenticated request without a valid cache
+# is rejected regardless). It is retained because the state-file v2 schema
+# carries it and it is useful when diagnosing password rotation. Historically
+# ``_cache_evict`` kept the marker so an attacker could not send a wrong
+# password, wait out the negative cache, then request without a password —
+# that protection now comes from the fail-closed policy itself.
 _seen_logins: set = set()
 _cache_lock = threading.Lock()
 _state_file_mtime: Optional[float] = None
@@ -194,8 +202,10 @@ def _cache_put(login: str, ttl_seconds: float) -> None:
 
 
 def _cache_evict(login: str) -> None:
-    # Clears the valid window only. The ``seen`` marker is intentionally
-    # preserved: password rotation must not silently downgrade enforce=seen.
+    # Clears the valid window only; the ``seen`` marker is kept for state-file
+    # continuity and diagnostics. Since T2-4 made ``enforce=seen`` fail closed,
+    # password rotation no longer needs the marker to prevent a downgrade — an
+    # evicted login is re-challenged whether or not it was ever seen.
     with _cache_lock:
         _positive_cache.pop(login, None)
         _persist_positive_cache()
@@ -214,7 +224,13 @@ def _negative_active(login: str) -> bool:
 
 
 def _has_seen(login: str) -> bool:
-    """True when the login has ever successfully authenticated."""
+    """True when the login has ever successfully authenticated.
+
+    Diagnostic only since T2-4: ``ldap_gate`` no longer consults this — the
+    strict modes reject every unauthenticated request without a valid cache,
+    so "has this login ever authenticated" no longer changes the verdict.
+    Kept as a supported introspection point for the state-file semantics.
+    """
     with _cache_lock:
         _load_state_file_locked()
         return login in _seen_logins or login in _positive_cache
@@ -324,6 +340,16 @@ async def ldap_gate(login: str, password: Optional[str]) -> str:
     ttl_hours = float(cfg.get("cache_ttl_hours", 72) or 72)
     ttl_seconds = ttl_hours * 3600.0
     enforce = str(cfg.get("enforce", "seen")).strip().lower()
+    # [owner] T2-4: an unrecognized ``enforce`` value must not silently mean
+    # "off". A typo (``enfore: always``, ``enforce: alway``) would otherwise
+    # disable the gate with no signal — the same silent-failure class as a
+    # dormant routing config. Normalize it to the strict mode and say so.
+    if enforce not in ("off", "always", "seen"):
+        logger.warning(
+            "[LDAP] unrecognized enforce=%r; treating as 'always' (fail-closed)",
+            enforce,
+        )
+        enforce = "always"
     neg_seconds = float(cfg.get("negative_cache_seconds", 10) or 10)
 
     if password is not None:
@@ -365,9 +391,17 @@ async def ldap_gate(login: str, password: Optional[str]) -> str:
     if _cache_get(login) is not None:
         return ALLOW
 
-    if enforce == "always":
-        return DENY_REAUTH_REQUIRED
-    if enforce == "seen" and _has_seen(login):
+    # [owner] T2-4: ``seen`` is a legacy alias of ``always`` and fails closed.
+    # It previously ALLOWed a never-authenticated login (so that rolling out
+    # the password header would not break pre-existing traffic), but that
+    # inverted the protection: the gate rejected only logins that had already
+    # proved their identity, while an attacker just picks a uid that never
+    # logged in and gets through with no password at all. The rollout role
+    # belongs to ``off``, which is explicit about providing no anti-forgery
+    # force. Note this also makes the negative-cache branch below reachable
+    # only under ``off`` — under the strict modes the verdict is the same
+    # (DENY_REAUTH_REQUIRED), so nothing observable changes.
+    if enforce in ("always", "seen"):
         return DENY_REAUTH_REQUIRED
 
     if _negative_active(login):
