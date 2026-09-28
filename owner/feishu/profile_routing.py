@@ -275,6 +275,70 @@ def is_api_identity_whitelisted(identity: str) -> bool:
     )
     return False
 
+
+def identity_routing_diagnostics() -> Dict[str, Any]:
+    """Report whether API-server identity routing is actually wired (T2-3).
+
+    ``resolve_api_identity_route`` and ``is_api_identity_whitelisted`` both read
+    ``identity_routes`` / ``identity_whitelist`` from the ``user_routing``
+    section. When neither key yields an entry, the whole identity chain is
+    **dormant**: ``X-Hermes-Identity`` can never resolve a route, so the
+    reverse-proxy never fires *and* the LDAP second-factor gate never runs
+    either — that gate lives after the route resolution, so it is unreachable
+    by construction.
+
+    At a call site "this uid is not in ``identity_routes``" and "identity
+    routing was never configured" are indistinguishable (both return ``None``),
+    which is why the dormant state must be reported explicitly rather than
+    inferred from a resolution failure. This helper is read-only and
+    side-effect free; it never raises (``config_source="unavailable"`` covers
+    loader failure).
+
+    Returns:
+        ``dormant``: no usable entries at all — the chain cannot fire.
+        ``keys_present``: whether either key exists in the YAML section —
+            distinguishes "keys absent" from "keys present but empty".
+        ``identity_route_count`` / ``identity_whitelist_count``: entry counts.
+        ``config_source``: ``"loaded"`` or ``"unavailable"``. The latter also
+            covers a non-Feishu api_server node where ``FEISHU_APP_ID`` is
+            unset, since ``_load_routing_config`` is keyed on it.
+    """
+    routing_cfg = _load_routing_config()
+    if not routing_cfg:
+        return {
+            "dormant": True,
+            "keys_present": False,
+            "identity_route_count": 0,
+            "identity_whitelist_count": 0,
+            "config_source": "unavailable",
+        }
+
+    routes = routing_cfg.get("identity_routes")
+    whitelist = routing_cfg.get("identity_whitelist")
+    keys_present = "identity_routes" in routing_cfg or "identity_whitelist" in routing_cfg
+
+    if isinstance(routes, dict):
+        route_count = len(routes)
+    elif isinstance(routes, (list, tuple, set, frozenset)):
+        route_count = len(routes)
+    else:
+        route_count = 0
+
+    if isinstance(whitelist, (list, tuple, set, frozenset)):
+        whitelist_count = len(whitelist)
+    elif isinstance(whitelist, str):
+        whitelist_count = 1 if whitelist.strip() else 0
+    else:
+        whitelist_count = 0
+
+    return {
+        "dormant": route_count == 0 and whitelist_count == 0,
+        "keys_present": keys_present,
+        "identity_route_count": route_count,
+        "identity_whitelist_count": whitelist_count,
+        "config_source": "loaded",
+    }
+
 async def _forward_to_profile_container(
     *,
     endpoint: str,

@@ -2346,6 +2346,11 @@ class APIServerAdapter(BasePlatformAdapter):
         middleware (normal handling).
         """
 
+        # [owner] T2-3: the dormant notice below fires at most once per
+        # process. A structural condition (identity routing never wired)
+        # repeated on every request drowns the log without adding information.
+        dormant_notice_emitted = [False]
+
         @web.middleware
         async def identity_routing_middleware(request: "web.Request", handler):
             identity = request.headers.get("X-Hermes-Identity", "").strip()
@@ -2370,10 +2375,46 @@ class APIServerAdapter(BasePlatformAdapter):
 
             route = _resolve(identity)
             if route is None:
-                logger.warning(
-                    "[API] X-Hermes-Identity=%r is unknown; falling through to default",
-                    identity,
+                # [owner] T2-3: "not in identity_routes" and "identity routing
+                # never wired" both land here, and the second is a security
+                # trap worth naming — the LDAP gate below only runs *after* a
+                # route resolves, so a dormant config silently disables
+                # second-factor auth for every identity header. Report which
+                # one it is, once per process.
+                _diagnose = _owner_import(
+                    "owner.feishu.profile_routing", "identity_routing_diagnostics"
                 )
+                _diag = None
+                if _diagnose is not None:
+                    try:
+                        _diag = _diagnose()
+                    except Exception:  # pragma: no cover - diagnostics never break ingress
+                        _diag = None
+                if isinstance(_diag, dict) and _diag.get("dormant"):
+                    if not dormant_notice_emitted[0]:
+                        dormant_notice_emitted[0] = True
+                        logger.warning(
+                            "[API] X-Hermes-Identity=%r ignored: identity routing "
+                            "is DORMANT — identity_routes/identity_whitelist are %s "
+                            "(routing section: %s). Consequences: no sub-profile "
+                            "reverse-proxy AND no LDAP second-factor gate, for every "
+                            "identity header. See owner改动清单 §15.",
+                            identity,
+                            "present but empty"
+                            if _diag.get("keys_present")
+                            else "ABSENT from user_routing",
+                            _diag.get("config_source"),
+                        )
+                    else:
+                        logger.debug(
+                            "[API] X-Hermes-Identity=%r ignored (identity routing dormant)",
+                            identity,
+                        )
+                else:
+                    logger.warning(
+                        "[API] X-Hermes-Identity=%r is unknown; falling through to default",
+                        identity,
+                    )
                 return await handler(request)
 
             profile_name, endpoint_url, api_key = route
@@ -3925,6 +3966,12 @@ class APIServerAdapter(BasePlatformAdapter):
             绝不能"试探式"发聊天请求来探测（那样会真的和共享 bot 聊上）；
           - allowed = routed || whitelisted；绝不返回 endpoint_url /
             api_key，仅返回 profile 名。
+          - routing_dormant=true → 上述三态全部失效：identity_routes /
+            identity_whitelist 在配置中缺失或为空，任何 identity 都解析不出
+            路由，于是 allowed 恒为 false 且**不含"该用户被拒"的语义**。
+            消费方此时应视为"能力未上线"，退回自身默认策略，而不是据此
+            拒绝全部用户（否则会把「未接线」放大成「全员禁入」）。（T2-3；
+            响应另附 routing_keys_present 以区分「键缺失」与「键存在但为空」）
         Bearer 鉴权与其他 API 路由一致（API_SERVER_KEY / profile-scoped key）。
         """
         auth_err = self._check_auth(request)
@@ -3948,6 +3995,12 @@ class APIServerAdapter(BasePlatformAdapter):
         )
         _is_whitelisted = _owner_import(
             "owner.feishu.profile_routing", "is_api_identity_whitelisted"
+        )
+        # [owner] T2-3: report whether the routing section is wired at all.
+        # Without this, `allowed: false` is ambiguous — it is returned both for
+        # "this uid has no route" and for "no uid can ever have a route".
+        _diagnose = _owner_import(
+            "owner.feishu.profile_routing", "identity_routing_diagnostics"
         )
         if _resolve is None:
             # owner/ 路由模块缺失：无法判定。明确告知不可用（503），让
@@ -3988,6 +4041,17 @@ class APIServerAdapter(BasePlatformAdapter):
 
         # route = (profile_name, endpoint_url, api_key) —— 只取 profile 名，
         # endpoint_url / api_key 永不出网关。
+        routing_dormant = None
+        routing_keys_present = None
+        if _diagnose is not None:
+            try:
+                _diag = _diagnose()
+            except Exception:  # pragma: no cover - diagnostics never break the endpoint
+                _diag = None
+            if isinstance(_diag, dict):
+                routing_dormant = bool(_diag.get("dormant"))
+                routing_keys_present = bool(_diag.get("keys_present"))
+
         return web.json_response(
             {
                 "object": "hermes.api_server.ldap_identity_access",
@@ -3996,6 +4060,13 @@ class APIServerAdapter(BasePlatformAdapter):
                 "profile": route[0] if route else None,
                 "whitelisted": whitelisted,
                 "allowed": route is not None or whitelisted,
+                # [owner] T2-3: when routing is dormant, `allowed: false` is a
+                # property of the *gateway*, not of this uid — identity_routes
+                # and identity_whitelist are empty/absent, so every identity
+                # reports the same. Consumers must not read it as a per-user
+                # denial decision.
+                "routing_dormant": routing_dormant,
+                "routing_keys_present": routing_keys_present,
             }
         )
 

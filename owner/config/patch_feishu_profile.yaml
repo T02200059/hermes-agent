@@ -79,6 +79,17 @@ feishu:
 # LDAP 二次认证（api_server 的 X-Hermes-Identity 流量）
 # ═══════════════════════════════════════════════════════════════════════════════
 #
+# 【接线状态 · 2026-09-28 核实（T2-3）：本链路当前 DORMANT，未生效】
+#   user_routing 段下**尚无** identity_routes / identity_whitelist 键，因此：
+#     - resolve_api_identity_route() 恒返回 None → 中间件不反代，透传到 root；
+#     - ldap_gate 因此**永不执行** —— 它位于「路由解析成功」之后，
+#       所以本节的 ldap: 配置已实现、但没有任何请求会走到它；
+#     - /v1/ldap/identity/{uid}/access 对任何 uid 都返回 allowed:false
+#       （响应另带 routing_dormant:true 以区分「未接线」与「该 uid 被拒」）。
+#   网关在收到 identity 头且判定 dormant 时，会打印一次显式告警（每进程一次）。
+#   启用前须先修 T2-4 / T2-5 / T2-6，否则接线那一刻三处语义缺口从
+#   「不可达」变为「可用」。详见 owner/docs/owner改动清单.md §15。
+#
 # 作用面：携带 ``X-Hermes-Identity``（LDAP uid）请求头的 api_server 流量 ——
 # 即经 identity_routes 选 profile、反代到子容器的这条链路。
 #
