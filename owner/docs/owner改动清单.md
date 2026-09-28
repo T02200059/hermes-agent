@@ -454,6 +454,22 @@ _元数据统计口径：范围取「基点后未出现在上游 `00b2e03c80` �
 - **未纳入**：`gateway/run.py` 与 `patch_feishu_profile.yaml` 的无关本地改动
 - **Commit**：`0c48c2a8b6`（P0/P1/P2 首轮）、`56fa158790`（follow-up 收口）
 
+### 3.13 2026-09-28 审批历史挖掘改按结构标记判定（T2-1）
+
+`hermes_cli/approvals_suggest.py` 从审批历史中挖掘「隐含批准」建议时，原本用**英文文案**判定某次工具调用是否被拦截：`_BLOCK_MARKERS` 表（11 条英文片段）+ SQL `LIKE` 粗筛。i18n commit `5d85ec89ac` 把 `tools/approval.py` 的拦截文案搬进 `locales/*.yaml`，但对该文件只做了一行点状修补（补 `"正在请求用户批准"`）。于是中文环境下**双重漏检**：`t()` 返回的「已拦截：…」既不在 marker 表内，也过不了 SQL 粗筛，被用户明确拒绝的命令因此被读成「隐含批准」并进入建议列表。
+
+| 级别 | 问题 | 修复 | 文件 | Commit |
+|------|------|------|------|--------|
+| P1 | 拦截判定依赖英文文案，本地化后判定表与 SQL 预过滤**同时失效**，被拒绝的命令被挖掘为「隐含批准」 | 判定改按**结构标记**，与文案语言解耦，三层：① 结果 `status` 字段（`blocked` / `pending_approval` / `approval_required` / `denied` / `rejected`）与 outcome（`denied` / `timeout` / `transport_*`）；② `locales/*.yaml` 的 **key**（语言无关结构标识，覆盖 17 种语言 44 个 `approval.*` 键）；③ 硬编码兜底表（中英，fail-open）。SQL 预过滤锚点与判定判据**同源化**，并加超集断言焊死两处漂移 | `owner/approval/approval_history_policy.py`（新建）、`hermes_cli/approvals_suggest.py`、`tests/owner/test_approval_suggest_i18n_blocks.py`（新建） | `91007c9b58` |
+
+- **判定对象的边界**：只读结论字段（`error` / `message`），**刻意不读 `output`**。真实数据标定显示，把 `output` 纳入判定会引入 55 条误报 —— `status: "success"` 的 `cat` / `diff` 输出里恰好含 "BLOCKED" 字样（用户在讨论这些文案）。
+- **标记提取口径**：从 catalog 模板取**首个**含锚点的静态片段（非最长、非按句拆分），兼顾 SQL 语义与描述自带的括号/标点。实测产出 82 个 marker，锚点未覆盖率 0。
+- **涉及文件**（官方树 intrude）：`hermes_cli/approvals_suggest.py`（module 级薄委托 + `_blocked_tool_call_ids` 按 owner 锚点动态拼 LIKE；原 `_BLOCK_MARKERS` 保留为 fail-open 兜底）
+- **涉及文件**（owner 侧）：`owner/approval/approval_history_policy.py`（439 行）、`tests/owner/test_approval_suggest_i18n_blocks.py`（27 例）
+- **侵入类型**：薄委托（module 级 try-import + 判定/锚点两处转发）
+- **验证**：真实库（`~/.hermes/state.db`，46,582 条 tool 结果）标定 —— 真拦截漏检 **0 条**、误报 **0 条**、命中 92 条，全量判定 **1.04s**（对照英文文案匹配口径：漏检 79 条、误报 55 条）。变异验证两条：还原上游文件 → `zh` 参数化用例失败并**量化错位**（`count=8` 而非 3，被拒 5 次全混入）而 `en` 仍通过，精确印证「只有本地化触发」；抽掉 catalog 文案层 → 3 例失败，证明结构层单独不够。回归：`scripts/run_tests.sh` 57 文件 / 788 例全通过（16.8s）。
+- **同类普查**：全仓库按英文 `BLOCKED` 文案做**匹配判定**的生产代码仅此一处；其余出现处均为消息生产者（`owner/approval/skill_manage_gate.py`、`tools/file_tools.py`、`hermes_cli/plugins.py`）或结构化字段（`tools/skills_guard.py` 的 `status = "BLOCKED"`）。普查另得测试侧缺口：约 12 文件 40 处 `assert "BLOCKED" in result["message"]` 的英文硬断言（`HERMES_LANGUAGE=zh` 下 3 failed / 246 passed），已单独立项 **T2-22**。
+
 ---
 
 ## 四、飞书平台：深度定制与交互卡片
@@ -1523,6 +1539,7 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 | `owner/tips_zh.py` | 中文 tips 数据源 | hermes_cli/tips.py |
 | `owner/approval/skill_script_approval.py` | skill 脚本自动审批 + 安全门 | tools/approval.py / skills_tool.py |
 | `owner/approval/skill_manage_gate.py` | skill_manage 写操作飞书审批门（profile 白名单） | plugin hook + feishu adapter 点击路由 |
+| `owner/approval/approval_history_policy.py` | 审批历史拦截判定的结构标记策略（status / catalog key / 兜底三层 + SQL 锚点同源，§3.13） | hermes_cli/approvals_suggest.py 薄委托 |
 | `owner/feishu/skill_approval_card.py` | skill 审批自建卡 + card action 处理 | feishu/adapter.py（skill_approval_gate） |
 | `owner/owner-extensions/skill_manage_bridge/` | pre_tool_call / gateway 缓存接线 skill 审批门 | owner-extensions plugin |
 | `owner/owner-extensions/output_guard/` | transform_llm_output 复读/乱码/超长检测与折叠 | owner-extensions plugin（零官方侵入） |
@@ -1616,6 +1633,7 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 | `agent/codex_responses_adapter.py` | reasoning 后跳过/占位空 content（§7.15 方舟严格网关） | inline |
 | `cli.py` / `hermes_cli/main.py` / TUI | Ctrl+C → `app.exit` / gateway drain via stdin EOF（§6.3） | inline |
 | `cron/lifecycle_guard.py` / `tools/terminal_tool.py` | 二进制路径不当脚本扫（NUL → 空文本、fallback 跳过、`ValueError` 吞掉；§7.19） | inline |
+| `hermes_cli/approvals_suggest.py` | 拦截判定与 SQL 预过滤锚点委托 `owner/approval/approval_history_policy.py`（§3.13）；英文 marker 表降级为 fail-open 兜底 | 薄委托 |
 
 ### B.4 与附录 C 的交叉覆盖
 
@@ -1685,6 +1703,14 @@ _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请先�
 ---
 
 ## 附录 E：变更日志
+
+### 2026-09-28：新增 §3.13 审批历史挖掘改按结构标记判定（T2-1）
+
+- **新建正文**：**§3.13**：`91007c9b58`（`owner/approval/approval_history_policy.py` 新建 439 行、`hermes_cli/approvals_suggest.py` 薄委托 2 处、`tests/owner/test_approval_suggest_i18n_blocks.py` 新建 27 例）
+- **类型**：安全修复（i18n 击穿逻辑匹配）+ 官方文件侵入
+- **根因**：`5d85ec89ac`（2026-08-17）把 `tools/approval.py` 拦截文案搬进 `locales/*.yaml`，`approvals_suggest.py` 只补了一行中文 marker，导致中文环境下判定表与 SQL 粗筛同时失效，被拒绝的命令被挖掘为「隐含批准」
+- **验证**：真实库 46,582 条 tool 结果标定（真拦截漏检 0 / 误报 0 / 命中 92 / 1.04s）；变异验证两条；`scripts/run_tests.sh` 57 文件 / 788 例全通过
+- **同类普查**：生产侧仅此一处；测试侧英文硬断言缺口另立 **T2-22**
 
 ### 2026-09-23：新增 §7.27 outbound_special_token_scrub（出站剥 BOS/EOS）
 
