@@ -2629,17 +2629,24 @@ def _(rid, params: dict) -> dict:
     if not cmd:
         return _err(rid, 4004, "empty command")
     try:
-        from tools.approval import detect_dangerous_command, detect_hardline_command
+        from tools.approval import (
+            detect_dangerous_command,
+            detect_hardline_command,
+            _translate_pattern_description,
+        )
 
         is_hardline, hardline_desc = detect_hardline_command(cmd)
         if is_hardline:
+            # Detection returns English; localize for the user-facing error only.
+            _hl = _translate_pattern_description(hardline_desc, kind="hardline") or hardline_desc
             return _err(
-                rid, 4005, f"blocked (hardline): {hardline_desc}. Use the agent for dangerous commands."
+                rid, 4005, f"blocked (hardline): {_hl}. Use the agent for dangerous commands."
             )
         is_dangerous, _, desc = detect_dangerous_command(cmd)
         if is_dangerous:
+            _d = _translate_pattern_description(desc) or desc
             return _err(
-                rid, 4005, f"blocked: {desc}. Use the agent for dangerous commands."
+                rid, 4005, f"blocked: {_d}. Use the agent for dangerous commands."
             )
     except ImportError:
         return _err(rid, 5001, "shell.exec unavailable: approval safety module not importable")

@@ -148,7 +148,11 @@ def _render_text(verdict: dict) -> None:
     print(f"env-type: {verdict['env_type']}")
     print(f"verdict : {verdict['verdict']}  (exit {verdict['exit_code']})")
     if verdict["rule"]:
-        print(f"rule    : {verdict['rule']}")
+        # The verdict dict keeps the raw English rule string (it is also the
+        # --json payload); localize only this human-readable rendering.
+        from tools.approval import _translate_pattern_description
+        rule = verdict["rule"]
+        print(f"rule    : {_translate_pattern_description(rule) or rule}")
     if verdict["detail"]:
         print(f"detail  : {verdict['detail']}")
     print("normalized trace (variants the detectors evaluated):")

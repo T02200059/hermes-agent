@@ -51,6 +51,13 @@ def _pattern_description_to_key(description: str) -> str:
 def _translate_pattern_description(description: str, kind: str = "dangerous") -> str:
     """Translate a DANGEROUS_PATTERNS/HARDLINE_PATTERNS description for display.
 
+    **Display layer only.** This function must never be called from a detection
+    routine: ``detect_dangerous_command`` / ``detect_hardline_command`` return
+    the raw English description, and downstream consumers match that string
+    with English regexes (``hermes_cli.approvals_suggest.is_unsafe_class``).
+    Localizing inside detection breaks those consumers silently while still
+    looking correct in the user-facing prompt.
+
     Looks up ``approval.<kind>_desc.<key>`` in the active catalog. If the key is
     missing, falls back to the original English description so the approval
     reason is never replaced by a bare key path.
@@ -800,6 +807,10 @@ def detect_hardline_command(command: str) -> tuple:
 
     Hardline patterns are NEVER bypassable, even in YOLO mode.
 
+    **Return contract**: the description is the raw English
+    ``HARDLINE_PATTERNS`` description string, not a localized variant — see
+    ``detect_dangerous_command`` for why. Display code localizes separately.
+
     Returns:
         (is_hardline, description) or (False, None)
     """
@@ -831,7 +842,7 @@ def detect_hardline_command(command: str) -> tuple:
             else:
                 haystack = variant_lower
             if pattern_re.search(haystack):
-                return (True, _translate_pattern_description(description, kind="hardline"))
+                return (True, description)
 
     return (False, None)
 
@@ -923,15 +934,28 @@ def _save_blocked_payload(command: str) -> Optional[str]:
 
 
 def _hardline_block_result(description: str, command: str = "") -> dict:
-    """Build the standard block result for a hardline match."""
-    message = t("approval.hardline_blocked", description=description)
+    """Build the standard block result for a hardline match.
+
+    ``description`` arrives as the raw **English** detection string (see
+    ``detect_hardline_command``); localization is applied here, at the display
+    layer. The parser-limit comparison below is intentionally done on the raw
+    value so it keeps matching the English constants after localization.
+    """
+    is_parser_limit = description in (
+        _PARSER_LIMIT_DESCRIPTION,
+        _MALFORMED_EXEC_DESCRIPTION,
+    )
+    display_description = (
+        _translate_pattern_description(description, kind="hardline") or description
+    )
+    message = t("approval.hardline_blocked", description=display_description)
     # The parser-limit block is almost always a giant inline payload
     # (heredoc script, base64 blob, one-line python -c program) — not a
     # genuinely forbidden operation. 198 occurrences in a 250k-call
     # production window, typically followed by blind rephrase retries.
     # Auto-save the payload as a runnable script and point at it; fall
     # back to the manual write_file recipe when saving fails.
-    if description in (_PARSER_LIMIT_DESCRIPTION, _MALFORMED_EXEC_DESCRIPTION):
+    if is_parser_limit:
         saved = _save_blocked_payload(command) if command else None
         if saved:
             message += t("approval.hardline_recovery_saved", saved=saved)
@@ -945,10 +969,17 @@ def _hardline_block_result(description: str, command: str = "") -> dict:
 
 
 def _sudo_stdin_block_result(description: str) -> dict:
-    """Build the standard block result for sudo stdin guard."""
+    """Build the standard block result for sudo stdin guard.
+
+    ``description`` is the raw English guard string; localized at the display
+    layer (falls back to English when the catalog has no key).
+    """
+    display_description = (
+        _translate_pattern_description(description) or description
+    )
     return {
         "approved": False,
-        "message": t("approval.sudo_stdin_blocked", description=description),
+        "message": t("approval.sudo_stdin_blocked", description=display_description),
     }
 
 
@@ -2622,6 +2653,20 @@ def _is_shell_token_spliced_gateway_lifecycle(command: str) -> bool:
 def detect_dangerous_command(command: str) -> tuple:
     """Check if a command matches any dangerous patterns.
 
+    **Return contract (machine-readable, always English).** Both the
+    ``pattern_key`` and the ``description`` are the raw ``DANGEROUS_PATTERNS``
+    description string, never a localized variant:
+
+    * ``pattern_key`` is the allowlist/session-approval key.
+    * ``description`` is the detection-class identifier — consumers such as
+      ``hermes_cli.approvals_suggest.is_unsafe_class`` match it with
+      **English** regular expressions to decide whether a class may ever be
+      proposed as a permanent allowlist entry.
+
+    Display code must localize on its own via ``_translate_pattern_description``.
+    Translating here would silently break every English-based consumer while
+    looking correct in the prompt (see T1-1 in the 2026-09 review).
+
     Returns:
         (is_dangerous, pattern_key, description) or (False, None, None)
     """
@@ -2635,15 +2680,15 @@ def detect_dangerous_command(command: str) -> tuple:
         for pattern_re, description in DANGEROUS_PATTERNS_COMPILED:
             if pattern_re.search(command_lower):
                 pattern_key = description
-                return (True, pattern_key, _translate_pattern_description(description))
+                return (True, pattern_key, description)
     normalized = _normalize_command_for_detection(command)
     for description, _ in _execution_flag_findings(normalized):
-        return (True, description, _translate_pattern_description(description))
+        return (True, description, description)
     if _is_shell_token_spliced_gateway_lifecycle(command):
         return (
             True,
             _GATEWAY_LIFECYCLE_SPLICE_DESCRIPTION,
-            _translate_pattern_description(_GATEWAY_LIFECYCLE_SPLICE_DESCRIPTION),
+            _GATEWAY_LIFECYCLE_SPLICE_DESCRIPTION,
         )
     return (False, None, None)
 
@@ -4227,17 +4272,22 @@ def check_dangerous_command(command: str, env_type: str,
     if not is_dangerous:
         return {"approved": True, "message": None}
 
+    # Display-layer localization happens HERE, at the boundary into the
+    # human-facing gate — never inside detection. ``description`` above stays
+    # English for every machine consumer (allowlist keys, exclusion regexes);
+    # only ``display_description`` is localized.
+    display_description = _translate_pattern_description(description) or description
 
     # [owner] i18n: pass t() to _run_approval_gate's cron_deny_message
     # instead of the upstream hardcoded English string.
     return _run_approval_gate(
         pattern_key=pattern_key,
-        description=description,
+        description=display_description,
         display_target=command,
         approval_callback=approval_callback,
-        cron_deny_message=t("approval.cron_blocked", description=description),
+        cron_deny_message=t("approval.cron_blocked", description=display_description),
         single_query_deny_message=t(
-            "approval.single_query_blocked", description=description
+            "approval.single_query_blocked", description=display_description
         ),
 
         autoapprove_log_prefix=(
@@ -5488,7 +5538,8 @@ def check_all_command_guards(command: str, env_type: str,
                     return {
                         "approved": False,
                         "message": t(
-                            "approval.single_query_blocked", description=description
+                            "approval.single_query_blocked",
+                            description=_translate_pattern_description(description) or description,
                         ),
                         "pattern_key": _pk,
                         "description": description,
@@ -5542,7 +5593,8 @@ def check_all_command_guards(command: str, env_type: str,
                     return {
                         "approved": False,
                         "message": t(
-                            "approval.cron_blocked", description=description
+                            "approval.cron_blocked",
+                            description=_translate_pattern_description(description) or description,
                         ),
                     }
                 # Also run tirith check in cron-deny mode so content-level
@@ -5594,7 +5646,8 @@ def check_all_command_guards(command: str, env_type: str,
                         "approved": False,
                         "message": t(
                             "approval.unattended_blocked_command",
-                            description=description, platform=_ua_platform,
+                            description=_translate_pattern_description(description) or description,
+                            platform=_ua_platform,
                         ),
                     }
                 # Tirith parity with the cron branch: content-level threats
@@ -5757,6 +5810,19 @@ def check_all_command_guards(command: str, env_type: str,
 
     # Combine descriptions for a single approval prompt
     combined_desc = "; ".join(desc for _, desc, _ in warnings)
+
+    # Display-layer localization for the human prompt surfaces. ``combined_desc``
+    # itself stays **English** — it is also written into approval hooks,
+    # transcript records and pending-approval payloads, where a localized
+    # string would silently corrupt the machine-readable contract. Only the
+    # strings handed to a human are translated here.
+    # Tirith descriptions are already localized by ``_format_tirith_description``
+    # and must not be run through the pattern-description catalog.
+    _display_combined_desc = "; ".join(
+        desc if is_t else (_translate_pattern_description(desc) or desc)
+        for _, desc, is_t in warnings
+    )
+
     primary_key = warnings[0][0]
     all_keys = [key for key, _, _ in warnings]
     # "Always" is offered when at least one warning is a dangerous-pattern
@@ -5775,7 +5841,7 @@ def check_all_command_guards(command: str, env_type: str,
     # reaches a built-in surface only under the explicit fallback opt-in.
     transport_attempt = _present_with_selected_transport(
         command=command,
-        description=combined_desc,
+        description=_display_combined_desc,
         pattern_key=primary_key,
         pattern_keys=all_keys,
         session_key=session_key,
@@ -5958,7 +6024,7 @@ def check_all_command_guards(command: str, env_type: str,
             # the allowlist keys off pattern_key, so redaction is display-only.
             from agent.redact import redact_sensitive_text
             _disp_command = redact_sensitive_text(command)
-            _disp_combined_desc = redact_sensitive_text(combined_desc)
+            _disp_combined_desc = redact_sensitive_text(_display_combined_desc)
             pending_data = {
                 "command": _disp_command,
                 "pattern_key": primary_key,
@@ -6004,7 +6070,7 @@ def check_all_command_guards(command: str, env_type: str,
     )
     choice = prompt_dangerous_approval(
         command,
-        combined_desc,
+        _display_combined_desc,
         allow_permanent=has_permanent_capable and not smart_denied_for_owner,
         smart_denied=smart_denied_for_owner,
         approval_callback=approval_callback,
