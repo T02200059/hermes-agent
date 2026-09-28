@@ -62,6 +62,40 @@ AIAgent._execute_tool_calls
 - **SOP 防误判**：skill_context 视为主 agent 正在遵循的流程；与用户意图一致时优先 PASS
 - **fail 策略**：超时/失败时，tier1（已标危险）→ BLOCK（fail-closed）；skip 工具不调用 LLM（等价 PASS）
 
+### 4.1 分类准入规则（2026-09-28 修订）
+
+检测层的分类决定「哪些调用会进 LLM 审计」，因此它本身就是安全控制项。三条硬规则：
+
+1. **白名单只收「无论参数如何都无副作用」的工具。** 带 `action` / 子命令 /
+   可变语义参数的工具不得进 `_SAFE_TOOLS` —— 否则危险 action 会被整段当
+   safe tool 跳过。已被移出的先例：`process`、`skill_manage`、
+   `close_terminal`、`memory`。
+2. **未枚举的 action 取 fail-closed（→ tier1）**，不假设安全。
+3. **完全未分类的工具名同样 fail-closed（→ tier1）。**
+
+第 3 条的取舍：代价是审计量上升（注册 95 个工具中约 70 个未显式分类），
+收益是「上游 / MCP 新增工具不再静默落进盲区」。**审计门一旦开启，用户要的是
+防护而不是「看起来已防护」——后者比门不存在更危险，因为它剥夺了警觉。**
+该方向导致审计量的增加是有意接受的代价；`detector.warn_unreconciled_tools()`
+会在门首次生效时把未分类清单打进日志，供逐项补分类收窄。
+
+审计粒度是**每批一次 LLM 调用**（本批全部 tier1 合并裁决），不是每工具一次，
+因此增量成本有界。
+
+### 4.2 已知的 action 分流结果
+
+| 工具 | action | tier | 说明 |
+|---|---|---|---|
+| `skill_manage` | `delete` / `remove_file` | hardline | 不可逆写删，无恢复路径 |
+| `skill_manage` | `create` / `edit` / `patch` / `write_file` | tier1 | 该工具 6 个 action 全是写，无只读 action |
+| `skill_manage` | 未枚举 | tier1 | fail-closed |
+| `close_terminal` | — | tier1 | 与 `process action=close` 同一操作的两个工具名 |
+| `memory` | `add` / `replace` / `remove` / `batch` | tier1 | 全部写持久记忆，prompt 注入的跨会话持久化面 |
+| `tool_call`（桥） | unwrap 失败 | tier1 | 底层工具未知，不得当「未分类」放过 |
+
+`skill_manage` 的 action 真源是 `owner/approval/skill_manage_gate.WRITE_ACTIONS`，
+检测层复用而不复制，避免两处表漂移。
+
 压缩安全：首次审计时把 user 指令快照挂到 `agent._semantic_audit_user_snapshot`，避免只依赖可能被压缩的 messages。
 
 ## 5. 配置

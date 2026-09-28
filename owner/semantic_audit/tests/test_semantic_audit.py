@@ -795,3 +795,157 @@ def test_run_agent_glue_fail_open(monkeypatch):
     messages: list = []
     ra.AIAgent._execute_tool_calls(agent, asst, messages, "task")
     assert called["seq"] is True
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# T1-2（2026-09-28 月度审查，P0）：白名单准入 + 失败兜底方向
+#
+# 根因：性质可变的工具（同一工具名下既有只读 action 也有不可逆写删 action）
+# 被放进 _SAFE_TOOLS 后，危险 action 会被整段当 safe tool 跳过；同时兜底
+# 分支为 skip（fail-open），注释却写「fail-closed」。两者都属「门存在但
+# 未生效」——比门不存在更危险，因为会剥夺警觉。
+# ─────────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "tool_name", ["process", "skill_manage", "close_terminal", "memory"]
+)
+def test_action_split_tools_are_not_in_safe_tools(tool_name: str):
+    """性质可变的工具不得出现在 _SAFE_TOOLS（否则危险 action 被整段跳过）。"""
+    from owner.semantic_audit.detector import _SAFE_TOOLS
+
+    assert tool_name not in _SAFE_TOOLS
+
+
+def test_no_safe_tool_declares_an_action_parameter():
+    """结构性普查：_SAFE_TOOLS 里不得有任何「带 action 参数」的工具。
+
+    这是通用防线——白名单 + 可变 action 的组合即为同类 P0，与具体工具名
+    无关。注册表不可用时跳过（该断言是辅助信号，不应让测试环境失败）。
+    """
+    try:
+        import model_tools  # noqa: F401  (触发工具注册)
+        from tools.registry import registry
+    except Exception:
+        pytest.skip("工具注册表不可用")
+
+    from owner.semantic_audit.detector import _SAFE_TOOLS
+
+    def _props(name: str):
+        sch = registry.get_schema(name) or {}
+        return list((sch.get("parameters") or {}).get("properties") or {})
+
+    offenders = sorted(n for n in _SAFE_TOOLS if "action" in _props(n))
+    assert not offenders, (
+        f"以下工具带 action 参数却进了 _SAFE_TOOLS：{offenders} —— "
+        "必须按 action 分流，否则危险 action 会被整段跳过。"
+    )
+
+
+def test_skill_manage_delete_is_hardline():
+    """delete / remove_file 不可逆 → hardline（比 tier1 更严）。"""
+    from owner.semantic_audit.detector import classify_tool_call
+
+    for action in ("delete", "remove_file"):
+        c = classify_tool_call(_tc(action, "skill_manage", {"action": action, "name": "x"}))
+        assert c.tier == "hardline", f"skill_manage {action} 应 hardline，实得 {c.tier}"
+
+
+@pytest.mark.parametrize("action", ["create", "edit", "patch", "write_file"])
+def test_skill_manage_write_actions_are_tier1(action: str):
+    from owner.semantic_audit.detector import classify_tool_call
+
+    c = classify_tool_call(_tc("w", "skill_manage", {"action": action, "name": "x"}))
+    assert c.tier == "tier1", f"skill_manage {action} 应 tier1，实得 {c.tier}"
+
+
+def test_skill_manage_unknown_action_is_tier1_not_skip():
+    """未枚举的 action 不得假设安全。"""
+    from owner.semantic_audit.detector import classify_tool_call
+
+    for bad in ("__nope__", "", "DROP"):
+        c = classify_tool_call(_tc("u", "skill_manage", {"action": bad, "name": "x"}))
+        assert c.tier == "tier1", f"未知 action {bad!r} 应 tier1，实得 {c.tier}"
+
+
+def test_skill_manage_write_actions_use_single_source_of_truth():
+    """action 真源必须是 owner/approval/skill_manage_gate.WRITE_ACTIONS。"""
+    from owner.approval.skill_manage_gate import WRITE_ACTIONS
+    from owner.semantic_audit.detector import _skill_manage_write_actions
+
+    assert _skill_manage_write_actions() == frozenset(WRITE_ACTIONS)
+
+
+def test_close_terminal_is_tier1():
+    """close_terminal 与 process action=close 是同一操作的两个工具名。"""
+    from owner.semantic_audit.detector import classify_tool_call
+
+    c = classify_tool_call(_tc("ct", "close_terminal", {"pid": "1234"}))
+    assert c.tier == "tier1"
+
+
+@pytest.mark.parametrize("action", ["add", "replace", "remove", "batch"])
+def test_memory_write_actions_are_tier1(action: str):
+    """memory 全部 action 都写持久记忆（prompt 注入的跨会话持久化面）。"""
+    from owner.semantic_audit.detector import classify_tool_call
+
+    c = classify_tool_call(
+        _tc("m", "memory", {"action": action, "target": "memory", "content": "x"})
+    )
+    assert c.tier == "tier1", f"memory {action} 应 tier1，实得 {c.tier}"
+
+
+@pytest.mark.parametrize("tool_name", ["computer_use", "kanban_create", "browser_exec"])
+def test_unclassified_tool_falls_back_to_tier1(tool_name: str):
+    """兜底必须是 fail-closed：未分类工具一律 tier1，不再静默跳过。"""
+    from owner.semantic_audit.detector import classify_tool_call
+
+    c = classify_tool_call(_tc("x", tool_name, {"action": "click"}))
+    assert c.tier == "tier1", f"{tool_name} 应 fail-closed tier1，实得 {c.tier}"
+    assert "fail-closed" in c.reason
+
+
+def test_tool_search_bridge_unwrap_failure_is_tier1(monkeypatch):
+    """桥解析失败时底层工具未知 → 不得当「未分类」放过。"""
+    from owner.semantic_audit import detector
+
+    monkeypatch.setattr(
+        detector,
+        "unwrap_tool_call_ex",
+        lambda name, args: (name, args, "解析失败：模拟"),
+    )
+    c = detector.classify_tool_call(
+        _tc("b", "tool_call", {"name": "terminal", "arguments": {"command": "ls"}})
+    )
+    assert c.tier == "tier1"
+    assert "unwrap 失败" in c.reason
+
+
+def test_bridge_unwrap_success_is_classified_by_underlying_tool():
+    """桥解析成功时应按底层工具分类（此处底层为 terminal 的危险命令）。"""
+    from owner.semantic_audit.detector import classify_tool_call
+
+    c = classify_tool_call(
+        _tc(
+            "b2",
+            "tool_call",
+            {"name": "terminal", "arguments": {"command": "rm -rf /"}},
+        )
+    )
+    assert c.tier in {"hardline", "tier1"}, f"底层工具未被解析分类：{c.tier}/{c.reason}"
+
+
+def test_unreconciled_tool_names_excludes_classified_tools():
+    """对账函数不得把已显式分类的工具算作未覆盖。"""
+    try:
+        import model_tools  # noqa: F401
+    except Exception:
+        pytest.skip("工具注册表不可用")
+
+    from owner.semantic_audit.detector import (
+        classified_tool_names,
+        unreconciled_tool_names,
+    )
+
+    unknown = set(unreconciled_tool_names())
+    assert not (unknown & classified_tool_names())

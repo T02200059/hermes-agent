@@ -173,6 +173,14 @@ def _maybe_audit_batch_impl(
     if not cfg.get("enabled", False):
         return False
 
+    # 分类覆盖对账：门一旦开启，就说明运维要的是「真防护」而非「看起来
+    # 已防护」。未显式分类的工具现已按 fail-closed tier1 处理，这里只把
+    # 漂移量大声讲出来（每进程一次），供补分类用。
+    try:
+        detector.warn_unreconciled_tools()
+    except Exception:
+        logger.debug("semantic_audit: 分类对账失败", exc_info=True)
+
     # cron 默认 enforce；若 cron_enforce=False 可跳过 cron session
     if policy.is_cron_session(agent) and not cfg.get("cron_enforce", True):
         return False
