@@ -59,7 +59,7 @@ _元数据统计口径：范围取「基点后未出现在上游 `00b2e03c80` �
 
 - **try-import / lazy import** — 官方文件用 `try: from owner.x import y` 或 `_owner_import(...)` 延迟加载，owner/ 缺失时降级。最干净、sync 冲突最小。
 - **import 编排**（runtime patch）— 官方模块加载后，由 `owner/patches/*` 或 `owner/tools/schema_patches.py` 动态修改已注册对象（schema、常量、方法）。官方源码字面定义不变。
-- **薄胶水 / 委托**（`[owner]` / `[owner-patch]` 标记）— 官方文件中 1~5 行 import + 委托调用，所有实现在 owner/。短标记 + 指向 owner/ 位置。
+- **薄胶水 / 委托**（`[owner]` / `[owner]` 标记）— 官方文件中 1~5 行 import + 委托调用，所有实现在 owner/。短标记 + 指向 owner/ 位置。
 - **inline 逻辑** — 官方文件中直接嵌入的实现逻辑（非委托）。最重，sync 冲突最大，是后续 hook/plugin 化的重点候选。
 
 ---
@@ -188,10 +188,10 @@ _元数据统计口径：范围取「基点后未出现在上游 `00b2e03c80` �
 - **方案**：
   - `owner/tools/schema_patches.py`：模块加载后，在已注册的 tool schema 上 post-registration patch（运行时修改）。当前由 `owner-extensions` plugin 的 `register(ctx)` 统一 import/apply，不再占用 `gateway/run.py` 侵入点。
   - `owner/patches/pool_base_url_override.py`：`config_base_url_override()` — 当 model 配置了 base_url 时，覆盖 credential pool 的 base_url。`hermes_cli/runtime_provider.py` 两处薄胶水调用。
-  - **env-var template 泄露防护**（§11.2）：`hermes_cli/runtime_provider.py` + `agent/model_metadata.py` + `tui_gateway/server.py` 三处 `[owner-patch] P29` 防止 `${VAR}` 模板字符串泄露到运行时。
+  - **env-var template 泄露防护**（§11.2）：`hermes_cli/runtime_provider.py` + `agent/model_metadata.py` + `tui_gateway/server.py` 三处 `[owner] P29` 防止 `${VAR}` 模板字符串泄露到运行时。
 - **涉及文件**：
   - 纯新增：`owner/tools/schema_patches.py`、`owner/patches/pool_base_url_override.py`
-  - 侵入：`agent/credential_pool.py`、`hermes_cli/runtime_provider.py`（两处 `[owner-patch] P29` + base_url override 薄胶水）、`run_agent.py`、`agent/model_metadata.py`（`[owner-patch] P29`）、`tui_gateway/server.py`（`[owner-patch] P29`）
+  - 侵入：`agent/credential_pool.py`、`hermes_cli/runtime_provider.py`（两处 `[owner] P29` + base_url override 薄胶水）、`run_agent.py`、`agent/model_metadata.py`（`[owner] P29`）、`tui_gateway/server.py`（`[owner] P29`）
 - **侵入类型**：import 编排（schema_patches 是 runtime patch）、薄胶水（P29 三处 + base_url override）
 - **Commit**：`7f1a80ddb`（§3.10+§3.11）、`e78e53a71`（§11.2 P29 三处防泄露）、`de2295c0c`（补 schema_patches import 让 send_message card + image_generate model 参数生效）、`2c592b7ad`（upstream-native 检测）、`7b54ff5e8`（迁入 `owner-extensions` plugin）
 
@@ -677,7 +677,7 @@ _元数据统计口径：范围取「基点后未出现在上游 `00b2e03c80` �
 
 - **背景**：用户想在一个输入里串多个斜杠命令/提示，用 `;;` 分隔，全平台（CLI/Gateway/TUI/TS）支持。
 - **方案**：在 4 个 Python 入口 + 3 个 TS 文件中增加 `;;` 分割 + 依次执行逻辑。
-- **涉及文件**：`cli.py`、`gateway/platforms/base.py`（`[owner-patch] Chained quick commands`）、`gateway/run.py`、`tui_gateway/server.py`、`ui-tui/src/app/createSlashHandler.ts`、`ui-tui/src/gatewayTypes.ts`、`ui-tui/src/lib/rpc.ts`
+- **涉及文件**：`cli.py`、`gateway/platforms/base.py`（`[owner] Chained quick commands`）、`gateway/run.py`、`tui_gateway/server.py`、`ui-tui/src/app/createSlashHandler.ts`、`ui-tui/src/gatewayTypes.ts`、`ui-tui/src/lib/rpc.ts`
 - **侵入类型**：inline（4 处分割逻辑）+ TS inline
 - **Commit**：`1d908072a`（§6.1）
 
@@ -960,7 +960,7 @@ _元数据统计口径：范围取「基点后未出现在上游 `00b2e03c80` �
 - **方案**：
   - `agent/prompt_builder.py` 3 处：`_SKILLS_PROMPT_CACHE` 值 `str` → `(manifest, prompt)`；LRU 命中时重建 manifest 比对——磁盘未变返回缓存对象（保留 `is` 同对象语义），磁盘变化弃缓存走快照/冷路径重建；写入时随 prompt 存 manifest
   - 成本：每次**新会话**建 prompt 多一次 os.walk + per-file stat（~200 skills 个位数毫秒）；延续会话不走此路径（逐字恢复存储的 prompt 字节），prompt cache 前缀不变量不破
-- **侵入类型**：inline（缓存数据结构 + 读写点 3 处，均带 `[owner-patch]` 标记，无缩进重排）
+- **侵入类型**：inline（缓存数据结构 + 读写点 3 处，均带 `[owner]` 标记，无缩进重排）
 - **涉及文件**：`agent/prompt_builder.py`（+32/-4）、`tests/agent/test_prompt_builder.py`（+36：scp 语义落盘不清缓存 → 索引可见；磁盘未变 → 同对象复用）
 - **验证**：`tests/agent/test_prompt_builder.py` 69 passed 1 skipped（含新用例）；node010 部署重启后实测：磁盘快照 137 → 138（恰好 +kuaidi100-skill），`build_skills_system_prompt()` 索引含该 skill，网关 active 无异常
 - **Commit**：`48f8a6e6f8`
@@ -1145,8 +1145,8 @@ _元数据统计口径：范围取「基点后未出现在上游 `00b2e03c80` �
 ### 11.2 Cron job script args 参数支持
 
 - **背景**：cron job 的 script 需要支持 CLI flags 参数。
-- **方案**：`cron/jobs.py`（`# [owner-patch] cron job args support: normalize`）+ `cron/scheduler.py`（`# [owner-patch] map stored job args to CLI flags`）+ `tools/cronjob_tools.py`（`# [owner-patch] validate and normalize/store`）。
-- **侵入类型**：薄胶水（`[owner-patch]` 标记的三处参数处理）
+- **方案**：`cron/jobs.py`（`# [owner] cron job args support: normalize`）+ `cron/scheduler.py`（`# [owner] map stored job args to CLI flags`）+ `tools/cronjob_tools.py`（`# [owner] validate and normalize/store`）。
+- **侵入类型**：薄胶水（`[owner]` 标记的三处参数处理）
 - **Commit**：`3163d17e8`（§12.3）
 
 ### 11.3 运维脚本迁移
@@ -1752,6 +1752,28 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 - **未纳入**：`_degenerate_scan` 的分块扫描（本就是 O(n)）；`stream_guard` 的正则（已核查，无反向引用）。
 - **Commit**：`958594ce6f`
 
+### 16.8 官方改动文件 `[owner]` 标记全量补齐 + 覆盖率守卫（T2-11）
+
+- **背景**（T2-11 / 代码审查 M1）：sync fork 解冲时，判断某个 hunk 属于我们还是上游，靠的就是改动处的 `[owner]` 标记。而当时**有 58 个已被修改的官方文件全文没有任何标记** —— 解冲者只能按「上游代码」处理，整份定制被静默搬走。merge `315551234` 就是这样丢掉了 4 处标记（见 Check 5 的 4 条 warning）。
+- **口径先校正**：审查原文写「67 个官方文件」。实测口径差异在于**「无 `[owner]`」与「无任何标记」是两个集合** —— 前者 68 个（含 10 个只用 `[owner-patch]`），后者 **58 个**。本条的落地对象是后者（另 10 个由 `[owner-patch]` 归一覆盖）。
+- **范围边界**：官方目录下**新增**的文件不在本条内 —— 按 §2.2，新增文件靠 commit message 的 `[owner]` 前缀标识，不需要文件内标记。故统计一律用 `--diff-filter=M`。本仓该窗口内新增官方文件 11 个（`translucency.cjs`/`.test.cjs`、`api_server_media.py`、`feishu_client_utils.py`、`mimo_thinking.py`、`plugins/model-providers/damodel/*`、`REVIEW.md`、`ui-tui/src/owner/*`）。
+- **改前基线**：官方（非 `owner/`、非 `tests/`）改动文件 **117** 个，其中**零标记 58 个**；`--diff-filter=M` 窗口内共 **363 个带新增行的 hunk** 待落标记（另有 6 个纯删除 hunk），分布 **43 个 `.py` + 13 个 `.ts/.tsx` + `.gitignore`**。
+- **做法（逐 hunk 全标）**：每个 hunk 的**首个新增行上方**插一行标记。三类边界情形各有专门处置，且都不是"跳过"：
+  1. **改动落在多行字符串内部**（12 处：`agent/display.py`×3、`hermes_cli/commands.py`×3、`gateway/delivery_ledger.py`×2（`CREATE TABLE` 与 `SELECT` 字面量）、`kimi-coding/__init__.py`、`tools/feishu_drive_tool.py`、`ui-tui/src/gatewayTypes.ts`、`hermes_cli/gateway.py`）—— 往字符串里插 `#` 会改坏内容，故**上移到该字符串 token 起始行的上一行**，并在文案里注明「改动在下方的多行字符串内」。典型是 `hermes_cli/gateway.py`：唯一 hunk 落在 **112 行**的 respawn 脚本模板里，若无上移规则该文件会保持零标记。
+  2. **JSX children 位置**（`ui-tui/src/components/branding.tsx` 1 处）—— 裸 `//` 在 JSX children 里**不是注释而是文本子节点**，banner 会多渲染一行字面量；改用 JSX 惯用的 `{/* ... */}`。
+  3. **纯删除 hunk**（6 处，涉 4 文件：`.gitignore`、`agent/display.py`、`tools/feishu_drive_tool.py`、`ui-tui/src/app/useMainApp.ts`）—— 没有可挂的新增行，改为在**文件顶部**登记一小块「本文件另有 N 处仅删除上游代码的改动：新文件第 X 行附近」并含清单指针。
+- **标记格式的另一处取舍**：规范 §2.2 要求「短描述 + 指向 owner/ 位置」，但给 361 个插入点各带一句指针会给官方文件灌进约 19KB 纯注释，直接与 §2.1「极致最小化」相抵，反而放大每次 sync 的冲突面。故**标记只留短描述**（如 `# [owner] i18n 中文文案 t() 替换`），指针改由**改动清单的每文件条目**承担 —— 为此本轮同时补齐了附录 B 中缺失的 22 个文件条目，使「指针可查」成立。§2.2 已同步写入这条细则。
+- **生成物豁免**：`uv.lock` 的 4 个 hunk 曾插入标记，实测后**撤回** —— `uv lock` 会整文件重写、标记必被抹掉，且解冲时标记会诱导人保留本应重新生成的产物。依赖 pin 的标记挂在人工维护的 `pyproject.toml`（已有 `# [owner] LDAP bind auth ...`）。生成物清单固定在 `_GENERATED_ARTIFACTS`。
+- **`[owner-patch]` 归一**：全仓 95 处，**33 个文件共 90 处**归一为 `[owner]`（含 23 处清单散文、6 处 `inventory.yaml` 断言载荷、2 处补丁源码注释、1 处 `hermes_state.py` 的 SQL 字面量内注释）。刻意保留 5 处：**3 处**在 `owner/code-review/00-REVIEW.md`（2026-09-28 那轮评审的**冻结报告**，正文是当时的发现记录，改写会抹掉证据价值）、**2 处**在 `merge_health_check.py`（`_OWNER_MARKER_RE` 的 `(?:-patch)?` 容错分支 + `_normalize_owner_marker_line` 的 `.replace("[owner-patch]", " ")`）。后者是承重的：Check 5 要比对 merge `315551234` 的**历史删除行**，那些行里就是旧拼写（本次健康检查输出中可见），丢掉容错会让历史标记从"可见的遗留"退化为"不可见的 hunk"。
+- **归一的安全网**：`inventory.yaml` 的 6 条 `file_contains` 断言直接匹配 `# [owner-patch] <描述>` 文本，只改源码不改断言会让 Check 7 立刻变红 —— 这条断言恰好成了改名完整性的哨兵，改完两侧一致后 Check 7 为 0 issue。
+- **配套守卫（新增 Check 8）**：`merge_health_check.py` 增至 8 项检查。Check 8「Changed-file [owner] marker coverage」以 `git merge-base HEAD {upstream/main,origin/main,main}` 为基准（三者在本次均为 `00b2e03c80`），取 `--diff-filter=M` 的官方文件，逐个断言含至少一个 `[owner]` 标记；命中即 FAIL（不是 WARN）。这条守卫把"零标记官方文件"从**一次性人工普查**变成**每次跑健康检查都会验的不变量**。
+- **效果**：官方改动文件覆盖率 **0 标记 58 个 → 116/116 全覆盖**（117 减 1 个生成物）；健康检查 **6 passed / 1 warning → 7 passed / 1 warning**，Check 5 的 4 条既有 warning 不变（属 merge `315551234`，非本轮引入）；Check 4 识别 **670 个标记 / 99 个文件**。
+- **涉及文件**：58 个官方文件的标记插入（+365 行注释，纯插入、**零删除行**）；33 个文件共 90 处 `[owner-patch]` → `[owner]`；`owner/validation/merge_health_check.py`（新增 `check_changed_file_markers` / `_resolve_upstream_base` / `_is_generated_artifact` / `_GENERATED_ARTIFACTS` / `_UPSTREAM_BASE_REFS`，注册为 Check 8，模块 docstring 与 `_OWNER_MARKER_RE` 注释同步）、`tests/owner/test_merge_health_check.py`（+3 例）、`owner/docs/二次开发规范.md`（§2.2 新增「标记细则」+ §5 补注）、`owner/docs/owner改动清单.md`（本条 + 附录 B 补 22 个文件条目 + 附录 E）
+- **侵入类型**：仅注释（**零逻辑改动**）
+- **验证**：全部 43 个改动 `.py` 过 `py_compile`；**改名纯度逐行校验** —— 33 个改名文件的删除行与新增行**完全配对**，84 对逐对比较**每对只差 `[owner-patch]` → `[owner]`**，无附带改动；58 个插入文件为纯新增行（`git diff --numstat` 第二列全为 0）；`tests/owner/` **837 通过 / 0 失败**；**Check 8 变异验证 4/4 咬住** —— A 反向验证：从 47 个标记的 `browser_tool.py` 删 1 个 → 不报错（证明是文件级覆盖而非逐 hunk 计数）/ B：删掉只有 1 个标记的 `background_review.py` 的标记 → 用例 1 failed + Check 8 报 1 条（115/116）/ C：撤掉生成物豁免 → 点名 `uv.lock`（117/116，证明豁免承重）/ D：清空基准 ref 候选 → 优雅降级为 `skipped` 而非崩溃。
+- **未纳入（已登记为独立待办 T2-11b）**：逐 hunk 铺开本轮只覆盖了**零标记的 58 个文件**。用工作区重算，官方文件共有 **1528 个带新增行的 hunk**，其中 **626 个带标记**、**902 个未标记**，分布在 **55 个「已有标记但不完整」的文件**里（前 15 名占 692 处 = 76%：`gateway/run.py` 190/233、`tools/approval.py` 90/95、`agent/conversation_loop.py` 62/71、`hermes_cli/model_switch.py` 58/65、`plugins/platforms/feishu/adapter.py` 41/81、`gateway/platforms/api_server.py` 38/54、`cli.py` 36/40 …）。这 55 个文件在清单里都已有条目可查，且 Check 8 会持续守住文件级覆盖，故本轮**按文件级收口**（2026-09-28 用户决策），hunk 级铺开另立条目按冲突权重分批推进。
+- **Commit**：`a77e345342`（代码 + 测试；本条留档见附录 E）
+
 ---
 
 ## 附录 A：owner/ 模块职责索引
@@ -1811,33 +1833,45 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 | `plugins/platforms/feishu/adapter.py` | 64+ 处 `[owner]` 标记：approval/auto_card/bot_menu/clarify/diff_card/model_picker/profile_routing/resume_card/sender_name/early-typing/**skill_approval_gate** / **queue_card** 委托；`_mentions_self` 不再把 `@_all` 当 @机器人（§4.14）；**merge_forward 二次拉取渲染**（§4.15）；`send_card` 内补 `hermes_profile` 标签（§4.1）；`_finalize_send_result` 全路径 message_id 日志（§7.21）；**reaction 归属决策记录**（§16.6，仅注释：群聊表情按反应者解析属已接受决策，钉在用例上） | owner/feishu/*（含 skill_approval_card、queue_card、card_sender） | §4.2/§5.3-5.7/§17.1/§3.11/§4.1/§4.11/§4.14/§4.15/§7.21/§16.6 |
 | `agent/conversation_loop.py` | MoA 注入（CR-005 已改为独立 message）、content-filter fallback、adaptive backoff、thinking-timeout、attribution 重建、tool_call_id 胶水 | owner/attribution.py、owner/api_error_hints.py | a6dcd6ed8、9a05e50b4、362304bc8 |
 | `tools/approval.py` | home-prefix fold（CR-001 修复）、skill script 自动审批（3 处委托）、patch.yaml allowlist 合并、cron active helper | owner/approval/、owner/patch_config.py、owner/cron/approval_helper.py | 82fe8c962、5dd9580b4、99a374f64 |
-| `gateway/platforms/base.py` | per-profile cache roots、SendResult rotate/retry_after、chained quick command（`[owner-patch]`）、progress dedup code-fence 守卫 | — | 1d908072a、2be0af638 |
-| `tools/cronjob_tools.py` | owner/scripts allowlist（mtime-based）、cron job args 三处 `[owner-patch]` | — | 8a8f42455、3163d17e8、890869693 |
-| `cron/jobs.py` / `cron/scheduler.py` | cron job args `[owner-patch]` 参数 normalize + map | — | 3163d17e8 |
+| `gateway/platforms/base.py` | per-profile cache roots、SendResult rotate/retry_after、chained quick command（`[owner]`）、progress dedup code-fence 守卫 | — | 1d908072a、2be0af638 |
+| `tools/cronjob_tools.py` | owner/scripts allowlist（mtime-based）、cron job args 三处 `[owner]` | — | 8a8f42455、3163d17e8、890869693 |
+| `cron/jobs.py` / `cron/scheduler.py` | cron job args `[owner]` 参数 normalize + map | — | 3163d17e8 |
 | `gateway/platforms/api_server.py` | identity routing 中间件（`X-Hermes-Identity` → 子 profile 反代，§15.1）、LDAP bind 二次认证门 + 三态 401 + **503（`ldap_backend_unavailable`，§15.9）**（§15.2–§15.3）、转发头剥离 + SSE 逐 chunk 透传（§15.4）、`GET /v1/ldap/identity/{identity}/access` + identity_whitelist 短路（§15.5）、finish chunk effective `session_id`（§15.6）、**dormant 状态显式化**（§15.7：中间件 `route is None` 分支区分未接线/未配置 + 端点响应 `routing_dormant` / `routing_keys_present`）、**认证门前移**（§15.10：`_owner_identity_gate_rejection` 独立步骤，白名单 / 已路由 / 未知身份一律先过门）、`GET /v1/media/{id}` + `hermes.files`（§16.1）、`ApiMediaStore.from_config()`（§16.2）、`tool.progress` 字段扩展（§16.3）、**产物下载归属断言 + 「未声明即放行」决策**（§16.4）、**会话 id 派生加服务端盐 + 归属摘要刻意不加盐**（§16.5：`_owner_session_salt` 薄委托 + `_derive_chat_session_id` 改 HMAC）、**`tool.progress` 出口强制脱敏 + 帧绑定断言**（§16.6：`_redact_for_sse` / `_redact_args_for_sse` / `_redact_result_for_sse` / `_bind_tool_frame` / `_tool_frame_is_ours` / `_stripped_tool_frame`，两条 SSE 通道的产出与写出点 + `/v1/runs` 的 `_tool_progress`）、**子容器入口归属校验**（§16.6：`_owner_inbound_profile_rejection` / `_profile_mismatch_response`，两个 feishu doorway 不匹配返 409 `profile_mismatch`） | owner/gateway/ldap_auth.py、owner/feishu/profile_routing.py、owner/gateway/session_salt.py、gateway/platforms/api_server_media.py | 6177923b26、531508e317、311f553550、4b6d187a2b、b14892be7c、8d42e4c199、3d9a9ceed4、943b6bf1ac、9df4372591、9f453c51e1、6613ac2146、571ba8c937、0925bdf088、a622691915、6b80b565f4 |
+| `tools/browser_tool.py` | i18n 中文文案 `t()` 替换（**47 处** `[owner]` 标记） | agent/i18n.py + locales/ | i18n 批次（§12.2） |
+| `tools/memory_tool.py` | i18n 中文文案 `t()` 替换（**33 处** `[owner]` 标记） | agent/i18n.py + locales/ | i18n 批次（§12.2） |
+| `tools/computer_use/doctor.py` | i18n 中文文案 `t()` 替换（**20 处** `[owner]` 标记） | agent/i18n.py + locales/ | i18n 批次（§12.2） |
 
 ### B.2 中度侵入（薄胶水 + 列扩展，sync 冲突中）
 
 | 文件 | 侵入内容 | 侵入类型 |
 |------|----------|----------|
-| `run_agent.py` | owner_provider_name 参数+属性+透传、attribution 重建（`[owner-patch]`）、acp_args None 修复、schema patch import | 薄胶水 + 列扩展 |
-| `agent/agent_init.py` | owner_provider_name 透传、acp_args 空列表→None（`[owner-patch]`）、owner_provider_name 保留（`[owner-patch]`）、`_auth_pool_refresh_counts` 初始化（CR-003） | 薄胶水 |
+| `run_agent.py` | owner_provider_name 参数+属性+透传、attribution 重建（`[owner]`）、acp_args None 修复、schema patch import | 薄胶水 + 列扩展 |
+| `agent/agent_init.py` | owner_provider_name 透传、acp_args 空列表→None（`[owner]`）、owner_provider_name 保留（`[owner]`）、`_auth_pool_refresh_counts` 初始化（CR-003） | 薄胶水 |
 | `hermes_state.py` | sessions/messages 表加 owner_provider_name 列（INSERT/UPDATE/SELECT 全串联） | inline schema 扩展 |
 | `agent/chat_completion_helpers.py` | owner_provider_name 剥离 + extra_body 注入点 | 薄胶水 |
 | `agent/transports/chat_completions.py` | extra_body 注入 | 薄胶水 |
-| `hermes_cli/runtime_provider.py` | pool base_url override ×2（`[owner-patch]`）、env-var template P29 防泄露（`[owner-patch]`） | 薄胶水 |
+| `hermes_cli/runtime_provider.py` | pool base_url override ×2（`[owner]`）、env-var template P29 防泄露（`[owner]`） | 薄胶水 |
 | `hermes_cli/model_switch.py` | credential_helpers 薄调用（GitHub token 校验）；自定义 provider 匹配去重防误报 `switch_multiple_providers`（§2.10） | 薄胶水 + inline |
-| `agent/model_metadata.py` | env-var template P29 防泄露（`[owner-patch]`） | 薄胶水 |
-| `tui_gateway/server.py` | env-var template P29（`[owner-patch]`）、Cmd+C fallback、skin 数据传递；live compression sync 回退 `get_custom_provider_context_length`（§6.4） | 薄胶水 |
+| `agent/model_metadata.py` | env-var template P29 防泄露（`[owner]`） | 薄胶水 |
+| `tui_gateway/server.py` | env-var template P29（`[owner]`）、Cmd+C fallback、skin 数据传递；live compression sync 回退 `get_custom_provider_context_length`（§6.4） | 薄胶水 |
 | `agent/tool_executor.py` | checkpoint predictor 触发、file tool timeout 接线 | 薄胶水 |
 | `agent/tool_guardrails.py` | warn/block/halt 消息增强（计数器/阈值/路径） | inline（字符串） |
 | `tools/clarify_tool.py` / `clarify_gateway.py` | normalize_choices 薄调用 + stop sentinel | 薄胶水 |
 | `tools/skills_tool.py` | track_session_skill_view 薄调用 | 薄胶水 |
-| `gateway/platforms/qqbot/adapter.py` + `constants.py` | WS 重连链（heartbeat/timeout/stop_retry/rebuild） | inline |
+| `gateway/platforms/qqbot/adapter.py` + `gateway/platforms/qqbot/constants.py` | WS 重连链（heartbeat/timeout/stop_retry/rebuild） | inline |
 | `gateway/delivery_ledger.py` | `delivery_obligations` 加 `platform_message_id` 列 + 部分索引；`CREATE TABLE` 与 ALTER 对账循环双写；`mark_delivered` 非覆盖语义（§7.21） | inline 列扩展 + schema 对账 |
 | `hermes_cli/plugins.py` | 后台插件发现锁超时语义（join 超时直接返回 + `acquire(timeout=15)`），修复启动空白屏（§7.20） | inline |
 | `hermes_cli/profiles.py` | `get_active_profile_name` 读 `HERMES_PROFILE` env 优先 + `_PROFILE_ID_RE` 校验 + 回落路径推断（§7.14） | inline |
 | `plugins/memory/openviking/__init__.py` | `_ascii_peer_slug()` peer_id slug 化 + user/assistant fallback 链（§7.3） | inline |
+| `hermes_cli/write_approval_commands.py` | i18n 中文文案 `t()` 替换（13 处） | inline（字符串） |
+| `gateway/relay/adapter.py` | i18n 中文文案 `t()` 替换（8 处） | inline（字符串） |
+| `agent/context_breakdown.py` | usage breakdown 分类标签本地化（`_localized_category_label`，优先 `gateway.usage.breakdown_cat_*` 与 `/usage` 共享键，回退 payload 标签） | inline（字符串）+ 薄委托 |
+| `agent/conversation_compression.py` | 压缩完成状态行 i18n（`get_compaction_done_status`，运行期发射用） | inline（字符串） |
+| `ui-tui/src/components/appChrome.tsx` | owner spinner/主题接线（`owner/spinner.js` 动态 faces + 最宽字形测量缓存）、无选区 Cmd+C 回落终端原生复制 | inline + 薄胶水 |
+| `ui-tui/src/gatewayClient.ts` | graceful shutdown（`GRACEFUL_GATEWAY_EXIT_TIMEOUT_MS` 20s、`gracefulShutdownPromise` 去重） | inline |
+| `tools/computer_use/backend.py` | 可选 typed-browser 适配器钩子（`@staticmethod` 探测，缺依赖则退化）+ i18n | inline（钩子）+ 字符串 |
+| `tui_gateway/entry.py` | 退出前显式跑 `_shutdown_runtime`（session-end 事件 / 持久化 / 异步服务 flush，不依赖 atexit 时序） | 薄胶水 |
+| `tui_gateway/methods_tools.py` | hardline / dangerous 判定描述本地化（委托 `tools.approval._translate_pattern_description`） | 薄委托 |
 
 ### B.3 轻度侵入（import 编排 / 单行，sync 冲突小）
 
@@ -1865,6 +1899,30 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 | `cli.py` / `hermes_cli/main.py` / TUI | Ctrl+C → `app.exit` / gateway drain via stdin EOF（§6.3） | inline |
 | `cron/lifecycle_guard.py` / `tools/terminal_tool.py` | 二进制路径不当脚本扫（NUL → 空文本、fallback 跳过、`ValueError` 吞掉；§7.19） | inline |
 | `hermes_cli/approvals_suggest.py` | 拦截判定与 SQL 预过滤锚点委托 `owner/approval/approval_history_policy.py`（§3.13）；英文 marker 表降级为 fail-open 兜底 | 薄委托 |
+| `agent/image_gen_provider.py` | 仅允许 `http`/`https` 取图，其余 scheme（`file://`/`ftp://`/`gopher://`…）在网络与磁盘访问**之前**拒绝，防上游/调用方控制的 URL 被诱导读本地 | inline（安全校验） |
+| `agent/message_sanitization.py` | 中断占位文案 i18n（`gateway.interrupt.placeholder`） | inline（字符串） |
+| `agent/turn_context.py` | stale connections 等运行期状态 i18n | inline（字符串） |
+| `acp_adapter/server.py` | steer 失败文案 i18n（`gateway.steer_failed`） | inline（字符串） |
+| `gateway/platforms/whatsapp_cloud.py` | 审批卡标题 / 理由文案 i18n | inline（字符串） |
+| `gateway/platforms/yuanbao.py` | cron 投递包装剥离（委托 `strip_cron_delivery_wrapper`） | 薄胶水 |
+| `gateway/session_stall.py` | 会话停滞提示 i18n | inline（字符串） |
+| `plugins/platforms/matrix/adapter.py` | 附件失败提示 i18n | inline（字符串） |
+| `plugins/platforms/slack/adapter.py` | 图片 / 视频附件失败提示 i18n（分类型键） | inline（字符串） |
+| `tools/computer_use/tool.py` | 危险输入 / 破坏性快捷键拦截提示 i18n | inline（字符串） |
+| `tools/discord_tool.py` | pin / unpin 结果文案 i18n | inline（字符串） |
+| `tools/mcp_tool.py` | `_watch_children` 协程判定修正（`inspect.iscoroutinefunction`） | inline |
+| `tools/process_registry.py` | watch 禁用提示 i18n | inline（字符串） |
+| `tools/session_search_tool.py` | browse hint / 无匹配文案 i18n | inline（字符串） |
+| `tools/skill_manager_tool.py` | skill 创建 / 全量重写结果文案 i18n | inline（字符串） |
+| `tools/website_policy.py` | 站点策略拦截提示 i18n | inline（字符串） |
+| `hermes_cli/approvals_test.py` | 规则描述可读化（委托 `_translate_pattern_description`；JSON 载荷刻意保留英文原文，仅本地化人读渲染） | 薄委托 |
+| `hermes_cli/config.py` | 模型 / provider / custom-endpoint 写入时失效 24h 目录缓存（P2-9）；其他 key 不动缓存 | 薄胶水 |
+| `hermes_cli/credential_lifecycle.py` | 凭据变更时清 provider models 缓存 | 薄胶水 |
+| `hermes_state_common.py` | 共享 DDL 加 `owner_provider_name` 列（与 §10.1 归因链配套） | inline 列扩展 |
+| `apps/desktop/electron/main.ts` | 窗口半透明：`opacityForIntensity` 平台感知曲线（§13.1） | 薄胶水 |
+| `ui-tui/src/app/createGatewayEventHandler.ts` | skin `help_header` / `spinner` 字段透传 | 薄胶水 |
+| `ui-tui/src/app/useInputHandlers.ts` | macOS 无选区 Cmd+C 返回 false，回落终端原生复制 | inline |
+| `ui-tui/src/lib/gracefulExit.ts` / `ui-tui/src/entry.tsx` / `ui-tui/src/__tests__/gracefulExit.test.ts` | graceful exit（§6.3）：信号退出码表、cleanup 链、failsafe 25s、gateway drain | inline（含测试） |
 
 ### B.4 与附录 C 的交叉覆盖
 
@@ -1914,7 +1972,7 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 6. **runtime schema patches**（`owner/tools/schema_patches.py`）— 已迁入 `owner-extensions` plugin；验证依据：`model_tools.py` 先 `discover_builtin_tools()` 注册 schema dict 引用，再 `discover_plugins()`，plugin `register(ctx)` import 后可修改同一 dict；smoke test 已看到 `image_generate.model` 出现在工具 schema。
 7. **per-chat display overrides**（`owner/display_overrides.py`）— 不迁 plugin。原因：它不是独立启动期 patch，而是各个 display 决策点必须传入当前 `source/chat_id` 后同步解析；已通过 `gateway.display_config.resolve_display_setting_for_source()` 集中 chat_id 提取，`gateway/run.py` 只保留必要调用点。进一步迁 plugin 需要新增 display hook 并改所有调用路径，收益低于现状。
 8. **`/providers` command**（`owner/commands/providers.py`）— 已迁入 `owner-extensions` plugin command。Hermes plugin slash command API 已扩展 opt-in `hermes_ctx`（event/adapters/runner/platform），保留 Feishu interactive provider picker；`gateway/run.py` 的 `canonical == "providers"` 分支和 `gateway/slash_commands.py::_handle_providers_command()` shim 已删除。
-9. **cron job args / owner/scripts allowlist** — **已评估（2026-07-03）：部分可迁移，人工决定维持现状。** args 链（4 处 `[owner-patch]`）可迁移但收益低（需 monkey-patch 3 个 core 函数：`cronjob`、`create_job`、`_run_job_script`，跨 tool 期/存储期/执行期 3 个生命周期；且 args 是通用功能更应提 upstream）；allowlist（2 处副本）不可迁移（cron 运行时零 hook——`invoke_hook` 在 scheduler/jobs 出现 0 次——加上安全边界 WR-03）。评估发现 CR-002 修复遗漏了 scheduler 副本 2（`scheduler.py:1556`，process-lifetime cache 永不刷新），已修复为 mtime re-scan 与副本 1 一致。评估报告：`/tmp/zcode-cron-args-eval-result.md`（291 行，每条结论附行号引用）。
+9. **cron job args / owner/scripts allowlist** — **已评估（2026-07-03）：部分可迁移，人工决定维持现状。** args 链（4 处 `[owner]`）可迁移但收益低（需 monkey-patch 3 个 core 函数：`cronjob`、`create_job`、`_run_job_script`，跨 tool 期/存储期/执行期 3 个生命周期；且 args 是通用功能更应提 upstream）；allowlist（2 处副本）不可迁移（cron 运行时零 hook——`invoke_hook` 在 scheduler/jobs 出现 0 次——加上安全边界 WR-03）。评估发现 CR-002 修复遗漏了 scheduler 副本 2（`scheduler.py:1556`，process-lifetime cache 永不刷新），已修复为 mtime re-scan 与副本 1 一致。评估报告：`/tmp/zcode-cron-args-eval-result.md`（291 行，每条结论附行号引用）。
 10. **chained quick command（;;）** — 4 处 Python + 3 处 TS inline，是全平台语法增强，不适合 hook 化，建议保持。
 11. **`gateway/platforms/api_server.py`** — **待评估。** 该文件的 owner 侵入在 §15/§16 落地后已从轻度升为重度（identity routing 中间件、LDAP bind 认证门、转发头剥离 + SSE 透传、两个新增只读端点、路由注册与 capabilities 广告、`ApiMediaStore` 接线、流式事件字段扩展）。评估问题：identity 中间件与 LDAP gate 是否可迁入 `owner-extensions` plugin（`pre_gateway_dispatch` 类钩子能否覆盖中间件时机），或至少把转发路径收敛为 `owner/gateway/` 内的单一委托入口，避免每次 merge 都要逐行解冲中间件内部逻辑。注意 `owner/gateway/ldap_auth.py` 与 `owner/feishu/profile_routing.py` 本身已在 owner/ 内，可迁移的只是接线与转发骨架。
 
@@ -1934,6 +1992,21 @@ _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请先�
 ---
 
 ## 附录 E：变更日志
+
+### 2026-09-28：新增 §16.8 官方改动文件 `[owner]` 标记全量补齐 + 覆盖率守卫（T2-11）
+
+- **新建正文**：**§16.8**：`a77e345342`（58 个官方文件逐 hunk 插标记 +365 行；33 个文件共 90 处 `[owner-patch]` → `[owner]`；`owner/validation/merge_health_check.py` 新增 Check 8 及其 4 个助手/常量并注册；`tests/owner/test_merge_health_check.py` 新增 3 例；`owner/docs/二次开发规范.md` §2.2 新增「标记细则」+ §5 补注；本清单 §16.8 正文 + 附录 B 补 39 个文件条目 + 本条）
+- **类型**：可维护性 / 解冲安全（**零逻辑改动**，纯注释 + 校验器）
+- **口径校正**：审查原文「67 个官方文件」实测应为 —— 「无 `[owner]`」68 个、「无任何标记」**58 个**，本条落地对象是后者（另 10 个由 `[owner-patch]` 归一覆盖）。统计一律 `--diff-filter=M`：官方目录下**新增**文件按 §2.2 走 commit message 前缀，不需要文件内标记
+- **决策**（2026-09-28 用户两次确认）：① 粒度 = **逐 hunk 全标**（而非只补文件级）；② 拼写 = **统一为 `[owner]`**（而非两前缀并存）；③ 范围 = **按文件级收口**、hunk 级铺开只覆盖零标记的 58 个文件，其余 902 个未标记 hunk 另立 T2-11b
+- **三类边界情形均不跳过**：字符串内部 12 处（含 `hermes_cli/gateway.py` 落在 112 行 respawn 模板里的唯一 hunk——不上移则该文件保持零标记）→ **上移到字符串 token 起始行之前**并注明；JSX children 1 处 → 改用 `{/* ... */}`（裸 `//` 在 children 里会渲染成文本）；纯删除 hunk 6 处 / 4 文件 → 文件顶部登记小块
+- **标记格式取舍**：§2.2 原写「短描述 + 指向 owner/ 位置」，但 361 个插入点各带指针会给官方文件灌进约 19KB 注释、与 §2.1 冲突 ⇒ **标记只留短描述，指针改由清单的每文件条目承担**，并为此补齐附录 B 缺失条目（使「指针可查」成立）；§2.2 已同步写入
+- **生成物豁免**：`uv.lock` 的 4 处标记实测后**撤回**（`uv lock` 会整文件重写、标记必失，且解冲时会诱导保留本应重生成的产物）；pin 标记挂 `pyproject.toml`
+- **归一的 5 处刻意保留**：`owner/code-review/00-REVIEW.md` 3 处（冻结评审报告，改写会抹掉证据）、`merge_health_check.py` 2 处（正则容错分支 + `_normalize_owner_marker_line` 的旧拼写剥离，**承重**：Check 5 要比对 merge `315551234` 的历史删除行，那里就是旧拼写）
+- **新增守卫**：Check 8「Changed-file `[owner]` marker coverage」—— 以 `git merge-base HEAD {upstream/main,origin/main,main}` 为基准取官方 `--diff-filter=M` 文件，逐个断言含标记，命中即 **FAIL**（非 WARN）。把「零标记官方文件」从一次性人工普查变成每次跑检查都验的不变量
+- **效果**：零标记官方文件 **58 → 0**（覆盖 116/116，117 减 1 个生成物）；健康检查 **6 passed / 1 warning → 7 passed / 1 warning**（Check 5 的 4 条既有 warning 不变）；Check 4 识别 670 个标记 / 99 个文件
+- **验证**：改建 43 个 `.py` 全过 `py_compile`；**改名纯度逐行校验** 84 对每对只差 `[owner-patch]` → `[owner]`、58 个插入文件 `--numstat` 删除列为 0；`tests/owner/` **837 通过 / 0 失败**；**Check 8 变异 4/4 咬住**（A 反向：47 标记文件删 1 个不报错 / B 删唯一标记 → 115/116 报错 / C 撤生成物豁免 → 点名 `uv.lock` 117/116 / D 清空基准 ref → 优雅降级 `skipped`）
+- **未闭合边界**：**T2-11b** —— 官方文件共 1528 个带新增行 hunk，626 已标记、**902 未标记**，分布 55 个「已有标记但不完整」文件（前 15 名占 692 处 = 76%，`gateway/run.py` 190/233 居首）。这些文件清单里均已有条目、Check 8 亦守住文件级覆盖，故本轮按文件级收口，hunk 级按冲突权重分批另办
 
 ### 2026-09-28：新增 §16.7 `output_guard` 复读判据由 O(n²) 正则改为线性扫描（T2-10）
 
@@ -2140,7 +2213,7 @@ _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请先�
 
 - **类型**：plugin 迁移可行性评估（zcode 委托评估）
 - **结论**：**部分可迁移，人工决定维持现状**
-- **评估范围**：4 处 `[owner-patch]` args 链 + 2 处 allowlist 副本
+- **评估范围**：4 处 `[owner]` args 链 + 2 处 allowlist 副本
 - **核心发现**：
   1. **args 链（A1-A4）可迁移但收益低**：需 monkey-patch 3 个 core 函数（`cronjob`、`create_job`、`_run_job_script`），跨 tool 期/存储期/执行期 3 个生命周期；args 是通用功能更应提 upstream
   2. **allowlist 不可迁移**：cron 运行时零 hook（`invoke_hook` 在 scheduler/jobs 出现 0 次）+ 安全边界（WR-03）+ 两副本行为不一致
