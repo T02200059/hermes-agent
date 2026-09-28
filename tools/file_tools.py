@@ -13,7 +13,7 @@ from pathlib import Path, PurePosixPath
 
 from agent.file_safety import get_read_block_error
 # [owner] guard 文案 i18n
-from agent.i18n import t
+from agent.i18n import DEFAULT_LANGUAGE, get_language, t
 from tools.binary_extensions import (
     has_binary_extension,
     has_opaque_document_extension,
@@ -842,6 +842,95 @@ def _protected_instruction_reason(filepath: str, task_id: str = "default",
     return None
 
 
+# [owner] guard 文案 i18n ───────────────────────────────────────────────────
+# 护栏文案的英文原文，逐字取自上游。这里就是唯一真源：活跃语言为 en 时
+# _localized 直接返回本块内容，不查目录，因此上游改词会自动传导到输出；
+# 其他语言走 locales/<lang>.yaml，缺键回落本块。
+# locales/en.yaml 的同名条目必须与本块逐字一致 —— 由 tests/owner/
+# test_file_tools_guard_text_i18n.py 的漂移守卫强制（纯本地比对，不依赖上游 ref）。
+_PROTECTED_FILE_REQUEST = (
+    "Write to protected agent-instruction file(s): {targets}. "
+    "These files steer future agent behavior; approval is always "
+    "required (not bypassed by auto-approve)."
+)
+_PROTECTED_FILE_BLOCKED = (
+    "BLOCKED: write to protected agent-instruction file(s) ({targets}) "
+    "{why} The user has NOT consented to this write. Do NOT retry it or "
+    "attempt the same edit via another path (terminal, execute_code, "
+    "etc.)."
+)
+_SSH_CONFIG_REQUEST = (
+    "Write to SSH client config file(s): {targets}. "
+    "The SSH config can carry ProxyCommand / Match exec directives that "
+    "run commands, so writes require your approval."
+)
+_SSH_CONFIG_BLOCKED = (
+    "BLOCKED: write to SSH config file(s) ({targets}) "
+    "{why} Do NOT retry it via another path (terminal, execute_code) "
+    "without the user's explicit consent."
+)
+_WHY_APPROVAL_UNAVAILABLE = (
+    "requires approval but the approval subsystem is unavailable."
+)
+_WHY_NOT_DELIVERED = (
+    "requires approval but the approval request could not "
+    "be delivered."
+)
+_WHY_TIMED_OUT = (
+    "approval prompt timed out without a user response. "
+    "Silence is not consent."
+)
+_WHY_DENIED_BY_USER = "was denied by the user."
+_WHY_NO_HUMAN = (
+    "requires approval but no interactive user or gateway is "
+    "present to approve it."
+)
+_WHY_CRON_DENIED = "requires approval but this cron session denies it."
+_WHY_SINGLE_QUERY_DENIED = (
+    "requires approval but single-query (-q) sessions run "
+    "without a user present to approve it. To allow flagged "
+    "actions in single-query mode, set approvals.single_query_mode: "
+    "approve in config.yaml."
+)
+_WHY_DENIED = "was denied."
+
+# 目录键 → 英文原文。漂移守卫按此逐条比对 en 目录；调用点引用同名常量，
+# 因此本表与调用点用的是同一个字符串对象。
+_GUARD_EN_TEXTS: dict[str, str] = {
+    "approval.protected_file_request": _PROTECTED_FILE_REQUEST,
+    "approval.protected_file_blocked": _PROTECTED_FILE_BLOCKED,
+    "approval.ssh_config_request": _SSH_CONFIG_REQUEST,
+    "approval.ssh_config_blocked": _SSH_CONFIG_BLOCKED,
+    "approval.gate_why_approval_unavailable": _WHY_APPROVAL_UNAVAILABLE,
+    "approval.gate_why_not_delivered": _WHY_NOT_DELIVERED,
+    "approval.gate_why_timed_out": _WHY_TIMED_OUT,
+    "approval.gate_why_denied_by_user": _WHY_DENIED_BY_USER,
+    "approval.gate_why_no_human": _WHY_NO_HUMAN,
+    "approval.gate_why_cron_denied": _WHY_CRON_DENIED,
+    "approval.gate_why_single_query_denied": _WHY_SINGLE_QUERY_DENIED,
+    "approval.gate_why_denied": _WHY_DENIED,
+}
+
+
+def _localized(key: str, en_text: str, **kwargs: object) -> str:
+    """Render a guard message with the English original kept in code.
+
+    ``key`` is the catalog key and ``en_text`` the upstream wording, written
+    out verbatim in this module. When the active language is English we
+    format ``en_text`` and never consult the catalog -- that is what makes an
+    upstream rewording propagate to the output automatically. In any other
+    language the catalog entry for ``key`` wins, falling back to ``en_text``
+    when the key is absent from every catalog, so a partial catalog can
+    neither lose the message nor crash a gate.
+    """
+    if get_language() == DEFAULT_LANGUAGE:
+        return en_text.format(**kwargs) if kwargs else en_text
+    rendered = t(key, **kwargs)
+    if rendered != key:        # t() returns the bare key on a total miss.
+        return rendered
+    return en_text.format(**kwargs) if kwargs else en_text
+
+
 def _request_protected_instruction_approval(
         reasons: list[str], task_id: str = "default") -> str | None:
     """Ask the human to approve a write to protected instruction file(s).
@@ -854,19 +943,24 @@ def _request_protected_instruction_approval(
     """
     targets = ", ".join(dict.fromkeys(reasons))
 # [owner] guard 文案 i18n
-    description = t("approval.protected_file_request", targets=targets)
+    description = _localized(
+        "approval.protected_file_request", _PROTECTED_FILE_REQUEST,
+        targets=targets)
     display = f"<write to {targets}>"
-# [owner] guard 文案 i18n
 
-    def _blocked(why: str) -> str:
+    def _blocked(why_key: str, why_en: str) -> str:
         """Localized BLOCKED text for this gate."""
-        return t("approval.protected_file_blocked", targets=targets, why=why)
+        return _localized(
+            "approval.protected_file_blocked", _PROTECTED_FILE_BLOCKED,
+            targets=targets, why=_localized(why_key, why_en))
 
     try:
         import tools.approval as _approval
     except Exception:
 # [owner] guard 文案 i18n
-        return _blocked(t("approval.gate_why_approval_unavailable"))
+        return _blocked(
+            "approval.gate_why_approval_unavailable",
+            _WHY_APPROVAL_UNAVAILABLE)
 
     # Gateway surface: block on the button round-trip when a notify callback
     # is registered for this session (Telegram/Discord/Slack). One-operation
@@ -893,7 +987,8 @@ def _request_protected_instruction_approval(
         )
         if decision.get("notify_failed"):
 # [owner] guard 文案 i18n
-            return _blocked(t("approval.gate_why_not_delivered"))
+            return _blocked(
+                "approval.gate_why_not_delivered", _WHY_NOT_DELIVERED)
         choice = decision.get("choice")
         if decision.get("resolved") and choice in {"once", "session", "always"}:
             # One-operation grant regardless of the tapped scope — nothing
@@ -901,8 +996,9 @@ def _request_protected_instruction_approval(
             return None
         if not decision.get("resolved"):
 # [owner] guard 文案 i18n
-            return _blocked(t("approval.gate_why_timed_out"))
-        return _blocked(t("approval.gate_why_denied_by_user"))
+            return _blocked("approval.gate_why_timed_out", _WHY_TIMED_OUT)
+        return _blocked(
+            "approval.gate_why_denied_by_user", _WHY_DENIED_BY_USER)
 
     # CLI surface: per-thread approval callback (prompt_toolkit panel).
     callback = None
@@ -924,13 +1020,14 @@ def _request_protected_instruction_approval(
             return None
         if choice == "timeout":
 # [owner] guard 文案 i18n
-            return _blocked(t("approval.gate_why_timed_out"))
-        return _blocked(t("approval.gate_why_denied_by_user"))
+            return _blocked("approval.gate_why_timed_out", _WHY_TIMED_OUT)
+        return _blocked(
+            "approval.gate_why_denied_by_user", _WHY_DENIED_BY_USER)
 
     # No human channel at all (script, cron, background thread): fail
     # closed. Auto-approving here would recreate the persistence vector.
 # [owner] guard 文案 i18n
-    return _blocked(t("approval.gate_why_no_human"))
+    return _blocked("approval.gate_why_no_human", _WHY_NO_HUMAN)
 
 
 def _check_protected_instruction_write(paths: list[str],
@@ -985,36 +1082,45 @@ def _check_approval_required_write(paths: list[str],
 
     display_targets = ", ".join(dict.fromkeys(targets))
 # [owner] guard 文案 i18n
-    description = t("approval.ssh_config_request", targets=display_targets)
+    description = _localized(
+        "approval.ssh_config_request", _SSH_CONFIG_REQUEST,
+        targets=display_targets)
 
-    def _blocked(why: str) -> str:
+    def _blocked(why_key: str, why_en: str) -> str:
         """Localized BLOCKED text for this gate."""
-        return t("approval.ssh_config_blocked", targets=display_targets, why=why)
+        return _localized(
+            "approval.ssh_config_blocked", _SSH_CONFIG_BLOCKED,
+            targets=display_targets, why=_localized(why_key, why_en))
 
     try:
         import tools.approval as _approval
     except Exception:
 # [owner] guard 文案 i18n
-        return _blocked(t("approval.gate_why_approval_unavailable"))
+        return _blocked(
+            "approval.gate_why_approval_unavailable",
+            _WHY_APPROVAL_UNAVAILABLE)
 
     result = _approval._run_approval_gate(
         pattern_key="ssh_config_write",
         description=description,
         display_target=f"<write to {display_targets}>",
 # [owner] guard 文案 i18n
-        cron_deny_message=_blocked(t("approval.gate_why_cron_denied")),
+        cron_deny_message=_blocked(
+            "approval.gate_why_cron_denied", _WHY_CRON_DENIED),
         single_query_deny_message=_blocked(
-            t("approval.gate_why_single_query_denied")
-        ),
+            "approval.gate_why_single_query_denied",
+            _WHY_SINGLE_QUERY_DENIED),
         autoapprove_log_prefix="ssh_config_write",
         fail_closed_when_no_human=True,
 # [owner] guard 文案 i18n
-        no_human_block_message=_blocked(t("approval.gate_why_no_human")),
+        no_human_block_message=_blocked(
+            "approval.gate_why_no_human", _WHY_NO_HUMAN),
     )
     if result.get("approved"):
         return None
 # [owner] guard 文案 i18n
-    return result.get("message") or _blocked(t("approval.gate_why_denied"))
+    return result.get("message") or _blocked(
+        "approval.gate_why_denied", _WHY_DENIED)
 
 
 def _get_container_mirror_prefix_for_task(task_id: str = "default") -> str | None:
