@@ -1762,17 +1762,46 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
   1. **改动落在多行字符串内部**（12 处：`agent/display.py`×3、`hermes_cli/commands.py`×3、`gateway/delivery_ledger.py`×2（`CREATE TABLE` 与 `SELECT` 字面量）、`kimi-coding/__init__.py`、`tools/feishu_drive_tool.py`、`ui-tui/src/gatewayTypes.ts`、`hermes_cli/gateway.py`）—— 往字符串里插 `#` 会改坏内容，故**上移到该字符串 token 起始行的上一行**，并在文案里注明「改动在下方的多行字符串内」。典型是 `hermes_cli/gateway.py`：唯一 hunk 落在 **112 行**的 respawn 脚本模板里，若无上移规则该文件会保持零标记。
   2. **JSX children 位置**（`ui-tui/src/components/branding.tsx` 1 处）—— 裸 `//` 在 JSX children 里**不是注释而是文本子节点**，banner 会多渲染一行字面量；改用 JSX 惯用的 `{/* ... */}`。
   3. **纯删除 hunk**（6 处，涉 4 文件：`.gitignore`、`agent/display.py`、`tools/feishu_drive_tool.py`、`ui-tui/src/app/useMainApp.ts`）—— 没有可挂的新增行，改为在**文件顶部**登记一小块「本文件另有 N 处仅删除上游代码的改动：新文件第 X 行附近」并含清单指针。
-- **标记格式的另一处取舍**：规范 §2.2 要求「短描述 + 指向 owner/ 位置」，但给 361 个插入点各带一句指针会给官方文件灌进约 19KB 纯注释，直接与 §2.1「极致最小化」相抵，反而放大每次 sync 的冲突面。故**标记只留短描述**（如 `# [owner] i18n 中文文案 t() 替换`），指针改由**改动清单的每文件条目**承担 —— 为此本轮同时补齐了附录 B 中缺失的 22 个文件条目，使「指针可查」成立。§2.2 已同步写入这条细则。
+- **标记格式的另一处取舍**：规范 §2.2 要求「短描述 + 指向 owner/ 位置」，但给 361 个插入点各带一句指针会给官方文件灌进约 19KB 纯注释，直接与 §2.1「极致最小化」相抵，反而放大每次 sync 的冲突面。故**标记只留短描述**（如 `# [owner] i18n 中文文案 t() 替换`），指针改由**改动清单的每文件条目**承担 —— 为此本轮同时补齐了附录 B 中缺失的 39 个文件条目，使「指针可查」成立。§2.2 已同步写入这条细则。（本仓 116 个官方改动文件在附录 B 中全部有全路径条目 —— 收口过程见 §16.9 的「顺带收口」。）
 - **生成物豁免**：`uv.lock` 的 4 个 hunk 曾插入标记，实测后**撤回** —— `uv lock` 会整文件重写、标记必被抹掉，且解冲时标记会诱导人保留本应重新生成的产物。依赖 pin 的标记挂在人工维护的 `pyproject.toml`（已有 `# [owner] LDAP bind auth ...`）。生成物清单固定在 `_GENERATED_ARTIFACTS`。
 - **`[owner-patch]` 归一**：全仓 95 处，**33 个文件共 90 处**归一为 `[owner]`（含 23 处清单散文、6 处 `inventory.yaml` 断言载荷、2 处补丁源码注释、1 处 `hermes_state.py` 的 SQL 字面量内注释）。刻意保留 5 处：**3 处**在 `owner/code-review/00-REVIEW.md`（2026-09-28 那轮评审的**冻结报告**，正文是当时的发现记录，改写会抹掉证据价值）、**2 处**在 `merge_health_check.py`（`_OWNER_MARKER_RE` 的 `(?:-patch)?` 容错分支 + `_normalize_owner_marker_line` 的 `.replace("[owner-patch]", " ")`）。后者是承重的：Check 5 要比对 merge `315551234` 的**历史删除行**，那些行里就是旧拼写（本次健康检查输出中可见），丢掉容错会让历史标记从"可见的遗留"退化为"不可见的 hunk"。
 - **归一的安全网**：`inventory.yaml` 的 6 条 `file_contains` 断言直接匹配 `# [owner-patch] <描述>` 文本，只改源码不改断言会让 Check 7 立刻变红 —— 这条断言恰好成了改名完整性的哨兵，改完两侧一致后 Check 7 为 0 issue。
 - **配套守卫（新增 Check 8）**：`merge_health_check.py` 增至 8 项检查。Check 8「Changed-file [owner] marker coverage」以 `git merge-base HEAD {upstream/main,origin/main,main}` 为基准（三者在本次均为 `00b2e03c80`），取 `--diff-filter=M` 的官方文件，逐个断言含至少一个 `[owner]` 标记；命中即 FAIL（不是 WARN）。这条守卫把"零标记官方文件"从**一次性人工普查**变成**每次跑健康检查都会验的不变量**。
 - **效果**：官方改动文件覆盖率 **0 标记 58 个 → 116/116 全覆盖**（117 减 1 个生成物）；健康检查 **6 passed / 1 warning → 7 passed / 1 warning**，Check 5 的 4 条既有 warning 不变（属 merge `315551234`，非本轮引入）；Check 4 识别 **670 个标记 / 99 个文件**。
-- **涉及文件**：58 个官方文件的标记插入（+365 行注释，纯插入、**零删除行**）；33 个文件共 90 处 `[owner-patch]` → `[owner]`；`owner/validation/merge_health_check.py`（新增 `check_changed_file_markers` / `_resolve_upstream_base` / `_is_generated_artifact` / `_GENERATED_ARTIFACTS` / `_UPSTREAM_BASE_REFS`，注册为 Check 8，模块 docstring 与 `_OWNER_MARKER_RE` 注释同步）、`tests/owner/test_merge_health_check.py`（+3 例）、`owner/docs/二次开发规范.md`（§2.2 新增「标记细则」+ §5 补注）、`owner/docs/owner改动清单.md`（本条 + 附录 B 补 22 个文件条目 + 附录 E）
+- **涉及文件**：58 个官方文件的标记插入（+365 行注释，纯插入、**零删除行**）；33 个文件共 90 处 `[owner-patch]` → `[owner]`；`owner/validation/merge_health_check.py`（新增 `check_changed_file_markers` / `_resolve_upstream_base` / `_is_generated_artifact` / `_GENERATED_ARTIFACTS` / `_UPSTREAM_BASE_REFS`，注册为 Check 8，模块 docstring 与 `_OWNER_MARKER_RE` 注释同步）、`tests/owner/test_merge_health_check.py`（+3 例）、`owner/docs/二次开发规范.md`（§2.2 新增「标记细则」+ §5 补注）、`owner/docs/owner改动清单.md`（本条 + 附录 B 补 39 个文件条目 + 附录 E）
 - **侵入类型**：仅注释（**零逻辑改动**）
 - **验证**：全部 43 个改动 `.py` 过 `py_compile`；**改名纯度逐行校验** —— 33 个改名文件的删除行与新增行**完全配对**，84 对逐对比较**每对只差 `[owner-patch]` → `[owner]`**，无附带改动；58 个插入文件为纯新增行（`git diff --numstat` 第二列全为 0）；`tests/owner/` **837 通过 / 0 失败**；**Check 8 变异验证 4/4 咬住** —— A 反向验证：从 47 个标记的 `browser_tool.py` 删 1 个 → 不报错（证明是文件级覆盖而非逐 hunk 计数）/ B：删掉只有 1 个标记的 `background_review.py` 的标记 → 用例 1 failed + Check 8 报 1 条（115/116）/ C：撤掉生成物豁免 → 点名 `uv.lock`（117/116，证明豁免承重）/ D：清空基准 ref 候选 → 优雅降级为 `skipped` 而非崩溃。
 - **未纳入（已登记为独立待办 T2-11b）**：逐 hunk 铺开本轮只覆盖了**零标记的 58 个文件**。用工作区重算，官方文件共有 **1528 个带新增行的 hunk**，其中 **626 个带标记**、**902 个未标记**，分布在 **55 个「已有标记但不完整」的文件**里（前 15 名占 692 处 = 76%：`gateway/run.py` 190/233、`tools/approval.py` 90/95、`agent/conversation_loop.py` 62/71、`hermes_cli/model_switch.py` 58/65、`plugins/platforms/feishu/adapter.py` 41/81、`gateway/platforms/api_server.py` 38/54、`cli.py` 36/40 …）。这 55 个文件在清单里都已有条目可查，且 Check 8 会持续守住文件级覆盖，故本轮**按文件级收口**（2026-09-28 用户决策），hunk 级铺开另立条目按冲突权重分批推进。
 - **Commit**：`a77e345342`（代码 + 测试；本条留档见附录 E）
+
+---
+
+### 16.9 写入护栏文案的英文原文回归代码 + `_localized()` 渲染与漂移守卫（T2-12）
+
+- **背景**（T2-12 / 逻辑审查）：`tools/file_tools.py` 的两处写入护栏（`_request_protected_instruction_approval`、`_check_approval_required_write`）上游把文案写成**函数内的模板常量**，模板内含 `{why}` 占位符、由 `.format(why=...)` 在 7 + 8 个分支分别填充。一次 i18n 改造把模板与 8 个 `why` 片段整体搬进 `locales/{en,zh}.yaml`（12 个目录键），代码里只剩 `t("<key>")`。
+- **为什么这是真问题（不是风格）**：改造后运行期输出的**唯一来源是目录**。上游日后改词会在代码里形成冲突并被人工解决，但解决了也换不来新文案 —— 输出仍取自目录。更关键的是模板里那句安全指令（`Do NOT retry it or attempt the same edit via another path (terminal, execute_code, etc.)`）**只存在于目录**，上游删改它不会在代码里留下任何痕迹。属「上游护栏改进永不传导」这一类。
+- **口径先校正**：实测这 **12 条字符串当前与上游逐字一致**（AST 抽取两版逐条比对，唯一差异是 SSH 那对模板里占位符名 `{display_targets}` → `{targets}`）。因此本条修的是**潜在分叉**而非已发生的分叉，改动是**无损**的 —— 中/英输出零变化（见验证）。
+- **为什么不能按审查原建议「只把最终文案交给 `t()`」**：`agent/i18n.py::t()` 是**目录键查找**，没有接收英文原文的参数（回落链是 目标目录 → en 目录 → 裸键）。要让英文原文成为真源，必须在 `t()` 之外另加一层渲染。
+- **方案（2026-09-28 用户决策：原文回归代码）**：
+  - 4 个模板 + 8 个 `why` 片段以**具名模块常量**写回 `tools/file_tools.py`（措辞与上游逐字一致），并由 `_GUARD_EN_TEXTS` 把「目录键 → 英文原文」显式登记成表；调用点引用同名常量，因此表与调用点用的是同一个字符串对象。
+  - 新增 `_localized(key, en_text, **kw)`：活跃语言为 `en` ⇒ 直接格式化并返回代码原文、**不查目录**（上游改词因此自动传导到输出）；非 `en` ⇒ 取 `key` 的目录条目，**目录全缺时回落代码原文**（不抛异常、不把裸键显示给用户）。
+  - `_blocked()` 由 `(why)` 改为 `(why_key, why_en)`：外层渲染模板、内层 `_localized(why_key, why_en)` 渲染 `why` 片段。这一层不能省 —— 省掉后英文片段会漏进中文输出（见验证中的变异 G7b）。
+- **渲染助手放在 `tools/file_tools.py` 内而非 `owner/i18n/`**：`owner/i18n/` 是**输出侧展示层**翻译（设计文档 `owner/docs/design/i18n-display-layer/display-layer.md` §3.2 记录：回退 643 处 `t()` 调用点后与上游的冲突块 450 → 451，**净零**，T1-4 因此暂停）。为 12 条护栏文案复活那个机制属无实测收益的范围外扩张；放在文件内还使漂移守卫退化成一个**纯本地**比较。
+- **漂移守卫是纯本地的**：`tests/owner/test_file_tools_guard_text_i18n.py` 只比对「代码常量 vs `locales/en.yaml`」，**不需要上游 ref** —— CI 只克隆单分支时也能跑（对比 Check 8 需要 `merge-base`，缺 ref 时只能降级为 skipped）。
+- **守卫清单（7 类，全部经变异验证）**：① 代码常量 ↔ en 目录逐字一致；② zh 目录对 12 个键全覆盖；③ 代码里出现的每个 `_localized`/`_blocked` 键都在表里、且表里没有无人引用的键；④ 受守卫的键不得再以 `t("<key>")` 直取（会绕过代码真源）；⑤ 每个调用点必须把键与**表中那个**常量配对（按对象身份把常量表反查成「键 → 常量名」，再从 AST 逐调用点核对，纯机械、不依赖目录）；⑥ en 输出不查目录、非 en 必须查目录（双向哨兵法）；⑦ 目录全缺时回落原文且不抛异常，外加两个护栏的端到端文案在 en/zh 下的语言一致性与键↔常量配对。
+- **技巧（值得复用）**：「en 输出不查目录」用**哨兵法**证 —— 把目录值全换成哨兵串，断言 en 输出不变；非 en 再做一次**反向**哨兵（断言哨兵**出现**）。这比比对常量更硬：它直接证明「查没查目录」这条控制流事实，而不是间接推断。
+- **一个被变异测试抓出的自证陷阱**：端到端 zh 断言最初写成「与 `t(template, why=t(why_key))` 逐字相等」，而改造前后 zh 路径**都**走目录 ⇒ 该断言对目录改动完全不敏感（变异「改 zh 模板」实测**不失败**）。改为断言与目录无关的性质：三段文案必须互不相同（证明 why 键配对正确且各自被本地化）+ 英文原文一个字都不许出现在中文输出里。
+- **涉及文件**：`tools/file_tools.py`（新增 12 个英文原文常量 + `_GUARD_EN_TEXTS` + `_localized`；`_blocked` 签名与 15 个调用点改写；import 面加 `DEFAULT_LANGUAGE` / `get_language`）、`tests/owner/test_file_tools_guard_text_i18n.py`（新增 11 例）、`owner/docs/owner改动清单.md`（本条 + 附录 B 收口 + 附录 E）
+- **侵入类型**：inline（字符串）+ 局部渲染助手（**零行为改动**）
+- **验证**：
+  - **输出零变化**：12 个键 × en/zh/ja 与「改造前行为（全走目录）」逐字比对，**0 处不一致**；两个护栏端到端（无人工通道的 fail-closed 分支）在 en/zh 下逐字一致。
+  - **变异验证 14/14 全部咬住**：G1 改代码常量 / 改 en 目录 → 漂移守卫失败；G1 zh 目录删键 → 覆盖守卫失败；G2 表里删条目 / 调用点引用未声明键 → 结构守卫失败；G3 改回 `t("<key>")` 直取 → 失败；G4 en 分支改成也查目录 → 哨兵泄漏；G5 非 en 改成永远返回原文 → 反向哨兵缺失；G6 目录全缺时抛异常 → 失败；G7 ssh 分支配错 why 常量 → 失败；G7b `_blocked` 不再本地化 why → 中文断言失败、英文**如期通过**（说明该条守卫不可省）；G8 gate 1 配对错 why 常量 → 失败；G8b 常量对但键配错（en 输出**看不出**）→ 机械配对守卫失败；G9 退化为硬编码字符串 → 失败。
+  - **定向回归 1325 通过 / 7 失败**，与改造前基线**失败集合完全相同**（新增集合为空；7 例为既有失败：2 例 macOS `/tmp` → `/private/tmp` 符号链接、5 例 `tests/tools/test_approval.py` 的 webhook / timeout 用例）；通过数 +11 恰为本轮新增用例。
+  - 健康检查 **7 passed / 1 warning**（Check 5 的 4 条既有 warning 不变）；Check 8 **116/116**。
+- **同类普查**：官方 `.py` 文件共 **827 个 `t()` 键**，其中 **229 个**（分布在 **28 个官方文件**）与 T2-12 同属一类 —— 上游代码里**有**该文案、被 `t()` 替换后文案只存在目录里（判定法：取 en 值里最长一段不含占位符的 ≥20 字符片段，看它是否「当前文件没有、BASE 版本有」）。集中度：`gateway/run.py` 73、`agent/conversation_loop.py` 33、`cli.py` 25、`hermes_cli/models.py` 18、`tools/memory_tool.py` 15、`tools/computer_use/doctor.py` 13、`gateway/platforms/base.py` 8 …。本条只改造写入护栏这 12 条（含安全指令、价值最高）；其余未逐条回归代码 —— 逐一搬回会把这些文件的 i18n 侵入面显著放大、与 §2.1「极致最小化」相抵，应先按「是否含安全指令 / 是否易被上游改动」排序再分批。
+- **顺带收口**：附录 B 补齐本仓 **28 个官方改动文件**的速查条目（**25 行**，部分行按主题合并），使 **116 个官方改动文件在附录 B 中全部有全路径条目**；其中 `hermes_cli/tips.py` 此前在清单全文任何位置都没有路径提及，一并补上。
+- **未纳入**：`t()` 公共签名是否该扩展为「可传英文原文」（本条用局部助手规避，未动公共 API）；上面普查出的其余 217 个同类键未逐条改造。
+- **Commit**：`dfedb2ec74`（代码 + 测试；本条留档见附录 E）
 
 ---
 
@@ -1873,6 +1902,20 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 | `tui_gateway/entry.py` | 退出前显式跑 `_shutdown_runtime`（session-end 事件 / 持久化 / 异步服务 flush，不依赖 atexit 时序） | 薄胶水 |
 | `tui_gateway/methods_tools.py` | hardline / dangerous 判定描述本地化（委托 `tools.approval._translate_pattern_description`） | 薄委托 |
 
+| `hermes_cli/models.py` | 静态模型目录 + owner providers 豁免（**41 处** `[owner]` 标记） | inline（数据表） |
+| `agent/display.py` | per-chat display 覆盖 + i18n（20 处标记；含 3 处落在多行字符串内、1 处仅删除改动） | inline（字符串）+ 薄胶水 |
+| `tools/feishu_drive_tool.py` | fallback client + 共享 `_do_request`（15 处标记；含 2 处仅删除改动） | 薄胶水 |
+| `tools/file_tools.py` | 写入护栏文案：英文原文回归代码 + `_localized()` 渲染 + 漂移守卫（§16.9；12 处标记） | inline（字符串）+ 局部渲染助手 |
+| `model_tools.py` | 向 hook 插件暴露稳定 per-chat key / agent platform / agent chat_id，并透传到 `post_tool_call` 与卡片桥回落路径（10 处标记） | 列扩展 |
+| `ui-tui/src/theme.ts` | owner 主题扩展（10 处 `[owner]` 标记） | inline（数据表） |
+| `plugins/model-providers/kimi-coding/__init__.py` | Kimi thinking 回显 + vision（8 处标记；含 1 处落在多行字符串内） | inline |
+| `hermes_cli/providers.py` | provider 解析：`opencode-go` 补 `OPENCODE_GO_API_KEY`；`_LABEL_OVERRIDES` 加 `kimi-coding` / `kimi-coding-cn`；`get_label` 先查覆盖表再 normalize（4 处标记） | inline |
+| `plugins/model-providers/xiaomi/__init__.py` | `XiaomiProfile` 子类（4 处标记） | inline |
+| `agent/turn_finalizer.py` | `transform_llm_output` 记账初始化移到循环外 + 实时 transcript tail 同步（3 处标记，接 output_guard §14） | 薄胶水 |
+| `agent/prompt_builder.py` | skills-visibility 缓存值为 `(manifest, prompt)`、LRU 命中要对照磁盘重校验、manifest 随缓存持久化（3 处标记） | inline（缓存） |
+| `hermes_cli/send_cmd.py` | 输出 `message_id`（§7.21，3 处标记） | inline（字符串） |
+| `hermes_cli/auth.py` | `api_key_prefixes` 非空时只认 env 来源键；只接受 Copilot 兼容 token 前缀；Coding Plan `sk-sp` 前缀与其它区分（3 处标记） | inline（安全校验） |
+
 ### B.3 轻度侵入（import 编排 / 单行，sync 冲突小）
 
 | 文件 | 侵入内容 | 侵入类型 |
@@ -1923,6 +1966,19 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 | `ui-tui/src/app/createGatewayEventHandler.ts` | skin `help_header` / `spinner` 字段透传 | 薄胶水 |
 | `ui-tui/src/app/useInputHandlers.ts` | macOS 无选区 Cmd+C 返回 false，回落终端原生复制 | inline |
 | `ui-tui/src/lib/gracefulExit.ts` / `ui-tui/src/entry.tsx` / `ui-tui/src/__tests__/gracefulExit.test.ts` | graceful exit（§6.3）：信号退出码表、cleanup 链、failsafe 25s、gateway drain | inline（含测试） |
+
+| `agent/error_classifier.py` | 429 硬配额耗尽（如 opencode-go「Weekly usage limit reached. Resets in 2 days.」）归类为不可重试 billing，不再空等 600s × 3 次（§7.9） | inline |
+| `gateway/config.py` | `send_only` 子容器：`connection_mode` 走 `setdefault`、不覆盖 config.yaml（确立 config.yaml > env 的优先级） | inline |
+| `gateway/platforms/qqbot/keyboards.py` | 审批键盘文案 i18n + approval_explainer 命令解说段（理由行之后、空串跳过；4 处标记） | 薄胶水 |
+| `tools/clarify_gateway.py` | clarify choice display 助手 + 归一化 `{"display","key"}` dict 直传适配器 + 飞书 clarify 竞态防御（4 处标记） | 薄胶水 |
+| `.gitignore` | `owner/examples/**` 反 allowlist（豁免 `examples/` 通配）+ 本机编辑器/agent 设置与 `state.db`、`owner/*/samples/` 等忽略项（5 处标记；含 1 处仅删除改动） | 忽略规则 |
+| `hermes_cli/commands.py` | `GATEWAY_KNOWN_COMMANDS` 加 `/memory` `/skills`（2 处标记，落在多行字符串内） | inline（数据表） |
+| `hermes_cli/gateway.py` | restart watcher 清理 `__pycache__`（1 处标记，落在 112 行 respawn 脚本模板内） | inline（字符串） |
+| `hermes_cli/tips.py` | `get_random_tip` 按 `agent.i18n.get_language()` 走 `owner/tips_zh.py` 中文语料、失败回落英文；停用已删除功能的 tip（2 处标记） | 薄胶水 |
+| `locales/en.yaml` / `locales/zh.yaml` | approval_explainer 审批卡命令解说段键（各 2 处标记） | 目录（数据） |
+| `ui-tui/src/app/createSlashHandler.ts` / `ui-tui/src/lib/rpc.ts` / `ui-tui/src/gatewayTypes.ts` | chained quick command：分发 + RPC + 类型声明（`gatewayTypes.ts` 的改动落在多行字符串内） | 薄胶水 |
+| `ui-tui/src/app/useMainApp.ts` | graceful shutdown（§6.3；含 2 处仅删除改动） | inline |
+| `ui-tui/src/components/branding.tsx` | branding 渲染：`t.brand.icon` + `t.brand.tagline`（1 处标记，JSX children 用 `{/* ... */}`） | inline |
 
 ### B.4 与附录 C 的交叉覆盖
 
@@ -1992,6 +2048,19 @@ _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请先�
 ---
 
 ## 附录 E：变更日志
+
+### 2026-09-28：新增 §16.9 写入护栏文案英文原文回归代码 + `_localized()` 渲染与漂移守卫（T2-12）
+
+- **新建正文**：**§16.9**：`dfedb2ec74`（`tools/file_tools.py` 新增 12 个英文原文常量 + `_GUARD_EN_TEXTS` + `_localized`；`_blocked` 由 `(why)` 改 `(why_key, why_en)` 并改写 15 个调用点；import 面加 `DEFAULT_LANGUAGE` / `get_language`。`tests/owner/test_file_tools_guard_text_i18n.py` 新增 11 例。本清单 §16.9 正文 + 附录 B 收口 25 行 + 本次条目）
+- **类型**：可维护性 / 上游改动传导（**零行为改动、零输出变化**）
+- **决策**（2026-09-28 用户确认）：**原文回归代码**（而非「只加漂移守卫」或「完全退回上游形态」）
+- **口径校正**：实测这 12 条字符串**当前与上游逐字一致**（唯一差异是 SSH 模板占位符名 `{display_targets}` → `{targets}`）⇒ 修的是**潜在分叉**、改动无损；且 `t()` 是目录键查找、没有接收英文原文的参数，故审查给的「只把最终文案交给 `t()`」无法字面实现，必须另加一层渲染
+- **守卫与技巧**：7 类守卫（漂移 / zh 覆盖 / 结构完整 / 禁 `t()` 直取 / 机械配对核对 / 哨兵法双向 / 回落 + 端到端语言一致性）。「en 不查目录」用**哨兵法**证明 —— 污染目录后 en 输出必须不变，非 en 再做反向哨兵（哨兵**必须出现**）
+- **被变异测试抓出的自证陷阱**：端到端 zh 断言原写作「与 `t(template, why=t(why_key))` 逐字相等」，而改造前后 zh 路径**都**走目录 ⇒ 对目录改动零敏感（变异实测不失败）；改为与目录无关的性质（三段文案互不相同 + 英文原文不得出现在中文输出里）
+- **同类普查**：官方 `.py` 共 **827 个 `t()` 键**，其中 **229 个**（**28 个文件**）同属此缺陷类 —— 上游代码里有该文案、`t()` 替换后只存在目录里（`gateway/run.py` 73、`agent/conversation_loop.py` 33、`cli.py` 25、`hermes_cli/models.py` 18、`tools/memory_tool.py` 15 …）。本条只覆盖含安全指令的这 12 条，其余未逐条改造
+- **验证**：输出零变化（12 键 × en/zh/ja 与改造前逐字比对 0 处不一致）；**变异 14/14 全部咬住**（含 G7b 证明 why 片段本地化那一层不可省、G8b 证明「常量对但键配错」在 en 输出里看不出来、机械配对守卫必要）；定向回归 1325 通过 / 7 失败，与改造前**失败集合完全相同**（7 例既有：2 例 macOS 符号链接、5 例 `tests/tools/test_approval.py` webhook/timeout）；健康检查 7 passed / 1 warning、Check 8 116/116
+- **顺带收口（T2-11 遗留的附录 B 缺口）**：补齐本仓 **28 个官方改动文件**的速查条目（25 行），使 116 个官方改动文件在附录 B 中**全部**有全路径条目；`hermes_cli/tips.py` 此前在全文任何位置均无路径提及，一并补上。§16.8 正文里的条目数由「22」更正为实际登记的 **39**，与附录 E 记载一致
+- **未闭合边界**：漂移守卫为纯本地比对（不依赖上游 ref，CI 单分支亦可跑）；`t()` 公共签名未改；普查出的其余 217 个同类键未改造
 
 ### 2026-09-28：新增 §16.8 官方改动文件 `[owner]` 标记全量补齐 + 覆盖率守卫（T2-11）
 
