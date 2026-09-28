@@ -1645,6 +1645,36 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 - **侵入类型**：inline（流式事件字段扩展）
 - **Commit**：`943b6bf1ac`
 
+### 16.4 产物下载的归属断言与「未声明即放行」决策
+
+- **背景**（`0925bdf088`，本次补录）：`MEDIA:<path>` 登记为不透明 id 之后（§16.1），持 API key 且知道 `media_id` 者即可取件 —— 而多个用户可能落在同一容器（`default_profile` 共享实例、白名单走 root 本体）。需要一层归属断言，让「取件者就是登记方」在网关侧可判。
+- **方案**（`0925bdf088`）：
+  - 条目名带上登记方会话的摘要：`<media_id>__o<sha256前16>__<原文件名>`；无归属时退化为 `<media_id>__<原文件名>`，旧条目照旧可下载（§16.2 的「目录即索引」使旧名仍可解析）
+  - 下载时重算摘要比对，不符返回 **404 `media_account_mismatch`** —— 不用 403，否则该响应会被当作「他人 id 是否存在」的探测器
+  - 归属取**客户端传入的会话 id**（`X-Hermes-Session-Id`），刻意不用会被上下文压缩轮换的 `effective_session_id` —— 用后者会让压缩发生之后的下载断言必然失配
+  - 连带整理：去掉不可达的 410 `media_gone` 分支（目录即索引后文件缺失已由 `get()` 走 404），统一为单码 `media_not_found`，仅保留 `is_file()` 作「取记录」与「开读」之间的竞态守卫；`register()` 经 `rejected` 回传超限文件 `{name,size,limit}`，`finalize_api_media` 改三元组返回，`notices` 供流式链路补发一帧正文 —— 流式早已 flush 完 `delta.content`，不补帧用户会以为附件已经送达。新增词条 `gateway.media_too_large`（en/zh 双 catalog，占位符一致）
+- **涉及文件**：`gateway/platforms/api_server.py`（+87）、`gateway/platforms/api_server_media.py`、`locales/{en,zh}.yaml`、`tests/gateway/test_api_server{,_media_files,_media_owner}.py`
+- **侵入类型**：inline（媒体端点归属断言）+ 官方树内新增模块
+- **验证**：用例 131 → 148（+17：归属 8 项、条目命名/超限 7 项、流式端到端 2 项）；另修掉 `test_sweep_evicts_oldest_past_entry_cap` 一处既有偶发断言（用随机 id 排序判断淘汰顺序，约半数翻车）。无回归：与父提交在同一路径下跑同一批用例，失败集合逐条一致（24 项，均为 macOS 环境性失败）
+- **Commit**：`0925bdf088`
+- **决策 —— 「未声明即放行」为有意接受**（T2-7，2026-09-28 用户确认：**维持现状 + 显式记档**）：
+
+  `_media_owner_matches` 在请求不声明任何身份头时 `return True`；且注册侧「无会话 id → `owner=""`」的条目在下载侧连该函数都不会被调用（`_handle_media_download` 的 `if rec.owner and ...` 整段跳过）。**两条通路都是刻意的**，docstring 与专门用例（`test_unattributable_request_is_allowed`、`test_owner_absent_leaves_legacy_name_shape`）都写明了意图。它接受的边界是：**对未声明的下载，`media_id` 是唯一的归属凭据** —— 握有 API key 且知道 id 即可取件。
+
+  接受依据：
+
+  | 依据 | 内容 |
+  |---|---|
+  | id 不可枚举 | `media_id = "med_" + secrets.token_urlsafe(12)`（96 bit），且只交给登记方 ⇒ 实际暴露面是「id 泄漏」（前端日志 / 截图 / 转发链接），不是「被猜出」 |
+  | 收紧会锁掉设计对象 | 未声明 → 404 会拦住持有 API key 但不回带会话头的调用方，而那正是本项设计要求服务的一方；其真实行为在本仓库内不可核实（前端源码不在本仓） |
+  | 单改一处不是完整修复 | 注册侧那条独立通路依然敞着，只改 `_media_owner_matches` 会给出不完整的安全感 —— 收紧必须两条一起改 |
+  | 不对称是已知的 | 同文件的 `/v1/artifacts/download/{artifact_id}` 用**服务端推导**的 scope（profile principal + loopback 派生的 transport family）作 `scope_key` 精确相等比对，本身即 fail-closed，没有「不声明就放行」这一档 |
+
+  残余风险（显式记录）：在共享容器（`default_profile` 共享实例 / 白名单走 root）中，持 API key 且拿到他人 `media_id` 者可下载他人产物。与 **T2-8**（归属凭据无服务端盐）、**T2-9**（跨用户暴露面）叠加时风险上升。
+
+  本决策**钉在行为上**：`tests/gateway/test_api_server_media_owner.py::TestAcceptedUnattributedAccess` 断言「未声明即放行」与「注册侧落空 owner」，并断言 docstring 必须点名这是已接受的决策、必须给出本文出处。未来若要收紧，**改测试即是改决策** —— 不会作为某次重构的副作用悄悄发生（变异验证：把 `return True` 改成 `return False` → **4 例失败**；去掉 docstring 中的本文指针 → 1 例失败）。
+- **未纳入**：归属凭据加服务端盐（T2-8）；`tool.progress` 的按会话隔离（T2-9）；前端侧「下载时回带会话头」的适配 —— 本仓无法核实
+
 ---
 
 ## 附录 A：owner/ 模块职责索引
@@ -1689,7 +1719,7 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 | `owner/skins/` | ruolin 系列皮肤 YAML | — |
 | `owner/tools/schema_patches.py` | 运行时 schema patch（legacy send_message card + image_generate model） | owner-extensions plugin（import/apply） |
 | `owner/validation/` | merge 后健康检查（anchors + inventory + import/patch/marker checks + **merge_loss_audit**） | — |
-| `gateway/platforms/api_server_media.py` | 产物媒体存储（接管字节 + 目录即索引，TTL / 容量淘汰，§16.1–§16.2） | **官方树内 owner 新增文件**（非 owner/ 目录） |
+| `gateway/platforms/api_server_media.py` | 产物媒体存储（接管字节 + 目录即索引，TTL / 容量淘汰，§16.1–§16.2）；归属摘要 `media_owner_token` + 超限回执 `rejected`（§16.4） | **官方树内 owner 新增文件**（非 owner/ 目录） |
 
 ## 附录 B：官方文件侵入点速查
 
@@ -1706,7 +1736,7 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 | `gateway/platforms/base.py` | per-profile cache roots、SendResult rotate/retry_after、chained quick command（`[owner-patch]`）、progress dedup code-fence 守卫 | — | 1d908072a、2be0af638 |
 | `tools/cronjob_tools.py` | owner/scripts allowlist（mtime-based）、cron job args 三处 `[owner-patch]` | — | 8a8f42455、3163d17e8、890869693 |
 | `cron/jobs.py` / `cron/scheduler.py` | cron job args `[owner-patch]` 参数 normalize + map | — | 3163d17e8 |
-| `gateway/platforms/api_server.py` | identity routing 中间件（`X-Hermes-Identity` → 子 profile 反代，§15.1）、LDAP bind 二次认证门 + 三态 401 + **503（`ldap_backend_unavailable`，§15.9）**（§15.2–§15.3）、转发头剥离 + SSE 逐 chunk 透传（§15.4）、`GET /v1/ldap/identity/{identity}/access` + identity_whitelist 短路（§15.5）、finish chunk effective `session_id`（§15.6）、**dormant 状态显式化**（§15.7：中间件 `route is None` 分支区分未接线/未配置 + 端点响应 `routing_dormant` / `routing_keys_present`）、**认证门前移**（§15.10：`_owner_identity_gate_rejection` 独立步骤，白名单 / 已路由 / 未知身份一律先过门）、`GET /v1/media/{id}` + `hermes.files`（§16.1）、`ApiMediaStore.from_config()`（§16.2）、`tool.progress` 字段扩展（§16.3） | owner/gateway/ldap_auth.py、owner/feishu/profile_routing.py、gateway/platforms/api_server_media.py | 6177923b26、531508e317、311f553550、4b6d187a2b、b14892be7c、8d42e4c199、3d9a9ceed4、943b6bf1ac、9df4372591、9f453c51e1、6613ac2146、571ba8c937 |
+| `gateway/platforms/api_server.py` | identity routing 中间件（`X-Hermes-Identity` → 子 profile 反代，§15.1）、LDAP bind 二次认证门 + 三态 401 + **503（`ldap_backend_unavailable`，§15.9）**（§15.2–§15.3）、转发头剥离 + SSE 逐 chunk 透传（§15.4）、`GET /v1/ldap/identity/{identity}/access` + identity_whitelist 短路（§15.5）、finish chunk effective `session_id`（§15.6）、**dormant 状态显式化**（§15.7：中间件 `route is None` 分支区分未接线/未配置 + 端点响应 `routing_dormant` / `routing_keys_present`）、**认证门前移**（§15.10：`_owner_identity_gate_rejection` 独立步骤，白名单 / 已路由 / 未知身份一律先过门）、`GET /v1/media/{id}` + `hermes.files`（§16.1）、`ApiMediaStore.from_config()`（§16.2）、`tool.progress` 字段扩展（§16.3）、**产物下载归属断言 + 「未声明即放行」决策**（§16.4） | owner/gateway/ldap_auth.py、owner/feishu/profile_routing.py、gateway/platforms/api_server_media.py | 6177923b26、531508e317、311f553550、4b6d187a2b、b14892be7c、8d42e4c199、3d9a9ceed4、943b6bf1ac、9df4372591、9f453c51e1、6613ac2146、571ba8c937、0925bdf088 |
 
 ### B.2 中度侵入（薄胶水 + 列扩展，sync 冲突中）
 
@@ -1826,6 +1856,17 @@ _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请先�
 ---
 
 ## 附录 E：变更日志
+
+### 2026-09-28：新增 §16.4 产物下载归属断言 + 「未声明即放行」决策（T2-7，含补录）
+
+- **新建正文**：**§16.4**：`0925bdf088`（**补录** —— 该提交此前既不在正文、也不在待补录梳理清单中，§16 原先只列 3 个 commit）+ T2-7 决策（本次，无代码行为改动）
+- **类型**：留档补齐（归属断言的实现与「未声明即放行」的决策依据）+ 决策钉在测试上
+- **决策**（2026-09-28 用户确认）：**维持现状 + 显式记档**。`_media_owner_matches` 在请求未声明身份头时放行，含义是「对未声明的下载，`media_id` 即唯一归属凭据」。依据：id 96 bit 不可枚举且只交给登记方、收紧会锁掉设计上要服务的持 key 调用方、且单改下载侧并非完整修复（注册侧 `owner=""` 是第二条独立通路）
+- **代码侧**：仅 docstring 改写（`_media_owner_matches` + `_handle_media_download`），明写「已接受的决策」、残余风险与本文出处，并点出姊妹机制 `/v1/artifacts/download/{id}` 用服务端推导 scope、本身 fail-closed
+- **测试**：新增 `TestAcceptedUnattributedAccess` 3 例（下载侧放行、注册侧落空 owner、docstring 记档存在）—— 决策钉在行为上，未来收紧必须先改测试
+- **验证**：变异验证两条（均失败）：把 `return True` 改成 `return False`（即悄悄收紧）→ **4 例失败**；去掉 docstring 中的本文指针 → 1 例失败
+- **同类普查**：产物下载的两个机制（`/v1/media/{id}` 与 `/v1/artifacts/download/{id}`）信任模型不一致已查明并记录；归属凭据无服务端盐 → 由 **T2-8** 跟踪；跨用户暴露面 → **T2-9**
+- **未纳入**：前端侧「下载时回带会话头」的适配（本仓无法核实）
 
 ### 2026-09-28：新增 §15.10 认证判定与路由判定解耦（T2-6）
 
