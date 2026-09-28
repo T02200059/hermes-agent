@@ -1,9 +1,13 @@
 """LDAP bind-based second-factor auth for api_server identity traffic.
 
 Gate point: ``identity_routing_middleware`` in
-``gateway/platforms/api_server.py`` calls :func:`ldap_gate` after
-``resolve_api_identity_route`` resolves a known identity (LDAP uid) to a
-sub-profile container, and before the request is reverse-proxied.
+``gateway/platforms/api_server.py`` calls :func:`ldap_gate` — through the
+module-level step ``_owner_identity_gate_rejection`` — for **every** request
+carrying an ``X-Hermes-Identity`` header, *before* any routing decision
+(T2-6). A whitelisted identity and an unresolvable one are gated exactly like
+a routable one: routing chooses a destination, never whether the claim gets
+verified. Previously the gate sat inside the resolved-route branch, so a
+whitelist hit or a broken ``profile_endpoints`` entry skipped it entirely.
 
 Contract (patch_feishu_profile.yaml ``ldap:`` section):
   - password present + LDAP bind succeeds → cache the login for

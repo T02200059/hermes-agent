@@ -1,20 +1,21 @@
-"""T2-3 —— identity routing 的「未接线（dormant）」状态必须显式可观测。
+"""T2-3 / T2-6 —— 接线状态必须显式可观测，且未接线不得顺带关掉认证门。
 
 背景：`resolve_api_identity_route()` 对「该 uid 不在 identity_routes 里」与
-「整条 identity 链路从未接线」都返回 None，调用点无从区分。而后者会让
-`ldap_gate` **永久不可达** —— 它位于「路由解析成功」之后（`api_server.py`
-的 `identity_routing_middleware` 内），所以配置缺键时不会报错、不会拒绝，
-只是静静地不做任何二次认证。这是「门存在但未生效」的典型形态，比「门不存在」
-更危险：日志里看到的还是那句 `is unknown; falling through to default`，
-读起来像「这个 uid 没配」而不是「整套机制是关的」。
+「整条 identity 链路从未接线」都返回 None，调用点无从区分。后者会让整套机制
+静默失效 —— 配置缺键时不报错、不拒绝，只是把每个带身份头的请求都当作普通请求
+处理，日志里看到的还是那句 `is unknown; falling through to default`，读起来像
+「这个 uid 没配」而不是「整套机制是关的」。
 
-本文件把该不变量焊死在三处：
-  1. owner 侧诊断 `identity_routing_diagnostics()`
-  2. 中间件日志（dormant 与 unknown 必须可区分；dormant 只提示一次）
-  3. 准入端点响应（`allowed: false` 不得被读成「该用户被拒」）
+本文件把以下不变量焊死：
+  1. owner 侧诊断 `identity_routing_diagnostics()` 能区分 dormant 的三种成因
+  2. 中间件日志：dormant 与 unknown 必须可区分，dormant 只提示一次，且**不得**
+     再把「没有二次认证门」列为后果（门已前移到任何路由判定之前，T2-6）
+  3. 准入端点响应：`allowed: false` 不得被读成「该用户被拒」
+  4. dormant 配置**不得**顺带关闭 LDAP 二次认证门（T2-6）
 
-并配对照组：同一探针在「已接线」配置下必须确实命中 ldap_gate，否则
-「dormant 时 gate 未被调用」就是一句空断言。
+第 4 条是本文件与 `test_ldap_identity_auth.py` 的交界。T2-3 曾记录「dormant ⇒
+ldap_gate 永不可达」—— 那是门位于「路由解析成功」之后的后果。门前移后，dormant
+只影响「反代到哪个容器」，不再影响「要不要验证身份」，故原断言必须反向。
 """
 
 from __future__ import annotations
@@ -171,7 +172,7 @@ def _make_adapter():
 
 
 class _LdapGateProbe:
-    """Patch owner.gateway.ldap_auth.ldap_gate and count invocations.
+    """Patch owner.gateway.ldap_auth.ldap_gate: count calls and fix the verdict.
 
     ``_owner_import`` memoises the resolved attribute in ``_owner_lazy``, so
     patching the module alone would be ignored whenever an earlier call already
@@ -179,8 +180,9 @@ class _LdapGateProbe:
     the assertions below would be vacuous. Clear the cache as part of patching.
     """
 
-    def __init__(self):
+    def __init__(self, verdict: str = "allow"):
         self.calls = 0
+        self.verdict = verdict
 
     def patch(self):
         from gateway.platforms import api_server as api_mod
@@ -189,7 +191,7 @@ class _LdapGateProbe:
 
         async def fake_gate(identity, password):
             probe.calls += 1
-            return "allow"
+            return probe.verdict
 
         api_mod._owner_lazy.pop("owner.gateway.ldap_auth.ldap_gate", None)
         return patch.object(
@@ -220,7 +222,13 @@ class TestMiddlewareDormancy:
         dormant_warnings = [m for m in warnings if "DORMANT" in m]
         assert dormant_warnings, "dormant 状态必须有显式告警，不能只报 'is unknown'"
         assert "ABSENT" in dormant_warnings[0], "告警须给出成因（键缺失 vs 键为空）"
-        assert "no LDAP second-factor gate" in dormant_warnings[0]
+        assert "no sub-profile reverse-proxy" in dormant_warnings[0], (
+            "告警须点名真实后果"
+        )
+        assert "no LDAP second-factor gate" not in dormant_warnings[0], (
+            "T2-6 已把认证门前移到任何路由判定之前，dormant 不再关闭它 —— "
+            "告警若继续这样宣称，就是在给排障者一条错误结论"
+        )
 
     @pytest.mark.asyncio
     async def test_dormant_notice_emitted_once_per_middleware(
@@ -244,7 +252,13 @@ class TestMiddlewareDormancy:
         )
 
     @pytest.mark.asyncio
-    async def test_dormant_means_ldap_gate_is_unreachable(self, routing_home):
+    async def test_dormant_config_does_not_disable_the_gate(self, routing_home):
+        """T2-6：路由未接线不得顺带关掉认证门。
+
+        T2-3 曾记录「dormant ⇒ ldap_gate 永不可达」，那是门位于路由解析之后的
+        后果。门前移后，dormant 只影响「反代到哪个容器」，不影响「要不要验证
+        身份」。本用例把这一点焊死：配置 dormant 时，带身份头的请求仍须先过门。
+        """
         middleware = _make_adapter()._make_identity_routing_middleware()
         handler = _RecordingHandler()
         probe = _LdapGateProbe()
@@ -256,15 +270,36 @@ class TestMiddlewareDormancy:
                 ),
                 handler,
             )
-        assert resp.status == 200
-        assert probe.calls == 0, (
-            "路由未接线时 ldap_gate 位于早返回之后，永不执行 —— 既然一个密码为 'x' "
-            "的请求都没被送到门前，说明二次认证整体不生效"
+        assert probe.calls == 1, (
+            "dormant 配置下带身份头的请求必须仍被送到门前 —— 若为 0，说明"
+            "「未接线」又一次顺带关掉了二次认证"
         )
+        assert resp.status == 200, "门放行后，dormant 配置仍应透传到 root"
+
+    @pytest.mark.asyncio
+    async def test_dormant_config_still_rejects_when_the_gate_denies(
+        self, routing_home
+    ):
+        """上一条的对照组：门真拒绝时，dormant 配置也必须被拦住。
+
+        否则「门被调用了」只是一次无害的观测 —— 真正要成立的是它的否决权。
+        """
+        middleware = _make_adapter()._make_identity_routing_middleware()
+        handler = _RecordingHandler()
+        probe = _LdapGateProbe(verdict="deny_reauth_required")
+
+        with probe.patch():
+            resp = await middleware(
+                _FakeRequest({"X-Hermes-Identity": "yangtb"}), handler
+            )
+        assert probe.calls == 1
+        assert resp.status == 401
+        assert "ldap_auth_required" in resp.text
+        assert handler.requests == [], "被拒的请求不得继续走到路由/透传路径"
 
     @pytest.mark.asyncio
     async def test_gate_probe_does_fire_when_routing_is_wired(self, routing_home):
-        """对照组：同一探针在已接线配置下必须命中，否则上一条断言是空断言。"""
+        """同一探针在已接线配置下同样必须命中 —— 探针自身的有效性对照。"""
         _write(routing_home, _routing_yaml(_ROUTES))
         middleware = _make_adapter()._make_identity_routing_middleware()
         handler = _RecordingHandler()

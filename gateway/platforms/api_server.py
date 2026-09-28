@@ -226,6 +226,90 @@ def _owner_import(module: str, name: str) -> Any:
     return _owner_lazy[key]
 
 
+async def _owner_identity_gate_rejection(
+    identity: str, request: "web.Request"
+) -> Optional["web.Response"]:
+    """Run the LDAP second-factor gate for a claimed identity (T2-6).
+
+    Returns a ready-to-send rejection, or ``None`` when the request may
+    proceed. Deliberately independent of routing: the gate answers "is this
+    identity claim authenticated?", and that answer must hold whatever happens
+    next — whitelist → handled by the root gateway, resolved route →
+    reverse-proxied to a sub-profile, unknown → default path. It used to be a
+    step *inside* the resolved-route branch, which made authentication a
+    function of routing and left two ways to skip it entirely.
+
+    Verdicts (see ``owner/gateway/ldap_auth.py``):
+      - ``deny_bad_credentials``                                  → 401 ``ldap_auth_failed``
+      - ``deny_reauth_required`` / ``deny_empty_password``         → 401 ``ldap_auth_required``
+      - ``deny_invalid_login``                                     → 401 ``ldap_identity_invalid``
+      - ``deny_backend_unavailable``                               → 503 ``ldap_backend_unavailable``
+      - anything else (including ``allow``)                        → ``None`` (proceed)
+
+    401 tells the caller its credential is unusable, 503 tells it to retry
+    later; keeping the two apart is the T2-5 contract. An owner/ module that
+    cannot be imported also yields ``None`` — that is the ``_owner_import``
+    degradation contract, an operator-level condition (owner/ removed) rather
+    than something a caller can bring about.
+    """
+    _ldap_gate = _owner_import("owner.gateway.ldap_auth", "ldap_gate")
+    if _ldap_gate is None:
+        return None
+
+    password = request.headers.get("X-Hermes-Identity-Password", "").strip() or None
+    verdict = await _ldap_gate(identity, password)
+
+    if verdict == "deny_bad_credentials":
+        return web.json_response(
+            {
+                "error": {
+                    "message": "LDAP authentication failed for the given identity",
+                    "type": "gateway_auth_error",
+                    "code": "ldap_auth_failed",
+                }
+            },
+            status=401,
+        )
+    if verdict in ("deny_reauth_required", "deny_empty_password"):
+        return web.json_response(
+            {
+                "error": {
+                    "message": "LDAP re-authentication required (send X-Hermes-Identity-Password)",
+                    "type": "gateway_auth_error",
+                    "code": "ldap_auth_required",
+                }
+            },
+            status=401,
+        )
+    if verdict == "deny_invalid_login":
+        return web.json_response(
+            {
+                "error": {
+                    "message": "X-Hermes-Identity failed LDAP login validation",
+                    "type": "gateway_auth_error",
+                    "code": "ldap_identity_invalid",
+                }
+            },
+            status=401,
+        )
+    if verdict == "deny_backend_unavailable":
+        # [owner] T2-5: the credentials were never checked (LDAP unreachable /
+        # misconfigured), which is NOT the same as "your password is wrong".
+        # 503 tells the caller to retry later instead of prompting for a new
+        # password, and keeps the two failure modes distinguishable in logs.
+        return web.json_response(
+            {
+                "error": {
+                    "message": "LDAP backend unavailable; identity could not be verified",
+                    "type": "gateway_unavailable",
+                    "code": "ldap_backend_unavailable",
+                }
+            },
+            status=503,
+        )
+    return None
+
+
 def _browser_controller_ws_sender(ws, loop, *, wait_timeout: float = 10.0):
     """Return a loop-aware broker sender for one aiohttp controller socket.
 
@@ -2336,11 +2420,20 @@ class APIServerAdapter(BasePlatformAdapter):
         return profile_prefix_middleware
 
     def _make_identity_routing_middleware(self):
-        """Forward requests with X-Hermes-Identity header to the sub-profile container.
+        """Authenticate, then route, requests carrying X-Hermes-Identity.
 
-        When a request carries X-Hermes-Identity, resolves it via
-        identity_routes in patch_feishu_profile.yaml, then reverse-proxies
-        the request to the matching sub-profile's API Server endpoint.
+        Four stages, in this order:
+
+          1. no identity header      → pass through (normal handling)
+          2. LDAP second-factor gate → 401/503 rejection before anything else
+          3. identity_whitelist hit  → pass through (handled by the root gateway)
+          4. identity_routes hit     → reverse-proxy to that sub-profile
+
+        Stage 2 is a property of the *claim*, not of the route (T2-6): every
+        request presenting a header is gated — whitelisted, routable, and
+        unknown alike. Stage 3 therefore chooses only a destination; a
+        whitelisted identity is still authenticated, and the whitelist is
+        never an authentication bypass.
 
         No identity header or unknown identity → pass through to the next
         middleware (normal handling).
@@ -2357,10 +2450,28 @@ class APIServerAdapter(BasePlatformAdapter):
             if not identity:
                 return await handler(request)
 
+            # [owner] T2-6: gate first. The header is a *claim* of identity and
+            # the gate — not the routing table — decides whether that claim is
+            # authenticated. Running it before any routing decision closes two
+            # ways to skip it:
+            #   - a whitelisted identity returned early, so "root handles it"
+            #     doubled as "no second factor required" for a header anyone
+            #     able to reach the gateway can set;
+            #   - an identity whose route failed to resolve (unknown uid, or a
+            #     registered uid whose profile_endpoints entry is broken) fell
+            #     through to the ungated default path.
+            # Routing thereafter chooses a destination only; it no longer
+            # decides whether the claim gets verified.
+            _rejection = await _owner_identity_gate_rejection(identity, request)
+            if _rejection is not None:
+                return _rejection
+
             # [owner] LDAP identity whitelist — 与飞书 user_routing.whitelist
             # 同语义：白名单内的 LDAP 身份不反代到子容器，直接由 root
             # gateway 本体处理（对话落在 root 实例的 memory/会话）。
             # 优先级高于 identity_routes；owner/ 模块缺失时 fail-open 跳过。
+            # 白名单只决定「不反代」，不决定「免认证」—— 认证已在上一步完成
+            # （T2-6）。
             _whitelisted = _owner_import(
                 "owner.feishu.profile_routing", "is_api_identity_whitelisted"
             )
@@ -2377,10 +2488,12 @@ class APIServerAdapter(BasePlatformAdapter):
             if route is None:
                 # [owner] T2-3: "not in identity_routes" and "identity routing
                 # never wired" both land here, and the second is a security
-                # trap worth naming — the LDAP gate below only runs *after* a
-                # route resolves, so a dormant config silently disables
-                # second-factor auth for every identity header. Report which
-                # one it is, once per process.
+                # trap worth naming — a dormant config turns every identity
+                # request into a plain default-path request with no signal.
+                # The LDAP gate is no longer among the consequences (T2-6 runs
+                # it ahead of the routing decision), which is exactly why this
+                # notice must not claim it is. Report the cause, once per
+                # process.
                 _diagnose = _owner_import(
                     "owner.feishu.profile_routing", "identity_routing_diagnostics"
                 )
@@ -2396,9 +2509,10 @@ class APIServerAdapter(BasePlatformAdapter):
                         logger.warning(
                             "[API] X-Hermes-Identity=%r ignored: identity routing "
                             "is DORMANT — identity_routes/identity_whitelist are %s "
-                            "(routing section: %s). Consequences: no sub-profile "
-                            "reverse-proxy AND no LDAP second-factor gate, for every "
-                            "identity header. See owner改动清单 §15.",
+                            "(routing section: %s). Consequence: no sub-profile "
+                            "reverse-proxy — the request is served by the root "
+                            "gateway, as if the header were absent. See "
+                            "owner改动清单 §15.",
                             identity,
                             "present but empty"
                             if _diag.get("keys_present")
@@ -2418,67 +2532,6 @@ class APIServerAdapter(BasePlatformAdapter):
                 return await handler(request)
 
             profile_name, endpoint_url, api_key = route
-
-            # [owner] LDAP second-factor gate. A definitive credential failure
-            # rejects with 401; a backend that cannot render a verdict at all
-            # rejects with 503 (T2-5 — "unverified" must not read as "verified").
-            # Rejects land before any proxying; an absent owner/ module is
-            # fail-open (matches the _owner_import contract elsewhere).
-            _ldap_gate = _owner_import("owner.gateway.ldap_auth", "ldap_gate")
-            if _ldap_gate is not None:
-                password = request.headers.get(
-                    "X-Hermes-Identity-Password", ""
-                ).strip() or None
-                verdict = await _ldap_gate(identity, password)
-                if verdict == "deny_bad_credentials":
-                    return web.json_response(
-                        {
-                            "error": {
-                                "message": "LDAP authentication failed for the given identity",
-                                "type": "gateway_auth_error",
-                                "code": "ldap_auth_failed",
-                            }
-                        },
-                        status=401,
-                    )
-                if verdict in ("deny_reauth_required", "deny_empty_password"):
-                    return web.json_response(
-                        {
-                            "error": {
-                                "message": "LDAP re-authentication required (send X-Hermes-Identity-Password)",
-                                "type": "gateway_auth_error",
-                                "code": "ldap_auth_required",
-                            }
-                        },
-                        status=401,
-                    )
-                if verdict == "deny_invalid_login":
-                    return web.json_response(
-                        {
-                            "error": {
-                                "message": "X-Hermes-Identity failed LDAP login validation",
-                                "type": "gateway_auth_error",
-                                "code": "ldap_identity_invalid",
-                            }
-                        },
-                        status=401,
-                    )
-                if verdict == "deny_backend_unavailable":
-                    # [owner] T2-5: the credentials were never checked (LDAP
-                    # unreachable / misconfigured), which is NOT the same as
-                    # "your password is wrong". 503 tells the caller to retry
-                    # later instead of prompting for a new password, and keeps
-                    # the two failure modes distinguishable in logs.
-                    return web.json_response(
-                        {
-                            "error": {
-                                "message": "LDAP backend unavailable; identity could not be verified",
-                                "type": "gateway_unavailable",
-                                "code": "ldap_backend_unavailable",
-                            }
-                        },
-                        status=503,
-                    )
 
             # Build target URL: same path + query string
             path = request.path

@@ -30,10 +30,15 @@ Contract asserted here (behavior, not source shape):
                                    silently downgraded to ``off``
 
   Middleware integration (identity_routing_middleware):
-   13. verdict deny_*  → 401 with distinguishable error code, nothing proxied
-   14. allow           → request proxied WITHOUT X-Hermes-Identity-Password
-   15. no ldap section → pass-through (fail-open when owner config absent)
-   16. SSE response    → streamed chunk-by-chunk (never buffered wholesale)
+   14. verdict deny_*  → 401 with distinguishable error code, nothing proxied
+   15. allow           → request proxied WITHOUT X-Hermes-Identity-Password
+   16. no ldap section → pass-through (fail-open when owner config absent)
+   17. SSE response    → streamed chunk-by-chunk (never buffered wholesale)
+   18. gate ordering   → the gate runs for *every* identity header, ahead of any
+                         routing decision: a whitelist hit, a routable identity
+                         and an unresolvable one are all gated alike, and a
+                         denied claim never reaches the routing branches
+                         (whitelist = "do not reverse-proxy", never "skip auth")
 """
 
 from __future__ import annotations
@@ -648,6 +653,122 @@ class TestMiddleware:
             resp = await middleware(req, handler)
         assert resp.status == 200
         assert recorder.forwarded_headers, "request must have been proxied"
+
+
+# ---------------------------------------------------------------------------
+# T2-6: the gate is a step of its own, ahead of every routing decision
+# ---------------------------------------------------------------------------
+
+
+def _with_identity_whitelist(base: str = ROUTING_YAML, login: str = "yangtb") -> str:
+    """Add ``identity_whitelist`` alongside the existing ``identity_routes``.
+
+    The same uid appears in both lists on purpose: whitelist priority is the
+    documented semantic, so the by-design branch when a request is let through
+    is "root handles it, do not reverse-proxy".
+    """
+    return base + f"        identity_whitelist:\n          - {login}\n"
+
+
+BROKEN_ENDPOINT_YAML = LDAP_YAML + """
+feishu:
+  bots:
+    cli_test:
+      user_routing:
+        identity_routes:
+          yangtb: hermesxiyun
+        default_profile: hermesxiyun
+        profile_endpoints: {}
+"""
+
+
+def _write_routing(home: Path, text: str) -> None:
+    (home / "patch_feishu_profile.yaml").write_text(text, encoding="utf-8")
+    _reload_config(home)
+
+
+class TestGateRunsBeforeRouting:
+    """T2-6 —— 认证判定不再与路由判定耦合。
+
+    改前 `ldap_gate` 位于「`resolve_api_identity_route` 成功返回」之后，于是
+    有两条路绕过二次认证：命中 `identity_whitelist` 直接早返回；路由解析失败
+    （未知 uid，或已登记 uid 的 `profile_endpoints` 配错）落到 default 路径。
+    前者把「白名单」读成了「免认证」，后者让一条配置错误变成一条免认证通路。
+    """
+
+    @pytest.mark.asyncio
+    async def test_whitelisted_identity_must_still_pass_the_gate(self, routing_home):
+        """白名单只决定「不反代」，不决定「免认证」。"""
+        _write_routing(routing_home, _with_identity_whitelist())
+        middleware, _ = _make_middleware()
+        req = _FakeRequest({"X-Hermes-Identity": "yangtb"})  # 不带密码
+        with _fake_bind(FakeBind(raise_for_unknown=True)):
+            resp = await middleware(req, _DenyHandler())
+        assert resp.status == 401, (
+            "白名单身份无凭据时被放行 ⇒ 白名单又一次成了认证绕行道"
+        )
+        assert "ldap_auth_required" in resp.text
+
+    @pytest.mark.asyncio
+    async def test_whitelisted_identity_with_valid_credentials_is_not_proxied(
+        self, routing_home
+    ):
+        """门放行不等于反代：白名单的既有语义必须完好。"""
+        _write_routing(routing_home, _with_identity_whitelist())
+        _seed_valid_cache(routing_home, "yangtb")
+        middleware, _ = _make_middleware()
+        handler = _RecordingHandler()
+        recorder = _ProxyRecorder()
+        req = _FakeRequest({"X-Hermes-Identity": "yangtb"})
+        with _fake_bind(FakeBind(raise_for_unknown=True)):
+            with recorder.patch():
+                resp = await middleware(req, handler)
+        assert resp.status == 200
+        assert len(handler.requests) == 1, "白名单身份应由 root gateway 本体处理"
+        assert not recorder.forwarded_headers, "白名单身份不得被反代到子容器"
+
+    @pytest.mark.asyncio
+    async def test_unknown_identity_must_still_pass_the_gate(self, routing_home):
+        """未知 uid 改前直接透传 ⇒ 「路由表里查不到」等价于「不必验证身份」。"""
+        middleware, _ = _make_middleware()
+        req = _FakeRequest({"X-Hermes-Identity": "nobody"})
+        with _fake_bind(FakeBind(raise_for_unknown=True)):
+            resp = await middleware(req, _DenyHandler())
+        assert resp.status == 401
+        assert "ldap_auth_required" in resp.text
+
+    @pytest.mark.asyncio
+    async def test_broken_endpoint_route_does_not_skip_the_gate(self, routing_home):
+        """已登记 uid 的 endpoint 配错时，改前会退化为不受门保护的 default 路径。
+
+        `resolve_api_identity_route()` 在该 profile 缺 `profile_endpoints` 条目时
+        返回 None，调用点无法与「未知 uid」区分 —— 于是一条配置错误把本该受门
+        保护的请求变成了免认证通路。
+        """
+        _write_routing(routing_home, BROKEN_ENDPOINT_YAML)
+        middleware, _ = _make_middleware()
+        req = _FakeRequest({"X-Hermes-Identity": "yangtb"})
+        with _fake_bind(FakeBind(raise_for_unknown=True)):
+            resp = await middleware(req, _DenyHandler())
+        assert resp.status == 401
+        assert "ldap_auth_required" in resp.text
+
+    @pytest.mark.asyncio
+    async def test_gate_rejection_precedes_the_whitelist_branch(self, routing_home):
+        """顺序断言：门在路由判定之前，故一次拒绝不可能走到白名单/路由分支。
+
+        用「白名单命中 + 明确密码错」把两条分支同时置于可达状态：若顺序回退，
+        响应会由 401 变成透传 200。
+        """
+        _write_routing(routing_home, _with_identity_whitelist())
+        middleware, _ = _make_middleware()
+        req = _FakeRequest(
+            {"X-Hermes-Identity": "yangtb", "X-Hermes-Identity-Password": "wrong"}
+        )
+        with _fake_bind(FakeBind({})):  # bind 可判定 → 凭据被拒
+            resp = await middleware(req, _DenyHandler())
+        assert resp.status == 401
+        assert "ldap_auth_failed" in resp.text
 
 
 class _SSEProxyRecorder:

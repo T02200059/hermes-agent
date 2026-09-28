@@ -250,6 +250,10 @@ def is_api_identity_whitelisted(identity: str) -> bool:
     the feishu main-gateway whitelist — the whitelisted uid chats with the
     root instance's memory/sessions, not a per-user docker container).
 
+    Scope (T2-6): the whitelist decides **routing only**. It is not an
+    authentication bypass — the middleware runs the LDAP gate before consulting
+    it, so a whitelisted identity still has to prove the claim it presents.
+
     Reads ``identity_whitelist`` from the same routing config section as
     ``identity_routes``. Takes priority over ``identity_routes``: an entry
     in both lists resolves to the root gateway (dormant identity_routes
@@ -282,10 +286,16 @@ def identity_routing_diagnostics() -> Dict[str, Any]:
     ``resolve_api_identity_route`` and ``is_api_identity_whitelisted`` both read
     ``identity_routes`` / ``identity_whitelist`` from the ``user_routing``
     section. When neither key yields an entry, the whole identity chain is
-    **dormant**: ``X-Hermes-Identity`` can never resolve a route, so the
-    reverse-proxy never fires *and* the LDAP second-factor gate never runs
-    either — that gate lives after the route resolution, so it is unreachable
-    by construction.
+    **dormant**: ``X-Hermes-Identity`` can never resolve a route, so no request
+    is ever reverse-proxied to a sub-profile and every one of them is served by
+    the root gateway as if the header were absent.
+
+    The authentication gate is **not** among the casualties (T2-6): the
+    middleware runs ``ldap_gate`` ahead of any routing decision, so a dormant
+    config no longer disables second-factor auth. Before that change the gate
+    lived inside the resolved-route branch and was unreachable by construction,
+    which is what made dormancy a security trap rather than a plain
+    misconfiguration.
 
     At a call site "this uid is not in ``identity_routes``" and "identity
     routing was never configured" are indistinguishable (both return ``None``),
