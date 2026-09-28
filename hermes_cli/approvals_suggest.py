@@ -106,6 +106,13 @@ _UNSAFE_ROOT_PREFIXES = ("mkfs",)
 # Substrings in a role='tool' result that mean the command did NOT execute
 # with user consent (blocked, denied, timed out, or still pending).  Kept in
 # sync with the message templates in tools/approval.py.
+#
+# [owner] T2-1: matching *prose* is unsound once these messages are localized —
+# they live in locales/*.yaml now, so an English-only table (and the English
+# SQL prefilter that feeds it) goes dark on every non-English install.  This
+# table is therefore demoted to a fail-open fallback for when the owner policy
+# module is unavailable; the real verdict comes from
+# owner/approval/approval_history_policy.py.
 _BLOCK_MARKERS = (
     "BLOCKED (hardline)",
     "BLOCKED: User denied",
@@ -119,6 +126,17 @@ _BLOCK_MARKERS = (
     "approval_required",
     "BLOCKED by user deny rule",
 )
+
+# [owner] T2-1: language-independent block detection.  Returns None only if the
+# owner package is absent, in which case the legacy table above applies.
+try:
+    from owner.approval.approval_history_policy import (
+        result_blocks_execution as _owner_result_blocks_execution,
+        sql_like_anchors as _owner_sql_like_anchors,
+    )
+except Exception:  # pragma: no cover - owner package absent
+    _owner_result_blocks_execution = None
+    _owner_sql_like_anchors = None
 
 
 @dataclass
@@ -191,13 +209,28 @@ def _iter_terminal_calls(
 
 
 def _blocked_tool_call_ids(con: sqlite3.Connection, since_ts: float) -> set:
-    """Collect tool_call_ids whose result shows the command never ran freely."""
+    """Collect tool_call_ids whose result shows the command never ran freely.
+
+    [owner] T2-1: the prefilter and the verdict now share one source of truth
+    (``owner.approval.approval_history_policy``) — previously each maintained
+    its own English-only list and could silently miss what the other caught.
+    The probes below are language-independent *structure*: the result's
+    ``status`` field, plus the i18n catalog keys behind every approval message.
+    """
+    if _owner_sql_like_anchors is not None:
+        anchors = tuple(_owner_sql_like_anchors())
+    else:
+        anchors = ("BLOCKED", "approval")
+    if not anchors:
+        anchors = ("BLOCKED", "approval")
+    like_clause = " OR ".join("content LIKE ?" for _ in anchors)
+
     blocked: set = set()
     cur = con.execute(
         "SELECT tool_call_id, content FROM messages "
         "WHERE role='tool' AND tool_call_id IS NOT NULL AND timestamp >= ? "
-        "AND (content LIKE '%BLOCKED%' OR content LIKE '%approval%')",
-        (since_ts,),
+        f"AND ({like_clause})",
+        (since_ts, *(f"%{anchor}%" for anchor in anchors)),
     )
     while True:
         rows = cur.fetchmany(2000)
@@ -206,7 +239,11 @@ def _blocked_tool_call_ids(con: sqlite3.Connection, since_ts: float) -> set:
         for tool_call_id, content in rows:
             if not content:
                 continue
-            if any(marker in content for marker in _BLOCK_MARKERS):
+            if _owner_result_blocks_execution is not None:
+                is_blocked = _owner_result_blocks_execution(content)
+            else:
+                is_blocked = any(marker in content for marker in _BLOCK_MARKERS)
+            if is_blocked:
                 blocked.add(tool_call_id)
     return blocked
 
