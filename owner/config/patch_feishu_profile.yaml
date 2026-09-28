@@ -101,7 +101,8 @@ feishu:
 #   - 无密码请求  → 按 enforce 策略（见下），默认 seen：认证过一次的账号
 #                   在缓存过期且无新密码时才 401；从未认证过的账号放行
 #                   （api_key 仍是第一信任边界，部署期天然灰度）
-#   - LDAP 不可达 → 默认放行并告警（fail_open_on_error 可改为拒绝）
+#   - LDAP 不可达 → 带密码的请求默认拒绝（503 ldap_backend_unavailable）；
+#                   是否降级放行由下文的 fail_open_on_error 决定，默认 false
 #
 # 安全要点（实现侧遵守）：
 #   - 密码头在反代转发前剥离，且永不写入日志；
@@ -142,5 +143,14 @@ ldap:
   cache_ttl_hours: 72
   # 认证失败后的负缓存秒数（同一账号连续错密码时防爆破/防打爆 LDAP）
   negative_cache_seconds: 10
-  # LDAP 不可达 / ldap3 未安装时: true=放行(api_key 仍是边界) / false=拒绝
-  fail_open_on_error: true
+  # LDAP 不可达 / ldap3 未安装时，对【带密码】的请求是否放行。
+  #   false（默认/推荐）- 拒绝，返回 503 ldap_backend_unavailable。
+  #        理由：无法验证 ≠ 验证通过。放行会让「没查成」与「查过且正确」
+  #        不可区分 —— 能干扰 LDAP 连通性（或只是等到一次抖动）的人即可把
+  #        任意错误密码变合法，即 DoS 变成认证降级。503 而非 401，是为了让
+  #        调用方「稍后重试」而不是「去改密码」。
+  #   true  - 显式接受上述降级，仅适用于把可用性排在验证之上的场景。
+  # 注：`host` 为空、`ldap3` 未安装属**永久性配置错误**而非暂时不可达，
+  #     无论此开关如何都拒绝。
+  # 注：无密码的请求不走这条路径（不调用 bind），由上面的 enforce 档决定。
+  fail_open_on_error: false

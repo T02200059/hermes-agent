@@ -2419,7 +2419,9 @@ class APIServerAdapter(BasePlatformAdapter):
 
             profile_name, endpoint_url, api_key = route
 
-            # [owner] LDAP second-factor gate — only failures reject.
+            # [owner] LDAP second-factor gate. A definitive credential failure
+            # rejects with 401; a backend that cannot render a verdict at all
+            # rejects with 503 (T2-5 — "unverified" must not read as "verified").
             # Rejects land before any proxying; an absent owner/ module is
             # fail-open (matches the _owner_import contract elsewhere).
             _ldap_gate = _owner_import("owner.gateway.ldap_auth", "ldap_gate")
@@ -2460,6 +2462,22 @@ class APIServerAdapter(BasePlatformAdapter):
                             }
                         },
                         status=401,
+                    )
+                if verdict == "deny_backend_unavailable":
+                    # [owner] T2-5: the credentials were never checked (LDAP
+                    # unreachable / misconfigured), which is NOT the same as
+                    # "your password is wrong". 503 tells the caller to retry
+                    # later instead of prompting for a new password, and keeps
+                    # the two failure modes distinguishable in logs.
+                    return web.json_response(
+                        {
+                            "error": {
+                                "message": "LDAP backend unavailable; identity could not be verified",
+                                "type": "gateway_unavailable",
+                                "code": "ldap_backend_unavailable",
+                            }
+                        },
+                        status=503,
                     )
 
             # Build target URL: same path + query string

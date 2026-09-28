@@ -15,7 +15,13 @@ Contract asserted here (behavior, not source shape):
                                    attacker pass by picking a uid that never
                                    logged in)
     7. no password, seen+expired → enforce=seen (and always) denies / off allows
-    8. LDAP down                → fail_open allows; fail_open=false denies
+    8. LDAP down (transient)    → fail_open_on_error=false (default, T2-5) denies
+                                   with deny_backend_unavailable; an explicit
+                                   opt-in allows. `no_config` / `ldap3_missing`
+                                   are permanent config errors → deny regardless
+                                   of the switch. A *wrong* password is
+                                   deny_bad_credentials, never merged with
+                                   "could not verify"
     9. negative cache window    → bind-fail login denied even under enforce=off
    10. invalid login chars      → deny_invalid_login (DN-injection guard)
    11. password rotation        → a successful rebind refreshes the 72h window
@@ -107,13 +113,21 @@ class FakeBind:
     raise a transport error (server down). ``calls`` records the DNs seen.
     """
 
-    def __init__(self, results: dict | None = None, raise_for_unknown: bool = False):
+    def __init__(
+        self,
+        results: dict | None = None,
+        raise_for_unknown: bool = False,
+        raise_with: str | None = None,
+    ):
         self.results = results or {}
         self.raise_for_unknown = raise_for_unknown
+        self.raise_with = raise_with
         self.calls: list[str] = []
 
     async def __call__(self, user_dn: str, password: str) -> tuple[bool, str | None]:
         self.calls.append(user_dn)
+        if self.raise_with is not None:
+            return False, self.raise_with
         if user_dn in self.results:
             return self.results[user_dn], None
         if self.raise_for_unknown:
@@ -274,8 +288,14 @@ class TestLdapGate:
 
     @pytest.mark.asyncio
     async def test_ldap_down_fail_open_vs_closed(self, ldap_home):
-        fake = FakeBind(raise_for_unknown=True)
-        with _fake_bind(fake):
+        """T2-5: fail-open is an explicit opt-in, and only for transient errors.
+
+        Default is now fail-closed and reports ``deny_backend_unavailable``
+        (503), *not* ``deny_reauth_required`` — the credentials were never
+        checked, so telling the caller to re-authenticate would be wrong.
+        """
+        # Fixture ships fail_open_on_error: true → explicit opt-in still works.
+        with _fake_bind(FakeBind(raise_for_unknown=True)):
             assert await ldap_auth.ldap_gate("yangtb", "pw") == ldap_auth.ALLOW
 
         _write_ldap_section(
@@ -283,7 +303,68 @@ class TestLdapGate:
         )
         _reload_config(ldap_home)
         with _fake_bind(FakeBind(raise_for_unknown=True)):
-            assert await ldap_auth.ldap_gate("yangtb", "pw") == ldap_auth.DENY_REAUTH_REQUIRED
+            assert (
+                await ldap_auth.ldap_gate("yangtb", "pw")
+                == ldap_auth.DENY_BACKEND_UNAVAILABLE
+            )
+
+    @pytest.mark.asyncio
+    async def test_wrong_password_and_unverifiable_differ(self, ldap_home):
+        """The T2-5 acceptance criterion: two failures, two outcomes.
+
+        A *checked* wrong password is the caller's fault (401, re-prompt); an
+        *unchecked* password is the backend's fault (503, retry later).
+        Collapsing them is what let an outage turn any wrong password valid.
+        """
+        _write_ldap_section(
+            ldap_home,
+            base=LDAP_YAML.replace(
+                "fail_open_on_error: true", "fail_open_on_error: false"
+            ),
+        )
+        _reload_config(ldap_home)
+        with _fake_bind(FakeBind({})):  # bind evaluates → credential rejection
+            wrong = await ldap_auth.ldap_gate("yangtb", "definitely-wrong")
+        with _fake_bind(FakeBind(raise_for_unknown=True)):  # bind unavailable
+            unverifiable = await ldap_auth.ldap_gate("yangtb", "definitely-wrong")
+
+        assert wrong == ldap_auth.DENY_BAD_CREDENTIALS
+        assert unverifiable == ldap_auth.DENY_BACKEND_UNAVAILABLE
+        assert wrong != unverifiable
+
+    @pytest.mark.asyncio
+    async def test_default_is_fail_closed_when_key_is_absent(self, ldap_home):
+        """Without the key at all, an outage must not verify anything."""
+        base = "\n".join(
+            line
+            for line in LDAP_YAML.splitlines()
+            if not line.strip().startswith("fail_open_on_error:")
+        )
+        _write_ldap_section(ldap_home, base=base + "\n")
+        _reload_config(ldap_home)
+        with _fake_bind(FakeBind(raise_for_unknown=True)):
+            assert (
+                await ldap_auth.ldap_gate("yangtb", "pw")
+                == ldap_auth.DENY_BACKEND_UNAVAILABLE
+            )
+
+    @pytest.mark.asyncio
+    async def test_configuration_errors_deny_even_with_fail_open_on(
+        self, ldap_home
+    ):
+        """``no_config`` / ``ldap3_missing`` are permanent, not transient.
+
+        They mean the gate can never authenticate anyone here, so fail-open is
+        never defensible — it would silently disable the gate for good. The
+        fixture has ``fail_open_on_error: true``, which must not rescue them.
+        """
+        for error_class in ("no_config", "ldap3_missing"):
+            ldap_auth.reset_for_tests()
+            with _fake_bind(FakeBind(raise_with=error_class)):
+                verdict = await ldap_auth.ldap_gate("yangtb", "pw")
+            assert verdict == ldap_auth.DENY_BACKEND_UNAVAILABLE, (
+                f"{error_class} 是永久性配置错误，不得因 fail_open_on_error=true 而放行"
+            )
 
     @pytest.mark.asyncio
     async def test_negative_cache_blocks_even_enforce_off(self, ldap_home):
@@ -497,6 +578,31 @@ class TestMiddleware:
             resp = await middleware(req, _DenyHandler())
         assert resp.status == 401
         assert "ldap_auth_required" in resp.text
+
+    @pytest.mark.asyncio
+    async def test_backend_unavailable_returns_503(self, routing_home):
+        """T2-5: an unchecked password must not be reported as a bad password.
+
+        401 would tell the client to re-prompt for credentials, i.e. to keep
+        retrying a check that cannot succeed. 503 says "retry later" and keeps
+        the two failure modes distinguishable on the wire.
+        """
+        (routing_home / "patch_feishu_profile.yaml").write_text(
+            ROUTING_YAML.replace(
+                "fail_open_on_error: true", "fail_open_on_error: false"
+            ),
+            encoding="utf-8",
+        )
+        _reload_config(routing_home)
+        middleware, _ = _make_middleware()
+        req = _FakeRequest(
+            {"X-Hermes-Identity": "yangtb", "X-Hermes-Identity-Password": "secret"}
+        )
+        with _fake_bind(FakeBind(raise_for_unknown=True)):
+            resp = await middleware(req, _DenyHandler())
+        assert resp.status == 503
+        assert "ldap_backend_unavailable" in resp.text
+        assert "ldap_auth_failed" not in resp.text
 
     @pytest.mark.asyncio
     async def test_allowed_request_proxies_without_identity_headers(self, routing_home):

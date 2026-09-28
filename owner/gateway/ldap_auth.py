@@ -20,8 +20,17 @@ Contract (patch_feishu_profile.yaml ``ldap:`` section):
     proved their identity, so an attacker merely picked a uid that never
     logged in and passed with no password. An unrecognized ``enforce`` value
     is likewise treated as ``always`` rather than silently as ``off``
-  - LDAP unreachable / ldap3 missing → ``fail_open_on_error`` decides
-    (default: allow — API_SERVER_KEY remains the first trust boundary)
+  - password present but **could not be verified** (LDAP unreachable, ldap3
+    missing, no host configured) → 503 ``deny_backend_unavailable`` by
+    default. Allowing a request whose credentials were never checked makes
+    "could not verify" indistinguishable from "verified": anyone able to
+    disrupt LDAP connectivity — or merely waiting for an outage — turns an
+    arbitrary wrong password into a valid one, i.e. a denial of service
+    becomes an authentication downgrade. ``fail_open_on_error`` (default
+    ``false``) is the explicit opt-in to that bypass for *transient*
+    availability problems only. Configuration errors (``no_config`` /
+    ``ldap3_missing``) deny regardless of the switch — they are permanent,
+    not transient, so fail-open was never defensible there.
 
 Security invariants:
   - the password header is stripped before proxying and never logged
@@ -43,7 +52,7 @@ import re
 import tempfile
 import threading
 import time
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, FrozenSet, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -275,8 +284,9 @@ async def _bind(user_dn: str, password: str) -> Tuple[bool, Optional[str]]:
     """Attempt an LDAP SIMPLE bind. Returns (verdict, error_class).
 
     verdict is True on success, False on credential rejection, and False
-    with a non-None error_class on transport/LDAP-down (caller applies
-    fail_open_on_error).
+    with a non-None error_class when the bind could not be evaluated at all
+    (transport failure, missing config/dependency). The caller routes the
+    latter through ``_verdict_on_unverifiable``.
     """
     cfg = _load_ldap_config()
     host = str(cfg.get("host", ""))
@@ -313,13 +323,58 @@ DENY_BAD_CREDENTIALS = "deny_bad_credentials"
 DENY_REAUTH_REQUIRED = "deny_reauth_required"
 DENY_EMPTY_PASSWORD = "deny_empty_password"
 DENY_INVALID_LOGIN = "deny_invalid_login"
+DENY_BACKEND_UNAVAILABLE = "deny_backend_unavailable"
+
+# error_class values that mean "this gate can never authenticate anyone here":
+# a permanent misconfiguration or a missing dependency, not a transient outage.
+# These deny regardless of ``fail_open_on_error`` — fail-open is only
+# defensible for an *availability* problem, never for "we already know we
+# cannot check credentials". Distinguished from transient socket/timeout
+# errors, which the switch does govern.
+_CONFIG_ERROR_CLASSES: FrozenSet[str] = frozenset({"no_config", "ldap3_missing"})
 
 
-def _denied_by_fail_open(error_class: Optional[str]) -> bool:
-    if error_class is None:
-        return False
+def _verdict_on_unverifiable(login: str, error_class: str) -> str:
+    """Verdict when a presented password could not be verified (T2-5).
+
+    The caller only reaches this with a password in hand — the no-password
+    path never calls ``_bind`` and is governed by the ``enforce`` policy
+    instead. That distinction is what makes fail-open unsafe here: allowing a
+    request whose credentials were *never checked* turns "unverified" into
+    "verified", so whoever can disrupt LDAP connectivity (or simply waits for
+    an outage) gets any wrong password accepted.
+
+    Split by cause:
+      - ``_CONFIG_ERROR_CLASSES`` → permanent, deny regardless of the switch.
+      - anything else (socket errors, timeouts) → ``fail_open_on_error``,
+        which defaults to ``false``. Opting in is an explicit acceptance of
+        credential-check bypass during outages.
+    """
     cfg = _load_ldap_config()
-    return not bool(cfg.get("fail_open_on_error", True))
+    if error_class in _CONFIG_ERROR_CLASSES:
+        logger.error(
+            "[LDAP] identity %r cannot be verified: %s is a configuration error, "
+            "not a transient outage; denying (fail_open_on_error does not apply)",
+            login,
+            error_class,
+        )
+        return DENY_BACKEND_UNAVAILABLE
+
+    if bool(cfg.get("fail_open_on_error", False)):
+        logger.warning(
+            "[LDAP] identity %r allowed WITHOUT credential verification: backend "
+            "error %s and fail_open_on_error=true (explicit opt-in)",
+            login,
+            error_class,
+        )
+        return ALLOW
+
+    logger.warning(
+        "[LDAP] identity %r denied: credentials could not be verified (%s)",
+        login,
+        error_class,
+    )
+    return DENY_BACKEND_UNAVAILABLE
 
 
 async def ldap_gate(login: str, password: Optional[str]) -> str:
@@ -327,8 +382,10 @@ async def ldap_gate(login: str, password: Optional[str]) -> str:
 
     Returns one of ``ALLOW``, ``DENY_BAD_CREDENTIALS``,
     ``DENY_REAUTH_REQUIRED``, ``DENY_EMPTY_PASSWORD``,
-    ``DENY_INVALID_LOGIN``. The middleware maps these to pass-through /
-    401 responses with distinguishable error codes.
+    ``DENY_INVALID_LOGIN``, ``DENY_BACKEND_UNAVAILABLE``. The middleware maps
+    these to pass-through / 401 responses with distinguishable error codes;
+    ``DENY_BACKEND_UNAVAILABLE`` maps to 503 because the correct client action
+    is "retry later", not "your password is wrong".
     """
     cfg = _load_ldap_config()
     if not cfg.get("enabled", False):
@@ -365,19 +422,9 @@ async def ldap_gate(login: str, password: Optional[str]) -> str:
             return DENY_INVALID_LOGIN
         verdict, error_class = await _bind(dn, password)
         if error_class is not None:
-            if _denied_by_fail_open(error_class):
-                logger.warning(
-                    "[LDAP] identity %r rejected: server error (%s)",
-                    login,
-                    error_class,
-                )
-                return DENY_REAUTH_REQUIRED
-            logger.warning(
-                "[LDAP] identity %r fail-open on server error (%s)",
-                login,
-                error_class,
-            )
-            return ALLOW
+            # [owner] T2-5: a presented password that could not be checked must
+            # not be treated as checked. See _verdict_on_unverifiable.
+            return _verdict_on_unverifiable(login, error_class)
         if verdict:
             _cache_put(login, ttl_seconds)
             logger.info("[LDAP] identity %r authenticated (cached %.0fh)", login, ttl_hours)
