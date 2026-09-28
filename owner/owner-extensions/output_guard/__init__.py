@@ -1,4 +1,4 @@
-"""[owner] output_guard — transform_llm_output 钩子：复读/乱码/超长检测与折叠。
+r"""[owner] output_guard — transform_llm_output 钩子：复读/乱码/超长检测与折叠。
 
 背景
 ----
@@ -16,6 +16,19 @@
   干净文本（原先只改内存，state.db 保留退化原文并在下次会话加载时二次污染）。
 - **C3** 新增 `reasoning_text` 入参：思考通道单独扫描。当正文健康而思考退化
   （纯 thinking 循环）时**保留正文**、只追加告警注解，不替换正文。
+
+2026-09-28 增补（T2-10）
+------------------------
+`word_repeat` 的判据原为 `re.compile(r"(\S+)( \1){5,}")`，对无空白的长文本是
+**O(n²)**（`(\S+)` 无上界 ⇒ 每个起始位置都要回溯一遍找那个单空格），实测
+50 000 字符（= `_MAX_CHARS`）耗时 **30.4s** —— 与下方「契约」里写的 O(n) 相悖。
+触发输入是**完全合法的正常中文长回复**（判定结果为 `verdict=ok`），而判定点位于
+每轮生成收尾的**同步阻塞链**上（`turn_finalizer` 的 `transform_llm_output` →
+`analyze`，且被前移到 `_persist_session` 之前），最坏会连带拖住落库、微压缩与
+最终投递。现改为线性实现 `_find_word_repeat()`，与原正则逐例等价（差分测试见
+`tests/owner/test_output_guard.py::test_linear_scan_matches_the_regex_oracle`），
+同工况 0.0ms。**判定语义未变，包括原正则「可以从 token 中间起步」这一未写档的
+行为**（详见该函数 docstring）。
 
 契约
 ----
@@ -58,7 +71,19 @@ _MAX_CHARS = 50000
 _DEGENERATE_MIN_CHARS = 400
 _BLOCK_SIZE = 200
 _DIRTY_RUN_MIN = 3
-_WORD_REPEAT = re.compile(r"(\S+)( \1){5,}")
+# word_repeat 的判据曾写作 `re.compile(r"(\S+)( \1){5,}")`。该正则对无空白的长文本
+# 是 **O(n²)**：`(\S+)` 在每个起始位置都要从 run 末尾逐字符回溯去找那个单空格，而
+# 根本不存在空格时每次回溯都白跑。实测 50 000 字符（= _MAX_CHARS）耗时 **30.4s**，
+# 而本模块位于**每轮生成收尾的同步阻塞链**上（transform_llm_output → analyze，且在
+# _persist_session 之前），最坏会把落库、微压缩与最终投递一起拖住半分钟。现改为
+# `_find_word_repeat()` 线性实现，与原正则逐例等价（差分测试见
+# tests/owner/test_output_guard.py），同工况 0.0ms。
+_WORD_REPEAT_MIN_RUNS = 6  # 重复单元出现次数下限（= 原正则的 1 + {5,}）
+_WORD_REPEAT_SEP = " "  # 原正则的分隔符是字面单空格：多空格 / Tab 均不命中
+# 原正则 `\S+` 的 run 边界是**任意**空白（Tab / 换行 / NBSP 都算），只有重复段之间
+# 的分隔符才是字面单空格。两者必须分开建模，否则 "a\tb a\tb ..." 会被误判命中
+# （正则不命中：`\S+` 只能匹配到 "a"，其后不是空格）。
+_WS_RE = re.compile(r"\s")
 _TEMPLATE_MARKERS = ("<|im_end|>", "<|im_start|>", "[/CoT]")
 _JUNK_PATTERNS = (
     re.compile(r"</div>\.{2,}"),
@@ -98,6 +123,74 @@ def _block_score(block: str) -> int:
     return hits
 
 
+def _repeat_after(text: str, pos: int, unit: str, count: int) -> bool:
+    """从 pos 起是否紧跟 count 段「单空格 + unit」。
+
+    只校验每段的前导空格与 unit 本身，**不**要求 unit 之后也是空白 —— 原正则里
+    第 2..n 次出现是反向引用 ``\\1``（字面串），可以落在更长 token 的前缀上。
+    """
+    step = len(unit) + 1
+    if pos + step * count > len(text):
+        return False
+    for k in range(count):
+        off = pos + k * step
+        if text[off] != _WORD_REPEAT_SEP or text[off + 1 : off + 1 + len(unit)] != unit:
+            return False
+    return True
+
+
+def _token_at(text: str, pos: int) -> str:
+    """从 pos 起的完整非空白 run（边界 = 任意空白）；pos 处已是空白或越界返回 ""。"""
+    if pos >= len(text) or _WS_RE.match(text, pos):
+        return ""
+    end = _WS_RE.search(text, pos)
+    return text[pos:] if end is None else text[pos : end.start()]
+
+
+def _find_word_repeat(text: str) -> int | None:
+    """`(\\S+)( \\1){5,}` 的线性等价实现，返回**最左**匹配起点，无匹配返回 None。
+
+    等价性靠穷举原正则的可匹配形态得到（推导即证明，无遗漏分支）：
+
+    设重复单元为 G。``\\S+`` 不含空白、且其后必须紧跟一个空格 ⇒ G 必定收尾于
+    **某个非空白 run 的末尾**，即 G 只能是「起点所在 run 的、从起点到 run 末的
+    尾串」。两点须分开建模：run 的边界是**任意**空白（Tab / 换行 / NBSP 也算），
+    而重复段之间的分隔符必须是**字面单空格**。于是起点只有两种可能：
+
+    1. **起点 = run 起点**：G = 整个 run；后续 count 段只需「空格 + G」逐段相等。
+    2. **起点在 run 内部**：G = run 的一段真尾串，长度 d < run_len。此时第 2 次
+       出现之后还必须跟一个空格（供第 3 次出现使用）⇒ 第 2 次出现本身是一个
+       **完整 token** ⇒ d 被唯一确定为「run 后第一个 token 的长度」；再验证该
+       token 等于 run 的长度为 d 的尾串，以及第 3..count 次出现的对齐即可。
+
+    两种形态都只需常数次比较（每个 run 至多 O(5·run_len)，且各 run 互不重叠）
+    ⇒ 整体 O(n)。其中第 2 种（「从 token 中间起步」）是原正则的既成行为、此前
+    未写档，此处照旧保留。
+    """
+    n = len(text)
+    i = 0
+    while i < n:
+        m = _WS_RE.search(text, i)
+        j = n if m is None else m.start()
+        if j > i:  # 存在非空白 run [i, j)
+            run_len = j - i
+            later = _WORD_REPEAT_MIN_RUNS - 1  # 除首次出现外还需的段数
+
+            # 形态 1：起点 = run 起点，重复单元 = 整个 run。
+            if _repeat_after(text, j, text[i:j], later):
+                return i
+
+            # 形态 2：起点在 run 内部，重复单元 = run 的尾串（长度 = 后一个 token）。
+            unit = _token_at(text, j + 1)
+            d = len(unit)
+            if d and d < run_len and text[j - d : j] == unit:
+                if _repeat_after(text, j + d + 1, unit, later - 1):
+                    return j - d
+
+        i = j + 1  # 跳过至少一个空白字符（下一个 run 的搜索起点）
+    return None
+
+
 def _degenerate_scan(text: str) -> dict:
     """v2 信号扫描：dirty_run / word_repeat / first_offense（最早信号位置）。"""
     n = len(text)
@@ -109,11 +202,11 @@ def _degenerate_scan(text: str) -> dict:
         best = best if best >= run else run
         if s > 0 and first_dirty is None:
             first_dirty = idx * _BLOCK_SIZE
-    rep = _WORD_REPEAT.search(text)
-    offenses = [p for p in (first_dirty, rep.start() if rep else None) if p is not None]
+    rep_at = _find_word_repeat(text)
+    offenses = [p for p in (first_dirty, rep_at) if p is not None]
     return {
         "dirty_run": best,
-        "word_repeat": 1 if rep else 0,
+        "word_repeat": 1 if rep_at is not None else 0,
         "first_offense": min(offenses) if offenses else None,
     }
 
