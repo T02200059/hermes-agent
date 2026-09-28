@@ -51,6 +51,9 @@ class Site:
     zh: str
     kind: str  # shared | owner
     dynamic_args: bool = False
+    # 英文原文是否逐字出现在上游文件中。True 表示「owner 在该处的唯一改动
+    # 就是把英文串包进了 t()」——回退即恢复上游字节，该冲突块归零。
+    pure_wrapping: bool = False
 
 
 @dataclass
@@ -138,10 +141,45 @@ def _literal_keys(source: str) -> set[str]:
     return keys
 
 
-def collect(ref: str) -> Report:
+def upstream_string_literals(ref: str) -> set[str]:
+    """上游官方 .py 中出现过的全部字符串字面量。
+
+    用于判定某条英文原文是否**逐字**存在于上游——若是，则 owner 在该处的
+    唯一改动就是把英文串包进了 ``t()``，回退即恢复上游字节、冲突块归零。
+
+    用 AST 取字面量而非整文件子串：语义精确（不会把注释/文档里的巧合命中
+    算进来），且集合查找是 O(1)。跨文件汇总，因为上游会把大文件拆成
+    ``run_*.py`` / ``slash_commands_*.py``，字面量未必留在同名文件里。
+    """
+    listing = subprocess.run(
+        ["git", "ls-tree", "-r", "--name-only", ref],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+    ).stdout.split()
+
+    out: set[str] = set()
+    for name in listing:
+        if not name.endswith(".py") or name.startswith(_EXCLUDED_PREFIXES):
+            continue
+        src = git_show(ref, name)
+        if not src:
+            continue
+        try:
+            tree = ast.parse(src)
+        except SyntaxError:
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                out.add(node.value)
+    return out
+
+
+def collect(ref: str, with_pure_wrapping: bool = True) -> Report:
     en_catalog = load_catalog(REPO_ROOT / "locales" / "en.yaml")
     zh_catalog = load_catalog(REPO_ROOT / "locales" / "zh.yaml")
     upstream_keys = upstream_catalog_keys(ref)
+    up_literals = upstream_string_literals(ref) if with_pure_wrapping else set()
 
     report = Report()
     for path in sorted(REPO_ROOT.rglob("*.py")):
@@ -178,15 +216,17 @@ def collect(ref: str) -> Report:
 
             key = first.value
             kind = "shared" if key in upstream_keys else "owner"
+            en_text = en_catalog.get(key, "")
             report.sites.append(
                 Site(
                     file=rel,
                     line=node.lineno,
                     key=key,
-                    en=en_catalog.get(key, ""),
+                    en=en_text,
                     zh=zh_catalog.get(key, ""),
                     kind=kind,
                     dynamic_args=bool(node.keywords),
+                    pure_wrapping=bool(en_text) and en_text in up_literals,
                 )
             )
     report.sites.sort(key=lambda s: (s.file, s.line))
@@ -198,6 +238,7 @@ def render_markdown(report: Report, ref: str) -> str:
     by_file = report.by_file
     owner_sites = [s for s in report.sites if s.kind == "owner"]
     shared_sites = [s for s in report.sites if s.kind == "shared"]
+    pure = [s for s in owner_sites if s.pure_wrapping]
 
     lines: List[str] = []
     lines.append("# T1-4 工作清单：官方文件内 owner 新增的 i18n 调用点")
@@ -214,37 +255,49 @@ def render_markdown(report: Report, ref: str) -> str:
     lines.append(f"| 使用官方 `t()` 的官方文件 | {len(report.files_with_t)} |")
     lines.append(f"| `t()` 字面量调用点合计 | {len(report.sites)} |")
     lines.append(f"| 其中键仅 owner 有（需回退为英文 + 展示层翻译） | {len(owner_sites)} |")
+    lines.append(
+        f"| 其中**英文原文逐字见于上游**（回退即恢复上游字节，冲突块归零） | {len(pure)} |"
+    )
+    lines.append(
+        f"| 其中上游无此文案（owner 自造，回退只减 `t()` 不消冲突） | {len(owner_sites) - len(pure)} |"
+    )
     lines.append(f"| 其中键上游也在用（可与上游写法对齐） | {len(shared_sites)} |")
     lines.append(f"| `t()` 首参非字面量（需人工判定） | {len(report.bare)} |")
     lines.append("")
     lines.append("## 分类判据")
     lines.append("")
     lines.append("- **owner 键**：上游没有这个键，说明调用点是 owner 为本地化而加进官方函数体的。")
-    lines.append("  回退为英文原文后，中文由 `owner/i18n/display_filter.py` 在展示层完成——")
-    lines.append("  该处代码随即与上游逐字节一致，冲突块归零。")
-    lines.append("- **shared 键**：上游也用这个键。若调用点与上游同形，回退即与上游对齐；")
-    lines.append("  若同键但位置不同，说明是 owner 在别处补的调用，同样按 owner 键处理。")
+    lines.append("  回退为英文原文后，中文由 `owner/i18n/display_filter.py` 在展示层完成。")
+    lines.append("- **纯包裹**（`pure_wrapping`）：该键的英文原文逐字出现在上游文件中，说明")
+    lines.append("  owner 在这一行的唯一改动就是把英文串包进了 `t()`。**回退即与上游逐字节一致，")
+    lines.append("  该冲突块归零**——这是 T1-4 收益的主要来源，建议优先做。")
+    lines.append("- **自造文案**：上游没有这句话，冲突来自周边代码而非 `t()` 调用。回退仍然")
+    lines.append("  应该做（让官方代码不再携带 `t()`，减少后续 sync 的改动面），但不消冲突。")
+    lines.append("- **shared 键**：上游也用这个键。若调用点与上游同形，回退即与上游对齐。")
     lines.append("")
     lines.append("## 按文件分布")
     lines.append("")
-    lines.append("| 文件 | 调用点 | owner 键 | shared 键 |")
-    lines.append("|---|---|---|---|")
+    lines.append("| 文件 | 调用点 | owner 键 | 其中纯包裹 | shared 键 |")
+    lines.append("|---|---|---|---|---|")
     for file in sorted(by_file, key=lambda f: (-len(by_file[f]), f)):
         sites = by_file[file]
-        own = sum(1 for s in sites if s.kind == "owner")
-        shr = len(sites) - own
-        lines.append(f"| `{file}` | {len(sites)} | {own} | {shr} |")
+        own = [s for s in sites if s.kind == "owner"]
+        pure_n = sum(1 for s in own if s.pure_wrapping)
+        lines.append(
+            f"| `{file}` | {len(sites)} | {len(own)} | {pure_n} | {len(sites) - len(own)} |"
+        )
     lines.append("")
 
     lines.append("## 逐条清单（owner 键）")
     lines.append("")
-    lines.append("| 文件:行 | 键 | 英文原文（回退目标） | 中文译文（展示层） |")
-    lines.append("|---|---|---|---|")
-    for site in owner_sites:
+    lines.append("| 文件:行 | 键 | 类型 | 英文原文（回退目标） | 中文译文（展示层） |")
+    lines.append("|---|---|---|---|---|")
+    for site in sorted(owner_sites, key=lambda s: (not s.pure_wrapping, s.file, s.line)):
         en = site.en.replace("|", "\\|")
         zh = site.zh.replace("|", "\\|")
+        flag = "纯包裹" if site.pure_wrapping else "自造文案"
         lines.append(
-            f"| `{site.file}:{site.line}` | `{site.key}` | `{en}` | `{zh}` |"
+            f"| `{site.file}:{site.line}` | `{site.key}` | {flag} | `{en}` | `{zh}` |"
         )
     lines.append("")
 
@@ -284,10 +337,11 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     owner_n = sum(1 for s in report.sites if s.kind == "owner")
     shared_n = len(report.sites) - owner_n
+    pure_n = sum(1 for s in report.sites if s.kind == "owner" and s.pure_wrapping)
     print(
         f"[i18n-sites] 文件={len(report.files_with_t)} "
-        f"调用点={len(report.sites)} owner键={owner_n} shared键={shared_n} "
-        f"首参非字面量={len(report.bare)}"
+        f"调用点={len(report.sites)} owner键={owner_n}（纯包裹={pure_n}）"
+        f" shared键={shared_n} 首参非字面量={len(report.bare)}"
     )
     return 0
 
