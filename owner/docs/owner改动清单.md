@@ -1381,7 +1381,7 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 - **方案**（`6177923b26`）：
   - `owner/feishu/profile_routing.py` 新增 `resolve_api_identity_route(identity)`：在 `patch_feishu_profile.yaml` 的 `identity_routes` 段查找 LDAP uid → profile 映射，复用既有 `profile_endpoints` 解析出 `(profile_name, endpoint_url, api_key)`
   - `gateway/platforms/api_server.py` 新增 `_make_identity_routing_middleware`：读请求头 `X-Hermes-Identity`，命中后把请求 HTTP 反向代理到对应子容器的 API Server；不命中或身份未知则透传，行为不变
-- **配置样例**：
+- **配置样例**（形态示意；**当前未落地**，见 §15.7）：
 
   ```yaml
   identity_routes:
@@ -1389,6 +1389,7 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
     wangtingwei: wangtingwei
   ```
 
+- **接线状态**（2026-09-28 核实）：`patch_feishu_profile.yaml` 的 `user_routing` 段下**没有** `identity_routes` / `identity_whitelist` 键，故本节描述的解析路径不触发，链路为 dormant —— 详见 **§15.7**
 - **涉及文件**：`gateway/platforms/api_server.py`（+95）、`owner/feishu/profile_routing.py`（+31）
 - **侵入类型**：薄胶水（中间件注册）+ 路由逻辑全在 owner/
 - **Commit**：`6177923b26`
@@ -1426,6 +1427,8 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
   | `cache_ttl_hours` | 72 | 正缓存窗口 |
   | `negative_cache_seconds` | 10 | 负缓存窗口 |
   | `fail_open_on_error` | `true` | LDAP 不可达时放行 |
+
+- **接线状态**（2026-09-28 核实）：`ldap_gate` 的调用点位于 `identity_routing_middleware` 内**路由解析成功之后**（`api_server.py` 中 `route is None` 即早返回）。由于 `identity_routes` 缺键（§15.1），任何请求都解析不出路由，因此**本节的认证门在当前配置下不可达**——配置与代码均已就位，只是没有任何请求会走到它。详见 **§15.7**
 
 - **依赖**（`6790f1ba6c`）：新增 `ldap3==2.9.1`，运行时惰性 import —— 缺包时 `ImportError` → fail-open，lean 安装不受影响；按仓库 pinning 规范 exact-pin + uv lock 重生成。
 - **涉及文件**：`owner/gateway/ldap_auth.py`（新增，369 行）、`gateway/platforms/api_server.py`、`owner/config/patch_feishu_profile.yaml`、`pyproject.toml`、`uv.lock`、`tests/owner/test_ldap_identity_auth.py`（新增，424 行）
@@ -1467,6 +1470,7 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
   | 两者皆 false | 未知身份，聊天请求会 fall through 到 `default_profile`（共享实例） | **必须拒绝** —— 绝不能「试探式」发聊天请求来探测（那样会真的和共享 bot 聊上） |
 
 - **约束**：`allowed = routed || whitelisted`；**绝不返回** `endpoint_url` / `api_key`，仅返回 profile 名；owner/ 路由模块缺失时返回 503（明确告知不可用，而非误判为「无权限」）；Bearer 鉴权与其他 API 路由一致。
+- **消费方注意**（T2-3）：上表第三行的「必须拒绝」**以 `routing_dormant=false` 为前提**。当响应携带 `routing_dormant=true` 时，`allowed:false` 描述的是**网关未接线**这一状态、而非该 uid 的判定结果（所有 uid 取同值），消费方应视为「能力未上线」并退回自身默认策略 —— 否则会把「未接线」放大成「全员禁入」，且无法与真实的准入拒绝区分。响应另附 `routing_keys_present` 以区分「键缺失」与「键存在但为空」。当前实况见 **§15.7**
 - **白名单优先级**：命中 `identity_whitelist` 者不反代子容器，由 root gateway 本体处理（对话落在 root 实例的 memory/会话），与飞书 `user_routing.whitelist` → 主网关同构，**优先级高于 `identity_routes`**——后者条目随之休眠，同飞书双列表语义。
 - **涉及文件**：`gateway/platforms/api_server.py`（+116）、`owner/feishu/profile_routing.py`（+35）
 - **侵入类型**：薄胶水（路由注册 + 端点）+ 路由逻辑全在 owner/
@@ -1479,6 +1483,43 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 - **涉及文件**：`gateway/platforms/api_server.py`（+5）
 - **侵入类型**：薄胶水
 - **Commit**：`8d42e4c199`
+
+### 15.7 未接线状态显式化（identity routing dormant）
+
+- **问题**（T2-3）：§15.1–§15.5 构成的整套身份准入体系，触发前提是 `patch_feishu_profile.yaml` 的 `user_routing` 段存在 `identity_routes` / `identity_whitelist`。该键**从未写入**。2026-09-28 核实：`~/.hermes/patch_feishu_profile.yaml` 是指向本仓库 `owner/config/` 的符号链接（模板即现网）；`feishu.bots.<app_id>.user_routing` 下有 `whitelist` / `chat_profile_routes` / `user_profile_routes` / `default_profile` / `profile_endpoints`，唯独没有这两个键；`FEISHU_APP_ID` 与 `bots` 键一致，配置段本身加载正常。后果：
+
+  | 环节 | 现网实况 |
+  |---|---|
+  | `resolve_api_identity_route()` | 恒返回 `None`（`identity_routes.get(identity)` 落空） |
+  | 中间件 | 透传到 root，**不反代**子 profile |
+  | `ldap_gate` | **永不执行** —— 调用点在路由解析成功之后（§15.2） |
+  | `GET /v1/ldap/identity/{uid}/access` | 对任何 uid 返回 `allowed:false` |
+
+  这类「门存在但未生效」比「门不存在」更危险：既不报错也不拒绝，日志里只有一句 `is unknown; falling through to default`，读起来像「这个 uid 没配」，而不是「整套机制是关的」。
+
+- **决策**（2026-09-28）：**暂不接线，改为把未接线状态显式化**。理由是接线会把三处语义缺口从「不可达」变成「可用」，须先修完再接线 —— ① `enforce=seen` 会放行从未认证过的账号（T2-4）；② `fail_open_on_error: true` 不区分「LDAP 不可达」与「密码错误」（T2-5）；③ `identity_whitelist` 短路位于 LDAP gate **之前**，等于白名单即免认证（T2-6）。在此之前，风险最低且收益明确的做法是让状态可观测、文档与现网一致。
+- **方案**（`9f453c51e1`）：
+  - `owner/feishu/profile_routing.py` 新增 `identity_routing_diagnostics()`：结构化返回 `dormant` / `keys_present` / `identity_route_count` / `identity_whitelist_count` / `config_source`。只读、无副作用、**不抛异常**。
+  - `gateway/platforms/api_server.py` 中间件：`route is None` 分支区分**「该 uid 未配置」（已接线）**与**「整条链路未接线」**；后者打印一次显式告警（每中间件实例一次，避免结构性状态按请求刷屏），并点名后果（既不反代、也不做二次认证）与成因（键缺失 / 键存在但为空 / 配置段取不到）。
+  - `GET /v1/ldap/identity/{identity}/access` 响应新增 `routing_dormant` 与 `routing_keys_present`，消除 `allowed:false` 的语义歧义（§15.5）。
+  - `owner/config/patch_feishu_profile.yaml` 的 LDAP 节顶部标注接线状态与启用前置。
+- **成因三分**（`config_source` / `keys_present` 联合判读）：
+
+  | `config_source` | `keys_present` | 含义 |
+  |---|---|---|
+  | `loaded` | `false` | 配置段正常加载，只是**键从未写入** —— 即当前实况 |
+  | `loaded` | `true` | 键存在但条目为空（曾被清空） |
+  | `unavailable` | — | 配置段取不到。**`_load_routing_config()` 以 `FEISHU_APP_ID` 为入口**，因此纯 api_server 节点即使把键配好也读不到 —— 这是与「键缺失」不同的另一种 dormant 成因，排障方向也不同 |
+
+- **涉及文件**（官方树 intrude）：`gateway/platforms/api_server.py`（中间件告警分支 + 端点响应两字段）
+- **涉及文件**（owner 侧）：`owner/feishu/profile_routing.py`（新增 `identity_routing_diagnostics()`）、`owner/config/patch_feishu_profile.yaml`、`tests/owner/test_identity_routing_dormant.py`（新增 14 例）
+- **侵入类型**：薄委托（诊断函数 + 两处响应字段）
+- **验证**：14 例覆盖诊断五分档 / 中间件（透传、显式告警、只提示一次、`ldap_gate` 探针不可达）/ 准入端点（dormant 与已接线对照）。`ldap_gate` 探针配**对照组**——已接线配置下探针必须命中，否则「dormant 时门未被调用」是空断言（探针须同时清 `_owner_lazy` 缓存，否则会静默命中旧函数）。变异验证三条，均失败：关闭 dormant 分支 → 2 例；端点不返回 `routing_dormant` → 3 例；`keys_present` 恒真 → 3 例（含告警的成因归因）。回归：`tests/owner/` + `tests/gateway/test_api_server*` 共 67 文件 / 1056 例全通过（32.2s）。
+- **同类普查**（已完成）：
+  - `X-Hermes-Identity` 的**全部生产读取点**仅 `gateway/platforms/api_server.py`（中间件 + `_media_owner_matches`）。后者「未验证的身份头被当归属凭据」问题已在 **T2-7 / T2-8** 跟踪，无需另立条目。
+  - 其他「配置驱动门」：`owner/approval/skill_manage_gate.py`（`enabled: false`，§3.11 已记录该默认值调整）、`owner/semantic_audit`（默认 `enabled: false`，`config.py` 注释明确）。二者均**有显式开关且文档一致**，关闭是决策而非静默失效。**判定标准**：本条的缺陷形态是「**无开关、靠缺键隐式关闭**」——只有 identity routing 符合，故无同类缺陷。
+- **未纳入**：接线本身（依赖上述三处语义修复）；`_media_owner_matches` 收紧（T2-7）；归属凭据的服务端盐（T2-8）
+- **Commit**：`9f453c51e1`
 
 ---
 
@@ -1583,7 +1624,7 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 | `gateway/platforms/base.py` | per-profile cache roots、SendResult rotate/retry_after、chained quick command（`[owner-patch]`）、progress dedup code-fence 守卫 | — | 1d908072a、2be0af638 |
 | `tools/cronjob_tools.py` | owner/scripts allowlist（mtime-based）、cron job args 三处 `[owner-patch]` | — | 8a8f42455、3163d17e8、890869693 |
 | `cron/jobs.py` / `cron/scheduler.py` | cron job args `[owner-patch]` 参数 normalize + map | — | 3163d17e8 |
-| `gateway/platforms/api_server.py` | identity routing 中间件（`X-Hermes-Identity` → 子 profile 反代，§15.1）、LDAP bind 二次认证门 + 三态 401（§15.2–§15.3）、转发头剥离 + SSE 逐 chunk 透传（§15.4）、`GET /v1/ldap/identity/{identity}/access` + identity_whitelist 短路（§15.5）、finish chunk effective `session_id`（§15.6）、`GET /v1/media/{id}` + `hermes.files`（§16.1）、`ApiMediaStore.from_config()`（§16.2）、`tool.progress` 字段扩展（§16.3） | owner/gateway/ldap_auth.py、owner/feishu/profile_routing.py、gateway/platforms/api_server_media.py | 6177923b26、531508e317、311f553550、4b6d187a2b、b14892be7c、8d42e4c199、3d9a9ceed4、943b6bf1ac、9df4372591 |
+| `gateway/platforms/api_server.py` | identity routing 中间件（`X-Hermes-Identity` → 子 profile 反代，§15.1）、LDAP bind 二次认证门 + 三态 401（§15.2–§15.3）、转发头剥离 + SSE 逐 chunk 透传（§15.4）、`GET /v1/ldap/identity/{identity}/access` + identity_whitelist 短路（§15.5）、finish chunk effective `session_id`（§15.6）、**dormant 状态显式化**（§15.7：中间件 `route is None` 分支区分未接线/未配置 + 端点响应 `routing_dormant` / `routing_keys_present`）、`GET /v1/media/{id}` + `hermes.files`（§16.1）、`ApiMediaStore.from_config()`（§16.2）、`tool.progress` 字段扩展（§16.3） | owner/gateway/ldap_auth.py、owner/feishu/profile_routing.py、gateway/platforms/api_server_media.py | 6177923b26、531508e317、311f553550、4b6d187a2b、b14892be7c、8d42e4c199、3d9a9ceed4、943b6bf1ac、9df4372591、9f453c51e1 |
 
 ### B.2 中度侵入（薄胶水 + 列扩展，sync 冲突中）
 
@@ -1703,6 +1744,15 @@ _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请先�
 ---
 
 ## 附录 E：变更日志
+
+### 2026-09-28：新增 §15.7 未接线状态显式化（T2-3）
+
+- **新建正文**：**§15.7**：`9f453c51e1`（`owner/feishu/profile_routing.py` 新增 `identity_routing_diagnostics()`、`gateway/platforms/api_server.py` 中间件告警分支 + 准入端点 `routing_dormant` / `routing_keys_present`、`owner/config/patch_feishu_profile.yaml` 标注接线状态与启用前置、`tests/owner/test_identity_routing_dormant.py` 新建 14 例）
+- **类型**：可观测性修复（「门存在但未生效」显式化）+ 官方文件侵入
+- **背景**：§15.1–§15.5 的整套身份准入体系始终未被 `identity_routes` / `identity_whitelist` 接线 —— `ldap_gate` 因位于路由解析之后而永久不可达，准入端点对任何 uid 返回 `allowed:false`，而文档此前按「已生效」描述
+- **决策**：暂不接线（接线会把三处语义缺口从「不可达」变成「可用」，须先修完），改为显式化；§15.1 / §15.2 / §15.5 同步补接线状态说明
+- **验证**：14 例 + 变异验证三条（均失败）+ 回归 67 文件 / 1056 例全通过
+- **同类普查**：`X-Hermes-Identity` 生产读取点仅 `api_server.py`（其余已由 T2-7 / T2-8 跟踪）；其他「配置驱动门」均有显式开关且文档一致，无同类缺陷
 
 ### 2026-09-28：新增 §3.13 审批历史挖掘改按结构标记判定（T2-1）
 
