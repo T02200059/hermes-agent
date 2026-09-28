@@ -89,8 +89,17 @@ def _get_top_level_names(tree: ast.Module) -> Set[str]:
     for node in ast.iter_child_nodes(tree):
         if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
             names.add(node.name)
-        elif isinstance(node, ast.Assign):
-            for target in node.targets:
+        elif isinstance(node, (ast.Assign, ast.AnnAssign)):
+            # ``AnnAssign`` matters as much as ``Assign`` here: an annotated
+            # module-level constant (``FOO: FrozenSet[str] = frozenset()``) is
+            # a normal way to declare an export, and missing it made this check
+            # report a live import as broken — ``gateway/run.py``'s CR-004
+            # delegate reads ``OWNER_RAW_TEXT_PLATFORMS`` that way, so every
+            # run carried a false FAIL that could hide a real one.
+            targets = (
+                node.targets if isinstance(node, ast.Assign) else [node.target]
+            )
+            for target in targets:
                 if isinstance(target, ast.Name):
                     names.add(target.id)
                 elif isinstance(target, (ast.Tuple, ast.List)):
