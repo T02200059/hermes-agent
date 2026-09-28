@@ -1701,6 +1701,38 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 
 ---
 
+### 16.6 `tool.progress` 出口强制脱敏 + 帧绑定断言；飞书转发补子容器归属校验
+
+- **背景**（T2-9 / 安全官 S2-3 + S2-4）：S2-3 指 `hermes.tool.progress` 把工具 args（≤6000 字符）与输出摘要（≤1500）推入 SSE，「隔离完全依赖『SSE 只回发起者』这一隐式前提」；S2-4 指群聊 reaction 按**反应者**而非**消息归属**路由。
+- **S2-3 取证（比原记录多三条通路）**：① args 只过 `redact_tool_args_for_display`，而该函数实测**只处理 `browser_type.text`**（`agent/display.py:401-415`），其余工具原样出口；② `_clip_tool_output_for_sse` **完全没有任何脱敏**（只挑字段 + 截断）；③ **`label` 字段**由 `build_tool_preview(function_name, function_args)` 从**原始** args 派生 —— 只脱敏 `args` 仍会从 label 漏出密钥，是最容易连带漏掉的一条通路；④ native run 事件流（`/v1/runs` 的 `_tool_progress`）把 `args` 原样且**不限长**入队；⑤ Responses 通道（`/v1/responses`）的 `function_call.arguments` / `function_call_output.output` 原样出网（该通道按 spec 就是要回显参数）。
+- **「隔离依赖隐式前提」这一判断在仓内成立**：`_stream_q` 在 handler 内按请求新建、`_run_agent` 每请求新建 agent、回调闭包绑死该队列 —— 仓内**不存在**按会话扇出的逻辑，所以 P2 评级合理。问题不在隔离被破坏，而在**出口本身把工具参数与命令输出原样放出去**：一旦消费方（portal / 前端）按会话或按 chat 扇出，被放出去的就是真东西。
+- **S2-4 原修法为何不成立**（审查建议「维护 `message_id → origin profile`（出站时落库，`d74762a04e` 已做）并只在归属匹配时转发」）：
+  - 落库落错了地方。`d74762a04e` 写的是**发送方容器自己** `state.db` 的 `delivery_obligations.platform_message_id`，**没有 profile 列**；而主网关与子容器是**不同 HERMES_HOME / 不同 state.db**（容器身份取自 `HERMES_PROFILE`，见 `owner/approval/skill_manage_gate.py:181-198`）⇒ 处理 reaction 的主网关**根本看不到那张表**。
+  - 即便在容器内部可用，`gateway/delivery_ledger.py` 的 `_RETENTION_SECONDS = 7 天` + `_MAX_ROWS` 上限 + 受 `gateway.delivery_ledger` 开关控制 + 写入 best-effort（docstring 明写「ledger failures must never block an actual send」）⇒ 拿它当归属判据会**误丢超过 7 天的消息上的表情**。
+- **现网拓扑实测（决定 S2-4 的真实可达面）**：`user_routing` 为 `default_profile: hermesxiyun` + `whitelist: {杨天宝}`；`resolve_profile_route` **在群聊里跳过 whitelist**（`profile_routing.py:102-119`）⇒ 群聊里**所有人**的消息（含白名单用户的）都进同一容器，白名单用户的群表情也进同一容器 —— **去向一致**。容器内 `group_sessions_per_user` 默认 **True**（`adapter.py:4522`）⇒ 每个参与者独立会话 ⇒ 表情落在**反应者自己**的会话。因此当前拓扑下**不存在跨边界误投**，可达影响限于「同一容器内把表情投给了与消息不同属的会话」（只有表情文本跨过去，无跨用户读取）。S2-4 维持审查给的 **P2**；工作台把 T2-9 升到 P1 的叠加理由在 reaction 这一半**不成立**（tool.progress 那一半成立）。
+- **决策**（2026-09-28 用户确认）：
+  - S2-3：**强制脱敏 + 帧绑定断言**。args/output 出 SSE 前一律过 `redact_sensitive_text(force=True)`；每请求的进度帧打上 run 绑定标识，写出侧断言「帧只投本请求」，跨请求即降级为只发工具名 + 状态。
+  - S2-4：**补子容器身份校验 + 钉语义**，**不改路由**。转发载荷带 `target_profile`，子容器按自身身份校验、不匹配即显式拒绝；把「群聊表情投给反应者自己的会话」写成显式决策并用用例钉住。
+- **方案**：
+  - 脱敏统一走 `agent.redact.redact_sensitive_text(force=True)` —— 复用日志那套模式表，而不是另造一套；`force=True` 是 `agent/redact.py` docstring 明写的「must never return raw secrets regardless of the user's global logging redaction preference」边界档，因此**不受** `security.redact_secrets: false` 影响。新增 `_redact_for_sse()` / `_redact_args_for_sse()`（递归到 dict/list/tuple 内的字符串）/ `_redact_result_for_sse()`。
+  - **顺序是逻辑的一部分**：先在**值的层面**脱敏再截断。反过来会留下 `…ghp_abc` 这样的密钥碎片，而碎片一旦被截断就短到模式表认不出、dict 级兜底也救不回来（完整密钥两种顺序都留不下，差别只在这段碎片 —— 用例只钉这一段，不夸大）。
+  - **脱敏不可用即拒绝出网**：`_redact_for_sse()` 取不到脱敏器时返回占位符而非原文，并 `logger.error` 一次。这是出口边界，「无法确认」不能静默降级成「原样发出」。
+  - 帧绑定用**三元素元组** `("__tool_progress__", token, payload)`：token 走队列元组、**不进 payload** —— payload 会被原样序列化上网，而这条断言是内部契约，消费方既不需要也不该解析它。`_tool_frame_is_ours()` 对**无 token 的旧二元组**与**token 不匹配**一律返回假（fail-closed），写出侧把这类帧降级成 `{tool, toolCallId, status}`（`_stripped_tool_frame`）而不是丢弃 —— 表情/工具生命周期 UI 不能因为一次越界就消失。chat-completions 与 Responses 两条 SSE 通道共用同一套。
+  - S2-4 的校验放在**子容器入口**、与业务解耦：`owner/feishu/profile_routing.py` 新增 `container_profile_identity()` 与 `verify_inbound_target_profile(body)`；发送侧 `_forward_to_profile_container` / `_forward_card_action_sync` 带 `TARGET_PROFILE_KEY`；两个 doorway（`/v1/feishu/inbound`、`/v1/feishu/card-actions`）在鉴权后立即校验，不匹配返回 **409 `profile_mismatch`** 并点名两侧 profile。
+  - **校验对失败刻意不对称**：两侧都识别出来且不等 ⇒ **拒绝**；`target_profile` 缺失（旧发送方）或自身身份不可判定 ⇒ **接受 + 告警一次**。后两种若一律拒绝，会把一次版本错配或一个没打标的容器变成**整个多租户路由全部不可用** —— 那比它要防的误投更糟。API key 仍是鉴权边界，这条是纵深。
+  - **自身身份不猜**：`container_profile_identity()` 只读 `HERMES_PROFILE` env 与 `user_routing.container_profile` 配置，**不**回落到「当前 profile 名 / `default`」。这个值决定**是否拒绝**流量，猜「default」会在真实 profile 是别的名字时把所有正确寻址的事件全拒掉。
+- **未闭合的边界（显式记录）**：
+  - 帧绑定断言保护的是**本进程内**的投递对象。会话 id 可被调用方用 `X-Hermes-Session-Id` 指定并加入他人会话（只认 API key），这是上游既有模型，本条未动（同 §16.4 / §16.5 的取舍）。
+  - S2-4 的校验挡的是「主网关**寻址错了**」这一类配置漂移；容器自身身份没配出来时该检查自动让行（上面那条不对称规则），残余风险 = 一个没打标容器仍会接受任何寻址。
+  - 群聊 per-user 路由的语义张力本身没解：群是共享状态，而 `user_profile_routes` 是按人分的。本条只把「表情按反应者解析」记档为决策，没有改这个模型。
+- **涉及文件**：`gateway/platforms/api_server.py`（`_redact_for_sse` / `_redact_args_for_sse` / `_redact_nested_for_sse` / `_redact_result_for_sse` / `_bind_tool_frame` / `_tool_frame_is_ours` / `_stripped_tool_frame` / `_owner_inbound_profile_rejection` / `_profile_mismatch_response` + 两处 clip 助手 + 两条 SSE 通道的产出与写出点 + `/v1/runs` 的 `_tool_progress` + 两个 feishu doorway）、`owner/feishu/profile_routing.py`（`TARGET_PROFILE_KEY` / `container_profile_identity` / `verify_inbound_target_profile` / `reset_ownership_notices` + 两处转发载荷）、`plugins/platforms/feishu/adapter.py`（reaction 的决策记录）、`tests/gateway/test_api_server_tool_progress_egress.py`（新增 18 例）、`tests/owner/test_feishu_profile_transport.py`（+14 例）
+- **侵入类型**：官方文件薄胶水（api_server 的出口加固函数与 8 处调用点；adapter 仅注释）
+- **验证**：新增 32 例 + **变异验证 11 条全部失败** —— A1 参数值先截断后脱敏 → 1 例 / A2 output 不脱敏 → 3 例 / A3 label 不脱敏 → 1 例 / A4 帧不校验 token → 2 例 / A5 脱敏器失败时放行原文 → 1 例 / A6 Responses 的 arguments 不脱敏 → 1 例 / B1 归属校验恒不拒绝 → 2 例 / B2 身份不可判定时猜 `default` → 2 例 / B3 发送侧不带 `target_profile` → 1 例 / B4 入口不校验 → 1 例 / B5 决策记录被抹掉 → 1 例。其中 A1 与 A6 的守卫**一度测不出来**：A1 被 dict 级兜底遮蔽（断言完整密钥时两种顺序等价），A6 的变异模式同时命中相邻字典。A1 的解法是把断言下沉到**密钥碎片**（`test_redaction_precedes_the_per_value_cut` 断言 `"ghp_abc"` 不出现），A6 的解法是给变异脚本加**命中数期望**并收窄范围。两条已沉淀为 skill 第 23–24 条。
+- **未纳入**：`/api/sessions/{id}` 的归属模型（上游既有设计）；SSE 扇出逻辑本身（**不在本仓**，无法核实）；群聊 per-user 路由模型的改造；`tool.progress` 对「能力型工具只发摘要」的收紧（用户选定只做强制脱敏，避免改变前端可见的工具参数）
+- **Commit**：`6b80b565f4`
+
+---
+
 ## 附录 A：owner/ 模块职责索引
 
 | 路径 | 职责 | 侵入官方文件 |
@@ -1730,7 +1762,7 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 | `owner/commands/providers.py` | /providers plugin 斜杠命令实现 | owner-extensions plugin |
 | `owner/cron/` | cron session 隔离 + restart scrub + run_job hook + approval helper | cron/* + gateway/run.py |
 | `owner/diff_card/` | diff 卡片平台分发（飞书/QQ） | feishu/adapter.py |
-| `owner/feishu/` | 飞书深度定制（含 queue_card / skill_approval_card 等）；另承载 API Server 侧 `resolve_api_identity_route` / `is_api_identity_whitelisted`（§15.1、§15.5，复用 `profile_endpoints`） | feishu/adapter.py（64+ 处标记）、gateway/platforms/api_server.py |
+| `owner/feishu/` | 飞书深度定制（含 queue_card / skill_approval_card 等）；另承载 API Server 侧 `resolve_api_identity_route` / `is_api_identity_whitelisted`（§15.1、§15.5，复用 `profile_endpoints`）、**子容器入口归属校验**（§16.6：`container_profile_identity()` 只认 `HERMES_PROFILE` / `user_routing.container_profile` 且**不猜默认值**；`verify_inbound_target_profile()` 对「两侧可识别且不等」拒绝、对「无法判定」放行并告警一次） | feishu/adapter.py（64+ 处标记）、gateway/platforms/api_server.py |
 | `owner/gateway/` | inbound_context + hygiene_compression_notice + steer_vision + **ldap_auth**（LDAP bind 认证门：决策表 6 态 / 72h 正缓存 + 10s 负缓存 / RFC4514 转义，§15.2–§15.3；**§15.8 起 `enforce=seen` 为 `always` 的 fail-closed 别名**，`_seen_logins` 仅作诊断；**§15.9 起带密码但无法验证默认拒绝（503）**，`fail_open_on_error` 为显式 opt-in；**§15.7 新增路由接线状态诊断**） | gateway/run.py、gateway/platforms/api_server.py |
 | `owner/gateway/session_salt.py` | API 会话 id 派生用的服务端盐（优先级 env > config > `<HERMES_HOME>/api_session_salt`；生成档 32 字节 `token_urlsafe`、原子写 0600、跨重启稳定；落盘失败降级为每进程盐并告警一次，§16.5）；另提供来源归因 `session_salt_source()` | gateway/platforms/api_server.py（`_owner_session_salt` 薄委托 + `_derive_chat_session_id` 改 HMAC） |
 | `owner/patches/` | runtime patch（OpenViking recall + memory synthetic guard + pool base_url override + **queue_cancel** + **file_binary_detection**） | owner-extensions plugin / hermes_cli/runtime_provider.py |
@@ -1755,13 +1787,13 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 | 文件 | 侵入内容 | owner/ 对应模块 | 相关 commit |
 |------|----------|-----------------|-------------|
 | `gateway/run.py` | cron env scrub ×3、executor-shutdown、inbound context、hygiene notice、auto-card、per-chat display、chained quick command、steer vision enrichment（§7.18）、**stale-run cancel（§7.23：/stop 后跳过提升的孤儿轮次补硬中断）** | owner/cron/、owner/gateway/、owner/feishu/、owner/display_overrides.py、owner/gateway/steer_vision.py | 几乎所有 §11/§17 commit |
-| `plugins/platforms/feishu/adapter.py` | 64+ 处 `[owner]` 标记：approval/auto_card/bot_menu/clarify/diff_card/model_picker/profile_routing/resume_card/sender_name/early-typing/**skill_approval_gate** / **queue_card** 委托；`_mentions_self` 不再把 `@_all` 当 @机器人（§4.14）；**merge_forward 二次拉取渲染**（§4.15）；`send_card` 内补 `hermes_profile` 标签（§4.1）；`_finalize_send_result` 全路径 message_id 日志（§7.21） | owner/feishu/*（含 skill_approval_card、queue_card、card_sender） | §4.2/§5.3-5.7/§17.1/§3.11/§4.1/§4.11/§4.14/§4.15/§7.21 |
+| `plugins/platforms/feishu/adapter.py` | 64+ 处 `[owner]` 标记：approval/auto_card/bot_menu/clarify/diff_card/model_picker/profile_routing/resume_card/sender_name/early-typing/**skill_approval_gate** / **queue_card** 委托；`_mentions_self` 不再把 `@_all` 当 @机器人（§4.14）；**merge_forward 二次拉取渲染**（§4.15）；`send_card` 内补 `hermes_profile` 标签（§4.1）；`_finalize_send_result` 全路径 message_id 日志（§7.21）；**reaction 归属决策记录**（§16.6，仅注释：群聊表情按反应者解析属已接受决策，钉在用例上） | owner/feishu/*（含 skill_approval_card、queue_card、card_sender） | §4.2/§5.3-5.7/§17.1/§3.11/§4.1/§4.11/§4.14/§4.15/§7.21/§16.6 |
 | `agent/conversation_loop.py` | MoA 注入（CR-005 已改为独立 message）、content-filter fallback、adaptive backoff、thinking-timeout、attribution 重建、tool_call_id 胶水 | owner/attribution.py、owner/api_error_hints.py | a6dcd6ed8、9a05e50b4、362304bc8 |
 | `tools/approval.py` | home-prefix fold（CR-001 修复）、skill script 自动审批（3 处委托）、patch.yaml allowlist 合并、cron active helper | owner/approval/、owner/patch_config.py、owner/cron/approval_helper.py | 82fe8c962、5dd9580b4、99a374f64 |
 | `gateway/platforms/base.py` | per-profile cache roots、SendResult rotate/retry_after、chained quick command（`[owner-patch]`）、progress dedup code-fence 守卫 | — | 1d908072a、2be0af638 |
 | `tools/cronjob_tools.py` | owner/scripts allowlist（mtime-based）、cron job args 三处 `[owner-patch]` | — | 8a8f42455、3163d17e8、890869693 |
 | `cron/jobs.py` / `cron/scheduler.py` | cron job args `[owner-patch]` 参数 normalize + map | — | 3163d17e8 |
-| `gateway/platforms/api_server.py` | identity routing 中间件（`X-Hermes-Identity` → 子 profile 反代，§15.1）、LDAP bind 二次认证门 + 三态 401 + **503（`ldap_backend_unavailable`，§15.9）**（§15.2–§15.3）、转发头剥离 + SSE 逐 chunk 透传（§15.4）、`GET /v1/ldap/identity/{identity}/access` + identity_whitelist 短路（§15.5）、finish chunk effective `session_id`（§15.6）、**dormant 状态显式化**（§15.7：中间件 `route is None` 分支区分未接线/未配置 + 端点响应 `routing_dormant` / `routing_keys_present`）、**认证门前移**（§15.10：`_owner_identity_gate_rejection` 独立步骤，白名单 / 已路由 / 未知身份一律先过门）、`GET /v1/media/{id}` + `hermes.files`（§16.1）、`ApiMediaStore.from_config()`（§16.2）、`tool.progress` 字段扩展（§16.3）、**产物下载归属断言 + 「未声明即放行」决策**（§16.4）、**会话 id 派生加服务端盐 + 归属摘要刻意不加盐**（§16.5：`_owner_session_salt` 薄委托 + `_derive_chat_session_id` 改 HMAC） | owner/gateway/ldap_auth.py、owner/feishu/profile_routing.py、owner/gateway/session_salt.py、gateway/platforms/api_server_media.py | 6177923b26、531508e317、311f553550、4b6d187a2b、b14892be7c、8d42e4c199、3d9a9ceed4、943b6bf1ac、9df4372591、9f453c51e1、6613ac2146、571ba8c937、0925bdf088、a622691915 |
+| `gateway/platforms/api_server.py` | identity routing 中间件（`X-Hermes-Identity` → 子 profile 反代，§15.1）、LDAP bind 二次认证门 + 三态 401 + **503（`ldap_backend_unavailable`，§15.9）**（§15.2–§15.3）、转发头剥离 + SSE 逐 chunk 透传（§15.4）、`GET /v1/ldap/identity/{identity}/access` + identity_whitelist 短路（§15.5）、finish chunk effective `session_id`（§15.6）、**dormant 状态显式化**（§15.7：中间件 `route is None` 分支区分未接线/未配置 + 端点响应 `routing_dormant` / `routing_keys_present`）、**认证门前移**（§15.10：`_owner_identity_gate_rejection` 独立步骤，白名单 / 已路由 / 未知身份一律先过门）、`GET /v1/media/{id}` + `hermes.files`（§16.1）、`ApiMediaStore.from_config()`（§16.2）、`tool.progress` 字段扩展（§16.3）、**产物下载归属断言 + 「未声明即放行」决策**（§16.4）、**会话 id 派生加服务端盐 + 归属摘要刻意不加盐**（§16.5：`_owner_session_salt` 薄委托 + `_derive_chat_session_id` 改 HMAC）、**`tool.progress` 出口强制脱敏 + 帧绑定断言**（§16.6：`_redact_for_sse` / `_redact_args_for_sse` / `_redact_result_for_sse` / `_bind_tool_frame` / `_tool_frame_is_ours` / `_stripped_tool_frame`，两条 SSE 通道的产出与写出点 + `/v1/runs` 的 `_tool_progress`）、**子容器入口归属校验**（§16.6：`_owner_inbound_profile_rejection` / `_profile_mismatch_response`，两个 feishu doorway 不匹配返 409 `profile_mismatch`） | owner/gateway/ldap_auth.py、owner/feishu/profile_routing.py、owner/gateway/session_salt.py、gateway/platforms/api_server_media.py | 6177923b26、531508e317、311f553550、4b6d187a2b、b14892be7c、8d42e4c199、3d9a9ceed4、943b6bf1ac、9df4372591、9f453c51e1、6613ac2146、571ba8c937、0925bdf088、a622691915、6b80b565f4 |
 
 ### B.2 中度侵入（薄胶水 + 列扩展，sync 冲突中）
 
@@ -1881,6 +1913,18 @@ _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请先�
 ---
 
 ## 附录 E：变更日志
+
+### 2026-09-28：新增 §16.6 `tool.progress` 出口强制脱敏 + 帧绑定断言；飞书转发补子容器归属校验（T2-9）
+
+- **新建正文**：**§16.6**：`6b80b565f4`（`gateway/platforms/api_server.py` 新增出口脱敏与帧绑定助手 `_redact_for_sse` / `_redact_args_for_sse` / `_redact_nested_for_sse` / `_redact_result_for_sse` / `_bind_tool_frame` / `_tool_frame_is_ours` / `_stripped_tool_frame` + 新增 `_owner_inbound_profile_rejection` / `_profile_mismatch_response`，改两处 clip 助手、两条 SSE 通道的产出与写出点、`/v1/runs` 的 `_tool_progress`、两个 feishu doorway；`owner/feishu/profile_routing.py` 新增 `container_profile_identity` / `verify_inbound_target_profile` / `reset_ownership_notices` 与 `TARGET_PROFILE_KEY` 载荷；`plugins/platforms/feishu/adapter.py` reaction 归属决策记录（仅注释）；`tests/gateway/test_api_server_tool_progress_egress.py` 新增 18 例；`tests/owner/test_feishu_profile_transport.py` 新增 14 例）
+- **类型**：安全修复（出口泄密）+ 官方文件薄胶水 + 已接受决策钉在用例上
+- **决策**（2026-09-28 用户确认）：S2-3 **强制脱敏 + 帧绑定断言**；S2-4 **补子容器身份校验 + 钉语义，路由行为不变**
+- **与审查原文的分歧（两处）**：① 审查称「隔离完全依赖『SSE 只回发起者』这一隐式前提」—— 该前提在仓内**成立**（`_stream_q` 按请求新建、回调闭包绑死），问题不在隔离被破坏而在**出口本身原样放行**，故 P2 评级合理。② 审查给 S2-4 的修法（维护 `message_id → origin profile`，出站落库）**不成立** —— `d74762a04e` 落在发送方容器自己 `state.db` 的 `delivery_obligations.platform_message_id` 且无 profile 列，主网关与子容器是不同 `HERMES_HOME`；即便同类可用，7 天保留期 + 行数上限 + 开关 + best-effort 写入也会让旧消息上的表情被误丢
+- **现网拓扑实测**：群聊下 `resolve_profile_route` 跳过白名单 ⇒ 全员同容器（去向一致），容器内 `group_sessions_per_user` 默认 True ⇒ 表情落在反应者自己的会话 ⇒ **当前拓扑下不存在跨边界误投**；S2-4 维持 P2，工作台把 T2-9 升 P1 的叠加理由只在 `tool.progress` 那一半成立
+- **实质收获**：遗漏通路比原记录多一条 —— `label` 由 `build_tool_preview` 从**原始** args 派生，只脱敏 `args` 仍会从 label 漏出密钥；另确认「先脱敏再截断」的顺序是逻辑的一部分（反过来留下 `…ghp_abc` 碎片，模式表与 dict 级兜底都救不回来）
+- **验证**：新增 32 例 + 变异验证 11 条**全部咬住**；定向回归 12 失败 / 1090 通过（12 例经 `git stash` 对照证实为既有失败）；健康检查 6 passed / 1 warning（4 处 merge 残留死标记，属既有，T2-11 范围）。A1 与 A6 的守卫一度测不出来（A1 被 dict 级兜底遮蔽、A6 变异模式同时命中相邻字典），解法分别是把断言下沉到密钥碎片、给变异脚本加命中数期望并收窄范围，两条已沉淀为 skill 第 23–24 条
+- **未闭合边界**：帧绑定只保护**本进程内**的投递对象（会话 id 仍可由调用方用 `X-Hermes-Session-Id` 指定）；容器自身身份不可判定时校验自动让行；群聊 per-user 路由的语义张力未解
+- **未纳入**：SSE 扇出逻辑本身（**不在本仓**，无法核实）；`/api/sessions/{id}` 归属模型（上游既有设计）；群聊 per-user 路由模型的改造；`tool.progress` 对「能力型工具只发摘要」的收紧
 
 ### 2026-09-28：新增 §16.5 会话 id 派生加服务端盐 + 归属摘要刻意不加盐（T2-8，含两处连带修复）
 
