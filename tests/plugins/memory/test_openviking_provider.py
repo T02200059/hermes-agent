@@ -398,7 +398,6 @@ def test_post_setup_create_remote_user_profile_can_mirror_to_openviking_store(tm
         _prompt_from_values({
             "OpenViking server URL": "https://openviking.example",
             "OpenViking user API key": "user-secret",
-            "Hermes peer ID in OpenViking": "hermes",
             "OpenViking profile name": "VPS",
         }),
     )
@@ -408,10 +407,12 @@ def test_post_setup_create_remote_user_profile_can_mirror_to_openviking_store(tm
 
     mirrored_path = tmp_path / ".openviking" / "ovcli.conf.VPS"
     assert mirrored_path.exists()
+    # No peer is configured: upstream's "use user memory by default"
+    # (823bcc887a) removed the peer-ID prompt, so the mirrored profile must
+    # NOT carry an ``actor_peer_id``.
     assert json.loads(mirrored_path.read_text(encoding="utf-8")) == {
         "url": "https://openviking.example",
         "api_key": "user-secret",
-        "actor_peer_id": "hermes",
     }
     assert config["memory"]["provider"] == "openviking"
     assert config["memory"]["openviking"] == {
@@ -440,7 +441,6 @@ def test_post_setup_create_remote_user_can_keep_hermes_only(tmp_path, monkeypatc
         _prompt_from_values({
             "OpenViking server URL": "https://openviking.example",
             "OpenViking user API key": "user-secret",
-            "Hermes peer ID in OpenViking": "agent",
         }),
     )
     config = {"memory": {}}
@@ -452,7 +452,9 @@ def test_post_setup_create_remote_user_can_keep_hermes_only(tmp_path, monkeypatc
     env_text = (hermes_home / ".env").read_text(encoding="utf-8")
     assert "OPENVIKING_ENDPOINT=https://openviking.example" in env_text
     assert "OPENVIKING_API_KEY=user-secret" in env_text
-    assert "OPENVIKING_AGENT=agent" in env_text
+    # No peer configured → no OPENVIKING_AGENT (upstream 823bcc887a dropped
+    # the peer-ID prompt; a peer is opt-in via config.yaml / env now).
+    assert "OPENVIKING_AGENT" not in env_text
     assert not (tmp_path / "home" / ".openviking").exists()
 
 
@@ -484,7 +486,6 @@ def test_post_setup_create_openviking_service_validates_after_api_key(tmp_path, 
         _prompt_from_values(
             {
                 "OpenViking API key": "service-secret",
-                "Hermes peer ID in OpenViking": "agent",
             },
             forbidden={"OpenViking server URL", "OpenViking user API key", "OpenViking root API key"},
         ),
@@ -500,7 +501,7 @@ def test_post_setup_create_openviking_service_validates_after_api_key(tmp_path, 
             "root_api_key": "",
             "account": "",
             "user": "",
-            "agent": "agent",
+            "agent": "",
             "api_key_type": "user",
         },
         True,
@@ -508,7 +509,7 @@ def test_post_setup_create_openviking_service_validates_after_api_key(tmp_path, 
     env_text = (hermes_home / ".env").read_text(encoding="utf-8")
     assert "OPENVIKING_ENDPOINT=https://api.vikingdb.cn-beijing.volces.com/openviking" in env_text
     assert "OPENVIKING_API_KEY=service-secret" in env_text
-    assert "OPENVIKING_AGENT=agent" in env_text
+    assert "OPENVIKING_AGENT" not in env_text
 
 
 def test_post_setup_remote_blank_api_key_cancels_without_saving(tmp_path, monkeypatch):
@@ -569,7 +570,6 @@ def test_post_setup_user_key_path_can_route_detected_root_key_to_root_setup(tmp_
             "OpenViking user API key": "root-secret",
             "OpenViking account": "acct",
             "OpenViking user": "alice",
-            "Hermes peer ID in OpenViking": "agent",
         }
         return values.get(label, default or "")
 
@@ -578,12 +578,13 @@ def test_post_setup_user_key_path_can_route_detected_root_key_to_root_setup(tmp_
 
     OpenVikingMemoryProvider().post_setup(str(hermes_home), config)
 
-    assert prompt_events.count("Hermes peer ID in OpenViking") == 1
+    assert prompt_events, "setup 应当提示至少一项连接参数"
+    assert "Hermes peer ID in OpenViking" not in prompt_events
     env_text = (hermes_home / ".env").read_text(encoding="utf-8")
     assert "OPENVIKING_API_KEY=root-secret" in env_text
     assert "OPENVIKING_ACCOUNT=acct" in env_text
     assert "OPENVIKING_USER=alice" in env_text
-    assert "OPENVIKING_AGENT=agent" in env_text
+    assert "OPENVIKING_AGENT" not in env_text
 
 
 def test_post_setup_root_key_path_can_route_detected_user_key_to_user_setup(tmp_path, monkeypatch):
@@ -609,7 +610,6 @@ def test_post_setup_root_key_path_can_route_detected_user_key_to_user_setup(tmp_
             {
                 "OpenViking server URL": "https://openviking.example",
                 "OpenViking root API key": "user-secret",
-                "Hermes peer ID in OpenViking": "agent",
             },
             forbidden={"OpenViking user API key", "OpenViking account", "OpenViking user"},
         ),
@@ -620,7 +620,7 @@ def test_post_setup_root_key_path_can_route_detected_user_key_to_user_setup(tmp_
 
     env_text = (hermes_home / ".env").read_text(encoding="utf-8")
     assert "OPENVIKING_API_KEY=user-secret" in env_text
-    assert "OPENVIKING_AGENT=agent" in env_text
+    assert "OPENVIKING_AGENT" not in env_text
     assert "OPENVIKING_ACCOUNT" not in env_text
     assert "OPENVIKING_USER" not in env_text
 
@@ -645,7 +645,6 @@ def test_manual_root_key_flow_prints_validation_progress(monkeypatch, capsys):
             "OpenViking root API key": "root-secret",
             "OpenViking account": "acct",
             "OpenViking user": "alice",
-            "Hermes peer ID in OpenViking": "agent",
         }),
         lambda *args, **kwargs: next(choices),
         -1,
@@ -660,13 +659,37 @@ def test_manual_root_key_flow_prints_validation_progress(monkeypatch, capsys):
 
 
 def test_start_local_openviking_server_disabled_by_default():
-    """Auto-start is disabled - OpenViking server is managed externally via Docker."""
-    started, message = openviking_module._start_local_openviking_server("http://127.0.0.1:1934")
+    """[owner] Auto-start is disabled — the OpenViking server is managed externally.
 
-    assert started is False
+    Owner design decision (6a9383d38d, 2026-07-10): the bare-Python
+    ``openviking-server`` (without hotfix patches) raced the Docker container
+    for port 1933 on gateway restart and hijacked it. The function is now a
+    deliberate early-return stub. This test is the *positive* assertion of that
+    divergence; the upstream auto-start tests below are marked xfail for the
+    same reason.
+    """
+    state, message = openviking_module._start_local_openviking_server("http://127.0.0.1:1934")
+
+    assert state == openviking_module._LOCAL_SERVER_FAILED
     assert "disabled" in message.lower()
 
 
+# ─────────────────────────────────────────────────────────────────────────
+# [owner] 预期差异：以下 4 例来自上游，断言「本地自启」这一功能本身存在。
+# 该功能已被 owner 有意移除（6a9383d38d：防止裸 Python openviking-server 与
+# Docker 容器抢端口 1933 并劫持）。保留用例并把断言改为 xfail(strict=True)，
+# 而不是删除——strict 语义保证：一旦有人恢复本地自启，这里会因 XPASS 而
+# 失败，从而强制重新审视该决策。
+# 设计记录：owner/docs/design/openviking-local-autostart-disabled/README.md
+# ─────────────────────────────────────────────────────────────────────────
+
+_OWNER_LOCAL_AUTOSTART_XFAIL = pytest.mark.xfail(
+    strict=True,
+    reason="[owner] 本地自启已禁用（6a9383d38d）—— server 由 Docker 外部管理",
+)
+
+
+@_OWNER_LOCAL_AUTOSTART_XFAIL
 def test_start_local_openviking_server_strips_pythonpath_from_child_env(monkeypatch):
     """The spawned server must not inherit Hermes's PYTHONPATH (#78153).
 
@@ -696,6 +719,7 @@ def test_start_local_openviking_server_strips_pythonpath_from_child_env(monkeypa
     assert child_env.get("HERMES_PROFILE") == "test-profile"
 
 
+@_OWNER_LOCAL_AUTOSTART_XFAIL
 def test_start_local_openviking_server_does_not_spawn_when_port_already_open(monkeypatch):
     """A live listener means a second server would just die on DataDirectoryLocked."""
     probed = []
@@ -726,6 +750,7 @@ def test_start_local_openviking_server_does_not_spawn_when_port_already_open(mon
     assert probed == [("127.0.0.1", 1934)]
 
 
+@_OWNER_LOCAL_AUTOSTART_XFAIL
 def test_start_local_openviking_server_reports_occupied_port_without_cli_on_path(monkeypatch):
     """The port probe outranks PATH but never claims the listener is OpenViking."""
     monkeypatch.setattr(openviking_module, "_local_openviking_port_is_open", lambda host, port: True)
@@ -747,6 +772,7 @@ def test_start_local_openviking_server_reports_occupied_port_without_cli_on_path
     assert "unidentified process" in message
 
 
+@_OWNER_LOCAL_AUTOSTART_XFAIL
 def test_start_local_openviking_server_rejects_unparseable_url_before_probing(monkeypatch):
     monkeypatch.setattr(
         openviking_module,

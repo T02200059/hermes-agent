@@ -223,10 +223,13 @@ def test_cron_run_job_sets_cron_contextvar_on_real_agent_path(monkeypatch, tmp_p
         def __init__(self, **kwargs):
             seen["agent_kwargs"] = kwargs
 
-        def run_conversation(self, prompt):
+        # [owner] 上游 3155512347 起 cron 调度器会传入 task_id=（scheduler.py
+        # 的 _cron_task_id），桩必须同步签名，否则 run_job 直接 TypeError。
+        def run_conversation(self, prompt, task_id=None):
             from tools.approval import _is_cron_session
 
             seen["prompt"] = prompt
+            seen["task_id"] = task_id
             seen["cron_context"] = get_session_env("HERMES_CRON_SESSION")
             seen["approval_sees_cron"] = _is_cron_session()
             return {
@@ -290,7 +293,7 @@ def test_cron_run_job_sets_cron_contextvar_on_real_agent_path(monkeypatch, tmp_p
     monkeypatch.setattr(
         scheduler,
         "_build_job_prompt",
-        lambda job, prerun_script=None: f"prompt for {job['id']}",
+        lambda job, prerun_script=None, extra_prompt=None: f"prompt for {job['id']}",
     )
     monkeypatch.setattr(scheduler, "_resolve_delivery_target", lambda _job: None)
     monkeypatch.setattr(scheduler, "_guard_job_credential_exfil", lambda _job: None)
@@ -313,6 +316,14 @@ def test_cron_run_job_sets_cron_contextvar_on_real_agent_path(monkeypatch, tmp_p
     assert error is None
     assert seen["cron_context"] == "1"
     assert seen["approval_sees_cron"] is True
+    # 契约：cron 触发必须把 ``cron:{job_id}:{execution_id}`` 形式的 task_id 透传给
+    # agent（供用量审计归因 + 会话 CWD 隔离）。未提供 execution_id 时尾部为随机
+    # uuid4 hex，故只锁定前缀与分段结构，不锁死具体取值。
+    _task_id = seen["task_id"]
+    assert isinstance(_task_id, str)
+    _prefix, _job_part, _exec_part = _task_id.split(":", 2)
+    assert (_prefix, _job_part) == ("cron", "owner-contract-cron")
+    assert _exec_part
     assert seen["agent_kwargs"]["platform"] == "cron"
     assert get_session_env("HERMES_CRON_SESSION") == ""
 
