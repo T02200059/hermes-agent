@@ -1733,6 +1733,27 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 
 ---
 
+### 16.7 `output_guard` 的复读判据由 O(n²) 正则改为线性扫描（语义不变）
+
+- **背景**（T2-10 / 代码审查 L1）：v2 生成退化扫描里的复读判据写作 `_WORD_REPEAT = re.compile(r"(\S+)( \1){5,}")`，调用点 `_degenerate_scan()`。
+- **实测比原记录更重**：审查记录「4000→175ms / 8000→692ms / 16000→2745ms，`_MAX_CHARS` 按 O(n²) 外推约 20s」—— 其中 2745ms 实为 **16000 字符**的实测值，被当成了 40000。本机实测（各取 3 次最小值）：4000→185ms、8000→735ms、16000→**2 962ms**、40000→**18 735ms**、50000（= `_MAX_CHARS`）→**30 360ms**，翻倍即 ×4。
+- **为什么它是真问题**：该判定位于每轮生成收尾的**同步阻塞链**上（`agent/turn_finalizer.py` 的 `transform_llm_output` → `analyze`，且已被前移到 `_persist_session` 之前），而触发输入是**完全合法的正常中文长回复**（判定结果为 `verdict=ok`）⇒ 最坏会把落库、微压缩与最终投递一起拖住半分钟。这与模块 docstring 自己写的契约「纯 stdlib、**O(n)**、微秒~毫秒级，不影响回复延迟」直接矛盾。
+- **为什么不用「量词加上界」**：审查给的二选一里 `(\S{1,64})` 一行即可、393× 提速，但它**不是语义等价** —— 重复单元长于 64 字符时不再命中（实测 64 字符命中、65 与 200 字符双双漏判），且该形态下 `dirty_run` 与 `comp_belt` 都不会补位（`comp_belt` 要求 `sentence_count ≥ 10`，而这种重复的句子数只有 1）。故采用**线性扫描 + 完整复刻原语义**（2026-09-28 用户决策）。
+- **等价性怎么证**：把**被替换掉的原正则**原样留在测试里作 oracle，逐例比对「命中与否 + **最左匹配起点**」，而不只是命中与否。开发期扫到 **140 536 例零不一致**（穷举 `{a,b,空格,Tab,换行}` 长度 ≤ 7 的全部串 97 656 例 + 随机语料 40 000 例（含 NBSP 与全角空格）+ 结构化 2 880 例）；**提交进仓的用例**保留约 22 400 例（穷举长度 ≤ 6 的 19 531 例 + 随机 2 000 例 + 结构化 882 例），run 时间 0.7s。
+- **原语义里两处未写档的既成行为**（照旧保留，均已写进函数 docstring 并钉了用例）：
+  - 重复单元只能是「某个非空白 run 的、从起点到 run 末的**尾串**」⇒ 正则**可以从 token 中间起步**（`Zabcde` + 5×`abcde` 在偏移 1 处命中，`first_offense=1`）。
+  - run 的边界是**任意**空白（Tab / 换行 / NBSP 都算），而重复段之间的分隔符必须是**字面单空格** —— 两者必须分开建模，否则 `a\tb a\tb …` 会被线性版误判命中（正则不命中：`\S+` 只能匹配到 `a`，其后不是空格）。
+- **方案**：`_find_word_repeat()` 只穷举两种起点形态（run 起点 / run 内部，后者由「第 2 次出现后必须跟空格 ⇒ 它本身是完整 token ⇒ 单元长度唯一确定」推出），每种只需一次常数比较 ⇒ 整体 O(n)。助手 `_repeat_after` 只校验「单空格 + unit」而**不**要求 unit 之后也是空白（反向引用是字面串，可以落在更长 token 的前缀上）；`_token_at` 按 `_WS_RE` 取 run。判定语义、次数阈值（6 次）、信号名 `word_repeat` **全部不变**。
+- **效果**：50000 字符 **30 360ms → 0.26ms**；端到端 `analyze()` 于 50000 字符为 4.8ms（余量来自 `dirty_run` 与 zlib）。
+- **同类普查**：`owner/` 树内 8 处 `re.compile` 逐个核对 —— **仅此一处使用反向引用**，故「无上界量词 + 反向引用」这一二次回溯组合在本仓仅存在于此、已随本条修掉；`stream_guard._MARKER_RE` 是固定短语的择一，无反向引用、无嵌套量词，不构成 ReDoS。无需其他改动。
+- **涉及文件**：`owner/owner-extensions/output_guard/__init__.py`（新增 `_find_word_repeat` / `_repeat_after` / `_token_at` / `_WS_RE` 与 `_WORD_REPEAT_MIN_RUNS` / `_WORD_REPEAT_SEP`，删去 `_WORD_REPEAT` 正则；`_degenerate_scan` 改调用点；模块 docstring 与常量注释记录成因）、`tests/owner/test_output_guard.py`（+8 例）
+- **侵入类型**：owner-extensions 插件（**零官方侵入**）
+- **验证**：新增 8 例；**变异验证 9 条全部咬住** —— M1 退回原正则 → 2 例（时间上界 30.43s + 端到端 30.40s）/ M2 收窄为 `(\S{1,64})` → 2 例（差分 + >64 字符 token）/ M3 去掉尾串形态 → 1 例 / M4 给反向引用补尾随边界要求 → 差分 1 例 / M5 run 边界只认空格 → 差分 1 例 / M6 次数下限 6→5 → 1 例 / M7 重新引入无上界正则常量 → 1 例 / M8 抹掉 docstring 里的成因 → 1 例 / M9 段长上界判断由 `>` 收紧为 `>=` → 差分 1 例。定向回归（`tests/owner` + 3 个 `tests/gateway/test_api_server*.py`）**977 通过 / 0 失败**，父提交基线 **969 通过 / 0 失败**，`comm -23` 为空（差集恰为本轮新增的 8 例）；健康检查 **6 passed / 1 warning**（该 warning 是 merge `315551234` 的 4 条旧标记丢失，属既有，归 T2-11）。
+- **未纳入**：`_degenerate_scan` 的分块扫描（本就是 O(n)）；`stream_guard` 的正则（已核查，无反向引用）。
+- **Commit**：`958594ce6f`
+
+---
+
 ## 附录 A：owner/ 模块职责索引
 
 | 路径 | 职责 | 侵入官方文件 |
@@ -1751,7 +1772,7 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 | `owner/approval/approval_history_policy.py` | 审批历史拦截判定的结构标记策略（status / catalog key / 兜底三层 + SQL 锚点同源，§3.13） | hermes_cli/approvals_suggest.py 薄委托 |
 | `owner/feishu/skill_approval_card.py` | skill 审批自建卡 + card action 处理 | feishu/adapter.py（skill_approval_gate） |
 | `owner/owner-extensions/skill_manage_bridge/` | pre_tool_call / gateway 缓存接线 skill 审批门 | owner-extensions plugin |
-| `owner/owner-extensions/output_guard/` | transform_llm_output 复读/乱码/超长检测与折叠 | owner-extensions plugin（零官方侵入） |
+| `owner/owner-extensions/output_guard/` | transform_llm_output 复读/乱码/超长检测与折叠；复读判据 `word_repeat` 已改为**线性扫描**（§16.7：原 `(\S+)( \1){5,}` 正则对无空白长文本是 O(n²)，50 000 字符 30.4s，且位于生成收尾的同步阻塞链上） | owner-extensions plugin（零官方侵入） |
 | `owner/english_explainer/` | 英文终局回复中文解说旁白（§7.26，同 progress_explainer 形态） | owner-extensions plugin（零官方侵入） |
 | `owner/outbound_special_token_scrub.py` | 出站剥 DeepSeek BOS/EOS 泄漏（§7.27） | gateway/run.py + run_agent.py 薄胶水 |
 | `owner/progress_explainer/` | 沉默期进度旁白（§7.24） | gateway/run.py 薄胶水 |
@@ -1913,6 +1934,18 @@ _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请先�
 ---
 
 ## 附录 E：变更日志
+
+### 2026-09-28：新增 §16.7 `output_guard` 复读判据由 O(n²) 正则改为线性扫描（T2-10）
+
+- **新建正文**：**§16.7**：`958594ce6f`（`owner/owner-extensions/output_guard/__init__.py` 新增 `_find_word_repeat` / `_repeat_after` / `_token_at` / `_WS_RE` 与两个常量、删去 `_WORD_REPEAT` 正则、`_degenerate_scan` 改调用点、docstring 记录成因；`tests/owner/test_output_guard.py` 新增 8 例；`owner/docs/output-guard-design.md` 同步改写把判据写成该正则的句子）
+- **类型**：性能缺陷修复（守卫自身击穿模块的 O(n) 契约）+ 零官方侵入
+- **决策**（2026-09-28 用户确认）：审查给的二选一里选**线性扫描 + 完整复刻原语义**，而非「量词加上界」。理由：`(\S{1,64})` 逐例比对后确认**不是语义等价**（重复单元 >64 字符时漏判，且 `dirty_run` / `comp_belt` 都不会补位）
+- **实测比原记录更重**：原记录「40000→2745ms / `_MAX_CHARS` 外推约 20s」把 16000 的实测值当成了 40000；真值为 40000→18 735ms、50000→**30 360ms**（翻倍 ×4）
+- **等价性证明**：以**被替换掉的原正则**为 oracle 做差分测试，比对「命中与否 + 最左匹配起点」，开发期 140 536 例、提交进仓约 22 400 例，全部零不一致；原语义里两处**未写档的既成行为**（可从 token 中间起步；run 边界是任意空白而分隔符是字面单空格）照旧保留并钉了用例
+- **效果**：50000 字符 30 360ms → 0.26ms；端到端 `analyze()` 4.8ms
+- **同类普查**：`owner/` 树内 8 处 `re.compile` 逐个核对，反向引用仅此一处 ⇒ 该二次回溯组合在本仓不存在第二处；`stream_guard._MARKER_RE` 经核查不构成 ReDoS
+- **验证**：新增 8 例 + 变异 9 条全部咬住（含「退回原正则」→ 时间上界用例以 30.43s 失败）；定向回归 977 通过 / 0 失败、父提交基线 969 / 0、`comm -23` 为空；健康检查 6 passed / 1 warning（既有）
+- **未闭合边界**：无（本条为等价替换）；`_degenerate_scan` 的其余信号本就 O(n)
 
 ### 2026-09-28：新增 §16.6 `tool.progress` 出口强制脱敏 + 帧绑定断言；飞书转发补子容器归属校验（T2-9）
 
