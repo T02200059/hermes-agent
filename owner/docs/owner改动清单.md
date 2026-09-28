@@ -1426,7 +1426,7 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
   | `enforce` | `always` | 无密码且无有效缓存时的处置。`off` = 放行（灰度档）；`always` / `seen` = 拒绝（§15.8 起 `seen` 为 `always` 的遗留别名）；未识别取值按 `always` 处理 |
   | `cache_ttl_hours` | 72 | 正缓存窗口 |
   | `negative_cache_seconds` | 10 | 负缓存窗口 |
-  | `fail_open_on_error` | `true` | LDAP 不可达时放行 |
+  | `fail_open_on_error` | `false` | **带密码**的请求在 LDAP 不可达时的处置（§15.9）。`false` = 拒绝，返回 503 `ldap_backend_unavailable`；`true` = 显式接受认证降级。`no_config` / `ldap3_missing` 属永久性配置错误，不受此开关影响，一律拒绝 |
 
 - **接线状态**（2026-09-28 核实）：`ldap_gate` 的调用点位于 `identity_routing_middleware` 内**路由解析成功之后**（`api_server.py` 中 `route is None` 即早返回）。由于 `identity_routes` 缺键（§15.1），任何请求都解析不出路由，因此**本节的认证门在当前配置下不可达**——配置与代码均已就位，只是没有任何请求会走到它。详见 **§15.7**
 
@@ -1543,6 +1543,35 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 - **未纳入**：`fail_open_on_error` 不区分「LDAP 不可达」与「密码错误」（T2-5）；`identity_whitelist` 短路位于 LDAP gate **之前**（T2-6）
 - **Commit**：`ed0c3dfb21`
 
+### 15.9 带密码但无法验证时默认拒绝（fail-open 收窄为显式 opt-in）
+
+- **问题**（T2-5）：`fail_open_on_error` 全仓**只有一个消费点** —— `ldap_gate` 内「带密码」的 bind 分支（无密码的请求根本不调用 `_bind`，由 `enforce` 档决定，§15.8）。而该分支原本对**所有** `error_class` 一律 fail-open，实测（用真实 `ldap_gate` 路径，带**完全错误的密码**）：
+
+  | bind 侧返回 | 判定 |
+  |---|---|
+  | 明确判定密码错（`verdict=False`，无 `error_class`） | `deny_bad_credentials` ✅ |
+  | 抛 `SocketError`（LDAP 不可达） | **`allow`** |
+  | 抛 `LDAPSocketOpenError` | **`allow`** |
+  | `host` 为空（`no_config`） | **`allow`** |
+  | `ldap3` 未安装（`ldap3_missing`） | **`allow`** |
+
+  后果：请求**声明了凭据**却未被校验，而放行让「没查成」与「查过且正确」不可区分 —— 能干扰 LDAP 连通性的人（或只是等到一次抖动）即可把任意错误密码变合法，即 **DoS → 认证降级**。后两行更糟：它们是**永久性**错误，而非暂时不可达，`fail_open_on_error` 在那里从来不是一个经过权衡的选择。
+
+- **决策**（2026-09-28）：**默认翻转 + 保留开关**。理由：若把「带密码无法验证」一律改为拒绝，该开关就再没有任何作用面（见上），会退化成死配置；翻转默认值并保留语义，它才继续是一个**显式**的「可用性优先于验证」逃生口，同时默认不再降级。
+- **方案**（`6613ac2146`）：
+  - 新增判定 `DENY_BACKEND_UNAVAILABLE`；`_verdict_on_unverifiable(login, error_class)` 按成因分流：
+    - `_CONFIG_ERROR_CLASSES = {"no_config", "ldap3_missing"}` → 永久性配置错误，**无条件拒绝**并 `logger.error` 点名「这是配置错误，不是暂时不可达」。
+    - 其余（socket / timeout）→ 读 `fail_open_on_error`，**默认 `False`**；打开时 `logger.warning` 明说「未经验证即放行（显式 opt-in）」。
+  - `gateway/platforms/api_server.py`：`deny_backend_unavailable` → **503** `ldap_backend_unavailable`（`type: gateway_unavailable`）。用 503 而非 401，是因为调用方的正确动作是「稍后重试」而不是「去改密码」——把两种失败分开，也是在响应与日志两侧同时保留可归因性。
+  - `patch_feishu_profile.yaml`：`fail_open_on_error: false`，并重写说明（含「无密码请求不走此路径」「永久性配置错误不受开关影响」两点）。
+- **涉及文件**（官方树 intrude）：`gateway/platforms/api_server.py`（新增一个 verdict 的 503 映射）
+- **涉及文件**（owner 侧）：`owner/gateway/ldap_auth.py`、`owner/config/patch_feishu_profile.yaml`、`tests/owner/test_ldap_identity_auth.py`
+- **侵入类型**：薄胶水（一个 verdict 分支）
+- **验证**：新增/改写 5 例 —— `test_wrong_password_and_unverifiable_differ`（清单要求的验收标准：同一错误密码，`deny_bad_credentials` vs `deny_backend_unavailable`，两者必须不同）、`test_default_is_fail_closed_when_key_is_absent`、`test_configuration_errors_deny_even_with_fail_open_on`、`test_backend_unavailable_returns_503`（中间件层，并断言响应里**不含** `ldap_auth_failed`）、`test_ldap_down_fail_open_vs_closed`（opt-in 仍生效，且 fail-closed 时结果由 `deny_reauth_required` 改为 `deny_backend_unavailable`）。变异验证三条，均失败：暂时性错误恢复为无条件 fail-open → **4 例**；配置错误不再无条件拒绝 → 1 例；把两种失败合并回 `deny_reauth_required` → **5 例**。
+- **同类普查**（已完成，见下条发现）：认证链上其余兜底点逐个核对 —— `is_api_identity_whitelisted` 异常时返回 `False`（fail-closed ✅）；`resolve_api_identity_route` 返回 `None` → 透传（**已知且有意**，其状态已由 §15.7 显式化）；中间件 `_owner_import` 取不到模块 → 透传（架构契约，owner/ 整体缺失时的既有约定）。**但查出另一处同类缺陷**：`_load_ldap_config()` 把「配置读不到」与「未启用」压成同一个 `{}`，导致配置故障静默关闭认证门 —— 已单独立项 **T2-23**，其修复涉及共享配置加载器，需独立决策，不在本条内处理。
+- **未纳入**：`identity_whitelist` 短路位于 LDAP gate **之前**（T2-6，即白名单 = 免认证）
+- **Commit**：`6613ac2146`
+
 ---
 
 ## 十六、API Server：产物媒体与流式事件契约
@@ -1617,7 +1646,7 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 | `owner/cron/` | cron session 隔离 + restart scrub + run_job hook + approval helper | cron/* + gateway/run.py |
 | `owner/diff_card/` | diff 卡片平台分发（飞书/QQ） | feishu/adapter.py |
 | `owner/feishu/` | 飞书深度定制（含 queue_card / skill_approval_card 等）；另承载 API Server 侧 `resolve_api_identity_route` / `is_api_identity_whitelisted`（§15.1、§15.5，复用 `profile_endpoints`） | feishu/adapter.py（64+ 处标记）、gateway/platforms/api_server.py |
-| `owner/gateway/` | inbound_context + hygiene_compression_notice + steer_vision + **ldap_auth**（LDAP bind 认证门：决策表 6 态 / 72h 正缓存 + 10s 负缓存 / fail-open / RFC4514 转义，§15.2–§15.3；**§15.8 起 `enforce=seen` 为 `always` 的 fail-closed 别名**，`_seen_logins` 仅作诊断；**§15.7 新增路由接线状态诊断**） | gateway/run.py、gateway/platforms/api_server.py |
+| `owner/gateway/` | inbound_context + hygiene_compression_notice + steer_vision + **ldap_auth**（LDAP bind 认证门：决策表 6 态 / 72h 正缓存 + 10s 负缓存 / RFC4514 转义，§15.2–§15.3；**§15.8 起 `enforce=seen` 为 `always` 的 fail-closed 别名**，`_seen_logins` 仅作诊断；**§15.9 起带密码但无法验证默认拒绝（503）**，`fail_open_on_error` 为显式 opt-in；**§15.7 新增路由接线状态诊断**） | gateway/run.py、gateway/platforms/api_server.py |
 | `owner/patches/` | runtime patch（OpenViking recall + memory synthetic guard + pool base_url override + **queue_cancel** + **file_binary_detection**） | owner-extensions plugin / hermes_cli/runtime_provider.py |
 | `owner/providers/credential_helpers.py` | GitHub token 校验等 credential helper | hermes_cli/model_switch.py |
 | `owner/scripts/` | 运维脚本（备份/健康检查/汇率/todo 扫描/**HN Daily**/skill 同步/**Viking 记忆质量**/upstream_sync/周会/swagger） | — |
@@ -1646,7 +1675,7 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 | `gateway/platforms/base.py` | per-profile cache roots、SendResult rotate/retry_after、chained quick command（`[owner-patch]`）、progress dedup code-fence 守卫 | — | 1d908072a、2be0af638 |
 | `tools/cronjob_tools.py` | owner/scripts allowlist（mtime-based）、cron job args 三处 `[owner-patch]` | — | 8a8f42455、3163d17e8、890869693 |
 | `cron/jobs.py` / `cron/scheduler.py` | cron job args `[owner-patch]` 参数 normalize + map | — | 3163d17e8 |
-| `gateway/platforms/api_server.py` | identity routing 中间件（`X-Hermes-Identity` → 子 profile 反代，§15.1）、LDAP bind 二次认证门 + 三态 401（§15.2–§15.3）、转发头剥离 + SSE 逐 chunk 透传（§15.4）、`GET /v1/ldap/identity/{identity}/access` + identity_whitelist 短路（§15.5）、finish chunk effective `session_id`（§15.6）、**dormant 状态显式化**（§15.7：中间件 `route is None` 分支区分未接线/未配置 + 端点响应 `routing_dormant` / `routing_keys_present`）、`GET /v1/media/{id}` + `hermes.files`（§16.1）、`ApiMediaStore.from_config()`（§16.2）、`tool.progress` 字段扩展（§16.3） | owner/gateway/ldap_auth.py、owner/feishu/profile_routing.py、gateway/platforms/api_server_media.py | 6177923b26、531508e317、311f553550、4b6d187a2b、b14892be7c、8d42e4c199、3d9a9ceed4、943b6bf1ac、9df4372591、9f453c51e1 |
+| `gateway/platforms/api_server.py` | identity routing 中间件（`X-Hermes-Identity` → 子 profile 反代，§15.1）、LDAP bind 二次认证门 + 三态 401 + **503（`ldap_backend_unavailable`，§15.9）**（§15.2–§15.3）、转发头剥离 + SSE 逐 chunk 透传（§15.4）、`GET /v1/ldap/identity/{identity}/access` + identity_whitelist 短路（§15.5）、finish chunk effective `session_id`（§15.6）、**dormant 状态显式化**（§15.7：中间件 `route is None` 分支区分未接线/未配置 + 端点响应 `routing_dormant` / `routing_keys_present`）、`GET /v1/media/{id}` + `hermes.files`（§16.1）、`ApiMediaStore.from_config()`（§16.2）、`tool.progress` 字段扩展（§16.3） | owner/gateway/ldap_auth.py、owner/feishu/profile_routing.py、gateway/platforms/api_server_media.py | 6177923b26、531508e317、311f553550、4b6d187a2b、b14892be7c、8d42e4c199、3d9a9ceed4、943b6bf1ac、9df4372591、9f453c51e1、6613ac2146 |
 
 ### B.2 中度侵入（薄胶水 + 列扩展，sync 冲突中）
 
@@ -1766,6 +1795,14 @@ _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请先�
 ---
 
 ## 附录 E：变更日志
+
+### 2026-09-28：新增 §15.9 带密码但无法验证时默认拒绝（T2-5）
+
+- **新建正文**：**§15.9**：`6613ac2146`（`owner/gateway/ldap_auth.py` 新增 `DENY_BACKEND_UNAVAILABLE` + `_verdict_on_unverifiable` 按成因分流 + `fail_open_on_error` 默认翻转；`gateway/platforms/api_server.py` 新增 503 映射；`owner/config/patch_feishu_profile.yaml` `fail_open_on_error: true → false`；`tests/owner/test_ldap_identity_auth.py` 新增/改写 5 例）
+- **类型**：安全修复（DoS → 认证降级），官方文件侵入为单个 verdict 分支
+- **决策**：默认翻转 + 保留开关 —— 若带密码一律拒绝，该开关将失去全部作用面而退化为死配置
+- **验证**：变异验证三条（均失败）+ 密码错与无法验证两种结果必须不同的对照用例
+- **同类普查**：另查出 `_load_ldap_config()` 把「配置读不到」与「未启用」压成同一 `{}`，配置故障即静默关闭认证门 → 单独立项 **T2-23**（修复涉及共享加载器，需独立决策）
 
 ### 2026-09-28：新增 §15.8 enforce=seen 改为 fail-closed（T2-4）
 
