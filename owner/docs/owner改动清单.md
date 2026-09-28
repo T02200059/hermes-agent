@@ -1423,7 +1423,7 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
   | `host` | `10.10.100.150:389` | LDAPS 636 实测未开放 |
   | `user_dn_template` | 锚定 `cn=people` | 见上 |
   | `admin` | 凭据 | 供后续 group 校验，bind 主路径不用 |
-  | `enforce` | `seen` | 灰度：从未认证过的账号放行，认证过的账号缓存过期后 401 |
+  | `enforce` | `always` | 无密码且无有效缓存时的处置。`off` = 放行（灰度档）；`always` / `seen` = 拒绝（§15.8 起 `seen` 为 `always` 的遗留别名）；未识别取值按 `always` 处理 |
   | `cache_ttl_hours` | 72 | 正缓存窗口 |
   | `negative_cache_seconds` | 10 | 负缓存窗口 |
   | `fail_open_on_error` | `true` | LDAP 不可达时放行 |
@@ -1447,6 +1447,7 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 - **侵入类型**：纯 owner/ 内部（**零官方侵入**）
 - **验证**：新增 `test_wrong_password_eviction_preserves_seen_marker` 覆盖完整攻击链（认证一次 → 错密码驱逐 → 负缓存过期 → 无密码请求仍 DENY）；2 个既有夹具升级 v2 格式；LDAP 17 项 + feishu profile 路由/传输 41 项通过
 - **Commit**：`8f533aaa0c`
+- **后续**（§15.8，`ed0c3dfb21`）：本节建立的 `seen` 语义已因该项改为 fail-closed 而**不再参与放行判定** —— `enforce=seen` 与 `always` 现同义。`_seen_logins` / `_has_seen` 保留（state-file v2 结构与诊断用途），但门不再依赖它们。本节的攻击链（错密码驱逐 → 无密码请求）在新语义下依然被拒，只是原因从「`seen` 标记存活」变为「严格档一律拒绝」
 
 ### 15.4 代理转发加固：头剥离 + SSE 逐 chunk 透传
 
@@ -1520,6 +1521,27 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
   - 其他「配置驱动门」：`owner/approval/skill_manage_gate.py`（`enabled: false`，§3.11 已记录该默认值调整）、`owner/semantic_audit`（默认 `enabled: false`，`config.py` 注释明确）。二者均**有显式开关且文档一致**，关闭是决策而非静默失效。**判定标准**：本条的缺陷形态是「**无开关、靠缺键隐式关闭**」——只有 identity routing 符合，故无同类缺陷。
 - **未纳入**：接线本身（依赖上述三处语义修复）；`_media_owner_matches` 收紧（T2-7）；归属凭据的服务端盐（T2-8）
 - **Commit**：`9f453c51e1`
+
+### 15.8 enforce=seen 改为 fail-closed
+
+- **问题**（T2-4）：`enforce=seen` 的原始语义是「只拦已经认证过的账号」——无密码且缓存失效时，`_has_seen()` 为真才 `DENY_REAUTH_REQUIRED`，**从未认证过的账号一律放行**。原意图是部署期灰度（「前端没上线密码头之前不破坏任何现有流量」），但方向反了：门只拒绝*已经证明过身份*的人，于是攻击者挑一个**从未登录过**的 uid 就能零密码通过，被反代进其专属容器。生产环境下无人携带密码头 ⇒ `_seen_logins` 恒为空 ⇒ **`seen` 与 `off` 行为完全等价**，配置里那个档位名称给出的是虚假的安全感。
+- **方案**（fail-closed，`ed0c3dfb21`）：
+  - `enforce in ("always", "seen")` 一律 `DENY_REAUTH_REQUIRED`；`seen` 降为 **`always` 的遗留别名**——保留而非删除，因为未识别的取值若落进 `off` 分支即构成**静默降级**。
+  - 灰度职责交回 `off`：配置注释已明确它是「纯增强、无防伪造力」，现补充说明其**唯一例外**（该账号刚认证失败且负缓存未过期 → 仍拒绝），与既有用例 `test_negative_cache_blocks_even_enforce_off` 一致。
+  - `enforce` 取值校验：无法识别的字符串**按 `always` 处理并告警**。此前 `enforce: "alway"`（笔误）会穿过所有分支落到 `ALLOW`，把门悄悄关掉 —— 与 §15.7 的 dormant 同属「配置驱动的静默失效」。
+  - `_seen_logins` / `_has_seen` 不再参与放行判定（保留 state-file v2 结构与诊断用途），相关注释改写以明示，避免后人以为它仍在把门。
+  - `patch_feishu_profile.yaml` 的 `enforce` 由 `seen` 改为 `always`（二者现同义，写 `always` 更如实）。
+- **决策依据**：该链路当时为 dormant（§15.7），不存在「为保护现有流量而灰度」的对象，收紧无成本。
+- **涉及文件**：`owner/gateway/ldap_auth.py`、`owner/config/patch_feishu_profile.yaml`、`tests/owner/test_ldap_identity_auth.py`
+- **侵入类型**：纯 owner/ 内部（**零官方侵入**）
+- **验证**：新增/改写 3 例 —— `test_unseen_login_enforce_matrix`（`seen` 期望由 `ALLOW` 改 `DENY_REAUTH_REQUIRED`）、`test_unrecognized_enforce_value_fails_closed`、`test_enforce_seen_and_always_share_one_verdict`（三场景下两档必须逐项一致，防名称再次分叉）；两处 SSE / 超时传输用例改为种子化有效缓存（它们断言的是传输行为，不应依赖认证档位）。变异验证两条，均失败：`seen` 退回旧语义 → 5 例失败；未知取值静默降级为 `off` → 1 例失败。回归：`tests/owner/` + `api_server` / profile routing 共 57 文件 / 908 例全通过（20.8s）。
+- **同类普查**（清单要求：`_has_seen` / `_prune_expired` / `_positive_cache` 三者交互）：
+  - `_cache_get` 是唯一的放行判据入口，且**先 `_prune_expired(_now())` 再取值** ⇒ 不存在「过期条目被放行」的状态泄漏。
+  - ⚠️ `_has_seen` 读 `_positive_cache` 时**不剪除过期项**，会把已过期条目算作 `seen=True`。旧语义下方向是安全的（`True` → 更严格 = DENY），且现已不参与判定，故当前无影响。**约束**：若将来把 `_has_seen` 接回判定且语义方向为「`True` → 放行」，即构成漏洞 —— 其 docstring 已标注为 diagnostic-only。
+  - `_load_state_file_locked` 按 mtime 短路；同一秒内的外部改写可能漏读。边界极窄（`_cache_put` 会刷新 mtime），不构成实际风险，仅记录。
+  - **实质收获**：本次普查另查出「无法识别的 `enforce` 取值静默等价于 `off`」—— 同为「配置驱动静默降级」类，已在 §15.8 内一并修复，**不另立条目**。
+- **未纳入**：`fail_open_on_error` 不区分「LDAP 不可达」与「密码错误」（T2-5）；`identity_whitelist` 短路位于 LDAP gate **之前**（T2-6）
+- **Commit**：`ed0c3dfb21`
 
 ---
 
@@ -1595,7 +1617,7 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 | `owner/cron/` | cron session 隔离 + restart scrub + run_job hook + approval helper | cron/* + gateway/run.py |
 | `owner/diff_card/` | diff 卡片平台分发（飞书/QQ） | feishu/adapter.py |
 | `owner/feishu/` | 飞书深度定制（含 queue_card / skill_approval_card 等）；另承载 API Server 侧 `resolve_api_identity_route` / `is_api_identity_whitelisted`（§15.1、§15.5，复用 `profile_endpoints`） | feishu/adapter.py（64+ 处标记）、gateway/platforms/api_server.py |
-| `owner/gateway/` | inbound_context + hygiene_compression_notice + steer_vision + **ldap_auth**（LDAP bind 认证门：决策表 6 态 / 72h 正缓存 + 10s 负缓存 + `seen` 集合 / fail-open / RFC4514 转义，§15.2–§15.3） | gateway/run.py、gateway/platforms/api_server.py |
+| `owner/gateway/` | inbound_context + hygiene_compression_notice + steer_vision + **ldap_auth**（LDAP bind 认证门：决策表 6 态 / 72h 正缓存 + 10s 负缓存 / fail-open / RFC4514 转义，§15.2–§15.3；**§15.8 起 `enforce=seen` 为 `always` 的 fail-closed 别名**，`_seen_logins` 仅作诊断；**§15.7 新增路由接线状态诊断**） | gateway/run.py、gateway/platforms/api_server.py |
 | `owner/patches/` | runtime patch（OpenViking recall + memory synthetic guard + pool base_url override + **queue_cancel** + **file_binary_detection**） | owner-extensions plugin / hermes_cli/runtime_provider.py |
 | `owner/providers/credential_helpers.py` | GitHub token 校验等 credential helper | hermes_cli/model_switch.py |
 | `owner/scripts/` | 运维脚本（备份/健康检查/汇率/todo 扫描/**HN Daily**/skill 同步/**Viking 记忆质量**/upstream_sync/周会/swagger） | — |
@@ -1744,6 +1766,14 @@ _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请先�
 ---
 
 ## 附录 E：变更日志
+
+### 2026-09-28：新增 §15.8 enforce=seen 改为 fail-closed（T2-4）
+
+- **新建正文**：**§15.8**：`ed0c3dfb21`（`owner/gateway/ldap_auth.py`：`seen` 降为 `always` 的 fail-closed 别名 + `enforce` 取值校验 + `_seen_logins` 退出判定链；`owner/config/patch_feishu_profile.yaml` `enforce: seen → always`；`tests/owner/test_ldap_identity_auth.py` 改写 3 例并让两处传输用例改用种子化有效缓存）
+- **类型**：安全修复（门只拦「已认证过的账号」→ 攻击者挑从未登录的 uid 即零密码通过），纯 owner/ 内部，**零官方侵入**
+- **决策依据**：该链路当时 dormant（§15.7），不存在需要灰度保护的现有流量
+- **验证**：变异验证两条（均失败）+ 回归 57 文件 / 908 例全通过
+- **同类普查**：`_cache_get` 先剪枝再取值 ⇒ 无过期条目放行泄漏；`_has_seen` 不剪枝但已退出判定链（docstring 标注 diagnostic-only）；另查出「未识别 `enforce` 取值静默等价于 `off`」并一并修复
 
 ### 2026-09-28：新增 §15.7 未接线状态显式化（T2-3）
 
