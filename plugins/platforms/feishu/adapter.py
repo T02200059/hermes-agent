@@ -3768,6 +3768,28 @@ class FeishuAdapter(BasePlatformAdapter):
         # message_id; the container-side inject_inbound path does not dedup by
         # message_id (dedup lives in the main gateway's WebSocket handler), so
         # repeated reactions on the same message still each dispatch.
+        #
+        # [owner] T2-9 (accepted decision, not an oversight): the route is
+        # resolved from the REACTOR, not from the owner of the reacted-to
+        # message. That is deliberate: the container keys group sessions per
+        # participant (session.build_session_key with group_sessions_per_user),
+        # so ``reaction:added:<emoji>`` is an input to the *reactor's* own
+        # conversation — resolving it from the message's original asker would
+        # inject it into somebody else's session. The asymmetry with
+        # _dispatch_card_action/try_route_card_action is intentional too: a
+        # button click acts on the artifact's own state, so it routes by the
+        # ``hermes_profile`` tag stamped on that card.
+        # Two consequences worth knowing before changing this:
+        #   * resolve_profile_route skips the whitelist in group chats, so a
+        #     whitelisted user's reaction in a group goes to the container the
+        #     group's messages go to. Consistent by construction — his group
+        #     *messages* are routed the same way.
+        #   * the reacted-to message may belong to a different participant's
+        #     session in the same container. Only the emoji text crosses, so
+        #     this is state misfiling inside one container, not a cross-user
+        #     read. Cross-*container* delivery is guarded at the receiving
+        #     doorway (T2-9: target_profile check).
+        # ``TestReactionRoutingRecordsTheOwnershipDecision`` pins both halves.
         _try_msg_route = _owner_import(
             "owner.feishu.profile_routing", "try_route_inbound_message"
         )

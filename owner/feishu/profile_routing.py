@@ -211,6 +211,115 @@ def resolve_profile_route_by_name(profile_name: str) -> Optional[Tuple[str, str,
 
 
 
+# ── [owner T2-9] container-side ownership of the inbound RPC ─────────────────
+#
+# The main gateway holds the only Feishu WebSocket and forwards routed traffic
+# to sub-profile containers over HTTP. That transport authenticated the caller
+# (shared API key) but never checked *what* it was asked to serve: a container
+# accepted an event addressed to any profile. Both sides are configured from
+# the SAME ``profile_endpoints`` map, so the only way to land an event on the
+# wrong container is drift between that map and the process that actually
+# listens on the endpoint — exactly the configuration-error class this
+# codebase keeps getting bitten by (cf. T2-6, where a missing
+# ``profile_endpoints`` entry turned a gated uid into an ungated path).
+#
+# The check is deliberately asymmetric about failure:
+#   * mismatch, both sides identified  → REJECT (the interesting case)
+#   * target absent (older sender)     → accept + warn once
+#   * own identity undeterminable      → accept + warn once
+# Rejecting the latter two would turn a version skew or an unlabelled container
+# into a total outage of multi-profile routing — a worse failure than the
+# misroute this guards against. The API key remains the authentication
+# boundary either way.
+TARGET_PROFILE_KEY = "target_profile"
+CONTAINER_PROFILE_ENV = "HERMES_PROFILE"
+CONTAINER_PROFILE_CONFIG_KEY = "container_profile"
+
+_ownership_notices: set = set()
+
+
+def _warn_once(key: str, message: str, *args: Any) -> None:
+    """Log ``message`` once per process per ``key``."""
+    if key in _ownership_notices:
+        return
+    _ownership_notices.add(key)
+    logger.warning(message, *args)
+
+
+def container_profile_identity() -> Optional[str]:
+    """Return the profile this process believes it serves, else ``None``.
+
+    ``HERMES_PROFILE`` is the Docker-container identity (the same variable
+    ``owner/approval/skill_manage_gate.py`` reads). The optional
+    ``user_routing.container_profile`` config key lets a deployment that does
+    not set the env var declare it.
+
+    There is deliberately **no** fallback to the active profile name or
+    ``"default"``: this value decides whether to *reject* traffic, and a guess
+    here would either reject everything (guess differs from the target) or
+    make the check vacuous (guess matches everything). ``None`` means "cannot
+    decide", which the caller treats as "do not reject".
+    """
+    env_profile = (os.getenv(CONTAINER_PROFILE_ENV, "") or "").strip()
+    if env_profile:
+        return env_profile
+    cfg_value = _load_routing_config().get(CONTAINER_PROFILE_CONFIG_KEY)
+    if isinstance(cfg_value, str) and cfg_value.strip():
+        return cfg_value.strip()
+    return None
+
+
+def verify_inbound_target_profile(body: Any) -> Optional[str]:
+    """Check that an inbound RPC payload was addressed to *this* profile.
+
+    Returns ``None`` when the payload may be served, or a short reason string
+    when it must be rejected. Callers turn the reason into an explicit
+    ``409 profile_mismatch`` rather than a silent drop, so a misconfigured
+    ``profile_endpoints`` entry surfaces as a logged, attributable failure
+    instead of a conversation quietly appearing in the wrong container.
+    """
+    if not isinstance(body, dict):
+        return None
+    target = str(body.get(TARGET_PROFILE_KEY) or "").strip()
+    if not target:
+        _warn_once(
+            "target_absent",
+            "[Feishu] inbound RPC carried no %s; accepting without an "
+            "ownership check (sender predates the check)",
+            TARGET_PROFILE_KEY,
+        )
+        return None
+    mine = container_profile_identity()
+    if not mine:
+        _warn_once(
+            "identity_unknown",
+            "[Feishu] cannot determine this container's profile (set %s or "
+            "user_routing.%s); accepting inbound RPC for '%s' unchecked",
+            CONTAINER_PROFILE_ENV,
+            CONTAINER_PROFILE_CONFIG_KEY,
+            target,
+        )
+        return None
+    if mine == target:
+        return None
+    logger.error(
+        "[Feishu] REJECTING inbound RPC addressed to profile '%s' but this "
+        "container serves '%s' — profile_endpoints and the container "
+        "identity disagree",
+        target,
+        mine,
+    )
+    return (
+        f"inbound RPC addressed to profile '{target}' but this container "
+        f"serves '{mine}'"
+    )
+
+
+def reset_ownership_notices() -> None:
+    """Clear the once-per-process notice set (tests)."""
+    _ownership_notices.clear()
+
+
 def resolve_api_identity_route(
     identity: str,
 ) -> Optional[Tuple[str, str, str]]:
@@ -358,6 +467,7 @@ async def _forward_to_profile_container(
     chat_id: str,
     chat_type: str,
     message_id: Optional[str],
+    profile: str = "",
     message_type: str = "text",
     user_id: str = "",
     union_id: str = "",
@@ -408,6 +518,9 @@ async def _forward_to_profile_container(
         "schema_version": FEISHU_INBOUND_SCHEMA_VERSION,
         "text": text,
         "message_type": message_type,
+        # [owner T2-9] Lets the receiving container check that it is the profile
+        # this event was addressed to (see verify_inbound_target_profile).
+        TARGET_PROFILE_KEY: profile,
         "open_id": open_id,
         "user_id": user_id,
         "union_id": union_id,
@@ -548,6 +661,9 @@ def _forward_card_action_sync(
     clean_value = {k: v for k, v in action_value.items() if k != "hermes_profile"}
     payload = {
         "action_value": clean_value,
+        # [owner T2-9] Same ownership check as the inbound transport — a click
+        # must be replayed by the container that owns the card's state.
+        TARGET_PROFILE_KEY: profile_name,
         "open_id": str(getattr(operator, "open_id", "") or ""),
         "user_id": str(getattr(operator, "user_id", "") or ""),
         "chat_id": str(getattr(context, "open_chat_id", "") or ""),
@@ -664,6 +780,7 @@ async def try_route_inbound_message(
     forwarded = await _forward_to_profile_container(
         endpoint=endpoint,
         api_key=api_key,
+        profile=profile,
         text=text,
         open_id=open_id,
         chat_id=chat_id,
@@ -812,6 +929,7 @@ async def try_route_bot_menu_command(
     forwarded = await _forward_to_profile_container(
         endpoint=endpoint,
         api_key=api_key,
+        profile=profile,
         text=synthetic_text,
         open_id=open_id,
         chat_id=chat_id or "",

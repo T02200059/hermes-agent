@@ -593,3 +593,418 @@ async def test_api_rejects_unknown_inbound_schema_without_dispatch():
     assert response.status == 400
     assert payload["error"]["code"] == "unsupported_schema_version"
     assert api._background_tasks == set()
+
+
+# ---------------------------------------------------------------------------
+# [owner T2-9] Container-side ownership of the inbound RPC (S2-4)
+#
+# The transport authenticated the caller but never checked *what* it was asked
+# to serve, so drift between ``profile_endpoints`` and the process listening on
+# an endpoint delivered one profile's traffic into another container. The
+# decision lives in ``verify_inbound_target_profile``; these tests pin both the
+# reject case and the two "cannot decide ⇒ do not reject" cases, because the
+# latter two are what keep a version skew or an unlabelled container from
+# becoming a total routing outage.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _clear_ownership_notices(monkeypatch):
+    from owner.feishu import profile_routing
+
+    monkeypatch.delenv(profile_routing.CONTAINER_PROFILE_ENV, raising=False)
+    profile_routing.reset_ownership_notices()
+    yield
+    profile_routing.reset_ownership_notices()
+
+
+def test_forward_payload_carries_target_profile(monkeypatch):
+    """The sender names the profile the event is addressed to."""
+    from owner.feishu import profile_routing
+
+    captured = {}
+
+    class _Response:
+        status = 202
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+    class _Session:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        def post(self, url, **kwargs):
+            captured.update(kwargs)
+            return _Response()
+
+    monkeypatch.setattr("aiohttp.ClientSession", _Session)
+
+    asyncio.run(
+        profile_routing._forward_to_profile_container(
+            endpoint="http://profile.test",
+            api_key="secret",
+            profile="hermesxiyun",
+            text="hello",
+            open_id="ou_open",
+            chat_id="oc_chat",
+            chat_type="p2p",
+            message_id="om_message",
+        )
+    )
+
+    assert captured["json"][profile_routing.TARGET_PROFILE_KEY] == "hermesxiyun"
+
+
+def test_card_action_payload_carries_target_profile(monkeypatch):
+    """A click is addressed to the profile whose card state it acts on."""
+    from owner.feishu import profile_routing
+
+    captured = {}
+
+    class _Response:
+        status = 200
+
+        def read(self):
+            return b'{"card": null}'
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    def _fake_urlopen(req, timeout=None):
+        captured["body"] = json.loads(req.data.decode("utf-8"))
+        return _Response()
+
+    monkeypatch.setattr("urllib.request.urlopen", _fake_urlopen)
+    event = SimpleNamespace(
+        operator=SimpleNamespace(open_id="ou_clicker", user_id=""),
+        context=SimpleNamespace(open_chat_id="oc_chat"),
+    )
+
+    profile_routing._forward_card_action_sync(
+        ("hermesxiyun", "http://profile.test", "secret"),
+        event,
+        {"hermes_profile": "hermesxiyun", "action": "expand"},
+    )
+
+    assert captured["body"][profile_routing.TARGET_PROFILE_KEY] == "hermesxiyun"
+
+
+class TestContainerProfileIdentity:
+    """Self-identity resolution — deliberately never guesses."""
+
+    def test_env_var_wins(self, monkeypatch):
+        from owner.feishu import profile_routing
+
+        monkeypatch.setenv(profile_routing.CONTAINER_PROFILE_ENV, "from-env")
+        monkeypatch.setattr(
+            profile_routing, "_load_routing_config", lambda: {"container_profile": "from-config"}
+        )
+        assert profile_routing.container_profile_identity() == "from-env"
+
+    def test_falls_back_to_config_key(self, monkeypatch):
+        from owner.feishu import profile_routing
+
+        monkeypatch.setattr(
+            profile_routing, "_load_routing_config", lambda: {"container_profile": "from-config"}
+        )
+        assert profile_routing.container_profile_identity() == "from-config"
+
+    def test_blank_env_falls_through_to_config(self, monkeypatch):
+        from owner.feishu import profile_routing
+
+        monkeypatch.setenv(profile_routing.CONTAINER_PROFILE_ENV, "   ")
+        monkeypatch.setattr(
+            profile_routing, "_load_routing_config", lambda: {"container_profile": "from-config"}
+        )
+        assert profile_routing.container_profile_identity() == "from-config"
+
+    def test_undeterminable_returns_none_rather_than_default(self, monkeypatch):
+        """No env, no config key ⇒ ``None``, never a guessed "default".
+
+        A guessed value decides whether to *reject*, so guessing "default"
+        would reject every correctly-addressed event the moment the real
+        profile is anything else.
+        """
+        from owner.feishu import profile_routing
+
+        monkeypatch.setattr(profile_routing, "_load_routing_config", lambda: {})
+        assert profile_routing.container_profile_identity() is None
+
+
+class TestInboundTargetProfileVerification:
+
+    def test_matching_profile_is_accepted(self, monkeypatch):
+        from owner.feishu import profile_routing
+
+        monkeypatch.setenv(profile_routing.CONTAINER_PROFILE_ENV, "hermesxiyun")
+        assert (
+            profile_routing.verify_inbound_target_profile(
+                {profile_routing.TARGET_PROFILE_KEY: "hermesxiyun"}
+            )
+            is None
+        )
+
+    def test_other_profile_is_rejected_with_an_attributable_reason(self, monkeypatch):
+        from owner.feishu import profile_routing
+
+        monkeypatch.setenv(profile_routing.CONTAINER_PROFILE_ENV, "hermesxiyun")
+        reason = profile_routing.verify_inbound_target_profile(
+            {profile_routing.TARGET_PROFILE_KEY: "someone-else"}
+        )
+        assert reason is not None
+        assert "someone-else" in reason
+        assert "hermesxiyun" in reason
+
+    def test_absent_target_is_accepted_because_refusing_would_be_an_outage(
+        self, monkeypatch
+    ):
+        """A sender that predates the check must not lose every message."""
+        from owner.feishu import profile_routing
+
+        monkeypatch.setenv(profile_routing.CONTAINER_PROFILE_ENV, "hermesxiyun")
+        assert profile_routing.verify_inbound_target_profile({}) is None
+
+    def test_unknown_identity_is_accepted_rather_than_guessed(self, monkeypatch):
+        from owner.feishu import profile_routing
+
+        monkeypatch.setattr(profile_routing, "_load_routing_config", lambda: {})
+        assert (
+            profile_routing.verify_inbound_target_profile(
+                {profile_routing.TARGET_PROFILE_KEY: "anything"}
+            )
+            is None
+        )
+
+    def test_notice_is_emitted_once_per_process(self, monkeypatch, caplog):
+        from owner.feishu import profile_routing
+
+        monkeypatch.setenv(profile_routing.CONTAINER_PROFILE_ENV, "hermesxiyun")
+        with caplog.at_level("WARNING"):
+            for _ in range(3):
+                profile_routing.verify_inbound_target_profile({})
+        hits = [
+            r for r in caplog.records if "carried no" in r.getMessage()
+        ]
+        assert len(hits) == 1
+
+    def test_non_dict_payload_is_left_to_the_schema_check(self):
+        from owner.feishu import profile_routing
+
+        assert profile_routing.verify_inbound_target_profile(None) is None
+        assert profile_routing.verify_inbound_target_profile("not-a-dict") is None
+
+
+@pytest.mark.asyncio
+async def test_api_rejects_inbound_addressed_to_another_profile(monkeypatch):
+    """409 before the adapter is touched — never a silent local run."""
+    from owner.feishu import profile_routing
+
+    monkeypatch.setenv(profile_routing.CONTAINER_PROFILE_ENV, "hermesxiyun")
+    api = _api_adapter()
+    api._check_auth = MagicMock(return_value=None)
+    api._read_json_body = AsyncMock(
+        return_value=(
+            {
+                "schema_version": 1,
+                "text": "hello",
+                "open_id": "ou_open",
+                "chat_id": "oc_chat",
+                profile_routing.TARGET_PROFILE_KEY: "somebody-elses-profile",
+            },
+            None,
+        )
+    )
+    seen = {}
+
+    def _verifier(body):
+        seen["ran"] = True
+        return profile_routing.verify_inbound_target_profile(body)
+
+    monkeypatch.setattr(
+        "gateway.platforms.api_server._owner_import",
+        lambda module, symbol: (
+            _verifier if symbol == "verify_inbound_target_profile" else None
+        ),
+    )
+
+    response = await api._handle_feishu_inbound(SimpleNamespace())
+    payload = json.loads(response.text)
+    assert seen.get("ran") is True
+    assert response.status == 409
+    assert payload["error"]["code"] == "profile_mismatch"
+    assert api._background_tasks == set()
+
+
+@pytest.mark.asyncio
+async def test_api_serves_inbound_addressed_to_this_profile(monkeypatch):
+    from owner.feishu import profile_routing
+
+    monkeypatch.setenv(profile_routing.CONTAINER_PROFILE_ENV, "hermesxiyun")
+    api = _api_adapter()
+    api._check_auth = MagicMock(return_value=None)
+    api._read_json_body = AsyncMock(
+        return_value=(
+            {
+                "schema_version": 1,
+                "text": "hello",
+                "open_id": "ou_open",
+                "chat_id": "oc_chat",
+                profile_routing.TARGET_PROFILE_KEY: "hermesxiyun",
+            },
+            None,
+        )
+    )
+    event = MessageEvent(
+        text="hello",
+        source=SessionSource(
+            platform=Platform.FEISHU, chat_id="oc_chat", user_id="ou_open"
+        ),
+    )
+
+    class _Feishu:
+        build_forwarded_inbound_event = AsyncMock(return_value=event)
+
+        async def _dispatch_inbound_event(self, _event):
+            return None
+
+    feishu = _Feishu()
+
+    def _import(module, symbol):
+        if symbol == "_get_inprocess_feishu_adapter":
+            return lambda: feishu
+        if symbol == "verify_inbound_target_profile":
+            return profile_routing.verify_inbound_target_profile
+        return None
+
+    monkeypatch.setattr("gateway.platforms.api_server._owner_import", _import)
+
+    response = await api._handle_feishu_inbound(SimpleNamespace())
+    assert response.status == 202
+    for task in list(api._background_tasks):
+        await task
+
+
+@pytest.mark.asyncio
+async def test_api_tolerates_a_sender_that_predates_the_check(monkeypatch):
+    """Absent ``target_profile`` must not break routing (version skew)."""
+    from owner.feishu import profile_routing
+
+    monkeypatch.setenv(profile_routing.CONTAINER_PROFILE_ENV, "hermesxiyun")
+    api = _api_adapter()
+    api._check_auth = MagicMock(return_value=None)
+    api._read_json_body = AsyncMock(
+        return_value=(
+            {
+                "schema_version": 1,
+                "text": "hello",
+                "open_id": "ou_open",
+                "chat_id": "oc_chat",
+            },
+            None,
+        )
+    )
+    event = MessageEvent(
+        text="hello",
+        source=SessionSource(
+            platform=Platform.FEISHU, chat_id="oc_chat", user_id="ou_open"
+        ),
+    )
+
+    class _Feishu:
+        build_forwarded_inbound_event = AsyncMock(return_value=event)
+
+        async def _dispatch_inbound_event(self, _event):
+            return None
+
+    feishu = _Feishu()
+
+    def _import(module, symbol):
+        if symbol == "_get_inprocess_feishu_adapter":
+            return lambda: feishu
+        if symbol == "verify_inbound_target_profile":
+            return profile_routing.verify_inbound_target_profile
+        return None
+
+    monkeypatch.setattr("gateway.platforms.api_server._owner_import", _import)
+
+    response = await api._handle_feishu_inbound(SimpleNamespace())
+    assert response.status == 202
+    for task in list(api._background_tasks):
+        await task
+
+
+def test_raising_verifier_does_not_take_routing_down(monkeypatch):
+    """The API key is the authentication boundary; this check is depth."""
+    api = _api_adapter()
+
+    def _boom(_body):
+        raise RuntimeError("verifier exploded")
+
+    monkeypatch.setattr(
+        "gateway.platforms.api_server._owner_import",
+        lambda module, symbol: (
+            _boom if symbol == "verify_inbound_target_profile" else None
+        ),
+    )
+    from gateway.platforms import api_server
+
+    assert api_server._owner_inbound_profile_rejection({"target_profile": "x"}) is None
+
+
+def test_reaction_ownership_decision_is_recorded_beside_the_code():
+    """The reactor-based route is a decision, and the asymmetry is stated.
+
+    Pins the record itself (same discipline as T2-7's accepted-decision
+    test): tightening or re-routing reactions later has to change this text
+    too, so the choice cannot be reversed silently.
+    """
+    import inspect
+
+    from plugins.platforms.feishu.adapter import FeishuAdapter
+
+    src = inspect.getsource(FeishuAdapter._handle_reaction_event)
+    assert "T2-9 (accepted decision" in src
+    assert "from the REACTOR, not from the owner" in src
+    # The card path routes by the artifact's own tag — the contrast is the
+    # reason the asymmetry is explainable rather than looking like a bug.
+    assert "try_route_card_action" in src
+    # And the whitelist-skipped-in-groups consequence is spelled out.
+    assert "skips the whitelist in group chats" in src
+
+
+def test_group_reaction_route_skips_whitelist_as_documented(monkeypatch):
+    """Pins the factual claim the comment above makes about group routing."""
+    from owner.feishu import profile_routing
+
+    monkeypatch.setattr(
+        profile_routing,
+        "_load_routing_config",
+        lambda: {
+            "whitelist": ["ou_whitelisted"],
+            "chat_profile_routes": {},
+            "user_profile_routes": {},
+            "default_profile": "container-a",
+            "profile_endpoints": {
+                "container-a": {"url": "http://c.test", "api_key": "k"}
+            },
+        },
+    )
+    # DM: whitelist applies → main gateway (None).
+    assert (
+        profile_routing.resolve_profile_route("oc_dm", "ou_whitelisted", "p2p") is None
+    )
+    # Group: whitelist skipped → default_profile, i.e. the same destination the
+    # whitelisted user's group *messages* take.
+    route = profile_routing.resolve_profile_route("oc_group", "ou_whitelisted", "group")
+    assert route is not None
+    assert route[0] == "container-a"

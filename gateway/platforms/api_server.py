@@ -250,6 +250,42 @@ def _owner_session_salt() -> str:
         return ""
 
 
+def _owner_inbound_profile_rejection(body: Any) -> Optional[str]:
+    """[owner] T2-9: reject a cross-profile RPC addressed to another profile.
+
+    The Feishu transports (``/v1/feishu/inbound``, ``/v1/feishu/card-actions``)
+    are authenticated but were never *addressed*: a container served an event
+    for whichever profile the main gateway named, so drift between
+    ``profile_endpoints`` and the process listening on an endpoint delivered
+    one profile's traffic to another. ``owner/feishu/profile_routing.py`` owns
+    the decision (and the "cannot decide ⇒ do not reject" rule); this file
+    only turns a reason into a 409 so the failure is attributable.
+
+    Returns the rejection reason, or ``None`` when the payload may be served.
+    A raising verifier must not take routing down: the API key is still the
+    authentication boundary, so an internal error here warns and passes.
+    """
+    verifier = _owner_import(
+        "owner.feishu.profile_routing", "verify_inbound_target_profile"
+    )
+    if verifier is None:
+        return None
+    try:
+        return verifier(body)
+    except Exception as exc:  # noqa: BLE001 - defence in depth, not the gate
+        logger.warning(
+            "[API] target-profile verification failed (%s); accepting", exc
+        )
+        return None
+
+
+def _profile_mismatch_response(reason: str) -> "web.Response":
+    """[owner] T2-9: the 409 sent when an RPC is addressed to another profile."""
+    return web.json_response(
+        _openai_error(reason, code="profile_mismatch"), status=409
+    )
+
+
 async def _owner_identity_gate_rejection(
     identity: str, request: "web.Request"
 ) -> Optional["web.Response"]:
@@ -441,19 +477,139 @@ _TOOL_ARG_PRIMARY_KEYS = (
 )
 
 
+# [owner] T2-9: tool args and tool results are the widest free-text channel
+# this process has — commands, file contents, command output — and until now
+# they reached the wire almost verbatim. ``redact_tool_args_for_display`` is
+# tool-scoped (``browser_type`` only), and ``_clip_tool_output_for_sse``
+# masked nothing at all, so "SSE only goes to the requester" was the single
+# thing standing between a secret in a command and a third-party consumer
+# that fans progress events out by session (S2-3). Isolation is now asserted
+# (see ``_bind_tool_frame``) *and* the payload is redacted at the boundary.
+_SSE_REDACT_PLACEHOLDER = "«redaction unavailable»"
+_sse_redaction_failed = False
+
+
+def _redact_for_sse(text: str) -> str:
+    """[owner] T2-9: mask recognizable secrets in SSE-bound free text.
+
+    Reuses the log redactor rather than inventing a second pattern set, with
+    ``force=True`` — ``agent.redact`` documents that flag as the boundary
+    that must never return raw secrets regardless of the user's global
+    ``security.redact_secrets`` preference.
+
+    Returns a placeholder instead of the input when the redactor cannot be
+    loaded: this is an egress boundary, so "could not verify" must not
+    silently degrade into "emitted raw".
+    """
+    global _sse_redaction_failed
+    try:
+        from agent.redact import redact_sensitive_text
+
+        return redact_sensitive_text(text, force=True)
+    except Exception as exc:  # noqa: BLE001 - boundary fails closed, not loudly
+        if not _sse_redaction_failed:
+            _sse_redaction_failed = True
+            logger.error(
+                "[API] SSE secret redaction unavailable (%s); suppressing "
+                "tool args/results on hermes.tool.progress",
+                exc,
+            )
+        return _SSE_REDACT_PLACEHOLDER
+
+
+def _redact_args_for_sse(args: dict) -> dict:
+    """[owner] T2-9: redact the string leaves of a tool-arg dict, recursively.
+
+    Backstop for values that do not pass through ``_clip_jsonable_value``
+    (that path redacts the JSON-encoded form; the Responses channel hand-builds
+    its payload instead). Recurses through dict/list/tuple so a credential
+    nested one level down cannot ride along untouched.
+    """
+    out: Dict[str, Any] = {}
+    for key, value in args.items():
+        out[key] = _redact_nested_for_sse(value)
+    return out
+
+
+def _redact_nested_for_sse(value: Any) -> Any:
+    """[owner] T2-9: redact strings anywhere inside a JSON-shaped value."""
+    if isinstance(value, str):
+        return _redact_for_sse(value)
+    if isinstance(value, bytes):
+        return _redact_for_sse(value.decode("utf-8", "replace"))
+    if isinstance(value, dict):
+        return _redact_args_for_sse(value)
+    if isinstance(value, (list, tuple)):
+        return type(value)(_redact_nested_for_sse(item) for item in value)
+    return value
+
+
+def _redact_result_for_sse(result: Any) -> Any:
+    """[owner] T2-9: redact a raw tool result for the Responses channel.
+
+    Unlike :func:`_clip_tool_output_for_sse` this preserves the payload shape —
+    that channel echoes the item as JSON and has no length budget of its own,
+    so only the string leaves are masked.
+    """
+    return _redact_nested_for_sse(result)
+
+
+def _bind_tool_frame(tag: str, payload: dict, frame_token: str) -> tuple:
+    """[owner] T2-9: stamp the owning request onto a tool lifecycle frame.
+
+    The token rides in the ``queue`` tuple, never in ``payload``: the payload
+    is serialized straight onto the wire, and the isolation assertion is an
+    internal contract that consumers neither need nor should have to parse.
+    """
+    return (tag, frame_token, payload)
+
+
+def _tool_frame_is_ours(item: Any, frame_token: str) -> bool:
+    """[owner] T2-9: is this frame bound to *this* stream's request?
+
+    A frame that is unbound (2-tuple: produced by a writer that predates the
+    binding) or bound to a different token is not ours. Callers must degrade
+    such a frame to name+status rather than dropping it, so a leaked frame
+    still cannot carry args or output into another caller's stream.
+    """
+    return (
+        isinstance(item, tuple)
+        and len(item) == 3
+        and bool(frame_token)
+        and item[1] == frame_token
+    )
+
+
+def _stripped_tool_frame(payload: Any) -> dict:
+    """[owner] T2-9: name+status only — the form an unbound frame degrades to."""
+    if not isinstance(payload, dict):
+        return {}
+    stripped = {k: v for k, v in payload.items() if k in ("tool", "name", "toolCallId", "tool_call_id", "status")}
+    return stripped
+
+
 def _clip_jsonable_value(value: Any, max_chars: int) -> Any:
-    """Coerce a tool arg to a JSON-safe scalar/object, truncated."""
+    """Coerce a tool arg to a JSON-safe scalar/object, truncated and redacted.
+
+    [owner] T2-9: redaction runs *before* truncation. Clipping first leaves a
+    credential fragment (``…ghp_abc``) at the cut, and once truncated the
+    fragment is too short for the pattern set to recognize, so the dict-level
+    backstop cannot recover it. The full secret is absent either way — this
+    ordering is what keeps the fragment out.
+    """
     if value is None or isinstance(value, (bool, int, float)):
         return value
     if isinstance(value, str):
+        value = _redact_for_sse(value)
         return value if len(value) <= max_chars else value[: max_chars - 1] + "…"
     if isinstance(value, bytes):
-        text = value.decode("utf-8", "replace")
+        text = _redact_for_sse(value.decode("utf-8", "replace"))
         return text if len(text) <= max_chars else text[: max_chars - 1] + "…"
     try:
         encoded = json.dumps(value, ensure_ascii=False, default=str)
     except Exception:
         encoded = str(value)
+    encoded = _redact_for_sse(encoded)
     if len(encoded) <= max_chars:
         try:
             return json.loads(encoded)
@@ -463,7 +619,12 @@ def _clip_jsonable_value(value: Any, max_chars: int) -> Any:
 
 
 def _clip_tool_args_for_sse(args: Any) -> dict:
-    """Redact-ready args for ``hermes.tool.progress``; always JSON-serializable."""
+    """Redact-ready args for ``hermes.tool.progress``; always JSON-serializable.
+
+    [owner] T2-9: redaction is applied per value inside
+    :func:`_clip_jsonable_value` and again as a dict-level backstop here, so
+    no code path can hand a raw string to the wire.
+    """
     if not isinstance(args, dict):
         return {}
     out: Dict[str, Any] = {}
@@ -478,16 +639,22 @@ def _clip_tool_args_for_sse(args: Any) -> dict:
     except Exception:
         encoded = ""
     if len(encoded) <= _TOOL_ARGS_MAX_CHARS:
-        return out
+        return _redact_args_for_sse(out)
     slim: Dict[str, Any] = {}
     for key in _TOOL_ARG_PRIMARY_KEYS:
         if key in args:
             slim[key] = _clip_jsonable_value(args[key], 4000)
-    return slim
+    return _redact_args_for_sse(slim)
 
 
 def _clip_tool_output_for_sse(result: Any) -> str:
-    """Short, JSON-safe tool result preview for the completed progress event."""
+    """Short, JSON-safe tool result preview for the completed progress event.
+
+    [owner] T2-9: this helper used to be pure truncation — command output,
+    ``stdout`` and file bodies reached the wire with no redaction at all.
+    Redaction now runs before the length cut for the same reason as on the
+    args side: a clipped secret is still a secret.
+    """
     if result is None:
         return ""
     if isinstance(result, bytes):
@@ -508,7 +675,7 @@ def _clip_tool_output_for_sse(result: Any) -> str:
                 text = str(result)
     else:
         text = str(result)
-    text = text.replace("\x00", "")
+    text = _redact_for_sse(text.replace("\x00", ""))
     if len(text) > _TOOL_OUTPUT_MAX:
         return text[: _TOOL_OUTPUT_MAX - 1] + "…"
     return text
@@ -5744,7 +5911,15 @@ class APIServerAdapter(BasePlatformAdapter):
                 _enqueue("tool.progress", {"message_id": message_id, "tool_name": tool_name or "_thinking", "delta": preview or ""})
             elif event_type in {"tool.started", "tool.completed", "tool.failed"}:
                 event_name = event_type.replace("tool.", "tool.")
-                _enqueue(event_name, {"message_id": message_id, "tool_name": tool_name, "preview": preview, "args": args})
+                # [owner] T2-9: this native run-event stream carried raw,
+                # unbounded tool args. Same egress rule as the SSE channels:
+                # redact the string leaves before the event leaves the
+                # process. Values are not clipped here — this channel has no
+                # length budget of its own and clipping is a separate policy.
+                _safe_args = (
+                    _redact_args_for_sse(args) if isinstance(args, dict) else args
+                )
+                _enqueue(event_name, {"message_id": message_id, "tool_name": tool_name, "preview": preview, "args": _safe_args})
 
         async def _run_and_signal() -> None:
             try:
@@ -6112,6 +6287,12 @@ class APIServerAdapter(BasePlatformAdapter):
 
         if stream:
             _stream_q = ThreadSafeAsyncQueue()
+            # [owner] T2-9: per-request frame token. Tool progress carries the
+            # whole tool argument set and a result preview, so "the queue is
+            # local to this handler" is not left as an unstated assumption:
+            # the token is stamped here and re-checked in the writer, which
+            # degrades any frame that is not bound to this request.
+            _frame_token = uuid.uuid4().hex
 
             def _on_delta(delta):
                 # Filter out None — the agent fires stream_delta_callback(None)
@@ -6153,16 +6334,21 @@ class APIServerAdapter(BasePlatformAdapter):
                     get_tool_emoji,
                     redact_tool_args_for_display,
                 )
-                label = build_tool_preview(function_name, function_args) or function_name
+                # [owner] T2-9: the label is derived from the RAW args by
+                # ``build_tool_preview``, so redacting only ``args`` would
+                # still leak the credential through the preview string.
+                label = _redact_for_sse(
+                    build_tool_preview(function_name, function_args) or function_name
+                )
                 safe_args = redact_tool_args_for_display(function_name, function_args) or function_args
-                _stream_q.put_threadsafe(("__tool_progress__", {
+                _stream_q.put_threadsafe(_bind_tool_frame("__tool_progress__", {
                     "tool": function_name,
                     "emoji": get_tool_emoji(function_name),
                     "label": label,
                     "args": _clip_tool_args_for_sse(safe_args),
                     "toolCallId": tool_call_id,
                     "status": "running",
-                }))
+                }, _frame_token))
 
             def _on_tool_complete(tool_call_id, function_name, function_args, function_result):
                 """Emit the matching ``status: completed`` event.
@@ -6182,7 +6368,9 @@ class APIServerAdapter(BasePlatformAdapter):
                 }
                 if output:
                     payload["output"] = output
-                _stream_q.put_threadsafe(("__tool_progress__", payload))
+                _stream_q.put_threadsafe(
+                    _bind_tool_frame("__tool_progress__", payload, _frame_token)
+                )
 
             # Start agent in background.  agent_ref is a mutable container
             # so the SSE writer can interrupt the agent on client disconnect.
@@ -6214,6 +6402,7 @@ class APIServerAdapter(BasePlatformAdapter):
                 request, completion_id, model_name, created, _stream_q,
                 agent_task, agent_ref, session_id=session_id,
                 gateway_session_key=gateway_session_key,
+                frame_token=_frame_token,
             )
 
         # Non-streaming: run the agent (with optional Idempotency-Key)
@@ -6358,13 +6547,19 @@ class APIServerAdapter(BasePlatformAdapter):
     async def _write_sse_chat_completion(
         self, request: "web.Request", completion_id: str, model: str,
         created: int, stream_q, agent_task, agent_ref=None, session_id: str = None,
-        gateway_session_key: str = None,
+        gateway_session_key: str = None, frame_token: str = None,
     ) -> "web.StreamResponse":
         """Write real streaming SSE from agent's stream_delta_callback queue.
 
         If the client disconnects mid-stream (network drop, browser tab close),
         the agent is interrupted via ``agent.interrupt()`` so it stops making
         LLM API calls, and the asyncio task wrapper is cancelled.
+
+        [owner] T2-9: ``frame_token`` is the token the emitting handler
+        stamped onto its tool-progress frames. A frame bound to a different
+        token is written without ``args``/``output`` — the stream itself is
+        per-request, and the assertion makes that a checked property instead
+        of an assumption a future fan-out refactor could quietly break.
         """
         sse_headers = {
             "Content-Type": "text/event-stream",
@@ -6401,14 +6596,39 @@ class APIServerAdapter(BasePlatformAdapter):
                 """Write a single queue item to the SSE stream.
 
                 Plain strings are sent as normal ``delta.content`` chunks.
-                Tagged tuples ``("__tool_progress__", payload)`` are sent
-                as a custom ``event: hermes.tool.progress`` SSE event so
-                frontends can display them without storing the markers in
+                Tagged tuples ``("__tool_progress__", frame_token, payload)``
+                are sent as a custom ``event: hermes.tool.progress`` SSE event
+                so frontends can display them without storing the markers in
                 conversation history.  See #6972 for the original event,
                 #16588 for the ``toolCallId``/``status`` lifecycle fields.
+
+                [owner] T2-9: a frame whose token is not this stream's token
+                (or that carries no token at all) is written in its stripped
+                name+status form. Isolation of the richest payload on this
+                channel is therefore asserted at the point of emission, not
+                merely implied by how the queue happens to be wired.
                 """
-                if isinstance(item, tuple) and len(item) == 2 and item[0] == "__tool_progress__":
-                    await response.write(_sse_frame(item[1], event="hermes.tool.progress"))
+                if (
+                    isinstance(item, tuple)
+                    and len(item) == 3
+                    and item[0] == "__tool_progress__"
+                ):
+                    payload = item[2]
+                    if _tool_frame_is_ours(item, frame_token):
+                        await response.write(
+                            _sse_frame(payload, event="hermes.tool.progress")
+                        )
+                    else:
+                        logger.error(
+                            "[API] dropped unbound hermes.tool.progress frame "
+                            "(token mismatch); emitting name+status only"
+                        )
+                        await response.write(
+                            _sse_frame(
+                                _stripped_tool_frame(payload),
+                                event="hermes.tool.progress",
+                            )
+                        )
                 else:
                     content_chunk = {
                         "id": completion_id, "object": "chat.completion.chunk",
@@ -6589,6 +6809,7 @@ class APIServerAdapter(BasePlatformAdapter):
         store: bool,
         session_id: str,
         gateway_session_key: Optional[str] = None,
+        frame_token: Optional[str] = None,
     ) -> "web.StreamResponse":
         """Write an SSE stream for POST /v1/responses (OpenAI Responses API).
 
@@ -6893,13 +7114,31 @@ class APIServerAdapter(BasePlatformAdapter):
                 with ``__tool_started__`` / ``__tool_completed__``
                 prefixes are tool lifecycle events and flush the buffer
                 before emitting.
+
+                [owner] T2-9: those frames carry tool arguments and the
+                result preview, so they are only emitted in full when bound
+                to this stream's request token; an unbound or foreign frame
+                degrades to name+status.
                 """
                 nonlocal _batch_timer
-                if isinstance(it, tuple) and len(it) == 2 and isinstance(it[0], str):
-                    tag, payload = it
+                if (
+                    isinstance(it, tuple)
+                    and len(it) in (2, 3)
+                    and isinstance(it[0], str)
+                ):
+                    tag = it[0]
+                    payload = it[2] if len(it) == 3 else it[1]
+                    bound = _tool_frame_is_ours(it, frame_token)
                     # Flush batched text before tool events
                     if _batch_buf:
                         await _flush_batch()
+                    if not bound:
+                        logger.error(
+                            "[API] dropped unbound %s frame (token mismatch); "
+                            "emitting name+status only",
+                            tag,
+                        )
+                        payload = _stripped_tool_frame(payload)
                     if tag == "__tool_started__":
                         await _emit_tool_started(payload)
                     elif tag == "__tool_completed__":
@@ -7327,6 +7566,10 @@ class APIServerAdapter(BasePlatformAdapter):
             # agent runs so frontends can render text deltas and tool
             # calls in real time.  See _write_sse_responses for details.
             _stream_q = ThreadSafeAsyncQueue()
+            # [owner] T2-9: same per-request frame binding as the
+            # chat-completions branch — this channel carries tool arguments
+            # and result previews too, by the Responses spec.
+            _frame_token = uuid.uuid4().hex
 
             def _on_delta(delta):
                 # None from the agent is a CLI box-close signal, not EOS.
@@ -7348,20 +7591,24 @@ class APIServerAdapter(BasePlatformAdapter):
 
             def _on_tool_start(tool_call_id, function_name, function_args):
                 """Queue a started tool for live function_call streaming."""
-                _stream_q.put_threadsafe(("__tool_started__", {
+                _stream_q.put_threadsafe(_bind_tool_frame("__tool_started__", {
                     "tool_call_id": tool_call_id,
                     "name": function_name,
-                    "arguments": function_args or {},
-                }))
+                    # [owner] T2-9: same egress rule as hermes.tool.progress.
+                    # This channel echoes the arguments to the caller by spec,
+                    # and the caller is not necessarily the operator who owns
+                    # the secret the tool was invoked with.
+                    "arguments": _redact_args_for_sse(function_args or {}),
+                }, _frame_token))
 
             def _on_tool_complete(tool_call_id, function_name, function_args, function_result):
                 """Queue a completed tool result for live function_call_output streaming."""
-                _stream_q.put_threadsafe(("__tool_completed__", {
+                _stream_q.put_threadsafe(_bind_tool_frame("__tool_completed__", {
                     "tool_call_id": tool_call_id,
                     "name": function_name,
-                    "arguments": function_args or {},
-                    "result": function_result,
-                }))
+                    "arguments": _redact_args_for_sse(function_args or {}),
+                    "result": _redact_result_for_sse(function_result),
+                }, _frame_token))
 
             agent_ref = [None]
             agent_task = asyncio.ensure_future(self._run_agent(
@@ -7402,6 +7649,7 @@ class APIServerAdapter(BasePlatformAdapter):
                 store=store,
                 session_id=session_id,
                 gateway_session_key=gateway_session_key,
+                frame_token=_frame_token,
             )
 
         async def _compute_response():
@@ -8685,6 +8933,13 @@ class APIServerAdapter(BasePlatformAdapter):
         if err:
             return err
 
+        # [owner] T2-9: authenticated is not the same as addressed. Reject an
+        # event the main gateway tagged for a different profile instead of
+        # running it here (see _owner_inbound_profile_rejection).
+        _mismatch = _owner_inbound_profile_rejection(body)
+        if _mismatch:
+            return _profile_mismatch_response(_mismatch)
+
         schema_version = body.get("schema_version", 0)
         if schema_version not in (0, 1):
             return web.json_response(
@@ -8842,6 +9097,11 @@ class APIServerAdapter(BasePlatformAdapter):
         Thin glue: auth + body parse + adapter lookup, then delegate the replay /
         re-tag / card extraction to ``owner.feishu.profile_routing``. Returns
         ``{"card": <json|null>}`` for the main gateway to relay inline.
+
+        [owner] T2-9: a click tagged for another profile is rejected (409)
+        before the adapter is touched — the card's correlation state lives in
+        the container that sent it, so replaying elsewhere is not a partial
+        degradation, it is the wrong conversation.
         """
         auth_err = self._check_auth(request)
         if auth_err:
@@ -8849,6 +9109,10 @@ class APIServerAdapter(BasePlatformAdapter):
         body, err = await self._read_json_body(request)
         if err:
             return err
+
+        _mismatch = _owner_inbound_profile_rejection(body)
+        if _mismatch:
+            return _profile_mismatch_response(_mismatch)
 
         _get_adapter = _owner_import(
             "owner.feishu.profile_routing", "_get_inprocess_feishu_adapter"
