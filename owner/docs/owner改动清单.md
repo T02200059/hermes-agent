@@ -1670,10 +1670,34 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
   | 单改一处不是完整修复 | 注册侧那条独立通路依然敞着，只改 `_media_owner_matches` 会给出不完整的安全感 —— 收紧必须两条一起改 |
   | 不对称是已知的 | 同文件的 `/v1/artifacts/download/{artifact_id}` 用**服务端推导**的 scope（profile principal + loopback 派生的 transport family）作 `scope_key` 精确相等比对，本身即 fail-closed，没有「不声明就放行」这一档 |
 
-  残余风险（显式记录）：在共享容器（`default_profile` 共享实例 / 白名单走 root）中，持 API key 且拿到他人 `media_id` 者可下载他人产物。与 **T2-8**（归属凭据无服务端盐）、**T2-9**（跨用户暴露面）叠加时风险上升。
+  残余风险（显式记录）：在共享容器（`default_profile` 共享实例 / 白名单走 root）中，持 API key 且拿到他人 `media_id` 者可下载他人产物；与 **T2-9**（跨用户暴露面）叠加时风险上升。归属摘要**本身不掺服务端盐**（§16.5 记录了该取舍），因此这条风险的缓解仍只有 `media_id` 的不可枚举性，叠加项亦只有 T2-9。
 
   本决策**钉在行为上**：`tests/gateway/test_api_server_media_owner.py::TestAcceptedUnattributedAccess` 断言「未声明即放行」与「注册侧落空 owner」，并断言 docstring 必须点名这是已接受的决策、必须给出本文出处。未来若要收紧，**改测试即是改决策** —— 不会作为某次重构的副作用悄悄发生（变异验证：把 `return True` 改成 `return False` → **4 例失败**；去掉 docstring 中的本文指针 → 1 例失败）。
-- **未纳入**：归属凭据加服务端盐（T2-8）；`tool.progress` 的按会话隔离（T2-9）；前端侧「下载时回带会话头」的适配 —— 本仓无法核实
+- **未纳入**：`tool.progress` 的按会话隔离（T2-9）；前端侧「下载时回带会话头」的适配 —— 本仓无法核实。归属凭据本身的处置见 **§16.5**
+
+---
+
+### 16.5 会话 id 派生加服务端盐；归属摘要刻意不加盐
+
+- **背景**（T2-8 / 安全官 S2-2）：`_derive_chat_session_id` 把「system prompt + 首条用户消息」直接截断 sha256 成 `api-<16hex>`，两个入参都**公开且客户端可控**（prompt 是前端自带的，首条消息是用户自己的）⇒ 派生 id 可被**离线算出**。这条 id 不只是连续性键：`/api/sessions/{id}`（GET / PATCH / DELETE / fork，`api_server.py:5279-5347`）只校验 API key 并直接从路径取 id，**无归属校验** ⇒ 可离线推导的 id 等于「可推导地读到、改到、删掉别人的会话」。媒体归属断言只是它被报出来的场景，不是它的实质。
+- **原修法为何不成立**（安全官建议「两处摘要都掺盐」）：对归属摘要**零收益**。`_media_owner_matches` 比对的是 `media_owner_token(调用方送来的串)`，而盐在服务端作用于**送到的那串本身**，所以它只能关掉「离线算出一个派生 id」，关不掉「提交一个已知 id」与「什么都不声明」两条主路 —— 付了成本而边界未动。故盐**只加在派生上**。
+- **决策**（2026-09-28 用户确认）：只给 `_derive_chat_session_id` 加 HMAC 服务端盐，盐源为**新增独立持久化密钥**；`media_owner_token` 保持不加盐，并在两处 docstring 写明这是决策而非遗漏。
+- **方案**：
+  - 新增 `owner/gateway/session_salt.py`：`api_session_salt()` 按 `HERMES_API_SESSION_SALT` env > `gateway.api_server.session_salt` config > `<HERMES_HOME>/api_session_salt` 解析；生成档为 32 字节 `secrets.token_urlsafe`，`mkstemp` + `os.replace` 原子写、0600。
+  - 盐**跨重启稳定** ⇒ 派生会话连续性活过一次重启（`test_the_secret_survives_a_cache_reset` 断言第二次解析读到的是 `file` 档而非重新生成）。**多节点部署须统一注入 env/config**，否则各节点各自生成会得到不同 id。
+  - `_derive_chat_session_id` 改 `HMAC-SHA256(salt, seed)[:16]`；**形状（`api-` + 16 hex）刻意不变** —— 该值会落进磁盘产物名与响应头，改形状是另一件事。
+  - 降级：落盘失败 / 无 HERMES_HOME ⇒ 每进程随机盐 + `logger.error` 一次（点名声明的出路）。这只损失重启后的连续性，**不损失「不可离线推导」**；返回空串反而会恢复原缺陷。既有的**过短盐文件既不使用也不覆盖**（别人写的秘密不是我们的文件），同样走降级。`session_salt_source()` 把来源归因成 `env` / `config` / `file` / `generated` / `degraded`。
+  - **不接受的近似**：过短的 env/config 值**不当作已配置** —— 占位符（如 `changeme`）最坏的不是弱，而是读起来像已配置。
+- **未闭合的边界（显式记录）**：盐**不解决会话碰撞** —— 盐为整个部署共享，同 prompt + 同首句仍得同一 id（同容器两用户即共享会话与沙箱目录）。拆开需要一个本模块没有的「按身份」维度。`test_the_same_salt_still_collides_on_identical_inputs` 把这一条钉住：若哪天真的按身份隔离了，该用例会红 —— 那正是提醒更新本节的信号。
+- **涉及文件**：`owner/gateway/session_salt.py`（新增）、`gateway/platforms/api_server.py`（`_owner_session_salt` 薄委托 + `_derive_chat_session_id` 改 HMAC + 两处 docstring）、`tests/owner/test_session_salt.py`（新增 23 例）、`tests/gateway/test_api_server_media_owner.py`（+2 例钉住「摘要不加盐」）
+- **侵入类型**：官方文件薄胶水（一个模块级 helper + `_derive_chat_session_id` 内 8 行）
+- **验证**：新增 23 例覆盖优先级三档 / 生成落盘 0600 与暂存清理 / 跨重启稳定 / 三条降级路径 / 换盐换 id / 碰撞仍存在 / 形状不变 / 来源可归因。**变异验证 6 条全部失败**：撤销加盐 → 3 例；接受过短盐 → 1 例；删缓存提前返回 → 1 例；覆盖操作者的短文件 → 1 例；落盘权限放宽到 0644 → 1 例；空盐当有效 → 1 例。
+- **连带修复**（建立基线时发现的两处既有缺陷。与本题无关，但会让「回归全绿」这句话失真，故一并修）：
+  - `tests/gateway/test_api_server_media_files.py::test_sweep_evicts_oldest_past_entry_cap` 用 `name.split("__", 1)[0]` 解析条目名。id 是 `med_` + token，token 首字符恰为 `_` 时条目名成为 `med__…`，解析结果退化成 `"med"` ⇒ 实测约 **3.1%** 翻车（`1-(63/64)^2`）。改为按 id 锚定的 `glob(f"{id}__*")`（与同文件 `_blob` 同法）。**不可改用 `store.get()`**：它还套用 TTL，而本用例故意把 mtime 钉在 epoch 1000，会被判过期并真的删掉条目。
+  - `tests/owner/test_identity_routing_dormant.py` 的 `_LdapGateProbe.patch()` 只在**进入时**清 `_owner_lazy`，退出时仅还原模块属性 ⇒ 探针自己那次调用把 `fake_gate` 记忆化，同一 pytest 会话里后面的 `test_ldap_identity_auth.py` 拿到**假门**，放行本应被拒的请求；配置里的 `profile_endpoints` 指向本机真实监听中的网关，于是表现为该网关回的 401 `gateway_auth_failed`（**7 例失败**）。改为退出时一并清缓存。
+  - 净收益：`tests/owner/` + `tests/gateway/test_api_server*.py` 由 **7 例失败 / 956 通过** 变为 **963 例全通过**。
+- **未纳入**：`/api/sessions/{id}` 端点自身的归属模型（上游既有设计：只认 API key + 路径里的 id）—— 本条只让派生 id 不再可离线推导；`tool.progress` 的按会话隔离（T2-9）
+- **Commit**：`a622691915`
 
 ---
 
@@ -1708,6 +1732,7 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 | `owner/diff_card/` | diff 卡片平台分发（飞书/QQ） | feishu/adapter.py |
 | `owner/feishu/` | 飞书深度定制（含 queue_card / skill_approval_card 等）；另承载 API Server 侧 `resolve_api_identity_route` / `is_api_identity_whitelisted`（§15.1、§15.5，复用 `profile_endpoints`） | feishu/adapter.py（64+ 处标记）、gateway/platforms/api_server.py |
 | `owner/gateway/` | inbound_context + hygiene_compression_notice + steer_vision + **ldap_auth**（LDAP bind 认证门：决策表 6 态 / 72h 正缓存 + 10s 负缓存 / RFC4514 转义，§15.2–§15.3；**§15.8 起 `enforce=seen` 为 `always` 的 fail-closed 别名**，`_seen_logins` 仅作诊断；**§15.9 起带密码但无法验证默认拒绝（503）**，`fail_open_on_error` 为显式 opt-in；**§15.7 新增路由接线状态诊断**） | gateway/run.py、gateway/platforms/api_server.py |
+| `owner/gateway/session_salt.py` | API 会话 id 派生用的服务端盐（优先级 env > config > `<HERMES_HOME>/api_session_salt`；生成档 32 字节 `token_urlsafe`、原子写 0600、跨重启稳定；落盘失败降级为每进程盐并告警一次，§16.5）；另提供来源归因 `session_salt_source()` | gateway/platforms/api_server.py（`_owner_session_salt` 薄委托 + `_derive_chat_session_id` 改 HMAC） |
 | `owner/patches/` | runtime patch（OpenViking recall + memory synthetic guard + pool base_url override + **queue_cancel** + **file_binary_detection**） | owner-extensions plugin / hermes_cli/runtime_provider.py |
 | `owner/providers/credential_helpers.py` | GitHub token 校验等 credential helper | hermes_cli/model_switch.py |
 | `owner/scripts/` | 运维脚本（备份/健康检查/汇率/todo 扫描/**HN Daily**/skill 同步/**Viking 记忆质量**/upstream_sync/周会/swagger） | — |
@@ -1736,7 +1761,7 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 | `gateway/platforms/base.py` | per-profile cache roots、SendResult rotate/retry_after、chained quick command（`[owner-patch]`）、progress dedup code-fence 守卫 | — | 1d908072a、2be0af638 |
 | `tools/cronjob_tools.py` | owner/scripts allowlist（mtime-based）、cron job args 三处 `[owner-patch]` | — | 8a8f42455、3163d17e8、890869693 |
 | `cron/jobs.py` / `cron/scheduler.py` | cron job args `[owner-patch]` 参数 normalize + map | — | 3163d17e8 |
-| `gateway/platforms/api_server.py` | identity routing 中间件（`X-Hermes-Identity` → 子 profile 反代，§15.1）、LDAP bind 二次认证门 + 三态 401 + **503（`ldap_backend_unavailable`，§15.9）**（§15.2–§15.3）、转发头剥离 + SSE 逐 chunk 透传（§15.4）、`GET /v1/ldap/identity/{identity}/access` + identity_whitelist 短路（§15.5）、finish chunk effective `session_id`（§15.6）、**dormant 状态显式化**（§15.7：中间件 `route is None` 分支区分未接线/未配置 + 端点响应 `routing_dormant` / `routing_keys_present`）、**认证门前移**（§15.10：`_owner_identity_gate_rejection` 独立步骤，白名单 / 已路由 / 未知身份一律先过门）、`GET /v1/media/{id}` + `hermes.files`（§16.1）、`ApiMediaStore.from_config()`（§16.2）、`tool.progress` 字段扩展（§16.3）、**产物下载归属断言 + 「未声明即放行」决策**（§16.4） | owner/gateway/ldap_auth.py、owner/feishu/profile_routing.py、gateway/platforms/api_server_media.py | 6177923b26、531508e317、311f553550、4b6d187a2b、b14892be7c、8d42e4c199、3d9a9ceed4、943b6bf1ac、9df4372591、9f453c51e1、6613ac2146、571ba8c937、0925bdf088 |
+| `gateway/platforms/api_server.py` | identity routing 中间件（`X-Hermes-Identity` → 子 profile 反代，§15.1）、LDAP bind 二次认证门 + 三态 401 + **503（`ldap_backend_unavailable`，§15.9）**（§15.2–§15.3）、转发头剥离 + SSE 逐 chunk 透传（§15.4）、`GET /v1/ldap/identity/{identity}/access` + identity_whitelist 短路（§15.5）、finish chunk effective `session_id`（§15.6）、**dormant 状态显式化**（§15.7：中间件 `route is None` 分支区分未接线/未配置 + 端点响应 `routing_dormant` / `routing_keys_present`）、**认证门前移**（§15.10：`_owner_identity_gate_rejection` 独立步骤，白名单 / 已路由 / 未知身份一律先过门）、`GET /v1/media/{id}` + `hermes.files`（§16.1）、`ApiMediaStore.from_config()`（§16.2）、`tool.progress` 字段扩展（§16.3）、**产物下载归属断言 + 「未声明即放行」决策**（§16.4）、**会话 id 派生加服务端盐 + 归属摘要刻意不加盐**（§16.5：`_owner_session_salt` 薄委托 + `_derive_chat_session_id` 改 HMAC） | owner/gateway/ldap_auth.py、owner/feishu/profile_routing.py、owner/gateway/session_salt.py、gateway/platforms/api_server_media.py | 6177923b26、531508e317、311f553550、4b6d187a2b、b14892be7c、8d42e4c199、3d9a9ceed4、943b6bf1ac、9df4372591、9f453c51e1、6613ac2146、571ba8c937、0925bdf088、a622691915 |
 
 ### B.2 中度侵入（薄胶水 + 列扩展，sync 冲突中）
 
@@ -1856,6 +1881,18 @@ _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请先�
 ---
 
 ## 附录 E：变更日志
+
+### 2026-09-28：新增 §16.5 会话 id 派生加服务端盐 + 归属摘要刻意不加盐（T2-8，含两处连带修复）
+
+- **新建正文**：**§16.5**：`a622691915`（`owner/gateway/session_salt.py` 新增；`gateway/platforms/api_server.py` 新增 `_owner_session_salt` 薄委托并把 `_derive_chat_session_id` 改为 HMAC；`tests/owner/test_session_salt.py` 新增 23 例；`tests/gateway/test_api_server_media_owner.py` 新增 2 例）
+- **类型**：安全修复（可离线推导的 bearer 凭据）+ 官方文件薄胶水
+- **决策**（2026-09-28 用户确认）：**盐只加在会话 id 派生上，不加入归属摘要**；盐源为新增独立持久化密钥（不在 API key / LDAP 口令上搭车）
+- **与该条原修法的分歧**：安全官 S2-2 建议「两处摘要都掺盐」。对归属摘要**零收益** —— `_media_owner_matches` 比对的是 `media_owner_token(调用方送来的串)`，盐作用于「送到的那串本身」，只能关掉离线推导，关不掉「提交一个已知 id」与「什么都不声明」
+- **本条实质**：派生 id 不只是连续性键，`/api/sessions/{id}`（GET / PATCH / DELETE / fork）只认 API key + 路径里的 id、无归属校验 ⇒ 可离线推导的 id 等于可推导地读到、改到、删掉他人会话。这才是要关掉的东西
+- **未闭合边界**：盐**不解决会话碰撞**（部署共享一个盐 + 同 prompt 同首句 ⇒ 同 id），已显式记录并钉在 `test_the_same_salt_still_collides_on_identical_inputs`
+- **连带修复**（建立基线时发现的既有缺陷，与 T2-8 无关）：`test_sweep_evicts_oldest_past_entry_cap` 用 `split("__", 1)[0]` 解析条目名，而 id 是 `med_` + token、token 首字符可为 `_` ⇒ 约 **3.1% 假失败**；`_LdapGateProbe.patch()` 退出时未清 `_owner_lazy` ⇒ 假门漏给同一 pytest 会话的后续模块，`test_ldap_identity_auth.py` 有 7 例把本应被拒的请求真的反代到本机监听中的网关
+- **验证**：变异验证 6 条全部失败（撤销加盐 → 3 例 / 接受过短盐 → 1 / 删缓存提前返回 → 1 / 覆盖短文件 → 1 / 权限放宽 → 1 / 空盐当有效 → 1）+ 污染修复的变异 1 条（去掉退出清缓存 → 7 例复现）；回归 `tests/owner/` + `tests/gateway/test_api_server*.py` **963 例全通过**（修复前 7 例失败 / 956 通过）；与父提交对照无回归。**需网关重启生效**
+- **未纳入**：`/api/sessions/{id}` 端点自身的归属模型（上游既有设计）；`tool.progress` 的按会话隔离（T2-9）
 
 ### 2026-09-28：新增 §16.4 产物下载归属断言 + 「未声明即放行」决策（T2-7，含补录）
 
