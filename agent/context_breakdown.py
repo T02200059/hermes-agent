@@ -12,6 +12,8 @@ import json
 import re
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+from agent.i18n import t
+
 _SKILLS_BLOCK_RE = re.compile(r"<available_skills>.*?</available_skills>", re.DOTALL)
 
 _SUBAGENT_TOOL_NAMES = frozenset({"delegate_task"})
@@ -280,6 +282,17 @@ def render_context_grid(payload: Dict[str, Any]) -> List[str]:
     ]
 
 
+def _localized_category_label(cat: Dict[str, Any]) -> str:
+    """Prefer gateway.usage.breakdown_cat_* (shared with /usage); fall back to payload label."""
+    cat_id = str(cat.get("id") or "")
+    if cat_id:
+        label = t(f"gateway.usage.breakdown_cat_{cat_id}")
+        # Missing key → t() echoes the key back; fall back to engine English label.
+        if not label.endswith(f"breakdown_cat_{cat_id}"):
+            return label
+    return str(cat.get("label") or cat_id)
+
+
 def render_context_category_lines(payload: Dict[str, Any]) -> List[str]:
     """Render the 'Estimated usage by category' table as plain-text lines."""
     categories = payload.get("categories") or []
@@ -287,23 +300,25 @@ def render_context_category_lines(payload: Dict[str, Any]) -> List[str]:
     estimated_total = int(payload.get("estimated_total") or 0)
     denom = context_max or estimated_total
 
-    lines = ["Estimated usage by category"]
+    # [owner] i18n: headers / Free space / category labels via t() (gateway.context.* + usage.breakdown_cat_*)
+    lines = [t("gateway.context.breakdown_by_category")]
     if not categories:
-        lines.append("  (no data yet — send a message first)")
+        lines.append(f"  {t('gateway.context.breakdown_no_data')}")
         return lines
 
-    width = max(len(str(cat.get("label") or "")) for cat in categories)
-    width = max(width, len("Free space"))
-    for cat in categories:
+    free_label = t("gateway.context.breakdown_free_space")
+    labels = [_localized_category_label(cat) for cat in categories]
+    width = max((len(lbl) for lbl in labels), default=0)
+    width = max(width, len(free_label))
+    for cat, label in zip(categories, labels):
         tokens = int(cat.get("tokens") or 0)
         glyph = _CATEGORY_GLYPHS.get(str(cat.get("id") or ""), "▪")
         pct = tokens / denom * 100 if denom else 0.0
-        label = str(cat.get("label") or cat.get("id") or "")
         lines.append(f"{glyph} {label:<{width}} {tokens:>9,} tokens {pct:>5.1f}%")
     if context_max > 0:
         free = max(0, context_max - estimated_total)
         pct = free / context_max * 100
-        lines.append(f"{_FREE_GLYPH} {'Free space':<{width}} {free:>9,} tokens {pct:>5.1f}%")
+        lines.append(f"{_FREE_GLYPH} {free_label:<{width}} {free:>9,} tokens {pct:>5.1f}%")
     return lines
 
 
@@ -313,7 +328,8 @@ def render_context_details_lines(details: Dict[str, Any]) -> List[str]:
 
     toolsets = details.get("toolsets") or []
     if toolsets:
-        lines.append("Toolsets by schema cost (largest first)")
+        # [owner] i18n
+        lines.append(t("gateway.context.breakdown_toolsets_header"))
         for group in toolsets[:_DETAILS_TABLE_LIMIT]:
             lines.append(
                 f"  {group['toolset']:<24} {group['tool_count']:>3} tools"
@@ -321,13 +337,13 @@ def render_context_details_lines(details: Dict[str, Any]) -> List[str]:
             )
         remaining = len(toolsets) - _DETAILS_TABLE_LIMIT
         if remaining > 0:
-            lines.append(f"  … and {remaining} more")
+            lines.append(f"  {t('gateway.context.breakdown_and_more', remaining=remaining)}")
 
     skills = details.get("skills") or []
     if skills:
         if lines:
             lines.append("")
-        lines.append("Skills by cost (index = always-on; SKILL.md = cost when loaded)")
+        lines.append(t("gateway.context.breakdown_skills_header"))
         for entry in skills[:_DETAILS_TABLE_LIMIT]:
             name = str(entry.get("name") or "")
             if len(name) > 28:
@@ -340,7 +356,7 @@ def render_context_details_lines(details: Dict[str, Any]) -> List[str]:
             )
         remaining = len(skills) - _DETAILS_TABLE_LIMIT
         if remaining > 0:
-            lines.append(f"  … and {remaining} more")
+            lines.append(f"  {t('gateway.context.breakdown_and_more', remaining=remaining)}")
 
     return lines
 
@@ -368,8 +384,14 @@ def render_context_breakdown_lines(
     if context_max > 0:
         pct = int(payload.get("context_percent") or 0)
         lines.append("")
+        # [owner] i18n
         lines.append(
-            f"Context window: {context_used:,} / {context_max:,} tokens ({pct}%)"
+            t(
+                "gateway.context.breakdown_window",
+                used=f"{context_used:,}",
+                total=f"{context_max:,}",
+                pct=pct,
+            )
         )
 
     if details is not None:
@@ -379,5 +401,5 @@ def render_context_breakdown_lines(
             lines.extend(detail_lines)
     else:
         lines.append("")
-        lines.append("Use /context all for per-skill and per-toolset costs.")
+        lines.append(t("gateway.context.breakdown_expand_hint"))
     return lines

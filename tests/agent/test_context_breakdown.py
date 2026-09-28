@@ -125,4 +125,36 @@ def test_details_lines_caps_listing():
     lines = render_context_details_lines(details)
     assert any("… and 5 more" in line for line in lines)
 
+def test_category_lines_i18n_zh(monkeypatch):
+    """Gateway /context breakdown headers + category labels honor display language."""
+    from agent import i18n
+
+    monkeypatch.setenv("HERMES_LANGUAGE", "zh")
+    i18n.reset_language_cache()
+    try:
+        lines = render_context_category_lines(_payload())
+        text = "\n".join(lines)
+        assert "按类别估算用量" in text
+        assert "系统提示词" in text
+        assert "工具定义" in text
+        assert "空闲空间" in text
+        # Window / expand hint also localized
+        full = "\n".join(render_context_breakdown_lines(_payload(), grid=False))
+        assert "上下文窗口：" in full
+        assert "/context all" in full  # command name stays
+        assert "查看各技能与工具集开销" in full
+    finally:
+        monkeypatch.delenv("HERMES_LANGUAGE", raising=False)
+        i18n.reset_language_cache()
+
+
+def test_category_lines_i18n_en_default(monkeypatch):
+    monkeypatch.delenv("HERMES_LANGUAGE", raising=False)
+    from agent import i18n
+    i18n.reset_language_cache()
+    lines = render_context_category_lines(_payload())
+    text = "\n".join(lines)
+    assert "Estimated usage by category" in text
+    assert "System prompt" in text
+    assert "Free space" in text
 
