@@ -226,6 +226,30 @@ def _owner_import(module: str, name: str) -> Any:
     return _owner_lazy[key]
 
 
+def _owner_session_salt() -> str:
+    """[owner] T2-8: server-side salt for ``_derive_chat_session_id``.
+
+    Returns ``""`` when ``owner/`` is absent — the graceful-degradation contract
+    this file keeps for upstream sync (see ``_owner_import``), which falls back
+    to the unkeyed digest. ``owner/gateway/session_salt.py`` absorbs every
+    configuration and filesystem problem and still returns a usable salt, so
+    "owner present" and "derivation is keyed" are the same statement; a raising
+    provider would otherwise be an invisible downgrade, so it is reported
+    rather than swallowed.
+    """
+    getter = _owner_import("owner.gateway.session_salt", "api_session_salt")
+    if getter is None:
+        return ""
+    try:
+        return str(getter() or "")
+    except Exception as exc:  # noqa: BLE001 - chat must not break on a salt miss
+        logger.warning(
+            "[API] session-id salt unavailable (%s); falling back to the unkeyed digest",
+            exc,
+        )
+        return ""
+
+
 async def _owner_identity_gate_rejection(
     identity: str, request: "web.Request"
 ) -> Optional["web.Response"]:
@@ -1602,9 +1626,33 @@ def _derive_chat_session_id(
     them produces a deterministic session ID that lets the API server reuse
     the same Hermes session (and therefore the same Docker container sandbox
     directory) across turns.
+
+    [owner] T2-8: the seed is keyed with a server-side secret (HMAC), because
+    both inputs are public — the system prompt is whatever the frontend ships
+    and the first message is the user's own — so an unkeyed digest is
+    *derivable offline* by anyone who can guess them. The id it produces is not
+    just a continuity key: ``/api/sessions/{id}`` (GET / PATCH / DELETE / fork)
+    authenticates with the API key alone and reads the id straight from the
+    path, with no ownership check, so a derivable id is derivable access to
+    another caller's conversation. Keying removes the offline computation; it
+    does **not** make ids unique — two callers with the same system prompt and
+    first message still collide, which is recorded as an open bound in
+    ``owner/docs/owner改动清单.md`` §16.5 rather than implied to be fixed here.
+
+    The shape is deliberately unchanged (``api-`` + 16 hex): the derived value
+    flows into on-disk session artifacts and response headers, so widening or
+    re-prefixing it is a separate decision. The salt itself lives in owner/
+    (``owner/gateway/session_salt.py``); when owner/ is absent — upstream sync —
+    the unkeyed digest is kept as the fallback.
     """
     seed = f"{system_prompt or ''}\n{first_user_message}"
-    digest = hashlib.sha256(seed.encode("utf-8")).hexdigest()[:16]
+    salt = _owner_session_salt()
+    if salt:
+        digest = hmac.new(
+            salt.encode("utf-8"), seed.encode("utf-8"), hashlib.sha256
+        ).hexdigest()[:16]
+    else:
+        digest = hashlib.sha256(seed.encode("utf-8")).hexdigest()[:16]
     return f"api-{digest}"
 
 
@@ -4699,12 +4747,38 @@ class APIServerAdapter(BasePlatformAdapter):
 
     @staticmethod
     def _media_owner_matches(request: "web.Request", owner: str) -> bool:
-        """True when the request proves it is the entry's owning session.
+        """True when the request identifies itself as the entry's owning session.
 
         A routed caller carries both the session-continuation header and the
         LDAP identity header, so either is accepted.
 
-        A request that asserts neither is **allowed through**. That is an
+        **This is an identity guard, not a security boundary** (T2-8, owner改动清单
+        §16.5). What it compares is a digest of a string the *caller* supplies, so
+        it establishes "you named the same session", never "you possess something
+        only that session could possess". Three ways past it:
+
+          - present nothing → allowed outright (the accepted decision below);
+          - present the id the entry was registered under. A caller-chosen id is
+            guessable rather than secret; a *derived* one is no longer computable
+            offline (T2-8 keys ``_derive_chat_session_id`` with a server secret),
+            but it remains obtainable rather than possessed;
+          - present someone else's id that you happen to know.
+
+        So the honest reading is "this stops a client from accidentally fetching
+        another session's file". What actually keeps others out is the media id
+        itself — ``med_`` + 96 bits of ``secrets.token_urlsafe`` handed only to
+        the registering client — plus the API key.
+
+        T2-8 keyed the session-id derivation and deliberately left *this* digest
+        unkeyed. The split is the decision, not an oversight: a salt applied here
+        is applied server-side to whatever the caller sends, so it closes the
+        computing-a-derived-id-offline route while leaving "submit a known id"
+        and "submit nothing" exactly as they were — cost without moving the
+        boundary. Keying the derivation protects the same id at the point where
+        it *is* a bearer credential (``/api/sessions/{id}`` carries no ownership
+        check), which is where the offline derivation actually pays off.
+
+        An unattributed request is **allowed through**, and that is an
         accepted decision, not an oversight — it is recorded together with its
         residual risk in ``owner/docs/owner改动清单.md`` §16.4, and pinned by
         ``tests/gateway/test_api_server_media_owner.py``. The bound being
@@ -4740,17 +4814,28 @@ class APIServerAdapter(BasePlatformAdapter):
         crosses the HTTP boundary. The path is re-validated on download so a
         later overwrite/move cannot serve a denylisted location.
 
-        Ownership model — accepted decision, recorded in owner改动清单 §16.4:
+        Ownership model — accepted decision, recorded in owner改动清单 §16.4
+        and §16.5:
         an entry that carries an owner requires the caller to present the same
         session (or the LDAP identity it was routed by); a caller presenting
         neither is let through, and an entry registered by a turn with no
         session header carries no owner at all — in which case this check is
         skipped by the condition below rather than by ``_media_owner_matches``.
         So two entry points in code, one boundary in practice: the API key plus
-        knowledge of the id. Note the sibling ``/v1/artifacts/download/{id}``
-        resolves a *server-derived* scope instead (profile principal +
-        loopback-derived transport family) and is therefore fail-closed; that
-        asymmetry is known and deliberate, not accidental.
+        knowledge of the id.
+
+        That guard is an **identity check, not a security boundary** (T2-8):
+        it digests the string the caller supplies, so it separates clients by
+        what they *name*, never by what they can *prove*. What actually keeps
+        others out is the media id — 96 bits of ``secrets.token_urlsafe`` handed
+        only to the registering client. T2-8 keyed the session-id derivation and
+        left this digest unkeyed on purpose; ``_media_owner_matches`` carries the
+        reasoning for why the salt belongs on the other side of the pair.
+
+        Note the sibling ``/v1/artifacts/download/{id}`` resolves a
+        *server-derived* scope instead (profile principal + loopback-derived
+        transport family) and is therefore fail-closed; that asymmetry is known
+        and deliberate, not accidental.
 
         Rate limiting is deliberately not applied: this gateway serves a small
         internal deployment, the caller is an authenticated proxy rather than

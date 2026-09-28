@@ -185,20 +185,42 @@ class _LdapGateProbe:
         self.verdict = verdict
 
     def patch(self):
+        from contextlib import contextmanager
+
         from gateway.platforms import api_server as api_mod
 
         probe = self
+        key = "owner.gateway.ldap_auth.ldap_gate"
 
         async def fake_gate(identity, password):
             probe.calls += 1
             return probe.verdict
 
-        api_mod._owner_lazy.pop("owner.gateway.ldap_auth.ldap_gate", None)
-        return patch.object(
+        api_mod._owner_lazy.pop(key, None)
+        patcher = patch.object(
             __import__("owner.gateway.ldap_auth", fromlist=["ldap_gate"]),
             "ldap_gate",
             fake_gate,
         )
+
+        @contextmanager
+        def _scoped():
+            with patcher:
+                try:
+                    yield
+                finally:
+                    # Clearing the memo on the way in is only half of it: the
+                    # probe's own call memoises ``fake_gate``. Undoing just the
+                    # module attribute leaves ``_owner_lazy`` handing that fake
+                    # to every later module in the same pytest session, so
+                    # ``test_ldap_identity_auth.py`` then serves a gate that
+                    # allows what its tests expect to be denied — and because
+                    # the allowed request proxies for real to the live gateway
+                    # the config points at, the failure surfaced as a 401 from
+                    # that gateway instead of as a leak.
+                    api_mod._owner_lazy.pop(key, None)
+
+        return _scoped()
 
 
 class TestMiddlewareDormancy:

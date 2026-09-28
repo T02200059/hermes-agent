@@ -171,10 +171,17 @@ class TestApiMediaStore(_StoreCase):
         store.sweep(now=1000.0 + 10)
         survivors = sorted(p.name for p in store.root.iterdir())
         self.assertEqual(len(survivors), 2)
-        # Entry names carry a random id, so compare as a set — sorting the names
-        # of two random ids says nothing about which was evicted.
+        # Which ids are still on disk, asked the unambiguous way. An id is
+        # ``med_`` + a token that may itself start with ``_`` (``med__cVck…``),
+        # so ``name.split("__", 1)[0]`` reads those back as "med" — that made
+        # this assertion a ~3% flake instead of a check. ``glob(f"{id}__*")``
+        # anchors on the id the store itself anchors on, which is the same
+        # trick ``_blob`` above uses. (Not ``store.get()``: that also applies
+        # the TTL, and these entries are stamped at epoch 1000 on purpose, so
+        # it would call them expired and delete them.)
         self.assertEqual(
-            {name.split("__", 1)[0] for name in survivors}, {ids[3], ids[4]}
+            [mid for mid in ids if list(store.root.glob(f"{mid}__*"))],
+            [ids[3], ids[4]],
         )
 
     def test_sweep_leaves_foreign_files_alone(self):
