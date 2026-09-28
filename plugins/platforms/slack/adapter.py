@@ -39,6 +39,7 @@ from pathlib import Path as _Path
 
 sys.path.insert(0, str(_Path(__file__).resolve().parents[3]))
 
+# [owner] i18n 中文文案 t() 替换
 from agent.i18n import t
 from agent.secret_scope import UnscopedSecretError, get_secret
 from gateway.config import Platform, PlatformConfig
@@ -4777,6 +4778,7 @@ class SlackAdapter(BasePlatformAdapter):
                 exc_info=True,
             )
             # image_path is a host-local path; never echo it into chat.
+# [owner] i18n 中文文案 t() 替换
             text = t("gateway.image_attachment_failed")
             if caption:
                 text = f"{caption}\n{text}"
@@ -4938,6 +4940,7 @@ class SlackAdapter(BasePlatformAdapter):
                 exc_info=True,
             )
             # video_path is a host-local path; never echo it into chat.
+# [owner] i18n 中文文案 t() 替换
             text = t("gateway.video_attachment_failed")
             if caption:
                 text = f"{caption}\n{text}"
@@ -5006,6 +5009,7 @@ class SlackAdapter(BasePlatformAdapter):
             # display_name comes from caller-supplied file_name (or basename
             # of the host path) and is the user-facing filename only — safe
             # to surface so the user knows which file failed.
+# [owner] i18n 中文文案 t() 替换
             text = t("gateway.file_attachment_failed_with_name", file_name=display_name)
             if caption:
                 text = f"{caption}\n{text}"

@@ -2,6 +2,8 @@
 
 import ast
 
+import pytest
+
 from owner.validation import merge_health_check as mhc
 
 
@@ -70,3 +72,54 @@ def test_top_level_names_still_cover_the_other_declaration_shapes():
     tree = ast.parse("import os\nfrom x import y as z\ndef f(): pass\nclass K: pass\n")
 
     assert mhc._get_top_level_names(tree) >= {"os", "z", "f", "K"}
+
+
+# ---------------------------------------------------------------------------
+# Check 8: modified official files must carry an [owner] marker
+# ---------------------------------------------------------------------------
+
+
+def test_generated_artifacts_are_excluded_from_marker_coverage():
+    """A lockfile is rewritten wholesale, so a marker inside it is transient.
+
+    Marking uv.lock would be worse than useless: ``uv lock`` wipes the marker on
+    the next regeneration, and during a sync conflict the marker argues for
+    keeping our generated lines instead of regenerating the file. The pin is
+    tracked at its hand-authored source instead (pyproject.toml).
+    """
+    assert mhc._is_generated_artifact("uv.lock")
+    assert mhc._is_generated_artifact("sub/dir/package-lock.json")
+
+    assert not mhc._is_generated_artifact("gateway/delivery_ledger.py")
+    assert not mhc._is_generated_artifact("locales/zh.yaml")
+
+
+def test_upstream_base_resolves_to_a_full_commit_id():
+    base = mhc._resolve_upstream_base()
+
+    if base is None:
+        pytest.skip("no upstream/main, origin/main or main ref in this checkout")
+
+    assert len(base) == 40
+    assert all(ch in "0123456789abcdef" for ch in base)
+
+
+def test_every_modified_official_file_carries_an_owner_marker():
+    """The guard behind T2-11.
+
+    Resolving a fork sync means deciding per hunk whether a change is ours or
+    upstream's, and the marker at the change site is the only signal that
+    answers it. Before T2-11, 58 modified official files had no marker at all:
+    merge 315551234 had already swallowed four markers that way (Check 5), and
+    nothing in the suite noticed. Deleting any single marker here put a file
+    back in that state -- which is why this asserts on the issue list, not on a
+    count.
+    """
+    if mhc._resolve_upstream_base() is None:
+        pytest.skip("no upstream base ref in this checkout")
+
+    name, issues, examined, covered = mhc.check_changed_file_markers()
+
+    assert examined > 0, f"{name}: resolved a base but found no modified official files"
+    assert issues == [], f"{name}: {len(issues)} unmarked file(s): {issues}"
+    assert covered == examined

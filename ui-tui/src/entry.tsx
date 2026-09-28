@@ -62,9 +62,11 @@ setupGracefulExit({
     () => {
       resetTerminalModes()
 
+// [owner] graceful exit (§6.3)
       return gw.shutdownGracefully('graceful-exit-cleanup')
     }
   ],
+// [owner] graceful exit (§6.3)
   // MCP teardown can legitimately wait for a transport task to unwind. Keep
   // Node alive long enough for the owned Python gateway to drain its session
   // lifecycle and async services; GatewayClient has its own bounded fallback.
@@ -100,6 +102,7 @@ setupGracefulExit({
     }
   },
   onSignal: signal => {
+// [owner] graceful exit (§6.3)
     recordParentLifecycle(`graceful-exit received signal=${signal} → draining gateway`)
     resetTerminalModes()
     process.stderr.write(`hermes-tui lifecycle: received ${signal}\n`)
@@ -108,6 +111,7 @@ setupGracefulExit({
   // exits. Ignore SIGINT there so Ctrl+C cannot kill the embedded TUI if raw
   // mode briefly drops and the terminal driver turns the keystroke into a
   // signal instead of input bytes. SIGTERM/SIGHUP still cleanly shut down.
+// [owner] graceful exit (§6.3)
   ignoredSignals: DASHBOARD_TUI_MODE ? ['SIGINT'] : [],
   // An idle Ctrl+C is a normal user exit, just like /exit. SIGTERM/SIGHUP keep
   // their conventional signal-derived statuses for supervisors.

@@ -773,7 +773,7 @@ _MEDIA_DOWNLOAD_URI = "/open-apis/drive/v1/medias/:file_token/download"
 _DOCX_MAX_IMAGES = 100
 _DOCX_MAX_IMAGE_BYTES = 10 * 1024 * 1024  # 10 MiB per image
 _DOCX_BLOCKS_PAGE_SIZE = 500
-# [owner-patch] Hard budget on how many blocks are scanned for images before
+# [owner] Hard budget on how many blocks are scanned for images before
 # giving up (40 pages of 500): bounds pagination on huge block trees.
 _DOCX_MAX_BLOCKS_SCANNED = 20000
 # Vision OCR: concurrent auxiliary calls (each image is one LLM call).
@@ -781,7 +781,7 @@ _DOCX_MAX_BLOCKS_SCANNED = 20000
 # screenshot-heavy docs can still be OCR'd in one read.
 _DOCX_MAX_VISION_IMAGES = 100
 _DOCX_VISION_WORKERS = 3
-# [owner-patch] Cache-budget guard: when the cumulative doc-image cache
+# [owner] Cache-budget guard: when the cumulative doc-image cache
 # exceeds these, prune oldest files (by mtime) so long-lived gateways do not
 # accumulate unbounded disk usage.
 _DOCX_CACHE_MAX_FILES = 1000
@@ -1175,7 +1175,7 @@ def _image_cache_dir(doc_token: str) -> Path:
 
 
 def _prune_docx_image_cache() -> None:
-    """[owner-patch] Enforce the doc-image cache budget (LRU by mtime).
+    """[owner] Enforce the doc-image cache budget (LRU by mtime).
 
     Deletes the oldest files (across all docs) until both the file-count and
     total-bytes ceilings are under budget. Best-effort: failures degrade
@@ -1297,7 +1297,7 @@ def download_docx_images(client, doc_token, image_tokens, *, max_bytes=_DOCX_MAX
         entry["bytes"] = len(data)
         results.append(entry)
 
-    # [owner-patch] Enforce cache budget once per batch, after all writes.
+    # [owner] Enforce cache budget once per batch, after all writes.
     try:
         _prune_docx_image_cache()
     except OSError:
@@ -1564,7 +1564,7 @@ def read_docx_with_images(
 
 
 # ---------------------------------------------------------------------------
-# [owner-patch] merge_forward reading: GET /im/v1/messages/{id} returns the
+# [owner] merge_forward reading: GET /im/v1/messages/{id} returns the
 # parent merge_forward message plus N children (upper_message_id = parent).
 # Used by feishu_doc_read when doc_token looks like a message id (om_...).
 # ---------------------------------------------------------------------------

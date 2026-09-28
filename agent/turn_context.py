@@ -39,6 +39,7 @@ from agent.conversation_compression import (
     recover_rotated_compression_session,
 )
 from agent.context_engine import automatic_compaction_status_message
+# [owner] i18n 中文文案 t() 替换
 from agent.i18n import t as _t
 from agent.iteration_budget import IterationBudget
 from agent.memory_manager import build_memory_context_block
@@ -713,6 +714,7 @@ def build_turn_context(
     if agent.api_mode != "anthropic_messages":
         try:
             if agent._cleanup_dead_connections():
+# [owner] i18n 中文文案 t() 替换
                 agent._emit_status(_t("gateway.runtime.stale_connections"))
         except Exception:
             pass
@@ -862,6 +864,7 @@ def build_turn_context(
     if not agent.quiet_mode:
         _print_preview = summarize_user_message_for_log(user_message)
         agent._safe_print(
+# [owner] i18n 中文文案 t() 替换
             _t(
                 "gateway.runtime.starting_conversation",
                 preview=_print_preview[:60],

@@ -33,10 +33,12 @@ from pathlib import Path
 from hermes_constants import get_hermes_home
 from typing import Dict, Any, List, Optional, Tuple
 
+# [owner] i18n 中文文案 t() 替换
 from agent.i18n import t
 from utils import atomic_write_text, is_truthy_value
 from tools.registry import no_cache_check_fn
 
+# [owner] i18n 中文文案 t() 替换
 
 # fcntl is Unix-only; on Windows use msvcrt for file locking
 msvcrt = None
@@ -112,8 +114,10 @@ def _drift_error(path: "Path", bak_path: str) -> Dict[str, Any]:
     """
     return {
         "success": False,
+# [owner] i18n 中文文案 t() 替换
         "error": t("memory.drift_error", file=path.name, backup=bak_path),
         "drift_backup": bak_path,
+# [owner] i18n 中文文案 t() 替换
         "remediation": t("memory.drift_remediation"),
     }
 
@@ -134,6 +138,7 @@ def _read_failed_error(path: "Path") -> Dict[str, Any]:
     """
     return {
         "success": False,
+# [owner] i18n 中文文案 t() 替换
         "error": t("memory.read_failed", file=path.name),
     }
 
@@ -397,6 +402,7 @@ class MemoryStore:
         """Append a new entry. Returns error if it would exceed the char limit."""
         content = content.strip()
         if not content:
+# [owner] i18n 中文文案 t() 替换
             return {"success": False, "error": t("memory.content_empty")}
 
         # Scan for injection/exfiltration before accepting
@@ -425,6 +431,7 @@ class MemoryStore:
 
             # Reject exact duplicates
             if content in entries:
+# [owner] i18n 中文文案 t() 替换
                 return self._success_response(target, t("memory.entry_already_exists"))
 
             # Calculate what the new total would be
@@ -435,6 +442,7 @@ class MemoryStore:
                 current = self._char_count(target)
                 return self._consolidation_failure({
                     "success": False,
+# [owner] i18n 中文文案 t() 替换
                     "error": t(
                         "memory.add_exceeds_limit",
                         current=f"{current:,}",
@@ -449,6 +457,7 @@ class MemoryStore:
             self._set_entries(target, entries)
             self.save_to_disk(target)
 
+# [owner] i18n 中文文案 t() 替换
         return self._success_response(target, t("memory.entry_added"))
 
     def replace(self, target: str, old_text: str, new_content: str) -> Dict[str, Any]:
@@ -456,8 +465,10 @@ class MemoryStore:
         old_text = old_text.strip()
         new_content = new_content.strip()
         if not old_text:
+# [owner] i18n 中文文案 t() 替换
             return {"success": False, "error": t("memory.old_text_empty")}
         if not new_content:
+# [owner] i18n 中文文案 t() 替换
             return {"success": False, "error": t("memory.new_content_empty")}
 
         # Scan replacement content for injection/exfiltration
@@ -478,6 +489,7 @@ class MemoryStore:
             if not matches:
                 return self._consolidation_failure({
                     "success": False,
+# [owner] i18n 中文文案 t() 替换
                     "error": t("memory.no_match_replace", old_text=old_text),
                     "current_entries": entries,
                 })
@@ -489,6 +501,7 @@ class MemoryStore:
                     previews = self._previews([e for _, e in matches])
                     return {
                         "success": False,
+# [owner] i18n 中文文案 t() 替换
                         "error": t("memory.multiple_matches", old_text=old_text),
                         "matches": previews,
                     }
@@ -506,6 +519,7 @@ class MemoryStore:
                 current = self._char_count(target)
                 return self._consolidation_failure({
                     "success": False,
+# [owner] i18n 中文文案 t() 替换
                     "error": t("memory.replace_exceeds_limit", new_total=f"{new_total:,}", limit=f"{limit:,}"),
                     "current_entries": entries,
                     "usage": f"{current:,}/{limit:,}",
@@ -515,12 +529,14 @@ class MemoryStore:
             self._set_entries(target, entries)
             self.save_to_disk(target)
 
+# [owner] i18n 中文文案 t() 替换
         return self._success_response(target, t("memory.entry_replaced"))
 
     def remove(self, target: str, old_text: str) -> Dict[str, Any]:
         """Remove the entry containing old_text substring."""
         old_text = old_text.strip()
         if not old_text:
+# [owner] i18n 中文文案 t() 替换
             return {"success": False, "error": t("memory.old_text_empty")}
 
         with self._file_lock(self._path_for(target)):
@@ -536,6 +552,7 @@ class MemoryStore:
             if not matches:
                 return self._consolidation_failure({
                     "success": False,
+# [owner] i18n 中文文案 t() 替换
                     "error": t("memory.no_match_remove", old_text=old_text),
                     "current_entries": entries,
                 })
@@ -547,6 +564,7 @@ class MemoryStore:
                     previews = self._previews([e for _, e in matches])
                     return {
                         "success": False,
+# [owner] i18n 中文文案 t() 替换
                         "error": t("memory.multiple_matches", old_text=old_text),
                         "matches": previews,
                     }
@@ -557,6 +575,7 @@ class MemoryStore:
             self._set_entries(target, entries)
             self.save_to_disk(target)
 
+# [owner] i18n 中文文案 t() 替换
         return self._success_response(target, t("memory.entry_removed"))
 
     def apply_batch(self, target: str, operations: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -573,6 +592,7 @@ class MemoryStore:
         error is returned describing the first failure plus the live state.
         """
         if not operations:
+# [owner] i18n 中文文案 t() 替换
             return {"success": False, "error": t("memory.batch_empty")}
 
         # Scan every add/replace content for injection/exfil BEFORE touching
@@ -583,6 +603,7 @@ class MemoryStore:
             if act in {"add", "replace"} and new_content:
                 scan_error = _scan_memory_content(new_content)
                 if scan_error:
+# [owner] i18n 中文文案 t() 替换
                     return {"success": False, "error": t("memory.batch_op_scan_error", index=i+1, error=scan_error)}
 
         with self._file_lock(self._path_for(target)):
@@ -601,10 +622,12 @@ class MemoryStore:
                 act = op.get("action")
                 content = (op.get("content") or op.get("new_text") or "").strip()
                 old_text = (op.get("old_text") or "").strip()
+# [owner] i18n 中文文案 t() 替换
                 pos = t("memory.batch_op_pos", index=i+1, action=act or 'unknown')
 
                 if act == "add":
                     if not content:
+# [owner] i18n 中文文案 t() 替换
                         return self._batch_error(target, f"{pos}: " + t("memory.batch_content_required"))
                     if content in working:
                         continue  # idempotent -- skip duplicate, don't fail the batch
@@ -612,31 +635,38 @@ class MemoryStore:
 
                 elif act == "replace":
                     if not old_text:
+# [owner] i18n 中文文案 t() 替换
                         return self._batch_error(target, f"{pos}: " + t("memory.batch_old_text_required"))
                     if not content:
                         return self._batch_error(
                             target,
+# [owner] i18n 中文文案 t() 替换
                             f"{pos}: " + t("memory.batch_content_required_remove"),
                         )
                     matches = [j for j, e in enumerate(working) if old_text in e]
                     if not matches:
+# [owner] i18n 中文文案 t() 替换
                         return self._batch_error(target, f"{pos}: " + t("memory.batch_no_match", old_text=old_text))
                     if len({working[j] for j in matches}) > 1:
                         return self._batch_error(
                             target,
+# [owner] i18n 中文文案 t() 替换
                             f"{pos}: " + t("memory.batch_multiple_matches", old_text=old_text),
                         )
                     working[matches[0]] = content
 
                 elif act == "remove":
                     if not old_text:
+# [owner] i18n 中文文案 t() 替换
                         return self._batch_error(target, f"{pos}: " + t("memory.batch_old_text_required"))
                     matches = [j for j, e in enumerate(working) if old_text in e]
                     if not matches:
+# [owner] i18n 中文文案 t() 替换
                         return self._batch_error(target, f"{pos}: " + t("memory.batch_no_match", old_text=old_text))
                     if len({working[j] for j in matches}) > 1:
                         return self._batch_error(
                             target,
+# [owner] i18n 中文文案 t() 替换
                             f"{pos}: " + t("memory.batch_multiple_matches", old_text=old_text),
                         )
                     working.pop(matches[0])
@@ -644,6 +674,7 @@ class MemoryStore:
                 else:
                     return self._batch_error(
                         target,
+# [owner] i18n 中文文案 t() 替换
                         f"{pos}: " + t("memory.batch_unknown_action"),
                     )
 
@@ -674,6 +705,7 @@ class MemoryStore:
         limit = self._char_limit(target)
         return self._consolidation_failure({
             "success": False,
+# [owner] i18n 中文文案 t() 替换
             "error": message + " " + t("memory.batch_nothing_applied"),
             "current_entries": self._entries_for(target),
             "usage": f"{current:,}/{limit:,}",
@@ -1231,6 +1263,7 @@ def apply_memory_pending(payload: Dict[str, Any], store: "MemoryStore") -> Dict[
         return store.replace(target, old_text, content)
     if action == "remove":
         return store.remove(target, old_text)
+# [owner] i18n 中文文案 t() 替换
     return {"success": False, "error": t("memory.unknown_action", action=action)}
 # OpenAI Function-Calling Schema
 # =============================================================================

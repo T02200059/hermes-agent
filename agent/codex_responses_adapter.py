@@ -715,6 +715,7 @@ def _chat_messages_to_responses_input(
                 elif has_codex_reasoning:
                     # The Responses API requires a following item after each
                     # reasoning item (otherwise: missing_following_item error).
+# [owner] reasoning 后跳过/占位空 content (§7.15)
                     #
                     # Two-step rule (strict gateways e.g. Volcengine/Ark reject
                     # content:"" as missing ``input.content``):

@@ -1,3 +1,4 @@
+// [owner] 本文件另有 2 处「仅删除上游代码」的改动（无新增行可挂标记）：新文件第 525 行附近、新文件第 537 行附近；条目见 owner/docs/owner改动清单.md
 import {
   forceRedraw,
   type ScrollBoxHandle,
@@ -530,12 +531,14 @@ export function useMainApp(gw: GatewayClient) {
     // handler in entry.tsx — which sends the final resetTerminalModes() — never
     // fires.  This leaves kitty keyboard protocol, mouse modes, etc. enabled
     // in the parent shell.  See issue #19194.
+// [owner] graceful shutdown (§6.3)
     void gw.shutdownGracefully('app.die').finally(() => process.exit(0))
   }, [exit, gw])
 
   const dieWithCode = useCallback(
     (code: number) => {
       exit()
+// [owner] graceful shutdown (§6.3)
       void gw.shutdownGracefully(`app.dieWithCode:${code}`).finally(() => process.exit(code))
     },
     [exit, gw]

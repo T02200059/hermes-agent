@@ -37,6 +37,7 @@ import json
 import logging
 from typing import Any, Dict, List, Optional, Union
 
+# [owner] i18n 中文文案 t() 替换
 from agent.i18n import t
 from hermes_state_common import _RESET_END_REASONS
 
@@ -533,6 +534,7 @@ def _list_recent_sessions(db, limit: int, current_session_id: str = None, link_p
             "mode": "browse",
             "results": results,
             "count": len(results),
+# [owner] i18n 中文文案 t() 替换
             "message": t("tools.session_search.browse_hint", count=len(results)),
         }, ensure_ascii=False)
     except Exception as e:
@@ -804,6 +806,7 @@ def _discover(
             "detail": detail,
             "results": [],
             "count": 0,
+# [owner] i18n 中文文案 t() 替换
             "message": t("tools.session_search.no_matches"),
 
         }

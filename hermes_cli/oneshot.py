@@ -493,6 +493,7 @@ def _run_agent(
             api_key=runtime.get("api_key"),
             base_url=runtime.get("base_url"),
             provider=runtime.get("provider"),
+# [owner] extra_body 透传
             owner_provider_name=runtime.get("owner_provider_name"),
             requested_provider=runtime.get("requested_provider"),
             api_mode=runtime.get("api_mode"),

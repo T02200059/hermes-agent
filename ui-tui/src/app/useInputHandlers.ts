@@ -605,10 +605,12 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
         return
       }
 
+// [owner] 输入处理接线
       // On macOS, Cmd+C with no selection: fallback to terminal native copy.
       // Return false to pass the key event to the terminal for native handling.
       // On non-macOS, isAction uses Ctrl, so fall through to interrupt/clear/exit.
       if (isMac) {
+// [owner] 输入处理接线
         return false
       }
     }

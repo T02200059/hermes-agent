@@ -35,6 +35,7 @@ _NON_CODE_VERIFY_EXTENSIONS = frozenset(
         ".log",
         ".csv",
         ".tsv",
+# [owner] 创意/视觉扩展名 suppress verify-on-stop (§8.4)
         # Creative / visual artifacts — no verifiable runtime behavior; the
         # ``CODING_VERIFY_GUIDANCE`` addendum already says hold off tests and
         # linters until the user says they like the result. Including these

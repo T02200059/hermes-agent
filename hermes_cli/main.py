@@ -2924,6 +2924,7 @@ def _apply_tui_python_env(env: dict) -> None:
         env["HERMES_PYTHON"] = sys.executable
 
 
+# [owner] Ctrl+C / gateway drain (§6.3)
 def _call_tui_process(argv: list[str], *, cwd: str, env: dict) -> int:
     """Wait for the TUI child to own Ctrl+C shutdown from start to finish.
 
@@ -3115,8 +3116,10 @@ def _launch_tui(
     code: Optional[int] = None
     try:
         try:
+# [owner] Ctrl+C / gateway drain (§6.3)
             code = _call_tui_process(argv, cwd=str(cwd), env=env)
         except KeyboardInterrupt:
+# [owner] Ctrl+C / gateway drain (§6.3)
             # Fallback for non-main-thread embedders where Python could not
             # install the launcher-side SIGINT absorber. Normal terminal
             # launches stay inside _call_tui_process until Node completes the

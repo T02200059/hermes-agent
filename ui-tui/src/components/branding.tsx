@@ -130,6 +130,7 @@ export function Banner({ maxWidth, t }: { maxWidth?: number; t: Theme }) {
             {
               children: (
                 <Text color={t.color.muted} wrap="truncate-end">
+                  {/* [owner] branding 渲染 */}
                   {t.brand.icon} {t.brand.tagline}
                 </Text>
               ),
@@ -156,6 +157,7 @@ export function Banner({ maxWidth, t }: { maxWidth?: number; t: Theme }) {
   }
 
   const name = cols >= 52 ? t.brand.name : (t.brand.name.split(' ')[0] ?? t.brand.name)
+// [owner] branding 渲染
   const tag = cols >= 64 ? t.brand.tagline : cols >= 46 ? TAG_MID : TAG_TINY
 
   return (

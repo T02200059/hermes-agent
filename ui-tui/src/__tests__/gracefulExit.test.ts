@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
+// [owner] Ctrl+C 退出码 (§6.3)
 import { exitCodeForSignal, shouldExitForSignal } from '../lib/gracefulExit.js'
 
 describe('shouldExitForSignal', () => {
@@ -9,6 +10,7 @@ describe('shouldExitForSignal', () => {
     expect(shouldExitForSignal('SIGHUP', ['SIGINT'])).toBe(true)
   })
 })
+// [owner] Ctrl+C 退出码 (§6.3)
 
 describe('exitCodeForSignal', () => {
   it('lets standalone Ctrl+C use the same successful status as /exit', () => {

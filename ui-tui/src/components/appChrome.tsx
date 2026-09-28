@@ -48,9 +48,9 @@ interface IndicatorRender {
   showVerb: boolean
 }
 
-const renderIndicator = (style: IndicatorStyle, tick: number, faces: readonly string[] = DEFAULT_SPINNER.waitingFaces): IndicatorRender => {  // [owner-patch] +faces
+const renderIndicator = (style: IndicatorStyle, tick: number, faces: readonly string[] = DEFAULT_SPINNER.waitingFaces): IndicatorRender => {  // [owner] +faces
   if (style === 'kaomoji') {
-    return { frame: faces[tick % faces.length] ?? '', intervalMs: FACE_TICK_MS, showVerb: true }  // [owner-patch] faces from spinner
+    return { frame: faces[tick % faces.length] ?? '', intervalMs: FACE_TICK_MS, showVerb: true }  // [owner] faces from spinner
   }
 
   if (style === 'emoji') {
@@ -83,9 +83,9 @@ const renderIndicator = (style: IndicatorStyle, tick: number, faces: readonly st
 // module load instead of rescanning on every status render.
 const EMOJI_FRAME_WIDTH = EMOJI_FRAMES.reduce((max, f) => Math.max(max, stringWidth(f)), 1)
 
-const indicatorFrameWidth = (style: IndicatorStyle, faces: readonly string[] = DEFAULT_SPINNER.waitingFaces): number => {  // [owner-patch] +faces
+const indicatorFrameWidth = (style: IndicatorStyle, faces: readonly string[] = DEFAULT_SPINNER.waitingFaces): number => {  // [owner] +faces
   if (style === 'kaomoji') {
-    return faces.reduce((max, f) => Math.max(max, stringWidth(f)), 1)  // [owner-patch] dynamic faces width
+    return faces.reduce((max, f) => Math.max(max, stringWidth(f)), 1)  // [owner] dynamic faces width
   }
 
   if (style === 'emoji') {
@@ -110,13 +110,13 @@ export const MAX_DURATION_WIDTH = Math.max(
 // `unicode` is a bare 1-col braille spinner with no verb, while kaomoji/emoji/
 // ascii add a fixed-width verb; any style adds a bounded elapsed-time tail.
 // Mirrors FaceTicker's `frame + verbSegment + durationSegment` layout.
-export const busyIndicatorWidth = (style: IndicatorStyle, hasDuration: boolean, faces: readonly string[] = DEFAULT_SPINNER.waitingFaces): number => {  // [owner-patch] +faces
+export const busyIndicatorWidth = (style: IndicatorStyle, hasDuration: boolean, faces: readonly string[] = DEFAULT_SPINNER.waitingFaces): number => {  // [owner] +faces
   const { showVerb } = renderIndicator(style, 0)
   const verb = showVerb ? 1 + VERB_PAD_LEN : 0
   // ` · ` plus the bounded clock (e.g. `59m 59s`).
   const duration = hasDuration ? stringWidth(' · ') + MAX_DURATION_WIDTH : 0
 
-  return indicatorFrameWidth(style, faces) + verb + duration  // [owner-patch] pass faces
+  return indicatorFrameWidth(style, faces) + verb + duration  // [owner] pass faces
 }
 
 function FaceTicker({
@@ -133,7 +133,7 @@ function FaceTicker({
   verbOverride?: string
 }) {
   const [tick, setTick] = useState(() => Math.floor(Math.random() * 1000))
-  const [verbTick, setVerbTick] = useState(() => Math.floor(Math.random() * spinner.thinkingVerbs.length))  // [owner-patch] spinner verbs
+  const [verbTick, setVerbTick] = useState(() => Math.floor(Math.random() * spinner.thinkingVerbs.length))  // [owner] spinner verbs
   const [now, setNow] = useState(() => Date.now())
   const isOccluded = useStore($isStatusRuleOccluded)
 
@@ -142,7 +142,7 @@ function FaceTicker({
   // for verb-less styles like `unicode`) without leaving the previous
   // timer dangling. A frozen override (idle compaction) always shows the
   // verb so "compacting…" is visible even in unicode style (#97239).
-  const { intervalMs, showVerb } = renderIndicator(style, 0, spinner.waitingFaces)  // [owner-patch] pass faces
+  const { intervalMs, showVerb } = renderIndicator(style, 0, spinner.waitingFaces)  // [owner] pass faces
   const freezeVerb = Boolean(verbOverride)
   const displayVerb = freezeVerb || showVerb
 
@@ -177,7 +177,7 @@ function FaceTicker({
     }
   }, [displayVerb, freezeVerb, intervalMs, isOccluded])
 
-  const { frame } = renderIndicator(style, tick, spinner.waitingFaces)  // [owner-patch] pass faces
+  const { frame } = renderIndicator(style, tick, spinner.waitingFaces)  // [owner] pass faces
   const verbs = spinner.thinkingVerbs
   const verb = verbOverride ?? verbs[verbTick % verbs.length] ?? ''
   // Display-width-aware padding: padEnd() uses JS char length, but CJK
@@ -568,7 +568,7 @@ export function StatusRule({
   // (kaomoji is wide + verb; unicode is a bare 1-col spinner). When a notice
   // occupies the slot it reserves only `noticeReserve` (it shrinks/truncates).
   const slotWidth = busy
-    ? busyIndicatorWidth(indicatorStyle, turnStartedAt != null, t.spinner.waitingFaces)  // [owner-patch] pass faces
+    ? busyIndicatorWidth(indicatorStyle, turnStartedAt != null, t.spinner.waitingFaces)  // [owner] pass faces
     : showNotice
       ? noticeReserve
       : stringWidth(status)

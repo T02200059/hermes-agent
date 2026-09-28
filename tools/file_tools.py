@@ -12,6 +12,7 @@ import threading
 from pathlib import Path, PurePosixPath
 
 from agent.file_safety import get_read_block_error
+# [owner] guard 文案 i18n
 from agent.i18n import t
 from tools.binary_extensions import (
     has_binary_extension,
@@ -852,8 +853,10 @@ def _request_protected_instruction_approval(
     and no yolo bypass. Fail-closed when no human channel exists.
     """
     targets = ", ".join(dict.fromkeys(reasons))
+# [owner] guard 文案 i18n
     description = t("approval.protected_file_request", targets=targets)
     display = f"<write to {targets}>"
+# [owner] guard 文案 i18n
 
     def _blocked(why: str) -> str:
         """Localized BLOCKED text for this gate."""
@@ -862,6 +865,7 @@ def _request_protected_instruction_approval(
     try:
         import tools.approval as _approval
     except Exception:
+# [owner] guard 文案 i18n
         return _blocked(t("approval.gate_why_approval_unavailable"))
 
     # Gateway surface: block on the button round-trip when a notify callback
@@ -888,6 +892,7 @@ def _request_protected_instruction_approval(
             session_key, notify_cb, approval_data, surface="gateway",
         )
         if decision.get("notify_failed"):
+# [owner] guard 文案 i18n
             return _blocked(t("approval.gate_why_not_delivered"))
         choice = decision.get("choice")
         if decision.get("resolved") and choice in {"once", "session", "always"}:
@@ -895,6 +900,7 @@ def _request_protected_instruction_approval(
             # is persisted for this gate.
             return None
         if not decision.get("resolved"):
+# [owner] guard 文案 i18n
             return _blocked(t("approval.gate_why_timed_out"))
         return _blocked(t("approval.gate_why_denied_by_user"))
 
@@ -917,11 +923,13 @@ def _request_protected_instruction_approval(
             # One-operation grant; never persisted (see docstring).
             return None
         if choice == "timeout":
+# [owner] guard 文案 i18n
             return _blocked(t("approval.gate_why_timed_out"))
         return _blocked(t("approval.gate_why_denied_by_user"))
 
     # No human channel at all (script, cron, background thread): fail
     # closed. Auto-approving here would recreate the persistence vector.
+# [owner] guard 文案 i18n
     return _blocked(t("approval.gate_why_no_human"))
 
 
@@ -976,6 +984,7 @@ def _check_approval_required_write(paths: list[str],
         return None
 
     display_targets = ", ".join(dict.fromkeys(targets))
+# [owner] guard 文案 i18n
     description = t("approval.ssh_config_request", targets=display_targets)
 
     def _blocked(why: str) -> str:
@@ -985,22 +994,26 @@ def _check_approval_required_write(paths: list[str],
     try:
         import tools.approval as _approval
     except Exception:
+# [owner] guard 文案 i18n
         return _blocked(t("approval.gate_why_approval_unavailable"))
 
     result = _approval._run_approval_gate(
         pattern_key="ssh_config_write",
         description=description,
         display_target=f"<write to {display_targets}>",
+# [owner] guard 文案 i18n
         cron_deny_message=_blocked(t("approval.gate_why_cron_denied")),
         single_query_deny_message=_blocked(
             t("approval.gate_why_single_query_denied")
         ),
         autoapprove_log_prefix="ssh_config_write",
         fail_closed_when_no_human=True,
+# [owner] guard 文案 i18n
         no_human_block_message=_blocked(t("approval.gate_why_no_human")),
     )
     if result.get("approved"):
         return None
+# [owner] guard 文案 i18n
     return result.get("message") or _blocked(t("approval.gate_why_denied"))
 
 

@@ -4761,6 +4761,7 @@ class MessageSender:
     @staticmethod
     def strip_cron_wrapper(content: str) -> str:
         """Strip scheduler cron header/footer wrapper for cleaner Yuanbao output."""
+# [owner] cron 投递包装剥离
         from cron.scheduler import strip_cron_delivery_wrapper
         return strip_cron_delivery_wrapper(content)
 

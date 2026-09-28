@@ -411,6 +411,7 @@ import {
   MIN_WIDTH as WINDOW_MIN_WIDTH
 } from './window-state'
 import { hiddenWindowsChildOptions } from './windows-child-options'
+// [owner] 窗口半透明 opacityForIntensity
 const { opacityForIntensity } = require('./translucency.cjs') as {
   opacityForIntensity: (intensity: number, isWindows: boolean) => number
 }
@@ -1004,6 +1005,7 @@ let translucencyState = readPersistedTranslucency()
 // painting a themed backing onto them would turn them into opaque rectangles.
 const translucencyBackedWindows = new WeakSet()
 
+// [owner] 窗口半透明 opacityForIntensity
 // Map the 0–100 lever to a window opacity. The per-platform floor lives in
 // ./translucency.cjs (see opacityForIntensity): Windows gets a shallower curve
 // because it has no vibrancy/backdrop to soften `setOpacity`, so the macOS-tuned
@@ -1025,6 +1027,7 @@ function windowOpacity() {
 // window's own opacity is the record of whether that door was ever opened; see
 // opacityNeedsSetting for why it matters that it stays shut.
 function applyWindowOpacity(win) {
+// [owner] 窗口半透明 opacityForIntensity
   const opacity = windowOpacity()
 
   if (typeof win.setOpacity === 'function' && opacityNeedsSetting(opacity, win.getOpacity?.() ?? 1)) {

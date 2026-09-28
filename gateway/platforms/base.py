@@ -3053,7 +3053,7 @@ def expand_chained_quick_alias(target: str, user_args: str = "") -> list[str]:
     Central helper to avoid duplicating the 'f"{target} {user_args}".strip() + parse'
     pattern in quick command alias expansion across CLI, gateway, and TUI surfaces.
 
-    [owner-patch] Chained quick commands (general enhancement).
+    [owner] Chained quick commands (general enhancement).
     Parser and this expander live in base.py so all surfaces share the logic;
     each surface still owns its own (sync vs async) dispatch of the resulting list.
     """
@@ -5372,7 +5372,7 @@ class BasePlatformAdapter(ABC):
         code_spans: list = []
         for m in re.finditer(r'```[^\n]*\n.*?```', content, re.DOTALL):
             code_spans.append((m.start(), m.end()))
-        # [owner-patch] P35: CommonMark double-backtick inline code.
+        # [owner] P35: CommonMark double-backtick inline code.
         # Without this, paths in `` `/tmp/file.png` `` get mis-extracted.
         for m in re.finditer(r'``(?:[^`]|`[^`])+``', content):
             code_spans.append((m.start(), m.end()))

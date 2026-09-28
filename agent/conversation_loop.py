@@ -2577,7 +2577,7 @@ def run_conversation(
             # Keep 'reasoning_details' - OpenRouter uses this for multi-turn reasoning context
             # The signature field helps maintain reasoning continuity
 
-            # [owner-patch] owner_provider_name (and similar per-turn attribution
+            # [owner] owner_provider_name (and similar per-turn attribution
             # fields like model/provider) are for internal use only: session DB,
             # billing records, multi-profile routing, audit, qdrant recall etc.
             # They must be stripped from the api_messages copy so they never
@@ -4724,7 +4724,7 @@ def run_conversation(
                                 model=agent.model,
                                 api_call_count=1,
                             )
-                            # [owner-patch] stash per-message token breakdown
+                            # [owner] stash per-message token breakdown
                             # onto the agent instance. build_assistant_message
                             # picks it up when constructing the NEW assistant
                             # message dict (which happens later, after this

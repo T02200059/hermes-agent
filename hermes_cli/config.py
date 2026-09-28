@@ -6097,6 +6097,7 @@ def set_config_value(key: str, value: str, force: bool = False):
     print(f"✓ Set {key} = {_display_value} in {config_path}")
     warn_unpinned_cron_jobs_after_model_config_change(key, value, user_config)
 
+# [owner] provider models 缓存失效
     # Model/provider/custom-endpoint writes must not leave the picker on a
     # 24h-stale catalog (P2-9). Other config keys leave the cache alone.
     _k = (key or "").strip().lower()

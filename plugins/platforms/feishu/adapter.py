@@ -1040,7 +1040,7 @@ def _normalize_share_chat_message(payload: Dict[str, Any]) -> FeishuNormalizedMe
 
 
 # ---------------------------------------------------------------------------
-# [owner-patch] merge_forward expansion: shared renderer for forward children
+# [owner] merge_forward expansion: shared renderer for forward children
 # Single GET /im/v1/messages/{id} on a merge_forward parent returns the parent
 # plus N children (children carry upper_message_id = parent message_id).
 # Used by both the gateway auto-expansion (adapter._expand_merge_forward_text)
@@ -4974,7 +4974,7 @@ class FeishuAdapter(BasePlatformAdapter):
             mentions=getattr(message, "mentions", None),
             bot=self._bot_identity(),
         )
-        # [owner-patch] merge_forward: the push-event content is a fixed
+        # [owner] merge_forward: the push-event content is a fixed
         # placeholder ("Merged and Forwarded Message"); re-fetch via GET
         # /im/v1/messages/{id} which returns parent + N children.
         if normalized.raw_type == "merge_forward":
@@ -5340,7 +5340,7 @@ class FeishuAdapter(BasePlatformAdapter):
 
     # _fetch_bot_names is now private inside FeishuSenderNameCache (no longer needed on adapter)
 
-    # [owner-patch] merge_forward: fetch children via GET /im/v1/messages/{id}
+    # [owner] merge_forward: fetch children via GET /im/v1/messages/{id}
     # (returns parent + N children with upper_message_id) and render a transcript.
     async def _expand_merge_forward_text(self, message_id: str) -> Optional[str]:
         if not self._client or not message_id:

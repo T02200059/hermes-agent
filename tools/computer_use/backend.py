@@ -11,6 +11,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
+# [owner] typed_browser 钩子
 from agent.i18n import t
 
 
@@ -218,6 +219,7 @@ class ComputerUseBackend(ABC):
         `element` is the 1-based SOM index returned by a prior capture call.
         """
 
+# [owner] typed_browser 钩子
     # ── Optional typed-browser adapter ──────────────────────────────
     @staticmethod
     def _typed_browser_unavailable() -> Dict[str, Any]:

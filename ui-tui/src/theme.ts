@@ -40,6 +40,7 @@ export interface ThemeColors {
   statusBad: string
   statusCritical: string
   selectionBg: string
+// [owner] owner 主题扩展
   userBg: string
 
   diffAdded: string
@@ -58,9 +59,11 @@ export interface ThemeBrand {
   goodbye: string
   tool: string
   helpHeader: string
+// [owner] owner 主题扩展
   tagline: string
 }
 
+// [owner] owner 主题扩展
 export type { ThemeSpinner } from './owner/spinner.js'
 export { DEFAULT_SPINNER } from './owner/spinner.js'
 
@@ -71,6 +74,7 @@ import { mergeStatusBarFromSkin } from './owner/statusBar.js'
 export interface Theme {
   color: ThemeColors
   brand: ThemeBrand
+// [owner] owner 主题扩展
   spinner: import('./owner/spinner.js').ThemeSpinner
   bannerLogo: string
   bannerHero: string
@@ -266,6 +270,7 @@ const BRAND: ThemeBrand = {
   welcome: 'Type your message or /help for commands.',
   goodbye: 'Goodbye! ⚕',
   tool: '┊',
+// [owner] owner 主题扩展
   helpHeader: '(^_^)? Commands',
   tagline: DEFAULT_TAGLINE,
 }
@@ -429,6 +434,7 @@ export const LIGHT_SEEDS: ThemeSeeds = {
 export const DARK_THEME: Theme = {
   color: buildPalette(DARK_SEEDS, false),
   brand: BRAND,
+// [owner] owner 主题扩展
   spinner: DEFAULT_SPINNER,
   bannerLogo: '',
   bannerHero: ''
@@ -437,6 +443,7 @@ export const DARK_THEME: Theme = {
 export const LIGHT_THEME: Theme = {
   color: buildPalette(LIGHT_SEEDS, true),
   brand: BRAND,
+// [owner] owner 主题扩展
   spinner: DEFAULT_SPINNER,
   bannerLogo: '',
   bannerHero: ''
@@ -854,6 +861,7 @@ export function fromSkin(
   bannerLogo = '',
   bannerHero = '',
   toolPrefix = '',
+// [owner] owner 主题扩展
   helpHeader = '',
   spinner: Record<string, string[]> = {}
 ): Theme {
@@ -971,10 +979,12 @@ export function fromSkin(
         welcome: branding.welcome ?? d.brand.welcome,
         goodbye: branding.goodbye ?? d.brand.goodbye,
         tool: toolPrefix || d.brand.tool,
+// [owner] owner 主题扩展
         helpHeader: branding.help_header ?? (helpHeader || d.brand.helpHeader),
         tagline: mergeTaglineFromBranding(branding, d.brand.tagline)
       },
 
+// [owner] owner 主题扩展
       spinner: mergeSpinnerFromSkin(spinner, d.spinner),
 
       bannerLogo,

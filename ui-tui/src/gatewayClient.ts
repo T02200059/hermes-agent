@@ -16,6 +16,7 @@ const MAX_BUFFERED_EVENTS = 2000
 const MAX_LOG_PREVIEW = 240
 const STARTUP_TIMEOUT_MS = Math.max(5000, parseInt(process.env.HERMES_TUI_STARTUP_TIMEOUT_MS ?? '15000', 10) || 15000)
 const REQUEST_TIMEOUT_MS = Math.max(30000, parseInt(process.env.HERMES_TUI_RPC_TIMEOUT_MS ?? '120000', 10) || 120000)
+// [owner] gatewayClient (§6.3)
 const GRACEFUL_GATEWAY_EXIT_TIMEOUT_MS = 20000
 const WS_CONNECTING = 0
 const WS_OPEN = 1
@@ -162,6 +163,7 @@ export class GatewayClient extends EventEmitter {
   private drainGeneration = 0
   private stdoutRl: ReturnType<typeof createInterface> | null = null
   private stderrRl: ReturnType<typeof createInterface> | null = null
+// [owner] gatewayClient (§6.3)
   private gracefulShutdownPromise: Promise<void> | null = null
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
@@ -943,6 +945,7 @@ export class GatewayClient extends EventEmitter {
     // attach-mode promises do not hang after an intentional kill.
     this.rejectPending(new Error('gateway closed'))
   }
+// [owner] gatewayClient (§6.3)
 
   shutdownGracefully(reason = 'requested'): Promise<void> {
     if (this.gracefulShutdownPromise) {

@@ -1707,6 +1707,7 @@ def _run_review_in_thread(
         )
 
         if actions:
+# [owner] 多行 bullet 格式
             summary = "\n- " + "\n- ".join(dict.fromkeys(actions))
             agent._safe_print(
                 f"  💾 Self-improvement review: {summary}"

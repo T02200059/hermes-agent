@@ -2376,7 +2376,7 @@ def build_assistant_message(agent, assistant_message, finish_reason: str) -> dic
         "finish_reason": finish_reason,
     })
 
-    # [owner-patch] pick up per-message token breakdown stashed by
+    # [owner] pick up per-message token breakdown stashed by
     # conversation_loop after the API call. The stamp previously targeted
     # messages[-1] (wrong object — assistant dict not appended yet); now
     # it's stored on the agent instance and consumed here when the real

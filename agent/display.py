@@ -1,3 +1,4 @@
+# [owner] 本文件另有 1 处「仅删除上游代码」的改动（无新增行可挂标记）：新文件第 959 行附近；条目见 owner/docs/owner改动清单.md
 """CLI presentation -- spinner, kawaii faces, tool preview formatting.
 
 Pure display functions and classes with no AIAgent dependency.
@@ -17,6 +18,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from utils import safe_json_loads
+# [owner] per-chat display 覆盖 + i18n
 from agent.i18n import t
 from agent.redact import redact_sensitive_text
 from agent.tool_result_classification import file_mutation_result_landed
@@ -466,6 +468,7 @@ def build_tool_preview(tool_name: str, args: dict, max_len: int | None = None) -
         "cronjob": "action",
         "execute_code": "code", "browser_exec": "code", "delegate_task": "goal",
         "clarify": "question", "skill_manage": "name",
+# [owner] per-chat display 覆盖 + i18n
         # Deferred catalog bridge tools
         "tool_search": "query", "tool_describe": "name", "tool_call": "name",
         # OpenViking tools
@@ -669,12 +672,14 @@ def prepare_tool_preview(
 #
 # Turns "web_search <query>" into "Searching the web for <query>" — the
 # ChatGPT-style "Searching…/Reading…" surface.  Curated and built-in only:
+# [owner] per-chat display 覆盖 + i18n
 # we know each core tool's semantics, so the verb is a locale template, not
 # computed.  Custom/plugin/MCP tools have no entry and fall back to the raw
 # preview.  Sentence templates live in locales/*/yaml under display.tool_label
 # so languages can change word order (zh: "正在搜索文件：{preview}").
 # =========================================================================
 
+# [owner] per-chat display 覆盖 + i18n
 # Built-in tools that have a curated friendly-label template.
 _FRIENDLY_TOOL_LABELS: frozenset[str] = frozenset({
     "web_search",
@@ -784,6 +789,7 @@ _FRIENDLY_TOOL_LABELS: frozenset[str] = frozenset({
 _TOOL_VERBS_NO_PREVIEW: frozenset[str] = frozenset({
     "skills_list",
     "session_search",
+# [owner] per-chat display 覆盖 + i18n
     # No single useful argument preview (or no args at all)
     "browser_back",
     "browser_get_images",
@@ -803,6 +809,7 @@ _TOOL_VERBS_NO_PREVIEW: frozenset[str] = frozenset({
     "bfl_flux3_video_continuation",
 })
 
+# [owner] per-chat display 覆盖 + i18n
 # English-only joiner kept for back-compat callers.  New composition goes
 # through locale templates via compose_tool_label(); do not use this to
 # assemble a cross-language label.
@@ -825,6 +832,7 @@ def get_friendly_tool_labels() -> bool:
     return _friendly_tool_labels
 
 
+# [owner] per-chat display 覆盖 + i18n
 def terminal_block_header_label() -> str:
     """Title next to the emoji for a fenced terminal progress block.
 
@@ -867,7 +875,9 @@ def compose_tool_label(tool_name: str, preview: str | None) -> str | None:
     return t(key, preview=preview)
 
 
+# [owner] per-chat display 覆盖 + i18n（改动在下方的多行字符串内）
 def get_tool_verb(tool_name: str) -> str | None:
+# [owner] per-chat display 覆盖 + i18n
     """Return the friendly verb-only phrase for a built-in tool, or None.
 
     Returns None when friendly labels are disabled or the tool has no curated
@@ -877,6 +887,7 @@ def get_tool_verb(tool_name: str) -> str | None:
     """
     if not _friendly_tool_labels:
         return None
+# [owner] per-chat display 覆盖 + i18n
     key = _tool_label_key(tool_name, with_preview=False)
     if key is None:
         return None
@@ -884,6 +895,7 @@ def get_tool_verb(tool_name: str) -> str | None:
 
 
 def tool_verb_connector(tool_name: str) -> str:
+# [owner] per-chat display 覆盖 + i18n
     """Return the English connector between a verb and its preview.
 
     English-only back-compat.  New call sites should use
@@ -897,6 +909,7 @@ def verb_drops_preview(tool_name: str) -> bool:
     return tool_name in _TOOL_VERBS_NO_PREVIEW
 
 
+# [owner] per-chat display 覆盖 + i18n（改动在下方的多行字符串内）
 def build_status_phrase(tool_name: str, args: dict | None, max_len: int = 49) -> str | None:
     """Build a short present-tense status phrase for platform status surfaces.
 
@@ -921,11 +934,13 @@ def build_status_phrase(tool_name: str, args: dict | None, max_len: int = 49) ->
     if not _friendly_tool_labels:
         return None
 
+# [owner] per-chat display 覆盖 + i18n
     if tool_name not in _FRIENDLY_TOOL_LABELS:
         phrase = t("display.tool_status.using", tool=tool_name)
     elif tool_name in _TOOL_VERBS_NO_PREVIEW:
         phrase = t(f"display.tool_status.{tool_name}")
     else:
+# [owner] per-chat display 覆盖 + i18n
         preview = None
         if args:
             preview = build_tool_preview(tool_name, args, max_len=None)
@@ -934,6 +949,7 @@ def build_status_phrase(tool_name: str, args: dict | None, max_len: int = 49) ->
                 # status to the first line.
                 preview = preview.splitlines()[0].strip()
         if preview:
+# [owner] per-chat display 覆盖 + i18n
             phrase = t(f"display.tool_status.{tool_name}", preview=preview)
         else:
             phrase = t(f"display.tool_status.{tool_name}_verb")
@@ -945,6 +961,7 @@ def build_status_phrase(tool_name: str, args: dict | None, max_len: int = 49) ->
     return phrase
 
 
+# [owner] per-chat display 覆盖 + i18n（改动在下方的多行字符串内）
 def build_tool_label(tool_name: str, args: dict, max_len: int | None = None) -> str | None:
     """Build a human-phrased status label for a tool call.
 
@@ -958,6 +975,7 @@ def build_tool_label(tool_name: str, args: dict, max_len: int | None = None) -> 
         return build_tool_preview(tool_name, args, max_len=max_len)
 
     preview = build_tool_preview(tool_name, args, max_len=max_len)
+# [owner] per-chat display 覆盖 + i18n
     composed = compose_tool_label(tool_name, preview)
     if composed is not None:
         return composed
@@ -1537,9 +1555,11 @@ def _detect_tool_failure(tool_name: str, result: str | None) -> tuple[bool, str]
         return False, ""
 
     # Memory: distinguish "store full" from real errors.
+# [owner] per-chat display 覆盖 + i18n
     # Match English + localized (zh) overflow wording from memory.add_exceeds_limit.
     if tool_name == "memory":
         if isinstance(data, dict):
+# [owner] per-chat display 覆盖 + i18n
             err = data.get("error", "") or ""
             if data.get("success") is False and (
                 "exceed the limit" in err or "超出上限" in err

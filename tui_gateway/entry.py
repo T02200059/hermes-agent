@@ -147,16 +147,20 @@ def _log_signal(signum: int, frame) -> None:
     timer.daemon = True
     timer.start()
 
+# [owner] _shutdown_runtime 接线
     # ── Flush sessions and async services before exit ────────────────
     # The atexit handler (_shutdown_runtime) is registered in
     # tui_gateway/server.py, but a worker thread holding the GIL or
     # _stdout_lock can block atexit from completing within the grace
+# [owner] _shutdown_runtime 接线
     # window. Explicitly run it here so session-end events, persistence,
     # and MCP task teardown all happen before the interpreter closes the
     # MCP asyncio loop.
     try:
+# [owner] _shutdown_runtime 接线
         from tui_gateway.server import _shutdown_runtime
 
+# [owner] _shutdown_runtime 接线
         _shutdown_runtime()
     except Exception:
         pass

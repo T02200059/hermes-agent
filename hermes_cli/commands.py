@@ -592,6 +592,7 @@ def is_interrupt_then_dispatch(command_name: str | None) -> bool:
     return cmd is not None and cmd.busy_policy == "interrupt_then_dispatch"
 
 
+# [owner] GATEWAY_KNOWN_COMMANDS 加 /memory /skills（改动在下方的多行字符串内）
 def should_bypass_active_session(command_name: str | None) -> bool:
     """Return True for any resolvable slash command.
 
@@ -620,6 +621,7 @@ def should_bypass_active_session(command_name: str | None) -> bool:
     plugin commands.  is_gateway_known_command() already covers plugin
     commands via _iter_plugin_command_entries(), so we reuse it.
     """
+# [owner] GATEWAY_KNOWN_COMMANDS 加 /memory /skills
     if not command_name:
         return False
     if resolve_command(command_name) is not None:

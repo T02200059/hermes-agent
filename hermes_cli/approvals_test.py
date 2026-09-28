@@ -148,6 +148,7 @@ def _render_text(verdict: dict) -> None:
     print(f"env-type: {verdict['env_type']}")
     print(f"verdict : {verdict['verdict']}  (exit {verdict['exit_code']})")
     if verdict["rule"]:
+# [owner] hardline 描述可读化
         # The verdict dict keeps the raw English rule string (it is also the
         # --json payload); localize only this human-readable rendering.
         from tools.approval import _translate_pattern_description

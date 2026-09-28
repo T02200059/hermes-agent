@@ -121,6 +121,7 @@ def _emit_result(
             print(f"hermes send: {payload['error']}", file=sys.stderr)
         elif payload.get("success"):
             note = payload.get("note")
+# [owner] 输出 message_id (§7.21)
             # Surface the platform-assigned message id on both branches. It is
             # the only handle for recalling / editing / reacting to the message
             # afterward, and dropping it here made CLI- and cron-driven sends
@@ -130,8 +131,10 @@ def _emit_result(
             mid = payload.get("message_id")
             suffix = f" message_id={mid}" if mid else ""
             if note:
+# [owner] 输出 message_id (§7.21)
                 print(f"{note}{suffix}")
             else:
+# [owner] 输出 message_id (§7.21)
                 print(f"sent{suffix}")
         else:
             # Unknown shape — dump it so nothing is silently dropped.

@@ -111,6 +111,7 @@ export function createSlashHandler(ctx: SlashHandlerContext): (cmd: string) => b
         return void handler(`/${d.target}${argTail}`)
       }
 
+// [owner] chained quick command
       if (d.type === 'chain') {
         for (const cmd of d.commands) {
           void handler(`/${cmd}`)
@@ -176,6 +177,7 @@ export function createSlashHandler(ctx: SlashHandlerContext): (cmd: string) => b
       })
       .catch(() => {
         gw.request('command.dispatch', { arg: parsed.arg, name: parsed.name, session_id: sid })
+// [owner] chained quick command
           .then(async (raw: unknown) => {
             if (stale()) {
               return

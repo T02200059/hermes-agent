@@ -2578,7 +2578,7 @@ class AIAgent:
                     "_compressed_summary": bool(msg.get(COMPRESSED_SUMMARY_METADATA_KEY)),
                     "timestamp": _row_timestamp,
                     "api_content": _row_api_content,
-                    # [owner-patch] per-message API token breakdown
+                    # [owner] per-message API token breakdown
                     "input_tokens": msg.get("input_tokens") if role == "assistant" else None,
                     "output_tokens": msg.get("output_tokens") if role == "assistant" else None,
                     "cache_read_tokens": msg.get("cache_read_tokens") if role == "assistant" else None,

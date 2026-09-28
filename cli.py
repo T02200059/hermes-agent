@@ -21411,7 +21411,7 @@ class HermesCLI(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                     raise KeyboardInterrupt()
                 _signal.signal(_signal.SIGINT, _sigint_to_app_exit)
             else:
-                # [owner-patch] Windows: keep the historical SIGINT
+                # [owner] Windows: keep the historical SIGINT
                 # absorber. A background thread spawning a .cmd/.bat
                 # child emits spurious CTRL_C_EVENT that would otherwise
                 # hit the default handler and raise KeyboardInterrupt

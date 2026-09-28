@@ -66,6 +66,7 @@ from datetime import datetime, timezone
 from typing import Dict, Any, Optional, List, Tuple, Union
 from pathlib import Path
 from agent.redact import redact_cdp_url
+# [owner] i18n 中文文案 t() 替换
 from agent.i18n import t as _t
 from hermes_constants import (
     agent_browser_runnable,
@@ -1315,6 +1316,7 @@ def _run_chrome_fallback_command(
         current_url = str(url_result.get("data", {}).get("url", "")).strip()
     if not current_url:
         logger.warning("Chrome fallback: could not determine current URL from LP session")
+# [owner] i18n 中文文案 t() 替换
         return {"success": False, "error": _t("browser.chrome_fallback_no_url")}
 
     # 2. Create a temporary Chrome session (bypasses _get_session_info's cache).
@@ -1429,6 +1431,7 @@ def _run_chrome_fallback_command(
         except subprocess.TimeoutExpired:
             proc.kill()
             proc.wait()
+# [owner] i18n 中文文案 t() 替换
             return {"success": False, "error": _t("browser.chrome_fallback_timeout", command=cmd)}
         try:
             with open(stdout_path, "r", encoding="utf-8") as f:
@@ -1443,6 +1446,7 @@ def _run_chrome_fallback_command(
                     os.unlink(pth)
                 except OSError:
                     pass
+# [owner] i18n 中文文案 t() 替换
         return {"success": False, "error": _t("browser.chrome_fallback_failed", command=cmd)}
 
     try:
@@ -1450,6 +1454,7 @@ def _run_chrome_fallback_command(
         nav = _run_tmp("open", [current_url])
         if not nav.get("success"):
             logger.warning("Chrome fallback: navigate failed: %s", nav.get("error"))
+# [owner] i18n 中文文案 t() 替换
             return {"success": False, "error": _t("browser.chrome_fallback_navigate_failed", error=nav.get('error'))}
 
         # 4. Run the requested command in Chrome.
@@ -3767,6 +3772,7 @@ def _run_browser_command(
 
     from tools.interrupt import is_interrupted
     if is_interrupted():
+# [owner] i18n 中文文案 t() 替换
         return {"success": False, "error": _t("browser.interrupted")}
 
     # Get session info (creates Browserbase session with proxies if needed)
@@ -3774,11 +3780,13 @@ def _run_browser_command(
         session_info = _get_session_info(task_id)
     except Exception as e:
         logger.warning("Failed to create browser session for task=%s: %s", task_id, e)
+# [owner] i18n 中文文案 t() 替换
         return {"success": False, "error": _t("browser.session_create_failed", error=str(e))}
     # Cleanup stops the supervisor before closing the backend; keep it stopped.
     if command != "close" and session_info.get("cdp_url"):
         _ensure_cdp_supervisor(task_id)
 
+# [owner] i18n 中文文案 t() 替换
 
     # Build the command with the appropriate backend flag.
     # Cloud mode: --cdp <websocket_url> connects to Browserbase.
@@ -3952,6 +3960,7 @@ def _run_browser_command(
             # Some commands (close, record) legitimately return no output.
             if not stdout_text and returncode == 0 and command not in _EMPTY_OK_COMMANDS:
                 logger.warning("browser '%s' returned empty output (rc=0)", command)
+# [owner] i18n 中文文案 t() 替换
                 result = {"success": False, "error": _t("browser.command_no_output", command=command)}
             elif stdout_text:
                 try:
@@ -3991,11 +4000,13 @@ def _run_browser_command(
                         else:
                             result = {
                                 "success": False,
+# [owner] i18n 中文文案 t() 替换
                 "error": _t("browser.non_json_output", command=command, raw=raw)
                             }
                     else:
                         result = {
                             "success": False,
+# [owner] i18n 中文文案 t() 替换
                             "error": _t("browser.non_json_output", command=command, raw=raw)
                         }
             elif returncode != 0:
@@ -4206,6 +4217,7 @@ def browser_navigate(url: str, task_id: Optional[str] = None) -> str:
     if _PREFIX_RE.search(url) or _PREFIX_RE.search(url_decoded):
         return json.dumps({
             "success": False,
+# [owner] i18n 中文文案 t() 替换
             "error": _t("browser.blocked_api_key_in_url"),
         })
     url = _normalize_url_for_request(url)
@@ -4213,6 +4225,7 @@ def browser_navigate(url: str, task_id: Optional[str] = None) -> str:
     if _PREFIX_RE.search(url) or _PREFIX_RE.search(normalized_decoded):
         return json.dumps({
             "success": False,
+# [owner] i18n 中文文案 t() 替换
             "error": _t("browser.blocked_api_key_in_url"),
         })
 
@@ -4232,6 +4245,7 @@ def browser_navigate(url: str, task_id: Optional[str] = None) -> str:
     if sensitive_query_key and not _is_local_backend() and not auto_local_this_nav:
         return json.dumps({
             "success": False,
+# [owner] i18n 中文文案 t() 替换
             "error": _t("browser.blocked_credential_query_param", param=sensitive_query_key),
         })
 
@@ -4247,6 +4261,7 @@ def browser_navigate(url: str, task_id: Optional[str] = None) -> str:
     if _is_always_blocked_url(url):
         return json.dumps({
             "success": False,
+# [owner] i18n 中文文案 t() 替换
             "error": _t("browser.blocked_metadata_endpoint"),
         })
 
@@ -4258,6 +4273,7 @@ def browser_navigate(url: str, task_id: Optional[str] = None) -> str:
     ):
         return json.dumps({
             "success": False,
+# [owner] i18n 中文文案 t() 替换
             "error": _t("browser.blocked_private_address"),
         })
 
@@ -4323,6 +4339,7 @@ def browser_navigate(url: str, task_id: Optional[str] = None) -> str:
             _run_browser_command(nav_session_key, "open", ["about:blank"], timeout=10)
             return json.dumps({
                 "success": False,
+# [owner] i18n 中文文案 t() 替换
                 "error": _t("browser.blocked_redirect_metadata"),
             })
 
@@ -4336,6 +4353,7 @@ def browser_navigate(url: str, task_id: Optional[str] = None) -> str:
             _run_browser_command(nav_session_key, "open", ["about:blank"], timeout=10)
             return json.dumps({
                 "success": False,
+# [owner] i18n 中文文案 t() 替换
                 "error": _t("browser.blocked_redirect_private"),
             })
 
@@ -4408,6 +4426,7 @@ def browser_navigate(url: str, task_id: Optional[str] = None) -> str:
     else:
         return json.dumps({
             "success": False,
+# [owner] i18n 中文文案 t() 替换
             "error": result.get("error") or _t("browser.navigation_failed")
         }, ensure_ascii=False)
 
@@ -4469,6 +4488,7 @@ def browser_snapshot(
                     if _current_url and not _is_safe_url(_current_url):
                         return json.dumps({
                             "success": False,
+# [owner] i18n 中文文案 t() 替换
             "error": _t("browser.blocked_private_page_jsnav", url=_current_url),
                         }, ensure_ascii=False)
             except Exception as _url_exc:
@@ -4507,6 +4527,7 @@ def browser_snapshot(
     else:
         response = {
             "success": False,
+# [owner] i18n 中文文案 t() 替换
             "error": result.get("error") or _t("browser.snapshot_failed")
         }
         return json.dumps(_copy_fallback_warning(response, result), ensure_ascii=False)
@@ -4547,6 +4568,7 @@ def browser_click(ref: str, task_id: Optional[str] = None) -> str:
     else:
         response = {
             "success": False,
+# [owner] i18n 中文文案 t() 替换
             "error": result.get("error") or _t("browser.click_failed", ref=ref)
         }
         return json.dumps(_copy_fallback_warning(response, result), ensure_ascii=False)
@@ -4603,6 +4625,7 @@ def browser_type(ref: str, text: str, task_id: Optional[str] = None) -> str:
     else:
         response = {
             "success": False,
+# [owner] i18n 中文文案 t() 替换
             "error": result.get("error") or _t("browser.type_failed", ref=ref)
         }
         response = _copy_fallback_warning(response, result)
@@ -4625,6 +4648,7 @@ def browser_scroll(direction: str, task_id: Optional[str] = None) -> str:
     if direction not in {"up", "down"}:
         return json.dumps({
             "success": False,
+# [owner] i18n 中文文案 t() 替换
             "error": _t("browser.invalid_scroll_direction", direction=direction)
         }, ensure_ascii=False)
 
@@ -4648,6 +4672,7 @@ def browser_scroll(direction: str, task_id: Optional[str] = None) -> str:
     if not result.get("success"):
         response = {
             "success": False,
+# [owner] i18n 中文文案 t() 替换
             "error": result.get("error") or _t("browser.scroll_failed", direction=direction)
         }
         return json.dumps(_copy_fallback_warning(response, result), ensure_ascii=False)
@@ -4690,6 +4715,7 @@ def browser_back(task_id: Optional[str] = None) -> str:
             if _blocked_url:
                 return json.dumps({
                     "success": False,
+# [owner] i18n 中文文案 t() 替换
                     "error": _t("browser.blocked_private_page_back", url=_blocked_url),
                 }, ensure_ascii=False)
         data = result.get("data", {})
@@ -4701,6 +4727,7 @@ def browser_back(task_id: Optional[str] = None) -> str:
     else:
         response = {
             "success": False,
+# [owner] i18n 中文文案 t() 替换
             "error": result.get("error") or _t("browser.back_failed")
         }
         return json.dumps(_copy_fallback_warning(response, result), ensure_ascii=False)
@@ -4736,6 +4763,7 @@ def browser_press(key: str, task_id: Optional[str] = None) -> str:
     else:
         response = {
             "success": False,
+# [owner] i18n 中文文案 t() 替换
             "error": result.get("error") or _t("browser.press_failed", key=key)
         }
         return json.dumps(_copy_fallback_warning(response, result), ensure_ascii=False)
@@ -4750,6 +4778,7 @@ def _blocked_private_page_action(effective_task_id: str, action: str) -> Optiona
         return None
     return json.dumps({
         "success": False,
+# [owner] i18n 中文文案 t() 替换
         "error": _t("browser.blocked_private_page_action", url=blocked_url, action=action),
     }, ensure_ascii=False)
 
@@ -4788,6 +4817,7 @@ def browser_console(clear: bool = False, expression: Optional[str] = None, task_
         if _blocked_url:
             return json.dumps({
                 "success": False,
+# [owner] i18n 中文文案 t() 替换
                 "error": _t("browser.blocked_private_page_jsnav", url=_blocked_url),
             }, ensure_ascii=False)
 
@@ -5038,6 +5068,7 @@ def _enforce_browser_eval_policy(expression: str) -> Optional[str]:
     reason = _risky_browser_eval_reason(expression)
     if not reason:
         return None
+# [owner] i18n 中文文案 t() 替换
     return _t("browser.blocked_sensitive_eval", reason=reason)
 
 
@@ -5050,6 +5081,7 @@ def _browser_eval(expression: str, task_id: Optional[str] = None) -> str:
         if blocked_literal:
             return json.dumps({
                 "success": False,
+# [owner] i18n 中文文案 t() 替换
                 "error": _t("browser.blocked_eval_private_url", url=blocked_literal),
             }, ensure_ascii=False)
 
@@ -5094,6 +5126,7 @@ def _browser_eval(expression: str, task_id: Optional[str] = None) -> str:
                     if _blocked_url:
                         return json.dumps({
                             "success": False,
+# [owner] i18n 中文文案 t() 替换
                             "error": _t("browser.blocked_private_page_jsnav", url=_blocked_url),
                         }, ensure_ascii=False)
                 response = {
@@ -5129,6 +5162,7 @@ def _browser_eval(expression: str, task_id: Optional[str] = None) -> str:
         if any(hint in err.lower() for hint in ("unknown command", "not supported", "not found", "no such command")):
             response = {
                 "success": False,
+# [owner] i18n 中文文案 t() 替换
                 "error": _t("browser.eval_unsupported_backend", error=err),
             }
             return json.dumps(_copy_fallback_warning(response, result))
@@ -5140,6 +5174,7 @@ def _browser_eval(expression: str, task_id: Optional[str] = None) -> str:
         if "reference chain is too long" in err.lower():
             response = {
                 "success": False,
+# [owner] i18n 中文文案 t() 替换
                 "error": _t("browser.eval_dom_node_unserializable"),
             }
             return json.dumps(_copy_fallback_warning(response, result))
@@ -5173,6 +5208,7 @@ def _browser_eval(expression: str, task_id: Optional[str] = None) -> str:
         if _blocked_url:
             return json.dumps({
                 "success": False,
+# [owner] i18n 中文文案 t() 替换
                 "error": _t("browser.blocked_private_page_jsnav", url=_blocked_url),
             }, ensure_ascii=False)
     return json.dumps(_copy_fallback_warning(response, result), ensure_ascii=False, default=str)
@@ -5226,6 +5262,7 @@ def _camofox_eval(expression: str, task_id: Optional[str] = None) -> str:
             if _blocked_url:
                 return json.dumps({
                     "success": False,
+# [owner] i18n 中文文案 t() 替换
                     "error": _t("browser.blocked_private_page_jsnav", url=_blocked_url),
                 }, ensure_ascii=False)
 
@@ -5240,6 +5277,7 @@ def _camofox_eval(expression: str, task_id: Optional[str] = None) -> str:
         if any(code in error_msg for code in ("404", "405", "501")):
             return json.dumps({
                 "success": False,
+# [owner] i18n 中文文案 t() 替换
                 "error": _t("browser.camofox_eval_unsupported"),
             })
         return tool_error(error_msg, success=False)
@@ -5329,6 +5367,7 @@ def browser_get_images(task_id: Optional[str] = None) -> str:
             if _blocked_url:
                 return json.dumps({
                     "success": False,
+# [owner] i18n 中文文案 t() 替换
                     "error": _t("browser.blocked_private_page_jsnav", url=_blocked_url),
                 }, ensure_ascii=False)
 
@@ -5353,12 +5392,14 @@ def browser_get_images(task_id: Optional[str] = None) -> str:
                 "success": True,
                 "images": [],
                 "count": 0,
+# [owner] i18n 中文文案 t() 替换
                 "warning": _t("browser.image_data_parse_failed")
             }
             return json.dumps(_copy_fallback_warning(response, result), ensure_ascii=False)
     else:
         response = {
             "success": False,
+# [owner] i18n 中文文案 t() 替换
             "error": result.get("error") or _t("browser.get_images_failed")
         }
         return json.dumps(_copy_fallback_warning(response, result), ensure_ascii=False)
@@ -5420,6 +5461,7 @@ def browser_vision(question: str, annotate: bool = False, task_id: Optional[str]
                 if _current_url and not _is_safe_url(_current_url):
                     return json.dumps({
                         "success": False,
+# [owner] i18n 中文文案 t() 替换
                         "error": _t("browser.blocked_private_page_jsnav", url=_current_url),
                     }, ensure_ascii=False)
         except Exception as _url_exc:
@@ -5441,6 +5483,7 @@ def browser_vision(question: str, annotate: bool = False, task_id: Optional[str]
         fb_result = _chrome_fallback_screenshot(
             effective_task_id, screenshot_args, _get_command_timeout(),
         )
+# [owner] i18n 中文文案 t() 替换
         fb_reason = _t("browser.lightpanda_no_renderer_vision")
         fb_result = _annotate_lightpanda_fallback(fb_result, fb_reason)
         if fb_result.get("success"):
@@ -5477,6 +5520,7 @@ def browser_vision(question: str, annotate: bool = False, task_id: Optional[str]
                     "browser_engine_fallback": {
                         "from": "lightpanda",
                         "to": "chrome",
+# [owner] i18n 中文文案 t() 替换
                         "reason": _t("browser.lightpanda_no_renderer_vision"),
                     },
                 },
@@ -5485,6 +5529,7 @@ def browser_vision(question: str, annotate: bool = False, task_id: Optional[str]
                 "browser_engine_fallback": {
                     "from": "lightpanda",
                     "to": "chrome",
+# [owner] i18n 中文文案 t() 替换
                     "reason": _t("browser.lightpanda_no_renderer_vision"),
                 },
             }
@@ -5510,6 +5555,7 @@ def browser_vision(question: str, annotate: bool = False, task_id: Optional[str]
             mode = "local" if _cp is None else f"cloud ({_cp.provider_name()})"
             error_response = {
                 "success": False,
+# [owner] i18n 中文文案 t() 替换
                 "error": _t("browser.screenshot_failed", mode=mode, error=error_detail)
             }
             return json.dumps(_copy_fallback_warning(error_response, result), ensure_ascii=False)
@@ -5684,6 +5730,7 @@ def browser_vision(question: str, annotate: bool = False, task_id: Optional[str]
         # screenshot loses evidence the user might need.  The 24-hour cleanup
         # in _cleanup_old_screenshots prevents unbounded disk growth.
         logger.warning("browser_vision failed: %s", e, exc_info=True)
+# [owner] i18n 中文文案 t() 替换
         error_info = {"success": False, "error": _t("browser.vision_analysis_failed", error=str(e))}
         if screenshot_path.exists():
             error_info["screenshot_path"] = str(screenshot_path)

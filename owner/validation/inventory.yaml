@@ -455,7 +455,7 @@ items:
       - type: file_contains
         file: agent/credential_pool.py
         contains:
-          - '[owner-patch] api_key_prefixes gate'
+          - '[owner] api_key_prefixes gate'
           - '_prefixes = getattr(pconfig, "api_key_prefixes", ())'
       - type: file_contains
         file: hermes_cli/model_switch.py
@@ -578,17 +578,17 @@ items:
         file: tools/cronjob_tools.py
         contains:
           - '_get_owner_scripts_allowlist'
-          - '[owner-patch] cron job args support: validate and normalize'
-          - '[owner-patch] cron job args support: validate and store updates'
+          - '[owner] cron job args support: validate and normalize'
+          - '[owner] cron job args support: validate and store updates'
       - type: file_contains
         file: cron/jobs.py
         contains:
-          - '[owner-patch] cron job args support: normalize optional script CLI flags'
+          - '[owner] cron job args support: normalize optional script CLI flags'
       - type: file_contains
         file: cron/scheduler.py
         contains:
           - '_get_owner_scripts_allowlist'
-          - '[owner-patch] cron job args support: map stored job args to CLI flags'
+          - '[owner] cron job args support: map stored job args to CLI flags'
       - type: file_exists
         path: owner/scripts/check_hermes_upstream.py
       - type: file_exists
@@ -645,7 +645,7 @@ items:
       - type: file_contains
         file: agent/agent_runtime_helpers.py
         contains:
-          - '[owner-patch] damodel (genai.damodel.com)'
+          - '[owner] damodel (genai.damodel.com)'
           - 'provider_lower == "damodel"'
           - 'base_url_host_matches(eff_base_url, "genai.damodel.com")'
       - type: file_exists

@@ -11934,7 +11934,7 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
         effect_disposition: Optional[str] = None,
         _compressed_summary: bool = False,
         timestamp: Any = None,
-        # [owner-patch] per-message API token breakdown
+        # [owner] per-message API token breakdown
         input_tokens: Optional[int] = None,
         output_tokens: Optional[int] = None,
         cache_read_tokens: Optional[int] = None,
@@ -12015,7 +12015,7 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
                    owner_provider_name, model, provider, reasoning, reasoning_content, reasoning_details,
                    codex_reasoning_items, codex_message_items, platform_message_id, observed,
                    _compressed_summary, active,
-                   -- [owner-patch] per-message API token breakdown
+                   -- [owner] per-message API token breakdown
                    input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, api_content,
                    display_kind, display_metadata)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
@@ -12042,7 +12042,7 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
                     1 if observed else 0,
                     1 if _compressed_summary else 0,
                     1,
-                    # [owner-patch] per-message API token breakdown
+                    # [owner] per-message API token breakdown
                     input_tokens or 0,
                     output_tokens or 0,
                     cache_read_tokens or 0,
@@ -12472,7 +12472,7 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
                    owner_provider_name, model, provider, reasoning, reasoning_content, reasoning_details,
                    codex_reasoning_items, codex_message_items, platform_message_id, observed,
                    _compressed_summary, active,
-                   -- [owner-patch] per-message API token breakdown
+                   -- [owner] per-message API token breakdown
                    input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, api_content,
                    display_kind, display_metadata)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
@@ -12499,7 +12499,7 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
                     1 if msg.get("observed") else 0,
                     1 if msg.get("_compressed_summary") else 0,
                     1,
-                    # [owner-patch] per-message API token breakdown
+                    # [owner] per-message API token breakdown
                     msg.get("input_tokens") or 0,
                     msg.get("output_tokens") or 0,
                     msg.get("cache_read_tokens") or 0,

@@ -23,6 +23,7 @@ from __future__ import annotations
 import math
 from typing import Any, Mapping, Optional
 
+# [owner] i18n 中文文案 t() 替换
 from agent.i18n import t
 
 
@@ -65,6 +66,7 @@ def should_clear_session_stall_notification(
 def format_session_stall_notification(idle_seconds: float) -> str:
     """User-facing stall warning (ASCII minutes; matches issue #72016 copy)."""
     mins = max(1, int(idle_seconds // 60))
+# [owner] i18n 中文文案 t() 替换
     return t("gateway.session_stall", mins=mins)
 
 

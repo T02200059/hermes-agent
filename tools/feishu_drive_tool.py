@@ -1,3 +1,5 @@
+# [owner] 本文件另有 2 处「仅删除上游代码」的改动（无新增行可挂标记）：新文件第 11 行附近、新文件第 43 行附近；条目见 owner/docs/owner改动清单.md
+# [owner] fallback client + 共享 _do_request（改动在下方的多行字符串内）
 """Feishu Drive Tools -- document comment operations via Feishu/Lark API.
 
 Provides tools for listing, replying to, and adding document comments.
@@ -12,6 +14,7 @@ Shared helpers (``do_request``) live in :mod:`tools.feishu_client_utils`.
 import logging
 import threading
 
+# [owner] fallback client + 共享 _do_request
 from tools.feishu_client_utils import do_request, resolve_client
 from tools.registry import registry, tool_error, tool_result
 
@@ -86,8 +89,10 @@ FEISHU_DRIVE_LIST_COMMENTS_SCHEMA = {
 
 
 def _handle_list_comments(args: dict, **kwargs) -> str:
+# [owner] fallback client + 共享 _do_request
     client = resolve_client(get_client())
     if client is None:
+# [owner] fallback client + 共享 _do_request
         return tool_error(
             "Feishu client not available (set FEISHU_APP_ID and "
             "FEISHU_APP_SECRET, or run from a Feishu comment context)"
@@ -112,6 +117,7 @@ def _handle_list_comments(args: dict, **kwargs) -> str:
     if page_token:
         queries.append(("page_token", page_token))
 
+# [owner] fallback client + 共享 _do_request
     code, msg, data = do_request(
         client, "GET", _LIST_COMMENTS_URI,
         paths={"file_token": file_token},
@@ -164,8 +170,10 @@ FEISHU_DRIVE_LIST_REPLIES_SCHEMA = {
 
 
 def _handle_list_replies(args: dict, **kwargs) -> str:
+# [owner] fallback client + 共享 _do_request
     client = resolve_client(get_client())
     if client is None:
+# [owner] fallback client + 共享 _do_request
         return tool_error(
             "Feishu client not available (set FEISHU_APP_ID and "
             "FEISHU_APP_SECRET, or run from a Feishu comment context)"
@@ -188,6 +196,7 @@ def _handle_list_replies(args: dict, **kwargs) -> str:
     if page_token:
         queries.append(("page_token", page_token))
 
+# [owner] fallback client + 共享 _do_request
     code, msg, data = do_request(
         client, "GET", _LIST_REPLIES_URI,
         paths={"file_token": file_token, "comment_id": comment_id},
@@ -239,8 +248,10 @@ FEISHU_DRIVE_REPLY_SCHEMA = {
 
 
 def _handle_reply_comment(args: dict, **kwargs) -> str:
+# [owner] fallback client + 共享 _do_request
     client = resolve_client(get_client())
     if client is None:
+# [owner] fallback client + 共享 _do_request
         return tool_error(
             "Feishu client not available (set FEISHU_APP_ID and "
             "FEISHU_APP_SECRET, or run from a Feishu comment context)"
@@ -265,6 +276,7 @@ def _handle_reply_comment(args: dict, **kwargs) -> str:
         }
     }
 
+# [owner] fallback client + 共享 _do_request
     code, msg, data = do_request(
         client, "POST", _REPLY_COMMENT_URI,
         paths={"file_token": file_token, "comment_id": comment_id},
@@ -313,8 +325,10 @@ FEISHU_DRIVE_ADD_COMMENT_SCHEMA = {
 
 
 def _handle_add_comment(args: dict, **kwargs) -> str:
+# [owner] fallback client + 共享 _do_request
     client = resolve_client(get_client())
     if client is None:
+# [owner] fallback client + 共享 _do_request
         return tool_error(
             "Feishu client not available (set FEISHU_APP_ID and "
             "FEISHU_APP_SECRET, or run from a Feishu comment context)"
@@ -334,6 +348,7 @@ def _handle_add_comment(args: dict, **kwargs) -> str:
         ],
     }
 
+# [owner] fallback client + 共享 _do_request
     code, msg, data = do_request(
         client, "POST", _ADD_COMMENT_URI,
         paths={"file_token": file_token},

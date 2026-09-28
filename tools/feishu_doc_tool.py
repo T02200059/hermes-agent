@@ -157,7 +157,7 @@ def _handle_feishu_doc_read(args: dict, **kwargs) -> str:
             "FEISHU_APP_SECRET, or run from a Feishu comment context)"
         )
 
-    # [owner-patch] merge_forward: doc_token om_... → read forwarded chat log
+    # [owner] merge_forward: doc_token om_... → read forwarded chat log
     # via GET /im/v1/messages/{id} (parent + N children). Supports offset /
     # limit paging so long forwards are never silently truncated.
     raw_token_stripped = raw_token.strip()

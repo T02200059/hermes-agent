@@ -390,7 +390,7 @@ class TestBuildSkillsSystemPrompt:
     def test_out_of_band_skill_install_visible_without_cache_clear(
         self, monkeypatch, tmp_path
     ):
-        """[owner-patch] skills-visibility: a skill installed out-of-band
+        """[owner] skills-visibility: a skill installed out-of-band
         (scp/git pull) after the cache was warmed becomes visible on the next
         build WITHOUT clear_skills_system_prompt_cache — the LRU hit is
         re-validated against the disk manifest. Unchanged disk keeps serving

@@ -1,4 +1,4 @@
-"""[owner-patch] merge_forward expansion tests.
+"""[owner] merge_forward expansion tests.
 
 Covers:
 1. ``_render_merge_forward_entries`` — dict + SDK-object children, mention

@@ -31,6 +31,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from hermes_cli._subprocess_compat import windows_hide_flags
 
+# [owner] i18n 中文文案 t() 替换
 from agent.i18n import t
 
 
@@ -490,6 +491,7 @@ def _compose_fallback_report(
     checks.append({
         "name": "platform_supported",
         "status": "pass" if supported else "fail",
+# [owner] i18n 中文文案 t() 替换
         "message": t("tools.doctor.platform_supported", plat=plat) + ("" if supported else " (unsupported)"),
     })
 
@@ -497,6 +499,7 @@ def _compose_fallback_report(
     checks.append({
         "name": "session_active",
         "status": "skip",
+# [owner] i18n 中文文案 t() 替换
         "message": t("tools.doctor.session_not_probed"),
     })
 
@@ -512,6 +515,7 @@ def _compose_fallback_report(
             checks.append({
                 "name": "tcc_accessibility",
                 "status": "pass",
+# [owner] i18n 中文文案 t() 替换
                 "message": t("tools.doctor.accessibility_granted"),
                 "data": {"accessibility": True},
             })
@@ -519,6 +523,7 @@ def _compose_fallback_report(
             checks.append({
                 "name": "tcc_accessibility",
                 "status": "fail",
+# [owner] i18n 中文文案 t() 替换
                 "message": t("tools.doctor.accessibility_not_granted"),
                 "hint": t("tools.doctor.accessibility_hint"),
                 "data": {"accessibility": False},
@@ -527,6 +532,7 @@ def _compose_fallback_report(
             checks.append({
                 "name": "tcc_accessibility",
                 "status": "skip",
+# [owner] i18n 中文文案 t() 替换
                 "message": t("tools.doctor.accessibility_absent"),
             })
 
@@ -534,6 +540,7 @@ def _compose_fallback_report(
             checks.append({
                 "name": "tcc_screen_recording",
                 "status": "fail",
+# [owner] i18n 中文文案 t() 替换
                 "message": t("tools.doctor.screen_recording_granted_not_capturable"),
                 "hint": t("tools.doctor.screen_recording_hint"),
                 "data": {
@@ -545,6 +552,7 @@ def _compose_fallback_report(
             checks.append({
                 "name": "tcc_screen_recording",
                 "status": "pass",
+# [owner] i18n 中文文案 t() 替换
                 "message": t("tools.doctor.screen_recording_granted"),
                 "data": {
                     "screen_recording": True,
@@ -555,6 +563,7 @@ def _compose_fallback_report(
             checks.append({
                 "name": "tcc_screen_recording",
                 "status": "fail",
+# [owner] i18n 中文文案 t() 替换
                 "message": t("tools.doctor.screen_recording_not_granted"),
                 "hint": t("tools.doctor.screen_recording_grant_hint"),
                 "data": {"screen_recording": False},
@@ -565,23 +574,27 @@ def _compose_fallback_report(
                 checks.append({
                     "name": "tcc_screen_recording",
                     "status": "skip",
+# [owner] i18n 中文文案 t() 替换
                     "message": t("tools.doctor.screen_recording_absent"),
                 })
             else:
                 checks.append({
                     "name": "tcc_screen_recording",
                     "status": "skip",
+# [owner] i18n 中文文案 t() 替换
                     "message": t("tools.doctor.screen_recording_not_applicable", plat=plat),
                 })
     else:
         checks.append({
             "name": "tcc_accessibility",
             "status": "fail" if perm_err else "skip",
+# [owner] i18n 中文文案 t() 替换
             "message": perm_err or t("tools.doctor.check_permissions_unavailable"),
         })
         checks.append({
             "name": "tcc_screen_recording",
             "status": "fail" if perm_err else "skip",
+# [owner] i18n 中文文案 t() 替换
             "message": perm_err or t("tools.doctor.check_permissions_unavailable"),
         })
 
@@ -595,6 +608,7 @@ def _compose_fallback_report(
         checks.append({
             "name": "ax_capability",
             "status": "pass",
+# [owner] i18n 中文文案 t() 替换
             "message": t("tools.doctor.list_apps_succeeded", count_msg=count_msg),
         })
     elif list_ok is False:
@@ -604,8 +618,10 @@ def _compose_fallback_report(
             "message": (
                 list_err
                 or (
+# [owner] i18n 中文文案 t() 替换
                     t("tools.doctor.list_apps_failed_despite_grant")
                     if ax_granted
+# [owner] i18n 中文文案 t() 替换
                     else t("tools.doctor.list_apps_failed")
                 )
             ),
@@ -614,22 +630,26 @@ def _compose_fallback_report(
         checks.append({
             "name": "ax_capability",
             "status": "pass",
+# [owner] i18n 中文文案 t() 替换
             "message": t("tools.doctor.ax_inferred_from_grant"),
         })
     else:
         checks.append({
             "name": "ax_capability",
             "status": "skip",
+# [owner] i18n 中文文案 t() 替换
             "message": t("tools.doctor.not_probed"),
         })
 
     # Annotate that we used the fallback path
+# [owner] i18n 中文文案 t() 替换
     reason_short = (reason or t("tools.doctor.health_report_unavailable")).strip()
     if len(reason_short) > 160:
         reason_short = reason_short[:157] + "..."
     checks.append({
         "name": "health_report_path",
         "status": "skip",
+# [owner] i18n 中文文案 t() 替换
         "message": t(
             "tools.doctor.health_report_fallback",
             reason=reason_short,

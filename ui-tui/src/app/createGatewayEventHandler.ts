@@ -94,6 +94,7 @@ const themeForSkin = (s: GatewaySkin) => {
     s.banner_logo ?? '',
     s.banner_hero ?? '',
     s.tool_prefix ?? '',
+// [owner] branding/spinner 字段
     s.help_header ?? '',
     s.spinner ?? {}
   )

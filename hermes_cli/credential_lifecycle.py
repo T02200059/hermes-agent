@@ -280,6 +280,7 @@ def save_provider_env_credential(env_var: str, value: str) -> Dict[str, Any]:
     except Exception:
         pass
 
+# [owner] provider models 缓存失效
     try:
         from hermes_cli.models import clear_provider_models_cache
 

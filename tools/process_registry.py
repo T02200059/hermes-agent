@@ -42,6 +42,7 @@ import time
 import uuid
 from pathlib import Path
 
+# [owner] i18n 中文文案 t() 替换
 from agent.i18n import t
 
 _IS_WINDOWS = platform.system() == "Windows"
@@ -644,6 +645,7 @@ class ProcessRegistry:
                     "thread_id": session.watcher_thread_id,
                     "message_id": session.watcher_message_id,
                     "message": (
+# [owner] i18n 中文文案 t() 替换
                         t("tools.process_registry.watch_disabled",
                           session_id=session.id,
                           limit=WATCH_STRIKE_LIMIT,
@@ -744,6 +746,7 @@ class ProcessRegistry:
                         "type": "watch_overflow_released",
                         "suppressed": suppressed,
                         "message": (
+# [owner] i18n 中文文案 t() 替换
                             t("tools.process_registry.watch_overflow_released",
                               suppressed=suppressed)
                         ),
@@ -790,6 +793,7 @@ class ProcessRegistry:
                 "command": "",
                 "type": "watch_overflow_tripped",
                 "message": (
+# [owner] i18n 中文文案 t() 替换
                     t("tools.process_registry.watch_overflow_tripped",
                       max_per_window=WATCH_GLOBAL_MAX_PER_WINDOW,
                       window_seconds=WATCH_GLOBAL_WINDOW_SECONDS,
@@ -2552,6 +2556,7 @@ class ProcessRegistry:
         if hasattr(session, '_pty') and session._pty:
             try:
                 session._pty.sendeof()
+# [owner] i18n 中文文案 t() 替换
                 return {"status": "ok", "message": t("tools.process_registry.eof_sent")}
             except Exception as e:
                 return {"status": "error", "error": str(e)}
@@ -2560,6 +2565,7 @@ class ProcessRegistry:
             return {"status": "error", "error": "Process stdin not available (non-local backend or stdin closed)"}
         try:
             session.process.stdin.close()
+# [owner] i18n 中文文案 t() 替换
             return {"status": "ok", "message": t("tools.process_registry.stdin_closed")}
         except Exception as e:
             return {"status": "error", "error": str(e)}

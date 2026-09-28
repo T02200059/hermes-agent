@@ -26,6 +26,7 @@ if TYPE_CHECKING:
     from typing import TypeGuard
 
 from hermes_cli import __version__ as _HERMES_VERSION
+# [owner] 静态目录 + owner providers 豁免
 from agent.i18n import t
 from hermes_cli.urllib_security import open_credentialed_url, url_origin
 from utils import atomic_json_write, base_url_host_matches
@@ -807,6 +808,7 @@ _PROVIDER_MODELS: dict[str, list[str]] = {
         "deepseek/deepseek-r1-0528",
         "qwen/qwen3-235b-a22b-fp8",
     ],
+# [owner] 静态目录 + owner providers 豁免
     # Owner providers (config.yaml providers.*.models)
     "damodel": [
         "glm-5.1",
@@ -815,6 +817,7 @@ _PROVIDER_MODELS: dict[str, list[str]] = {
     ],
 }
 
+# [owner] 静态目录 + owner providers 豁免
 # Owner-managed providers: bypass _is_custom_current guard so they can
 # win over "custom" when the user typed /model <name>.
 _OWNER_PROVIDERS = frozenset({"damodel"})
@@ -3615,6 +3618,7 @@ _LIVE_FIRST_PICKER_PROVIDERS: frozenset[str] = frozenset(
     {"opencode-zen", "opencode-go"}
 )
 
+# [owner] 静态目录 + owner providers 豁免
 # Kimi Coding Plan (sk-kimi-* → api.kimi.com/coding) only serves these IDs.
 # Do NOT merge with the Moonshot open-API curated list for that endpoint.
 _KIMI_CODING_PLAN_MODELS: list[str] = [
@@ -3759,6 +3763,7 @@ def detect_static_provider_for_model(
             or pid in _BORROWED_MODEL_PROVIDERS
         ):
             continue
+# [owner] 静态目录 + owner providers 豁免
         if _is_custom_current and pid not in _OWNER_PROVIDERS:
             continue
         if any(name_lower == m.lower() for m in _provider_catalog_names(pid)):
@@ -4463,6 +4468,7 @@ def provider_model_ids(provider: Optional[str], *, force_refresh: bool = False) 
                 api_key, base_url = "", _p.base_url
             if not base_url:
                 base_url = _p.base_url
+# [owner] 静态目录 + owner providers 豁免
             # Kimi Coding Plan (sk-kimi-* → api.kimi.com/coding) is a subscription
             # with only kimi-for-coding [+ highspeed]. Never merge the Moonshot
             # open-API curated catalog into that picker row.
@@ -4546,6 +4552,7 @@ def provider_model_ids(provider: Optional[str], *, force_refresh: bool = False) 
 #   - Cache file is best-effort. Any read/write error degrades silently
 #     to a live fetch — the picker keeps working.
 
+# [owner] 静态目录 + owner providers 豁免
 _PROVIDER_MODELS_CACHE_TTL = 86400  # 24h (owner: was 3600)
 # Providers whose catalog is served with NO credential and therefore gets a
 # stable (constant) credential fingerprint in the disk cache. The opencode-free
@@ -4824,6 +4831,7 @@ def cached_provider_model_ids(
 
     allow_empty_ollama = normalized == "ollama"
     if not force_refresh and _cache_entry_valid(entry, fp, allow_empty=allow_empty_ollama):
+# [owner] 静态目录 + owner providers 豁免
         cached_models = list(entry["models"])
         # Drop pre-fix cache rows that mixed Moonshot open-API models into
         # the Kimi Coding Plan picker (sk-kimi-* → api.kimi.com/coding).
@@ -4858,6 +4866,7 @@ def cached_provider_model_ids(
     # Cache miss / stale / forced refresh — call the live path.
     live = provider_model_ids(normalized, force_refresh=force_refresh)
     if live:
+# [owner] 静态目录 + owner providers 豁免
         # Owner fork: diff-check — only write disk if model list changed (save I/O).
         old_models = entry.get("models") if isinstance(entry, dict) else None
         old_fp = entry.get("fp") if isinstance(entry, dict) else None
@@ -4871,6 +4880,7 @@ def cached_provider_model_ids(
             "at": now,
             "models": list(live),
         }
+# [owner] 静态目录 + owner providers 豁免
         if models_changed:
             _save_provider_models_cache(cache)
         return list(live)
@@ -6192,6 +6202,7 @@ def probe_api_models(
     identical, so the same parser works for both.
     """
     normalized = (base_url or "").strip().rstrip("/")
+# [owner] 静态目录 + owner providers 豁免
 
     # Expand ${VAR} placeholders that may have survived config loading if the
     # env var was not yet present in os.environ. If expansion leaves a literal
@@ -6876,6 +6887,7 @@ def validate_requested_model(
             "accepted": False,
             "persist": False,
             "recognized": False,
+# [owner] 静态目录 + owner providers 豁免
             "message": t("gateway.model.validation_empty"),
         }
 
@@ -6889,11 +6901,13 @@ def validate_requested_model(
                 return {"accepted": True, "persist": True, "recognized": True, "message": None}
             return {
                 "accepted": False, "persist": False, "recognized": False,
+# [owner] 静态目录 + owner providers 豁免
                 "message": t("gateway.model.validation_moa_not_found", requested=requested),
             }
         except Exception as exc:
             return {
                 "accepted": False, "persist": False, "recognized": False,
+# [owner] 静态目录 + owner providers 豁免
                 "message": t("gateway.model.validation_moa_read_error", error=exc),
             }
 
@@ -6902,6 +6916,7 @@ def validate_requested_model(
             "accepted": False,
             "persist": False,
             "recognized": False,
+# [owner] 静态目录 + owner providers 豁免
             "message": t("gateway.model.validation_no_spaces"),
         }
 
@@ -6957,18 +6972,21 @@ def validate_requested_model(
             return {
                 "accepted": False, "persist": False, "recognized": False,
                 "message": (
+# [owner] 静态目录 + owner providers 豁免
                     f"{exc} " + t("gateway.model.validation_lmstudio_auth")
                 ),
             }
         if models is None:
             return {
                 "accepted": False, "persist": False, "recognized": False,
+# [owner] 静态目录 + owner providers 豁免
                 "message": t("gateway.model.validation_lmstudio_unreachable", requested=requested),
             }
         if not models:
             return {
                 "accepted": False, "persist": False, "recognized": False,
                 "message": (
+# [owner] 静态目录 + owner providers 豁免
                     t("gateway.model.validation_lmstudio_no_models_1")
                     + t("gateway.model.validation_lmstudio_no_models_2", requested=requested)
                 ),
@@ -6977,6 +6995,7 @@ def validate_requested_model(
             return {"accepted": True, "persist": True, "recognized": True, "message": None}
         return {
             "accepted": False, "persist": False, "recognized": False,
+# [owner] 静态目录 + owner providers 豁免
             "message": t("gateway.model.validation_lmstudio_not_found", requested=requested),
         }
 
@@ -7097,6 +7116,7 @@ def validate_requested_model(
                     "persist": True,
                     "recognized": True,
                     "corrected_model": auto[0],
+# [owner] 静态目录 + owner providers 豁免
                     "message": t("gateway.model.validation_auto_corrected", requested=requested, corrected=auto[0]),
                 }
 
@@ -7106,12 +7126,14 @@ def validate_requested_model(
                 suggestion_text = "\n  Similar models: " + ", ".join(f"`{s}`" for s in suggestions)
 
             message = (
+# [owner] 静态目录 + owner providers 豁免
                 t("gateway.model.validation_custom_not_found_1", requested=requested, url=probe.get('probed_url'))
                 + t("gateway.model.validation_custom_not_found_2")
                 + suggestion_text
             )
             if probe.get("used_fallback"):
                 message += (
+# [owner] 静态目录 + owner providers 豁免
                     t("gateway.model.validation_custom_fallback", url=probe.get('resolved_base_url'))
                 )
 
@@ -7123,12 +7145,15 @@ def validate_requested_model(
             }
 
         message = (
+# [owner] 静态目录 + owner providers 豁免
             t("gateway.model.validation_custom_unreachable", url=probe.get('probed_url'))
             + t("gateway.model.validation_custom_unreachable_2", requested=requested)
         )
         if api_mode == "anthropic_messages":
+# [owner] 静态目录 + owner providers 豁免
             message += t("gateway.model.validation_custom_anthropic_note")
         if probe.get("suggested_base_url"):
+# [owner] 静态目录 + owner providers 豁免
             message += t("gateway.model.validation_custom_suggested_url", url=probe.get('suggested_base_url'))
 
         return {
@@ -7199,6 +7224,7 @@ def validate_requested_model(
                     "persist": True,
                     "recognized": True,
                     "corrected_model": auto[0],
+# [owner] 静态目录 + owner providers 豁免
                     "message": t("gateway.model.validation_auto_corrected", requested=requested, corrected=auto[0]),
                 }
             suggestions = get_close_matches(requested_for_lookup, catalog_models, n=3, cutoff=0.5)
@@ -7228,6 +7254,7 @@ def validate_requested_model(
                     "accepted": False,
                     "persist": False,
                     "recognized": False,
+# [owner] 静态目录 + owner providers 豁免
                     "message": t("gateway.model.validation_codex_not_plausible", requested=requested, provider_label=provider_label) + suggestion_text,
                 }
             return {
@@ -7235,6 +7262,7 @@ def validate_requested_model(
                 "persist": True,
                 "recognized": False,
                 "message": (
+# [owner] 静态目录 + owner providers 豁免
                     t("gateway.model.validation_catalog_not_found", requested=requested, provider_label=provider_label)
                     + t("gateway.model.validation_catalog_not_found_2")
                     + suggestion_text
@@ -7268,6 +7296,7 @@ def validate_requested_model(
                     "persist": True,
                     "recognized": True,
                     "corrected_model": corrected,
+# [owner] 静态目录 + owner providers 豁免
                     "message": t("gateway.model.validation_auto_corrected", requested=requested, corrected=corrected),
                 }
             suggestions = get_close_matches(requested_for_lookup.lower(), catalog_lower_list, n=3, cutoff=0.5)
@@ -7279,6 +7308,7 @@ def validate_requested_model(
                 "persist": True,
                 "recognized": False,
                 "message": (
+# [owner] 静态目录 + owner providers 豁免
                     t("gateway.model.validation_minimax_not_found", requested=requested)
                     + suggestion_text
                     + t("gateway.model.validation_minimax_no_models_endpoint")
@@ -7312,6 +7342,7 @@ def validate_requested_model(
                     "persist": True,
                     "recognized": True,
                     "corrected_model": auto[0],
+# [owner] 静态目录 + owner providers 豁免
                     "message": t("gateway.model.validation_auto_corrected", requested=requested, corrected=auto[0]),
                 }
             suggestions = get_close_matches(requested, anthropic_models, n=3, cutoff=0.5)
@@ -7326,6 +7357,7 @@ def validate_requested_model(
                 "persist": True,
                 "recognized": False,
                 "message": (
+# [owner] 静态目录 + owner providers 豁免
                     t("gateway.model.validation_anthropic_not_found", requested=requested)
                     + t("gateway.model.validation_anthropic_not_found_2")
                     + suggestion_text
@@ -7353,6 +7385,7 @@ def validate_requested_model(
                     "persist": True,
                     "recognized": True,
                     "corrected_model": auto[0],
+# [owner] 静态目录 + owner providers 豁免
                     "message": t("gateway.model.validation_auto_corrected", requested=requested, corrected=auto[0]),
                 }
         # Probe failed or model not found — accept anyway (proxy likely
@@ -7361,6 +7394,7 @@ def validate_requested_model(
             "accepted": True,
             "persist": True,
             "recognized": False,
+# [owner] 静态目录 + owner providers 豁免
             "message": t("gateway.model.validation_anthropic_messages_unverified", requested=requested),
         }
 
@@ -7419,6 +7453,7 @@ def validate_requested_model(
                     "persist": True,
                     "recognized": True,
                     "corrected_model": corrected,
+# [owner] 静态目录 + owner providers 豁免
                     "message": t("gateway.model.validation_auto_corrected", requested=requested, corrected=corrected),
                 }
 
@@ -7456,6 +7491,7 @@ def validate_requested_model(
                     "persist": True,
                     "recognized": True,
                     "message": (
+# [owner] 静态目录 + owner providers 豁免
                         t("gateway.model.validation_live_not_found_catalog", requested=requested)
                     ),
                 }
@@ -7500,6 +7536,7 @@ def validate_requested_model(
             "persist": False,
             "recognized": False,
             "message": (
+# [owner] 静态目录 + owner providers 豁免
                 t("gateway.model.validation_not_found_in_provider", requested=requested)
                 + suggestion_text
             ),
@@ -7535,6 +7572,7 @@ def validate_requested_model(
                 "persist": True,
                 "recognized": False,
                 "message": (
+# [owner] 静态目录 + owner providers 豁免
                     t("gateway.model.validation_bedrock_not_found", requested=requested, region=region)
                     + t("gateway.model.validation_bedrock_not_found_2")
                     + suggestion_text
@@ -7593,6 +7631,7 @@ def validate_requested_model(
                 "persist": True,
                 "recognized": True,
                 "corrected_model": corrected_with_suffix,
+# [owner] 静态目录 + owner providers 豁免
                 "message": t(
                     "gateway.model.validation_auto_corrected",
                     requested=requested,
@@ -7612,6 +7651,7 @@ def validate_requested_model(
             "persist": True,
             "recognized": False,
             "message": (
+# [owner] 静态目录 + owner providers 豁免
                 t("gateway.model.validation_catalog_fallback_not_found", requested=requested, provider_label=provider_label)
                 + suggestion_text
                 + t("gateway.model.validation_catalog_fallback_may_work")
@@ -7625,6 +7665,7 @@ def validate_requested_model(
         "persist": True,
         "recognized": False,
         "message": (
+# [owner] 静态目录 + owner providers 豁免
             t("gateway.model.validation_api_unreachable", requested=requested, provider_label=provider_label)
         ),
     }

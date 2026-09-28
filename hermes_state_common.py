@@ -480,7 +480,7 @@ CREATE TABLE IF NOT EXISTS messages (
     _compressed_summary INTEGER NOT NULL DEFAULT 0,
     active INTEGER NOT NULL DEFAULT 1,
     compacted INTEGER NOT NULL DEFAULT 0,
-    -- [owner-patch] per-message API token breakdown (input/output/cache)
+    -- [owner] per-message API token breakdown (input/output/cache)
     input_tokens INTEGER DEFAULT 0,
     output_tokens INTEGER DEFAULT 0,
     cache_read_tokens INTEGER DEFAULT 0,

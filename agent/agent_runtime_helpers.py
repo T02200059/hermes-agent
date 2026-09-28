@@ -2749,7 +2749,7 @@ def anthropic_prompt_cache_policy(
         # pi-mono's "alibaba" cacheControlFormat.
         return True, False
 
-    # [owner-patch] damodel (genai.damodel.com) — OpenAI-wire transport
+    # [owner] damodel (genai.damodel.com) — OpenAI-wire transport
     # that accepts Anthropic-style cache_control markers.  Without this
     # branch damodel qwen3.6-27b reports 0% cached tokens, re-billing
     # the full prompt on every turn.

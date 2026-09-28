@@ -34,6 +34,7 @@ import urllib.request
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 from agent.secret_scope import get_secret
+# [owner] i18n 中文文案 t() 替换
 from agent.i18n import t
 from tools.registry import registry, tool_error
 
@@ -569,18 +570,21 @@ def _list_pins(token: str, channel_id: str, **_kwargs: Any) -> str:
 def _pin_message(token: str, channel_id: str, message_id: str, **_kwargs: Any) -> str:
     """Pin a message in a channel."""
     _discord_request("PUT", f"/channels/{channel_id}/pins/{message_id}", token)
+# [owner] i18n 中文文案 t() 替换
     return json.dumps({"success": True, "message": t("tools.discord.message_pinned", message_id=message_id)})
 
 
 def _unpin_message(token: str, channel_id: str, message_id: str, **_kwargs: Any) -> str:
     """Unpin a message from a channel."""
     _discord_request("DELETE", f"/channels/{channel_id}/pins/{message_id}", token)
+# [owner] i18n 中文文案 t() 替换
     return json.dumps({"success": True, "message": t("tools.discord.message_unpinned", message_id=message_id)})
 
 
 def _delete_message(token: str, channel_id: str, message_id: str, **_kwargs: Any) -> str:
     """Delete a message from a channel or thread."""
     _discord_request("DELETE", f"/channels/{channel_id}/messages/{message_id}", token)
+# [owner] i18n 中文文案 t() 替换
     return json.dumps({"success": True, "message": t("tools.discord.message_deleted", message_id=message_id)})
 
 
@@ -617,12 +621,14 @@ def _create_thread(
 def _add_role(token: str, guild_id: str, user_id: str, role_id: str, **_kwargs: Any) -> str:
     """Add a role to a guild member."""
     _discord_request("PUT", f"/guilds/{guild_id}/members/{user_id}/roles/{role_id}", token)
+# [owner] i18n 中文文案 t() 替换
     return json.dumps({"success": True, "message": t("tools.discord.role_added", role_id=role_id, user_id=user_id)})
 
 
 def _remove_role(token: str, guild_id: str, user_id: str, role_id: str, **_kwargs: Any) -> str:
     """Remove a role from a guild member."""
     _discord_request("DELETE", f"/guilds/{guild_id}/members/{user_id}/roles/{role_id}", token)
+# [owner] i18n 中文文案 t() 替换
     return json.dumps({"success": True, "message": t("tools.discord.role_removed", role_id=role_id, user_id=user_id)})
 
 

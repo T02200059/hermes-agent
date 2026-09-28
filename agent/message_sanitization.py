@@ -20,6 +20,7 @@ import logging
 import re
 from typing import Any
 
+# [owner] i18n 中文文案 t() 替换
 from agent.i18n import t
 
 logger = logging.getLogger(__name__)
@@ -324,6 +325,7 @@ def close_interrupted_tool_sequence(messages: list, final_response: Any = None) 
 
     append_message(messages, {
         "role": "assistant",
+# [owner] i18n 中文文案 t() 替换
         "content": text.strip() or t("gateway.interrupt.placeholder"),
     })
     return True

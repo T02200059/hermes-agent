@@ -4510,7 +4510,7 @@ def _run_job_script(
         else:
             argv = [python_exe, str(path)]
 
-    # [owner-patch] cron job args support: map stored job args to CLI flags
+    # [owner] cron job args support: map stored job args to CLI flags
     if args:
         for key, value in args.items():
             key_str = str(key).strip()

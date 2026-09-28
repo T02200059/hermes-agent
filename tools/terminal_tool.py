@@ -3127,7 +3127,7 @@ def terminal_tool(
                 try:
                     local_path = Path(script_path).expanduser()
                 except ValueError:
-                    # [owner-patch] embedded NUL byte in the path — not a
+                    # [owner] embedded NUL byte in the path — not a
                     # valid filesystem reference; nothing to read.
                     return None
                 try:

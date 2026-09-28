@@ -155,6 +155,7 @@ HERMES_OVERLAYS: Dict[str, HermesOverlay] = {
     "opencode-go": HermesOverlay(
         transport="openai_chat",
         is_aggregator=True,
+# [owner] provider 解析
         extra_env_vars=("OPENCODE_GO_API_KEY",),
         base_url_env_var="OPENCODE_GO_BASE_URL",
     ),
@@ -461,6 +462,7 @@ _LABEL_OVERRIDES: Dict[str, str] = {
     "ollama-cloud": "Ollama Cloud",
     "xai-oauth": "xAI Grok OAuth (SuperGrok / Premium+)",
     "opencode-free": "OpenCode Free",
+# [owner] provider 解析
     "kimi-coding": "Kimi / Kimi Coding Plan",
     "kimi-coding-cn": "Kimi / Moonshot (China)",
 }
@@ -597,12 +599,14 @@ def get_provider(name: str, *, allow_network: bool = True) -> Optional[ProviderD
 
 def get_label(provider_id: str) -> str:
     """Get a human-readable display name for a provider."""
+# [owner] provider 解析
     # Check label overrides first — before normalize, so distinct slugs that
     # alias to the same models.dev ID (e.g. kimi-coding / kimi-coding-cn both
     # → kimi-for-coding) can have distinct display names.
     if provider_id in _LABEL_OVERRIDES:
         return _LABEL_OVERRIDES[provider_id]
 
+# [owner] provider 解析
     canonical = normalize_provider(provider_id)
     if canonical in _LABEL_OVERRIDES:
         return _LABEL_OVERRIDES[canonical]

@@ -1337,6 +1337,7 @@ def _spawn_gateway_restart_watcher(old_pid: int, run_argv: list[str]) -> bool:
     respawn_cwd_literal = json.dumps(respawn_cwd)
     respawn_env_literal = json.dumps(respawn_env_overlay)
 
+# [owner] restart watcher 清理 __pycache__（改动在下方的多行字符串内）
     watcher = textwrap.dedent(
         """
         import os

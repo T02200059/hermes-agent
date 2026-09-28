@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Post-merge health check: detect dead owner code caused by upstream refactoring.
 
-Runs 7 checks:
+Runs 8 checks:
   1. _owner_import chain validation (P0)
   2. Direct from owner.* import validation (P0)
   3. owner/patches/*.py target validation (P0)
@@ -9,6 +9,7 @@ Runs 7 checks:
   5. Merge diff dead-marker detection (P2)
   6. Critical owner anchor validation (P0)
   7. Owner inventory static validation (P0)
+  8. Changed-file [owner] marker coverage (P1)
 
 Exit code 0 = all pass (warnings OK), 1 = any FAIL.
 """
@@ -390,6 +391,10 @@ def check_patch_targets() -> CheckResult:
 # Check 4: [owner] marker inventory & context validation
 # ---------------------------------------------------------------------------
 
+# ``[owner]`` is the only sanctioned marker (二次开发规范 §2.2). The retired
+# ``[owner-patch]`` alternative stays in the pattern so a line reintroduced by a
+# merge is still inventoried by Check 4 and adjudicated by Check 5 — dropping it
+# from the pattern would turn a visible legacy marker into an invisible hunk.
 _OWNER_MARKER_RE = re.compile(r"\[owner(?:-patch)?\]")
 _DIFF_HUNK_RE = re.compile(r"@@ -(\d+)(?:,\d+)? \+\d+(?:,\d+)? @@")
 
@@ -414,7 +419,12 @@ _UPSTREAM_SYMBOLS = {
 
 
 def check_owner_markers() -> CheckResult:
-    """Inventory [owner]/[owner-patch] markers and validate context."""
+    """Inventory [owner] markers and validate context.
+
+    ``_OWNER_MARKER_RE`` also accepts the retired ``[owner-patch]`` spelling.
+    That tolerance is deliberate: a stray one reintroduced by a merge must still
+    be *counted* here and *resolved* by Check 5, not silently ignored.
+    """
     py_files = _iter_py_files(REPO_ROOT)
     issues: List[str] = []
     total_markers = 0
@@ -857,6 +867,132 @@ def check_validation_inventory() -> CheckResult:
 
 
 # ---------------------------------------------------------------------------
+# Check 8: Changed-file [owner] marker coverage
+# ---------------------------------------------------------------------------
+
+# Refs tried in order to locate the last common ancestor with upstream.
+_UPSTREAM_BASE_REFS = ("upstream/main", "origin/main", "main")
+
+# Generated artifacts that must NOT carry hand-written markers. A tool rewrites
+# them wholesale, so a marker inside is wiped on the next regeneration; worse,
+# during a sync conflict it invites preserving our generated lines instead of
+# regenerating the file. The hand-authored source of truth carries the marker
+# instead -- e.g. pyproject.toml for a dependency pin that shows up in uv.lock.
+_GENERATED_ARTIFACTS = {
+    "uv.lock",
+    "poetry.lock",
+    "package-lock.json",
+    "pnpm-lock.yaml",
+    "yarn.lock",
+    "Cargo.lock",
+}
+
+
+def _is_generated_artifact(rel_path: str) -> bool:
+    return rel_path.rsplit("/", 1)[-1] in _GENERATED_ARTIFACTS
+
+
+def _resolve_upstream_base() -> Optional[str]:
+    """Last common ancestor of HEAD and the upstream mainline, or None."""
+    for ref in _UPSTREAM_BASE_REFS:
+        try:
+            result = subprocess.run(
+                ["git", "merge-base", "HEAD", ref],
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            return None
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+    return None
+
+
+def check_changed_file_markers() -> CheckResult:
+    """Every modified official file must carry at least one [owner] marker.
+
+    Resolving a fork sync means deciding, hunk by hunk, whether a change is ours
+    or upstream's -- and the [owner] marker at the change site is the only
+    signal that answers it. A modified file with no marker anywhere reads as
+    untouched upstream code, so the entire customization is taken from upstream
+    and disappears without a trace: merge 315551234 lost four markers exactly
+    that way (see Check 5).
+
+    Scope is official files *modified* since the upstream base, excluding
+    ``owner/`` and ``tests/``. Files *added* under an official directory are out
+    of scope: ``owner/docs/二次开发规范.md`` 2.2 identifies those through the
+    ``[owner]`` commit-message prefix, not an in-file marker. Generated
+    artifacts are out of scope for the reason documented at
+    ``_GENERATED_ARTIFACTS``.
+    """
+    base = _resolve_upstream_base()
+    if base is None:
+        return (
+            "Check 8: Changed-file [owner] marker coverage",
+            ["cannot resolve an upstream base ref — skipped"],
+            0,
+            0,
+        )
+
+    try:
+        result = subprocess.run(
+            ["git", "diff", "--diff-filter=M", "--name-only", f"{base}..HEAD"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+    except subprocess.TimeoutExpired:
+        return (
+            "Check 8: Changed-file [owner] marker coverage",
+            ["git diff timed out — skipped"],
+            0,
+            0,
+        )
+
+    if result.returncode != 0:
+        return (
+            "Check 8: Changed-file [owner] marker coverage",
+            [f"git diff failed: {result.stderr.strip()}"],
+            0,
+            0,
+        )
+
+    candidates = [
+        f.strip()
+        for f in result.stdout.splitlines()
+        if f.strip() and not f.strip().startswith(("owner/", "tests/"))
+    ]
+
+    issues: List[str] = []
+    examined = 0
+    covered = 0
+    for rel_path in candidates:
+        if _is_generated_artifact(rel_path):
+            continue
+        fpath = REPO_ROOT / rel_path
+        if not fpath.is_file():
+            continue  # deleted by the same window — nothing left to mark
+        examined += 1
+        try:
+            source = fpath.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            issues.append(f"{rel_path} — unreadable: {exc}")
+            continue
+        if _OWNER_MARKER_RE.search(source):
+            covered += 1
+            continue
+        issues.append(
+            f"{rel_path} — modified official file with no [owner] marker anywhere; "
+            "a sync would treat this customization as upstream code and drop it"
+        )
+
+    return "Check 8: Changed-file [owner] marker coverage", issues, examined, covered
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -879,6 +1015,7 @@ def main() -> int:
         check_merge_diff,
         check_critical_owner_anchors,
         check_validation_inventory,
+        check_changed_file_markers,
     ]
 
     total_pass = 0
@@ -914,6 +1051,9 @@ def main() -> int:
         elif check_fn == check_validation_inventory:
             checks_run, item_count = counts
             print(f"  Ran {checks_run} static checks across {item_count} inventory items")
+        elif check_fn == check_changed_file_markers:
+            examined, covered = counts
+            print(f"  {covered}/{examined} modified official files carry an [owner] marker")
 
         if not issues:
             if is_warn:

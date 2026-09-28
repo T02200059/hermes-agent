@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 _token_state: Dict[str, Dict[str, Any]] = {}
 _token_lock = threading.Lock()
 
-# [owner-patch] Idle tokens in these states are pruned after
+# [owner] Idle tokens in these states are pruned after
 # ``_TOKEN_STALE_AFTER`` so long-lived gateways do not accumulate them.
 # ``scheduled`` is pre-enqueue (abandoned /queue cards); the others are
 # terminal. Live FIFO states (``enqueued``, ``process_now``) are kept —
@@ -977,7 +977,7 @@ def _enqueue_fifo(self, session_key: str, queued_event: Any, adapter: Any) -> No
         with _token_lock:
             meta = _token_state.get(token) or {}
             if meta.get("status") in ("cancelled", "steered"):
-                # [owner-patch] A cancelled/steered token has already served
+                # [owner] A cancelled/steered token has already served
                 # its purpose (blocking the pre-enqueue dispatch). Re-sending
                 # the same text is a NEW queue request: retire the stale
                 # token instead of silently dropping the message (P1-1), so
@@ -1043,7 +1043,7 @@ async def _busy_queue_command(self, event: Any, quick_key: str, source: Any) -> 
                 _existing_meta = _token_state.get(existing) or {}
                 _existing_status = _existing_meta.get("status")
             if _existing_status in ("cancelled", "steered"):
-                # [owner-patch] The card belongs to a cancelled/steered
+                # [owner] The card belongs to a cancelled/steered
                 # request — re-issuing /queue with the same text is a NEW
                 # request. Retire the stale token and mint a fresh one so
                 # the new enqueue is not dropped (P1-1).

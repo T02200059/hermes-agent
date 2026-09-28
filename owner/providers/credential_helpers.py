@@ -38,7 +38,7 @@ def has_valid_github_token(env_vars: Union[tuple, list]) -> bool:
     return False
 
 
-# [owner-patch] Generic prefix-based credential validation.
+# [owner] Generic prefix-based credential validation.
 # Used by /providers listing to skip providers whose env-sourced key
 # doesn't match the provider's expected key format.
 _PROVIDER_PREFIX_MAP: dict[str, tuple] = {

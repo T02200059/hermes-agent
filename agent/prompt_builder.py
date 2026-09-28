@@ -1509,7 +1509,7 @@ def drain_truncation_warnings() -> list:
 # miss = full os.walk manifest rebuild). ~32 costs low single-digit MB worst
 # case.
 _SKILLS_PROMPT_CACHE_MAX = 32
-# [owner-patch] skills-visibility: cache value is (manifest, prompt) so an LRU
+# [owner] skills-visibility: cache value is (manifest, prompt) so an LRU
 # hit can be re-validated against disk — hand-installed skills (scp/git pull)
 # previously stayed invisible to NEW sessions in long-lived gateways until a
 # restart, because only skill_manage/skills_hub callers cleared this cache.
@@ -1852,7 +1852,7 @@ def _build_skills_system_prompt_inner(
         tuple(sorted(disabled)),
         tuple(sorted(compact_categories or ())),
     )
-    # [owner-patch] skills-visibility: re-validate an LRU hit against the disk
+    # [owner] skills-visibility: re-validate an LRU hit against the disk
     # manifest so skills dropped in out-of-band (scp/git pull) become visible
     # to NEW sessions without a gateway restart. One os.walk per lookup;
     # continuing sessions never reach this path (they restore their stored
@@ -2155,7 +2155,7 @@ def _build_skills_system_prompt_inner(
         )
 
     # ── Store in LRU cache ────────────────────────────────────────────
-    # [owner-patch] skills-visibility: persist the manifest alongside the
+    # [owner] skills-visibility: persist the manifest alongside the
     # rendered prompt so later lookups can detect out-of-band disk changes.
     try:
         _store_manifest = _build_skills_manifest(skills_dir)

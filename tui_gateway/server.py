@@ -5733,7 +5733,7 @@ def _runtime_model_config(agent, existing: dict | None = None) -> dict:
         config.pop("provider", None)
     if base_url:
         config["base_url"] = base_url
-    # [owner-patch] P29: Don't pop base_url when switch_model returns empty.
+    # [owner] P29: Don't pop base_url when switch_model returns empty.
     # An empty result.base_url means it couldn't be resolved, but the existing
     # value (typically ${VAR}) is still valid.  Popping it causes downstream
     # resolution to fall back to hardcoded defaults (#17101).
@@ -7062,7 +7062,7 @@ def _apply_live_compression_config(agent: Any, cfg: dict | None) -> None:
     except (TypeError, ValueError):
         pass
 
-    # [owner-patch] tui-live-ctx-override-resolve: 顶层 model.context_length 缺省时，
+    # [owner] tui-live-ctx-override-resolve: 顶层 model.context_length 缺省时，
     # 回退到 providers.<provider>.models.<model>.context_length（get_custom_provider_context_length
     # 是 per-model override 的唯一权威源）。否则新版 providers.*.models 结构下的
     # context_length 会被本函数清空，compressor 下次 resolve 落到 256K fallback。

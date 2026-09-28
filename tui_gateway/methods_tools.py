@@ -2629,6 +2629,7 @@ def _(rid, params: dict) -> dict:
     if not cmd:
         return _err(rid, 4004, "empty command")
     try:
+# [owner] hardline 描述可读化
         from tools.approval import (
             detect_dangerous_command,
             detect_hardline_command,
@@ -2637,15 +2638,19 @@ def _(rid, params: dict) -> dict:
 
         is_hardline, hardline_desc = detect_hardline_command(cmd)
         if is_hardline:
+# [owner] hardline 描述可读化
             # Detection returns English; localize for the user-facing error only.
             _hl = _translate_pattern_description(hardline_desc, kind="hardline") or hardline_desc
             return _err(
+# [owner] hardline 描述可读化
                 rid, 4005, f"blocked (hardline): {_hl}. Use the agent for dangerous commands."
             )
         is_dangerous, _, desc = detect_dangerous_command(cmd)
         if is_dangerous:
+# [owner] hardline 描述可读化
             _d = _translate_pattern_description(desc) or desc
             return _err(
+# [owner] hardline 描述可读化
                 rid, 4005, f"blocked: {_d}. Use the agent for dangerous commands."
             )
     except ImportError:

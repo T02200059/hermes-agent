@@ -67,6 +67,7 @@ _MAX_ROWS = 500
 
 # Visible prefix for redeliveries that might duplicate an already-received
 # message (crash mid-send / post-rejection retry). Honest at-least-once.
+# [owner] delivery_obligations 加 platform_message_id 列 (§7.21)
 # Untagged baseline — prefer :func:`recovered_reply_marker` at send sites so
 # multi-profile fleets can tell which gateway crashed mid-delivery.
 RECOVERED_MARKER = (
@@ -89,6 +90,7 @@ RECONNECTED_MARKER = (
 _RUNTIME_RETRYABLE_ERRORS = frozenset({"send_path_degraded"})
 
 
+# [owner] delivery_obligations 加 platform_message_id 列 (§7.21)
 def recovered_reply_marker() -> str:
     """Return the recovered-reply prefix, optionally tagged with the profile.
 
@@ -139,6 +141,7 @@ def _initialize_schema(conn: sqlite3.Connection) -> None:
     from hermes_state import apply_wal_with_fallback
 
     apply_wal_with_fallback(conn, db_label="state.db (delivery_ledger)")
+# [owner] delivery_obligations 加 platform_message_id 列 (§7.21)（改动在下方的多行字符串内）
     conn.execute(
         """CREATE TABLE IF NOT EXISTS delivery_obligations (
             obligation_id TEXT PRIMARY KEY,
@@ -158,6 +161,7 @@ def _initialize_schema(conn: sqlite3.Connection) -> None:
             platform_message_id TEXT
         )"""
     )
+# [owner] delivery_obligations 加 platform_message_id 列 (§7.21)
     # Declarative column reconciliation: every column must appear BOTH in the
     # CREATE TABLE above (for fresh databases) and in the ALTER loop below (for
     # databases created before the column existed). CREATE TABLE IF NOT EXISTS
@@ -166,6 +170,7 @@ def _initialize_schema(conn: sqlite3.Connection) -> None:
     columns = {
         row[1] for row in conn.execute("PRAGMA table_info(delivery_obligations)")
     }
+# [owner] delivery_obligations 加 platform_message_id 列 (§7.21)
     for _column, _decl in (
         ("adapter_profile", "TEXT"),
         # Platform-assigned id of the message we actually delivered (Feishu
@@ -317,6 +322,7 @@ def mark_attempting(obligation_id: str) -> None:
     _update_state(obligation_id, "attempting")
 
 
+# [owner] delivery_obligations 加 platform_message_id 列 (§7.21)
 def mark_delivered(obligation_id: str, message_id: Optional[str] = None) -> None:
     """Record a successful delivery, optionally with the platform message id.
 
@@ -362,6 +368,7 @@ def release_runtime_claim(obligation_id: str, error: str = "") -> bool:
     return bool(cursor.rowcount)
 
 
+# [owner] delivery_obligations 加 platform_message_id 列 (§7.21)
 def _update_state(
     obligation_id: str,
     state: str,
@@ -377,6 +384,7 @@ def _update_state(
     delivered/failed update on the same obligation).
     """
     with _DB_LOCK, _transaction() as conn:
+# [owner] delivery_obligations 加 platform_message_id 列 (§7.21)
         if message_id:
             conn.execute(
                 """UPDATE delivery_obligations
@@ -631,6 +639,7 @@ def ledger_enabled(config: Optional[Dict[str, Any]] = None) -> bool:
 def debug_rows(limit: int = 20) -> str:
     """Human-readable dump for ad-hoc inspection (sqlite3-free path)."""
     with _DB_LOCK, _transaction() as conn:
+# [owner] delivery_obligations 加 platform_message_id 列 (§7.21)（改动在下方的多行字符串内）
         rows = conn.execute(
             """SELECT obligation_id, session_key, state, attempts,
                       created_at, updated_at, last_error, platform_message_id
@@ -643,6 +652,7 @@ def debug_rows(limit: int = 20) -> str:
             {
                 "id": r[0], "session": r[1], "state": r[2], "attempts": r[3],
                 "created_at": r[4], "updated_at": r[5], "last_error": r[6],
+# [owner] delivery_obligations 加 platform_message_id 列 (§7.21)
                 "platform_message_id": r[7],
             }
             for r in rows

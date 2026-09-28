@@ -19,6 +19,7 @@ export const asCommandDispatch = (value: unknown): CommandDispatchResponse | nul
   }
 
   if (t === 'alias' && typeof o.target === 'string') {
+// [owner] chained quick command
     if (o.type === 'chain') return { type: 'chain', commands: o.commands }
     return { type: 'alias', target: o.target }
   }

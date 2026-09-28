@@ -283,7 +283,7 @@ def test_removing_codex_native_threshold_restores_default(monkeypatch):
     assert session["agent"].codex_responses_compact_threshold == 200_000
 
 
-# ── [owner-patch] tui-live-ctx-override-resolve (2026-09-03) ─────────────
+# ── [owner] tui-live-ctx-override-resolve (2026-09-03) ─────────────
 # 回归: _apply_live_compression_config 只读顶层 model.context_length，而新版
 # providers.<provider>.models.<model>.context_length 结构下 per-model override
 # 会被误清空 → compressor 下次 resolve 落到 256K fallback。修复后必须从

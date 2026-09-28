@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
+# [owner] i18n 中文文案 t() 替换
 from agent.i18n import t
 
 from hermes_constants import get_hermes_home
@@ -277,6 +278,7 @@ def check_website_access(url: str, config_path: Optional[Path] = None) -> Option
                 "host": host,
                 "rule": pattern,
                 "source": rule.get("source", "config"),
+# [owner] i18n 中文文案 t() 替换
                 "message": t(
                     "tools.website_policy.blocked",
                     host=host,

@@ -988,7 +988,7 @@ def _read_referenced_script(path: Path) -> tuple[Optional[str], bool]:
     # scanning — stripping can only splice tokens together, never apart, so it
     # fails closed.
     if _has_binary_magic(data):
-        # [owner-patch] return empty text, NOT None: None means "file not
+        # [owner] return empty text, NOT None: None means "file not
         # found locally" and triggers the read_remote_script fallback, which
         # would re-read the binary with no NUL check and feed machine-code
         # tokens back into the recursion. A binary executed by the user is

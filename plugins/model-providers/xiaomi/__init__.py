@@ -1,3 +1,4 @@
+# [owner] XiaomiProfile 子类
 """Xiaomi MiMo provider profile.
 
 Official OpenAI-compatible endpoint. Deep thinking is controlled by
@@ -11,6 +12,7 @@ from typing import Any
 
 from providers import register_provider
 from providers.base import ProviderProfile
+# [owner] XiaomiProfile 子类
 from providers.mimo_thinking import build_mimo_thinking_extras
 
 
@@ -30,12 +32,14 @@ class XiaomiProfile(ProviderProfile):
         )
 
 
+# [owner] XiaomiProfile 子类
 xiaomi = XiaomiProfile(
     name="xiaomi",
     aliases=("mimo", "xiaomi-mimo"),
     env_vars=("XIAOMI_API_KEY",),
     base_url="https://api.xiaomimimo.com/v1",
     supports_health_check=False,  # /v1/models returns 401 even with valid key
+# [owner] XiaomiProfile 子类
     supports_vision=True,  # mimo-v2.5 is vision-capable (omni-modal)
     supports_vision_tool_messages=False,  # rejects list-type tool content (400 "text is not set")
 )

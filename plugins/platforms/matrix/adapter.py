@@ -70,6 +70,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Dict, Optional, Set
 
+# [owner] i18n 中文文案 t() 替换
 from agent.i18n import t
 from agent.secret_scope import UnscopedSecretError, get_secret
 
@@ -2981,6 +2982,7 @@ class MatrixAdapter(BasePlatformAdapter):
                 "[%s] upload fallback: media file not found for %s",
                 self.name, file_path,
             )
+# [owner] i18n 中文文案 t() 替换
             notice = t("gateway.attachment_failed")
             text = f"{caption}\n{notice}" if caption else notice
             return await self.send(room_id, text, reply_to)

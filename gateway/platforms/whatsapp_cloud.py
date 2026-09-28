@@ -78,6 +78,7 @@ from gateway.platforms.base import (
     SendResult,
 )
 from gateway.platforms.whatsapp_common import WhatsAppBehaviorMixin, _get_wsecret
+# [owner] i18n 中文文案 t() 替换
 from agent.i18n import t
 from gateway.platforms.media_cache import ext_for_mime
 from gateway import rich_sent_store
@@ -872,8 +873,10 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
         cmd = command or ""
         cmd_preview = cmd if len(cmd) <= 800 else cmd[:800] + "..."
         body_text = self._truncate_body(
+# [owner] i18n 中文文案 t() 替换
             t("approval.card_title_exec_md") + "\n\n"
             f"```\n{cmd_preview}\n```\n\n"
+# [owner] i18n 中文文案 t() 替换
             + t("approval.reason_label", description=description)
             + (
                 "\n\n" + t("approval.card_smart_deny_note")
@@ -891,6 +894,7 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
                 "buttons": [
                     {
                         "type": "reply",
+# [owner] i18n 中文文案 t() 替换
                         "reply": {
                             "id": f"appr:{approval_id}:approve",
                             "title": t("approval.whatsapp_btn_approve"),
@@ -898,6 +902,7 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
                     },
                     {
                         "type": "reply",
+# [owner] i18n 中文文案 t() 替换
                         "reply": {
                             "id": f"appr:{approval_id}:deny",
                             "title": t("approval.whatsapp_btn_deny"),

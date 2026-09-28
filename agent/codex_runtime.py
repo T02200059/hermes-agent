@@ -25,6 +25,7 @@ from typing import Any, Callable, Dict, List
 
 from agent.stream_single_writer import claim_stream_writer, stream_writer_is_current
 
+# [owner] owner_provider_name 透传
 try:
     from agent.conversation_loop import _get_current_attribution
 except Exception:
@@ -234,6 +235,7 @@ def _record_codex_app_server_usage(agent, turn) -> dict[str, Any]:
                 cost_status=cost_result.status,
                 cost_source=cost_result.source,
                 billing_provider=agent.provider,
+# [owner] owner_provider_name 透传
                 owner_provider_name=_get_current_attribution(agent),
                 billing_base_url=agent.base_url,
                 billing_mode="subscription_included"
@@ -284,8 +286,10 @@ def _record_codex_app_server_compaction(
     )
     if not force:
         try:
+# [owner] owner_provider_name 透传
             from agent.conversation_compression import get_compaction_status
 
+# [owner] owner_provider_name 透传
             agent._emit_status(get_compaction_status())
         except Exception:
             pass

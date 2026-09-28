@@ -2,6 +2,7 @@ import type { BillingBlock, UsageModelData } from '@hermes/shared/billing'
 import type { HermesSkin } from '@hermes/shared/skin'
 
 import type { SessionInfo, SlashCategory, SubagentStatus, Usage } from './types.js'
+// [owner] chained quick command 类型（改动在下方的多行字符串内）
 
 /** The cross-surface skin contract (canonical shape in `@hermes/shared`).
  *  Includes the paired light_colors/dark_colors overlays from #20379.
@@ -74,6 +75,7 @@ export type {
 export type CommandDispatchResponse =
   | { output?: string; type: 'exec' | 'plugin' }
   | { target: string; type: 'alias' }
+// [owner] chained quick command 类型
   | { commands: string[]; type: 'chain' }
   | { display?: string; message?: string; name: string; type: 'skill' }
   | { display?: string; message: string; notice?: string; type: 'send' }

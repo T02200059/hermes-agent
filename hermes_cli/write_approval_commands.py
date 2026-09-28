@@ -18,12 +18,14 @@ from __future__ import annotations
 import json
 from typing import List, Optional
 
+# [owner] i18n 中文文案 t() 替换
 from agent.i18n import t as _t
 from tools import write_approval as wa
 
 
 def _fmt_state(subsystem: str) -> str:
     on = wa.write_approval_enabled(subsystem)
+# [owner] i18n 中文文案 t() 替换
     return _t("memory_proposal.response_approval_state", state="on" if on else "off")
 
 
@@ -34,6 +36,7 @@ def _fmt_state(subsystem: str) -> str:
 def _fmt_pending_list(subsystem: str) -> str:
     records = wa.list_pending(subsystem)
     if not records:
+# [owner] i18n 中文文案 t() 替换
         return _t("memory_proposal.response_no_pending")
     lines = [_t("memory_proposal.response_pending_header", count=len(records))]
     for r in records:
@@ -102,6 +105,7 @@ def handle_pending_subcommand(
 
 def _resolve_one(subsystem: str, rest: List[str]):
     if not rest:
+# [owner] i18n 中文文案 t() 替换
         return None, _t("memory_proposal.response_usage_approve", subsystem=subsystem)
     return rest[0], None
 
@@ -109,10 +113,12 @@ def _resolve_one(subsystem: str, rest: List[str]):
 def _approve(subsystem: str, rest: List[str], memory_store) -> str:
     target, err = _resolve_one(subsystem, rest)
     if err or target is None:
+# [owner] i18n 中文文案 t() 替换
         return err or _t("memory_proposal.response_usage_approve", subsystem=subsystem)
 
     records = wa.list_pending(subsystem)
     if not records:
+# [owner] i18n 中文文案 t() 替换
         return _t("memory_proposal.response_no_pending")
 
     if target.lower() == "all":
@@ -120,20 +126,24 @@ def _approve(subsystem: str, rest: List[str], memory_store) -> str:
     else:
         rec = wa.get_pending(subsystem, target)
         if not rec:
+# [owner] i18n 中文文案 t() 替换
             return _t("memory_proposal.response_no_match", id=target)
         targets = [rec]
 
+# [owner] i18n 中文文案 t() 替换
     applied, failed, first_id = 0, [], None
     for rec in targets:
         ok, msg = _apply_one(subsystem, rec, memory_store)
         if ok:
             wa.discard_pending(subsystem, rec["id"])
+# [owner] i18n 中文文案 t() 替换
             if first_id is None:
                 first_id = rec["id"]
             applied += 1
         else:
             failed.append(f"{rec['id']}: {msg}")
 
+# [owner] i18n 中文文案 t() 替换
     if applied == 1 and first_id:
         out = [_t("memory_proposal.response_approved_one", id=first_id)]
     else:
@@ -164,14 +174,17 @@ def _apply_one(subsystem: str, rec, memory_store):
 def _reject(subsystem: str, rest: List[str]) -> str:
     target, err = _resolve_one(subsystem, rest)
     if err or target is None:
+# [owner] i18n 中文文案 t() 替换
         return err or _t("memory_proposal.response_usage_reject", subsystem=subsystem)
     if target.lower() == "all":
         n = 0
         for rec in wa.list_pending(subsystem):
             if wa.discard_pending(subsystem, rec["id"]):
                 n += 1
+# [owner] i18n 中文文案 t() 替换
         return _t("memory_proposal.response_rejected_all", count=n)
     if wa.discard_pending(subsystem, target):
+# [owner] i18n 中文文案 t() 替换
         return _t("memory_proposal.response_rejected_one", id=target)
     return _t("memory_proposal.response_no_match", id=target)
 

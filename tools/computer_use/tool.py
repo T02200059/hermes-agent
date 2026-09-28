@@ -49,6 +49,7 @@ import sys
 import threading
 from typing import Any, Dict, List, Optional, Tuple
 
+# [owner] i18n 中文文案 t() 替换
 from agent.i18n import t
 
 from tools.computer_use.backend import (
@@ -536,6 +537,7 @@ def handle_computer_use(args: Dict[str, Any], **kwargs) -> Any:
         if pat:
             return json.dumps({
                 "error": f"blocked pattern in type text: {pat!r}",
+# [owner] i18n 中文文案 t() 替换
                 "hint": t("tools.computer_use.hint_dangerous_type_pattern"),
             })
 
@@ -546,6 +548,7 @@ def handle_computer_use(args: Dict[str, Any], **kwargs) -> Any:
             if blocked.issubset(combo) and len(blocked) <= len(combo):
                 return json.dumps({
                     "error": f"blocked key combo: {sorted(blocked)}",
+# [owner] i18n 中文文案 t() 替换
                     "hint": t("tools.computer_use.hint_destructive_shortcuts_blocked"),
                 })
 
@@ -576,6 +579,7 @@ def handle_computer_use(args: Dict[str, Any], **kwargs) -> Any:
     except Exception as e:
         return json.dumps({
             "error": f"computer_use backend unavailable: {e}",
+# [owner] i18n 中文文案 t() 替换
             "hint": t("tools.computer_use.hint_backend_unavailable"),
         })
 

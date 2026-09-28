@@ -44,6 +44,7 @@ class KimiProfile(ProviderProfile):
         base_url: str | None = None,
         timeout: float = 8.0,
     ) -> list[str] | None:
+# [owner] Kimi thinking 回显 + vision
         """Fetch live model IDs, with Coding Plan catalog path handling.
 
         Inference base for ``sk-kimi-*`` is ``https://api.kimi.com/coding``
@@ -68,6 +69,7 @@ class KimiProfile(ProviderProfile):
 
     def build_api_kwargs_extras(
         self, *, reasoning_config: dict | None = None, **context
+# [owner] Kimi thinking 回显 + vision（改动在下方的多行字符串内）
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         """Kimi reasoning controls.
 
@@ -83,6 +85,7 @@ class KimiProfile(ProviderProfile):
         (and ``type: disabled`` errors). For that family we omit the toggle
         entirely and only optionally send ``reasoning_effort``.
         """
+# [owner] Kimi thinking 回显 + vision
         extra_body: dict[str, Any] = {}
         top_level: dict[str, Any] = {}
 
@@ -95,6 +98,7 @@ class KimiProfile(ProviderProfile):
             always_thinking = False
 
         if not reasoning_config or not isinstance(reasoning_config, dict):
+# [owner] Kimi thinking 回显 + vision
             if always_thinking:
                 # Server default is on; do not send thinking param.
                 return extra_body, top_level
@@ -106,6 +110,7 @@ class KimiProfile(ProviderProfile):
 
         enabled = reasoning_config.get("enabled", True)
         if enabled is False:
+# [owner] Kimi thinking 回显 + vision
             if always_thinking:
                 # k2.7-code rejects disabled — omit rather than 400.
                 return extra_body, top_level
@@ -131,6 +136,7 @@ class KimiProfile(ProviderProfile):
             k3_effort = None
         if k3_effort in KIMI_K3_EFFORTS:
             top_level["reasoning_effort"] = k3_effort
+# [owner] Kimi thinking 回显 + vision
         elif always_thinking:
             # k2.7-code: leave thinking param off (always-on server-side).
             pass
@@ -153,6 +159,7 @@ kimi = KimiProfile(
         "User-Agent": f"HermesAgent/{_HERMES_VERSION}",
     },
     default_aux_model="kimi-k2-turbo-preview",
+# [owner] Kimi thinking 回显 + vision
     supports_vision=True,
 )
 
@@ -169,6 +176,7 @@ kimi_cn = KimiProfile(
         "User-Agent": f"HermesAgent/{_HERMES_VERSION}",
     },
     default_aux_model="kimi-k2-turbo-preview",
+# [owner] Kimi thinking 回显 + vision
     supports_vision=True,
 )
 

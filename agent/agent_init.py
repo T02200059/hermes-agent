@@ -723,7 +723,7 @@ def init_agent(
     }
     agent._credential_pool = credential_pool
     agent.acp_command = acp_command or command
-    # [owner-patch] acp_args empty list should be stored as None, not [].
+    # [owner] acp_args empty list should be stored as None, not [].
     agent.acp_args = list(acp_args or args or []) or None
     if api_mode in {"chat_completions", "codex_responses", "anthropic_messages", "bedrock_converse", "codex_app_server"}:
         agent.api_mode = api_mode
@@ -784,7 +784,7 @@ def init_agent(
         else:
             agent.api_mode = "chat_completions"
 
-    # [owner-patch] Preserve the actual provider identity (e.g. xfyun, damodel)
+    # [owner] Preserve the actual provider identity (e.g. xfyun, damodel)
     # independently of the generic "custom" backend type.
     agent.owner_provider_name = (
         (owner_provider_name or "").strip().lower() or agent.provider

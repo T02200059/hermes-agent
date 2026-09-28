@@ -1,3 +1,4 @@
+# [owner] 本文件另有 1 处「仅删除上游代码」的改动（无新增行可挂标记）：新文件第 12 行附近；条目见 owner/docs/owner改动清单.md
 .DS_Store
 /venv/
 /venv.old/
@@ -42,6 +43,7 @@ tmp/
 temp_vision_images/
 hermes-*/*
 examples/
+# [owner] allowlist owner/examples
 # Keep owner-maintained templates tracked (ignored by the blanket rule above).
 !owner/examples/
 !owner/examples/**
@@ -193,6 +195,7 @@ scripts/out/
 # committed to the repo root. See the hermes-release skill.
 RELEASE_v*.md
 
+# [owner] allowlist owner/examples
 # Local editor/agent settings that are machine- or user-specific.
 .claude/settings.local.json
 .local/
@@ -219,6 +222,7 @@ native/fts5_cjk/*.so
 # interrupted; consumed by launch-time recovery. Never commit it (was tracked
 # by accident via 3a69e34702, removed in the #72002 salvage).
 .lazy-refresh-incomplete
+# [owner] allowlist owner/examples
 # Runtime SQLite state database created by tests or local agent runs.
 state.db
 owner/feishu_profile/hermesxiyun/.env
@@ -235,6 +239,7 @@ owner/feishu_profile/hermesxiyun/.env
 
 # Disposable profile created by scripts/probe_active_session_exclusivity.py
 .probe-home/
+# [owner] allowlist owner/examples
 
 # output_guard real incident samples (contain user conversation content)
 owner/owner-extensions/output_guard/samples/

@@ -28,6 +28,7 @@ from typing import Any, Callable, Dict, Optional, Tuple, cast
 
 from gateway.config import Platform, PlatformConfig
 from gateway.platforms.base import BasePlatformAdapter, MessageEvent, SendResult
+# [owner] i18n 中文文案 t() 替换
 from agent.i18n import t
 from gateway.relay.descriptor import CapabilityDescriptor
 from gateway.relay.media import RelayMediaClient
@@ -2917,31 +2918,38 @@ class RelayAdapter(BasePlatformAdapter):
         button→text fallback takes over (same contract as a native adapter's
         failed button send).
         """
+# [owner] i18n 中文文案 t() 替换
         options: list = [{
             "id": "once",
             "label": t("approval.relay_btn_once"),
             "style": "primary",
         }]
         if not smart_denied and allow_session:
+# [owner] i18n 中文文案 t() 替换
             options.append({
                 "id": "session", "label": t("approval.relay_btn_session"),
             })
             if allow_permanent:
                 options.append({
                     "id": "always",
+# [owner] i18n 中文文案 t() 替换
                     "label": t("approval.relay_btn_always"),
                 })
+# [owner] i18n 中文文案 t() 替换
         options.append({
             "id": "deny", "label": t("approval.relay_btn_deny"), "style": "danger",
         })
 
         cmd_preview = command if len(command) <= 1500 else command[:1500] + "..."
         text = (
+# [owner] i18n 中文文案 t() 替换
             t("approval.card_title_exec_md_strong") + "\n\n"
             f"```\n{cmd_preview}\n```\n"
+# [owner] i18n 中文文案 t() 替换
             + t("approval.reason_label", description=description)
         )
         if smart_denied:
+# [owner] i18n 中文文案 t() 替换
             text += "\n\n" + t("approval.relay_smart_deny_note")
 
         prompt_id = self._mint_prompt(

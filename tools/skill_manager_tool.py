@@ -42,6 +42,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from hermes_constants import get_hermes_home, display_hermes_home
+# [owner] i18n 中文文案 t() 替换
 from agent.i18n import t
 from utils import atomic_write_text, is_truthy_value
 from hermes_cli.config import cfg_get
@@ -1064,8 +1065,10 @@ def _create_skill(name: str, content: str, category: str = None) -> Dict[str, An
         _display_path = str(skill_dir)
     result = {
         "success": True,
+# [owner] i18n 中文文案 t() 替换
         "message": t("tools.skill_manage.created", name=name),
         "path": _display_path,
+# [owner] i18n 中文文案 t() 替换
 
         "skill_md": str(skill_md),
         "_change": {"description": _desc},
@@ -1159,6 +1162,7 @@ def _edit_skill(name: str, content: str) -> Dict[str, Any]:
 
     result = {
         "success": True,
+# [owner] i18n 中文文案 t() 替换
         "message": t("tools.skill_manage.updated_full_rewrite", name=name),
         "path": str(existing["path"]),
         "_change": {"description": _desc},
@@ -1294,6 +1298,7 @@ def _patch_skill(
 
     result = {
         "success": True,
+# [owner] i18n 中文文案 t() 替换
         "message": t("tools.skill_manage.patched", target=file_path or 'SKILL.md', name=name, count=match_count, plural='s' if match_count > 1 else ''),
     }
     # Include change previews for verbose notifications
@@ -1476,6 +1481,7 @@ def _write_file(name: str, file_path: str, file_content: str) -> Dict[str, Any]:
 
     result = {
         "success": True,
+# [owner] i18n 中文文案 t() 替换
         "message": t("tools.skill_manage.file_written", file_path=file_path, name=name),
         "path": str(target),
     }
@@ -1535,6 +1541,7 @@ def _remove_file(name: str, file_path: str) -> Dict[str, Any]:
 
     return {
         "success": True,
+# [owner] i18n 中文文案 t() 替换
         "message": t("tools.skill_manage.file_removed", file_path=file_path, name=name),
     }
 
