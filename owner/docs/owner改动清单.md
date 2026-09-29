@@ -42,7 +42,7 @@ _元数据统计口径：范围取「基点后未出现在上游 `00b2e03c80` �
 | 看 LLM 输出复读/乱码折叠 | §14 |
 | 看 API Server identity 路由、LDAP 认证、准入查询 | §15 |
 | 看 API Server 产物媒体下载、流式事件契约 | §16 |
-| 看本轮月度审查（2026-09-28）的逐项修复留档 | §16.7-§16.14（依次为 T2-10~T2-17） |
+| 看本轮月度审查（2026-09-28）的逐项修复留档 | §16.7-§16.15（依次为 T2-10~T2-18） |
 | 看 Gateway merge 后最容易丢的胶水 | §7、附录 B、附录 C |
 | 看脚本、cron、备份、Upstream Sync、Viking 记忆治理 | §11 |
 | 看 owner/ 模块到官方侵入点的映射 | 附录 A、附录 B |
@@ -2100,6 +2100,85 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 
 ---
 
+### 16.15 飞书三件套的请求管线并入上游 `feishu_lark`：审计的「换目录」修法零块收益，真正相撞的是两个官方兄弟（T2-18）
+
+- **背景**（T2-18 / 代码审查 M7-附带）：审查条目针对 `tools/feishu_client_utils.py` —— 「1,596 行、创建于 `tools/` 官方树内（违反规范 §2.2 落点约定）；本次 merge 未冲突（MOD=0、上游无同名、无私有符号依赖）→ 风险低于 T2-16」，修法是「评估迁入 `owner/tools/`」。用户决策：**不做换目录，改为对齐上游 `feishu_lark`**。
+- **口径先校正（审查给的行数与风险判断两条）**：
+  1. **行数**：报告写 1,596 行，实测 **1,621 行**。
+  2. **「上游无同名」属实，但结论下错了方向**。该路径确实 MOD=0（`git merge-tree --write-tree upstream/main HEAD` 未把它列为冲突）；问题在于**上游另建了 `tools/feishu_lark.py`**（`6723628de9`，2026-09-02，晚于我方基点 2026-09-01），把 `set_client` / `get_client` / `_check_feishu` / `build_request` / `lark_call` / `raw_body` / `response_data` 这 7 个符号从官方文件里抽了出来 —— 而**我方自建模块重实现的正是同一套管线**。于是风险不在被审文件自身，而在**两个官方兄弟**：
+
+    | 文件 | 冲突块 | 我方侧行 | 行数（基点 / 我方 / 上游） |
+    |---|---:|---:|---|
+    | `tools/feishu_doc_tool.py` | **6** | 143 | 138 / 281 / 95 |
+    | `tools/feishu_drive_tool.py` | **7** | 249 | 431 / 413 / 203 |
+    | 合计 | **13** | **392** | |
+
+    被审的那个文件自身 **0 块** —— 审查说「风险低于 T2-16」就**该文件自身**成立，就**它引发的**冲突面不成立。
+- **审计修法（迁入 `owner/tools/`）零块收益**。在 HEAD 上只把模块级 import 路径改成 `from owner.tools.feishu_client_utils import ...`（文件搬走后官方文件的引用行必然变）后实测：
+
+  | 候选 | 冲突块 | 我方侧行 |
+  |---|---:|---:|
+  | 对照（HEAD 现状） | **13** | 392 |
+  | 审计修法（迁入 `owner/tools/`） | **13** | 392 |
+
+  **块数与路径无关** —— 块由「同一基点区域两处都改过」定义，换一个 import 路径不改区域归属（**§16.11、§16.12、§16.14 之后的第四例**）。故本项按「对齐上游」处理，换目录另见「未纳入」①。
+- **相撞的真实成因（逐块实测，分两类）**：
+  1. **管线重复类**（可消，本项目标）：文件头的 `import` / `logger` / `_local` / `set_client` / `get_client` / `_check_feishu` 区域 —— 上游**删掉这些定义**改为 `from tools.feishu_lark import (...)`，我方**删掉同一批**却换成**自建模块的 import**，两侧在同一区域做了**不同的替换**。
+  2. **能力类**（消不掉，本项不承诺）：我方 handler 有**上游没有的能力** —— env-fallback client、wiki 节点解析、bitable / sheet 读取、docx 图片物化 + vision OCR、`om_` 合并转发分页。上游把 4 个 drive handler 收成了 `_comment_op` 工厂函数，我方的 4 个显式 handler 与它**正面相撞**。
+- **方案（对齐上游 `feishu_lark`）三步**：
+  1. **预置上游 `tools/feishu_lark.py`，与上游逐字相同**（86 行）。该文件在基点与我方都不存在、上游存在 ⇒ merge 侧是「上游新增」，我方预置成同文 ⇒ **零合并债**（`git merge-tree` 不把它列为冲突）。
+  2. **两个官方文件的头部换成上游形态**：docstring 取上游 5 行、`import` 块逐字照抄上游（含我方不用的 `build_request` / `raw_body`，由上游那句 `# noqa: F401` 覆盖）、`_RAW_CONTENT_URI` 就位、`logger = logging.getLogger(__name__)`；**删掉我方 5 处重复实现**（2× `set_client`/`get_client`、2× `_check_feishu`，以及 drive_tool 里早已搬进共享模块的 `_do_request` 残影）。
+  3. **我方扩展代码（`feishu_client_utils` 的 import + `logger`）落到上游改过的区域之外** —— 本项最关键、也最容易做错的一步（见「技巧」③）。
+- **我方 `do_request` 与上游 `lark_call` 的等价性实测（不能直接替换）**：`lark_call` 的 `raw_body` 只兜 `JSONDecodeError` / `AttributeError`，而**媒体下载端点返回的是原始图片字节**，`json.loads(b'\x89PNG...')` 抛的 `UnicodeDecodeError` 会**穿出去**。按「删掉 60 行内联解析、直接调 `lark_call`」执行后，`read_docx_with_images` 的 **2 个用例当场变红**。落盘改法：**共享 `build_request` + `response_data`，只在「不是文本」这一种响应体上兜一层**，并保留 `GET` / `POST` 以外的 `ValueError` 严格拒绝。
+- **落点阶梯（doc_tool：哪个落点买到哪个读数）**：
+
+  | 落点 | 冲突块 | 我方侧行 |
+  |---|---:|---:|
+  | 对照（HEAD 现状） | **6** | 143 |
+  | 扩展块紧跟 `_RAW_CONTENT_URI` | 5 | 129 |
+  | 扩展块紧跟 `logger` | 5 | 128 |
+  | **扩展块挪进 handler 体内（落盘）** | **4** | **111** |
+
+  drive_tool 把 7 种落点全扫过一遍（紧跟 docstring / `import logging` / `feishu_lark` import / registry import / `logger` / EOF / handler 内导入），**最低就是 5 块** —— 因为它的 4 个块是 `_comment_op` 正面相撞，落点怎么挪都消不掉。
+- **结果**：
+
+  | 文件 | 冲突块 | 我方侧行 | 行数 |
+  |---|---|---:|---:|
+  | `tools/feishu_doc_tool.py` | 6 → **4** | 143 → **111** | 281 → 246 |
+  | `tools/feishu_drive_tool.py` | 7 → **5** | 249 → **219** | 413 → 375 |
+  | 合计 | 13 → **9** | 392 → **330** | 694 → 621 |
+  | `tools/feishu_lark.py` | — | — | 新增 86（与上游逐字相同） |
+
+- **留下的 9 块是什么**：doc_tool 的 4 块 = `resolve_client(get_client())`（env-fallback client）、错误文案 + `om_` 合并转发 + wiki 解析、docx/bitable/sheet 分派、我方不再做 raw_content GET；drive_tool 的 5 块 = 1 块「我方 4 行扩展 vs 上游 `_comment_op`」+ 4 块 handler 本体。**9 块全是「能力类」，管线重复类已清零。**
+- **顺带修掉的形式缺陷（drive_tool 标记）**：`[owner]` 标记 **15 → 9**；**缩进逃逸 9 → 0**（原 9 处写在缩进块内却顶格到第 0 列）；删掉第 2 行那条**位置错挂且实际无对应改动**的「改动在下方的多行字符串内」标记（它指向的 docstring 新增行是普通新增行、不在任何字符串内）；删掉 4 处装饰性 `# ---- feishu_drive_* ----` 分隔线（基点有、上游已删）。
+- **我方新增一个官方树文件（对规范 §2.2 的显式例外）**：`tools/feishu_lark.py` 落在官方目录，**内容与上游逐字相同** ⇒ 它不是「我方自定义文件」，而是**提前抵达的上游文件**；放进 `owner/` 反而会造出永久分叉。故按例外处理并在此登记。
+- **涉及文件**：`tools/feishu_lark.py`（新增 86 行，与上游逐字相同）、`tools/feishu_doc_tool.py`、`tools/feishu_drive_tool.py`、`tools/feishu_client_utils.py`（`do_request` 60 → 37 行，改走共享管线 + 非文本兜底）、`tests/tools/test_feishu_tools.py`（新增 3 例）。
+- **侵入类型**：合并面收敛（沿用上游同向的共享管线 + 把扩展块移到上游改区之外 + 删重复实现）+ 缺陷修复（标记缩进逃逸、无对应改动的标记、装饰性分隔线）；**正常路径行为零变更**（唯一差异是 `do_request` 的非文本响应体兜底由「内联解析的副作用」变为显式分支，语义等价论证见上）。
+- **验证**：
+  - **定向**：`tests/tools/test_feishu_client_utils.py` + `tests/tools/test_feishu_tools.py` + `tests/owner/test_merge_forward_expansion.py` + `tests/owner/test_upstream_private_symbol_deps.py` + `tests/gateway/test_feishu.py` —— 基线（`8645d5c236`）**199 passed / 6 failed**，本次 **202 passed / 6 failed**（**Δ+3 = 本次新增的 3 个用例**）；6 个失败**与基线逐节点相同**（全部在 `tests/gateway/test_feishu.py`，落在 adapter 的 `_sender_name_cache` 上，为本仓既有存量、与 `tools/feishu_*` 无关）⇒ **本次引入 0 个新失败**。
+  - **变异 8 例 / 6 咬住 + 2 如实记缺**（`/tmp/t218/mutate_t218.py`：锚点必须**恰好命中 1 次**、变异体必须仍能 `compile()`、还原走内存快照 + md5）：① 去掉 `GET`/`POST` 方法守卫 ⇒ **1F**；② 去掉非文本响应体容忍 ⇒ **2F**（正是等价性缺口那 2 例）；③ `build_request` 的 `paths`/`queries` 互换 ⇒ **1F**；④ doc_tool 不再再导出 `set_client` ⇒ **2F**；⑤ drive_tool 不再导入 `_check_feishu` ⇒ **1F**；⑥ `_typed_data` 恒返回 `{}` ⇒ **MISS**；⑦ `_check_feishu` 恒为 `True` ⇒ **MISS**；⑧ 去掉 doc_tool 的异常日志行 ⇒ **1F**。两个 MISS 是**如实记录的覆盖缺口**（⑥ 只断言「不抛异常」、未断言回落内容；⑦ 无用例验证 `lark_oapi` 缺失时探测为 False）。
+  - **仪器口径的一处修正（记录在案）**：首轮变异只解析 `(\d+) failed`，而**模块级 `NameError` 让 pytest 报的是 `1 error`、退出码非 0**，于是正确咬住的 ⑤ 被读成 MISS。改为 `failed + error` 并加「退出码非 0 却说零失败/零错误记 1」的兜底后读数才可用。**仪器口径错了会静默改变结论。**
+  - **爆炸半径**（语料 **135 路径** = T2-14 的 134 + 1 追加）：
+
+    | 腿 | 内容 | 读数 |
+    |---|---|---|
+    | A | 当前工作树 | 30 failed / **2624 passed** / 13 skipped |
+    | B | 4 个被改文件还原到 HEAD + `feishu_lark.py` 移开 | 30 failed / **2621 passed** / 13 skipped |
+
+    **NEW 0 / GONE 0**；通过数差 **+3 = 3 个新用例**；语料自证「收集到 518 个 feishu 节点」，4 个被改文件还原后 md5 全部 OK、新增文件归位。
+  - **健康检查**：`python -m owner.validation.merge_health_check` → **7 passed / 1 warning**（Check 5 的 4 条属既有项，与本次无关）；Check 8 **116/116**、Check 6 **28/28**、Check 7 **140/140** 全绿。Check 4 标记数 **667 → 662**（−5 = doc_tool +1、drive_tool −6），与逐文件计数一致。
+- **技巧（值得复用）**：① **审计说「某文件违规」时，先量它引发的冲突面落在哪**：被审文件 0 块、两个官方兄弟 13 块；只盯着被审文件会把风险读到反方向。② **换目录修不动块数**：块由「同一区域两处都改过」定义，与路径无关（第四例）。③ **我方新增块的落点决定块数**：落点必须选在**两侧都没改**的基点区域；把新增块放在上游改写区的**紧邻**处会被并进同一个 hunk（doc_tool 的扩展块紧跟 `_RAW_CONTENT_URI` 或 `logger` 都是 5 块，**挪进 handler 体内才到 4 块**）。④ **「头部逐字等于上游」本身有收益**：docstring 与 import 块逐字照抄（含我方不用的符号，由 `# noqa: F401` 覆盖）后，文件头永久零合并债；代价是 `_RAW_CONTENT_URI` 在我方成了无使用者的常量 —— **这笔账要明写**。⑤ **复用上游实现前必须实测等价性**：`raw_body` 只兜 JSON 解析错，二进制响应体（媒体下载）会穿出去；照「删掉自己的、直接调上游的」执行会当场坏功能。⑥ **薄壳的再导出是契约**：`feishu_comment.py` 用 `mod.set_client(client)` 注入，官方文件 `from tools.feishu_lark import (...)` 上那句 `# noqa: F401` 就是这条契约；删重复实现时必须**保名**（§16.13 同型）。⑦ **变异仪器要计 error 不只计 failed**（见上）。
+- **未纳入**：
+  1. **审计修法「把 `tools/feishu_client_utils.py` 迁入 `owner/tools/`」**：零块收益（13 → 13），且会让官方文件的 import 指向 `owner/`、在同一块区域内换掉一行 —— **合并面不变、规范面另有争议**。本项按「不纳入」处置并**登记为待决**：这是**同一批「官方目录新增文件」的第 2 例**（T2-16 的 `gateway/platforms/api_server_media.py` 是第 1 例），两例的落点问题应一并决策。
+  2. **`do_request` 直接替换为 `lark_call`（省掉 60 行内联）**：**不可行** —— 媒体下载路径 2 例变红（等价性缺口见上）。保留薄壳 + 非文本兜底。
+  3. **drive_tool 剩余 5 块（我方侧 219 行）**：4 块是「上游改成 `_comment_op` / 我方 4 个显式 handler」的正面相撞，属 **T2-20（采纳上游拆包）** 的邻接工作 —— 本项**不承诺**消掉它们，做完后如实记录为 5 块。
+  4. **`_RAW_CONTENT_URI` 在 doc_tool 成为无使用者常量**：为「头部与上游逐字节相同」保留。若日后清理，需接受 **+1 块**。
+  5. **Check 8 对「官方目录新增文件」的盲区**：`tools/feishu_lark.py` 是我方新增的官方树文件、**无 `[owner]` 标记**，而 Check 8 只数 **modified** 文件（仍 116/116）⇒ 这是该盲区的**第 5 例**，扩展项已登记。
+  6. **`tests/gateway/test_feishu.py` 的 6 个存量失败**：与本次无关（基线同集合），**未在本项范围内修**。
+- **Commit**：见附录 E（代码 + 测试一次提交；本条文档单独提交）
+
+---
+
 ## 附录 A：owner/ 模块职责索引
 
 | 路径 | 职责 | 侵入官方文件 |
@@ -2223,7 +2302,9 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 | `agent/verification_stop.py` | 创意/视觉扩展名 suppress verify-on-stop（§8.4） | inline（allowlist） |
 | `agent/models_dev.py` | models.dev 缓存 TTL 24h（§2.11）+ fetch 超时 5s | inline |
 | `gateway/session_context.py` | cron session 隔离接线 | 薄胶水 |
-| `tools/feishu_client_utils.py` / `tools/feishu_doc_tool.py` | `om_` 消息 ID 支持 + `offset`/`mf_limit` 分页读取合并转发（§4.15）；docx 内嵌 bitable 块读取（§4.13）；**对官方私有符号 `plugins.platforms.feishu.adapter._render_merge_forward_entries` 的依赖改为可降级**（§16.13：裸导入在 HEAD `:1593`，现包进 `try:`，降级走本函数既有的 `(None, msg)` 失败形态） | 薄胶水 |
+| `tools/feishu_client_utils.py` / `tools/feishu_doc_tool.py` | `om_` 消息 ID 支持 + `offset`/`mf_limit` 分页读取合并转发（§4.15）；docx 内嵌 bitable 块读取（§4.13）；**对官方私有符号 `plugins.platforms.feishu.adapter._render_merge_forward_entries` 的依赖改为可降级**（§16.13：裸导入在 HEAD `:1593`，现包进 `try:`，降级走本函数既有的 `(None, msg)` 失败形态）；**请求管线并入上游 `tools/feishu_lark`**（§16.15：头部与上游逐字节相同、删 `set_client`/`get_client`/`_check_feishu` 三处重复实现、扩展块挪进 handler 体内；doc_tool 冲突块 6 → 4） | 薄胶水 |
+| `tools/feishu_drive_tool.py` | fallback client + 共享 `do_request`（§16.15：头部对齐上游、删 `set_client`/`get_client`/`_check_feishu` 三处重复实现、`[owner]` 标记 15 → 9 且缩进逃逸 9 → 0；冲突块 7 → 5，余下 4 块属 **T2-20**） | 薄胶水 |
+| `tools/feishu_lark.py` | **新增**，与上游 `6723628de9` 逐字相同（§16.15：预置上游共享管线，merge 侧零冲突；官方树新增文件的落点例外见 §16.15） | 上游同文（零合并债） |
 | `pyproject.toml` / `uv.lock` | 新增 `ldap3==2.9.1`（exact-pin + uv lock 重生成，§15.2） | 依赖声明 |
 | `plugins/platforms/discord/adapter.py` | clarify button `get_choice_display` | 薄胶水 |
 | `plugins/platforms/telegram/adapter.py` | （sender 签名相关） | 薄胶水 |
@@ -2343,6 +2424,19 @@ _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请先�
 ---
 
 ## 附录 E：变更日志
+
+### 2026-09-29：新增 §16.15 飞书三件套管线并入上游 `feishu_lark`（T2-18）
+
+- **新建正文**：**§16.15**（`tools/feishu_lark.py` 预置为上游逐字同文；`tools/feishu_doc_tool.py` / `tools/feishu_drive_tool.py` 头部换成上游形态并删 5 处重复实现（2× `set_client`/`get_client`、2× `_check_feishu`、`_do_request` 残影）；`tools/feishu_client_utils.py` 的 `do_request` 改走共享 `build_request` + `response_data` 并保留方法守卫与非文本响应体兜底；drive_tool 标记 15 → 9、缩进逃逸 9 → 0）。本清单 §16.15 正文 + §0.2 导航行 + 附录 B 三行 + 本条
+- **类型**：合并面收敛 + 缺陷修复（标记形式缺陷、无对应改动的标记、装饰性分隔线）；**正常路径零行为变更**
+- **决策**（用户）：方向 = **对齐上游 `feishu_lark`**（不采纳审计的「迁入 `owner/tools/`」）
+- **口径校正**：① 报告写 1,596 行，实测 **1,621 行**；② 「MOD=0」属实但**被审文件不是风险所在** —— 上游 `6723628de9`（2026-09-02）另建 `tools/feishu_lark.py` 抽走 7 个符号，我方自建模块重实现同一套管线；真正的冲突面在两个官方兄弟：doc_tool **6 块 / 143 行**、drive_tool **7 块 / 249 行**（合计 **13 块 / 392 行**）
+- **审计修法逐条量掉（零收益）**：口径 = `git merge-file -p --diff3` 的冲突块数（与 `git merge-tree` 独立判定互校）。对照 **13 块 / 392 行**；修法（迁入 `owner/tools/`，官方文件 import 路径随之改）**13 块 / 392 行** —— **第四例「缩块不消块」**，且首次证明**换路径也不改块数**
+- **相撞分两类**：**管线重复类**（文件头的 `import`/`logger`/`_local`/`set_client`/`get_client`/`_check_feishu`，上游删、我方也删但换成自建模块的 import）⇒ **已清零**；**能力类**（env-fallback client、wiki 解析、bitable/sheet 读取、docx 图片物化 + vision OCR、`om_` 合并转发分页；drive 的 4 个显式 handler 与上游 `_comment_op` 正面相撞）⇒ **9 块全在此类**
+- **等价性缺口（实测，「直接替换」不可行）**：上游 `raw_body` 只兜 `JSONDecodeError`/`AttributeError`，而媒体下载返回**二进制 PNG** ⇒ `UnicodeDecodeError` 穿出 ⇒ 照「删 60 行内联、直接调 `lark_call`」执行会**当场坏掉** `read_docx_with_images` 的 2 个用例。落盘改法 = 共享管线 + 只在非文本体上兜一层 + 保留 `GET`/`POST` 严格拒绝
+- **结果**：冲突块 **13 → 9**（doc_tool 6 → 4、drive_tool 7 → 5；drive 下限为 5，余下 4 块是 `_comment_op` 相撞，属 T2-20）、我方侧行 **392 → 330**、两文件 **694 → 621** 行、新增 `tools/feishu_lark.py` 86 行（与上游逐字相同）
+- **验证**：定向 **基线 199 → 202 passed / 6 failed**（Δ+3 = 3 个新用例；6 个失败与基线**逐节点相同**，全在 `tests/gateway/test_feishu.py`，为存量 ⇒ **本次引入 0 新失败**）；**变异 8 例 / 6 咬住 + 2 如实记缺**（`_typed_data` 恒 `{}`、`_check_feishu` 恒 `True` 无用例覆盖）；**仪器口径修正** —— 只数 `(\d+) failed` 会把模块级 `NameError` 的 `1 error` 读成 0 失败、把正确咬住的变异体误判 MISS，改为 `failed + error` 并加退出码兜底；爆炸半径 **135 路径 / 两腿同 30 failed / NEW 0 GONE 0 / Δ+3（3 个新用例）**，语料自证「收集到 518 个 feishu 节点」；健康检查 **7 passed / 1 warning**（Check 8 116/116、Check 6 28/28、Check 7 140/140；Check 4 标记 667 → 662）
+- **未纳入**：审计修法「迁入 `owner/tools/`」（零块收益，登记为「官方目录新增文件」第 2 例，与 T2-16 `api_server_media.py` 一并决策）；`do_request` 直接替换（不可行）；drive_tool 剩余 5 块（属 **T2-20**）；`_RAW_CONTENT_URI` 成为无使用者常量（清理需 +1 块）；Check 8 对**新增**文件的盲区（第 5 例）；`tests/gateway/test_feishu.py` 的 6 个存量失败
 
 ### 2026-09-29：新增 §16.14 `delivery_ledger` 合并面收敛（T2-17）
 
