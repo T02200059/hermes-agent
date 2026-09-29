@@ -36,7 +36,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any, Optional, TYPE_CHECKING
+from typing import Any, Dict, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     # [owner] 目标分支飞书适配器已重构为插件（源码为单体 gateway/platforms/feishu.py）。
@@ -209,3 +209,39 @@ def _build_warn_result(text: str, *, raw_exc: Any = None) -> "SendResult":  # ty
     # ``_deliver_media_from_response`` 的 warning 路径）会消费 error。
     # 当上层决定把提示真正发给用户时（见 adapter 薄胶水），就从这里取。
     return SendResult(success=False, error=text, raw_response=raw_exc)
+
+
+# =============================================================================
+# Moved out of plugins/platforms/feishu/adapter.py (T2-14)
+# =============================================================================
+
+
+async def send_media_guard_hint(
+    adapter: Any,
+    chat_id: str,
+    hint_text: Optional[str],
+    reply_to: Optional[str],
+    metadata: Optional[Dict[str, Any]],
+) -> None:
+    """[owner] media guard: 把超限/上传失败的中文提示发到飞书 DM。
+
+    之前超限或 SDK 崩溃时只记日志、返回 ``SendResult(success=False)``，
+    上层投递链不会再发任何消息 → 用户侧静默失败。这里补一道用户可见的
+    提示投递，与 ``base.py`` 的 ``⚠️ Couldn't deliver the ...`` 降级
+    语义一致（不泄漏 host 路径，只发提示文本）。
+
+    best-effort：发送本身的异常不再向上抛，避免遮蔽原始上传失败结果。
+    """
+    if not hint_text:
+        return
+    try:
+        await adapter.send(
+            chat_id=chat_id,
+            content=hint_text,
+            reply_to=reply_to,
+            metadata=metadata,
+        )
+    except Exception as hint_exc:
+        logger.warning(
+            "[Feishu] media_guard: failed to surface hint to user: %s", hint_exc
+        )

@@ -10,6 +10,7 @@ This module is private customization for the fork.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import TYPE_CHECKING, Any, Dict, Optional
@@ -224,3 +225,109 @@ async def send_card_via_rest(
     except Exception as exc:
         logger.warning("[Feishu] send_card exception: %s", exc)
         return SendResult(success=False, error=f"Feishu card send failed: {exc}")
+
+
+# =============================================================================
+# Moved out of plugins/platforms/feishu/adapter.py (T2-14)
+#
+# These two were the largest blocks of OURS sitting inside the upstream class
+# body, so every upstream edit nearby produced a merge conflict block. Both are
+# pure local code with no upstream counterpart to shadow, which is exactly the
+# case where moving out is free: no upstream line is deleted, so no future
+# upstream edit to this region can collide with "the lines we removed".
+# =============================================================================
+
+
+def get_card_send_lock(adapter: "FeishuAdapter", chat_id: str) -> "asyncio.Lock":
+    """Per-chat lock serializing multi-chunk auto-card dispatch.
+
+    Separate from ``_get_chat_lock`` (inbound handling), which is already
+    held on the call path into ``send``→``try_auto_card``. Bounded the same
+    LRU way to keep memory in check.
+
+    Callers reach this through ``FeishuAdapter._get_card_send_lock``, which is
+    looked up defensively (``getattr(adapter, "_get_card_send_lock", None)`` in
+    ``owner/feishu/auto_card.py``). Losing that name does not fail loudly — the
+    call site degrades to ``contextlib.nullcontext()`` and interleaved multi-chunk
+    card sends come back. Keep the adapter method in place.
+    """
+    lock = adapter._card_send_locks.get(chat_id)
+    if lock is not None:
+        adapter._card_send_locks.move_to_end(chat_id)
+        return lock
+    if len(adapter._card_send_locks) >= adapter.CHAT_LOCK_MAX_SIZE:
+        evicted = False
+        for key in list(adapter._card_send_locks):
+            if not adapter._card_send_locks[key].locked():
+                adapter._card_send_locks.pop(key)
+                evicted = True
+                break
+        if not evicted:
+            adapter._card_send_locks.pop(next(iter(adapter._card_send_locks)))
+    lock = asyncio.Lock()
+    adapter._card_send_locks[chat_id] = lock
+    return lock
+
+
+async def send_card(
+    adapter: "FeishuAdapter",
+    *,
+    chat_id: str,
+    card: Dict[str, Any],
+    metadata: Optional[Dict[str, Any]] = None,
+) -> SendResult:
+    """Send a Feishu interactive card (thin wrapper over ``_send_raw_message``).
+
+    Uses ``_finalize_send_result`` (like ``send`` / ``edit_message`` /
+    ``send_exec_approval``) instead of returning ``success=True``
+    unconditionally. Feishu returns API-level errors (9499 / 1120004 /
+    230002 / …) as a response object with ``success() == False`` — it does
+    NOT raise. The previous code surfaced those as success, which broke
+    auto-card's retry/fallback chain: retries never fired, the
+    ``return None`` fallback was skipped, and ``already_sent`` sealed the
+    plain-text safety net.
+
+    Multi-profile routing: buttons are tagged with this container's profile name
+    (``hermes_profile``) at the ``_send_raw_message`` choke point (all interactive
+    payloads, not just this path) so a click on the only WebSocket (held by the
+    main gateway) routes back here (``try_route_card_action``). Gated on
+    ``send_only`` mode — the main gateway's websocket adapter is a no-op.
+    Fail-open: without ``owner/feishu/card_sender`` the card is sent untagged
+    (legacy behaviour). Fixes /providers picker + clarify cards for routed
+    profiles ("会话已过期" — state lived in the container, click handled on the
+    main gateway).
+
+    The hermes_profile tag itself is stamped in ``_send_raw_message`` — a single
+    choke point over every interactive payload, see
+    ``_maybe_tag_interactive_payload`` — which this path funnels into. The
+    pre-serialization tagging that used to live in the method body moved there so
+    approval/update-prompt style bypasses cannot regress it.
+    """
+    try:
+        payload = json.dumps(card, ensure_ascii=False)
+        response = await adapter._send_raw_message(
+            chat_id=chat_id,
+            msg_type="interactive",
+            payload=payload,
+            reply_to=None,
+            metadata=metadata,
+        )
+        result = adapter._finalize_send_result(
+            response, "card send failed", chat_id=chat_id
+        )
+        if result.success:
+            logger.info(
+                "[Feishu card] send_card OK chat_id=%s message_id=%s",
+                chat_id,
+                result.message_id or "(none)",
+            )
+        else:
+            logger.warning(
+                "[Feishu card] send_card failed chat_id=%s error=%s",
+                chat_id,
+                result.error,
+            )
+        return result
+    except Exception as exc:
+        logger.warning("[Feishu] send_card failed: %s", exc)
+        return SendResult(success=False, error=str(exc))

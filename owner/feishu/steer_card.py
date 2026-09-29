@@ -552,3 +552,67 @@ def _card_response(resp_cls: Any, card_cls: Any, card_data: dict) -> Any:
     card.data = card_data
     response.card = card
     return response
+
+
+# =============================================================================
+# Moved out of plugins/platforms/feishu/adapter.py (T2-14)
+#
+# Send-side glue (state write + send + trace) and action-side trace used to sit
+# inline in the upstream class body. Pure local code, no upstream counterpart
+# deleted — see the same note in owner/feishu/model_picker.py.
+# =============================================================================
+
+
+async def send_guide_card(
+    adapter: Any,
+    *,
+    chat_id: str,
+    source: Any,
+    metadata: Optional[Dict[str, Any]] = None,
+) -> None:
+    """Send an interactive guide card for queue/steer/goal/subgoal/background.
+
+    ``source`` is recorded in ``adapter._guide_card_state`` before the send so a
+    click that races the send still resolves its originating command.
+    """
+    guide_id = str(_uuid.uuid4())
+    adapter._guide_card_state[guide_id] = {"source": source}
+    result = await adapter.send_card(
+        chat_id=chat_id, card=build_guide_card(guide_id), metadata=metadata,
+    )
+    logger.info(
+        "[Feishu card] guide sent guide_id=%s chat_id=%s success=%s message_id=%s",
+        guide_id,
+        chat_id,
+        bool(getattr(result, "success", False)),
+        getattr(result, "message_id", None) or "(none)",
+    )
+
+
+def dispatch_guide_card_action(
+    adapter: Any, *, event: Any, action_value: Dict[str, Any], loop: Any
+) -> Any:
+    """Trace then delegate a guide-card callback to ``handle_guide_card_action``.
+
+    Named ``dispatch_*`` rather than ``handle_*`` to avoid shadowing the
+    handler itself in this module. ``loop`` is accepted (and unused) so the
+    adapter shell keeps the exact signature of the other card-action handlers.
+    """
+    step = action_value.get("hermes_feishu_guide", "?") if isinstance(action_value, dict) else "?"
+    guide_id = action_value.get("guide_id", "?") if isinstance(action_value, dict) else "?"
+    logger.info(
+        "[Feishu card] guide action step=%s guide_id=%s",
+        step,
+        guide_id,
+    )
+    result = handle_guide_card_action(
+        adapter=adapter,
+        action_value=action_value,
+        event=event,
+    )
+    logger.info(
+        "[Feishu card] guide action result step=%s type=%s",
+        step,
+        type(result).__name__,
+    )
+    return result

@@ -338,3 +338,68 @@ def _card_response(resp_cls: Any, card_cls: Any, card_data: dict) -> Any:
     card.data = card_data
     response.card = card
     return response
+
+
+# =============================================================================
+# Moved out of plugins/platforms/feishu/adapter.py (T2-14)
+#
+# The adapter used to hold the send-side glue (state write + send + trace log)
+# and the action-side trace log inline, in the upstream class body. Both were
+# pure local code with no upstream counterpart, so moving them out deletes no
+# upstream line and cannot create merge debt.
+# =============================================================================
+
+
+async def send_model_picker_card(
+    adapter: Any,
+    *,
+    chat_id: str,
+    providers: list,
+    source: Any,
+    metadata: Optional[Dict[str, Any]] = None,
+) -> None:
+    """Send an interactive model picker card: record state, send, trace.
+
+    The picker state must land in ``adapter._model_picker_state`` *before* the
+    card goes out so a click that races the send still finds its provider list
+    (``handle_picker_action`` reads it back by ``picker_id``).
+    """
+    import uuid
+
+    picker_id = str(uuid.uuid4())
+    adapter._model_picker_state[picker_id] = {"providers": providers, "source": source}
+    result = await adapter.send_card(
+        chat_id=chat_id,
+        card=build_provider_card(picker_id, providers),
+        metadata=metadata,
+    )
+    logger.info(
+        "[Feishu card] model_picker sent picker_id=%s chat_id=%s providers=%d success=%s message_id=%s",
+        picker_id,
+        chat_id,
+        len(providers or []),
+        bool(getattr(result, "success", False)),
+        getattr(result, "message_id", None) or "(none)",
+    )
+
+
+def dispatch_model_picker_action(
+    adapter: Any, *, event: Any, action_value: Dict[str, Any], loop: Any
+) -> Any:
+    """Trace then delegate a model-picker callback to ``handle_picker_action``.
+
+    ``loop`` is accepted (and unused) so the adapter's shell keeps the exact
+    signature of the other card-action handlers.
+    """
+    step = action_value.get("hermes_model_picker", "?") if isinstance(action_value, dict) else "?"
+    picker_id = action_value.get("picker_id", "?") if isinstance(action_value, dict) else "?"
+    logger.info(
+        "[Feishu card] model_picker action step=%s picker_id=%s",
+        step,
+        picker_id,
+    )
+    return handle_picker_action(
+        adapter=adapter,
+        action_value=action_value,
+        event=event,
+    )

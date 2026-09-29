@@ -581,3 +581,71 @@ def _card_response(resp_cls: Any, card_cls: Any, card_data: dict) -> Any:
     card.data = card_data
     response.card = card
     return response
+
+
+# =============================================================================
+# Moved out of plugins/platforms/feishu/adapter.py (T2-14)
+#
+# Send-side glue (build + send + trace) and action-side trace used to sit inline
+# in the upstream class body. Pure local code, no upstream counterpart deleted —
+# see the same note in owner/feishu/model_picker.py.
+# =============================================================================
+
+
+async def send_queue_status_card(
+    adapter: Any,
+    *,
+    chat_id: str,
+    user_input: str,
+    user_name: str,
+    queue_token: str,
+    depth: int = 0,
+    source: Any = None,
+    metadata: Optional[Dict[str, Any]] = None,
+) -> Any:
+    """Send the Feishu-only queue status card (queued text + 3 action buttons).
+
+    Returns the ``SendResult`` from the send so callers (e.g.
+    ``owner/patches/queue_cancel_patch.py``) can react to a failed post.
+    """
+    card = build_queue_status_card(
+        user_input,
+        user_name,
+        queue_token=queue_token,
+        depth=depth or None,
+    )
+    result = await adapter.send_card(
+        chat_id=chat_id, card=card, metadata=metadata,
+    )
+    logger.info(
+        "[Feishu card] queue status sent token=%s chat_id=%s success=%s message_id=%s",
+        (queue_token or "")[:8],
+        chat_id,
+        bool(getattr(result, "success", False)),
+        getattr(result, "message_id", None) or "(none)",
+    )
+    return result
+
+
+def dispatch_queue_card_action(
+    adapter: Any, *, event: Any, action_value: Dict[str, Any], loop: Any
+) -> Any:
+    """Trace then delegate a queue-card callback to ``handle_queue_card_action``.
+
+    Named ``dispatch_*`` rather than ``handle_*`` to avoid shadowing the handler
+    itself in this module. ``loop`` is accepted (and unused) so the adapter shell
+    keeps the exact signature of the other card-action handlers.
+    """
+    step = action_value.get("hermes_queue_card", "?") if isinstance(action_value, dict) else "?"
+    logger.info("[Feishu card] queue action step=%s", step)
+    result = handle_queue_card_action(
+        adapter=adapter,
+        action_value=action_value,
+        event=event,
+    )
+    logger.info(
+        "[Feishu card] queue action result step=%s type=%s",
+        step,
+        type(result).__name__,
+    )
+    return result

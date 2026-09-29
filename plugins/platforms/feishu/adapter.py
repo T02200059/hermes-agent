@@ -3173,90 +3173,28 @@ class FeishuAdapter(BasePlatformAdapter):
         ``P2CardActionTriggerResponse`` whose ``card`` inline-updates the message.
         The HTTP caller serialises ``response.card.data`` back to the main
         gateway, which relays that update over the WebSocket it owns.
+
+        [owner] The branch table itself lives in ``owner/feishu/card_action.py``
+        (``dispatch_card_action``), which returns ``UNHANDLED`` when nothing
+        matched. The fallback tail is deliberately kept HERE: it builds
+        ``P2CardActionTriggerResponse`` from this module's global, and the gateway
+        tests monkeypatch exactly that global
+        (``tests/gateway/test_feishu_approval_buttons.py`` patches
+        ``feishu_module.P2CardActionTriggerResponse``) — moving the tail would
+        silently disconnect those patch points.
         """
-        hermes_action = action_value.get("hermes_action") if isinstance(action_value, dict) else None
-        update_prompt_action = (
-            action_value.get("hermes_update_prompt_action")
-            if isinstance(action_value, dict) else None
+        from owner.feishu.card_action import UNHANDLED, dispatch_card_action
+
+        _result = dispatch_card_action(
+            self,
+            event=event,
+            action_value=action_value,
+            loop=loop,
+            data=data,
+            allow_profile_routing=allow_profile_routing,
         )
-
-        # [owner] multi-profile routing: forward to the sub-profile that sent the card.
-        # Only the WebSocket path routes (``allow_profile_routing=True``); the
-        # sub-profile's own HTTP replay path skips this (``allow_profile_routing=False``)
-        # so the click is handled locally instead of bouncing back to itself.
-        if allow_profile_routing:
-            _try_card_route = _owner_import("owner.feishu.profile_routing", "try_route_card_action")
-            if _try_card_route is not None:
-                _route_response = _try_card_route(event, action_value)
-                if _route_response is not None:
-                    return _route_response
-
-        # [owner] model picker: dispatch picker card callbacks (see owner/feishu/model_picker.py)
-        model_picker = action_value.get("hermes_model_picker") if isinstance(action_value, dict) else None
-        if model_picker:
-            return self._handle_model_picker_action(event=event, action_value=action_value, loop=loop)
-
-        # [owner] clarify: route clarify card button clicks (see owner/feishu/clarify_card.py)
-        clarify_id = action_value.get("clarify_id") if isinstance(action_value, dict) else None
-        if clarify_id:
-            return self._handle_clarify_card_action(event=event, action_value=action_value, loop=loop)
-
-        # [owner] feishu guide: route guide card button clicks (see owner/feishu/steer_card.py)
-        feishu_guide = action_value.get("hermes_feishu_guide") if isinstance(action_value, dict) else None
-        if feishu_guide:
-            logger.info("[Feishu] Dispatching guide card action: %s", action_value)
-            return self._handle_guide_card_action(event=event, action_value=action_value, loop=loop)
-
-        # [owner] queue status card: guide / process_now / cancel (see owner/feishu/queue_card.py)
-        feishu_queue = action_value.get("hermes_queue_card") if isinstance(action_value, dict) else None
-        if feishu_queue:
-            logger.info("[Feishu] Dispatching queue card action: %s", action_value)
-            return self._handle_queue_card_action(event=event, action_value=action_value, loop=loop)
-
-        # [owner] diff cards: route expand/collapse/full actions (see owner/diff_card/feishu.py)
-        diff_action = (
-            (isinstance(action_value, dict) and action_value.get("expand_diff"))
-            or (isinstance(action_value, dict) and action_value.get("collapse_diff"))
-            or (isinstance(action_value, dict) and action_value.get("show_full_diff"))
-        )
-        if diff_action:
-            from owner.diff_card.feishu import handle_feishu_diff_action
-            return handle_feishu_diff_action(self, event, action_value)
-
-        # [owner] resume: handle resume selection button click (see owner/feishu/resume_card.py)
-        if hermes_action == "resume_select":
-            from owner.feishu.resume_card import handle_resume_card_action
-            return handle_resume_card_action(
-                adapter=self,
-                event=event,
-                action_value=action_value,
-                loop=loop,
-            )
-
-        # [owner] memory_approval_gate: route approval-card button clicks
-        # (see owner/feishu/memory_approval.py).
-        if hermes_action == "memory_approval_gate":
-            from owner.feishu.memory_approval import handle_card_click
-            return handle_card_click(
-                adapter=self, event=event, action_value=action_value, loop=loop,
-            )
-
-        # [owner] skill_approval_gate: route skill approval card button clicks
-        # (see owner/feishu/skill_approval_card.py).
-        if hermes_action == "skill_approval_gate":
-            from owner.feishu.skill_approval_card import handle_card_click
-            return handle_card_click(
-                adapter=self, event=event, action_value=action_value, loop=loop,
-            )
-
-        if hermes_action:
-            return self._handle_approval_card_action(event=event, action_value=action_value, loop=loop)
-        if update_prompt_action:
-            return self._handle_update_prompt_card_action(
-                event=event,
-                action_value=action_value,
-                loop=loop,
-            )
+        if _result is not UNHANDLED:
+            return _result
 
         self._submit_on_loop(loop, self._handle_card_action_event(data))
         if P2CardActionTriggerResponse is None:
@@ -3373,63 +3311,19 @@ class FeishuAdapter(BasePlatformAdapter):
         card: Dict[str, Any],
         metadata: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
-        """Send a Feishu interactive card (thin wrapper over _send_raw_message).
+        """[owner] Send a Feishu interactive card — body in owner/feishu/card_sender.py.
 
-        Uses ``_finalize_send_result`` (like ``send`` / ``edit_message`` /
-        ``send_exec_approval``) instead of returning ``success=True``
-        unconditionally. Feishu returns API-level errors (9499 / 1120004 /
-        230002 / …) as a response object with ``success() == False`` — it does
-        NOT raise. The previous code surfaced those as success, which broke
-        auto-card's retry/fallback chain: retries never fired, the
-        ``return None`` fallback was skipped, and ``already_sent`` sealed the
-        plain-text safety net.
-
-        [owner] multi-profile routing: buttons are tagged with this
-        container's profile name (``hermes_profile``) at the
-        ``_send_raw_message`` choke point (all interactive payloads, not just
-        this path) so a click on the only WebSocket (held by the main
-        gateway) routes back here (``try_route_card_action``). Gated on
-        ``send_only`` mode — the main gateway's websocket adapter is a no-op.
-        Fail-open: without ``owner/feishu/card_sender`` the card is sent
-        untagged (legacy behaviour). Fixes /providers picker + clarify cards
-        for routed profiles ("会话已过期" — state lived in the container,
-        click handled on the main gateway).
+        This method is the thin shell. The rationale for the
+        ``_finalize_send_result`` contract (Feishu API-level errors arrive as
+        ``success() == False``, not as exceptions) and for the ``hermes_profile``
+        tagging choke point now lives with the implementation, in
+        ``owner/feishu/card_sender.py::send_card``.
         """
-        import json as _json
-        try:
-            # [owner] multi-profile routing: the hermes_profile button tag is
-            # stamped in _send_raw_message (single choke point over every
-            # interactive payload — see owner/feishu/card_sender.py
-            # _maybe_tag_interactive_payload), which this path funnels into.
-            # The pre-serialization tagging that used to live here moved there
-            # so approval/update-prompt style bypasses cannot regress it.
-            payload = _json.dumps(card, ensure_ascii=False)
-            response = await self._send_raw_message(
-                chat_id=chat_id,
-                msg_type="interactive",
-                payload=payload,
-                reply_to=None,
-                metadata=metadata,
-            )
-            result = self._finalize_send_result(
-                response, "card send failed", chat_id=chat_id
-            )
-            if result.success:
-                logger.info(
-                    "[Feishu card] send_card OK chat_id=%s message_id=%s",
-                    chat_id,
-                    result.message_id or "(none)",
-                )
-            else:
-                logger.warning(
-                    "[Feishu card] send_card failed chat_id=%s error=%s",
-                    chat_id,
-                    result.error,
-                )
-            return result
-        except Exception as exc:
-            logger.warning("[Feishu] send_card failed: %s", exc)
-            return SendResult(success=False, error=str(exc))
+        from owner.feishu.card_sender import send_card as _owner_send_card
+
+        return await _owner_send_card(
+            self, chat_id=chat_id, card=card, metadata=metadata
+        )
 
     # ── [owner] Clarify card ───────────────────────────────────────────────
 
@@ -3500,49 +3394,33 @@ class FeishuAdapter(BasePlatformAdapter):
         source: Any,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> None:
-        """Send an interactive model picker card.
+        """[owner] Send an interactive model picker card.
 
-        Thin glue — card building lives in ``owner/feishu/model_picker.py``.
+        Thin glue — card building, state write and trace logging all live in
+        ``owner/feishu/model_picker.py::send_model_picker_card``.
         """
-        import uuid as _uuid
-        from owner.feishu.model_picker import build_provider_card
+        from owner.feishu.model_picker import send_model_picker_card as _owner_send
 
-        picker_id = str(_uuid.uuid4())
-        self._model_picker_state[picker_id] = {"providers": providers, "source": source}
-        result = await self.send_card(
+        return await _owner_send(
+            self,
             chat_id=chat_id,
-            card=build_provider_card(picker_id, providers),
+            providers=providers,
+            source=source,
             metadata=metadata,
-        )
-        logger.info(
-            "[Feishu card] model_picker sent picker_id=%s chat_id=%s providers=%d success=%s message_id=%s",
-            picker_id,
-            chat_id,
-            len(providers or []),
-            bool(getattr(result, "success", False)),
-            getattr(result, "message_id", None) or "(none)",
         )
 
     def _handle_model_picker_action(
         self, *, event: Any, action_value: Dict[str, Any], loop: Any
     ) -> Any:
-        """Handle model picker card callbacks.
+        """[owner] Model picker card callback.
 
-        Thin glue — callback logic lives in ``owner/feishu/model_picker.py``.
+        Thin glue — the trace + dispatch live in
+        ``owner/feishu/model_picker.py::dispatch_model_picker_action``.
         """
-        from owner.feishu.model_picker import handle_picker_action
+        from owner.feishu.model_picker import dispatch_model_picker_action
 
-        step = action_value.get("hermes_model_picker", "?") if isinstance(action_value, dict) else "?"
-        picker_id = action_value.get("picker_id", "?") if isinstance(action_value, dict) else "?"
-        logger.info(
-            "[Feishu card] model_picker action step=%s picker_id=%s",
-            step,
-            picker_id,
-        )
-        return handle_picker_action(
-            adapter=self,
-            action_value=action_value,
-            event=event,
+        return dispatch_model_picker_action(
+            self, event=event, action_value=action_value, loop=loop
         )
 
     # ── [owner] Feishu guide card ──────────────────────────────────────────
@@ -3553,53 +3431,30 @@ class FeishuAdapter(BasePlatformAdapter):
         source: Any,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> None:
-        """Send an interactive guide card for queue/steer/goal/subgoal/background.
+        """[owner] Send an interactive guide card for queue/steer/goal/subgoal/background.
 
-        Thin glue - card building lives in ``owner/feishu/steer_card.py``.
+        Thin glue — card building, state write and trace logging all live in
+        ``owner/feishu/steer_card.py::send_guide_card``.
         """
-        import uuid as _uuid
-        from owner.feishu.steer_card import build_guide_card
+        from owner.feishu.steer_card import send_guide_card as _owner_send
 
-        guide_id = str(_uuid.uuid4())
-        self._guide_card_state[guide_id] = {"source": source}
-        result = await self.send_card(
-            chat_id=chat_id, card=build_guide_card(guide_id), metadata=metadata,
-        )
-        logger.info(
-            "[Feishu card] guide sent guide_id=%s chat_id=%s success=%s message_id=%s",
-            guide_id,
-            chat_id,
-            bool(getattr(result, "success", False)),
-            getattr(result, "message_id", None) or "(none)",
+        return await _owner_send(
+            self, chat_id=chat_id, source=source, metadata=metadata
         )
 
     def _handle_guide_card_action(
         self, *, event: Any, action_value: Dict[str, Any], loop: Any
     ) -> Any:
-        """Handle guide card callbacks.
+        """[owner] Guide card callback.
 
-        Thin glue - callback logic lives in ``owner/feishu/steer_card.py``.
+        Thin glue — the trace + dispatch live in
+        ``owner/feishu/steer_card.py::dispatch_guide_card_action``.
         """
-        from owner.feishu.steer_card import handle_guide_card_action
+        from owner.feishu.steer_card import dispatch_guide_card_action
 
-        step = action_value.get("hermes_feishu_guide", "?") if isinstance(action_value, dict) else "?"
-        guide_id = action_value.get("guide_id", "?") if isinstance(action_value, dict) else "?"
-        logger.info(
-            "[Feishu card] guide action step=%s guide_id=%s",
-            step,
-            guide_id,
+        return dispatch_guide_card_action(
+            self, event=event, action_value=action_value, loop=loop
         )
-        result = handle_guide_card_action(
-            adapter=self,
-            action_value=action_value,
-            event=event,
-        )
-        logger.info(
-            "[Feishu card] guide action result step=%s type=%s",
-            step,
-            type(result).__name__,
-        )
-        return result
 
     # ── [owner] Feishu queue status card ─────────────────────────────────
 
@@ -3614,52 +3469,37 @@ class FeishuAdapter(BasePlatformAdapter):
         source: Any = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> Any:
-        """Send Feishu-only queue status card (queued + 3 action buttons).
+        """[owner] Send Feishu-only queue status card (queued + 3 action buttons).
 
-        Thin glue - card building lives in ``owner/feishu/queue_card.py``.
+        Thin glue — card building, send and trace logging all live in
+        ``owner/feishu/queue_card.py::send_queue_status_card``.
         """
-        from owner.feishu.queue_card import build_queue_status_card
+        from owner.feishu.queue_card import send_queue_status_card as _owner_send
 
-        card = build_queue_status_card(
-            user_input,
-            user_name,
+        return await _owner_send(
+            self,
+            chat_id=chat_id,
+            user_input=user_input,
+            user_name=user_name,
             queue_token=queue_token,
-            depth=depth or None,
+            depth=depth,
+            source=source,
+            metadata=metadata,
         )
-        result = await self.send_card(
-            chat_id=chat_id, card=card, metadata=metadata,
-        )
-        logger.info(
-            "[Feishu card] queue status sent token=%s chat_id=%s success=%s message_id=%s",
-            (queue_token or "")[:8],
-            chat_id,
-            bool(getattr(result, "success", False)),
-            getattr(result, "message_id", None) or "(none)",
-        )
-        return result
 
     def _handle_queue_card_action(
         self, *, event: Any, action_value: Dict[str, Any], loop: Any
     ) -> Any:
-        """Handle queue status card callbacks.
+        """[owner] Queue status card callback.
 
-        Thin glue - callback logic lives in ``owner/feishu/queue_card.py``.
+        Thin glue — the trace + dispatch live in
+        ``owner/feishu/queue_card.py::dispatch_queue_card_action``.
         """
-        from owner.feishu.queue_card import handle_queue_card_action
+        from owner.feishu.queue_card import dispatch_queue_card_action
 
-        step = action_value.get("hermes_queue_card", "?") if isinstance(action_value, dict) else "?"
-        logger.info("[Feishu card] queue action step=%s", step)
-        result = handle_queue_card_action(
-            adapter=self,
-            action_value=action_value,
-            event=event,
+        return dispatch_queue_card_action(
+            self, event=event, action_value=action_value, loop=loop
         )
-        logger.info(
-            "[Feishu card] queue action result step=%s type=%s",
-            step,
-            type(result).__name__,
-        )
-        return result
 
     async def _resolve_approval(
         self,
@@ -3859,7 +3699,7 @@ class FeishuAdapter(BasePlatformAdapter):
 
     @staticmethod
     def _normalise_card_action_value(raw: Any) -> Any:
-        """Accept action.value as either a dict or a JSON string.
+        """[owner] action.value normalisation — body in owner/feishu/card_action.py.
 
         Feishu SDK versions differ on whether ``action.value`` is returned
         pre-parsed into a dict or left as a raw JSON string.  Without this
@@ -3867,17 +3707,9 @@ class FeishuAdapter(BasePlatformAdapter):
         ``_dispatch_card_action`` skips and the callback silently fails,
         leaving the card stuck in a loading state.
         """
-        if isinstance(raw, dict):
-            return raw
-        if isinstance(raw, str) and raw.strip():
-            import json as _json
-            try:
-                parsed = _json.loads(raw)
-                if isinstance(parsed, dict):
-                    return parsed
-            except Exception:
-                pass
-        return {}
+        from owner.feishu.card_action import normalise_card_action_value
+
+        return normalise_card_action_value(raw)
 
     async def _handle_card_action_event(self, data: Any) -> None:
         """Route Feishu interactive card button clicks as synthetic COMMAND events."""
@@ -3960,28 +3792,17 @@ class FeishuAdapter(BasePlatformAdapter):
         return lock
 
     def _get_card_send_lock(self, chat_id: str) -> asyncio.Lock:
-        """Per-chat lock serializing multi-chunk auto-card dispatch.
+        """[owner] Per-chat auto-card send lock — body in owner/feishu/card_sender.py.
 
-        Separate from ``_get_chat_lock`` (inbound handling), which is already
-        held on the call path into ``send``→``try_auto_card``. Bounded the same
-        LRU way to keep memory in check.
+        Kept as a real method rather than inlined away: ``owner/feishu/auto_card.py``
+        resolves it with ``getattr(adapter, "_get_card_send_lock", None)``, so a
+        missing name degrades silently to ``contextlib.nullcontext()`` (no lock at
+        all) instead of failing loudly — which would re-open interleaved
+        multi-chunk card sends.
         """
-        lock = self._card_send_locks.get(chat_id)
-        if lock is not None:
-            self._card_send_locks.move_to_end(chat_id)
-            return lock
-        if len(self._card_send_locks) >= self.CHAT_LOCK_MAX_SIZE:
-            evicted = False
-            for key in list(self._card_send_locks):
-                if not self._card_send_locks[key].locked():
-                    self._card_send_locks.pop(key)
-                    evicted = True
-                    break
-            if not evicted:
-                self._card_send_locks.pop(next(iter(self._card_send_locks)))
-        lock = asyncio.Lock()
-        self._card_send_locks[chat_id] = lock
-        return lock
+        from owner.feishu.card_sender import get_card_send_lock
+
+        return get_card_send_lock(self, chat_id)
 
     async def _handle_message_with_guards(self, event: MessageEvent) -> None:
         """Dispatch a single event through the agent pipeline with per-chat serialization
@@ -6422,28 +6243,15 @@ class FeishuAdapter(BasePlatformAdapter):
         reply_to: Optional[str],
         metadata: Optional[Dict[str, Any]],
     ) -> None:
-        """[owner] media guard: 把超限/上传失败的中文提示发到飞书 DM。
+        """[owner] Surface an oversize/upload-failure hint to the user in DM.
 
-        之前超限或 SDK 崩溃时只记日志、返回 ``SendResult(success=False)``，
-        上层投递链不会再发任何消息 → 用户侧静默失败。这里补一道用户可见的
-        提示投递，与 ``base.py`` 的 ``⚠️ Couldn't deliver the ...`` 降级
-        语义一致（不泄漏 host 路径，只发提示文本）。
-
-        best-effort：发送本身的异常不再向上抛，避免遮蔽原始上传失败结果。
+        Body in ``owner/feishu/media_guard.py::send_media_guard_hint`` — including
+        why it is best-effort (the hint send must never mask the original upload
+        failure result).
         """
-        if not hint_text:
-            return
-        try:
-            await self.send(
-                chat_id=chat_id,
-                content=hint_text,
-                reply_to=reply_to,
-                metadata=metadata,
-            )
-        except Exception as hint_exc:
-            logger.warning(
-                "[Feishu] media_guard: failed to surface hint to user: %s", hint_exc
-            )
+        from owner.feishu.media_guard import send_media_guard_hint
+
+        await send_media_guard_hint(self, chat_id, hint_text, reply_to, metadata)
 
 
 # =============================================================================
