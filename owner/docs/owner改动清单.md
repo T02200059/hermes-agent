@@ -1231,7 +1231,11 @@ _元数据统计口径：范围取「基点后未出现在上游 `00b2e03c80` �
   - `fde14c096d` — `swagger-kanban` scan 流水线增加 **T4 自修复卡**：T3 报告完成后自动创建 T4 fix 子卡（`parent: t3_id`），流水线从 T0→T1→T2→T3 扩展为 T0→T1→T2→T3→T4(fix)。
   - `ac1a3b9f4a` — `swagger-kanban-run.sh` 增加 **review 人审门闩模式**：从 T3 报告解析 `CONFIRMED` 数量，有问题才建 T4 人工门闩卡，worker 整理中文清单后 block 等人审；无 `CONFIRMED` 则跳过。
   - `61375e20c5` — 新增 `owner/scripts/token_cost_estimate.py`：从 `state.db` 统计近 N 天 token 用量，按北京时间高峰（9-12、14-18）/ 空闲分时计价估算费用。计价口径：`input_tokens` → 输入未命中，`cache_read_tokens` → 输入命中（独立计数），`output_tokens` → 输出；支持 `--assume-ark-cache`——ark 套餐渠道不返回缓存命中字段，按其他渠道平均命中率（94%）重算。实测 30 天：按原始口径命中率 79.3% / ¥452，重算后 94% / ¥191。
-- **涉及文件**：`owner/scripts/feishu_weekly_ops.py`、`owner/scripts/swagger-*.sh`、`owner/scripts/token_cost_estimate.py`、`owner/config/patch.yaml`
+  - **`swagger-split-blocks.fixed.sh`（保留副本，2026-09-23，T0 `t_25290f2f`）** —— 与 `swagger-split-blocks.sh` 相同但修正两处缺陷，**是这两处修正的唯一副本**（2026-09-29 核实：正式脚本对 `FIX-1`/`changed_worktree` 关键词各命中 **0** 次）：
+    - **FIX-1**：`route_snippet` 的 `func_names` 缺 6 个 `Register` 函数（`ChannelRegister` / `AgentRegister` / `BareMetalRegister` / `CloudDiskRegister` / `InboxRegister` / `SMSRegister`），连对应模块键（`agent` / `baremetal` / `cloud_disk` / `inbox` / `sms`）也没进 `other` 的 fallback ⇒ **244 条路由只有 204 条进入 snippet**，T1 无法交叉核对那 40 条 `@Router`。已对本仓正式脚本逐一核对，缺陷成立。
+    - **FIX-2**：`changed_files` 只统计 **git 已提交**变更，**工作区未提交改动被忽略**（当时是 6 个 handler 文件）；改为 已提交 ∪ 工作区改动，并新增 `changed_committed` / `changed_worktree` 两个字段（`git status --porcelain`）。
+    - **接线缺口（保留它的理由，也是它的现状）**：`swagger-kanban-run.sh:82` 调的仍是**正式名** `~/.hermes/scripts/swagger-split-blocks.sh` ⇒ **这两处修正目前不在生效路径上**。两文件 `bash -n` 均通过、差异 63 行，与 `~/.hermes/scripts/` 下同名副本逐字一致。落地方式二选一（需先能跑到 `starryshore-manager` 工程验证）：把两处并进正式脚本，或让 `swagger-kanban-run.sh` 改指 `.fixed.sh`。
+- **涉及文件**：`owner/scripts/feishu_weekly_ops.py`、`owner/scripts/swagger-*.sh`（含 `swagger-split-blocks.fixed.sh`）、`owner/scripts/token_cost_estimate.py`、`owner/config/patch.yaml`
 - **侵入类型**：纯新增（脚本 + 配置）
 - **Commit**：`3d53da788`、`8ee7ca57d`、`fde14c096d`、`ac1a3b9f4a`、`61375e20c5`
 
