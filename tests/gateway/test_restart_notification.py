@@ -628,25 +628,3 @@ def test_lifecycle_msg_code_skew_includes_named_profile(monkeypatch):
     )
     assert "gateway [ops] is running" in msg
     assert "aaa" in msg and "bbb" in msg
-
-
-def test_recovered_reply_marker_named_profile(monkeypatch):
-    from gateway.delivery_ledger import RECOVERED_MARKER, recovered_reply_marker
-
-    monkeypatch.setattr(
-        "hermes_cli.profiles.get_active_profile_name",
-        lambda: "ops",
-    )
-    marker = recovered_reply_marker()
-    assert "gateway [ops] restarted" in marker
-    assert marker != RECOVERED_MARKER
-
-
-def test_recovered_reply_marker_default_matches_baseline(monkeypatch):
-    from gateway.delivery_ledger import RECOVERED_MARKER, recovered_reply_marker
-
-    monkeypatch.setattr(
-        "hermes_cli.profiles.get_active_profile_name",
-        lambda: "default",
-    )
-    assert recovered_reply_marker() == RECOVERED_MARKER

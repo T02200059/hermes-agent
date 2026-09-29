@@ -197,6 +197,14 @@ class TestPlatformMessageId:
             ).fetchone()
         return None if r is None else r[0]
 
+    def _updated_at(self, oid):
+        with dl._connect() as conn:
+            r = conn.execute(
+                "SELECT updated_at FROM delivery_obligations WHERE obligation_id=?",
+                (oid,),
+            ).fetchone()
+        return None if r is None else r[0]
+
     def test_delivered_row_stores_the_platform_message_id(self):
         _record(oid="ob-mid", platform="feishu", chat_id="oc_abc")
         dl.mark_attempting("ob-mid")
@@ -231,6 +239,71 @@ class TestPlatformMessageId:
         dl.mark_delivered("ob-noid")
         assert _row("ob-noid")["state"] == "delivered"
         assert self._message_id("ob-noid") is None
+
+    def test_the_id_stamp_does_not_disturb_the_state_columns(self):
+        """The transition and the stamp are two statements; only the first owns
+        state / updated_at / last_error.
+
+        Splitting the UPDATE is what keeps this feature's footprint out of the
+        schema region upstream is rewriting, so the split is pinned here: the
+        stamp must write the id and nothing else. If it ever grew a SET on
+        last_error, a successful re-delivery would silently restore the error
+        text the transition had just cleared.
+        """
+        _record(oid="ob-split", platform="feishu", chat_id="oc_split")
+        dl.mark_failed("ob-split", "transient boom")
+        before = self._updated_at("ob-split")
+
+        dl.mark_delivered("ob-split", "om_split")
+
+        row = _row("ob-split")
+        assert row["state"] == "delivered"
+        assert row["last_error"] is None
+        assert self._message_id("ob-split") == "om_split"
+        assert self._updated_at("ob-split") >= before
+
+    def test_a_stamp_failure_does_not_lose_the_delivery(self, monkeypatch):
+        """The transition is written first, so a failed id stamp degrades to
+        'delivered without an id' instead of losing the delivery record.
+
+        This is the whole reason the two statements are in this order. Written
+        the other way round, the crash/failure window would leave an
+        already-sent row back in ``attempting`` — which ``sweep_recoverable``
+        treats as ambiguous-but-redeliverable, i.e. a duplicate send.
+        """
+        _record(oid="ob-lost")
+        real = dl._transaction
+        calls: list[int] = []
+
+        def flaky():
+            calls.append(1)
+            if len(calls) == 2:
+                raise sqlite3.OperationalError("disk I/O error")
+            return real()
+
+        with monkeypatch.context() as scoped:
+            scoped.setattr(dl, "_transaction", flaky)
+            with pytest.raises(sqlite3.OperationalError):
+                dl.mark_delivered("ob-lost", "om_lost")
+
+        assert _row("ob-lost")["state"] == "delivered"
+        assert self._message_id("ob-lost") is None
+        assert len(calls) == 2, "第二条语句（补 id）确实是独立的一次事务"
+
+    def test_debug_rows_carries_the_platform_message_id(self):
+        """The ad-hoc dump is the sqlite3-free way to inspect the ledger, so it
+        has to show the id the delivery recorded — otherwise the handle exists
+        in the row but stays invisible to whoever is debugging an outbound send.
+        """
+        import json
+
+        _record(oid="ob-dump", platform="feishu", chat_id="oc_dump")
+        dl.mark_delivered("ob-dump", "om_dump")
+
+        entry = next(r for r in json.loads(dl.debug_rows()) if r["id"] == "ob-dump")
+
+        assert entry["state"] == "delivered"
+        assert entry["platform_message_id"] == "om_dump"
 
     def test_re_recording_an_obligation_resets_it_including_the_id(self):
         """record_obligation() is INSERT OR REPLACE — re-registering the SAME
@@ -574,7 +647,10 @@ class TestGatewayRedeliverySweep:
         await runner._redeliver_pending_obligations()
 
         sent = adapter.send.call_args.kwargs
-        assert sent["content"].startswith(dl.recovered_reply_marker())
+        # Boot recovery leaves ``marker`` unset in the claimed row, so the send
+        # path falls back to the untagged constant (gateway/run.py applies
+        # ``row.get("marker", RECOVERED_MARKER)``).
+        assert sent["content"].startswith(dl.RECOVERED_MARKER)
         assert sent["content"].endswith("the final answer")
 
     @pytest.mark.asyncio

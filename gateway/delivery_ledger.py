@@ -67,9 +67,6 @@ _MAX_ROWS = 500
 
 # Visible prefix for redeliveries that might duplicate an already-received
 # message (crash mid-send / post-rejection retry). Honest at-least-once.
-# [owner] delivery_obligations 加 platform_message_id 列 (§7.21)
-# Untagged baseline — prefer :func:`recovered_reply_marker` at send sites so
-# multi-profile fleets can tell which gateway crashed mid-delivery.
 RECOVERED_MARKER = (
     "♻️ Recovered reply — the gateway restarted during delivery, "
     "so this may be a duplicate:\n\n"
@@ -88,35 +85,6 @@ RECONNECTED_MARKER = (
 # (blocked bot, bad auth, missing chat) must not be retried merely because an
 # adapter reconnected.
 _RUNTIME_RETRYABLE_ERRORS = frozenset({"send_path_degraded"})
-
-
-# [owner] delivery_obligations 加 platform_message_id 列 (§7.21)
-def recovered_reply_marker() -> str:
-    """Return the recovered-reply prefix, optionally tagged with the profile.
-
-    Falls back to :data:`RECOVERED_MARKER` (original untagged wording) when the
-    active profile is ``default`` or cannot be resolved. Resolution failures
-    log a warning; this path must never raise into the redelivery loop.
-    """
-    try:
-        # Lazy import: gateway.run imports this module on the redelivery path.
-        from gateway.run import _gateway_profile_tag
-
-        tag = _gateway_profile_tag()
-    except Exception as exc:
-        logger.warning(
-            "Could not resolve profile tag for recovered-reply marker; "
-            "using untagged text: %s",
-            exc,
-        )
-        return RECOVERED_MARKER
-
-    if not tag:
-        return RECOVERED_MARKER
-    return (
-        f"♻️ Recovered reply — the gateway{tag} restarted during delivery, "
-        "so this may be a duplicate:\n\n"
-    )
 
 
 def _db_path():
@@ -141,7 +109,6 @@ def _initialize_schema(conn: sqlite3.Connection) -> None:
     from hermes_state import apply_wal_with_fallback
 
     apply_wal_with_fallback(conn, db_label="state.db (delivery_ledger)")
-# [owner] delivery_obligations 加 platform_message_id 列 (§7.21)（改动在下方的多行字符串内）
     conn.execute(
         """CREATE TABLE IF NOT EXISTS delivery_obligations (
             obligation_id TEXT PRIMARY KEY,
@@ -161,7 +128,6 @@ def _initialize_schema(conn: sqlite3.Connection) -> None:
             platform_message_id TEXT
         )"""
     )
-# [owner] delivery_obligations 加 platform_message_id 列 (§7.21)
     # Declarative column reconciliation: every column must appear BOTH in the
     # CREATE TABLE above (for fresh databases) and in the ALTER loop below (for
     # databases created before the column existed). CREATE TABLE IF NOT EXISTS
@@ -170,25 +136,22 @@ def _initialize_schema(conn: sqlite3.Connection) -> None:
     columns = {
         row[1] for row in conn.execute("PRAGMA table_info(delivery_obligations)")
     }
-# [owner] delivery_obligations 加 platform_message_id 列 (§7.21)
+    # [owner] delivery_obligations 加 platform_message_id 列 (§7.21)
+    # Platform-assigned id of the message we actually delivered (Feishu
+    # ``om_xxx``, Discord snowflake, …), populated by mark_delivered() from
+    # SendResult.message_id so an outbound send can be traced back to the
+    # platform artifact. Without it the only record of "what did we send" was a
+    # log line, and cron/CLI paths logged nothing at all. Goes through the
+    # shared hermes_cli.sqlite_util primitive instead of a second hand-rolled
+    # ALTER, which is also the shape upstream moved this region to.
+    from hermes_cli.sqlite_util import add_column_if_missing
+
     for _column, _decl in (
         ("adapter_profile", "TEXT"),
-        # Platform-assigned id of the message we actually delivered (Feishu
-        # ``om_xxx``, Discord snowflake, …). Populated by mark_delivered() from
-        # SendResult.message_id so an outbound send can be traced back to the
-        # platform artifact — without it the only record of "what did we send"
-        # was a log line, and cron/CLI paths logged nothing at all.
         ("platform_message_id", "TEXT"),
     ):
         if _column not in columns:
-            try:
-                conn.execute(
-                    f"ALTER TABLE delivery_obligations ADD COLUMN {_column} {_decl}"
-                )
-            except sqlite3.OperationalError as exc:
-                # Concurrent first-use connections can both observe the old schema.
-                if "duplicate column" not in str(exc).lower():
-                    raise
+            add_column_if_missing(conn, "delivery_obligations", _column, f"{_column} {_decl}")
     # Partial index: only delivered rows carry an id, and lookups are always
     # scoped by (platform, chat_id) — most recently delivered first.
     try:
@@ -332,10 +295,23 @@ def mark_delivered(obligation_id: str, message_id: Optional[str] = None) -> None
     exact message; without it the ledger only knows that *something* arrived.
 
     Left as ``None`` (the default) on paths that don't surface the id — the
-    UPDATE then deliberately leaves any previously-stored id in place instead
-    of overwriting it with NULL.
+    stamp then deliberately leaves any previously-stored id in place instead of
+    overwriting it with NULL.
+
+    The state transition and the id stamp are two statements, in that order, on
+    purpose. A crash between them leaves the row ``delivered``, so
+    ``sweep_recoverable`` will not pick it up and redeliver — only the id is
+    lost. The reverse order would leave an already-sent row parked in
+    ``attempting``, which the sweep treats as ambiguous-but-redeliverable.
     """
-    _update_state(obligation_id, "delivered", message_id=message_id)
+    _update_state(obligation_id, "delivered")
+    if message_id:
+        with _DB_LOCK, _transaction() as conn:
+            conn.execute(
+                """UPDATE delivery_obligations SET platform_message_id=?
+                   WHERE obligation_id=?""",
+                (str(message_id), obligation_id),
+            )
 
 
 def mark_failed(obligation_id: str, error: str = "") -> None:
@@ -367,39 +343,14 @@ def release_runtime_claim(obligation_id: str, error: str = "") -> bool:
         )
     return bool(cursor.rowcount)
 
-
-# [owner] delivery_obligations 加 platform_message_id 列 (§7.21)
-def _update_state(
-    obligation_id: str,
-    state: str,
-    error: str = "",
-    message_id: Optional[str] = None,
-) -> None:
-    """Transition a row's state, optionally stamping the delivered message id.
-
-    The ``message_id`` branch is a separate statement rather than a
-    ``COALESCE(?, platform_message_id)`` in one query because passing NULL must
-    mean "leave the stored id alone" — a plain SET would erase an id we
-    already learned whenever a row transitioned again (e.g. a second
-    delivered/failed update on the same obligation).
-    """
+def _update_state(obligation_id: str, state: str, error: str = "") -> None:
     with _DB_LOCK, _transaction() as conn:
-# [owner] delivery_obligations 加 platform_message_id 列 (§7.21)
-        if message_id:
-            conn.execute(
-                """UPDATE delivery_obligations
-                   SET state=?, updated_at=?, last_error=?, platform_message_id=?
-                   WHERE obligation_id=?""",
-                (state, time.time(), error[:500] if error else None,
-                 str(message_id), obligation_id),
-            )
-        else:
-            conn.execute(
-                """UPDATE delivery_obligations
-                   SET state=?, updated_at=?, last_error=?
-                   WHERE obligation_id=?""",
-                (state, time.time(), error[:500] if error else None, obligation_id),
-            )
+        conn.execute(
+            """UPDATE delivery_obligations
+               SET state=?, updated_at=?, last_error=?
+               WHERE obligation_id=?""",
+            (state, time.time(), error[:500] if error else None, obligation_id),
+        )
 
 
 def sweep_recoverable(
@@ -639,7 +590,9 @@ def ledger_enabled(config: Optional[Dict[str, Any]] = None) -> bool:
 def debug_rows(limit: int = 20) -> str:
     """Human-readable dump for ad-hoc inspection (sqlite3-free path)."""
     with _DB_LOCK, _transaction() as conn:
-# [owner] delivery_obligations 加 platform_message_id 列 (§7.21)（改动在下方的多行字符串内）
+        # [owner] delivery_obligations 加 platform_message_id 列 (§7.21) — the
+        # dump carries the platform id too, so an ad-hoc inspection can trace a
+        # delivered row back to the artifact the platform acknowledged.
         rows = conn.execute(
             """SELECT obligation_id, session_key, state, attempts,
                       created_at, updated_at, last_error, platform_message_id
@@ -652,7 +605,6 @@ def debug_rows(limit: int = 20) -> str:
             {
                 "id": r[0], "session": r[1], "state": r[2], "attempts": r[3],
                 "created_at": r[4], "updated_at": r[5], "last_error": r[6],
-# [owner] delivery_obligations 加 platform_message_id 列 (§7.21)
                 "platform_message_id": r[7],
             }
             for r in rows
