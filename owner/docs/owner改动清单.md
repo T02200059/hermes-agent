@@ -42,7 +42,7 @@ _元数据统计口径：范围取「基点后未出现在上游 `00b2e03c80` �
 | 看 LLM 输出复读/乱码折叠 | §14 |
 | 看 API Server identity 路由、LDAP 认证、准入查询 | §15 |
 | 看 API Server 产物媒体下载、流式事件契约 | §16 |
-| 看本轮月度审查（2026-09-28）的逐项修复留档 | §16.7-§16.12（依次为 T2-10~T2-15） |
+| 看本轮月度审查（2026-09-28）的逐项修复留档 | §16.7-§16.13（依次为 T2-10~T2-16） |
 | 看 Gateway merge 后最容易丢的胶水 | §7、附录 B、附录 C |
 | 看脚本、cron、备份、Upstream Sync、Viking 记忆治理 | §11 |
 | 看 owner/ 模块到官方侵入点的映射 | 附录 A、附录 B |
@@ -1952,6 +1952,77 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 
 ---
 
+### 16.13 官方**私有符号**依赖：调用点可降级 + 可观测，并按名字钉住（T2-16 + 同类普查）
+
+- **背景**（T2-16 / 合并冲突 + 安全审查）：审查说 `gateway/platforms/api_server_media.py:517` 在函数体内裸导入官方**私有**符号 `_resolve_media_to_data_urls`，该符号上游已搬过一次，失败点在每次媒体投递、启动自检抓不到；修法是「**把实现复制进 `owner/gateway/media_resolve.py`（~25 行）**消除私有符号依赖 + 整体迁 `owner/gateway/`，官方文件留 1–3 行委托」；验收口径是 `grep -rn "from gateway.platforms.api_server import _" gateway/platforms/api_server_media.py` **应为空**。审查另给两条同族风险：官方文件 `api_server.py` **反向 import** 我方文件（双向耦合，`owner/` 不可移除）；add/add 同路径碰撞。
+- **口径先校正（审查给的位置、量、修法三条）**：
+  1. **符号的行号三处都不对**。审查说「`api_server.py:1165`→`:873`，现 HEAD 在 `:1272`」。实测：**我方 HEAD `:1547`**（`1547:def _resolve_media_to_data_urls(text: str) -> str:`）、上游 `upstream/main:873:def …` ✓、基点 `00b2e03c80:1165:def …` ✓。`1272` 不存在于任何一版；`1165→873` 是**基点 → 上游**的位移，不是两个本地位置。
+  2. **复制量的对象与量级都错**。审查说「~25 行」。实测函数本体 **51 行**（基点口径，我方与基点**逐字相同** —— 我们从来没碰过它），上游同函数已缩到 **37 行**；复制还要带上 1 行模块常量 `_MEDIA_IMG_EXT`（`api_server.py:1535`）与两条已从 `gateway/platforms/base.py` 来的依赖（`MEDIA_TAG_CLEANUP_RE` / `validate_media_delivery_path`），合计约 **52 行**，是审查估计的两倍。**这个被量错的行数正是「复制很便宜」这个判断成立的前提**。
+  3. **计量口径提示**：`api_server.py` 我方在 `:1535`–`:1560` 一带（`_MEDIA_IMG_EXT` / `_MEDIA_MIME` / 函数）与上游**行号不可互相牵引** —— 上游同段在 `:860`–`:910` 一带，中间隔着 `_redact_api_error_text` / `_openai_error` 等上游新函数。**行号只能在同一棵树内比较**。
+- **审查修法①（复制实现）经实测判定为有害**：被复制的那个函数在**上游已经改过两次，而我们的树停在基点**。
+
+  | 提交 | 日期 | 改了什么 |
+  |---|---|---|
+  | `581d97e545` | 2026-09-02 | docstring 35 行 → 7 行；`_to_data_url` 重构（`validate_media_delivery_path` 结果为空时提前返回改为 `p = Path(safe_path) if safe_path else None`） |
+  | `13f908f10d` | 2026-09-14 | **`#111046`：尾部 `<|eos|>` 哨兵粘在最后一个 media 标签上时不再内联** —— 新增 `_terminal_sentinel_start()`，正文改为「按 `scan` 扫描、只在有标签被解析时才丢弃哨兵」 |
+
+  第二条是**行为变更**，不是排版。复制 = 把这套**旧于 `#111046` 的语义**永久写进我们自己的树：以后上游再修这个函数，我们的副本既不会收到修复，也不会报冲突 —— 它会安静地用过时语义服务。**修法的方向错了**：移走「我们自己的代码」才是零合并债（§16.11），**复制上游正文**恰好相反。
+- **审查没看到的四点**：
+  1. **失败模型不是静默的**。原形态在模块级首条语句上无条件导入，`tests/gateway/test_api_server_media_files.py`（owner 新增，本项语料内）会在上游改名时直接 **ERROR**。隐患是真的（启动自检确实不看这条路径），但「静默断裂」的定性不成立 —— 它是一条**响的**断裂，只是响在测试里而不是模型层。
+  2. **降级路径本来就存在且可用**。`finalize_api_media` 不内联时，剩余 `MEDIA:` 标签照旧走 `BasePlatformAdapter.extract_media` → `store.register()` → 可下载附件。**内联是装饰性的，不是功能性的**，所以「import 失败就整个功能不可用」的前提不成立。这正是本项敢降级的根据。
+  3. **同族依赖比 grep 看到的多**。审查的 `grep -rn "from gateway\|from agent\|from tools" owner/ | grep " import _"` 找到 5 处。改用 **AST 普查**（`ast.ImportFrom` + `Try` 体判定）得：普查目标 **154 个文件**，含官方私有导入的 **9 个文件 / 14 条符号引用**，其中裸导入 **2 条**（`owner/cron/session_context.py`，见下）。grep 少算的两个原因：**多行 `from x import (\n    _a,\n    _b,\n)` 不匹配**；模块前缀白名单**漏了 `hermes_cli` 与 `plugins`**（`hermes_cli.runtime_provider._get_model_config`、`plugins.platforms.feishu.adapter._render_merge_forward_entries` 都在 grep 的覆盖之外）。
+  4. **反向 import 是唯一生产调用点，但同族还有更重的**。`api_server.py:155-161` 从 `api_server_media` 导入 5 个名字（`ApiMediaStore` / `attach_hermes_files` / `content_disposition` / `finalize_api_media` / `media_owner_token`），生产代码里**只此一处**（其余 4 处都在测试里）。这条是**真的**，但它是 §2.3 可移除性的问题，不是本项（私有符号）的问题 —— 见「未纳入」。
+- **方案**（2026-09-29 用户决策：**可观测降级 + 命名守卫**，**不复制实现**）：调用点**按名字在运行时解析**、允许失败、**降级为「不内联」**（图片转成可下载附件而非内联 data URL）并 **warn 一次**（点名 `§16.13` 的处置指引）；再用测试**按名字把它钉住**，让下一次 sync 的改名变成一条点名的红用例而不是运行期的 `ImportError`。
+  - **明确不满足审查的字面验收**：`grep -rn "from gateway.platforms.api_server import _" gateway/platforms/api_server_media.py` **仍然非空** —— 那行还在，只是搬进了 `try:` 块。这是**刻意**的：审查那条口径要求的是「消除私有符号依赖」，而消除它的唯一办法就是复制实现，复制已被实测判定有害（上表）。**本项按「依赖仍在、但可降级且可观测」交付。**
+  - **同类普查发现的另外 5 处一并处置**（用户决策：「一并改成可降级调用」）：本该「登记一下就完」的静默降级站点也全部改成**可观测**（`except Exception: pass` → `except Exception as exc:` + `_warn_once(...)`）。
+- **逐站点表（9 文件 / 14 条符号引用，行号为改动后当前位置）**：
+
+  | # | 文件 | 行 | 官方私有符号 | 处置 |
+  |---|---|---|---|---|
+  | 1 | `gateway/platforms/api_server_media.py` | 522 | `gateway.platforms.api_server._resolve_media_to_data_urls` | **本项本体**：裸导入（HEAD `:517`）→ 可降级 `_inline_image_data_urls()`（`:504`），降级 = 不内联、图片转附件，warn 一次 |
+  | 2 | `owner/patches/pool_base_url_override.py` | 46 | `hermes_cli.runtime_provider._get_model_config` | 原本 `except ImportError: pass`（**静默**）→ `except Exception as exc` + warn 一次（函数返回值语义不变：拿不到就 `return None` 交回上游默认） |
+  | 3 | `owner/i18n/display_filter.py` | 122 / 156 | `agent.i18n._locales_dir` / `._load_catalog` | 原本两处 `except Exception: pass` → 各自 warn 一次；降级后仍落到本地解析 |
+  | 4 | `owner/approval/approval_history_policy.py` | 220 | `agent.i18n._locales_dir` | 同上（同族第 3 处） |
+  | 5 | `owner/feishu/compression_summary.py` | 39 | `agent.context_compressor._SUMMARY_END_MARKER` / `._HISTORICAL_SUMMARY_PREFIXES` | 原本**模块级裸导入**（HEAD `:16`）→ 移入 `try:`；拿不到则 **`_SUMMARY_ANCHORS_AVAILABLE = False` 整个能力关闭** + warn 一次 |
+  | 6 | `owner/semantic_audit/policy.py` | 134 | `tools.approval._YOLO_MODE_FROZEN` | 原本 `except Exception: return False`（静默）→ warn 一次后 `return False`（降级方向安全：不跳过审计 = 更严格） |
+  | 7 | `owner/approval/skill_manage_gate.py` | 634 | `tools.approval._lock` / `._gateway_notify_cbs` / `._await_gateway_decision` | **无需改动**：已有 `except Exception as exc:` → `hard_stop_turn(f"BLOCKED: skill approval infrastructure unavailable ({exc})")` + `{"action": "block"}`。**已可观测且 fail-closed**，本项只把它登记进清单 |
+  | 8 | `tools/feishu_client_utils.py` | 1606 | `plugins.platforms.feishu.adapter._render_merge_forward_entries` | 原本裸导入（HEAD `:1593`）→ 可降级，走本函数**既有**的 `(None, msg)` 失败形态（不抛异常、也不假装成功返回 `(text, None)`） |
+  | 9 | `owner/cron/session_context.py` | 35 | `gateway.session_context._UNSET` / `._VAR_MAP` | **刻意不降级**，登记进 `FAIL_LOUD_ALLOWLIST`（理由见下）；本次只加 docstring |
+
+  - 站点 1 与 2–6 的**降级方式不同，这是有意的**：站点 1 降级后功能照旧可用（换交付形式），5 必须**整体关闭能力**（锚点是格式常量，猜错会让解析器静默跑偏 —— 把「摘要 + 真正的一轮对话」当摘要整段播出去，比不播更糟），2/3/4/6 降级后仍是本来的次优路径。
+- **为什么 `owner/cron/session_context.py` 刻意保持硬导入**（写进模块 docstring + 由守卫强制）：① **没有可退回的语义** —— 该模块的全部职责就是往官方 `_VAR_MAP` 注入，表没了就注册不了，静默跳过只会让 cron 悄悄丢掉会话上下文，比启动即报错更糟；② **`_UNSET` 就是那个哨兵本身** —— 它被当作 ContextVar 的 `default` 并在上游按**身份**比较，换成本地占位符会改变比较结果。allowlist 按**双向**守卫：文件不再是裸导入时，那条 allowlist 也必须被删掉（否则它就从「记录一个刻意的决定」退化成「掩盖新裸导入的免检通道」）。
+- **涉及文件**：`gateway/platforms/api_server_media.py`（+48/−2）、`owner/feishu/compression_summary.py`（+52/−7）、`owner/i18n/display_filter.py`（+36/−3）、`owner/patches/pool_base_url_override.py`（+29/−2）、`owner/semantic_audit/policy.py`（+27/−1）、`tools/feishu_client_utils.py`（+27/−1）、`owner/approval/approval_history_policy.py`（+25/−2）、`owner/cron/session_context.py`（+21/−0）；合计 **8 文件 +246/−19**。新建 `tests/owner/test_upstream_private_symbol_deps.py`（**588 行 / 29 例**）。
+- **侵入类型**：缺陷修复（私有符号依赖可降级 + 静默降级改可观测）+ 官方文件 1 处 `[owner]` 标记（新增耦合点说明）；**行为在正常情况下零变更**（import 成功时走的还是原路径、原返回值）
+- **守卫清单（`tests/owner/test_upstream_private_symbol_deps.py`，29 例，四类）**：
+  1. **符号存在性**（14 例）：`PRIVATE_SYMBOLS` 13 行登记表 → `test_official_private_symbols_we_reach_for_still_exist[<13>]` 参数化断言 `hasattr`，并**连带断言 `why` 非空**（否则这份普查会退化成一份没人敢删也看不懂的清单）；另有 `test_the_api_server_resolver_keeps_the_signature_we_call_it_with` —— **签名**变了同样会坏（我们按 `(text)` 单参调它），把参数名 / 无默认值 / 返回注解一起钉住。
+  2. **降级可用且可观测**（11 例）：`test_finalize_api_media_degrades_when_the_resolver_is_gone`（**不抛异常 + 标签外的正文本必须活下来**）、`test_the_degrade_keeps_an_image_deliverable_as_a_file`（**两条腿各自的交付契约**：可用腿内联成 data URL 且**不**登记附件、降级腿不内联但**必须**登记附件；两腿共同底线是 `MEDIA:` 不得泄漏原始路径）、`test_the_degrade_warns_exactly_once_and_names_the_fix`（**恰好 1 次** + 文案里必须有 `§16.13`）、`test_owner_side_degrade_paths_are_observable[<4>]`（站点 2/3/4 参数化）、`test_compression_summary_disables_itself_when_the_anchors_are_gone`（**关闭能力**而不是照原样交出）、`test_merge_forward_renderer_degrades_to_the_functions_own_failure_shape`、`test_semantic_audit_policy_warns_when_the_yolo_probe_is_unreachable`、`test_the_cron_session_var_is_registered_into_the_upstream_var_map`（注册类依赖的**正面**断言：既要求注册真的发生，也要求 `_CRON_SESSION.get() is session_context._UNSET` **身份相等**）。
+  3. **全仓普查（AST）**（2 例）：`test_no_official_private_import_is_left_unguarded`（裸导入 = 下一次 sync 的静默断裂点）、`test_the_census_covers_every_guarded_private_import`（**反向**：凡已包进 `try` 的导入都必须在 `PRIVATE_SYMBOLS` 里登记 —— 只查「有没有裸导入」是不够的，那样在 `try` 里偷偷加一条没人知道的依赖是**无声通过**的）。
+  4. **守卫自证 + allowlist 双向**（2 例）：`test_the_census_actually_reaches_the_files_it_claims_to_guard`（枚举出的目标集合必须**真的**覆盖已知站点、且**至少解析出 5 个含私有导入的文件** —— 防「路径写错 ⇒ 枚举为空 ⇒ 全绿」）、`test_the_fail_loud_allowlist_is_still_justified`（allowlist 里每一行都必须**确实**是裸导入，否则它就是一条免检通道）。
+  - 两处实现坑（已修）：① **`py_compile` 只查语法** —— 它放过了 `tools/feishu_client_utils.py` 里缺失的 `from typing import Any`（该文件没有 `Any` 导入，会在首次调用时 `NameError`），验证因此改成对 8 个改动模块跑真正的 `importlib.import_module()` 循环；② **warn-once 状态要按参数化用例清掉** —— 模块级 `set` 不清的话，同 key 的第二个参数化用例会看到 **0** 条告警并误判为「静默降级」。
+- **验证**：
+  - **守卫**：`tests/owner/test_upstream_private_symbol_deps.py` **29 passed**；相关定向套件（`test_merge_forward_expansion` / `test_feishu_client_utils` / `test_runtime_provider_resolution` / `test_compression_summary` / `test_skill_manage_gate` / `semantic_audit*` / `test_compression_logging_session_context` / `test_approval_suggest_i18n_blocks`）**286 passed**；媒体三件套（`test_api_server_media_data_urls` / `_files` / `_owner`）**45 passed**；8 个改动模块 `importlib` 全通过。
+  - **变异验证 12/12 全部咬住**（`/tmp/t216/mutate_t216.py`：每个 `.py` 变异体先 `compile()` 预校验、锚点必须**恰好命中 1 次**否则判 `BAD ANCHOR`、还原走内存快照 + md5）：① 裸导入回来 ⇒ 咬住普查；② 降级改成 `raise` ⇒ 咬住「不抛异常」+「附件仍交付」；③ 降级 `return ""`（不内联变成丢件）⇒ 咬住「标签外正文本存活」；④ 删掉告警（回到静默降级）⇒ 咬住；⑤ warn-once 改成 warn-every-call ⇒ 咬住；⑥ 告警丢掉 `§16.13` 指引 ⇒ 咬住；⑦ 有人把硬导入改成软回退 ⇒ 咬住 **allowlist 双向守卫**（运行时抓不到，因为本环境 import 成功、回退分支不可达 —— 这是正确的分工，不是测试缺口）；⑧ 删掉注册那一行 ⇒ 咬住注册断言；⑨ 哨兵换成本地 `object()` ⇒ 咬住**身份**断言；⑩ 摘要能力不再关闭 ⇒ 咬住；⑪ `PRIVATE_SYMBOLS` 少一行 ⇒ 咬住反向普查；⑫ 扫描器不再下探函数体 ⇒ 咬住**自证**用例（9 个含私有导入的文件会只剩 2 个可见）。
+  - **变异装置两处首轮不合格，已修（记录在案）**：① `resolver_import_goes_bare` 与 `degrade_goes_silent` 的锚点只切了 `try:` / `logger.warning(` 一行，**留下悬空的 handler 体 / 字符串参数 ⇒ `SyntaxError` ⇒ 判 `INVALID`**；修法是把锚点扩成**整块正文**（这也说明「变异体必须仍是合法程序」这条预校验是承重的）。② **`test_finalize_api_media_degrades_when_the_resolver_is_gone` 的输入不含 `MEDIA:`** —— `finalize_api_media` 在无标签时**提前返回**，那条路径压根走不到解析器，用例**绿得毫无意义**；变异体②③因此双双逃逸。这是**测试的缺口**（不是代码多余），改成含标签的真实输入后才咬住。
+  - **爆炸半径回归**（语料 **137 个路径** = T2-14 的 134 个 + `tests/agent/test_i18n.py` + `tests/owner/test_locale_catalog_integrity.py` + 本守卫）：
+
+    | 腿 | 内容 | 读数 |
+    |---|---|---|
+    | A | 当前树 | 30 failed / **2645 passed** / 43 skipped |
+    | B | 8 个被改文件还原到 HEAD（裸导入 / 静默 `except: pass`）、本守卫移走并从语料里剔除（136 路径） | 30 failed / **2616 passed** / 43 skipped |
+
+    **NEW 0 / GONE 0**；两腿 30 个失败**同一集合**，均为存量。通过数差 **29 = 本守卫整文件 29 例**在对照腿中被移走。还原后 9 处 md5 校验全部 OK。
+  - **健康检查**：`python -m owner.validation.merge_health_check` → **7 passed / 1 warning**，与 T2-15 后完全一致（Check 5 的 4 条 warning 属 merge 315551234 的既有项；Check 4 674 个标记 / 100 文件、Check 6 28/28、Check 7 140/140、Check 8 116/116 全绿）。
+- **技巧（值得复用）**：① **对官方私有符号的依赖必须「可降级 + 可观测」**：可降级是因为私有符号的位置不由我们控制；可观测是因为**静默降级等于把上游改名变成一次无人察觉的降级**。② **审计给「复制实现」这类修法时，先问一句**：这个函数在上游**自我们的基点以来改过没有**？改过 ⇒ 复制 = **冻结旧语义**，比不改更糟（判据是 `git log -S<新符号> upstream/main -- <file>`，本项一次就捞出 `13f908f10d`）。③ **「复制很便宜」通常建立在错的行数上** —— 先量函数本体（本项 51 行 vs 审查的 ~25 行），量错量级会让判断反向。④ **AST 扫描普查强于 grep**：多行 `import (` 与模块前缀白名单是 grep 的两个结构性盲区（本项 5 → 9 文件 / 14 条）。⑤ **普查要双向 + 自证**：只查「有没有裸导入」会漏掉「在 `try` 里偷偷加依赖」；只枚举路径会漏掉「路径写错 ⇒ 枚举为空 ⇒ 全绿」。⑥ **allowlist 条目不成立时守卫必须强制删除它**，否则它变成免检通道。⑦ **变异体的注入点必须真的可达**：`except` 分支在本环境不可达的变异体在运行时永远等价（本项变异体⑦），此时**正确的期望是只有静态守卫咬住它** —— 别为了让数字好看去改测试。⑧ 「降级」有不同形态，**要按语义选**：装饰性功能可以「换交付形式」，格式锚点类必须「整体关闭能力」，注册类只能「硬失败」。
+- **未纳入**：
+  1. **审查修法①「复制 `_resolve_media_to_data_urls` 进 `owner/gateway/media_resolve.py`」**：实测有害（冻结 `#111046` 之前的语义），**整条按「不纳入」处置**。由此**审查的字面验收（`grep … import _` 为空）也不满足**，这是决策的已知代价。
+  2. **审查修法②「整体迁 `owner/gateway/`，官方文件留 1–3 行委托」**：官方文件反向 import 我方文件（`api_server.py:155-161`，5 个名字，生产代码唯一调用点）是 **§2.3 可移除性**问题，不是私有符号问题；迁移还会把「官方文件里的官方代码」搬到 `owner/`，方向与 §16.11 的结论相反。**另立条目，不在本项范围。**
+  3. **add/add 同路径碰撞**：风险为真但弱 —— 上游 `gateway/platforms/` 下**没有** `api_server_media.py`（它有 `api_server_openai_routes.py` / `api_server_turn_boundary.py` 等 6 个 `api_server_*`），故不会与我们对同一路径各写一份；但 `api_server.py` 本身 **195 次提交 / 3 月**，属于「上游正在系统拆 `api_server_*.py`」的高活跃区，将来若上游造出同名文件即为 add/add。**已登记，不展开。**
+  4. **owner 在官方树内「新增」的文件不受 Check 8 覆盖**：Check 8 的口径是「**被修改的**官方文件必须带 `[owner]` 标记」（116/116 全绿），而 `gateway/platforms/api_server_media.py` 在上游不存在 ⇒ 被算作新增 ⇒ 不进那个集合。该文件在本次之前**零 `[owner]` 标记**（本次新增 1 处耦合点说明，`:498`）；`tools/feishu_client_utils.py` 已有 5 处（均属别的特性）。这是 Check 8 的**结构性盲区**，**已登记，不展开**。
+  5. **`owner/approval/skill_manage_gate.py` 的告警化**：它已经是 `hard_stop_turn` + 点名 `exc` 的 fail-closed 形态，**比 warn-once 更强**，本项只登记不改。
+- **Commit**：见附录 E（代码 + 测试一次提交；本条文档单独提交）
+
+---
+
 ## 附录 A：owner/ 模块职责索引
 
 | 路径 | 职责 | 侵入官方文件 |
@@ -1995,7 +2066,7 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 | `owner/skins/` | ruolin 系列皮肤 YAML | — |
 | `owner/tools/schema_patches.py` | 运行时 schema patch（legacy send_message card + image_generate model） | owner-extensions plugin（import/apply） |
 | `owner/validation/` | merge 后健康检查（anchors + inventory + import/patch/marker checks + **merge_loss_audit**） | — |
-| `gateway/platforms/api_server_media.py` | 产物媒体存储（接管字节 + 目录即索引，TTL / 容量淘汰，§16.1–§16.2）；归属摘要 `media_owner_token` + 超限回执 `rejected`（§16.4） | **官方树内 owner 新增文件**（非 owner/ 目录） |
+| `gateway/platforms/api_server_media.py` | 产物媒体存储（接管字节 + 目录即索引，TTL / 容量淘汰，§16.1–§16.2）；归属摘要 `media_owner_token` + 超限回执 `rejected`（§16.4）；**对官方私有符号 `_resolve_media_to_data_urls` 的依赖改为「按名字运行时解析 + 可降级 + warn 一次」**（§16.13：裸导入在 HEAD `:517`，现包进 `_inline_image_data_urls()` 的 `try:`；降级 = 不内联 → 图片转为可下载附件） | **官方树内 owner 新增文件**（非 owner/ 目录） |
 
 ## 附录 B：官方文件侵入点速查
 
@@ -2075,7 +2146,7 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 | `agent/verification_stop.py` | 创意/视觉扩展名 suppress verify-on-stop（§8.4） | inline（allowlist） |
 | `agent/models_dev.py` | models.dev 缓存 TTL 24h（§2.11）+ fetch 超时 5s | inline |
 | `gateway/session_context.py` | cron session 隔离接线 | 薄胶水 |
-| `tools/feishu_client_utils.py` / `tools/feishu_doc_tool.py` | `om_` 消息 ID 支持 + `offset`/`mf_limit` 分页读取合并转发（§4.15）；docx 内嵌 bitable 块读取（§4.13） | 薄胶水 |
+| `tools/feishu_client_utils.py` / `tools/feishu_doc_tool.py` | `om_` 消息 ID 支持 + `offset`/`mf_limit` 分页读取合并转发（§4.15）；docx 内嵌 bitable 块读取（§4.13）；**对官方私有符号 `plugins.platforms.feishu.adapter._render_merge_forward_entries` 的依赖改为可降级**（§16.13：裸导入在 HEAD `:1593`，现包进 `try:`，降级走本函数既有的 `(None, msg)` 失败形态） | 薄胶水 |
 | `pyproject.toml` / `uv.lock` | 新增 `ldap3==2.9.1`（exact-pin + uv lock 重生成，§15.2） | 依赖声明 |
 | `plugins/platforms/discord/adapter.py` | clarify button `get_choice_display` | 薄胶水 |
 | `plugins/platforms/telegram/adapter.py` | （sender 签名相关） | 薄胶水 |
@@ -2195,6 +2266,17 @@ _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请先�
 ---
 
 ## 附录 E：变更日志
+
+### 2026-09-29：新增 §16.13 官方私有符号依赖改为可降级 + 可观测（T2-16 + 同类普查）
+
+- **新建正文**：**§16.13**（`gateway/platforms/api_server_media.py` 的裸私有导入改为按名字运行时解析、可降级、warn 一次；同类普查另 5 处一并处置、1 处登记为刻意 fail-loud；新建 `tests/owner/test_upstream_private_symbol_deps.py` 29 例）。本清单 §16.13 正文 + §0.2 导航行 + 附录 A `api_server_media.py` 行 + 附录 B `tools/feishu_client_utils.py` 行 + 本条
+- **类型**：缺陷修复（私有符号依赖可降级 + 静默降级改可观测）；**正常路径零行为变更**
+- **决策**（2026-09-29 用户）：修法方向 = **可观测降级 + 命名守卫**，**不复制实现**；同类普查发现的另外 5 处**一并改成可降级调用**（含把原本「静默降级」的 4 处改为 warn 一次）
+- **口径校正（审查给的位置、量、修法三条）**：① 符号行号三处都不对 —— 实测**我方 `:1547` / 上游 `:873` / 基点 `:1165`**，审查说的 `:1272` 不存在于任何一版；② 「~25 行」实测是**函数本体 51 行**（+1 行 `_MEDIA_IMG_EXT`），且我方该函数与基点**逐字相同**（从未改过）；③ **修法①「复制实现」实测有害** —— 上游已两次重写该函数（`581d97e545` 2026-09-02 重写 docstring + 重构 `_to_data_url`；**`13f908f10d` 2026-09-14 修 `#111046` 尾部 `<|eos|>` 哨兵，属行为变更**），复制 = 把旧于 `#111046` 的语义永久冻结进我们的树 ⇒ **整条按「不纳入」处置**，审查的字面验收（`grep … import _` 为空）**有意不满足**。
+- **审查没看到的四点**：① 失败模型**不是静默的**（原形态在 `finalize_api_media` 首条语句无条件导入，owner 新增的 `tests/gateway/test_api_server_media_files.py` 会直接 ERROR）；② **降级路径本来就可用**（不内联 → `extract_media` → `store.register` → 可下载附件；内联是装饰性而非功能性）；③ **普查比 grep 大** —— AST 得 **154 目标 / 9 文件 / 14 条符号引用 / 2 条裸导入**，审查的 grep 只找到 5（漏因：多行 `import (` 不匹配、前缀白名单漏 `hermes_cli` 与 `plugins`）；④ 反向 import 生产代码**唯一**调用点 `api_server.py:155-161`（5 个名字），但属 §2.3 可移除性问题，另立条目。
+- **验证**：守卫 **29 passed**；定向套件 286 passed；媒体三件套 45 passed；8 个改动模块 `importlib` 全通过；**变异 12/12 咬住**；爆炸半径回归 **137 路径**（T2-14 的 134 + `test_i18n.py` + `test_locale_catalog_integrity.py` + 本守卫）**NEW 0 / GONE 0**，leg A 2645 passed / leg B 2616 passed（差 **29** = 本守卫整文件）；健康检查 **7 passed / 1 warning**（与 T2-15 后一致）。
+- **变异装置两处首轮不合格，已修（记录在案）**：① 两个变异体只切了 `try:` / `logger.warning(` 一行，留下悬空 handler 体 / 字符串参数 ⇒ `SyntaxError` ⇒ 判 `INVALID`（锚点必须扩成整块正文）；② `test_finalize_api_media_degrades_when_the_resolver_is_gone` 的输入**不含 `MEDIA:`**，而该函数在无标签时提前返回 ⇒ 用例**绿得毫无意义**，两个变异体逃逸 —— 这是**测试的缺口**，改成真实输入后才咬住。
+- **遗留登记（不展开）**：审查修法②「整体迁 `owner/gateway/`」（属 §2.3）；add/add 同路径风险（上游 `gateway/platforms/` 下**无** `api_server_media.py`，但其 6 个 `api_server_*` 文件 + `api_server.py` **195 次提交 / 3 月** 说明仍在系统拆分）；**Check 8 不覆盖 owner 在官方树内「新增」的文件**（口径是「被修改的」官方文件；`api_server_media.py` 在本次之前零 `[owner]` 标记）。
 
 ### 2026-09-29：新增 §16.12 `locales` 删掉被静默丢弃的重复键（T2-15）
 
