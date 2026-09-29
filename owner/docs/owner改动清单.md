@@ -42,7 +42,7 @@ _元数据统计口径：范围取「基点后未出现在上游 `00b2e03c80` �
 | 看 LLM 输出复读/乱码折叠 | §14 |
 | 看 API Server identity 路由、LDAP 认证、准入查询 | §15 |
 | 看 API Server 产物媒体下载、流式事件契约 | §16 |
-| 看本轮月度审查（2026-09-28）的逐项修复留档 | §16.7-§16.13（依次为 T2-10~T2-16） |
+| 看本轮月度审查（2026-09-28）的逐项修复留档 | §16.7-§16.14（依次为 T2-10~T2-17） |
 | 看 Gateway merge 后最容易丢的胶水 | §7、附录 B、附录 C |
 | 看脚本、cron、备份、Upstream Sync、Viking 记忆治理 | §11 |
 | 看 owner/ 模块到官方侵入点的映射 | 附录 A、附录 B |
@@ -2027,6 +2027,79 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 
 ---
 
+### 16.14 `delivery_ledger` 的合并面收敛：审计两条修法逐条量掉，改从「我方噪声」入手（T2-17）
+
+- **背景**（T2-17 / 代码审查 M8）：审查说 `gateway/delivery_ledger.py:138/320/365` 改了上游 SQLite schema/事务层，而上游有一条 `refactor(sqlite): one open_db/transaction layer for every small store`（`576accd92b`，2026-09-12）**直冲该区域**；该文件**零 `[owner]` 标记**（违反规范 §2.2）。修法两条：① schema 迁移抽到 `owner/gateway/ledger_schema.py`；② `mark_delivered` 的新参数用 `**kwargs` 兼容而非改签名。行动清单 #8 复述了修法①。merge 侧独立给了同一结论：该文件净改动 `+109/−20`、**MOD 4**、`up3m` **21**（近 3 个月上游触碰次数）、命中冲突热点，定级 **P1**。
+- **口径先校正（审查给的位置、标记数、修法三条）**：
+  1. **行号位移**：审查说 `138/320/365`；实测我方 HEAD 三处函数定义在 **`:140` `_initialize_schema` / `:326` `mark_delivered` / `:372` `_update_state`**（`debug_rows` 在 `:639`）。三处都在，只是各错 2/6/7 行。另：报告的净改动写 `+109/−20`，实测我方 **HEAD vs 基点**是 `+119/−20`（12 hunk）。
+  2. **「零标记」是审查当时的旧数，且新补的标记本身有形式缺陷**。现为 **10 处**（2026-09-28 `a77e345342` 随 T2-11 补上）。这 10 处的**文本逐字相同** —— T2-11 是**逐 hunk** 机械打标，同一个 §7.21 标题行被复制了 10 次；其中 **6 处「缩进逃逸」**（写在缩进块内却顶格到第 0 列，`:144/:164/:173/:387/:642/:655`），另有 4 处本就该顶格（`:70/:93/:325/:371`）。缩进逃逸是**独立于合并风险的正式缺陷**：正确形态是 `#` 与所在块同缩进、被注的语句在下一行。
+  3. **修法①要我们自建一个基点就已存在的原语**。`hermes_cli/sqlite_util.py` **在基点 `00b2e03c80` 就存在**，已含 `add_column_if_missing(conn, table, column, ddl)` 与 `write_txn(conn)`；其模块 docstring 原文就写着「The projects and kanban stores open WAL SQLite files with the same two primitives — an idempotent column-add migration and an IMMEDIATE write transaction. One definition here keeps the two stores from drifting.」，`hermes_cli/kanban_db.py:92` 一直在用（`from hermes_cli.sqlite_util import add_column_if_missing as _add_column_if_missing`，约 20 个调用点）。**更关键的是：上游 `576accd92b` 对该文件采用的正是这个形态** —— `upstream/main` 的 `delivery_ledger.py:25` 就是 `from hermes_cli.sqlite_util import add_column_if_missing`，`_connect()` 与 `_transaction()` 也改成了 `sqlite_util.open_db` / `sqlite_util.transaction`（该提交把引用该模块的文件数从基点的 **12 个**扩到 **27 个**），我们只是成为**同向的第三个消费者**。与 T2-16 修法①同型（要我们造一个已有的东西）。
+- **审计两条修法逐条量掉（零收益）**。口径 = `git merge-file -p --diff3 ours base theirs` 的**冲突块数**（ref-free 的文件级三方合并，故**内存中的候选也能量**；先用 `git merge-tree --write-tree upstream/main HEAD` 自校验 —— 该路径确被独立判为内容冲突）：
+
+  | 候选 | 冲突块 | 我方侧行 |
+  |---|---:|---:|
+  | 对照（HEAD 现状） | **4** | 123 |
+  | 审计修法①（schema 迁移抽 `owner/gateway/ledger_schema.py`） | **4** | 89 |
+  | 审计修法②（`mark_delivered` 改 `**kwargs` 签名） | **4** | — |
+
+  两条都只买到「我方侧行数」这一个指标，**块数一动不动** —— 与 **§16.11**、**§16.12** 同构，这是**第三例**：**块由「两处都改过」定义，缩我方侧只减行不减块；消块的唯一办法是让某一侧在该区域回到基点**。
+- **撑起冲突面的其实是四件别的事（逐条实测，base/ours/theirs 行数取自块内读数）**：
+
+  | # | 块内读数 | 成因 | 处置与结果 |
+  |---|---|---|---|
+  | 块 1 | `19/22/19` | `RECOVERED_MARKER` 上方：我们在**上游同一段注释**里插了 3 行（1 行 `[owner]` 标记 + 2 行指向待删死函数的引语），而上游也润色了同一段（`Visible prefixes … — honest at-least-once.`） | 3 行全删、该区域恢复基点原文 ⇒ **块消失** |
+  | 块 2 | `1/2/1` | `apply_wal_with_fallback(...)` 之后那处**顶格标记**把 1 行基线区域一分为二。上游已把 `_initialize_schema` 的头两行（`from hermes_state import apply_wal_with_fallback` + 该调用）**删掉**（WAL 交给 `open_db`），函数的 `def` 行直接接 `conn.execute(` —— 那处标记正好落在上游改过的位置上 | 随标记去重删掉 ⇒ **块消失** |
+  | 块 3 | `27/53/11` | 上游在**该函数上整体重写**（改成 `add_column_if_missing` 形态），而我们**必须**在这个函数里加一列 | **消不掉**（见下） |
+  | 块 4 | `36/46/43` | 我们在 `_update_state` 里改了正文，而上游也改了同一个函数（把 `)` 收进参数行）；我们的 `mark_delivered` 改动紧邻其后，于是两侧的改动**并成一个 36 行基线区域** | `_update_state` **逐字节还原基点** + 戳记内联进上游从未触碰的 `mark_delivered` ⇒ **块消失** |
+
+- **块 3 消不掉的证明（写下来，省掉反复试修法）**：① 消块要求某一侧在该区域回到基点；上游是**整体重写**（base 27 行 → theirs 11 行），我们不可能要求上游回退。② 我们也不可能回到基点：`platform_message_id` 列**必须**在这个函数里建，而**不能**推迟到首次写入 —— `debug_rows()` 会**无条件** `SELECT platform_message_id`，先开库后建列会在读路径上报 `no such column`（下方「被刻意否掉的一条」实测把钩子挪到 `record_obligation` 能到 0 块，代价正是这个）。③ 于是只剩「缩小我方侧」（53 → 49 行），而缩放不消块。
+- **方案**（2026-09-29 用户决策：**C1′ 最小冲突面** + **删死函数**），四步，每步各自实测：
+  1. **清掉注释噪声**：删 `RECOVERED_MARKER` 上方我方那 3 行，该区域**恢复基点原文**（现在与基点逐字节相同）。
+  2. **标记去重 10 → 3，且全部按所在块自身缩进写**（4 / 0 / 8 空格）：`_initialize_schema` 区域 1 处、`mark_delivered` 上方 1 处、`debug_rows` 内 1 处。**缩进逃逸 6 → 0**。
+  3. **建列腿改用既有共享原语** `hermes_cli.sqlite_util.add_column_if_missing`（顺带把既有的 `adapter_profile` 一并纳入同一个循环），保留部分索引 `idx_delivery_platform_message_id`。
+  4. **`_update_state` 逐字节还原基点**；**戳记内联进 `mark_delivered`**（上游未触碰的安静区）—— 两条语句，先改状态、后补 id。
+- **结果**：冲突块 **4 → 1**、我方侧行 **123 → 49**、文件 **661 → 613** 行；相对**基点**的我方足迹 **12 hunk / +119−20 → 9 hunk / +64−13**（我方自有的改动面收缩约 45%）。**零新耦合** —— 未新建 `owner/` 模块、未新增私有符号依赖、未新增跨文件 import。
+- **落点阶梯（哪个动作买到哪个读数）**：
+
+  | 阶梯 | 动作 | 冲突块 | 我方侧行 |
+  |---|---|---:|---:|
+  | 对照 | HEAD 现状 | **4** | 123 |
+  | S1 | 清注释噪声（删残留引语 + 删死函数 + 标记去重） | **2** | 96 |
+  | S2 | \+ `_update_state` 还原、戳记移出该函数 | **1** | 51 |
+  | S3 | \+ 建列腿改用共享原语 | **1** | 42 |
+
+  S1 消掉块 1/2，S2 消掉块 4，**S3 不减块** —— 它买的是「我方侧行数 + 与上游同向」。落盘成品的我方侧为 **49 行**（探测阶梯里的 42 行用的是简写注释；落盘版保留完整英文注释与不变式说明。**判据是块数，不是这一列**）。
+- **代价（明写，属有意取舍）**：戳记由**一条 UPDATE 拆成两条语句**。两步之间崩溃只丢**可追溯 id** —— 行已是 `delivered`，`sweep_recoverable` 不会再捡起它重投；**次序反过来**才会让「已投递」的行停在 `attempting`，那是**会重复发送**的窗口。§7.21 的「**非覆盖语义**」仍在：`if message_id:` 守卫保证默认路径**不**把已学到的 id 抹成 NULL（§7.21 原文「两条 UPDATE，非 COALESCE」的语义不变，变的是**原子性**）。
+- **被否证 / 被刻意否掉的两条思路（记录在案，避免下次重走）**：
+  1. **被实测否证**：「把 schema 钩子挪到上游没在改的地方」—— 上游**连 `_connect()` 都重写了**（改成 `sqlite_util.open_db`）。在噪声已清净的树上实测把钩子挪进 `_connect()`：块数 **3 → 3**，但**新造了一块**（不是消块）——挪落点只是**换一个块**。
+  2. **被刻意否掉（能到 0 块但会坏功能）**：把建列钩子挪到 `record_obligation`（首次写入路径）可降到 **0 块**，但 `debug_rows()` 无条件 `SELECT platform_message_id` ⇒ **先开库、后建列**会在读路径上报 `no such column`。**列必须建库时就存在，不能拿到才建。**
+- **顺带发现的缺陷：`recovered_reply_marker()` 零生产调用者**。29 行、按 profile 给「重投前缀」打标；`git grep -n recovered_reply_marker HEAD` 全仓只有 **自身定义 + 上方注释里的 `:func:` 引用 + 3 个测试**，生产路径走的是 `gateway/run.py:13225` 的 `row.get("marker", RECOVERED_MARKER)`。上游 `_claimed_row` 的 docstring 自己写明 boot 恢复的行**不带 marker**、由 runner 定默认值（`marker = FLOOD_MARKER if flood else (RECONNECTED_MARKER if runtime else None)` ⇒ `None` ⇒ 落到 runner 默认）—— **上游独立选了我们同一个方向**。一个**拿不到任何输入**的函数活在官方文件里是「既不收上游修复、也不报冲突」的最坏形态；本次它恰好还生产了一个冲突块（块 1 里我方那 2 行引语就是指向它的）。用户决策：**删掉**。3 个用例分流：`test_recovered_reply_marker_named_profile` / `test_recovered_reply_marker_default_matches_baseline` 是**纯单测**（随函数删）；`test_attempting_redelivers_with_marker` 是**真的覆盖重投路径**（**不删**，只把期望值由 `dl.recovered_reply_marker()` 改为 `dl.RECOVERED_MARKER`，并把「上游 boot 恢复不给 marker」这句写进注释）。
+- **涉及文件**：`gateway/delivery_ledger.py`（661 → 613 行；相对 HEAD `+37/−85`、13 hunk；相对基点 `+64/−13`、9 hunk）、`tests/gateway/test_delivery_ledger.py`（`+78`：新增 3 例 + 1 个 `_updated_at` 辅助）、`tests/gateway/test_restart_notification.py`（`−22`：删 2 例）。
+- **侵入类型**：合并面收敛（删我方噪声 + 换用**上游同向**的共享原语 + 把钩子移到上游未触碰的安静区）+ 缺陷修复（标记缩进逃逸 6 → 0、删零调用者死函数）；**正常路径行为零变更**（唯一差异是戳记走两条语句，语义等价论证见「代价」）。
+- **验证**：
+  - **定向**：`tests/gateway/test_delivery_ledger.py` + `tests/gateway/test_restart_notification.py` **75 passed**。
+  - **变异 7/8 咬住**（`/tmp/t217/mutate_t217.py`：锚点必须**恰好命中 1 次**、变异体必须仍能 `compile()`、还原走内存快照 + md5）：① 删掉补 id 语句 ⇒ **7F**；② `if message_id:` 改成无条件写（`None` 也覆盖）⇒ **1F**；③ 两条语句次序颠倒 ⇒ **1F**；④ 只补 id 不做状态迁移 ⇒ **9F**；⑤ 建列腿整条不生效（只剩 DDL）⇒ **2F**；⑥ 去掉幂等守卫 + 裸 ALTER ⇒ **39F**；⑦ `debug_rows` 不再带该列 ⇒ **1F**。**未咬住的那 1 个是正确预期**（见下）。
+  - **唯一 MISS 是正确预期，不是测试缺口**：从建表 DDL 里拿掉 `platform_message_id TEXT`（同时把上一行的尾逗号收好、保证仍是合法 SQL）后，ALTER 腿在**新建库**上同样把它补上 ⇒ **运行时等价**。首轮这个变异体写成「只删一行、留下悬空逗号」⇒ **DDL 不合法** ⇒ 39 个失败被误读成「咬住」；**非 Python 载荷 `compile()` 校不出来**，改成合法删法后读数才可用。
+  - **爆炸半径**（语料 **138 路径** = T2-14 的 134 + 4 追加）：
+
+    | 腿 | 内容 | 读数 |
+    |---|---|---|
+    | A | 当前工作树 | 30 failed / **2677 passed** / 43 skipped |
+    | B | 3 个被改文件还原到 HEAD | 30 failed / **2676 passed** / 43 skipped |
+
+    **NEW 0 / GONE 0**；两腿 30 个失败**同一集合**，均为存量。通过数差 **+1 = 3 个新用例 − 2 个被删用例**；3 个文件还原后 md5 全部 OK。
+    - **本轮修掉的一处语料缺口（记录在案）**：首轮 B 腿的通过数差是 **+3**，与「+1」对不上 —— 因为语料里**根本没有** `tests/gateway/test_restart_notification.py`，B 腿对它的「还原」是**空操作**，被删的 2 例（以及被删的死函数）从未进入回归。补进语料后加了**自证断言**（本次改过的 `tests/` 文件必须都在语料里，否则直接 fail），再跑才对上 +1。
+  - **健康检查**：`python -m owner.validation.merge_health_check` → **7 passed / 1 warning**（Check 5 的 4 条 warning 属 merge `315551234` 的既有项，与本次无关）；Check 8 **116/116**、Check 6 **28/28**、Check 7 **140/140** 全绿。Check 4 标记数 **674 → 667**（−7 = 删 10 + 留 3），全仓口径 **1019 → 1012**，两侧一致。
+- **技巧（值得复用）**：① **「缩小我方侧」与「消掉冲突块」是两个指标**：块由「两处都改过」定义，缩我方侧只减行不减块；消块的唯一办法是**让某一侧回到基点**（本项是 §16.11、§16.12 之后的第三例）。② **块消不掉时，把「为什么消不掉」写下来**：块 3 的不可消性有两个独立理由（上游整体重写 + 列必须在建库时存在），写进清单比反复试修法省时间。③ **审计要求我们「造一个东西」时，先查它在基点是否存在**：`sqlite_util.add_column_if_missing` 在基点就有，而且**上游自己刚把这个文件改成用它** —— 审计的直觉（用共享原语）是对的，只是被包装成「另建一个模块」。④ **挪落点前先查上游有没有动过那个落点**：`_connect()` 已被上游重写，挪进去只是换个块。⑤ **逐 hunk 机械打标会把同一行复制 N 次，还容易顶格写进缩进块**：本项 10 处文本逐字相同、6 处缩进逃逸。正确形态是「按区域留 1 处 + 落在该块自身缩进上」，并接受**区域级覆盖优先于 hunk 级覆盖**。⑥ **变异体载荷不是 Python 时，`compile()` 校验不了它**：SQL 变异体首轮留下悬空逗号（非法 DDL）⇒ 39 个失败被误读成咬住；非 Python 载荷要**单独想一遍合法性**。⑦ **`pytest --collect-only` 比跑测试快一个数量级，适合做语料自证**：「语料声明 N 个路径」不等于「N 个路径被真的收进回归」，本项就是靠它 + 自证断言抓出漏掉的那个测试文件。
+- **未纳入**：
+  1. **审计修法①「schema 迁移抽到 `owner/gateway/ledger_schema.py`」**：零收益（4 块 → 4 块），且要自建一个**基点已有**的原语；改用既有共享原语后**方向与上游一致**（上游 `576accd92b` 自己就是这么改的）。**整条按「不纳入」处置。**
+  2. **审计修法②「`mark_delivered` 用 `**kwargs` 兼容」**：零收益（4 块 → 4 块），且会把 3 个显式参数换成无名字典，丢掉签名可读性与类型检查。**不纳入。**
+  3. **hunk 级标记覆盖的缺口**：本项把 `_initialize_schema` 的标记由「逐 hunk 3 处」收敛为「区域 1 处」，于是 **`CREATE TABLE` 的 DDL hunk（`platform_message_id TEXT`）不再有紧邻标记**。要覆盖它只能把标记写回 `conn.execute(` 上方 —— 而**上游把 `_initialize_schema` 的头两行删掉了**，这一落点正是**块 2 的成因**：实测**加回去 1 块 → 2 块**。故按「**区域级覆盖 + hunk 级留缺口**」交付，缺口归 **T2-11b**（已登记的 902 处 hunk 级缺口）一并处置。Check 8 是**文件级**口径，仍 116/116 全绿。（旁证：`merge-file` 的冲突标记是**带路径的** `<<<<<< <path>`，用 `grep -c "^<<<<<< $"` 数块会得 0 —— 数块必须解析标记行前缀。）
+  4. **`mark_delivered` 的语义分叉风险**：本项把戳记留在官方文件的 `mark_delivered` 内，**没有**把它搬进 `owner/`。若日后按 §16.11 的方向把这段自有代码搬出去，搬走的是「两条语句的次序」这一个决策 —— 已由 `test_the_id_stamp_does_not_disturb_the_state_columns` 与 `test_a_stamp_failure_does_not_lose_the_delivery` 两例钉住，故本次不动。**已登记，不展开。**
+- **Commit**：见附录 E（代码 + 测试一次提交；本条文档单独提交）
+
+---
+
 ## 附录 A：owner/ 模块职责索引
 
 | 路径 | 职责 | 侵入官方文件 |
@@ -2110,7 +2183,7 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 | `tools/clarify_tool.py` / `clarify_gateway.py` | normalize_choices 薄调用 + stop sentinel | 薄胶水 |
 | `tools/skills_tool.py` | track_session_skill_view 薄调用 | 薄胶水 |
 | `gateway/platforms/qqbot/adapter.py` + `gateway/platforms/qqbot/constants.py` | WS 重连链（heartbeat/timeout/stop_retry/rebuild） | inline |
-| `gateway/delivery_ledger.py` | `delivery_obligations` 加 `platform_message_id` 列 + 部分索引；`CREATE TABLE` 与 ALTER 对账循环双写；`mark_delivered` 非覆盖语义（§7.21） | inline 列扩展 + schema 对账 |
+| `gateway/delivery_ledger.py` | `delivery_obligations` 加 `platform_message_id` 列 + 部分索引；`CREATE TABLE` 与 ALTER 对账循环双写；`mark_delivered` 非覆盖语义（§7.21）。**合并面收敛（§16.14）**：建列腿改用既有共享原语 `hermes_cli.sqlite_util.add_column_if_missing`（上游 `576accd92b` 对该文件采用的同形）；`_update_state` 逐字节还原基点、戳记内联进 `mark_delivered`；`[owner]` 标记 10 → 3 且缩进逃逸 6 → 0；删零生产调用者的 `recovered_reply_marker()`。冲突块 4 → 1 | inline 列扩展 + schema 对账 |
 | `hermes_cli/plugins.py` | 后台插件发现锁超时语义（join 超时直接返回 + `acquire(timeout=15)`），修复启动空白屏（§7.20）；**薄壳 + `_discover_and_load_scoped()` 消除 40 行缩进重排**、`force=True` 上抛 `PluginDiscoveryLockBusy`、`_discovery_deferred` 可观测（§16.10，6 处标记） | inline |
 | `hermes_cli/profiles.py` | `get_active_profile_name` 读 `HERMES_PROFILE` env 优先 + `_PROFILE_ID_RE` 校验 + 回落路径推断（§7.14） | inline |
 | `plugins/memory/openviking/__init__.py` | `_ascii_peer_slug()` peer_id slug 化 + user/assistant fallback 链（§7.3） | inline |
@@ -2270,6 +2343,19 @@ _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请先�
 ---
 
 ## 附录 E：变更日志
+
+### 2026-09-29：新增 §16.14 `delivery_ledger` 合并面收敛（T2-17）
+
+- **新建正文**：**§16.14**（`gateway/delivery_ledger.py`：删我方注释噪声、`[owner]` 标记去重 10 → 3 并消除 6 处缩进逃逸、建列腿改用既有共享原语 `hermes_cli.sqlite_util.add_column_if_missing`、`_update_state` 逐字节还原基点并把戳记内联进 `mark_delivered`、删零生产调用者的 `recovered_reply_marker()` 及其 2 个纯单测）。本清单 §16.14 正文 + §0.2 导航行 + 附录 B `gateway/delivery_ledger.py` 行 + 本条
+- **类型**：合并面收敛 + 缺陷修复（标记形式缺陷、零调用者死函数）；**正常路径零行为变更**（唯一差异是戳记走两条语句：先改状态、后补 id —— 崩溃窗口只丢可追溯 id，不会造成重复发送）
+- **决策**（2026-09-29 用户）：修法方向 = **C1′ 最小冲突面**（4 块 → 1）；`recovered_reply_marker()` 处置 = **删掉**
+- **口径校正（位置、标记数、修法三条）**：① 行号位移 —— 审查 `138/320/365`，实测我方 HEAD 为 `:140`/`:326`/`:372`；② 「零 `[owner]` 标记」是审查当时的旧数，现为 **10 处**（2026-09-28 `a77e345342` 随 T2-11 补上），但 10 处**文本逐字相同**且 **6 处缩进逃逸**，本身即是缺陷；③ **修法①要我们自建一个基点就已存在的原语** —— `hermes_cli/sqlite_util.py` 在基点 `00b2e03c80` 就含 `add_column_if_missing` / `write_txn`（`kanban_db.py:92` 一直在用），且**上游 `576accd92b` 对该文件采用的正是该形态**（`upstream/main` 的 `delivery_ledger.py:25` 即该 import），与 T2-16 修法①同型
+- **审计两条修法逐条量掉（零收益）**：口径 = `git merge-file -p --diff3` 的冲突块数（与 `git merge-tree` 独立判定互校）。对照 **4 块 / 我方侧 123 行**；修法①（schema 抽 `owner/gateway/ledger_schema.py`）**4 块 / 89 行**；修法②（`mark_delivered` 改 `**kwargs`）**4 块**。两条只买到「我方侧行数」一个指标 —— **第三例「缩块不消块」**（前两例 §16.11、§16.12）
+- **撑起冲突面的四件事与处置**：块 1（`RECOVERED_MARKER` 上方我方插的 3 行，上游同段也润色过）⇒ 清噪声消除；块 2（`apply_wal_with_fallback` 后的顶格标记，上游已把该函数头两行删掉）⇒ 去重消除；块 3（`_initialize_schema` 列对账，上游整体重写 + 我们必须在该函数建列）⇒ **消不掉**，已写下双重理由；块 4（`_update_state` 双方都改 + `mark_delivered` 紧邻并成一个基线区域）⇒ 还原基点 + 戳记内联消除。**落点阶梯**：4 → S1 清噪声 2 → S2 还原 `_update_state` 1 → S3 换共享原语 1（S3 不减块，买的是行数与「与上游同向」）
+- **被否证 / 被刻意否掉的两条思路**：① 「挪落点」—— 上游**连 `_connect()` 都重写了**，把钩子挪进去实测 3 块 → 3 块但**新造一块**；② 「挪进 `record_obligation`」能到 **0 块**但 `debug_rows()` 无条件 `SELECT` 该列 ⇒ 先开库后建列会在读路径报 `no such column`。**列必须建库时就存在。**
+- **结果**：冲突块 **4 → 1**、我方侧行 **123 → 49**、文件 **661 → 613**；相对基点我方足迹 **12 hunk/+119−20 → 9 hunk/+64−13**；**零新耦合**
+- **验证**：定向 **75 passed**；**变异 7/8 咬住**（未咬住那 1 个是**正确预期**：DDL 里拿掉该列后 ALTER 腿在新建库上同样补上 ⇒ 运行时等价；首轮该变异体留下悬空逗号 ⇒ 非法 DDL ⇒ 39 个失败被误读成咬住，属**变异体不合格**）；爆炸半径 **138 路径 / 两腿同 30 failed / NEW 0 GONE 0 / Δ+1**（本轮修掉一处**语料缺口**：`tests/gateway/test_restart_notification.py` 原先不在语料里，B 腿对它的还原是空操作 ⇒ 已补入并加**自证断言**）；健康检查 **7 passed / 1 warning**（Check 8 116/116、Check 6 28/28、Check 7 140/140；Check 4 标记 674 → 667）
+- **未纳入**：审计修法①②（零收益/降签名可读性）；hunk 级标记缺口（`CREATE TABLE` 的 DDL hunk 不再有紧邻标记 —— 补回去实测 1 块 → 2 块，归 **T2-11b**）；`mark_delivered` 搬入 `owner/`（语义决策已由 2 例钉住，登记不展开）
 
 ### 2026-09-29：新增 §16.13 官方私有符号依赖改为可降级 + 可观测（T2-16 + 同类普查）
 
