@@ -31,7 +31,8 @@ approval:
   hint_description_truncated: "…（描述已截断）"
 
   # 拦截/硬拦截/拒绝消息 — 命令被阻止时返回给 agent。
-  hardline_blocked: "已拦截（硬拦截）：{description}。此命令位于无条件拦截列表中，无法通过 agent 执行 — 即使使用 --yolo、/yolo、approvals.mode=off 或 cron 批准模式也不行。如果你确实需要运行它，请在 agent 外的终端中手动运行。"
+  # approval.hardline_blocked 归下面「拦截结果消息」段（它是工具结果文案，
+  # 与 hardline_recovery_* 同组）；在此重复定义会被 YAML 静默忽略。
   sudo_stdin_blocked: "已拦截：{description}。请勿通过管道向 'sudo -S' 传递密码 — 这是一个暴力破解攻击路径。如果 agent 需要免密 sudo，请在 .env 文件中设置 SUDO_PASSWORD，或者在你自己的终端中手动运行 sudo 命令。"
   cron_blocked: "已拦截：命令被标记为危险（{description}），但定时任务运行时没有用户在场批准。请寻找替代方案来避免此命令。如需在定时任务中允许危险命令，请在 config.yaml 中设置 approvals.cron_mode: approve。"
   gateway_asking: "⚠️ 此命令具有潜在危险（{description}）。正在请求用户批准。\n\n**命令：**\n```\n{command}\n```"
