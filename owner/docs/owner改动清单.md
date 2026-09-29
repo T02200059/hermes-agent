@@ -1834,6 +1834,59 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 - **未纳入**：`owner/scripts/check-reindent.sh`（审查 §5.5 提议的 CI 门禁）本轮**未实现** —— 它需要 `git diff <base> -w --stat` 与上游 ref，只在多分支克隆里可用；本条的守卫改成**纯本地**的结构不变量，不依赖 ref。`_delivery_manager()`（:6480）走 `manager.discover_and_load()` 且不看 `_discovery_deferred`，在延迟窗口内 hook 投递仍会静默落空 —— 一并记录，未改（改动会波及 hook 投递语义）。
 - **Commit**：`bae086a304`（代码 + 测试；本条留档见附录 E）
 
+### 16.11 feishu adapter 自有卡片胶水迁入 `owner/feishu/`（T2-14）
+
+- **背景**（T2-14 / 合并冲突审查 §5.4）：`plugins/platforms/feishu/adapter.py` 是全库第二冲突文件（33 个冲突块），上游活跃度 76 次/3 月。审查给出的修法是「按规范 §3 的『审批卡片经验』继续收薄 —— 标签注入收口到**新建**的 `owner/feishu/profile_tag.py`，路由继续收拢到已有的 `owner/feishu/profile_routing.py`，adapter 侧每处 1 行调用」，并预期冲突块 33 → 8–10。
+- **口径先校正（审查 §5.4 表格四条前提，三条不成立）**：
+  1. **标签注入已经收口了**。`owner/feishu/card_sender.py::_maybe_tag_interactive_payload`（配 `_maybe_tag_card_profile` / `_inject_profile_tag`）是**唯一**的序列化期注入点；adapter 侧只有 `_send_raw_message` 里**一处 5 行调用**，且 2026-09-15 那次「root fix」的说明已经写在代码注释里。新建 `profile_tag.py` 只是在自家两个文件之间搬约 100 行，**冲突面一字不减**。
+  2. **profile 路由已经收拢了**。`owner/feishu/profile_routing.py` 已有 982 行 / 25 个公开符号（`try_route_inbound_message`、`try_route_card_action`、`handle_card_action_request`、`try_route_bot_menu_command`、`resolve_profile_route`、`verify_inbound_target_profile`、`_forward_to_profile_container` …），adapter 侧是 1 行 `_owner_import` + 调用。
+  3. **i18n 那一行不成立**。adapter 内 **0** 个 `t()`；全文件 i18n 引用只有 3 行，是 `send_exec_approval` 里一处 `get_language()`。
+  4. notice 卡 / queue 卡那行本来就写着「保持」。
+- **实测口径（审查的数字有出入，以实测为准）**：文件 7092 行；`[owner]` 标记 **71**（审查说 67）；默认 `-U3` 下 **52 个 hunk、其中 28 个含删除**（审查说 27；配「24 个纯插入 hunk」，52 = 28 + 24 自洽）；plain diff `+1447/−270`（审查说 +1425）。另外审查 §5.5「用 `git diff -w` 判纯重排」这条仪器在本文件上**方向是反的**：`-w` 给出 `+1476/−299`，**比 plain 更大** —— 因为空白不敏感后 git 的配对变了，它在这里什么也证明不了。
+- **33 块真正的构成**：把 `git merge-tree --write-tree upstream/main HEAD` 的冲突块逐块解析后，我方这一侧共 **1193 行**，其中**可执行代码 824 行**、注释 274、空行 95。也就是说审查说的「深度耦合」并不是标签/路由，而是**只有我们才有的卡片胶水被内联塞在上游类体里**：最大块 357 行（`_handle_update_prompt_card_action` 尾 + 卡片发送/澄清/选择器/引导/队列一族）、次大 135 行（`_on_card_action_trigger` + `_dispatch_card_action`）、再次 85 / 71 / 54 / 52。**上游的结构性重构也正砸在同一片区域**：上游新增了 `_pop_validated_prompt_state`（我方没有，块内上游侧 55 行）、把 `send_exec_approval` 改名 `_send_exec_approval_prompt` 并把卡片核心抽到共享模板 `gateway/platforms/base_exec_approval.py`、把 sender_name 一族的方法签名改成多行（后两块属**纯排版，无解**）。
+- **方案**（2026-09-29 用户决策：**只搬纯自有代码**）：把**纯属本项目、与上游零耦合**的方法正文整块迁入既有 owner 模块，adapter 侧只留签名 + 1 行委托。**方向刻意如此** —— 对我们自己的代码，搬走不删上游任何一行，因此**零合并债**；反过来「把上游正文搬到 `owner/`」是**反向**的（§16.10 同一结论：搬走后上游以后每次改那段正文都会撞在「我们删掉的行」上）。
+- **迁移清单（11 个方法，合计 404 → 212 行）**：
+
+  | 方法 | 行数 | 迁往 |
+  |---|---:|---|
+  | `_dispatch_card_action` | 111 → 49 | **新建** `owner/feishu/card_action.py` |
+  | `_normalise_card_action_value` | 20 → 12 | 同上 |
+  | `send_card` | 63 → 19 | `owner/feishu/card_sender.py` |
+  | `_get_card_send_lock` | 23 → 12 | 同上 |
+  | `send_model_picker_card` | 29 → 21 | `owner/feishu/model_picker.py` |
+  | `_handle_model_picker_action` | 21 → 13 | 同上 |
+  | `send_guide_card` | 25 → 16 | `owner/feishu/steer_card.py` |
+  | `_handle_guide_card_action` | 27 → 13 | 同上 |
+  | `send_queue_status_card` | 34 → 28 | `owner/feishu/queue_card.py` |
+  | `_handle_queue_card_action` | 22 → 13 | 同上 |
+  | `_send_media_guard_hint` | 29 → 16 | `owner/feishu/media_guard.py` |
+
+  `adapter.py` 7092 → 6900 行。**不新建平行目录**：正文一律进「本来就属于它」的模块。命名冲突处理：`steer_card.py` / `queue_card.py` 里本来就有同名的 `handle_*` 处理器，新增的薄封装改名 `dispatch_*`，避免遮蔽处理器自身。
+- **刻意保留的三处设计决定**：
+  1. **兜底尾巴留在 adapter**。`_dispatch_card_action` 末尾的 `self._submit_on_loop(loop, self._handle_card_action_event(data))` + 空响应构造**没有搬走** —— 它构造的是**适配器模块全局** `P2CardActionTriggerResponse`，而 `tests/gateway/test_feishu_approval_buttons.py` 的 `_patch_callback_card_types` fixture 正是给那个全局打补丁（`monkeypatch.setattr(feishu_module, "P2CardActionTriggerResponse", _FakeP2Response)`）。搬进 owner/ 后它会读自己模块的绑定，那些补丁点**静默失效**，测试会拿到真实 lark 类。
+  2. **哨兵必须是哨兵**。既然尾巴留在 adapter，owner 侧就需要一个「没有命中任何分支、请走兜底」的信号。**不能用 `None`**：处理器**可以合法返回 `None`**（事件没有对应状态时就是解完的结局），`None` 当哨兵会把「处理器返回 None」误判成「没命中分支」，凭空多 submit 一次合成命令。故定义 `UNHANDLED = _Unhandled()` 单例并做**身份比较**。owner 模块内的 lark 类型走自己 `_lark_card_types()` 式 import，与 `clarify_card.py` / `queue_card.py` 既有写法一致。
+  3. **名字一个都不能少**。`owner/feishu/auto_card.py:663` 用 `getattr(adapter, "_get_card_send_lock", None)` 解析锁，拿到 `None` 就 `contextlib.nullcontext()`（**无锁**）。名字丢了**不报错**，而是静默重新打开「多块卡片交错发送」的 bug —— 所以 11 个方法一律保留为真方法，守卫也把这条耦合显式钉住。
+- **涉及文件**：`plugins/platforms/feishu/adapter.py`（11 个方法改薄壳）、`owner/feishu/card_action.py`（新建 214 行）、`owner/feishu/card_sender.py`（+107）、`owner/feishu/model_picker.py`（+65）、`owner/feishu/queue_card.py`（+68）、`owner/feishu/steer_card.py`（+64）、`owner/feishu/media_guard.py`（+37/−1，多一个 `Dict` 导入）、`tests/owner/test_feishu_adapter_thinning.py`（新建，37 例）
+- **侵入类型**：结构调整（正文外移 + 薄壳委托），**零行为变更**
+- **验证**：
+  - **冲突面（同一把尺：`git merge-tree --write-tree upstream/main HEAD`）**：冲突块 **33 → 33**；我方冲突侧 **1193 → 1033 行**（code 824 → 691、注释 274 → 255、空行 95 → 87）；最大块 **357 → 259**，次大 **135 → 73**。逐块核对：块 #19 与 #17 的缩减量正好等于对应方法迁出的行数（`_dispatch_card_action` −62 ⇒ #17 135→73），说明仪器读数可靠。
+  - **「33 → 8–10」判定不可达（口径说明）**：冲突块是按「两处都改过」**计块**，不是计行 —— 把 357 行的块缩成 5 行委托，**仍然是 1 块**。要到 8–10 必须把我们在约 15 个上游函数里的存在**彻底移走**，而其中若干（审批按钮必须由 card-action 处理器派发、reaction 必须由 `_handle_reaction_event` 转发）**结构上离不开**。本条只动自有代码，剩下 27 处「注入上游函数内」的落点原样未动（见「未纳入」）。
+  - **变异验证 17/17 全部咬住**：删除/改名 `_get_card_send_lock`；把 `send_model_picker_card` 重新内联撑大；把一段已迁走的正文串复制回 adapter；把 `None` 当哨兵；末尾不再返回 `UNHANDLED`；去掉兜底的 `_submit_on_loop`；HTTP 重放路径也走路由；normalise 返回非 dict 的 JSON；`send_card` 异常吞成 success；`send_card` 忽略发送失败；卡片锁不做 LRU；锁从不复用；选择器状态改到发送之后写（两条）；引导卡不记 source；队列卡丢掉 `SendResult`；media guard 空文本也发。
+  - **变异验证当场补上一处守卫缺口**：`normalise_card_action_value` 的参数集原先只喂 Python `list`，没有喂「**编码成 JSON 字符串**的非 dict」（`"[1,2]"` / `"\"plain\""` / `"42"`）。于是「去掉 `isinstance(parsed, dict)` 判断」这个变异体**没被咬住** —— 若不跑变异，这一处会以「17/17 全绿」的假象留下。补齐三个参数后咬住（3 例失败）。
+  - **爆炸半径回归**（134 个路径：全部 feishu 相关用例 + `tests/owner/` 全量）：**NEW 0 / GONE 0**。leg A（当前树）30 failed / **2586 passed**；leg B（HEAD）30 failed / **2546 passed** —— 通过数差 40 = 本轮新增 **37 例** + 3 个新参数化用例，两侧 30 个失败**同一集合**，均为存量。
+- **守卫清单（`tests/owner/test_feishu_adapter_thinning.py`，37 例，5 类结构 + 11 类语义）**：① 11 个方法名字仍在（`hasattr`，含「多个调用点用 `getattr(..., None)` 解析」的说明）；② 每个方法体不超界（约 1.3× 迁移后大小）；③ 11 个方法总量 ≤ 260 行（迁移后 212、迁移前 404）——②③ 合起来把「回流内联」变成测试失败；④ 被迁走的正文特征串不再出现在 adapter（防「复制而非搬走」）；⑤ `auto_card.py` 仍以 `getattr` 解析 `_get_card_send_lock`（把这条静默降级耦合显式化）；⑥ 兜底尾巴仍读 **adapter 模块全局** 的响应类（打补丁后拿到假类）；⑦「处理器返回 `None`」**不**被当成 fallthrough（不额外 submit）；⑧ profile 路由短路优先于任何本地分支；⑨ `allow_profile_routing=False` 时**绝不**路由；⑩ `normalise` 对「能解析但非 dict」的 JSON 仍收敛为 `{}`；⑪ `send_card` 失败上报与异常 fail-open；⑫ 卡片锁按 chat 复用且 LRU 有界；⑬ 选择器 / 引导卡状态**在发送之前**写入；⑭ 队列卡把 `SendResult` 透传；⑮ media guard 提示 best-effort（发送异常不外抛、空文本不发）。
+- **技巧（值得复用）**：① **搬自家代码与搬上游代码是两件方向相反的事** —— 前者不删上游行、零合并债；后者让上游以后的每次改动都撞在「我们删掉的行」上。判断依据很简单：这段正文在上游 `main` 里**存不存在**。存在就留在原地，不存在才搬走。② **「块数」与「行数」是两把不同的尺**：缩小一个块不会让块数下降，只有把某个落点的改动**整个撤走**才会。做收益预估时先用块数核预期，别拿行数降幅去承诺块数降幅。③ **把「块缩了多少」与「方法缩了多少」对账**：`_dispatch_card_action` 从 111 缩到 49（−62），冲突块 #17 正好从 135 掉到 73（−62）—— 对得上才说明测量仪器没问题。④ **跨模块「薄壳」若被 `getattr(obj, name, None)` 解析，名字就是契约**：这类调用点丢名字不会抛异常，而是走一条「功能静默降级」的分支；写守卫时要断言的是**那条降级分支的调用方仍然找得到名字**，而不只是「方法存在」。⑤ **哨兵不能用 `None`**，只要被包装的处理器有「合法返回 `None`」的可能 —— 用专门单例 + 身份比较。
+- **收尾：两处校验锚点必须跟着搬家，并把它们收进 pytest**。`owner/validation/merge_health_check.py` 的 Check 6（`anchors.yaml` 关键锚点）与 Check 7（`inventory.yaml` 静态断言）都是**直接匹配文本**的，源码搬走后断言不改就会红。实测迁移后：**Check 6 报 5 条**（`handle_feishu_diff_action` / `owner.diff_card.feishu` / `handle_card_click` / `owner.feishu.memory_approval` 四条随正文一起搬走；`handle_picker_action` 是本轮把它改名成 `dispatch_model_picker_action` 所致）、**Check 7 报 2 条**（`feishu-diff-card-dispatch` 的 `file_contains` 仍指向 adapter）。处置：`anchors.yaml` 的 `feishu-adapter-card-routes` 改为只断言**仍留在适配器里的接线**（`owner.feishu.card_action` / `dispatch_card_action` / profile 路由 / clarify / picker / guide），新增 `feishu-card-action-branch-table` 条目指向 `owner/feishu/card_action.py`；`inventory.yaml` 的 `feishu-diff-card-dispatch` 拆成两条（新落点 + 「适配器仍路由进这张表」）。复跑 **Check 6 28/28、Check 7 140/140，0 issue**。
+  **顺带暴露的真正问题**：这两个检查**只存在于健康检查脚本里，pytest 里没有** —— 所以那 134 个路径的回归语料虽然**包含** `tests/owner/test_merge_health_check.py`，却**不会**因它们变红，「全绿」的结论里根本不包含这两项。已在同一文件补 3 例（Check 6、Check 7，以及**按 id 钉住**分支表锚点必须指向新落点的第 3 例），变异 **7/7 咬住**。第 3 例是必需的：前两例断言 `issues == []` 与 `checked == total`，两者都**从被测文件自身推导** ⇒ 把过期条目**整条删掉**反而更绿（27 specs / 27 readable / 0 issue），而那恰恰是最省事的假修法。
+- **标记数变化（附录 B 是当前状态索引，故按 70 计）**：`[owner]` 标记 **71 → 70**，净 −1 —— `send_card` 原有两处标记随正文迁出、薄壳只留一处；分派表的 9 处随表迁入 `card_action.py`；其余 8 个新薄壳各补 1 处。本条与附录 E 里出现的 **71** 是**改造前**实测口径（用于纠正审查的 67），量的不是同一版文件。
+- **未纳入**：
+  1. **注入上游函数内的我方代码**（约 436 行，占我方新增 30%）：`_handle_reaction_event`(64)、`_process_inbound_message`(51)、`_on_card_action_trigger`(55)、`send_exec_approval`(66)、`_send_uploaded_file_message`(19)、`send_image_file`(16)、`_send_raw_message`(16)、`__init__`(42)、`_finalize_send_result`(31) 等。把它们也收成 1 行委托能**进一步降行数**，但这几处搬出会**新增合并债**，且块本身仍在（只是更小），需要另行决策（属审查 §5.4 未言明的另一半）。
+  2. **上游已重构、非我方可控**：`_pop_validated_prompt_state` 是上游新加的助手（我方没有该名字）；`send_exec_approval` 被上游改名并模板化；sender_name 一族的上游签名排版变化。这三类冲突**任何收薄动作都消不掉**。
+  3. **`_render_merge_forward_entries` 及其调用方 `_expand_merge_forward_text`**：`tools/feishu_client_utils.py:1593` **从 adapter import 这个渲染器**，搬走必须改上游文件，等于亲手新增合并债 —— 故整体不动。
+  4. **审查 §5.4 提议新建的 `owner/feishu/profile_tag.py`**：不建（前提 1 已不成立）。
+  5. **审查 §5.5 提议的 `owner/scripts/check-reindent.sh`**：仍未实现（§16.10 已记录，本文件上 `-w` 方向还是反的）。
+- **Commit**：`881092cbe0`（代码 + 测试）/ `f244475b09`（校验锚点同步 + Check 6/7 收进 pytest）；本条留档见附录 E
+
 ---
 
 ## 附录 A：owner/ 模块职责索引
@@ -1865,7 +1918,7 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 | `owner/commands/providers.py` | /providers plugin 斜杠命令实现 | owner-extensions plugin |
 | `owner/cron/` | cron session 隔离 + restart scrub + run_job hook + approval helper | cron/* + gateway/run.py |
 | `owner/diff_card/` | diff 卡片平台分发（飞书/QQ） | feishu/adapter.py |
-| `owner/feishu/` | 飞书深度定制（含 queue_card / skill_approval_card 等）；另承载 API Server 侧 `resolve_api_identity_route` / `is_api_identity_whitelisted`（§15.1、§15.5，复用 `profile_endpoints`）、**子容器入口归属校验**（§16.6：`container_profile_identity()` 只认 `HERMES_PROFILE` / `user_routing.container_profile` 且**不猜默认值**；`verify_inbound_target_profile()` 对「两侧可识别且不等」拒绝、对「无法判定」放行并告警一次） | feishu/adapter.py（64+ 处标记）、gateway/platforms/api_server.py |
+| `owner/feishu/` | 飞书深度定制（含 queue_card / skill_approval_card 等）；另承载 API Server 侧 `resolve_api_identity_route` / `is_api_identity_whitelisted`（§15.1、§15.5，复用 `profile_endpoints`）、**子容器入口归属校验**（§16.6：`container_profile_identity()` 只认 `HERMES_PROFILE` / `user_routing.container_profile` 且**不猜默认值**；`verify_inbound_target_profile()` 对「两侧可识别且不等」拒绝、对「无法判定」放行并告警一次） | feishu/adapter.py（70 处标记）、gateway/platforms/api_server.py |
 | `owner/gateway/` | inbound_context + hygiene_compression_notice + steer_vision + **ldap_auth**（LDAP bind 认证门：决策表 6 态 / 72h 正缓存 + 10s 负缓存 / RFC4514 转义，§15.2–§15.3；**§15.8 起 `enforce=seen` 为 `always` 的 fail-closed 别名**，`_seen_logins` 仅作诊断；**§15.9 起带密码但无法验证默认拒绝（503）**，`fail_open_on_error` 为显式 opt-in；**§15.7 新增路由接线状态诊断**） | gateway/run.py、gateway/platforms/api_server.py |
 | `owner/gateway/session_salt.py` | API 会话 id 派生用的服务端盐（优先级 env > config > `<HERMES_HOME>/api_session_salt`；生成档 32 字节 `token_urlsafe`、原子写 0600、跨重启稳定；落盘失败降级为每进程盐并告警一次，§16.5）；另提供来源归因 `session_salt_source()` | gateway/platforms/api_server.py（`_owner_session_salt` 薄委托 + `_derive_chat_session_id` 改 HMAC） |
 | `owner/patches/` | runtime patch（OpenViking recall + memory synthetic guard + pool base_url override + **queue_cancel** + **file_binary_detection**） | owner-extensions plugin / hermes_cli/runtime_provider.py |
@@ -1890,7 +1943,7 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 | 文件 | 侵入内容 | owner/ 对应模块 | 相关 commit |
 |------|----------|-----------------|-------------|
 | `gateway/run.py` | cron env scrub ×3、executor-shutdown、inbound context、hygiene notice、auto-card、per-chat display、chained quick command、steer vision enrichment（§7.18）、**stale-run cancel（§7.23：/stop 后跳过提升的孤儿轮次补硬中断）** | owner/cron/、owner/gateway/、owner/feishu/、owner/display_overrides.py、owner/gateway/steer_vision.py | 几乎所有 §11/§17 commit |
-| `plugins/platforms/feishu/adapter.py` | 64+ 处 `[owner]` 标记：approval/auto_card/bot_menu/clarify/diff_card/model_picker/profile_routing/resume_card/sender_name/early-typing/**skill_approval_gate** / **queue_card** 委托；`_mentions_self` 不再把 `@_all` 当 @机器人（§4.14）；**merge_forward 二次拉取渲染**（§4.15）；`send_card` 内补 `hermes_profile` 标签（§4.1）；`_finalize_send_result` 全路径 message_id 日志（§7.21）；**reaction 归属决策记录**（§16.6，仅注释：群聊表情按反应者解析属已接受决策，钉在用例上） | owner/feishu/*（含 skill_approval_card、queue_card、card_sender） | §4.2/§5.3-5.7/§17.1/§3.11/§4.1/§4.11/§4.14/§4.15/§7.21/§16.6 |
+| `plugins/platforms/feishu/adapter.py` | **70 处 `[owner]` 标记**（T2-14 迁移前 71，净 −1：`send_card` 两处随正文迁出、薄壳留一处，分派表 9 处随表迁入 `card_action.py`，其余 8 个新薄壳各补 1 处）：approval/auto_card/bot_menu/clarify/diff_card/model_picker/profile_routing/resume_card/sender_name/early-typing/**skill_approval_gate** / **queue_card** 委托；`_mentions_self` 不再把 `@_all` 当 @机器人（§4.14）；**merge_forward 二次拉取渲染**（§4.15）；`send_card` 内补 `hermes_profile` 标签（§4.1）；`_finalize_send_result` 全路径 message_id 日志（§7.21）；**reaction 归属决策记录**（§16.6，仅注释：群聊表情按反应者解析属已接受决策，钉在用例上）；**自有卡片胶水外移 + 11 个薄壳**（§16.11：`_dispatch_card_action` 111→49、`send_card` 63→19、`_get_card_send_lock` 23→12、`_send_media_guard_hint` 29→16、picker/guide/queue 六方法、`_normalise_card_action_value` 20→12；文件 7092→6900 行；兜底尾巴刻意留在 adapter，owner 侧以 `UNHANDLED` 哨兵表示「走兜底」；`anchors.yaml` / `inventory.yaml` 随之改指 `owner/feishu/card_action.py`） | owner/feishu/*（含 skill_approval_card、queue_card、card_sender、card_action） | §4.2/§5.3-5.7/§17.1/§3.11/§4.1/§4.11/§4.14/§4.15/§7.21/§16.6/§16.11 |
 | `agent/conversation_loop.py` | MoA 注入（CR-005 已改为独立 message）、content-filter fallback、adaptive backoff、thinking-timeout、attribution 重建、tool_call_id 胶水 | owner/attribution.py、owner/api_error_hints.py | a6dcd6ed8、9a05e50b4、362304bc8 |
 | `tools/approval.py` | home-prefix fold（CR-001 修复）、skill script 自动审批（3 处委托）、patch.yaml allowlist 合并、cron active helper | owner/approval/、owner/patch_config.py、owner/cron/approval_helper.py | 82fe8c962、5dd9580b4、99a374f64 |
 | `gateway/platforms/base.py` | per-profile cache roots、SendResult rotate/retry_after、chained quick command（`[owner]`）、progress dedup code-fence 守卫 | — | 1d908072a、2be0af638 |
@@ -2079,6 +2132,20 @@ _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请先�
 ---
 
 ## 附录 E：变更日志
+
+### 2026-09-29：新增 §16.11 feishu adapter 自有卡片胶水迁入 `owner/feishu/`（T2-14）
+
+- **新建正文**：**§16.11**：`881092cbe0`（`plugins/platforms/feishu/adapter.py` 11 个方法改薄壳：`_dispatch_card_action` / `_normalise_card_action_value` / `send_card` / `_get_card_send_lock` / `send_model_picker_card` / `_handle_model_picker_action` / `send_guide_card` / `_handle_guide_card_action` / `send_queue_status_card` / `_handle_queue_card_action` / `_send_media_guard_hint`；新建 `owner/feishu/card_action.py`；`owner/feishu/{card_sender,model_picker,steer_card,queue_card,media_guard}.py` 追加正文。`tests/owner/test_feishu_adapter_thinning.py` 新增 37 例。本清单 §16.11 正文 + 附录 B 行 + 本条）
+- **跟随修正**：`f244475b09`（**校验锚点同步 + Check 6/7 收进 pytest**）。`owner/validation/{anchors,inventory}.yaml` 是**文本匹配**式断言，正文搬家后必须跟着搬：Check 6 原有 5 条 issue（4 条随正文迁出、1 条因 `handle_picker_action` 改名 `dispatch_model_picker_action`）、Check 7 原有 2 条（`feishu-diff-card-dispatch` 仍指向 adapter）。改后 Check 6 **28/28**、Check 7 **140/140**，0 issue。同时暴露：这两项检查**只跑在健康检查脚本里，pytest 里没有** ⇒ 134 路径回归语料虽含 `tests/owner/test_merge_health_check.py` 却不会因它们变红。补 3 例变常驻 pytest 门，变异 **7/7 咬住**。
+- **类型**：结构可维护性（正文外移 + 薄壳委托，**零行为变更**）
+- **决策**（2026-09-29 用户确认）：范围＝**只搬纯自有代码**（与上游零耦合的方法正文），不动「注入上游函数内」的那部分
+- **口径校正（审查 §5.4 给的四条前提，三条不成立）**：① 标签注入**已经**收口到 `owner/feishu/card_sender.py::_maybe_tag_interactive_payload`，adapter 侧只有一处 5 行调用 ⇒ 新建 `profile_tag.py` 无收益；② profile 路由**已经**收拢到 `owner/feishu/profile_routing.py`（982 行 / 25 个公开符号）；③ adapter 内 **0** 个 `t()`，i18n 那一行不成立；④ notice/queue 卡那行原本就写着「保持」。另：审查 §5.5 的 `-w` 仪器在本文件上**方向是反的**（`-w` 给出 `+1476/−299`，比 plain `+1447/−270` 更大）。
+- **实测口径**：文件 **7092** 行（改造前；改造后 6900）；`[owner]` 标记 **71**（审查说 67；改造后 70，净 −1 的构成见 §16.11）；52 hunk 中 **28** 个含删除（审查说 27；配 24 个纯插入，52 = 28 + 24 自洽）；plain `+1447/−270`（审查说 +1425）。
+- **33 块的真实构成**：我方冲突侧 1193 行 = 可执行代码 **824** + 注释 274 + 空行 95；最大块 357（`_handle_update_prompt_card_action` 尾 + 卡片发送/澄清/选择器/引导/队列一族）、次大 135（`_on_card_action_trigger` + `_dispatch_card_action`）。根因是**自有卡片胶水内联在上游类体里**，不是标签/路由。上游同期还在同片区域做了三项结构性重构（新增 `_pop_validated_prompt_state`、`send_exec_approval` 改名 `_send_exec_approval_prompt` 并模板化、sender_name 一族签名改多行）。
+- **结构与语义**：11 个方法合计 404 → 212 行；adapter 7092 → 6900 行；`steer_card.py` / `queue_card.py` 内已有同名 `handle_*`，故新增薄封装改名 `dispatch_*`。**兜底尾巴刻意留在 adapter**（构造适配器模块全局 `P2CardActionTriggerResponse`，网关测试正给该全局打补丁），owner 侧因此用 `UNHANDLED` 单例 + 身份比较表示「走兜底」——**不能用 `None`**，处理器可以合法返回 `None`。
+- **验证**：冲突块 **33 → 33**、我方冲突侧 **1193 → 1033**（最大块 357 → 259、次大 135 → 73，缩减量与方法行数对得上）；**变异 17/17 全部咬住**（并借变异当场补上 `normalise_card_action_value` 的一处守卫缺口：原先没喂「JSON 字符串编码的非 dict」）；爆炸半径 134 路径 **NEW 0 / GONE 0**（leg A 2586 passed / leg B 2546 passed，差 40 = 新增 37 例 + 3 个新参数化用例；两侧 30 个失败同一集合，均存量）。补 3 例 pytest 门后复跑同一语料：leg A **2589** passed / leg B **2546** passed，差 **43**（= 40 + 3），**NEW 0 / GONE 0** 不变。
+- **未闭合边界**：审查预期「冲突块 33 → 8–10」**判定不可达** —— 块数是**计块**不是计行，缩小块不消块；要到 8–10 必须把我们在约 15 个上游函数里的存在彻底移走，而审批按钮派发、reaction 转发等结构上离不开。注入上游函数内的约 436 行（占我方新增 30%）**未纳入**，属需另行决策的另一半。`_render_merge_forward_entries` 未动（`tools/feishu_client_utils.py:1593` 从 adapter import 它，搬走等于新增合并债）。审查 §5.5 的 `check-reindent.sh` 仍未实现。
+- **教训（可复用）**：「期望值从被测文件自身推导」的断言（`checked == total`、`issues == []` 配「条目可被删除」）**删掉被测对象就自证通过** —— 必须另有一条**按 id/位置钉住**的用例，否则最省事的假修法恰好是最绿的那条。
 
 ### 2026-09-29：新增 §16.10 `discover_and_load` 消除 40 行纯缩进重排 + 取锁失败可观测（T2-13）
 
