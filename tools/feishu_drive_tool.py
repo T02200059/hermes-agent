@@ -1,52 +1,26 @@
-# [owner] 本文件另有 2 处「仅删除上游代码」的改动（无新增行可挂标记）：新文件第 11 行附近、新文件第 43 行附近；条目见 owner/docs/owner改动清单.md
-# [owner] fallback client + 共享 _do_request（改动在下方的多行字符串内）
 """Feishu Drive Tools -- document comment operations via Feishu/Lark API.
 
-Provides tools for listing, replying to, and adding document comments.
-Uses the same lazy-import + BaseRequest pattern as feishu_comment.py.
-
-The lark client is injected per-thread by the comment event handler when one
-is active; otherwise we build a tenant client from ``FEISHU_APP_ID`` /
-``FEISHU_APP_SECRET`` so the tools also work in plain DM/group-chat contexts.
-Shared helpers (``do_request``) live in :mod:`tools.feishu_client_utils`.
+List / reply-to / add document comments through the generic BaseRequest path (lazy SDK
+import), sharing client/request plumbing with feishu_doc_tool via ``tools.feishu_lark``.
+The lark client is injected per-thread by the feishu_comment event handler.
 """
 
 import logging
-import threading
 
-# [owner] fallback client + 共享 _do_request
-from tools.feishu_client_utils import do_request, resolve_client
+from tools.feishu_lark import (  # noqa: F401  (set_client/get_client are imported by feishu_comment)
+    _check_feishu,
+    build_request,
+    get_client,
+    lark_call,
+    set_client)
 from tools.registry import registry, tool_error, tool_result
 
 logger = logging.getLogger(__name__)
 
-# Thread-local storage for the lark client injected by feishu_comment handler.
-_local = threading.local()
-
-
-def set_client(client):
-    """Store a lark client for the current thread (called by feishu_comment)."""
-    _local.client = client
-
-
-def get_client():
-    """Return the lark client for the current thread, or None."""
-    return getattr(_local, "client", None)
-
-
-def _check_feishu():
-    # See ``tools/feishu_doc_tool.py::_check_feishu`` — ``find_spec`` keeps
-    # CLI startup fast (the SDK itself takes ~5s to import eagerly).
-    import importlib.util
-    try:
-        return importlib.util.find_spec("lark_oapi") is not None
-    except (ImportError, ValueError):
-        return False
-
-
-# ---------------------------------------------------------------------------
-# feishu_drive_list_comments
-# ---------------------------------------------------------------------------
+# [owner] 上游没有的能力：env-fallback client（DM / 群聊没有注入 client 时，
+# 由 ``FEISHU_APP_ID`` / ``FEISHU_APP_SECRET`` 建 tenant client），4 个 handler 一律
+# 经 ``resolve_client`` 取 client；请求管线走共享 ``do_request``。
+from tools.feishu_client_utils import do_request, resolve_client
 
 _LIST_COMMENTS_URI = "/open-apis/drive/v1/files/:file_token/comments"
 
@@ -89,10 +63,10 @@ FEISHU_DRIVE_LIST_COMMENTS_SCHEMA = {
 
 
 def _handle_list_comments(args: dict, **kwargs) -> str:
-# [owner] fallback client + 共享 _do_request
+    # [owner] 上游在 feishu_comment 上下文外直接拒绝运行；此处回落到 env 里的 tenant
+    # client，并把请求管线交给共享 ``do_request``（§16.15）。
     client = resolve_client(get_client())
     if client is None:
-# [owner] fallback client + 共享 _do_request
         return tool_error(
             "Feishu client not available (set FEISHU_APP_ID and "
             "FEISHU_APP_SECRET, or run from a Feishu comment context)"
@@ -117,7 +91,7 @@ def _handle_list_comments(args: dict, **kwargs) -> str:
     if page_token:
         queries.append(("page_token", page_token))
 
-# [owner] fallback client + 共享 _do_request
+    # [owner] 见上：请求管线走共享 ``do_request``。
     code, msg, data = do_request(
         client, "GET", _LIST_COMMENTS_URI,
         paths={"file_token": file_token},
@@ -128,10 +102,6 @@ def _handle_list_comments(args: dict, **kwargs) -> str:
 
     return tool_result(data)
 
-
-# ---------------------------------------------------------------------------
-# feishu_drive_list_comment_replies
-# ---------------------------------------------------------------------------
 
 _LIST_REPLIES_URI = "/open-apis/drive/v1/files/:file_token/comments/:comment_id/replies"
 
@@ -170,10 +140,10 @@ FEISHU_DRIVE_LIST_REPLIES_SCHEMA = {
 
 
 def _handle_list_replies(args: dict, **kwargs) -> str:
-# [owner] fallback client + 共享 _do_request
+    # [owner] 上游在 feishu_comment 上下文外直接拒绝运行；此处回落到 env 里的 tenant
+    # client，并把请求管线交给共享 ``do_request``（§16.15）。
     client = resolve_client(get_client())
     if client is None:
-# [owner] fallback client + 共享 _do_request
         return tool_error(
             "Feishu client not available (set FEISHU_APP_ID and "
             "FEISHU_APP_SECRET, or run from a Feishu comment context)"
@@ -196,7 +166,7 @@ def _handle_list_replies(args: dict, **kwargs) -> str:
     if page_token:
         queries.append(("page_token", page_token))
 
-# [owner] fallback client + 共享 _do_request
+    # [owner] 见上：请求管线走共享 ``do_request``。
     code, msg, data = do_request(
         client, "GET", _LIST_REPLIES_URI,
         paths={"file_token": file_token, "comment_id": comment_id},
@@ -207,10 +177,6 @@ def _handle_list_replies(args: dict, **kwargs) -> str:
 
     return tool_result(data)
 
-
-# ---------------------------------------------------------------------------
-# feishu_drive_reply_comment
-# ---------------------------------------------------------------------------
 
 _REPLY_COMMENT_URI = "/open-apis/drive/v1/files/:file_token/comments/:comment_id/replies"
 
@@ -248,10 +214,10 @@ FEISHU_DRIVE_REPLY_SCHEMA = {
 
 
 def _handle_reply_comment(args: dict, **kwargs) -> str:
-# [owner] fallback client + 共享 _do_request
+    # [owner] 上游在 feishu_comment 上下文外直接拒绝运行；此处回落到 env 里的 tenant
+    # client，并把请求管线交给共享 ``do_request``（§16.15）。
     client = resolve_client(get_client())
     if client is None:
-# [owner] fallback client + 共享 _do_request
         return tool_error(
             "Feishu client not available (set FEISHU_APP_ID and "
             "FEISHU_APP_SECRET, or run from a Feishu comment context)"
@@ -276,7 +242,7 @@ def _handle_reply_comment(args: dict, **kwargs) -> str:
         }
     }
 
-# [owner] fallback client + 共享 _do_request
+    # [owner] 见上：请求管线走共享 ``do_request``。
     code, msg, data = do_request(
         client, "POST", _REPLY_COMMENT_URI,
         paths={"file_token": file_token, "comment_id": comment_id},
@@ -288,10 +254,6 @@ def _handle_reply_comment(args: dict, **kwargs) -> str:
 
     return tool_result(success=True, data=data)
 
-
-# ---------------------------------------------------------------------------
-# feishu_drive_add_comment
-# ---------------------------------------------------------------------------
 
 _ADD_COMMENT_URI = "/open-apis/drive/v1/files/:file_token/new_comments"
 
@@ -325,10 +287,10 @@ FEISHU_DRIVE_ADD_COMMENT_SCHEMA = {
 
 
 def _handle_add_comment(args: dict, **kwargs) -> str:
-# [owner] fallback client + 共享 _do_request
+    # [owner] 上游在 feishu_comment 上下文外直接拒绝运行；此处回落到 env 里的 tenant
+    # client，并把请求管线交给共享 ``do_request``（§16.15）。
     client = resolve_client(get_client())
     if client is None:
-# [owner] fallback client + 共享 _do_request
         return tool_error(
             "Feishu client not available (set FEISHU_APP_ID and "
             "FEISHU_APP_SECRET, or run from a Feishu comment context)"
@@ -348,7 +310,7 @@ def _handle_add_comment(args: dict, **kwargs) -> str:
         ],
     }
 
-# [owner] fallback client + 共享 _do_request
+    # [owner] 见上：请求管线走共享 ``do_request``。
     code, msg, data = do_request(
         client, "POST", _ADD_COMMENT_URI,
         paths={"file_token": file_token},

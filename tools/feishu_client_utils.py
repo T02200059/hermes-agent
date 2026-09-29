@@ -116,62 +116,56 @@ def resolve_client(local_client):
 
 
 # ---------------------------------------------------------------------------
-# Low-level request helper (mirrors feishu_drive_tool._do_request)
+# Low-level request helper
 # ---------------------------------------------------------------------------
+
+# see: 官方 feishu_doc_tool / feishu_drive_tool 走 tools.feishu_lark 的 build_request +
+# lark_call；这里复用同一套管线，只保留本模块需要的两处更严的语义。
+_SUPPORTED_METHODS = ("GET", "POST")
+
+
+def _typed_data(response):
+    """``response.data`` as a dict (``{}`` when absent) -- where non-text bodies land."""
+    resp_data = getattr(response, "data", None)
+    if isinstance(resp_data, dict):
+        return resp_data
+    return vars(resp_data) if resp_data and hasattr(resp_data, "__dict__") else {}
+
 
 def do_request(client, method, uri, paths=None, queries=None, body=None):
     """Build and execute a BaseRequest. Returns ``(code, msg, data_dict)``.
 
+    The BaseRequest pipeline is :mod:`tools.feishu_lark` -- the same one the
+    official ``feishu_doc_tool`` / ``feishu_drive_tool`` modules use -- so the
+    tree holds exactly one implementation of it. Two behaviours here stay
+    deliberately stricter than ``lark_call``:
+
+    * a method outside ``GET`` / ``POST`` raises ``ValueError`` instead of being
+      silently sent as a POST;
+    * a body that is neither valid JSON nor decodable text (the media-download
+      endpoints answer with raw image bytes, so ``raw.content`` is not UTF-8)
+      falls back to the typed ``response.data`` -- ``lark_call``'s ``raw_body``
+      only guards malformed JSON and would propagate ``UnicodeDecodeError``.
+
     ``data_dict`` is the parsed ``data`` object from the response body (or
     ``{}`` if there was none).
     """
-    from lark_oapi import AccessTokenType
-    from lark_oapi.core.enum import HttpMethod
-    from lark_oapi.core.model.base_request import BaseRequest
+    from tools.feishu_lark import build_request, response_data
 
-    _METHOD_MAP = {"GET": HttpMethod.GET, "POST": HttpMethod.POST}
-    http_method = _METHOD_MAP.get(method)
-    if http_method is None:
+    if method not in _SUPPORTED_METHODS:
         raise ValueError(f"Unsupported HTTP method: {method}")
-
-    builder = (
-        BaseRequest.builder()
-        .http_method(http_method)
-        .uri(uri)
-        .token_types({AccessTokenType.TENANT})
-    )
-    if paths:
-        builder = builder.paths(paths)
-    if queries:
-        builder = builder.queries(queries)
-    if body is not None:
-        builder = builder.body(body)
-
-    request = builder.build()
 
     # Tool handlers run synchronously in a worker thread (no running event
     # loop), so call the blocking lark client directly.
-    response = client.request(request)
+    response = client.request(build_request(method, uri, paths, queries, body))
 
-    code = getattr(response, "code", None)
-    msg = getattr(response, "msg", "")
+    try:
+        data = response_data(response)
+    except (UnicodeDecodeError, ValueError, AttributeError):
+        logger.debug("feishu_client_utils: response body is not text; using response.data")
+        data = _typed_data(response)
 
-    data = {}
-    raw = getattr(response, "raw", None)
-    if raw and hasattr(raw, "content"):
-        try:
-            body_json = json.loads(raw.content)
-            data = body_json.get("data", {}) or {}
-        except (json.JSONDecodeError, AttributeError, ValueError):
-            logger.debug("feishu_client_utils: failed to parse raw.content, falling back to response.data")
-    if not data:
-        resp_data = getattr(response, "data", None)
-        if isinstance(resp_data, dict):
-            data = resp_data
-        elif resp_data and hasattr(resp_data, "__dict__"):
-            data = vars(resp_data)
-
-    return code, msg, data
+    return getattr(response, "code", None), getattr(response, "msg", ""), data
 
 
 # ---------------------------------------------------------------------------

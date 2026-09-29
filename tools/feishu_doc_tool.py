@@ -2,51 +2,17 @@
 
 Provides ``feishu_doc_read`` for reading document content as plain text.
 Uses the same lazy-import + BaseRequest pattern as feishu_comment.py.
-
-When a comment-event handler injects a lark client via ``set_client`` we use
-it; otherwise we build a tenant client from ``FEISHU_APP_ID`` /
-``FEISHU_APP_SECRET`` so the tool also works in plain DM/group-chat contexts.
-Shared helpers live in :mod:`tools.feishu_client_utils`.
-
-For docx, embedded images are downloaded to
-``$HERMES_HOME/cache/feishu_doc_images/``, OCR'd via auxiliary vision, and
-embedded into the returned text as ``[Image N: /local/path]`` plus the
-transcribed content so the agent can read screenshot-heavy docs in one call.
 """
 
-import logging
-import threading
-
-from tools.feishu_client_utils import (
-    extract_token,
-    list_wiki_children,
-    read_bitable_as_text,
-    read_docx_with_images,
-    read_sheet_as_text,
-    resolve_client,
-    resolve_wiki_node,
-)
+from tools.feishu_lark import (  # noqa: F401  (set_client/get_client are imported by feishu_comment)
+    _check_feishu,
+    build_request,
+    get_client,
+    raw_body,
+    set_client)
 from tools.registry import registry, tool_error, tool_result
 
-logger = logging.getLogger(__name__)
-
-# Thread-local storage for the lark client injected by feishu_comment handler.
-_local = threading.local()
-
-
-def set_client(client):
-    """Store a lark client for the current thread (called by feishu_comment)."""
-    _local.client = client
-
-
-def get_client():
-    """Return the lark client for the current thread, or None."""
-    return getattr(_local, "client", None)
-
-
-# ---------------------------------------------------------------------------
-# feishu_doc_read
-# ---------------------------------------------------------------------------
+_RAW_CONTENT_URI = "/open-apis/docx/v1/documents/:document_id/raw_content"
 
 FEISHU_DOC_READ_SCHEMA = {
     "name": "feishu_doc_read",
@@ -128,22 +94,21 @@ FEISHU_DOC_READ_SCHEMA = {
 }
 
 
-def _check_feishu():
-    # Use ``importlib.util.find_spec`` — it checks whether ``lark_oapi``
-    # is importable without actually executing its ``__init__``.
-    # Executing the real import here costs ~5 seconds (the SDK eagerly
-    # loads websockets, dispatcher, every api/v2 model) and this probe
-    # fires at every ``hermes`` startup during tool-availability
-    # evaluation.  Correctness is preserved because the actual tool
-    # handler still does the real import when invoked.
-    import importlib.util
-    try:
-        return importlib.util.find_spec("lark_oapi") is not None
-    except (ImportError, ValueError):
-        return False
-
-
 def _handle_feishu_doc_read(args: dict, **kwargs) -> str:
+    # [owner] 上游没有的能力（wiki / bitable / sheet 读取、docx 图片物化 + vision OCR、
+    # ``om_`` 合并转发分页、DM/群聊的 env-fallback client）全在共享模块里；上游把这些
+    # 行放在文件头，为避免与其 ``tools.feishu_lark`` 抽取同区相撞，此处按需导入。
+    import logging
+
+    from tools.feishu_client_utils import (
+        extract_token,
+        list_wiki_children,
+        read_bitable_as_text,
+        read_docx_with_images,
+        read_sheet_as_text,
+        resolve_client,
+        resolve_wiki_node,
+    )
     raw_token = args.get("doc_token", "").strip()
     if not raw_token:
         return tool_error("doc_token is required")
@@ -260,7 +225,7 @@ def _handle_feishu_doc_read(args: dict, **kwargs) -> str:
     except ImportError:
         return tool_error("lark_oapi not installed")
     except Exception as e:
-        logger.exception("feishu_doc_read: unexpected error")
+        logging.getLogger(__name__).exception("feishu_doc_read: unexpected error")
         return tool_error(f"Failed to read document: {e}")
 
 
