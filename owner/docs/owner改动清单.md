@@ -936,6 +936,7 @@ _元数据统计口径：范围取「基点后未出现在上游 `00b2e03c80` �
 - **涉及文件**：`hermes_cli/plugins.py`（+116/-40）、`cli.py`（+12）、`tests/hermes_cli/test_plugin_discovery_join_timeout.py`（新增）
 - **侵入类型**：inline（plugin 发现锁语义 + CLI 启动顺序）
 - **验证**：新增测试覆盖「超时跳过」与「后台已结束则正常加载」两条分支
+- **结构后续调整**（见 **§16.10**）：当时为套 `try/finally` 把上游 `with` 块内 40 行整体缩进 +4；现已改为「薄壳 + `_discover_and_load_scoped()`」，`with` 行与正文保持上游缩进，本条的早返回条件与取锁语义不变。官方文件级 diff 因此由 `+116/-40` 变为 `+123/-2`（纯缩进 39 行 → 0），并新增 `force=True` 上抛 `PluginDiscoveryLockBusy` 与 `_discovery_deferred` 可观测标志。
 - **Commit**：`211614adf2`
 
 ### 7.21 出站 message_id 落库 + 全路径日志
@@ -1805,6 +1806,36 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 
 ---
 
+### 16.10 `discover_and_load` 消除 40 行纯缩进重排 + 取锁失败可观测（T2-13）
+
+- **背景**（T2-13 / 合并冲突审查 §4.4）：owner 侧为消除「hermes 开局白屏挂死」（§7.20）给 `PluginManager.discover_and_load()` 加了带超时的取锁。当时把上游的 `with self._discovery_lock, _plugin_home_scope(self.home_path):` 拆成 `acquire(timeout=15.0)` + `try/finally`，为套 `try` 把 `with` 块内 **40 行函数体整体缩进 +4**。纯重排是冲突放大器：git 把整段判为改写，上游动这一段的任何位置，人工都要面对一整块「被谁改写了」。
+- **实测口径（审查的「约 40 行」成立，且更精确）**：`git diff 00b2e03c80 -- hermes_cli/plugins.py` 为 **+111/−40**；加 `-w` 为 **+72/−1** ⇒ 40 个删除里 **39 行是纯缩进**，真删除只有 1 处（那一行 `with`）。函数体实测 **40 行**，其中 `if force:` 有两处（外层 16 空格 / 内层 `try` 内 16 空格），git 的 Myers 算法把这两行**交叉匹配**成上下文，所以 41 行候选里只报了 39 行纯缩进 + 1 行真删除 —— 这也是同一段代码在 plain diff 里 6 hunk、在 `-w` 里 7 hunk 的原因。
+- **口径先校正（审查给的三处前提都不成立）**：
+  1. **审查建议的修法按字面不可实现**。原文是「保留上游 `with` 原样不动 + 函数最前面加一个 `if not _discovery_lock_or_bail(self): return`」。但 `self._discovery_lock = threading.RLock()`（:3749）——**是 RLock**。helper 取锁后**不释放** ⇒ 内层 `with` 同线程重入成功，却**没有任何代码释放外层那一层** ⇒ 锁被永久多持一层，此后本进程所有 discovery 全死锁；取完**就释放** ⇒ 内层 `with` 退回原来的无限阻塞，**护栏被静默删除**。要让它正确，调用方必须补 `finally: release()`，而 `try` 一旦包住函数体，那 40 行**必然回到 +4 缩进** —— 绕回原点。
+  2. **审查指定的落点不存在**：`owner/plugins/discovery_guard.py` 所指的 `owner/plugins/` 目录本仓**不存在**。
+  3. **审查 §5.5 提议的 CI 门禁脚本不存在**：`owner/scripts/check-reindent.sh` 本仓**不存在**（`owner/scripts/` 下 38 个脚本里最接近的 `check-merge-residue.sh` 做的是另一件事）。§5.5 想用它把「纯缩进重排」变成 CI 阻断项，目前没有任何实现。
+  另有一条方向性判断：把函数体搬到 `owner/` 在冲突维度上是**反向**的 —— 留在原文件，上游将来改那 40 行是**干净合并**；搬出去之后，同样的上游改动会撞在「我们删掉的行」上，变成冲突。
+- **方案（2026-09-29 用户决策：同文件抽 `_scoped` 方法）**：把函数体抽成 `_discover_and_load_scoped(force)`，**`with self._discovery_lock, _plugin_home_scope(self.home_path):` 逐字保留、缩进不变**，40 行正文回到上游缩进。这不是新花样：本文件上游自己就是「持锁薄壳 + `_xxx_scoped` 正文」——`unload()` → `_unload_scoped()`（:4043）、`_load_plugin()` → `_load_plugin_scoped()`（:5232）；`discover_and_load` 是全文件**唯一**持锁却不抽方法的异类。
+- **保留内层 `with self._discovery_lock,` 不引入新依赖**：RLock 重入在本文件**已是上游自己的依赖** —— `discover_and_load` 体内调 `self.unload()`（:4251），扫描过程中调 `_load_plugin`（:4456 / :4503 / :5026），三者都 `with self._discovery_lock`。重入是被上游既有代码要求的，不是本条引入的。
+- **顺带修掉两处护栏缺陷**（2026-09-29 用户决策：一并修）：
+  1. **`force=True` 被静默丢弃**：护栏原来不分 force，`discover_and_load(force=True)` 拿不到锁时同样 15s 后静默 `return`，显式重扫请求消失。现在改为上抛新增的 `PluginDiscoveryLockBusy(RuntimeError)`。这是安全的：全部 5 处 `_ensure_plugins_discovered(force=True)` 调用点（`tools/image_generation_tool.py`、`tools/transcription_tools.py`、`tools/tts_tool.py`、`tools/video_generation_tool.py`、`tools/voice_mode.py`）**本来就**把发现包在 `try/except Exception` 里、按非致命处理并回落到各自的 missing-provider 报错；`hermes_cli/main.py:12019` 那处更会把原因直接打印给操作者。默认（非 force）路径刻意**不**改成上抛 —— `_ensure_plugins_discovered()` 背后有几十个 getter，抛出去会波及全部读取点。
+  2. **取锁失败的后果不可观测**：`discover_and_load` 返回 `None`，调用方无从分辨「扫过了」与「没扫成」。新增 `PluginManager._discovery_deferred`（拿不到锁置 True、任何一次成功扫描后复位），`discover_plugins()` 由 `-> None` 改为 `-> bool` 如实回报；`start_background_plugin_discovery()` 文档里那句「so no caller can observe a half-loaded registry」补上这一例外 —— 该承诺在 join 超时窗口内**确实**被打破，写清楚比留着假话好。
+- **一处我自己的判断错误，被本轮守卫测试当场抓出**：最初把 `discover_plugins()` 里 `if (not force and _background_discovery_join_timed_out ...)` 的 `not force` 当成缺陷删掉了。实际它是**承重的** —— 没有它，`force=True` 会被同一个 join-timeout 早返回吞掉，「强制重扫」反而更静默。正确结论：静默丢弃发生在 `discover_and_load` 的护栏里，不在 `discover_plugins()` 的早返回里。`not force` 原样保留，并新增守卫 `test_discover_plugins_never_short_circuits_a_forced_rescan` 钉住它。
+- **涉及文件**：`hermes_cli/plugins.py`（新增 `PluginDiscoveryLockBusy`；`__init__` 增 `_discovery_deferred`；`discover_and_load` 抽成薄壳 + 新增 `_discover_and_load_scoped`；`discover_plugins` 返回 `bool` 并补 docstring；`start_background_plugin_discovery` docstring 补例外；`[owner]` 标记 2 → 6 处）、`tests/owner/test_plugins_discovery_guard.py`（新增 19 例）、`owner/docs/owner改动清单.md`（本条 + §7.20 指针 + 附录 B 行 + 附录 E）
+- **侵入类型**：结构调整（方法抽取，**零缩进重排**）+ 两处行为修正
+- **验证**：
+  - **缩进噪音归零**：`git diff 00b2e03c80 -- hermes_cli/plugins.py` plain **+123/−2**、`-w` **+123/−2** —— **两串数字完全相同 ⇒ 全文件零「仅空白」改动**（改造前是 +111/−40 与 +72/−1，差值就是那 39 行）。`discover_and_load` 区域的删除数 **40 → 0**：`with` 行与 40 行正文全部成为上下文，该 hunk 是纯插入 `+29/−0`。仅剩的 2 处删除都在 `discover_plugins()`，且都是本轮行为修正不可回避的（返回类型注解 + 末尾调用行）。hunk 数 6 → 10，多出的 4 处**全为纯插入**。
+  - **变异验证 17/17 全部咬住**：G1a 正文退回旧形态 / G1b 正文被套进一层 `try`（`with` 落到 12 空格）/ G1c 上游那行被改写成不再自己取锁（MOD 回归）/ G1d 正文重新内联 / G1e 薄壳不调 scoped 方法；G2a 不释放锁 / G2b 超时值改小 / G2c 拿不到锁后忘了 `return` / G2d 不复位 deferred；G3a 不记 deferred / G3b force 不再上抛 / G3c 取锁条件取反；G4a 永远回报 True / G4b 谎报 / G4c 把 force 也短路掉；G5a already-discovered 捷径吞掉 force / G5b SAFE_MODE 不置位。
+  - **变异体的有效性也做了把关**：两个最初设计的「只给一行改缩进」变异实测是 **IndentationError**（不可导入），pytest 报的是 collection error 而不是用例失败 —— 那证明不了断言在起作用。改用「套一层 `try`」「去掉内层的那把锁」两个合法变异体，并在装置里加了 `compile()` 前置校验：不可导入的变异直接判不合格，不记成「没咬住」。
+  - **定向回归**（爆炸半径 27 个路径：所有引用 `discover_plugins` / `discover_and_load` / `_discovery_lock` 的用例 + force 重试路径 + `tests/owner/`）**1381 通过 / 15 跳过 / 0 失败**，两腿失败集合完全相同（NEW: 0 / GONE: 0）
+  - 健康检查 **7 passed / 1 warning（Check 5 的 4 条既有 warning 不变，属 merge `315551234`）**；Check 8 **116/116**。
+- **守卫清单（8 类）**：① 上游 `with` 行在 `_discover_and_load_scoped` 内逐字保留且缩进 8；② 正文抽查三处代表性行的缩进与上游一致；③ 全文件不出现 12 空格的该 `with` 行；④ `discover_and_load` 是薄壳（不含任何正文标记 + 行数上限）；⑤ 取锁/释放成对且重入深度归零（`acquire(15.0)` → `enter` → `exit` → `release`）；⑥ 护栏拦下时确实不扫描、`_discovered` 仍 False、`_discovery_deferred` 置 True；⑦ `force=True` 上抛且一路可观测到 `_ensure_plugins_discovered`；⑧ `discover_plugins()` 的返回值语义 + 三条既有捷径（already-discovered / SAFE_MODE / force）不被吞掉 + 真 RLock 在正常与异常路径后都不泄漏（另一线程可非阻塞拿到）。
+- **技巧（值得复用）**：真实 `RLock` 不暴露重入计数，同线程再取一次**永远成功**，所以「锁泄漏」在本线程里查不出来 —— 必须**换一个线程**用 `acquire(blocking=False)` 才测得准。用**记录型锁替身**（记录 `acquire`/`release`/`__enter__`/`__exit__` 顺序并跟踪 depth）把「取了几层、放了几层」变成可断言的完整日志；替身的 `__enter__` 在未授权时**直接抛错**，让「拿不到锁后忘了 `return`」变成测试失败而不是挂起。
+- **未纳入**：`owner/scripts/check-reindent.sh`（审查 §5.5 提议的 CI 门禁）本轮**未实现** —— 它需要 `git diff <base> -w --stat` 与上游 ref，只在多分支克隆里可用；本条的守卫改成**纯本地**的结构不变量，不依赖 ref。`_delivery_manager()`（:6480）走 `manager.discover_and_load()` 且不看 `_discovery_deferred`，在延迟窗口内 hook 投递仍会静默落空 —— 一并记录，未改（改动会波及 hook 投递语义）。
+- **Commit**：`bae086a304`（代码 + 测试；本条留档见附录 E）
+
+---
+
 ## 附录 A：owner/ 模块职责索引
 
 | 路径 | 职责 | 侵入官方文件 |
@@ -1889,7 +1920,7 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 | `tools/skills_tool.py` | track_session_skill_view 薄调用 | 薄胶水 |
 | `gateway/platforms/qqbot/adapter.py` + `gateway/platforms/qqbot/constants.py` | WS 重连链（heartbeat/timeout/stop_retry/rebuild） | inline |
 | `gateway/delivery_ledger.py` | `delivery_obligations` 加 `platform_message_id` 列 + 部分索引；`CREATE TABLE` 与 ALTER 对账循环双写；`mark_delivered` 非覆盖语义（§7.21） | inline 列扩展 + schema 对账 |
-| `hermes_cli/plugins.py` | 后台插件发现锁超时语义（join 超时直接返回 + `acquire(timeout=15)`），修复启动空白屏（§7.20） | inline |
+| `hermes_cli/plugins.py` | 后台插件发现锁超时语义（join 超时直接返回 + `acquire(timeout=15)`），修复启动空白屏（§7.20）；**薄壳 + `_discover_and_load_scoped()` 消除 40 行缩进重排**、`force=True` 上抛 `PluginDiscoveryLockBusy`、`_discovery_deferred` 可观测（§16.10，6 处标记） | inline |
 | `hermes_cli/profiles.py` | `get_active_profile_name` 读 `HERMES_PROFILE` env 优先 + `_PROFILE_ID_RE` 校验 + 回落路径推断（§7.14） | inline |
 | `plugins/memory/openviking/__init__.py` | `_ascii_peer_slug()` peer_id slug 化 + user/assistant fallback 链（§7.3） | inline |
 | `hermes_cli/write_approval_commands.py` | i18n 中文文案 `t()` 替换（13 处） | inline（字符串） |
@@ -2048,6 +2079,19 @@ _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请先�
 ---
 
 ## 附录 E：变更日志
+
+### 2026-09-29：新增 §16.10 `discover_and_load` 消除 40 行纯缩进重排 + 取锁失败可观测（T2-13）
+
+- **新建正文**：**§16.10**：`bae086a304`（`hermes_cli/plugins.py` 新增 `PluginDiscoveryLockBusy`；`__init__` 增 `_discovery_deferred`；`discover_and_load` 抽成薄壳 + 新增 `_discover_and_load_scoped`；`discover_plugins` 由 `-> None` 改 `-> bool`；`start_background_plugin_discovery` docstring 补例外。`tests/owner/test_plugins_discovery_guard.py` 新增 19 例。本清单 §16.10 正文 + §7.20 指针 + 附录 B 行 + 本条）
+- **类型**：结构可维护性 / 上游改动传导（**零缩进重排**）+ 两处行为修正（`force=True` 不再被静默丢弃、取锁失败可观测）
+- **决策**（2026-09-29 用户两次确认）：① 修法＝**同文件抽 `_scoped` 方法**（而非审查原文的 `owner/plugins/discovery_guard.py` 委托）；② 范围＝**结构重构与两处行为修正一并做**
+- **口径校正（审查给的三处前提全不成立）**：审查建议的 `if not _discovery_lock_or_bail(self): return` 依赖 `_discovery_lock` 不可重入，而它是 **RLock**（`:3749`）⇒ 该 helper 持锁不释放会让外层永久多持一层（后续 discovery 全死锁）、取完就释放则护栏被静默删除；修正它必须补 `finally: release()`，又必然把 40 行退回 +4 缩进。审查指定的落点 `owner/plugins/` 目录**不存在**，§5.5 提议的 CI 门禁 `owner/scripts/check-reindent.sh` 也**不存在**。另：把正文搬到 `owner/` 在冲突维度上是反向的（留在原文件上游可干净合并）。
+- **实测口径**：plain `+111/−40` vs `-w` `+72/−1` ⇒ 40 个删除里 **39 行是纯缩进**（正文 40 行，`if force:` 两处被 git 交叉匹配成上下文）；真删除只有那 1 行 `with`。
+- **结构与语义**：`_discover_and_load_scoped(force)` 内的 `with self._discovery_lock, _plugin_home_scope(self.home_path):` 逐字保留、缩进不变；正文回到上游缩进。与本文件上游自身的 `unload()`→`_unload_scoped()`、`_load_plugin()`→`_load_plugin_scoped()` 同构（`discover_and_load` 原是全文件唯一「持锁却不抽方法」的异类）。RLock 重入**已是上游既有依赖**（体内调 `self.unload()` 与 `_load_plugin()`，两者都 `with self._discovery_lock`），故保留内层锁不引入新依赖。
+- **两处行为修正**：① `force=True` 拿不到锁改为上抛 `PluginDiscoveryLockBusy(RuntimeError)` —— 6 处 force 调用点**本来就**在 `try/except Exception` 里按非致命处理；默认路径刻意不上抛（几十个 getter 会受影响）。② 新增 `_discovery_deferred` + `discover_plugins() -> bool`，并把 `start_background_plugin_discovery()` docstring 里「no caller can observe a half-loaded registry」补上 join 超时这一例外。
+- **被守卫测试抓出的自身判断错误**：把 `discover_plugins()` 的 `not force` 当缺陷删除是错的 —— 它是承重的（删了 `force=True` 会被同一早返回吞掉）。静默丢弃在 `discover_and_load` 的护栏里，不在那处早返回里；已原样保留并加守卫钉住。
+- **验证**：plain == `-w`（`+123/−2`）⇒ 全文件零仅空白改动；`discover_and_load` 区域删除 **40 → 0**（该 hunk 纯插入 `+29/−0`）；**变异 17/17 全部咬住**（并加了 `compile()` 前置校验，把两个不可导入的变异体判为不合格、换成合法变异体）；定向回归（爆炸半径 27 个路径：所有引用 `discover_plugins` / `discover_and_load` / `_discovery_lock` 的用例 + force 重试路径 + `tests/owner/`）**1381 通过 / 15 跳过 / 0 失败**，两腿失败集合完全相同（NEW: 0 / GONE: 0）；健康检查 7 passed / 1 warning（Check 5 的 4 条既有 warning 不变，属 merge `315551234`）、Check 8 116/116
+- **未闭合边界**：§5.5 的 `check-reindent.sh` 未实现（需上游 ref）；`_delivery_manager()` 仍不看 `_discovery_deferred`（延迟窗口内 hook 投递会静默落空，未改）
 
 ### 2026-09-28：新增 §16.9 写入护栏文案英文原文回归代码 + `_localized()` 渲染与漂移守卫（T2-12）
 
