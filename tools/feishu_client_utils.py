@@ -38,8 +38,20 @@ import re
 import threading
 import time
 from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger(__name__)
+
+_private_dep_notices: set = set()
+
+
+def _warn_once(key: str, message: str, *args: Any) -> None:
+    """Log ``message`` once per process per ``key``."""
+    if key in _private_dep_notices:
+        return
+    _private_dep_notices.add(key)
+    logger.warning(message, *args)
+
 
 # Process-wide cache of the fallback client. Guarded by ``_fallback_lock``
 # because tool handlers run in worker threads.
@@ -1590,7 +1602,20 @@ def read_merge_forward_as_text(client, message_id, *, offset=0, limit=None):
 
     # Shared renderer lives in plugins/platforms/feishu/adapter.py to keep a
     # single rendering path; import lazily to avoid import cycles at module load.
-    from plugins.platforms.feishu.adapter import _render_merge_forward_entries
+    try:
+        from plugins.platforms.feishu.adapter import _render_merge_forward_entries
+    except Exception as exc:
+        # 降级走本函数既有的失败形态（``(None, msg)``），调用方已经处理它；
+        # 不能改成抛异常 —— 那样一条被改名的导入会打掉整个 merge_forward 读取。
+        _warn_once(
+            "feishu_client_utils.render_merge_forward",
+            "read_merge_forward_as_text degraded: cannot reach plugins."
+            "platforms.feishu.adapter._render_merge_forward_entries (%s) — "
+            "merged-forward messages can no longer be rendered as text. "
+            "Re-point this import; see owner/docs/owner改动清单.md §16.13.",
+            exc,
+        )
+        return None, f"Merge-forward renderer unavailable ({exc})"
     return _render_merge_forward_entries(
         message_id, children, offset=offset, limit=limit
     ), None

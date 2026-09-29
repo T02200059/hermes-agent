@@ -1,7 +1,10 @@
 """API-server delivery of agent-produced files (``MEDIA:<path>`` tags).
 
 Remote OpenAI-compatible frontends cannot read the gateway's local filesystem.
-Image tags are inlined as markdown data URLs (existing ``_resolve_media_to_data_urls``).
+Image tags are inlined as markdown data URLs through the official
+``_resolve_media_to_data_urls`` resolver, reached defensively by name (if it
+ever moves upstream the tags degrade to ordinary attachments instead of
+breaking delivery — see ``_inline_image_data_urls``).
 Every remaining deliverable file is *ingested* into a Hermes-managed store
 directory and served from ``GET /v1/media/{media_id}`` — never a raw path. The
 same ``validate_media_delivery_path`` gate used by Feishu/Telegram applies at
@@ -492,6 +495,46 @@ class ApiMediaStore:
             return 0
 
 
+# [owner] upstream-private coupling: the data-URL resolver below lives in
+# gateway.platforms.api_server as a private symbol. See §16.13 of
+# owner/docs/owner改动清单.md before re-pointing it.
+_inline_resolver_warned = False
+
+
+def _inline_image_data_urls(text: str) -> str:
+    """Best-effort inline of ``MEDIA:`` image tags via the API-server resolver.
+
+    The resolver is resolved **by name at call time** and the lookup is allowed
+    to fail. That is deliberate: it is a *private* symbol in an official module
+    that upstream has already relocated once (``api_server.py`` 1165 at our
+    base → 873 upstream) and whose body it has since rewritten, so a bare
+    top-level import would turn any future rename into an ImportError on the
+    media-delivery path — where no startup self-check looks.
+
+    Degrading is safe because inlining is cosmetic, not functional: when it is
+    skipped the remaining ``MEDIA:`` tags fall through to
+    ``BasePlatformAdapter.extract_media`` and the images are delivered as
+    downloadable attachments instead of markdown data URLs. The one thing we
+    must not do is degrade *silently*, hence the process-wide warn-once.
+    """
+    global _inline_resolver_warned
+    try:
+        from gateway.platforms.api_server import _resolve_media_to_data_urls
+    except Exception as exc:
+        if not _inline_resolver_warned:
+            _inline_resolver_warned = True
+            logger.warning(
+                "[api_server_media] gateway.platforms.api_server."
+                "_resolve_media_to_data_urls is unavailable (%s) — MEDIA: image "
+                "tags will be delivered as file attachments instead of inline "
+                "data URLs. Re-point this call at the symbol's new home; see "
+                "owner/docs/owner改动清单.md §16.13.",
+                exc,
+            )
+        return text
+    return _resolve_media_to_data_urls(text)
+
+
 def finalize_api_media(
     text: str,
     store: ApiMediaStore,
@@ -514,14 +557,13 @@ def finalize_api_media(
     silently: the user asked for a report and must learn that one of its
     attachments could not be delivered.
     """
-    from gateway.platforms.api_server import _resolve_media_to_data_urls
     from gateway.platforms.base import BasePlatformAdapter
 
     raw = text or ""
     if "MEDIA:" not in raw:
         return raw, [], []
 
-    inlined = _resolve_media_to_data_urls(raw)
+    inlined = _inline_image_data_urls(raw)
     pairs, cleaned = BasePlatformAdapter.extract_media(inlined)
     safe = BasePlatformAdapter.filter_media_delivery_paths(pairs)
     files: List[Dict[str, Any]] = []

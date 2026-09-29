@@ -17,11 +17,45 @@ from agent.context_compressor import (
     COMPRESSED_SUMMARY_METADATA_KEY,
     LEGACY_SUMMARY_PREFIX,
     SUMMARY_PREFIX,
-    _HISTORICAL_SUMMARY_PREFIXES,
-    _SUMMARY_END_MARKER,
 )
 
 logger = logging.getLogger(__name__)
+
+_private_dep_notices: set = set()
+
+
+def _warn_once(key: str, message: str, *args: Any) -> None:
+    """Log ``message`` once per process per ``key``."""
+    if key in _private_dep_notices:
+        return
+    _private_dep_notices.add(key)
+    logger.warning(message, *args)
+
+
+# 官方**私有**的「摘要格式锚点」：它们是解析器唯一的定位依据，而且**不能猜** ——
+# 猜错的锚点会让解析静默跑偏（而不是报错），比不解析更糟。所以拿不到就整个能力
+# 关闭，并留一条点名处置指引的 warn。见 owner/docs/owner改动清单.md §16.13。
+try:
+    from agent.context_compressor import (
+        _HISTORICAL_SUMMARY_PREFIXES,
+        _SUMMARY_END_MARKER,
+    )
+
+    _SUMMARY_ANCHORS_AVAILABLE = True
+except Exception as exc:
+    _HISTORICAL_SUMMARY_PREFIXES = None  # type: ignore[assignment]
+    _SUMMARY_END_MARKER = None  # type: ignore[assignment]
+    _SUMMARY_ANCHORS_AVAILABLE = False
+    _warn_once(
+        "compression_summary.upstream_anchors",
+        "owner.feishu.compression_summary disabled: cannot reach "
+        "agent.context_compressor._SUMMARY_END_MARKER / "
+        "_HISTORICAL_SUMMARY_PREFIXES (%s). Feishu users get no post-compression "
+        "recap until this import is re-pointed — the anchors are format "
+        "constants, so guessing them would misparse rather than fail. See "
+        "owner/docs/owner改动清单.md §16.13.",
+        exc,
+    )
 
 _SECTION_RE = re.compile(r"^##\s+(.+?)\s*$", re.MULTILINE)
 
@@ -101,20 +135,26 @@ def _first_bullets(text: Optional[str], max_items: int = 4, max_chars: int = 400
 def _strip_summary_prefix(summary: str) -> str:
     """Return summary body without handoff prefix and end marker."""
     text = (summary or "").strip()
-    for prefix in (SUMMARY_PREFIX, LEGACY_SUMMARY_PREFIX, *_HISTORICAL_SUMMARY_PREFIXES):
+    extra_prefixes = tuple(_HISTORICAL_SUMMARY_PREFIXES or ())
+    for prefix in (SUMMARY_PREFIX, LEGACY_SUMMARY_PREFIX, *extra_prefixes):
         if text.startswith(prefix):
             text = text[len(prefix):].lstrip()
             break
     # Strip the end marker and everything after it.  When the summary is merged
     # into the tail message, the actual user/assistant turn follows the marker.
-    marker_pos = text.find(_SUMMARY_END_MARKER)
-    if marker_pos != -1:
-        text = text[:marker_pos].rstrip()
+    if _SUMMARY_END_MARKER:
+        marker_pos = text.find(_SUMMARY_END_MARKER)
+        if marker_pos != -1:
+            text = text[:marker_pos].rstrip()
     return text
 
 
 def find_compressed_summary(messages: List[Dict[str, Any]]) -> Optional[str]:
     """Find and clean the first compressed-summary message in a message list."""
+    if not _SUMMARY_ANCHORS_AVAILABLE:
+        # 锚点拿不到 ⇒ 不产出任何摘要。返回未剥离前缀/尾标的原文会让下游
+        # 把「摘要 + 真正的一轮对话」当成摘要整段播出去。
+        return None
     for msg in messages:
         if not isinstance(msg, dict):
             continue

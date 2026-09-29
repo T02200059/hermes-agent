@@ -53,6 +53,20 @@ from typing import Any, Dict, FrozenSet, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
+# 对官方**私有**符号（``agent.i18n._locales_dir``）的依赖必须可降级且**可观测**：
+# 降级本身已有自解析兜底，但静默兜底会让「上游改了名字、我们一直在走次优路径」
+# 这件事永远不显形。
+_private_dep_notices: set = set()
+
+
+def _warn_once(key: str, message: str, *args: Any) -> None:
+    """Log ``message`` once per process per ``key``."""
+    if key in _private_dep_notices:
+        return
+    _private_dep_notices.add(key)
+    logger.warning(message, *args)
+
+
 # ---------------------------------------------------------------------------
 # 层 1：结果状态字段（语言无关）
 # ---------------------------------------------------------------------------
@@ -208,8 +222,15 @@ def _locales_dir() -> Optional[Path]:
         path = Path(_upstream_locales_dir())
         if path.is_dir():
             return path
-    except Exception:
-        pass
+    except Exception as exc:
+        _warn_once(
+            "approval_history_policy.upstream_locales_dir",
+            "owner.approval.approval_history_policy fell back to its own "
+            "locales/ resolution: cannot reach agent.i18n._locales_dir (%s). "
+            "If the catalog diverges from t()'s, re-point this import; see "
+            "owner/docs/owner改动清单.md §16.13.",
+            exc,
+        )
 
     candidate = Path(__file__).resolve().parents[2] / "locales"
     return candidate if candidate.is_dir() else None

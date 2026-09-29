@@ -54,6 +54,20 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
+# 对官方**私有**符号的依赖（``agent.i18n._locales_dir`` / ``._load_catalog``）
+# 必须可降级且**可观测**：降级本身已有自解析兜底，但静默的兜底会让
+# 「上游改了名字、我们一直在用次优路径」这件事永远不显形。
+_private_dep_notices: set = set()
+
+
+def _warn_once(key: str, message: str, *args: Any) -> None:
+    """Log ``message`` once per process per ``key``."""
+    if key in _private_dep_notices:
+        return
+    _private_dep_notices.add(key)
+    logger.warning(message, *args)
+
+
 # 语言为英文时无需翻译（上游 DEFAULT_LANGUAGE）；显式短路避免加载 catalog
 _BASELINE_LANGUAGE = "en"
 
@@ -110,8 +124,15 @@ def _locales_dir() -> Optional[Path]:
         path = Path(_upstream_locales_dir())
         if path.is_dir():
             return path
-    except Exception:
-        pass
+    except Exception as exc:
+        _warn_once(
+            "display_filter.upstream_locales_dir",
+            "owner.i18n.display_filter fell back to its own locales/ resolution: "
+            "cannot reach agent.i18n._locales_dir (%s). If the catalog diverges "
+            "from t()'s, re-point this import; see owner/docs/owner改动清单.md "
+            "§16.13.",
+            exc,
+        )
 
     candidate = Path(__file__).resolve().parents[2] / "locales"
     return candidate if candidate.is_dir() else None
@@ -137,8 +158,15 @@ def _load_catalog(lang: str) -> Dict[str, str]:
         catalog = _upstream_load(lang)
         if isinstance(catalog, dict):
             return {str(k): str(v) for k, v in catalog.items()}
-    except Exception:
-        pass
+    except Exception as exc:
+        _warn_once(
+            "display_filter.upstream_load_catalog",
+            "owner.i18n.display_filter fell back to parsing locales/%s.yaml "
+            "directly: cannot reach agent.i18n._load_catalog (%s). Re-point this "
+            "import; see owner/docs/owner改动清单.md §16.13.",
+            lang,
+            exc,
+        )
 
     directory = _locales_dir()
     if directory is None:

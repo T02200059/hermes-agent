@@ -8,10 +8,24 @@
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
+
+_private_dep_notices: set = set()
+
+
+def _warn_once(key: str, message: str, *args: Any) -> None:
+    """Log ``message`` once per process per ``key``."""
+    if key in _private_dep_notices:
+        return
+    _private_dep_notices.add(key)
+    logger.warning(message, *args)
+
 
 _TTL_SECONDS = 30 * 60  # 30 min
 
@@ -123,7 +137,18 @@ def should_skip_for_yolo(cfg: Dict[str, Any]) -> bool:
         )
 
         return bool(_YOLO_MODE_FROZEN or is_current_session_yolo_enabled())
-    except Exception:
+    except Exception as exc:
+        # 降级方向是安全的（不跳过审计 = 更严格），但不能静默 —— 否则
+        # `respect_yolo` 这个开关会在上游改名后一直变成一个空开关。
+        _warn_once(
+            "semantic_audit_policy.yolo_probe",
+            "owner.semantic_audit.policy: cannot reach tools.approval."
+            "_YOLO_MODE_FROZEN / is_current_session_yolo_enabled (%s) — "
+            "respect_yolo now always evaluates false, i.e. the audit no longer "
+            "yields to /yolo. Re-point this import; see "
+            "owner/docs/owner改动清单.md §16.13.",
+            exc,
+        )
         return False
 
 

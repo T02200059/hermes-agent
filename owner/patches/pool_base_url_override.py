@@ -8,7 +8,20 @@ to the provider's hardcoded default URL.
 Fixes: delegate_task 401 on token-plan xiaomi endpoints.
 See: owner/docs/v16改动清单.md §pool-base-url-override
 """
-from typing import Optional
+import logging
+from typing import Any, Optional
+
+logger = logging.getLogger("pool_base_url_override")
+
+_private_dep_notices: set = set()
+
+
+def _warn_once(key: str, message: str, *args: Any) -> None:
+    """Log ``message`` once per process per ``key``."""
+    if key in _private_dep_notices:
+        return
+    _private_dep_notices.add(key)
+    logger.warning(message, *args)
 
 
 def config_base_url_override(provider: str, current_url: str) -> Optional[str]:
@@ -23,11 +36,23 @@ def config_base_url_override(provider: str, current_url: str) -> Optional[str]:
     Returns None when no override is needed (caller keeps current_url unchanged).
 
     Priority: env var > config model.base_url > hardcoded default
+
+    ``_get_model_config`` is an **official private** symbol (``PROVIDER_REGISTRY``
+    is public). A rename or relocation upstream must degrade to "no override"
+    rather than raise on every pooled request — but never silently.
     """
     try:
         from hermes_cli.auth import PROVIDER_REGISTRY
         from hermes_cli.runtime_provider import _get_model_config
-    except ImportError:
+    except Exception as exc:
+        _warn_once(
+            "pool_base_url_override.imports",
+            "pool base_url override disabled: cannot reach "
+            "hermes_cli.runtime_provider._get_model_config (%s) — requests keep "
+            "the provider's hardcoded default URL. Re-point this import at the "
+            "symbol's new home; see owner/docs/owner改动清单.md §16.13.",
+            exc,
+        )
         return None
 
     pconfig = PROVIDER_REGISTRY.get(provider)
