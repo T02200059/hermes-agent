@@ -42,6 +42,7 @@ _元数据统计口径：范围取「基点后未出现在上游 `00b2e03c80` �
 | 看 LLM 输出复读/乱码折叠 | §14 |
 | 看 API Server identity 路由、LDAP 认证、准入查询 | §15 |
 | 看 API Server 产物媒体下载、流式事件契约 | §16 |
+| 看本轮月度审查（2026-09-28）的逐项修复留档 | §16.7-§16.12（依次为 T2-10~T2-15） |
 | 看 Gateway merge 后最容易丢的胶水 | §7、附录 B、附录 C |
 | 看脚本、cron、备份、Upstream Sync、Viking 记忆治理 | §11 |
 | 看 owner/ 模块到官方侵入点的映射 | 附录 A、附录 B |
@@ -1890,6 +1891,67 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 
 ---
 
+### 16.12 `locales/{zh,en}.yaml`：删掉被 YAML 静默丢弃的重复键 `approval.hardline_blocked`（T2-15）
+
+- **背景**（T2-15 / 合并冲突审查）：审查说 `locales/{zh,en}.yaml` 的 owner 新增键「分散成两簇，插在上游活跃区间内」（引 `zh.yaml:36-69` 与 `:560-606`；上游 **28** 次/3 月），修法是「新增键统一追加到 `approval:` 块末尾 + 界标注释（**~120 行移动**）」。
+- **口径先校正（审查给的位置、量、修法、活跃度四条，逐条不成立）**：
+  1. **`approval` 本来就是一个连续的尾部块，修法即现状**。同一把尺（`yaml.compose()` node 树；行号一律取**我方文件**行号，上游树只用来判**成员资格**，不提供位置 —— 混用两套行号会静默把答案反转）：`approval` 段与上游共有的键 17 个占我方 **4–20 行**，owner-only 键 **516** 个，**落在共有键区间内 0 个**、**首个 owner 键之后再无共有键 0 个**。en 同形（共有 17 个占 13–30 行，结论相同）。审查给的两个区间对不上任何一簇 owner 键：`36-69` 在 `approval` 段内部，`560-606` 在 `gateway` 段里。
+  2. **真正交错的是 `gateway`，不是 `approval`**：`gateway` 共有键 395 个占我方 **609–1519 行**，owner-only 条目 **398** 个，其中 **388 个**落在共有键区间内（另 10 个在末个共有键之后）。这是全文件**唯一**一处真交错；其余 8 个顶层块（`browser` 36 / `cron` 11 / `display` 329 / `memory` 27 / `memory_proposal` 43 / `terminal_tool` 7 / `toolguard` 3 / `tools` 57 个 owner-only 键）**一个共有键都没有**，结构上不可能交错。
+  3. **「~120 行」量错了对象**：实测 owner-only 键路径 **1427 个**（zh / en 相同，且这 1427 个在基点 `00b2e03c80` 也全都不存在），共有键路径 412 个。1427 是**键路径数**、120 是**行数**，两者不可直接比较；即便折成行，`gateway` 那 398 个条目落在 609–1519 区间内，量级也完全不同。
+  4. **上游活跃度**：审查说 28 次/3 月，实测 **33 次/3 月**（`git log --since='3 months ago' upstream/main -- locales/`）。上游维护的是**同一套 17 本 catalog**（`git ls-tree upstream/main locales/` 与本地逐名一致），其中 2026-09-14 一次「plain-language, actionable user-facing messages (core)」直接覆盖本次涉及的文案。
+- **「把新增键收拢到块尾」买不到任何收益（实测）**：把 `gateway` 下全部 **398** 个 owner-only 条目整块搬到 `gateway` 映射末尾（共有键原位不动、搬动后 `yaml.safe_load` 语义等价的断言通过），用同一把尺量冲突块：
+
+  | 文件 | 收拢前 → 后 |
+  |---|---|
+  | `locales/zh.yaml` | **1 → 1** |
+  | `locales/en.yaml` | **0 → 0** |
+
+  仪器：`git merge-file -p ours base theirs` —— 它是 `merge-tree` 的逐文件形态但**无 ref 依赖**，因此可以量一个只存在于内存里的候选；先用未改动字节自校验，读数与 `git merge-tree --write-tree upstream/main HEAD` 一致（zh 1 / en 0）。**结论**：`zh.yaml` 那唯一一个冲突块由**共有键的取值分叉**造成（`gateway.status` 我方 6 行本地化中文 vs 上游 7 行英文、且上游多一个 `free_tier`），只要不放弃本地化取值它就消不掉，而**重排 owner-only 键碰不到它**。故本项按「不纳入」处置（见下）。
+- **复核过程中发现的真缺陷**：`approval.hardline_blocked` 在两本维护语种里**各被定义了两次**。
+
+  | 文件 | 修复前 | 修复后 |
+  |---|---|---|
+  | `locales/zh.yaml` | 34 / 55（两处值逐字相同） | 仅 55（块结果段） |
+  | `locales/en.yaml` | 44 / 65（两处值逐字相同） | 仅 67（块结果段） |
+
+  - YAML 对同层重复键**不报错**：后定义者胜出、先定义的静默丢弃。于是**编辑第一处是静默无操作**，而运行期 `t("approval.hardline_blocked")` 读到的文案一直是对的 —— 这正是它能存活两个月没被发现的原因。
+  - **来源**（`git log -S` 逆序 + 逐次取值定位所在小节）：`e93f3148e7`（2026-07-01，owner 17.10/17.14/17.22 i18n 补全）先把它加在**块消息**段；`92e0787ea6`（2026-08-27，「i18n: 本地化 approval/gateway/tools 硬编码用户可见字符串」）**新建块结果段**时又加了一次（同一提交里那段标题 `# 拦截结果消息 — …` 本身也是新增行）。即第二次批量 i18n 重新本地化了同一条文案，没有回看它在上一个小节已经存在。两次提交各只新增 1 次出现（`git show <c> -- locales/zh.yaml | grep -c '^+  hardline_blocked:'` 均为 1）。
+  - **保留哪一处**：消费者是 `tools/approval.py:936 _hardline_block_result()`（返回**工具结果** dict，`:951` 调 `t("approval.hardline_blocked", description=display_description)`），所以它属于「拦截结果消息 / Block-result messages」段，与同段的 `hardline_recovery_saved` / `hardline_recovery_manual` 同组。删除的是块消息段那一处，原位留说明注释（zh 2 行 / en 3 行）。
+  - 全库扫描：**17 本 catalog 修复后全部无重复键**。
+  - **不给这处说明注释补 `[owner]` 标记**：本文件已有的标记（各 2 处）标注的是 `approval_explainer` **键组**（真实特性插入），本处是「删除重复 + 说明注释」而非键组；同文件另 1427 个 owner-only 键按「目录（数据）」惯例一律不标记，单独给一条注释加标记反而破坏一致性。
+- **既有守卫的盲点（这才是本缺陷能存活的另一半原因）**：`tests/agent/test_i18n.py::test_catalog_keys_match_english` 走 `yaml.safe_load` + `_flatten` —— `safe_load` 对重复键不报错并用后定义者覆盖，`_flatten` 再把它折进一个 `dict`，**重复在建字典之前就已经被合并掉了**。两本 catalog 被**同等地**抹平，`en_keys - lang_keys` 与反向差集都看不出异常。所以「同一本册子里有没有重复」与「两本册子键集是否一致」是**两条独立**的不变量，前者永远无法由后者发现。
+- **方案**：删掉块消息段那一处重复定义，原位留说明注释；新增 `tests/owner/test_locale_catalog_integrity.py` 补齐这条独立不变量。
+- **涉及文件**：`locales/zh.yaml`（−1/+2）、`locales/en.yaml`（−1/+3）、`tests/owner/test_locale_catalog_integrity.py`（新建 158 行 / 20 例）
+- **侵入类型**：缺陷修复（删除被静默丢弃的重复定义）+ 数据文件注释；**零行为变更**（改动前后 `yaml.safe_load` 取到的 `approval.hardline_blocked` 逐字相同）
+- **守卫清单（`tests/owner/test_locale_catalog_integrity.py`，20 例 = 17 本 catalog 参数化 ×1 + 维护语种钉住 ×2 + 仪器钉住 ×1）**：
+  1. `test_no_locale_defines_the_same_key_twice[<17 本>]`：走 `yaml.compose()` 的 node 树 —— 只有 node 还留着被丢弃的那一次出现，`KeyNode.start_mark.line` 给出它的行号；断言 `duplicates == {}`，**而不是**「文件还能加载」（后者正是问题被遮住的方式）。
+  2. `test_the_maintained_locales_still_define_hardline_blocked_once[zh|en]`：钉**修复对象本身**，两条断言 —— ① `"hardline_blocked:"` 在本册内**恰好出现 1 次**；② `_key_line(text, "approval", "hardline_blocked")` 的行号 **大于**该段标题行号。第 ② 条是必需的：只钉「恰好 1 次」的话，**把定义搬回上一个小节**同样通过（变异体 5 只被这半条抓到）。
+  3. `test_safe_load_would_not_notice_a_duplicate`：钉**仪器选择是承重的** —— 同一段含重复键的样本，`safe_load` 只看到 1 个值、`compose` 看到两个定义。没有这一例，「把检查重写在 `safe_load` 上」会得到一个**空洞全绿**的守卫。
+  - 三处实现坑（已修，说明留在代码注释里）：① **标题匹配不能裸子串** —— 我们留的说明注释**点名了**「拦截结果消息」段，裸子串搜索命中 2 次，改用 `re.compile(r"^#\s*" + re.escape(heading))` 锚定到注释行；② **`_mappings()` 会遍历所有 mapping，顶层名字可能撞上嵌套 mapping 的整个键集** —— `_key_line` 初版按「键集包含」找节点，命中的是嵌套的 `tirith` 块，改为只走顶层 mapping 的条目（`for key_node, value_node in root.value` + `isinstance(value_node, yaml.MappingNode)`）；③ **样本行号要数对** —— `'root:\n  k: "first"\n  k: "second"\n'` 里 `root` 在第 1 行、`k` 在 **2、3** 行（是 `root` 的兄弟而非嵌套子节点的兄弟），初版写成 `[3, 4]`。
+- **验证**：
+  - **守卫**：`tests/owner/test_locale_catalog_integrity.py` **20 passed**；与上游 parity 同跑（`+ tests/agent/test_i18n.py`）**27 passed / 30 skipped**（skipped 是需要 ref 的非维护语种对照）。
+  - **变异验证 7/7 全部咬住**（`/tmp/t215/mutate_t215.py`：每个变异体先 `yaml.safe_load` 预校验仍可加载、`.py` 变异体先 `compile()`；锚点必须**恰好命中 1 次**否则判 `BAD ANCHOR`；还原走内存快照 + md5）：① 把删掉的那处写回块消息段 ⇒ 咬住 `[zh.yaml]` + `[zh]`；② 在**非维护语种** `ja.yaml` 造重复 ⇒ 咬住 `[ja.yaml]`（证明不变量与语言无关、参数化确实覆盖 17 本）；③ 在 `en.yaml` 复制一个**嵌套**兄弟键 ⇒ 咬住 `[en.yaml]`（证明 compose 行走会下探子映射）；④ 把两处都删掉 ⇒ 咬住 `[zh]`；⑤ 保留 1 处但搬回上一个小节 ⇒ 咬住 `[zh]`（**只有守卫 2 的「行号 > 标题行」那半条抓到它**）；⑥ 在 `en.yaml` 删掉唯一那处 ⇒ 咬住 `[en]`；⑦ 把 `_duplicate_keys` 的仪器换成 `yaml.safe_load`（后人最可能的「简化」）⇒ 咬住仪器钉住那一例。
+  - **变异装置首轮不合格，已修（记录在案）**：首轮 **2/6**，三个 `BAD ANCHOR`（锚点用的是 `S2_HEAD + HB + "，请在…"` 这种**拼接后根本不存在**的串 ⇒ 命中 0 次；另一个 `    shortened_url:` 作为裸行命中 2 次）+ 一个 `MISS`（`rewrite_the_check_on_top_of_safe_load` 注入的是 `if isinstance(node, dict): break`，而 `_mappings` yield 的是 `yaml.MappingNode`、从来不是 `dict` ⇒ 那个 `break` 永远不执行）。**后者是变异体本身坏了，不是「代码多了一层」**。修法：锚点一律改用**整行原文**并在应用前先数命中数，仪器变异体改成真正把仪器换掉。
+  - **爆炸半径回归**（语料 **136 个路径** = T2-14 的 134 个 + **补入 `tests/agent/test_i18n.py`** + 本守卫）：T2-14 的语料竟然漏了上游 parity 用例，对一个 locale 条目而言这是真实缺口，本轮补上。
+
+    | 腿 | 内容 | 读数 |
+    |---|---|---|
+    | A | 当前树 | 30 failed / **2616 passed** / 43 skipped |
+    | B | `locales/{zh,en}.yaml` 还原到 HEAD（即把重复放回去）、本守卫移走并从语料里剔除 | 30 failed / **2596 passed** / 43 skipped |
+
+    **NEW 0 / GONE 0**；两腿 30 个失败**同一集合**，均为存量；通过数差 **20 = 本守卫整文件 20 例**在对照腿中被移走。相对 T2-14 的 2589 多出的 **27** = 20（本守卫）+ 7（`tests/agent/test_i18n.py` 的 7 例）。还原后三处 md5 校验全部 OK。
+  - **冲突面**（同一把尺 `git merge-tree --write-tree upstream/main <ref>`，`567fc4dbec` → `cc8e245a1a`）：`locales/zh.yaml` **1 → 1** 块（我方 6 行 / 上游 7 行，差异只有「上游多 `free_tier`」+「我方取值本地化」）、`locales/en.yaml` **0 → 0**。**修复本身不动冲突面** —— 被删的那处取值与保留处逐字相同，从来没参与过冲突。
+  - **健康检查**：`python -m owner.validation.merge_health_check` → **7 passed / 1 warning**，与 T2-14 后完全一致（Check 5 的 4 条 warning 属 merge 315551234 的既有项；Check 6 28/28、Check 7 140/140、Check 8 116/116 仍全绿）。
+- **技巧（值得复用）**：① **重复键被 YAML 静默丢弃**，`safe_load` + flatten 形态的守卫**在结构上永远看不到它**，必须走 `compose()` 的 node 行号。② **「单册内无重复」与「两册键集一致」是两条独立不变量**，别指望后者发现前者。③ 发现重复键时要问「**哪一处才是对的**」并把答案钉在测试里，否则「两处一起删掉」同样通过，而那会让 `t(key)` 静默退回裸键。④ **审计给「位置 + 行号范围」时，位置本身也要复核**：「已按现状收尾」与「未做」在报告里长得一样 —— 量两个数即可判：区间内我方键数、首个我方键之后的对方键数，两个都是 0 就是现状。⑤ **修法的收益要用同一把尺在同一个对象上量**：审计修法（收拢）是针对 `approval` 提的，而 `approval` 早已收拢；把它移到真有交错的 `gateway` 上量，收益仍是 **0** ⇒ 结论是**修法本身不成立**，不是落点选错。
+- **未纳入**：
+  1. **`gateway` 段 398 个 owner-only 条目的纯搬动**：实测冲突块 **1 → 1 / 0 → 0**，零收益；约 900 行纯 churn 本身就是一次大 diff（还要重跑一次 136 路径回归）。**这是该修法唯一的落点，因此整条修法按「不纳入」处置。**
+  2. **`gateway.status` 那 6 行取值分叉**（我方本地化中文 vs 上游英文 + `free_tier`）：属 **T2-12 家族**（本地化取值与上游文案的漂移，已登记 **T2-12b**：229 键 / 28 文件的上游文案现只存在目录里），不在本项范围。
+  3. **共有键的取值分叉**：412 个共有键路径中，zh 有 **45** 个取值与上游不同、en 有 **19** 个。这些是「已接受的本地化差异」，同属 T2-12 家族。
+  4. **给本处说明注释补 `[owner]` 标记**：不加（理由见上）。hunk 级标记铺开本身是已登记的 **T2-11b**（55 个已标记但不完整的文件、902 个未标记 hunk），本项不裁决 `locales/*.yaml` 是否该进那个范围。
+- **Commit**：`cc8e245a1a`（代码 + 测试）；本条留档见附录 E
+
+---
+
 ## 附录 A：owner/ 模块职责索引
 
 | 路径 | 职责 | 侵入官方文件 |
@@ -2060,7 +2122,7 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 | `hermes_cli/commands.py` | `GATEWAY_KNOWN_COMMANDS` 加 `/memory` `/skills`（2 处标记，落在多行字符串内） | inline（数据表） |
 | `hermes_cli/gateway.py` | restart watcher 清理 `__pycache__`（1 处标记，落在 112 行 respawn 脚本模板内） | inline（字符串） |
 | `hermes_cli/tips.py` | `get_random_tip` 按 `agent.i18n.get_language()` 走 `owner/tips_zh.py` 中文语料、失败回落英文；停用已删除功能的 tip（2 处标记） | 薄胶水 |
-| `locales/en.yaml` / `locales/zh.yaml` | approval_explainer 审批卡命令解说段键（各 2 处标记） | 目录（数据） |
+| `locales/en.yaml` / `locales/zh.yaml` | approval_explainer 审批卡命令解说段键（各 2 处标记）；**删除被 YAML 静默丢弃的重复键 `approval.hardline_blocked`**（§16.12：修复前 zh 34/55、en 44/65，两处值逐字相同 ⇒ **编辑第一处是静默无操作**；来源是 `e93f3148e7` 加在块消息段、`92e0787ea6` 新建块结果段时又加一次；保留块结果段那一处，消费方 `tools/approval.py::_hardline_block_result`）。现状口径：17 本 catalog **无重复键**；owner-only 键路径 1427、与上游共有键 412（其中 zh 45 / en 19 个取值与上游不同，属 T2-12 家族）。审查 T2-15 那条「收拢到 `approval:` 块尾」的修法经实测**零收益**（`approval` 早已是连续尾部块；换到真有交错的 `gateway` 上量，冲突块仍 1→1 / 0→0），按「不纳入」处置 | 目录（数据） |
 | `ui-tui/src/app/createSlashHandler.ts` / `ui-tui/src/lib/rpc.ts` / `ui-tui/src/gatewayTypes.ts` | chained quick command：分发 + RPC + 类型声明（`gatewayTypes.ts` 的改动落在多行字符串内） | 薄胶水 |
 | `ui-tui/src/app/useMainApp.ts` | graceful shutdown（§6.3；含 2 处仅删除改动） | inline |
 | `ui-tui/src/components/branding.tsx` | branding 渲染：`t.brand.icon` + `t.brand.tagline`（1 处标记，JSX children 用 `{/* ... */}`） | inline |
@@ -2133,6 +2195,17 @@ _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请先�
 ---
 
 ## 附录 E：变更日志
+
+### 2026-09-29：新增 §16.12 `locales` 删掉被静默丢弃的重复键（T2-15）
+
+- **新建正文**：**§16.12**：`cc8e245a1a`（`locales/{zh,en}.yaml` 各删掉 `approval.hardline_blocked` 的**第一处**重复定义、原位留说明注释；新建 `tests/owner/test_locale_catalog_integrity.py` 20 例）。本清单 §16.12 正文 + §0.2 导航行 + 附录 B 行 + 本条）
+- **类型**：缺陷修复（删除被 YAML 静默丢弃的重复定义）+ 数据文件注释；**零行为变更**（改动前后 `yaml.safe_load` 取到的值逐字相同）
+- **口径校正（审查给的位置、量、修法三者都不成立）**：审查说 owner 新增键「分散成两簇、插在上游活跃区间内」（引 `zh.yaml:36-69` / `:560-606`；上游 28 次/3 月），修法是「收拢到 `approval:` 块尾（~120 行移动）」。实测（`yaml.compose()` node 树，行号一律取**我方文件**行号）：① `approval` 段共有键 17 个占 4–20 行、owner-only 键 516 个，**区间内 owner 键 0 个、首个 owner 键之后再无共有键 0 个** ⇒ **它本来就是连续的尾部块，修法即现状**；② 真交错在 `gateway`（owner-only 条目 398 个，**388 个**落在共有键区间 609–1519 内），其余 8 个顶层块一个共有键都没有；③ 「~120 行」实际是 **1427 个 owner-only 键路径**（共有键 412）；④ 上游活跃度实测 **33 次/3 月**（审查说 28），且上游维护**同一套 17 本 catalog**。
+- **修法被实测否掉**：把 `gateway` 下 398 个 owner-only 条目整块搬到映射末尾（语义等价已断言），冲突块 **1 → 1 / 0 → 0**（仪器 `git merge-file -p`，先用未改动字节与 `git merge-tree` 对账）。那唯一一个冲突块由 `gateway.status` **共有键的取值分叉**造成（我方 6 行中文 vs 上游 7 行英文 + `free_tier`），重排 owner-only 键碰不到它 ⇒ 按「不纳入」处置。
+- **真缺陷与来源**：`approval.hardline_blocked` 在两本维护语种里各被定义两次（zh 34/55、en 44/65，值逐字相同）。YAML 后定义者胜出 ⇒ 运行期文案一直是对的，**编辑第一处却是静默无操作**。`e93f3148e7`（2026-07-01）先加在块消息段；`92e0787ea6`（2026-08-27，批量 i18n）新建块结果段时又加一次（两次各只新增 1 次出现）。保留块结果段那一处 —— 消费方 `tools/approval.py:936 _hardline_block_result()` 返回工具结果 dict。17 本 catalog 修复后**无重复键**。
+- **既有守卫为什么抓不到**：`tests/agent/test_i18n.py` 走 `safe_load` + `_flatten`，重复键在比较之前就被合并掉了，两本 catalog 被**同等地**抹平 ⇒ 「键集一致」这条不变量在结构上永远发现不了「单册内有重复」。新守卫走 `compose()` node 行号，并把**修复对象**（保留哪一处）与**仪器选择**（compose 而非 safe_load）分别钉住。
+- **验证**：守卫 **20 passed**（与上游 parity 同跑 27 passed / 30 skipped）；变异 **7/7 咬住**（含「搬回上一个小节」只被守卫 2 的「行号 > 标题行」半条抓到、「把仪器换成 safe_load」只被仪器钉住那一例抓到）；爆炸半径回归 **136 路径**（T2-14 的 134 + **补入 `tests/agent/test_i18n.py`** + 本守卫）**NEW 0 / GONE 0**，leg A 2616 passed / leg B 2596 passed（差 20 = 本守卫整文件）；冲突面 `zh` 1→1、`en` 0→0；健康检查 **7 passed / 1 warning**（与 T2-14 后一致）。
+- **变异装置首轮 2/6，已修（记录在案）**：三个 `BAD ANCHOR`（锚点是拼接后不存在的串 ⇒ 命中 0 次；一个裸行锚点命中 2 次）+ 一个 `MISS`（注入的 `isinstance(node, dict)` 永远不成立，因为 `_mappings` yield 的是 `MappingNode`）—— **后者是变异体本身坏了，不是代码多了一层**。
 
 ### 2026-09-29：新增 §16.11 feishu adapter 自有卡片胶水迁入 `owner/feishu/`（T2-14）
 
