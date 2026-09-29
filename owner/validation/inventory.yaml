@@ -515,11 +515,18 @@ items:
         contains:
           - 'owner.diff_card.dispatcher'
           - 'install_diff_card_support'
+      # T2-14：diff 卡分派随 `_dispatch_card_action` 正文迁到 owner/feishu/card_action.py。
+      # 两条都断言：① 分派分支仍存在；② 适配器仍路由进这张表（薄壳里的 import）。
       - type: file_contains
-        file: plugins/platforms/feishu/adapter.py
+        file: owner/feishu/card_action.py
         contains:
           - 'owner.diff_card.feishu'
           - 'handle_feishu_diff_action'
+      - type: file_contains
+        file: plugins/platforms/feishu/adapter.py
+        contains:
+          - 'owner.feishu.card_action'
+          - 'dispatch_card_action'
 
   - id: feishu-approval-card
     title: "owner change list 3.1 Feishu approval card context"

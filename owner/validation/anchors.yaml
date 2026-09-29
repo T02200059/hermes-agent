@@ -135,21 +135,36 @@ anchors:
       - 'owner.display_overrides'
       - 'resolve_display_setting_for_source'
 
+  # T2-14：卡片分派表本体迁到 owner/feishu/card_action.py，适配器侧只留薄壳
+  # （`from owner.feishu.card_action import UNHANDLED, dispatch_card_action`）。
+  # 本条目只断言**仍留在适配器里的接线**；已迁走的锚点见下一条（同一份胶水的
+  # 新落点，两条一起才能守住「分派表还在、且适配器仍路由进它」）。
   - id: feishu-adapter-card-routes
     file: plugins/platforms/feishu/adapter.py
     contains:
+      - 'owner.feishu.card_action'
+      - 'dispatch_card_action'
       - 'owner.feishu.profile_routing'
       - 'try_route_card_action'
       - 'owner.feishu.clarify_card'
       - 'handle_clarify_card_action'
       - 'owner.feishu.model_picker'
-      - 'handle_picker_action'
+      - 'dispatch_model_picker_action'
       - 'owner.feishu.steer_card'
       - 'handle_guide_card_action'
+
+  - id: feishu-card-action-branch-table
+    file: owner/feishu/card_action.py
+    contains:
+      - 'owner.feishu.profile_routing'
+      - 'try_route_card_action'
       - 'owner.diff_card.feishu'
       - 'handle_feishu_diff_action'
+      - 'owner.feishu.resume_card'
+      - 'handle_resume_card_action'
       - 'owner.feishu.memory_approval'
       - 'handle_card_click'
+      - 'owner.feishu.skill_approval_card'
 
   - id: feishu-adapter-send-helpers
     file: plugins/platforms/feishu/adapter.py

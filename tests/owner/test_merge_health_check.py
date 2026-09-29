@@ -123,3 +123,69 @@ def test_every_modified_official_file_carries_an_owner_marker():
     assert examined > 0, f"{name}: resolved a base but found no modified official files"
     assert issues == [], f"{name}: {len(issues)} unmarked file(s): {issues}"
     assert covered == examined
+
+
+# ---------------------------------------------------------------------------
+# Check 6 / Check 7: anchors + inventory as pytest gates
+# ---------------------------------------------------------------------------
+#
+# Both checks are pure file reads (0.13s together), yet they lived only inside
+# the out-of-band health-check script -- so a regression could not surface in
+# pytest, and any "green suite" claim silently excluded them.
+#
+# T2-14 hit exactly that: the card-action branch table moved out of
+# ``plugins/platforms/feishu/adapter.py`` into ``owner/feishu/card_action.py``
+# and left thin shells behind, which is a *deliberate, correct* refactor -- but
+# ``anchors.yaml`` / ``inventory.yaml`` still pinned every dispatch anchor to the
+# adapter. Check 6 went to 5 issues, Check 7 to 2, and the 134-path regression
+# corpus (which does include this file) stayed green because nothing here ran
+# them. The anchors are the registry of WHERE owner glue lives; when glue moves,
+# the registry has to move with it, and only a gate makes that mandatory.
+
+
+def test_critical_owner_anchors_all_resolve():
+    """Check 6: every ``anchors.yaml`` entry still matches its target file."""
+    name, issues, checked, total = mhc.check_critical_owner_anchors()
+
+    assert total > 0, f"{name}: no anchor specs loaded -- anchors.yaml missing or malformed"
+    assert checked == total, f"{name}: {total - checked} spec(s) could not be read: {issues}"
+    assert issues == [], f"{name}: {len(issues)} missing anchor(s): {issues}"
+
+
+def test_owner_inventory_static_checks_all_resolve():
+    """Check 7: every ``inventory.yaml`` static check still holds."""
+    name, issues, checks_run, items = mhc.check_validation_inventory()
+
+    assert items > 0, f"{name}: no inventory items loaded -- inventory.yaml missing or malformed"
+    assert checks_run > 0, f"{name}: inventory loaded but declared no static checks"
+    assert issues == [], f"{name}: {len(issues)} broken static check(s): {issues}"
+
+
+def test_the_card_action_branch_table_stays_registered():
+    """The registry must keep *its* entry, not just stay internally consistent.
+
+    ``test_critical_owner_anchors_all_resolve`` compares ``checked`` against
+    ``total`` -- both derived from the file -- so deleting the anchor entry
+    entirely silences it: 27 specs, 27 readable, zero issues. That is precisely
+    the lazy fix for a stale anchor, and it silently drops the coverage the
+    anchor was providing. So T2-14's migration is pinned by id here: the branch
+    table must be registered against its new home, and the adapter entry must
+    assert the *call into* it rather than the dispatch table itself.
+    """
+    specs, issues = mhc._load_anchor_specs()
+    assert issues == []
+
+    by_id = {spec["id"]: spec for spec in specs}
+    branch_table = by_id.get("feishu-card-action-branch-table")
+    assert branch_table is not None, "the card-action branch table lost its anchor entry"
+    assert branch_table["file"] == "owner/feishu/card_action.py"
+    # Each of the branch-table branches that only exist in our tree.
+    assert {"owner.diff_card.feishu", "handle_feishu_diff_action"} <= set(branch_table["contains"])
+    assert {"owner.feishu.resume_card", "owner.feishu.memory_approval"} <= set(branch_table["contains"])
+
+    adapter = by_id.get("feishu-adapter-card-routes")
+    assert adapter is not None
+    assert adapter["file"] == "plugins/platforms/feishu/adapter.py"
+    # The adapter keeps the thin shell and the wiring; the table itself is gone.
+    assert {"owner.feishu.card_action", "dispatch_card_action"} <= set(adapter["contains"])
+    assert "handle_feishu_diff_action" not in adapter["contains"]
