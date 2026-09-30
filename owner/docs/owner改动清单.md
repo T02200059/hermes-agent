@@ -2179,8 +2179,16 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 
 ---
 
-### 16.16 采纳上游 `run.py` 拆包：56 处定制按上游新落点重落，进度尺缺口归零（T2-20）
+### 16.16 采纳上游 `run.py` 拆包：23 个模块落地 + 56 处定制重落；换码就绪性复核不成立（T2-20）
 
+- **复核结论（2026-09-30，本节后续"进度尺归零"的适用边界）**：本节的机检（`verify` PASS、`ruler` **0 缺口**）只回答「**标记文本计数是否下降**」。对**换码**这一步，该口径**不充分**，原因是它有两条按构造原理的失明面：
+  1. **无标记的定制**：我方 `gateway/run.py` 相对 merge-base 的真实改动是 **+906 / −475 行 / 240 个 hunk**，而 `[owner]` 标记只覆盖其中 **56 行**。其中 **i18n `t(` 调用 163 行**（三方交叉验证：BASE 10 处 → 本地 172 处 / 159 键；上游 24 文件族 8 处）**完全无标记**，是最大的一块。
+  2. **惰性导入**：`ruler` 只数标记文本；当"重落"落成的是一句 `from gateway.run import <我方自有助手>` 时，标记文本出现了、符号却仍只在单体里 —— 仪器判「已落位」。
+- **实测结果（独立交付物 `deliverables/gstack/T2-20-换码暴露面与就绪性实测.md` + `T2-20-换码暴露面清单.tsv`）**：
+  - **尺度**：`GatewayRunner` 我方 **24,978 行** vs 上游 `run.py` **1,111 行**（上游把方法拆进 14 个 `Gateway*Mixin`）；本地 `run.py` **不 `import` 任何 `gateway.run_*`（计数 0）** ⇒ 23 个模块目前是**惰性死重**，运行时仍是单体。
+  - **行级核对**（未来树 = 全仓 .py 去 `run.py` ∪ 上游 `run.py`）：906 行中逐字命中 331、令牌命中 84、**未覆盖 385**（标记 6 = 4 原地 + 2 已登记塌缩 / i18n 133 / 代码 200 / 注释 46）。叠加「符号存续」判据后，**换码后消失的符号所含未覆盖行 = 140**（代码 100 / i18n 20 / 标记 4 / 注释 16）：`_gateway_profile_tag`(24)、`_classify_edit_failure`(16)、`_is_executor_shutdown_error`(12)、`_format_exec_approval_fallback`(11)、`_append_dedup_counter`(11)、`_escape_code_fences_for_inline_block`(8) 等。
+  - **就绪性机检：9 处生产引用会在换码时 `ImportError`**。5 个符号（`_gateway_lifecycle_msg`、`_classify_edit_failure`、`_is_executor_shutdown_error`、`_append_dedup_counter`、`_load_gateway_runtime_config`）**上游 `run.py` 没有**（上游可用名 = 顶层 371 + 惰性再导出表 41 = 412），而调用点已写进 `gateway/run_turn.py:2014`、`gateway/run_turn_runner.py:616/656/708`、`gateway/slash_commands.py:91/1640/1728/4370`；测试侧另有 7 处。
+  - **判定：本节的"重落"是「调用点搬迁」而非「定义搬迁」** —— 与本条已记的 `resolve_tool_progress` 一例同因（惰性闭包 + 只补调用点），是同一盲区的第二次复现。**换码范围与验收须按上述三点重建**；映射表 §3 的 52 条**不构成**换码的验收面。
 - **背景**（T2-20）：上游在 19 天窗口内把 `gateway/run.py` 从 5,676 行拆成 23 个 `run_*.py`（合计 21,542 行），我方仍是 34,113 行的单体。三方合并实测 `run.py` 有 **32 冲突块 / ours 侧 25,005 行**（`git merge-file` 口径；`merge-tree` 结果树口径为 25 块 / 25,294 行），其中 **1 块独占 19,945 行**——那不是「某几处定制」，而是**整段拆包搬走**。**用「逐处迁定制」的手法消不掉它**，只能采纳上游结构。
 - **成本 / 收益被实测改写（本项的决策依据）**：
   - 真实 `git merge upstream/main`（`merge-tree --write-tree`）冲突 **117 文件 / 544 块 / ours 侧 124,755 行**；`run.py` 是第 1 名但**只占 20.0% 行、5.9% 块**（次席 `cli.py` 10.7%、`tui_gateway/server.py` 9.7%、`hermes_state.py` 8.6%）。上游做的是**全仓规模**的模块化，`run.py` 只是最大一例 ⇒ **单项治理的收益上限是五分之一**。
@@ -2489,6 +2497,7 @@ _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请先�
 - **验证**：机检 `verify` **PASS**（43 种标记文本全部未下降；全仓总数 869 ≥ 下限 54）、`ruler` **缺口归零**（39 已落位 + 4 原地登记 = 43）；定向 9 个测试文件 **9 failed / 221 passed**，9 项与基线**同一批**（`test_error_classifier` 的 429 归类，属 T2-21）⇒ **零新增失败**；`tests/gateway/test_display_config.py` 单跑 **23 passed**；**23/23** 个 `run_*.py` 可 import、`import gateway.run` 正常。**未跑全量**
 - **仪器两次加固 + 一次扩展**：① 记录口径由整行改为「从 `# [owner]` 起的部分」（行内标记的接收者改名是**正当改写**，用整行做身份会误报 16 处；裸标记回退整行以防假阴性）；② 新增 `run_py_inplace.json` 分类报告（原地项不登记则永远留在待落清单，计数器无法收敛，真实缺口被已知项淹没）
 - **Commit**：`fcae2029a0`（结构）→ `21f32d86d6`（import-time 闭包）→ `ab969baa80`（`display_config` 符号）→ `58be2cbe98`（`run_turn.py` 重落）
+- **换码就绪性复核（2026-09-30，追加）**：本条「`ruler` 缺口归零」的**适用边界**被复核推翻 —— 该口径只数**标记文本**，对**换码**这一步不充分。实测：我方 `run.py` 相对 merge-base 的改动是 **+906 −475 / 240 个 hunk**（`[owner]` 只覆盖其中 56 行；**i18n `t(` 163 行完全无标记**，三方交叉验证 BASE 10 → 本地 172/159 键 → 上游 24 文件族 8）；行级核对**未覆盖 385 行**（i18n 133 / 代码 200 / 注释 46 / 标记 6），叠加「符号存续」判据后**换码后消失的符号所含未覆盖行 = 140**；**9 处生产惰性导入**指向**上游 `run.py` 没有**的符号（`_gateway_lifecycle_msg`、`_classify_edit_failure`、`_is_executor_shutdown_error`、`_append_dedup_counter`、`_load_gateway_runtime_config`；上游可用名 = 顶层 371 + 惰性再导出 41 = 412）⇒ **换码即 `ImportError`**。**判定：本条的重落是"调用点搬迁"而非"定义搬迁"；换码尚未就绪。** 独立交付物 `T2-20-换码暴露面与就绪性实测.md` + `T2-20-换码暴露面清单.tsv`；§16.16 标题与正文已按实测更正；处置选项（A′ / A / B / C / D）**待用户决策**
 - **未纳入**：惰性闭包全量补齐（230 模块 / 142 符号，留到换码后按实际暴露路径驱动）；同批其余 116 个冲突文件（`run.py` 只占 20.0% 行）；`owner/docs/run-py-owner-mapping.md` 的逐模块计数差与「per-chat 簇收敛进 `owner/`」建议（需按本轮实测重写对齐）
 - **顺带发现（P2）**：`_resolve_gateway_display_bool(..., chat_id=)` 的 `chat_id` **无任何生产调用方** —— 保守移植但应纳入「无使用者 owner 面」清理判定（激活或删除）
 
