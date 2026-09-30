@@ -34,7 +34,7 @@ _TOPIC_RESTORE_STEPS = (
 
 
 def _collapse_title(title: str) -> str:
-    return re.sub(r"\s+", " ", str(title or "")).strip() or "Hermes Chat"
+    return re.sub(r"\s+", " ", str(title or "")).strip() or t("gateway.telegram_topic_default")
 
 
 class GatewayTopicThreadsMixin:
@@ -125,30 +125,13 @@ class GatewayTopicThreadsMixin:
     # ── Telegram topic mode: user-facing text ───────────────────────────────────────────────
 
     def _telegram_topic_root_lobby_message(self) -> str:
-        return (
-            "This main chat is reserved for system commands.\n\n"
-            "To start a new Hermes chat, open the All Messages topic at the top "
-            "of this bot interface and send any message there. Telegram will "
-            "create a new topic for that message; each topic works as an "
-            "independent Hermes session."
-        )
+        return t("gateway.telegram_topic_lobby")
 
     def _telegram_topic_root_new_message(self) -> str:
-        return (
-            "To start a new parallel Hermes chat, open the All Messages topic "
-            "at the top of this bot interface and send any message there. "
-            "Telegram will create a new topic for it.\n\n"
-            "Each topic is an independent Hermes session. Use /new inside an "
-            "existing topic only if you want to replace that topic's current session."
-        )
+        return t("gateway.telegram_topic_new")
 
     def _telegram_topic_new_header(self, source: SessionSource) -> Optional[str]:
-        return (
-            "Started a new Hermes session in this topic.\n\n"
-            "Tip: for parallel work, open All Messages and send a message there "
-            "to create a separate topic instead of using /new here. /new replaces "
-            "the session attached to the current topic."
-        ) if self._is_telegram_topic_lane(source) else None
+        return t("gateway.telegram_topic_header") if self._is_telegram_topic_lane(source) else None
 
     def _telegram_topic_help_text(self) -> str:
         return (
@@ -550,7 +533,7 @@ class GatewayTopicThreadsMixin:
             return format_session_db_unavailable(prefix=t("gateway.shared.session_db_unavailable_prefix"))
         chat_id = str(source.chat_id or "")
         if not chat_id:
-            return "Could not determine chat ID."
+            return t("gateway.chat_id_unknown")
         profile_name = self._telegram_topic_profile_name(source)
         currently_enabled = False
         with suppress(Exception):
@@ -558,12 +541,12 @@ class GatewayTopicThreadsMixin:
                 chat_id=chat_id, user_id=str(source.user_id or ""), profile_name=profile_name,
             )
         if not currently_enabled:
-            return "Multi-session topic mode is not currently enabled for this chat."
+            return t("gateway.topic_mode_disabled")
         try:
             await self._session_db.disable_telegram_topic_mode(chat_id=chat_id, profile_name=profile_name)
         except Exception as exc:
             logger.exception("Failed to disable Telegram topic mode")
-            return f"Failed to disable topic mode: {exc}"
+            return t("gateway.topic_disable_failed", error=exc)
         # Reset per-profile+chat debounce state so the next activation doesn't see a stale cooldown.
         # See #76423.
         cooldown_key = self._telegram_topic_cooldown_key(source)
@@ -571,12 +554,7 @@ class GatewayTopicThreadsMixin:
             store = getattr(self, attr, None)
             if isinstance(store, dict):
                 store.pop(cooldown_key, None)
-        return (
-            "Multi-session topic mode is now OFF for this chat.\n\n"
-            "Existing topics in Telegram aren't removed — they'll just stop "
-            "being gated as independent sessions. The root DM works as a "
-            "normal Hermes chat again. Run /topic to re-enable later."
-        )
+        return t("gateway.topic_disabled")
 
     async def _telegram_topic_root_status_message(self, source: SessionSource) -> str:
         lines = [
@@ -600,7 +578,7 @@ class GatewayTopicThreadsMixin:
             for session in sessions:
                 preview = str(session.get("preview") or "").strip()
                 lines.append(
-                    f"- {session.get('title') or 'Untitled session'} — `{session.get('id') or ''}`"
+                    f"- {session.get('title') or t('gateway.default_chat_name')} — `{session.get('id') or ''}`"
                     + (f" — {preview}" if preview else "")
                 )
             lines.extend(["", "To restore one:", *_TOPIC_RESTORE_STEPS, f"Example: Send /topic {sessions[0].get('id')} inside a topic."])
@@ -615,17 +593,17 @@ class GatewayTopicThreadsMixin:
         session_id = await db.resolve_session_id(raw_session_id.strip())
         session = await db.get_session(session_id) if session_id else None
         if not session:
-            return f"Session not found: {raw_session_id.strip()}"
+            return t("gateway.session_not_found", name=raw_session_id.strip())
         if str(session.get("source") or "") != "telegram":
-            return "That session is not a Telegram session and cannot be restored into this topic."
+            return t("gateway.topic_not_telegram_session")
         if str(session.get("user_id") or "") != str(source.user_id):
-            return "That session does not belong to this Telegram user."
+            return t("gateway.topic_wrong_user")
         linked = await db.is_telegram_session_linked_to_topic(session_id=session_id)
         topic_profile = self._telegram_topic_profile_name(source)
         current_binding = await db.get_telegram_topic_binding(
             chat_id=str(source.chat_id), thread_id=str(source.thread_id), profile_name=topic_profile,
         )
-        already_linked = "That session is already linked to another Telegram topic."
+        already_linked = t("gateway.topic_already_linked")
         if linked and (not current_binding or current_binding.get("session_id") != session_id):
             return already_linked
         try:
@@ -648,5 +626,6 @@ class GatewayTopicThreadsMixin:
                 if projected is not None and projected.get("content"):
                     last_assistant = str(projected.get("content"))
                     break
-        response = f"Session restored: {title}"
-        return response + (f"\n\nLast Hermes message:\n{last_assistant}" if last_assistant else "")
+        response = t("gateway.session_restored", title=title)
+        return response + (t("gateway.session_restored_last", last_assistant=last_assistant)
+                           if last_assistant else "")
