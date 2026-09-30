@@ -17,6 +17,7 @@ import os
 import re
 import time
 from contextlib import suppress
+from agent.i18n import t
 from gateway.config import Platform
 from gateway.platforms.base import EphemeralReply
 from gateway.platforms.event import MessageEvent, MessageType
@@ -29,6 +30,7 @@ from gateway.session import (
     SessionSource, is_shared_multi_user_session, neutralize_untrusted_inline_text
 )
 from gateway.turn_lease import TurnLeaseTimeoutError
+from owner.gateway.lifecycle_copy import lifecycle_msg as _gateway_lifecycle_msg
 from typing import Any, Dict, List, Optional, Tuple
 
 if TYPE_CHECKING:  # string annotations only; never imported at runtime (cycle)
@@ -340,10 +342,10 @@ class GatewayInboundMixin:
             err = self._hm_write_update_response(response_text)
             if err is not None:
                 logger.warning("Failed to write update response: %s", err)
-                return f"✗ Failed to send response to update process: {err}"
+                return t("gateway.update_send_failed", error=err)
             _up_state.persistent.update_prompt_pending = False
             label = response_text if len(response_text) <= 20 else response_text[:20] + "…"
-            return f"✓ Sent `{label}` to the update process."
+            return t("gateway.update_sent", label=label)
         # Recognized slash command during a pending update prompt: write a blank response so the
         # detached update's ``_gateway_prompt`` returns the prompt's default (typically a safe
         # "n" / skip) and exits instead of blocking on stdin until the watcher timeout.
@@ -756,7 +758,7 @@ class GatewayInboundMixin:
             if event.get_command() == "stop":  # force-clean the sentinel so the session is unlocked
                 self._release_running_agent_state(_quick_key)
                 logger.info("HARD STOP (pending) for session %s — sentinel cleared", _quick_key)
-                return EphemeralReply("⚡ Force-stopped. The agent was still starting — session unlocked.")
+                return EphemeralReply(t("gateway.force_stop_pending"))
             self._hm_merge_pending_for_source(source, _quick_key, event, merge_text=True)  # picked up after start
             return None
         if self._draining:
@@ -844,7 +846,7 @@ class GatewayInboundMixin:
             message = hook_result.get("message")
             message = message if isinstance(message, str) and message else None
             if decision == "deny":
-                return True, message or f"Command `/{command}` was blocked by a hook.", None
+                return True, message or t("gateway.hook_blocked", command=command), None
             if decision == "handled":
                 return True, message, None
             if decision == "rewrite":
@@ -938,7 +940,7 @@ class GatewayInboundMixin:
         from agent.learn_prompt import build_learn_prompt
 
         req = event.get_command_args().strip()
-        _ack = f"Learning a skill from {'what you described' if req else 'this conversation'}…"
+        _ack = t("gateway.learn_ack_described") if req else t("gateway.learn_ack_conversation")
         return await self._hm_rewrite_turn_to_prompt(event, source, "learn", _ack, lambda: build_learn_prompt(req))
 
     async def _hm_cmd_plan(self, event, source, _quick_key):
@@ -955,11 +957,11 @@ class GatewayInboundMixin:
         try:
             _init_prompt = build_init_prompt_for_cwd(extra=event.get_command_args().strip())
         except Exception:
-            return True, "Could not start /init — please try again."
+            return True, t("gateway.init_failed")
         _ack = (
-            "Updating AGENTS.md from a project scan…"
+            t("gateway.init_ack_update")
             if "UPDATE the existing AGENTS.md" in _init_prompt
-            else "Generating AGENTS.md from a project scan…"
+            else t("gateway.init_ack_generate")
         )
         await self._send_command_ack(source, _ack, "init")
         event.text = _init_prompt
@@ -1001,7 +1003,7 @@ class GatewayInboundMixin:
 
     async def _hm_cmd_steer(self, event, source, _quick_key):
         return self._hm_send_payload_as_turn(
-            event, "Usage: /steer <prompt>  (no agent is running; sending as a normal message)"
+            event, t("gateway.steer_usage_no_agent")
         )
 
     @staticmethod
@@ -1039,7 +1041,7 @@ class GatewayInboundMixin:
             }
             self._evict_cached_agent(_quick_key)
         except Exception:
-            return True, "Failed to prepare MoA turn."
+            return True, t("gateway.moa_prepare_failed")
         return False, None
 
     # Idle-path built-ins with bespoke flow (confirmations, prompt rewrites, one-shot MoA), each
@@ -1078,11 +1080,11 @@ class GatewayInboundMixin:
             if output:
                 from agent.redact import redact_sensitive_text
                 output = redact_sensitive_text(output)
-            return output or "Command returned no output."
+            return output or t("gateway.quick_command_no_output")
         except asyncio.TimeoutError:
-            return "Quick command timed out (30s)."
+            return t("gateway.quick_command_timeout")
         except Exception as e:
-            return f"Quick command error: {e}"
+            return t("gateway.quick_command_error", error=e)
 
     async def _hm_dispatch_quick_and_plugin_commands(
         self, event: "MessageEvent", source: SessionSource, command: Optional[str]
@@ -1090,7 +1092,8 @@ class GatewayInboundMixin:
         """Drain gate, user-defined quick commands (exec/alias) and plugin slash commands →
         ``(handled, result, command)``; an alias quick command rewrites ``command``."""
         if self._draining:
-            return True, f"⏳ Gateway is {self._status_action_gerund()} and is not accepting new work right now.", command
+            return True, _gateway_lifecycle_msg(
+                "gateway.busy_drain_no_work", action=self._status_action_gerund()), command
 
         # User-defined quick commands (bypass agent loop, no LLM call)
         qcmd = self._hm_quick_commands().get(command) if command else None
@@ -1107,13 +1110,13 @@ class GatewayInboundMixin:
             if qtype == "exec":
                 exec_cmd = qcmd.get("command", "")
                 if not exec_cmd:
-                    return True, f"Quick command '/{command}' has no command defined.", command
+                    return True, t("gateway.quick_command_no_command", command=command), command
                 return True, await self._hm_run_exec_quick_command(command, exec_cmd), command
             if qtype != "alias":
-                return True, f"Quick command '/{command}' has unsupported type (supported: 'exec', 'alias').", command
+                return True, t("gateway.quick_command_unsupported_type", command=command), command
             new_command = self._hm_expand_alias_quick_command(event, qcmd)
             if new_command is None:
-                return True, f"Quick command '/{command}' has no target defined.", command
+                return True, t("gateway.quick_command_no_target", command=command), command
             command = new_command  # Fall through to normal command dispatch below
 
         # Plugin-registered slash commands. Underscores normalize to hyphens so Telegram's
@@ -1180,12 +1183,7 @@ class GatewayInboundMixin:
             "Unrecognized slash command /%s from %s — replying with unknown-command notice",
             command, source.platform.value if source.platform else "?",
         )
-        return (
-            f"Unknown command `/{command}`. "
-            f"Type /commands to see what's available, "
-            f"or resend without the leading slash to send "
-            f"as a regular message."
-        )
+        return t("gateway.unknown_command", command=command)
 
     def _hm_skill_slash_rewrite(
         self, event: "MessageEvent", source: SessionSource, _quick_key: str, command: Optional[str]
@@ -1224,27 +1222,23 @@ class GatewayInboundMixin:
                 from agent.skill_utils import get_disabled_skill_names as _get_plat_disabled
                 _plat_disabled = _get_plat_disabled(platform=_plat)
                 if _skill_name and _skill_name in _plat_disabled:
-                    return (
-                        f"The **{_skill_name}** skill is disabled for {_plat}.\n"
-                        f"Enable it with: `hermes skills config`"
-                    )
+                    return t("gateway.skill_disabled_for_platform", skill=_skill_name, platform=_plat)
                 _disabled_extra = [
                     skill_cmds.get(k, {}).get("name", "")
                     for k in extra_keys
                     if skill_cmds.get(k, {}).get("name", "") in _plat_disabled
                 ]
                 if _disabled_extra:
-                    return (
-                        f"The **{', '.join(_disabled_extra)}** skill(s) in this "
-                        f"stacked invocation are disabled for {_plat}.\n"
-                        f"Enable them with: `hermes skills config`"
+                    return t(
+                        "gateway.skills_disabled_stacked",
+                        skills=", ".join(_disabled_extra), platform=_plat,
                     )
             if extra_keys and _build_stacked is not None:
                 stacked_result = _build_stacked(
                     [cmd_key, *extra_keys], stacked_instruction, task_id=_quick_key,
                 )
                 if not stacked_result:
-                    return f"Failed to load stacked skills for /{command}."
+                    return t("gateway.stacked_skills_load_failed", command=command)
                 event.text, _loaded, _missing = stacked_result
             else:
                 msg = build_skill_invocation_message(cmd_key, user_instruction, task_id=_quick_key)
@@ -1371,11 +1365,7 @@ class GatewayInboundMixin:
             # only fall to zero. Reversible.
             if self._external_drain_active:
                 logger.info("Refusing new turn for session %s — external drain active.", _quick_key)
-                return (
-                    "⏳ This agent is draining for a maintenance action and isn't "
-                    "accepting new turns right now. It'll be back in a moment — "
-                    "please resend shortly."
-                )
+                return _gateway_lifecycle_msg("gateway.busy_drain_maintenance")
 
         # Claim this session before any await: many awaits sit between here and _run_agent
         # registering the real AIAgent; without this sentinel a second message during any of them
@@ -1407,11 +1397,7 @@ class GatewayInboundMixin:
                     "the user must resend",
                     _quick_key, exc.session_id,
                 )
-                return (
-                    "⏳ Another turn is still running on this session. To "
-                    "protect the transcript, this message was not processed. "
-                    "Wait for the active turn to finish, then resend it."
-                )
+                return t("gateway.turn_lease.gateway_timeout")
             try:
                 await self._run_post_turn_hooks(
                     agent_result=_agent_result, source=source, is_internal=is_internal, event=event,

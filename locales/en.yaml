@@ -722,8 +722,7 @@ gateway:
   unknown_command: "Unknown command `/{command}`. Type /commands to see what's available, or resend without the leading slash to send as a regular message."
   skill_disabled: "The **{skill}** skill is installed but disabled.
 Enable it with: `hermes skills config`"
-  skill_disabled_for_platform: "The **{skill}** skill is disabled for {platform}.
-Enable it with: `hermes skills config`"
+  skill_disabled_for_platform: "The **{skill}** skill is disabled for {platform}.\nEnable it with: `hermes skills config`"
   skill_not_installed: "The **{skill}** skill is available but not installed.
 Install it with: `hermes skills install {path}`"
 

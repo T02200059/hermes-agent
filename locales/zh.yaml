@@ -721,8 +721,7 @@ gateway:
   unknown_command: "未知命令 `/{command}`。输入 /commands 查看可用命令，或去掉前导斜杠重新发送以作为普通消息。"
   skill_disabled: "**{skill}** 技能已安装但已禁用。
 使用 `hermes skills config` 启用。"
-  skill_disabled_for_platform: "**{skill}** 技能在 {platform} 上已禁用。
-使用 `hermes skills config` 启用。"
+  skill_disabled_for_platform: "**{skill}** 技能在 {platform} 上已禁用。\n使用 `hermes skills config` 启用。"
   skill_not_installed: "**{skill}** 技能可用但未安装。
 使用 `hermes skills install {path}` 安装。"
 
