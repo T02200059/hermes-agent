@@ -18,7 +18,8 @@ of the WebUI path silently skipping it.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List
+import time
+from typing import Any, Dict, List, Optional
 
 from agent.tool_dispatch_helpers import make_tool_result_message
 from agent.tool_result_classification import tool_may_have_side_effect
@@ -199,6 +200,26 @@ def sanitize_replay_history(
     if not agent_history:
         return agent_history
     return strip_dangling_tool_call_tail(strip_interrupted_tool_tails(agent_history))
+
+
+def canonicalize_replay_history(
+    agent_history: List[Dict[str, Any]], *, now: Optional[float] = None
+) -> List[Dict[str, Any]]:
+    """Apply every destructive replay transform in the shared, fixed order.
+
+    Resume surfaces and the send path must serialize the same history bytes, or a
+    resumed request diverges in the middle of the cached prefix.
+
+    The input is never modified. ``now`` is the expiry clock; the send path passes the
+    turn's admission time so every request in one turn sees the same bytes.
+    """
+    if not agent_history:
+        return agent_history
+    if now is None:
+        now = time.time()
+    cleaned = strip_interrupted_tool_tails(agent_history)
+    cleaned = strip_dangling_tool_call_tail(cleaned)
+    return strip_stale_dangerous_confirmations(cleaned, now=now)
 
 
 # ──────────────────────────────────────────────────────────────────────

@@ -23,6 +23,11 @@ LIVE_GATEWAY_SILENT_MARKERS = frozenset({
     "NO REPLY",
 })
 
+# Display kind stamped on persisted rows produced by self-injected machinery (not the human). Only
+# these may vanish on a bare silence marker; a human turn always gets a visible fallback.
+INTERNAL_NOTIFICATION_DISPLAY_KIND = "internal_notification"
+MACHINERY_DISPLAY_KINDS = frozenset({INTERNAL_NOTIFICATION_DISPLAY_KIND})
+
 
 def _canonical_silence_candidate(text: str) -> str:
     return " ".join(text.strip().upper().split())
@@ -118,6 +123,28 @@ def is_intentional_silence_agent_result(agent_result: dict | None, response: Any
     if agent_result.get("failed"):
         return False
     return is_intentional_silence_response(response)
+
+
+def display_kind_for_event(event: Any) -> str | None:
+    """The persisted user-row kind for a gateway turn: only self-injected events are machinery.
+
+    A scheduled heartbeat prompt is self-injected too (``_heartbeat_session_id`` is stamped only
+    by the gateway poller, never inferred from inbound text), but it deliberately stays
+    non-internal so authorization and the emergency stop still apply to it.
+    """
+    if getattr(event, "internal", False) or getattr(event, "_heartbeat_session_id", None):
+        return INTERNAL_NOTIFICATION_DISPLAY_KIND
+    return None
+
+
+def is_machinery_display_kind(display_kind: Any) -> bool:
+    """Only a machinery turn may vanish on a bare silence marker; a human turn gets a visible fallback.
+
+    The caller passes the current turn's persisted display kind instead of inferring it from the
+    transcript: the inbound user row is not persisted yet, and a previous internal row must never
+    authorize silence on a human turn.
+    """
+    return display_kind in MACHINERY_DISPLAY_KINDS
 
 
 def is_partial_silence_marker(text: Any) -> bool:

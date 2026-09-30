@@ -63,6 +63,22 @@ SYSTEMD_STOP_HEADROOM_S = 30.0
 SYSTEMD_TIMEOUT_STOP_SEC_FLOOR = 60.0
 
 
+def is_global_startup_conflict(error_code: str | None) -> bool:
+    """True when an adapter's fatal error is a single-writer ownership conflict.
+
+    Adapters emit ``{scope}_lock`` with ``retryable=True`` so a *mid-run* reconnect can
+    recover; at startup a live foreign holder is a configuration conflict (two gateways
+    cannot poll one token), not a transient blip.  Matches by error CODE only, never text.
+
+    ``BasePlatformAdapter._acquire_platform_lock`` emits ``{scope}_lock`` with ``retryable=True`` on
+    purpose: a *mid-run* reconnect must be able to recover once the live holder exits or a stale record is
+    cleared (#54167). This matches by error CODE only (the ``{scope}_lock`` / ``lock_conflict`` families
+    every adapter emits for scoped-lock and identity conflicts), never by message text.
+    """
+    code = (error_code or "").strip().lower()
+    return bool(code) and (code == "lock_conflict" or code.endswith("_lock"))
+
+
 def is_gateway_supervisor_process(
     environ: Mapping[str, str] | None = None,
 ) -> bool:

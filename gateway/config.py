@@ -454,6 +454,10 @@ PORT_BINDING_CONDITIONAL_MODES: dict[str, str] = {
     "feishu": "webhook",
 }
 
+# Port-binders whose /p/<profile>/ surface is a MIRROR served by the default's own adapter; a secondary
+# never gets an instance of these (api_server: /p/<profile>/v1/..., webhook: profile-bound routes).
+SHARED_LISTENER_MIRROR_PLATFORMS = frozenset({"api_server", "webhook"})
+
 
 def platform_binds_port(platform_value: str, extra: Optional[dict] = None) -> bool:
     """Return True when *platform_value* actually binds a port for *extra* config.
