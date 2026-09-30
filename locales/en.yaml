@@ -682,6 +682,7 @@ gateway:
   busy_drain_no_work:      "⏳ Gateway{profile_tag} is {action} and is not accepting new work right now."
   busy_drain_maintenance:  "⏳ This agent{profile_tag} is draining for a maintenance action and isn't accepting new turns right now. It'll be back in a moment — please resend shortly."
   busy_steer_ack:          "⏩ Steered into current run{status_detail}. Your message arrives after the next tool call."
+  busy_steer_ack_subagents: "⏩ Steered into current run and its active subagent(s){status_detail}. Your message arrives after their next tool call."
   busy_queue_ack:          "⏳ Queued for the next turn{status_detail}. I'll respond once the current task finishes."
   busy_interrupt_ack:      "⚡ Interrupting current task{status_detail}. I'll respond to your message shortly."
   busy_subagent_queued:    "⏳ Subagent working{status_detail} — your message is queued for when it finishes (use /stop to cancel everything)."
@@ -690,6 +691,7 @@ gateway:
   # Steer command replies.
   steer_failed:            "⚠️ Steer failed: {error}"
   steer_queued:            "⏩ Steer queued — arrives after the next tool call: '{preview}'"
+  steer_queued_subagents:  "⏩ Steer queued into current run and its active subagent(s) — arrives after the next tool call: '{preview}'"
   steer_empty:             "Steer rejected (empty payload)."
 
   # Force-stop reply.

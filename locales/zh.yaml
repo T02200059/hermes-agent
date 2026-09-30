@@ -682,6 +682,7 @@ gateway:
   busy_drain_no_work:       "⏳ 网关{profile_tag}正在{action}，目前无法接受新任务。"
   busy_drain_maintenance:   "⏳ 当前代理{profile_tag}正在为维护操作排空，暂时不接受新的轮次。稍后会恢复，请稍后重新发送消息。"
   busy_steer_ack:           "⏩ 已导向当前运行{status_detail}。你的消息将在下一次工具调用后送达。"
+  busy_steer_ack_subagents: "⏩ 已导向当前运行及其活跃子代理{status_detail}。你的消息将在其下一次工具调用后送达。"
   busy_queue_ack:           "⏳ 已排队到下一轮{status_detail}。当前任务完成后我会回复你。"
   busy_interrupt_ack:       "⚡ 正在中断当前任务{status_detail}。稍后我会回复你的消息。"
   busy_subagent_queued:     "⏳ 子代理运行中{status_detail} — 你的消息已排队等待完成（使用 /stop 取消所有操作）。"
@@ -690,6 +691,7 @@ gateway:
   # /steer 命令回复
   steer_failed:            "⚠️ 导向失败：{error}"
   steer_queued:            "⏩ 导向已排队 — 将在下一次工具调用后送达：'{preview}'"
+  steer_queued_subagents:  "⏩ 导向已排队到当前运行及其活跃子代理 — 将在下一次工具调用后送达：'{preview}'"
   steer_empty:             "导向被拒绝（内容为空）。"
 
   # 强制停止
