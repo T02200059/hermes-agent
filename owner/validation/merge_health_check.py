@@ -892,6 +892,40 @@ def _is_generated_artifact(rel_path: str) -> bool:
     return rel_path.rsplit("/", 1)[-1] in _GENERATED_ARTIFACTS
 
 
+# Verbatim upstream ports: official files whose *only* local change is upstream code
+# copied in ahead of the sync (T2-20's "port the missing symbols" route).
+#
+# These files must NOT carry an [owner] marker, and adding one would be actively
+# harmful: the marker's meaning in this repo is "this is OUR customization -- keep
+# ours at conflict time", whereas for a verbatim port the correct resolution is
+# upstream's version. Marking them would tell a future resolver to preserve a stale
+# copy of upstream's own code.
+#
+# So the exemption is per-file and reasoned, and it is kept honest by two asserts:
+# an allowlisted file that gains an [owner] marker is reported as a stale entry
+# (which means it now carries real customization and must be marked normally), and
+# an allowlisted file that is no longer modified since the base is reported so the
+# entry gets retired. Without this, Check 8 could be silently neutralised by
+# parking a customized file here.
+_UPSTREAM_PORT_ALLOWLIST = REPO_ROOT / "owner" / "validation" / "upstream_port_files.txt"
+
+
+def _load_upstream_port_allowlist() -> dict:
+    """``{rel_path: reason}`` from ``upstream_port_files.txt`` (missing file -> {})."""
+    try:
+        raw = _UPSTREAM_PORT_ALLOWLIST.read_text(encoding="utf-8")
+    except OSError:
+        return {}
+    entries: dict = {}
+    for line in raw.splitlines():
+        line = line.split("#", 1)[0].strip()
+        if not line:
+            continue
+        path, _, reason = line.partition("  ")
+        entries[path.strip()] = reason.strip() or "(no reason given)"
+    return entries
+
+
 def _resolve_upstream_base() -> Optional[str]:
     """Last common ancestor of HEAD and the upstream mainline, or None."""
     for ref in _UPSTREAM_BASE_REFS:
@@ -969,6 +1003,8 @@ def check_changed_file_markers() -> CheckResult:
     issues: List[str] = []
     examined = 0
     covered = 0
+    allowlist = _load_upstream_port_allowlist()
+    seen_allowlisted: set = set()
     for rel_path in candidates:
         if _is_generated_artifact(rel_path):
             continue
@@ -981,13 +1017,35 @@ def check_changed_file_markers() -> CheckResult:
         except OSError as exc:
             issues.append(f"{rel_path} — unreadable: {exc}")
             continue
-        if _OWNER_MARKER_RE.search(source):
+        has_marker = bool(_OWNER_MARKER_RE.search(source))
+        if rel_path in allowlist:
+            seen_allowlisted.add(rel_path)
+            if has_marker:
+                issues.append(
+                    f"{rel_path} — stale entry in upstream_port_files.txt: the file now "
+                    "carries an [owner] marker, so it is a real customization (and must be "
+                    "marked as one) rather than a verbatim upstream port; remove the entry"
+                )
+                covered += 1
+                continue
+            covered += 1
+            continue
+        if has_marker:
             covered += 1
             continue
         issues.append(
             f"{rel_path} — modified official file with no [owner] marker anywhere; "
-            "a sync would treat this customization as upstream code and drop it"
+            "a sync would treat this customization as upstream code and drop it "
+            "(if the file is purely a verbatim upstream port, list it in "
+            "owner/validation/upstream_port_files.txt with a reason)"
         )
+
+    for rel_path, reason in sorted(allowlist.items()):
+        if rel_path not in seen_allowlisted:
+            issues.append(
+                f"{rel_path} — stale entry in upstream_port_files.txt: no longer a modified "
+                f"official file ({reason}); retire the entry"
+            )
 
     return "Check 8: Changed-file [owner] marker coverage", issues, examined, covered
 

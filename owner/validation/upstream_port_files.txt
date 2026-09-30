@@ -1,0 +1,23 @@
+# Verbatim upstream ports (T2-20 "port the missing symbols" route).
+#
+# A file belongs here only when its ENTIRE local change is upstream code copied in
+# ahead of the sync -- no owner customization of our own.  Such a file must NOT
+# carry an [owner] marker: the marker means "keep ours at conflict time", while the
+# correct resolution for a verbatim port is upstream's version.
+#
+# Check 8 enforces both directions: an entry whose file gains an [owner] marker is
+# reported as stale (that file is a real customization and must be marked normally),
+# and an entry whose file is no longer modified since the base is reported so it gets
+# retired.  A reason is mandatory -- the parser reads everything after two spaces.
+#
+# Do NOT park a customized file here to silence Check 8: the [owner]-marker assert
+# above catches exactly that.
+#
+# Format: <path><two spaces><reason, one line>
+
+agent/replay_cleanup.py  canonicalize_replay_history added verbatim from upstream/main, T2-20
+agent/session_activity.py  format_iteration_progress added verbatim from upstream/main, T2-20
+gateway/response_filters.py  INTERNAL_NOTIFICATION_DISPLAY_KIND, MACHINERY_DISPLAY_KINDS, display_kind_for_event, is_machinery_display_kind added verbatim, T2-20
+gateway/restart.py  is_global_startup_conflict added verbatim from upstream/main, T2-20
+hermes_cli/timefmt.py  EPOCH_MIN, EPOCH_MAX, coerce_epoch added verbatim from upstream/main, T2-20
+utils.py  file_signature added verbatim from upstream/main, T2-20
