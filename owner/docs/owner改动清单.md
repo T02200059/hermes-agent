@@ -42,7 +42,7 @@ _元数据统计口径：范围取「基点后未出现在上游 `00b2e03c80` �
 | 看 LLM 输出复读/乱码折叠 | §14 |
 | 看 API Server identity 路由、LDAP 认证、准入查询 | §15 |
 | 看 API Server 产物媒体下载、流式事件契约 | §16 |
-| 看本轮月度审查（2026-09-28）的逐项修复留档 | §16.7-§16.15（依次为 T2-10~T2-18） |
+| 看本轮月度审查（2026-09-28）的逐项修复留档 | §16.7-§16.16（依次为 T2-10~T2-20） |
 | 看 Gateway merge 后最容易丢的胶水 | §7、附录 B、附录 C |
 | 看脚本、cron、备份、Upstream Sync、Viking 记忆治理 | §11 |
 | 看 owner/ 模块到官方侵入点的映射 | 附录 A、附录 B |
@@ -2179,6 +2179,55 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 
 ---
 
+### 16.16 采纳上游 `run.py` 拆包：56 处定制按上游新落点重落，进度尺缺口归零（T2-20）
+
+- **背景**（T2-20）：上游在 19 天窗口内把 `gateway/run.py` 从 5,676 行拆成 23 个 `run_*.py`（合计 21,542 行），我方仍是 34,113 行的单体。三方合并实测 `run.py` 有 **32 冲突块 / ours 侧 25,005 行**（`git merge-file` 口径；`merge-tree` 结果树口径为 25 块 / 25,294 行），其中 **1 块独占 19,945 行**——那不是「某几处定制」，而是**整段拆包搬走**。**用「逐处迁定制」的手法消不掉它**，只能采纳上游结构。
+- **成本 / 收益被实测改写（本项的决策依据）**：
+  - 真实 `git merge upstream/main`（`merge-tree --write-tree`）冲突 **117 文件 / 544 块 / ours 侧 124,755 行**；`run.py` 是第 1 名但**只占 20.0% 行、5.9% 块**（次席 `cli.py` 10.7%、`tui_gateway/server.py` 9.7%、`hermes_state.py` 8.6%）。上游做的是**全仓规模**的模块化，`run.py` 只是最大一例 ⇒ **单项治理的收益上限是五分之一**。
+  - 换码前置依赖：23 个上游模块**不自足**。静态闭包四代收敛，最终判定 **import-time 只要 5 个模块 + 0 个符号**；惰性闭包是 **230 模块 / 142 符号**（属运行期，不阻塞 import）。
+- **用户决策：收窄为「按符号补齐」**——23 个上游模块整取；55 个依赖文件**一律不替换**，只把缺的符号移植进来。
+- **落地分两步**：
+  1. **结构 + import-time 闭包**（`fcae2029a0`、`21f32d86d6`）：23 个 `run_*.py` 落地（19 个与上游**逐字一致**、4 个已承载定制）；补 **7 处 import-time 符号** + **5 个 import-time 模块**（均逐字取上游、字节一致已验）+ `FailoverReason` 上游新增的 5 个成员。
+  2. **定制重落**（`ab969baa80`、`58be2cbe98`）：monolith 里剩余 **24 种标记文本 / 30 处缺口**全部重落到 `gateway/run_turn.py`。
+- **移植约定（本条确立）**：**前向移植的上游代码逐字复制、不加 `[owner]` 标记**。判据一句话：「merge 那一刻，该以谁的一侧为准」——上游代码提前取用后，未来真 merge 时与上游一致可**自动合掉**；加标记反而把自动合入变成手动冲突。我方自己的定制（上游没有的）**必须**标记。
+- **口径决策：逐点传 `source=`，不用「单点绑定 partial」**。曾评估把 per-chat 解析收敛成 `functools.partial` 单点注入（标记更少、合并面更小），但会让 **8 处站点共用 1 条标记**，机检仪器从此对这 8 处失明，还须新增 `allow_drop` 假造一次「塌缩」。取舍是**仪器灵敏度优先**——仪器的存在理由正是「漏搬 = 定制静默消失」（T0-1 的动机），不能为省几行标记削掉它的分辨力。最终**未新增任何 `allow_drop`**。
+- **惰性闭包提前咬到一次（改写「可完全推迟」的判断）**：上游 `run_turn.py` 运行期 `from gateway.display_config import resolve_tool_progress`，而 `display_config.py`（55 个依赖文件之一，**不整体替换**）**没有这个符号**。它属惰性闭包、非 import-time 依赖 ⇒ 「23/23 可 import」的检查**看不见它**，一旦走到这条路径就是 `ImportError`。按既定路线**只补符号**：`resolve_tool_progress`（含 per-chat 层）、`_configured_display_value`（含 per-chat 层），并把原先内联在 `resolve_display_setting` 里的 owner 钩子惰性 import 收敛成单点 `_owner_display_hooks()`（避免优雅降级 fallback 在两个调用点之间漂移）。
+  - 上游 `resolve_tool_progress` 回答的是**第二问**：「这个模式是运维写下的，还是继承来的 tier 默认值」——Slack 原生 task cards 依赖该区分（tier 的 `off` 不该杀卡片，写下的 `tool_progress: off` 必须杀）。移植版额外携带 per-chat 层，否则 `display.per_chat.<platform>.<chat_id>.tool_progress` 对溯源问题不可见，per-chat 的 `off` 会留下卡片通道继续跑。
+  - **等价性实测（非抽样）**：`resolve_display_setting` 8 组配置 × 5 平台 × 9 设置 × 2 chat_id = **720 组比较，0 处差异**。
+- **四处「不能机械套模板」的判定**：
+  1. `_clear_planned_restart_notification` **上游全仓无**（被删）。但其内的 `[owner]` 标记经 **AST 复核实为模块级代码**——紧跟 `os.environ["_HERMES_GATEWAY"] = "1"` 之后的环境清洗，与该被删函数无关 ⇒ 判为 **run.py 原地**。
+  2. `track_agent` 上游**改名** `_run_agent_track_agent`（`run_turn.py`）⇒ 按新名落笔。
+  3. `_interim_assistant_cb` 实测**不是定制**（我方与基点逐字一致；上游版本是上游自身加的 streaming-TTS flush + `_send_status_text`）⇒ 采纳上游、无丢失。
+  4. **两处「正当塌缩」**（上游把我方重复的定制**收敛成单一 choke point** ⇒ 标记数合法下降，登记进 `allow_drop`）：
+     - `# [owner] cron-env-leak: scrub session/cron env (see owner/cron/restart_scrub.py)` → `GatewayShutdownMixin._restart_watcher_env()`（`gateway/run_shutdown.py:1348`）。
+     - `# [owner] fence-safe` → `_progress_absorb`（`gateway/run_turn_runner.py`，主循环与 drain 循环两处调用同一助手）。
+- **四处「run.py 原地」不迁移**（逐条复核确认）：CR-004 白名单（模块级）、BOS/EOS 清洗（`_sanitize_gateway_final_response` 内）、`_resolve_gateway_display_bool` 的 `chat_id` 文档行、cron-env-leak 的模块级环境清洗。上游 `run.py` 至今保有这 4 个宿主/位置 ⇒ **换码收尾时补回新 run.py** 即可。
+- **机检（零定制丢失仪器，口径 v2）**：
+  - `verify` **PASS**：43 种标记文本全部未下降；全仓总数 **869** ≥ 下限 54。
+  - `ruler` 收敛到 **0 缺口**：**39 种已落位 + 4 种登记为「run.py 原地」= 43**。
+  - **仪器本轮两次加固 / 一次扩展**：① 记录口径由「整行」改为「**从 `# [owner]` 起的部分**」——`run.py` 里大量标记是**代码行上的行内注释**（`progress_lines[-1] = ... # [owner] fence-safe`），重落时上游把接收者改名是**正当改写**，用整行做身份会把这 16 处报成漏搬；裸标记（标记后无评注）**回退整行**，否则不同裸标记合成一条计数、丢一个加一个互相抵消，产生**假阴性**。② 新增 `run_py_inplace.json` 的**分类报告**：原地项若不加登记会**永远**留在待落清单里，使计数器收敛不到 0，真实缺口被已知项淹没。
+- **Check 8 与「前向移植不加标记」约定的冲突（本轮修的是守卫，不是约定）**：手工跑健康检查发现 Check 8 由 **116/116 掉到 116/122**，报 6 个文件「modified official file with no `[owner]` marker anywhere」（`agent/replay_cleanup.py`、`agent/session_activity.py`、`gateway/response_filters.py`、`gateway/restart.py`、`hermes_cli/timefmt.py`、`utils.py`）。
+  - **冲突本质**：这 6 个文件**在我方基点零足迹**，本次改动**全部**是逐字上游移植。Check 8 的规则是「改过的官方文件必须带标记」，而本条的约定是「前向移植不带标记」——**两者在这类文件上正面相撞**。
+  - **判定：约定对、守卫粗**。`[owner]` 标记在本仓的语义是「**这是我方定制，冲突时保我方**」；而对逐字移植，正确的解冲突方向恰恰是**取上游版本**。给它们加标记会**误导后续 merge 去保留一份上游自己代码的旧拷贝** —— 比不加标记更糟。所以修的是守卫。
+  - **改法（保留 Check 8 的严格性，而不是放水）**：新增 `owner/validation/upstream_port_files.txt` 逐文件**带理由**的豁免清单，并在 Check 8 里加**两个反向断言**防止它变成静默开关 —— ① 豁免文件**长出** `[owner]` 标记 ⇒ 报「条目过期（该文件已是真定制，须正常标记）」；② 豁免文件**已不再是改过的官方文件** ⇒ 报「条目过期（应退休）」。**「把有定制的文件塞进清单来消音」这条路被 ① 直接堵死。**
+  - **自证三探针全部咬住**（`/tmp/t220/selfproof_check8.py`，内存快照 + 字节比对还原）：A 给 `utils.py` 加 `[owner]` ⇒ 报条目过期 ✓；B 移除 `gateway/restart.py` 条目 ⇒ 报缺标记 ✓；C 塞入无效路径 ⇒ 报条目过期 ✓。还原后回到 **122/122 / 0 issue**。
+  - 该清单是**过渡性**的：换码收尾后这些文件由上游版本取代，条目随之退休（第 ② 个断言会主动提示）。
+- **涉及文件**：新增 `gateway/run_*.py` × 23；`gateway/display_config.py`（补 `resolve_tool_progress` / `_configured_display_value` / `_owner_display_hooks`）、`gateway/run_turn.py`（25 处标记重落）、`owner/validation/merge_health_check.py`（Check 8 增豁免清单 + 两个反向断言）、新增 `owner/validation/upstream_port_files.txt`、`gateway/config.py` / `gateway/restart.py` / `gateway/response_filters.py` / `agent/session_activity.py` / `agent/replay_cleanup.py` / `agent/error_classifier.py` / `hermes_cli/timefmt.py` / `utils.py`（逐符号补齐）、新增 `agent/turn_failure_copy.py` / `gateway/platforms/base_exec_approval.py` / `gateway/platforms/event.py` / `gateway/session_transcript.py` / `gateway/warning_notifications.py`（与上游逐字相同）。
+- **侵入类型**：结构性采纳上游拆包 + 薄胶水重落（25 处标记）。**正常路径行为零变更**（per-chat 解析逐点仍传 `source`，与 monolith 一致）。
+- **验证**：
+  - **机检**：`verify` PASS、`ruler` 0 缺口（见上）。
+  - **定向回归（非全量）**：9 个测试文件 **9 failed / 221 passed** —— 9 项与基线**同一批**（`test_error_classifier` 的 `429`/`rate_limit` 归类，属 T2-21），**零新增失败**；`tests/gateway/test_display_config.py` 单跑 **23 passed**。
+  - **可导入性**：**23/23** 个 `run_*.py` 可 `import`；`import gateway.run` 正常。
+- **顺带发现（P2，留待清理类条目）**：`_resolve_gateway_display_bool(..., chat_id=)` 的 `chat_id` 形参**没有任何生产调用方**（唯一调用点与两处测试都不传）——该 per-chat 支持目前是**死能力**。本次按「不静默丢弃定制」**保守移植**（保留形参 + 文档行），但应纳入「无使用者 owner 面」的清理判定：**要么**在 `show_reasoning` 调用点补 `chat_id=source.chat_id` 激活它，**要么**删除。
+- **未纳入**：
+  1. **惰性闭包全量补齐（230 模块 / 142 符号）**：留到换码后按**实际暴露的运行时路径**驱动，避免为不存在的路径付合并面。`resolve_tool_progress` 一例说明「可完全推迟」不成立，届时须逐条实测。
+  2. **同批 116 个冲突文件的其余部分**：`run.py` 只占 117 文件 / 544 块的 20.0% 行。本项**只治理 `run.py`**，其余属别的条目。
+  3. **`owner/docs/run-py-owner-mapping.md` 的逐模块计数差**：该文档（2026-09-28，HEAD `efec7a3696`）记 `run.py` 5 / `run_turn.py` 33、合计 57，与本轮实测 `run.py` 3 / `run_turn.py` 32、合计 56 不一致；其第 208/210 行建议把 per-chat 显示簇（18 标记 / 11 调用点）**收敛进 `owner/`**，本次按「逐调用点重落」**未采纳**。该文档需按本轮实测**重写对齐**。
+- **本条改动**：本清单 §16.16 正文 + §0.2 导航行 + 附录 B（新增 `gateway/run_*.py` 行、修订 `gateway/run.py` 与 `gateway/display_config.py` 两行）+ 附录 E。
+- **Commit**：`fcae2029a0`（结构）→ `21f32d86d6`（import-time 闭包）→ `ab969baa80`（`display_config` 符号）→ `58be2cbe98`（`run_turn.py` 重落）。见附录 E。
+
+---
+
 ## 附录 A：owner/ 模块职责索引
 
 | 路径 | 职责 | 侵入官方文件 |
@@ -2232,7 +2281,8 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 
 | 文件 | 侵入内容 | owner/ 对应模块 | 相关 commit |
 |------|----------|-----------------|-------------|
-| `gateway/run.py` | cron env scrub ×3、executor-shutdown、inbound context、hygiene notice、auto-card、per-chat display、chained quick command、steer vision enrichment（§7.18）、**stale-run cancel（§7.23：/stop 后跳过提升的孤儿轮次补硬中断）** | owner/cron/、owner/gateway/、owner/feishu/、owner/display_overrides.py、owner/gateway/steer_vision.py | 几乎所有 §11/§17 commit |
+| `gateway/run.py` | cron env scrub ×3、executor-shutdown、inbound context、hygiene notice、auto-card、per-chat display、chained quick command、steer vision enrichment（§7.18）、**stale-run cancel（§7.23：/stop 后跳过提升的孤儿轮次补硬中断）**。**§16.16 起 `run.py` 已让位给上游拆包结构** —— 上述定制绝大多数已重落到 `gateway/run_*.py`（见下一行），`run.py` 里只剩 **4 处「原地」定制**：CR-004 白名单（模块级）、BOS/EOS 清洗（`_sanitize_gateway_final_response` 内）、`_resolve_gateway_display_bool` 的 `chat_id` 文档行、cron-env-leak 的模块级环境清洗 | owner/cron/、owner/gateway/、owner/feishu/、owner/display_overrides.py、owner/gateway/steer_vision.py | 几乎所有 §11/§17 commit；§16.16 |
+| `gateway/run_*.py`（23 个，§16.16 新增） | 上游拆包后的新承运方。19 个与上游**逐字一致**（提前抵达的上游文件，零合并债）；**4 个承载我方定制**：`run_turn_runner.py` 9 处（diff-card 包装、飞书澄清超时停止、fence-safe、per-chat streaming…）、`run_busy.py` 4 处、`run_inbound.py` 4 处、`run_shutdown.py` 2 处。**§16.16 第二步另把 25 处标记重落进 `run_turn.py`**：per-chat display override ×11（`resolve_display_setting_for_source` 逐点传 `source=`）、auto-card ×3、progress_explainer ×6（安装点 + 停止点，后者落在上游抽取出的 `_run_agent_cleanup_turn_tasks` 内）、杂项 ×5（hygiene 压缩通知、§17.2 重启竞态、`_bg_session_key`、stop-orphan-run）。正式的前向移植代码**不带 `[owner]` 标记**（判据：merge 那一刻该以谁的一侧为准） | owner/cron/、owner/gateway/、owner/feishu/、owner/diff_card/、owner/progress_explainer/、owner/display_overrides.py、owner/patches/stop_orphan_run.py | fcae2029a0、21f32d86d6、58be2cbe98 |
 | `plugins/platforms/feishu/adapter.py` | **70 处 `[owner]` 标记**（T2-14 迁移前 71，净 −1：`send_card` 两处随正文迁出、薄壳留一处，分派表 9 处随表迁入 `card_action.py`，其余 8 个新薄壳各补 1 处）：approval/auto_card/bot_menu/clarify/diff_card/model_picker/profile_routing/resume_card/sender_name/early-typing/**skill_approval_gate** / **queue_card** 委托；`_mentions_self` 不再把 `@_all` 当 @机器人（§4.14）；**merge_forward 二次拉取渲染**（§4.15）；`send_card` 内补 `hermes_profile` 标签（§4.1）；`_finalize_send_result` 全路径 message_id 日志（§7.21）；**reaction 归属决策记录**（§16.6，仅注释：群聊表情按反应者解析属已接受决策，钉在用例上）；**自有卡片胶水外移 + 11 个薄壳**（§16.11：`_dispatch_card_action` 111→49、`send_card` 63→19、`_get_card_send_lock` 23→12、`_send_media_guard_hint` 29→16、picker/guide/queue 六方法、`_normalise_card_action_value` 20→12；文件 7092→6900 行；兜底尾巴刻意留在 adapter，owner 侧以 `UNHANDLED` 哨兵表示「走兜底」；`anchors.yaml` / `inventory.yaml` 随之改指 `owner/feishu/card_action.py`） | owner/feishu/*（含 skill_approval_card、queue_card、card_sender、card_action） | §4.2/§5.3-5.7/§17.1/§3.11/§4.1/§4.11/§4.14/§4.15/§7.21/§16.6/§16.11 |
 | `agent/conversation_loop.py` | MoA 注入（CR-005 已改为独立 message）、content-filter fallback、adaptive backoff、thinking-timeout、attribution 重建、tool_call_id 胶水 | owner/attribution.py、owner/api_error_hints.py | a6dcd6ed8、9a05e50b4、362304bc8 |
 | `tools/approval.py` | home-prefix fold（CR-001 修复）、skill script 自动审批（3 处委托）、patch.yaml allowlist 合并、cron active helper | owner/approval/、owner/patch_config.py、owner/cron/approval_helper.py | 82fe8c962、5dd9580b4、99a374f64 |
@@ -2298,7 +2348,7 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 | `agent/credential_pool.py` | base_url override 钩子 | 薄胶水 |
 | `agent/agent_runtime_helpers.py` | `_auth_pool_refresh_counts` defensive getter + file timeout | 薄胶水 |
 | `agent/codex_runtime.py` | owner_provider_name 透传 | 薄胶水 |
-| `gateway/display_config.py` / `gateway/slash_commands.py` | per-chat display source 透传 + i18n；`/new` 时 invalidate patch 配置缓存（§1.2） | 薄胶水 |
+| `gateway/display_config.py` / `gateway/slash_commands.py` | per-chat display source 透传 + i18n；`/new` 时 invalidate patch 配置缓存（§1.2）。**§16.16 另补上游符号**：`resolve_tool_progress`（含 per-chat 层）、`_configured_display_value`（含 per-chat 层），并把 owner 钩子的惰性 import + 优雅降级收敛成单点 `_owner_display_hooks()`（避免 fallback 在两个调用点之间漂移） | 薄胶水 |
 | `agent/verification_stop.py` | 创意/视觉扩展名 suppress verify-on-stop（§8.4） | inline（allowlist） |
 | `agent/models_dev.py` | models.dev 缓存 TTL 24h（§2.11）+ fetch 超时 5s | inline |
 | `gateway/session_context.py` | cron session 隔离接线 | 薄胶水 |
@@ -2424,6 +2474,23 @@ _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请先�
 ---
 
 ## 附录 E：变更日志
+
+### 2026-09-30：新增 §16.16 采纳上游 `run.py` 拆包，定制重落完毕（T2-20）
+
+- **新建正文**：**§16.16**（23 个 `gateway/run_*.py` 结构落地；7 处 import-time 符号 + 5 个 import-time 模块 + `FailoverReason` 5 成员；`gateway/run_turn.py` 重落 25 处标记；`gateway/display_config.py` 补 `resolve_tool_progress` / `_configured_display_value` / `_owner_display_hooks`）。本清单 §16.16 正文 + §0.2 导航行 + 附录 B（新增 `gateway/run_*.py` 行、修订 `gateway/run.py` 与 `gateway/display_config.py` 两行）+ 本条
+- **类型**：结构性采纳上游拆包 + 薄胶水重落；**正常路径零行为变更**（per-chat 解析逐点仍传 `source`，与 monolith 一致）
+- **决策**（用户，2026-09-29）：**收窄为「按符号补齐」** —— 23 个上游模块整取，55 个依赖文件**一律不替换**，只把缺的符号移植进来。理由：真实 `git merge upstream/main` 的冲突面是 **117 文件 / 544 块 / ours 侧 124,755 行**，`run.py` 虽是第 1 名却**只占 20.0% 行、5.9% 块** —— 上游做的是全仓规模的模块化，单项治理的收益上限就是五分之一
+- **口径决策**：per-chat 解析**逐点传 `source=`**，不收敛成 `functools.partial` 单点注入。后者标记更少、合并面更小，但会让 8 处站点共用 1 条标记 ⇒ 机检仪器对这 8 处**失明**，还须新增 `allow_drop` 假造塌缩。取舍 = **仪器灵敏度优先**。最终**未新增任何 `allow_drop`**
+- **移植约定（本条确立）**：**前向移植的上游代码逐字复制、不加 `[owner]` 标记**（判据：merge 那一刻该以谁的一侧为准）；我方自己的定制必须标记
+- **惰性闭包提前咬到一次**：上游 `run_turn.py` 运行期要 `display_config.resolve_tool_progress`，而该依赖文件里**没有**这个符号 —— 它属**惰性**闭包、非 import-time 依赖 ⇒ 「23/23 可 import」的检查**看不见它**，走到即 `ImportError`。按既定路线只补符号，并为展示阈值量纲给 `_HygienePlan` 增补 `context_length`。**等价性实测非抽样：`resolve_display_setting` 720 组比较 0 差异**
+- **两处「正当塌缩」**（上游把我方重复定制收敛成单一 choke point，标记数合法下降，登记 `allow_drop`）：`cron-env-leak` → `GatewayShutdownMixin._restart_watcher_env()`（`run_shutdown.py:1348`）；`fence-safe` → `_progress_absorb`（`run_turn_runner.py`）
+- **四处「不能机械套模板」的判定**：`_clear_planned_restart_notification` 上游已删但其标记**实为模块级代码**（AST 复核）⇒ run.py 原地；`track_agent` 上游改名 `_run_agent_track_agent` ⇒ 按新名落笔；`_interim_assistant_cb` 实测**不是定制** ⇒ 采纳上游；`_bg_session_key` 只作用于背景任务路径 ⇒ 主回合 `ctx.session_key` 不受影响
+- **四处「run.py 原地」**（不迁移，换码收尾补回新 `run.py`）：CR-004 白名单（模块级）、BOS/EOS 清洗（`_sanitize_gateway_final_response` 内）、`_resolve_gateway_display_bool` 的 `chat_id` 文档行、cron-env-leak 的模块级环境清洗
+- **验证**：机检 `verify` **PASS**（43 种标记文本全部未下降；全仓总数 869 ≥ 下限 54）、`ruler` **缺口归零**（39 已落位 + 4 原地登记 = 43）；定向 9 个测试文件 **9 failed / 221 passed**，9 项与基线**同一批**（`test_error_classifier` 的 429 归类，属 T2-21）⇒ **零新增失败**；`tests/gateway/test_display_config.py` 单跑 **23 passed**；**23/23** 个 `run_*.py` 可 import、`import gateway.run` 正常。**未跑全量**
+- **仪器两次加固 + 一次扩展**：① 记录口径由整行改为「从 `# [owner]` 起的部分」（行内标记的接收者改名是**正当改写**，用整行做身份会误报 16 处；裸标记回退整行以防假阴性）；② 新增 `run_py_inplace.json` 分类报告（原地项不登记则永远留在待落清单，计数器无法收敛，真实缺口被已知项淹没）
+- **Commit**：`fcae2029a0`（结构）→ `21f32d86d6`（import-time 闭包）→ `ab969baa80`（`display_config` 符号）→ `58be2cbe98`（`run_turn.py` 重落）
+- **未纳入**：惰性闭包全量补齐（230 模块 / 142 符号，留到换码后按实际暴露路径驱动）；同批其余 116 个冲突文件（`run.py` 只占 20.0% 行）；`owner/docs/run-py-owner-mapping.md` 的逐模块计数差与「per-chat 簇收敛进 `owner/`」建议（需按本轮实测重写对齐）
+- **顺带发现（P2）**：`_resolve_gateway_display_bool(..., chat_id=)` 的 `chat_id` **无任何生产调用方** —— 保守移植但应纳入「无使用者 owner 面」清理判定（激活或删除）
 
 ### 2026-09-29：新增 §16.15 飞书三件套管线并入上游 `feishu_lark`（T2-18）
 
