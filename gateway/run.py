@@ -3929,67 +3929,17 @@ _CONTROL_INTERRUPT_MESSAGES = frozenset(
 
 
 def _gateway_profile_tag() -> str:
-    """Return a display tag for lifecycle messages, e.g. ``" [coder]"``.
+    # [owner] lifecycle profile tag — implementation in owner/gateway/lifecycle_copy.py
+    from owner.gateway.lifecycle_copy import profile_tag
 
-    Named profiles (and non-default ``HERMES_HOME`` → ``custom``) get
-    ``" [<name>]"`` so multi-gateway fleets can tell which process is
-    shutting down or coming back online.  The default profile returns
-    ``""`` so single-profile installs keep the original untagged wording.
-
-    Resolution order:
-    1. ``HERMES_LIFECYCLE_LABEL`` env var — free-form display label for
-       lifecycle / busy-drain messages only (Chinese, spaces, etc. allowed).
-       Intended for one-process-per-tenant fleets that keep a stable
-       ``HERMES_PROFILE`` id for routing while showing a human nickname.
-    2. ``HERMES_PROFILE`` env var (set by ``-p`` / profile selection)
-    3. ``get_active_profile_name()`` (inferred from ``HERMES_HOME`` path)
-
-    ``HERMES_LIFECYCLE_LABEL`` is display-only: it is not validated as a
-    profile id and is not used for routing, auth, or bot identity.
-
-    Any resolution failure also returns ``""`` (fallback to the original
-    message shape) and logs a warning — lifecycle notifications must never
-    crash the shutdown/startup path over a missing profile id.
-    """
-    try:
-        # Display override first — free-form, no profile-id constraints.
-        label = (os.environ.get("HERMES_LIFECYCLE_LABEL") or "").strip()
-        if label:
-            return f" [{label}]"
-
-        name = (os.environ.get("HERMES_PROFILE") or "").strip()
-        if not name:
-            from hermes_cli.profiles import get_active_profile_name
-
-            name = get_active_profile_name()
-    except Exception as exc:
-        logger.warning(
-            "Could not resolve active profile name for lifecycle messages; "
-            "using untagged gateway text: %s",
-            exc,
-        )
-        return ""
-
-    if not isinstance(name, str) or not name.strip():
-        logger.warning(
-            "Active profile name is empty/invalid (%r); using untagged gateway text",
-            name,
-        )
-        return ""
-
-    name = name.strip()
-    if name == "default":
-        return ""
-    return f" [{name}]"
+    return profile_tag()
 
 
 def _gateway_lifecycle_msg(key: str, **format_kwargs: Any) -> str:
-    """Translate a gateway lifecycle key with an optional ``{profile_tag}``.
+    # [owner] lifecycle i18n msg — implementation in owner/gateway/lifecycle_copy.py
+    from owner.gateway.lifecycle_copy import lifecycle_msg
 
-    Extra ``format_kwargs`` (e.g. ``count``, ``action``, ``boot_rev``) are
-    forwarded to :func:`agent.i18n.t` alongside the resolved profile tag.
-    """
-    return t(key, profile_tag=_gateway_profile_tag(), **format_kwargs)
+    return lifecycle_msg(key, **format_kwargs)
 
 
 def _is_control_interrupt_message(message: Optional[str]) -> bool:
@@ -4734,86 +4684,32 @@ async def _dispose_unused_adapter(adapter: "BasePlatformAdapter | None") -> None
 
 
 def _append_dedup_counter(base_msg: str, count: int) -> str:
-    """Append a ``(×N)`` repeat counter to a deduplicated progress line.
+    # [owner] fence-safe dedup counter — implementation in owner/gateway/turn_helpers.py
+    from owner.gateway.turn_helpers import append_dedup_counter
 
-    When ``base_msg`` ends with a closed fence (```` ``` ````) the counter MUST
-    be placed on a new line: appending it inline (``"``` (×N)"``) strips the
-    line of its CommonMark closed-fence status, so the code block never closes
-    and subsequent terminal progress lines get swallowed into it. Only matters
-    on ``supports_code_blocks`` platforms (Feishu/Slack), but the newline is
-    harmless elsewhere.
-
-    Shared by both dedup sites in ``send_progress_messages`` (main loop and the
-    drain loop) so the rule cannot drift between them.
-    """
-    sep = "\n" if base_msg.endswith("```") else " "
-    return f"{base_msg}{sep}(×{count + 1})"
+    return append_dedup_counter(base_msg, count)
 
 
 def _classify_edit_failure(result) -> str:
-    """Classify a failed progress-message edit into a follow-up action.
+    # [owner] edit-failure classifier — implementation in owner/gateway/turn_helpers.py
+    from owner.gateway.turn_helpers import classify_edit_failure
 
-    Pure decision function (no I/O) so the progress-loop's failure handling can
-    be unit-tested without driving the whole async loop (WR-06). Precedence
-    matches the loop's original inline order:
-
-      - ``"retryable"``: transient (network) error — keep ``can_edit`` and let
-        the next cycle catch up.
-      - ``"rotate"``: the bubble is no longer editable but a fresh one is
-        allowed (the adapter set ``result.rotate`` by platform error code, e.g.
-        Feishu's ~20-edit cap → 230072/230075). Open a new bubble, keep editing.
-      - ``"flood"``: flood control / rate limit — back off but keep editing.
-      - ``"disable"``: permanent failure (not found, permissions, …) — stop
-        editing and fall back to fresh sends.
-    """
-    if getattr(result, "retryable", False):
-        return "retryable"
-    if getattr(result, "rotate", False):
-        return "rotate"
-    err = (getattr(result, "error", "") or "").lower()
-    if "flood" in err or "retry after" in err:
-        return "flood"
-    return "disable"
+    return classify_edit_failure(result)
 
 
 def _is_executor_shutdown_error(exc: BaseException) -> bool:
-    """True when ``exc`` is asyncio's "default executor torn down" RuntimeError.
+    # [owner] executor-shutdown detector — implementation in owner/gateway/turn_helpers.py
+    from owner.gateway.turn_helpers import is_executor_shutdown_error
 
-    ``run_in_executor(None, ...)`` and ``asyncio.to_thread(...)`` raise this once
-    the running loop's default ThreadPoolExecutor has been shut down — which
-    happens during the asyncio teardown of a SIGTERM/restart drain while the loop
-    is *briefly still serving inbound events*. A message that lands in that
-    window (or an in-flight turn when SIGTERM arrives) then fails here rather
-    than from a real bug, so it should surface as a transient "restarting"
-    condition, not a scary generic agent error.
-    """
-    if not isinstance(exc, RuntimeError):
-        return False
-    msg = str(exc).lower()
-    return (
-        "executor shutdown has been called" in msg
-        or "cannot schedule new futures after shutdown" in msg
-        or "event loop is closed" in msg
-    )
-
-
-_ESCAPE_FENCE_RE = re.compile(r'^([ \t]*)(`{3,})(.*)$', re.MULTILINE)
+    return is_executor_shutdown_error(exc)
 
 
 def _escape_code_fences_for_inline_block(text: str) -> str:
-    """Rewrite markdown code-fence lines so they can't break out of a wrapping
-    ```` ``` ```` block used to display reasoning on Feishu/Telegram.
+    # [owner] reasoning fence escaper — implementation + rationale live in
+    # owner/gateway/turn_helpers.py (module path in callers, not here)
+    from owner.gateway.turn_helpers import escape_code_fences_for_inline_block
 
-    Any line whose first non-space characters are a fence of 3+ backticks —
-    including indented/tab-prefixed fences, which a naive ``re.sub(r'^```')``
-    missed and thus leaked — is rewritten to the same number of single quotes.
-    Inline single backticks are left untouched. The info string after the fence
-    (e.g. the language tag) is preserved.
-    """
-    return _ESCAPE_FENCE_RE.sub(
-        lambda m: m.group(1) + "'" * len(m.group(2)) + m.group(3),
-        text,
-    )
+    return escape_code_fences_for_inline_block(text)
 
 
 # Max seconds between platform reconnect retries (primary watcher and

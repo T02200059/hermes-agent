@@ -613,7 +613,7 @@ class TurnRunner:
                 # [owner] rotate: delegate to the shared classifier
                 # so Feishu 230072/230075 (edit cap) opens a fresh
                 # bubble instead of permanently disabling can_edit.
-                from gateway.run import _classify_edit_failure
+                from owner.gateway.turn_helpers import classify_edit_failure as _classify_edit_failure  # [owner]
                 _owner_action = _classify_edit_failure(result)
                 if _owner_action == "retryable":
                     logger.debug("[%s] Transient overflow edit failure — keeping can_edit=True", st.adapter.name)
@@ -653,7 +653,7 @@ class TurnRunner:
                 return base_msg
             # Upstream unified both dedup sites (main loop and drain loop) into this single
             # helper, so the two copies of our customization collapsed into one.
-            from gateway.run import _append_dedup_counter
+            from owner.gateway.turn_helpers import append_dedup_counter as _append_dedup_counter  # [owner]
             st.progress_lines[-1] = _append_dedup_counter(base_msg, count)  # [owner] fence-safe
             return st.progress_lines[-1]
         st.progress_lines.append(raw)
@@ -705,7 +705,7 @@ class TurnRunner:
             if result.success:
                 return True
             # [owner] rotate: delegate to the shared classifier
-            from gateway.run import _classify_edit_failure
+            from owner.gateway.turn_helpers import classify_edit_failure as _classify_edit_failure  # [owner]
             _owner_action = _classify_edit_failure(result)
             if _owner_action == "retryable":
                 logger.debug("[%s] Transient edit failure — keeping can_edit=True", st.adapter.name)

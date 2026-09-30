@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 import gateway.run as gateway_run
+from owner.gateway.lifecycle_copy import lifecycle_msg, profile_tag
 from gateway.config import HomeChannel, Platform, PlatformConfig
 from gateway.platforms.base import MessageEvent, MessageType, SendResult
 from gateway.session import build_session_key
@@ -185,7 +186,7 @@ async def test_send_home_channel_startup_notification_to_configured_home(tmp_pat
     assert delivered == {("telegram", "home-42", None)}
     adapter.send.assert_called_once_with(
         "home-42",
-        gateway_run._gateway_lifecycle_msg("gateway.online"),
+        lifecycle_msg("gateway.online"),
     )
 
 
@@ -219,7 +220,7 @@ async def test_send_home_channel_startup_notification_preserves_thread_metadata(
     assert delivered == {("telegram", "parent-42", "777")}
     adapter.send.assert_called_once_with(
         "parent-42",
-        gateway_run._gateway_lifecycle_msg("gateway.online"),
+        lifecycle_msg("gateway.online"),
         metadata={
             "thread_id": "777",
             "telegram_dm_topic_reply_fallback": True,
@@ -408,7 +409,7 @@ async def test_shutdown_notifications_use_cached_live_thread_source_when_origin_
 
     adapter.send.assert_awaited_once_with(
         "parent-42",
-        gateway_run._gateway_lifecycle_msg("gateway.shutdown_notify_stop"),
+        lifecycle_msg("gateway.shutdown_notify_stop"),
         metadata={"thread_id": "topic-7"},
     )
 
@@ -443,7 +444,7 @@ def test_gateway_profile_tag_empty_for_default(monkeypatch):
         "hermes_cli.profiles.get_active_profile_name",
         lambda: "default",
     )
-    assert gateway_run._gateway_profile_tag() == ""
+    assert profile_tag() == ""
 
 
 def test_gateway_profile_tag_named_profile(monkeypatch):
@@ -453,7 +454,7 @@ def test_gateway_profile_tag_named_profile(monkeypatch):
         "hermes_cli.profiles.get_active_profile_name",
         lambda: "coder",
     )
-    assert gateway_run._gateway_profile_tag() == " [coder]"
+    assert profile_tag() == " [coder]"
 
 
 def test_gateway_profile_tag_prefers_lifecycle_label_env(monkeypatch):
@@ -467,13 +468,13 @@ def test_gateway_profile_tag_prefers_lifecycle_label_env(monkeypatch):
         "hermes_cli.profiles.get_active_profile_name",
         lambda: "coder",
     )
-    assert gateway_run._gateway_profile_tag() == " [孙起飞的 AI 助手]"
+    assert profile_tag() == " [孙起飞的 AI 助手]"
 
 
 def test_gateway_profile_tag_lifecycle_label_blank_falls_through(monkeypatch):
     monkeypatch.setenv("HERMES_LIFECYCLE_LABEL", "   ")
     monkeypatch.setenv("HERMES_PROFILE", "sunqifei")
-    assert gateway_run._gateway_profile_tag() == " [sunqifei]"
+    assert profile_tag() == " [sunqifei]"
 
 
 def test_gateway_profile_tag_prefers_hermes_profile_env(monkeypatch):
@@ -484,7 +485,7 @@ def test_gateway_profile_tag_prefers_hermes_profile_env(monkeypatch):
         "hermes_cli.profiles.get_active_profile_name",
         lambda: "coder",
     )
-    assert gateway_run._gateway_profile_tag() == " [fleet-a]"
+    assert profile_tag() == " [fleet-a]"
 
 
 def test_gateway_profile_tag_hermes_profile_env_default_is_empty(monkeypatch):
@@ -494,7 +495,7 @@ def test_gateway_profile_tag_hermes_profile_env_default_is_empty(monkeypatch):
         "hermes_cli.profiles.get_active_profile_name",
         lambda: "coder",
     )
-    assert gateway_run._gateway_profile_tag() == ""
+    assert profile_tag() == ""
 
 
 def test_gateway_profile_tag_fallback_on_error_logs_warning(monkeypatch, caplog):
@@ -508,7 +509,7 @@ def test_gateway_profile_tag_fallback_on_error_logs_warning(monkeypatch, caplog)
         _boom,
     )
     with caplog.at_level("WARNING"):
-        assert gateway_run._gateway_profile_tag() == ""
+        assert profile_tag() == ""
     assert any(
         "Could not resolve active profile name" in r.getMessage()
         for r in caplog.records
@@ -523,7 +524,7 @@ def test_gateway_profile_tag_fallback_on_empty_name_logs_warning(monkeypatch, ca
         lambda: "   ",
     )
     with caplog.at_level("WARNING"):
-        assert gateway_run._gateway_profile_tag() == ""
+        assert profile_tag() == ""
     assert any(
         "empty/invalid" in r.getMessage()
         for r in caplog.records
@@ -537,7 +538,7 @@ def test_gateway_lifecycle_msg_includes_profile_tag(monkeypatch):
         "hermes_cli.profiles.get_active_profile_name",
         lambda: "work",
     )
-    msg = gateway_run._gateway_lifecycle_msg("gateway.shutdown_notify_stop")
+    msg = lifecycle_msg("gateway.shutdown_notify_stop")
     assert " [work] " in msg or msg.startswith("⚠️ Gateway [work]")
     assert "shutting down" in msg
 
@@ -549,7 +550,7 @@ def test_gateway_lifecycle_msg_matches_original_when_default(monkeypatch):
         "hermes_cli.profiles.get_active_profile_name",
         lambda: "default",
     )
-    msg = gateway_run._gateway_lifecycle_msg("gateway.shutdown_notify_stop")
+    msg = lifecycle_msg("gateway.shutdown_notify_stop")
     assert msg == (
         "⚠️ Gateway shutting down — Your current task will be interrupted."
     )
@@ -558,7 +559,7 @@ def test_gateway_lifecycle_msg_matches_original_when_default(monkeypatch):
 def test_gateway_lifecycle_msg_uses_lifecycle_label(monkeypatch):
     monkeypatch.setenv("HERMES_LIFECYCLE_LABEL", "孙起飞的 AI 助手")
     monkeypatch.setenv("HERMES_PROFILE", "sunqifei")
-    msg = gateway_run._gateway_lifecycle_msg("gateway.shutdown_notify_stop")
+    msg = lifecycle_msg("gateway.shutdown_notify_stop")
     assert " [孙起飞的 AI 助手]" in msg
     assert "sunqifei" not in msg
 
@@ -589,7 +590,7 @@ def test_lifecycle_msg_draining_includes_named_profile(monkeypatch):
         "hermes_cli.profiles.get_active_profile_name",
         lambda: "coder",
     )
-    msg = gateway_run._gateway_lifecycle_msg("gateway.draining", count=2)
+    msg = lifecycle_msg("gateway.draining", count=2)
     assert " [coder] " in msg or msg.startswith("⏳ [coder]")
     assert "2" in msg
     assert "Draining" in msg
@@ -600,7 +601,7 @@ def test_lifecycle_msg_busy_drain_includes_named_profile(monkeypatch):
         "hermes_cli.profiles.get_active_profile_name",
         lambda: "work",
     )
-    msg = gateway_run._gateway_lifecycle_msg(
+    msg = lifecycle_msg(
         "gateway.busy_drain_queued",
         action="restarting",
     )
@@ -612,7 +613,7 @@ def test_lifecycle_msg_model_restarting_includes_named_profile(monkeypatch):
         "hermes_cli.profiles.get_active_profile_name",
         lambda: "ops",
     )
-    msg = gateway_run._gateway_lifecycle_msg("gateway.model.gateway_restarting")
+    msg = lifecycle_msg("gateway.model.gateway_restarting")
     assert "gateway [ops] is restarting" in msg
 
 
@@ -621,7 +622,7 @@ def test_lifecycle_msg_code_skew_includes_named_profile(monkeypatch):
         "hermes_cli.profiles.get_active_profile_name",
         lambda: "ops",
     )
-    msg = gateway_run._gateway_lifecycle_msg(
+    msg = lifecycle_msg(
         "gateway.model.code_skew_restart_required",
         boot_rev="aaa",
         disk_rev="bbb",

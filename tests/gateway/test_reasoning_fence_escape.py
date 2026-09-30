@@ -12,7 +12,7 @@ the wrapping block" — not a snapshot of current output.
 
 import re
 
-import gateway.run as gateway_run
+from owner.gateway.turn_helpers import escape_code_fences_for_inline_block
 
 
 _FENCE_LINE_RE = re.compile(r'^[ \t]*`{3,}', re.MULTILINE)
@@ -20,7 +20,7 @@ _FENCE_LINE_RE = re.compile(r'^[ \t]*`{3,}', re.MULTILINE)
 
 def _wrap(reasoning: str) -> str:
     """Mirror the gateway's wrap: escape, then wrap in a fenced block."""
-    safe = gateway_run._escape_code_fences_for_inline_block(reasoning)
+    safe = escape_code_fences_for_inline_block(reasoning)
     return f"```\n{safe}\n```"
 
 
@@ -88,7 +88,7 @@ def test_inline_single_backticks_left_untouched():
     verbatim — escaping them would corrupt legitimate inline code in the
     reasoning."""
     reasoning = "use `foo` and `bar` here"
-    escaped = gateway_run._escape_code_fences_for_inline_block(reasoning)
+    escaped = escape_code_fences_for_inline_block(reasoning)
     assert escaped == reasoning
 
 
@@ -96,7 +96,7 @@ def test_fence_with_trailing_info_string_preserved():
     """The info string after a fence (language tag) is preserved, only the
     backticks are rewritten."""
     reasoning = "```python\nx\n```"
-    escaped = gateway_run._escape_code_fences_for_inline_block(reasoning)
+    escaped = escape_code_fences_for_inline_block(reasoning)
     assert "'''python" in escaped
     assert "```" not in escaped
 
@@ -107,9 +107,9 @@ def test_multiple_fences_all_escaped():
 
 
 def test_empty_string_passthrough():
-    assert gateway_run._escape_code_fences_for_inline_block("") == ""
+    assert escape_code_fences_for_inline_block("") == ""
 
 
 def test_no_fences_passthrough():
     reasoning = "just plain thinking, no code at all."
-    assert gateway_run._escape_code_fences_for_inline_block(reasoning) == reasoning
+    assert escape_code_fences_for_inline_block(reasoning) == reasoning

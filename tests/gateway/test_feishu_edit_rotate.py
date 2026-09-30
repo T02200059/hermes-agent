@@ -8,7 +8,7 @@ import pytest
 from types import SimpleNamespace
 
 from gateway.platforms.base import SendResult
-from gateway.run import _classify_edit_failure
+from owner.gateway.turn_helpers import classify_edit_failure as _classify_edit_failure
 
 
 class TestSendResultRotate:

@@ -18,7 +18,7 @@ import re
 # Exercise the PRODUCTION helper, not a local copy — a regression in
 # gateway/run.py must fail these tests (WR-04). The rule lives in one place
 # (_append_dedup_counter) and is called from both dedup sites (WR-05).
-from gateway.run import _append_dedup_counter as _apply_dedup_counter
+from owner.gateway.turn_helpers import append_dedup_counter as _apply_dedup_counter
 
 
 # ---------------------------------------------------------------------------

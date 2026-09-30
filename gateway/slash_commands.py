@@ -88,7 +88,7 @@ def _model_switch_skew_guard() -> Optional[str]:
     if not skew:
         return None
     boot_rev, disk_rev = skew
-    from gateway.run import _gateway_lifecycle_msg
+    from owner.gateway.lifecycle_copy import lifecycle_msg as _gateway_lifecycle_msg  # [owner]
 
     return _gateway_lifecycle_msg(
         "gateway.model.code_skew_restart_required",
@@ -1637,7 +1637,7 @@ class GatewaySlashCommandsMixin:
             return ""
 
         if self._restart_requested or self._draining:
-            from gateway.run import _gateway_lifecycle_msg
+            from owner.gateway.lifecycle_copy import lifecycle_msg as _gateway_lifecycle_msg  # [owner]
 
             count = self._running_agent_count()
             if count:
@@ -1725,7 +1725,7 @@ class GatewaySlashCommandsMixin:
             self.request_restart(detached=False, via_service=True)
         else:
             self.request_restart(detached=True, via_service=False)
-        from gateway.run import _gateway_lifecycle_msg
+        from owner.gateway.lifecycle_copy import lifecycle_msg as _gateway_lifecycle_msg  # [owner]
 
         if active_agents:
             return _gateway_lifecycle_msg("gateway.draining", count=active_agents)

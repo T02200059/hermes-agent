@@ -2011,7 +2011,9 @@ class GatewayTurnMixin:
         # torn down by an in-progress SIGTERM/restart drain while this turn was
         # running. Not a real failure — tell the user to resend instead of
         # dumping a RuntimeError.
-        from gateway.run import _gateway_lifecycle_msg, _is_executor_shutdown_error
+        # [owner] helpers live in owner/ so the split modules stay self-sufficient
+        from owner.gateway.lifecycle_copy import lifecycle_msg as _gateway_lifecycle_msg
+        from owner.gateway.turn_helpers import is_executor_shutdown_error as _is_executor_shutdown_error
         if _is_executor_shutdown_error(e):
             return _gateway_lifecycle_msg("gateway.model.gateway_restarting")
         # Never expose raw exception types/messages to end users (info-leakage risk).
