@@ -809,6 +809,21 @@ class GatewayInboundMixin:
         target_command = target.lstrip("/")
         return target_command.split()[0] if target_command else target_command
 
+    @staticmethod
+    def _hm_alias_quick_command_chain(event: "MessageEvent", qcmd: dict) -> List[str]:
+        """``;;``-separated fragments of an alias quick command's target (+ the user args).
+
+        [owner] chained quick commands. The splitter lives in ``gateway.platforms.base``
+        so the CLI, the TUI and the gateway agree on where a chain breaks; each surface
+        still owns its own dispatch of the resulting list. An alias with no target yields
+        ``[]`` — the same case that makes ``_hm_expand_alias_quick_command`` return ``None``.
+        """
+        target = (qcmd.get("target") or "").strip()
+        if not target:
+            return []
+        from gateway.platforms.base import expand_chained_quick_alias
+        return expand_chained_quick_alias(target, event.get_command_args().strip())
+
     async def _hm_command_hooks(
         self, event: "MessageEvent", source: SessionSource, _quick_key: str, command: str, canonical: str
     ) -> Tuple[bool, Optional[str], Optional[str]]:
@@ -860,7 +875,8 @@ class GatewayInboundMixin:
         self, event: "MessageEvent", source: SessionSource, _quick_key: str
     ) -> Tuple[bool, Optional[str], Optional[str], Optional[str]]:
         """Resolve the slash command (aliases, access gate, hooks) → ``(handled, result, command,
-        canonical)``; when ``handled`` the caller returns ``result`` as-is (may be None)."""
+        canonical)``; when ``handled`` the caller returns ``result`` as-is (may be None). A
+        chained alias quick command runs every fragment right here and comes back handled."""
         from hermes_cli.commands import is_gateway_known_command, resolve_command as _resolve_cmd
 
         def _canon(cmd):
@@ -877,6 +893,25 @@ class GatewayInboundMixin:
         if command and _cmd_def is None:
             qcmd = self._hm_quick_commands().get(command)
             if qcmd is not None and qcmd.get("type") == "alias":
+                # [owner] chained quick commands: an alias target may itself be a
+                # ";;"-separated chain ("/model x ;; /reasoning low"). Every fragment
+                # re-enters _handle_message with a rewritten copy of the event so it takes
+                # the same admission / access-gate / dispatch path as a typed command; the
+                # replies are joined in order and the chain is reported as handled.
+                _chain = self._hm_alias_quick_command_chain(event, qcmd)
+                if len(_chain) > 1:
+                    results = []
+                    for cmd_text in _chain:
+                        cmd_text = cmd_text if cmd_text.startswith("/") else f"/{cmd_text}"
+                        _fragment = await self._handle_message(
+                            dataclasses.replace(event, text=cmd_text)
+                        )
+                        if _fragment:
+                            results.append(str(_fragment))
+                    return True, (
+                        "\n".join(results) if results
+                        else t("gateway.chained_commands_executed")
+                    ), command, canonical
                 new_command = self._hm_expand_alias_quick_command(event, qcmd)
                 if new_command is not None:
                     command = new_command
@@ -1123,10 +1158,36 @@ class GatewayInboundMixin:
         # underscored autocomplete form matches plugin commands registered with hyphens.
         if command:
             try:
-                from hermes_cli.plugins import get_plugin_command_handler
-                plugin_handler = get_plugin_command_handler(command.replace("_", "-"))
-                if plugin_handler:
-                    result = plugin_handler(event.get_command_args().strip())
+                from hermes_cli.plugins import (
+                    get_plugin_command_entry,
+                    make_plugin_command_context,
+                )
+                # [owner] dispatch through the entry rather than the bare handler: a handler
+                # that opts into PluginCommandContext (``*, hermes_ctx``) — the owner
+                # extensions behind /providers and /feishu-guide are exactly that — needs the
+                # platform/event/adapters/runner bundle, and the busy lane already passes it.
+                # Handler-only dispatch calls them positionally, so every ctx-aware plugin
+                # command dies into the warning below and silently stops working.
+                _plugin_entry = get_plugin_command_entry(command.replace("_", "-"))
+                _plugin_handler = _plugin_entry.get("handler") if _plugin_entry else None
+                if _plugin_handler:
+                    user_args = event.get_command_args().strip()
+                    if _plugin_entry.get("accepts_ctx"):
+                        result = _plugin_handler(
+                            user_args,
+                            hermes_ctx=make_plugin_command_context(
+                                platform=(
+                                    source.platform.value
+                                    if source and source.platform
+                                    else None
+                                ),
+                                event=event,
+                                adapters=self.adapters,
+                                runner=self,
+                            ),
+                        )
+                    else:
+                        result = _plugin_handler(user_args)
                     if asyncio.iscoroutine(result):
                         result = await result
                     return True, str(result) if result else None, command
