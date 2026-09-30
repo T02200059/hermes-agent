@@ -200,6 +200,33 @@ _PLATFORM_DEFAULTS: dict[str, dict[str, Any]] = {
 OVERRIDEABLE_KEYS = frozenset(_GLOBAL_DEFAULTS.keys())
 
 
+# [owner] per-chat display overrides: safe lazy import so the module remains
+# importable (and fully functional as no-op) even if owner/display_overrides.py
+# is deleted. This improves removability per 二次开发规范.
+def _owner_display_hooks():
+    """Return ``(merge_owner_display_config, resolve_per_chat_override)``.
+
+    Single lazy-import point for the owner display hooks, shared by
+    :func:`resolve_display_setting` and :func:`_configured_display_value` so the
+    graceful-degradation fallback cannot drift between the two callers.
+    """
+    try:
+        from owner.display_overrides import (
+            merge_owner_display_config,
+            resolve_per_chat_override,
+        )
+    except Exception:
+        # [owner] graceful degradation – no per_chat or owner.display merge
+        # (this path is taken only if owner/display_overrides.py cannot be imported)
+        def merge_owner_display_config(cfg):  # type: ignore
+            return cfg
+
+        def resolve_per_chat_override(*_a, **_k):  # type: ignore
+            return None
+
+    return merge_owner_display_config, resolve_per_chat_override
+
+
 def resolve_display_setting(
     user_config: dict,
     platform_key: str,
@@ -232,21 +259,7 @@ def resolve_display_setting(
     """
     display_cfg = user_config.get("display") or {}
 
-    # [owner] per-chat display overrides: safe lazy import so the module remains
-    # importable (and fully functional as no-op) even if owner/display_overrides.py
-    # is deleted. This improves removability per 二次开发规范.
-    try:
-        from owner.display_overrides import (
-            merge_owner_display_config,
-            resolve_per_chat_override,
-        )
-    except Exception:
-        # [owner] graceful degradation – no per_chat or owner.display merge
-        # (this path is taken only if owner/display_overrides.py cannot be imported)
-        def merge_owner_display_config(cfg):  # type: ignore
-            return cfg
-        def resolve_per_chat_override(*_a, **_k):  # type: ignore
-            return None
+    merge_owner_display_config, resolve_per_chat_override = _owner_display_hooks()
 
     # [owner] merge patch.yaml owner.display into config at call time
     display_cfg = merge_owner_display_config(display_cfg)
@@ -321,8 +334,86 @@ def resolve_display_setting_for_source(
 
 
 # ---------------------------------------------------------------------------
+# Tool-progress provenance
+# ---------------------------------------------------------------------------
+# Upstream lifted this pair out of the monolith so a caller can ask a second question
+# ``resolve_display_setting`` cannot answer alone: did an operator WRITE this mode, or is
+# it an inherited tier default? Slack native task cards depend on the distinction — a
+# tier's ``off`` must not kill the card lane, while a written ``tool_progress: off`` must.
+#
+# This port carries the per-chat tier as well. Without it an operator's
+# ``display.per_chat.<platform>.<chat_id>.tool_progress`` would be invisible to the
+# provenance question, so a per-chat ``off`` would leave the card lane running.
+
+def resolve_tool_progress(
+    user_config: dict,
+    platform_key: str,
+    env_mode: str | None = None,
+    *,
+    source: Any = None,
+    chat_id: str | None = None,
+) -> "tuple[str, bool]":
+    """Return (mode, explicit intent) from the same winning source.
+
+    Non-None YAML wins over the legacy env bridge. Null inherits through to env,
+    then tier defaults. A tier's off is not an operator request to disable cards.
+
+    ``source`` / ``chat_id`` extend upstream's signature with the per-chat tier so
+    gateway call sites can pass the turn's ``SessionSource`` (see
+    :func:`resolve_display_setting_for_source`).
+    """
+    if chat_id is None and source is not None:
+        chat_id = getattr(source, "chat_id", None)
+    configured = _configured_display_value(
+        user_config, platform_key, "tool_progress", chat_id=chat_id
+    )
+    if configured is not None:
+        return _normalise("tool_progress", configured), True
+    if env_mode:
+        return _normalise("tool_progress", env_mode), True
+    return (
+        resolve_display_setting(user_config, platform_key, "tool_progress", chat_id=chat_id),
+        False,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _configured_display_value(
+    user_config: dict,
+    platform_key: str,
+    setting: str,
+    *,
+    chat_id: str | None = None,
+) -> Any:
+    """First non-None operator value, without introducing tier defaults.
+
+    Mirrors the precedence in :func:`resolve_display_setting` — owner display merge,
+    then per-chat, then per-platform, then the legacy ``tool_progress_overrides``
+    bridge, then the global key — stopping at the first value an operator wrote.
+    """
+    merge_owner_display_config, resolve_per_chat_override = _owner_display_hooks()
+    display_cfg = merge_owner_display_config(user_config.get("display") or {})
+    if not isinstance(display_cfg, dict):
+        return None
+    if chat_id:
+        val = resolve_per_chat_override(display_cfg, platform_key, chat_id, setting)
+        if val is not None:
+            return val
+    platforms = display_cfg.get("platforms")
+    plat_overrides = platforms.get(platform_key) if isinstance(platforms, dict) else None
+    if isinstance(plat_overrides, dict) and plat_overrides.get(setting) is not None:
+        return plat_overrides[setting]
+    if setting == "tool_progress":
+        legacy = display_cfg.get("tool_progress_overrides")
+        if isinstance(legacy, dict) and legacy.get(platform_key) is not None:
+            return legacy[platform_key]
+    if setting != "streaming":  # display.streaming is CLI-only
+        return display_cfg.get(setting)
+    return None
+
 
 def _normalise(setting: str, value: Any) -> Any:
     """Normalise YAML quirks (bare ``off`` → False in YAML 1.1)."""
