@@ -17,20 +17,16 @@ from contextlib import suppress
 from pathlib import Path
 from typing import Any, Dict, Optional, cast
 
+from agent.i18n import t
 from gateway.config import Platform, _BUILTIN_PLATFORM_VALUES
 from gateway.platforms.base import BasePlatformAdapter, _mark_notify_metadata
 from gateway.platforms.event import MessageEvent, MessageType
 from gateway.session import SessionEntry, SessionSource
 from gateway.run_shutdown import _log_suppressed, _notice_target_key, _send_error, _send_failed
+from owner.gateway.lifecycle_copy import lifecycle_msg as _gateway_lifecycle_msg
 
 # Log-record parity with the origin module.
 logger = logging.getLogger("gateway.run")
-
-# A failed /update leaves the previous version running; the full pip/git log stays on the host
-# (`hermes update` re-runs it in the terminal) and only a short tail is quoted in chat.
-_UPDATE_FAILED_NOTICE = (
-    "❌ Hermes update failed; the previous version is still running. Run `hermes update` on the "
-    "host to see the full error, or try /update again later.")
 
 
 def _update_output_tail(output: str, limit: int) -> str:
@@ -554,11 +550,11 @@ class GatewayNotificationsMixin:
                 )
                 sent_buttons = True
         if not sent_buttons:
-            default_hint = f" (default: {default})" if default else ""
+            default_hint = t("gateway.update.default_hint", default=default) if default else ""
             _p = getattr(adapter, "typed_command_prefix", "/")
             await target.send(
-                f"☤ **Update needs your input:**\n\n{prompt_text}{default_hint}\n\n"
-                f"Reply `{_p}approve` (yes) or `{_p}deny` (no), or type your answer directly."
+                t("gateway.update.needs_input", prompt=prompt_text, default_hint=default_hint,
+                  command_prefix=_p)
             )
         # Keep the prompt marker on disk until answered so a restarted watcher can re-forward it.
         self._session_state(target.session_key).persistent.update_prompt_pending = True
@@ -611,7 +607,8 @@ class GatewayNotificationsMixin:
                 with _log_suppressed(logging.WARNING, "Update final notification failed: %s"):
                     exit_code = self._update_exit_code(paths)
                     await target.send(
-                        "✅ Hermes update finished." if exit_code == 0 else _UPDATE_FAILED_NOTICE
+                        t("gateway.update.finished") if exit_code == 0
+                        else t("gateway.update.failed_notice")
                     )
                     logger.info("Update finished (exit=%s), notified %s", exit_code, session_key)
                 self._clear_update_markers(paths, session_key)
@@ -638,7 +635,7 @@ class GatewayNotificationsMixin:
             paths.exit_code.write_text("124", encoding="utf-8")
             await _flush_buffer()
             with suppress(Exception):
-                await target.send("❌ Hermes update timed out after 30 minutes.")
+                await target.send(t("gateway.update.timed_out"))
             self._clear_update_markers(paths, session_key)
 
     async def _send_update_notification(self) -> bool:
@@ -688,13 +685,15 @@ class GatewayNotificationsMixin:
                 from tools.ansi_strip import strip_ansi
                 output = strip_ansi(output).strip()
                 if exit_code == 0:
-                    msg = "✅ Hermes update finished successfully."
+                    msg = t("gateway.update.finished_ok")
                     if output:
-                        msg = f"{msg}\n\n```\n{_update_output_tail(output, 3500)}\n```"
+                        msg = t("gateway.update.finished_with_output",
+                                output=_update_output_tail(output, 3500))
                 else:
-                    msg = _UPDATE_FAILED_NOTICE
+                    msg = t("gateway.update.failed_notice")
                     if output:
-                        msg = f"{msg}\n\nLast lines:\n```\n{_update_output_tail(output, 800)}\n```"
+                        msg = t("gateway.update.failed_with_output",
+                                output=_update_output_tail(output, 800))
                 await adapter.send(chat_id, msg, metadata=_non_conversational_metadata(metadata, platform=platform))
                 logger.info("Sent post-update notification to %s:%s (exit=%s)", platform_str, chat_id, exit_code)
         except Exception as e:
@@ -740,7 +739,7 @@ class GatewayNotificationsMixin:
                     if data.get(field):
                         metadata[field] = str(data[field])
             result = await transport.send(
-                platform, str(chat_id), "♻ Gateway restarted successfully. Your session continues.",
+                platform, str(chat_id), _gateway_lifecycle_msg("gateway.restart_success"),
                 metadata=_non_conversational_metadata(metadata, platform=platform),
             )
             # adapter.send() catches provider errors (e.g. "Chat not found") and returns
@@ -864,7 +863,7 @@ class GatewayNotificationsMixin:
         """
         delivered: set[tuple[str, str, Optional[str]]] = set()
         skipped = skip_targets or set()
-        message = "♻️ Gateway online — Hermes is back and ready."
+        message = _gateway_lifecycle_msg("gateway.online")
         free_tier_line = self._free_tier_startup_line()
         if free_tier_line:
             message = f"{message}\n{free_tier_line}"
@@ -1841,14 +1840,18 @@ class GatewayNotificationsMixin:
             return _format_concise_process_notification(session_id, command, session.exit_code, new_output,
                                                         duration_seconds=_dur)
         header = _format_concise_process_notification(session_id, command, session.exit_code, "", duration_seconds=_dur)
-        return f"{header}\n\nFinal output:\n```\n{new_output.strip()}\n```" if new_output.strip() else header
+        if new_output.strip():
+            return f"{header}{t('gateway.bg_process_final_body', output=new_output.strip())}"
+        return header
 
     def _format_process_running_message(self, session) -> str:
         from gateway.run import _redact_gateway_user_facing_secrets, _shorten_command_for_display
         new_output = self._redacted_output_tail(session, 500)
         short_cmd = _shorten_command_for_display(_redact_gateway_user_facing_secrets(getattr(session, "command", "") or ""))
-        header = "⏳ Background task still running" + (f" — `{short_cmd}`" if short_cmd else "")
-        return f"{header}\n\nRecent output:\n```\n{new_output.strip()}\n```" if new_output.strip() else header
+        header = t("gateway.bg_process_running_header") + (f" — `{short_cmd}`" if short_cmd else "")
+        if new_output.strip():
+            return f"{header}{t('gateway.bg_process_running_body', output=new_output.strip())}"
+        return header
 
     def arm_process_watcher(self, watcher: dict) -> bool:
         """Start ``_run_process_watcher`` for a watcher registered mid-turn, from the agent's

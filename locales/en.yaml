@@ -646,6 +646,12 @@ gateway:
   telegram_topic_default: "Hermes Chat"
   bg_process_finished: "[Background process {session_id} finished with exit code {exit_code}~ Here's the final output:\n{output}]"
   bg_process_running: "[Background process {session_id} is still running~ New output:\n{output}]"
+  # The two bracket keys above are still driven by the monolith (gateway/run.py) and go away
+  # with it at the split cutover. The post-split (#54266) non-concise lanes render a concise
+  # header plus a fenced tail, carried by the fragments below.
+  bg_process_running_header: "⏳ Background task still running"
+  bg_process_final_body:   "\n\nFinal output:\n```\n{output}\n```"
+  bg_process_running_body: "\n\nRecent output:\n```\n{output}\n```"
 
   # Generic error shown to the user when message processing crashes unexpectedly.
   handler_error: "Sorry, I encountered an error ({error_type}).\n{error_detail}\nTry again or use /reset to start a fresh session."
@@ -1450,9 +1456,12 @@ Install it with: `hermes skills install {path}`"
 
     finished: "✅ Hermes update finished."
     failed_exit: "❌ Hermes update failed (exit code {exit_code})."
+    # A failed /update leaves the previous version running; the full pip/git log stays on the
+    # host (`hermes update` re-runs it in the terminal) and only a short tail is quoted in chat.
+    failed_notice: "❌ Hermes update failed; the previous version is still running. Run `hermes update` on the host to see the full error, or try /update again later."
     timed_out: "❌ Hermes update timed out after 30 minutes."
-    finished_with_output: "✅ Hermes update finished.\n\n```\n{output}\n```"
-    failed_with_output: "❌ Hermes update failed.\n\n```\n{output}\n```"
+    finished_with_output: "✅ Hermes update finished successfully.\n\n```\n{output}\n```"
+    failed_with_output: "❌ Hermes update failed; the previous version is still running. Run `hermes update` on the host to see the full error, or try /update again later.\n\nLast lines:\n```\n{output}\n```"
     finished_ok: "✅ Hermes update finished successfully."
     failed_details: "❌ Hermes update failed. Check the gateway logs or run `hermes update` manually for details."
     needs_input: "⚕ **Update needs your input:**\n\n{prompt}{default_hint}\n\nReply `{command_prefix}approve` (yes) or `{command_prefix}deny` (no), or type your answer directly."

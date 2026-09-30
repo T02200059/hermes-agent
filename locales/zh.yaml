@@ -648,6 +648,11 @@ gateway:
   telegram_topic_default: "Hermes 聊天"
   bg_process_finished: "[后台进程 {session_id} 已完成，退出码 {exit_code}~ 最终输出：\n{output}]"
   bg_process_running: "[后台进程 {session_id} 仍在运行~ 新输出：\n{output}]"
+  # 上面两个方括号键仍由未切换的单体（gateway/run.py）驱动，切换时随之删除。
+  # 拆包后（#54266）非 concise 通道改为「简洁抬头 + 代码围栏尾部」，由下面三个片段承载。
+  bg_process_running_header: "⏳ 后台任务仍在运行"
+  bg_process_final_body:   "\n\n最终输出：\n```\n{output}\n```"
+  bg_process_running_body: "\n\n最新输出：\n```\n{output}\n```"
 
   # 消息处理意外崩溃时向用户显示的通用错误。
   handler_error: "抱歉，发生了错误（{error_type}）。\n{error_detail}\n请重试，或使用 /reset 开始新会话。"
@@ -1439,9 +1444,11 @@ gateway:
 
     finished: "✅ Hermes 更新完成。"
     failed_exit: "❌ Hermes 更新失败（退出码 {exit_code}）。"
+    # 更新失败时上一版本仍在运行；完整的 pip/git 日志留在宿主机上，聊天里只引用一小段尾部输出。
+    failed_notice: "❌ Hermes 更新失败；上一版本仍在运行。请在宿主机上运行 `hermes update` 查看完整错误，或稍后重试 /update。"
     timed_out: "❌ Hermes 更新在 30 分钟后超时。"
-    finished_with_output: "✅ Hermes 更新完成。\n\n```\n{output}\n```"
-    failed_with_output: "❌ Hermes 更新失败。\n\n```\n{output}\n```"
+    finished_with_output: "✅ Hermes 更新已成功完成。\n\n```\n{output}\n```"
+    failed_with_output: "❌ Hermes 更新失败；上一版本仍在运行。请在宿主机上运行 `hermes update` 查看完整错误，或稍后重试 /update。\n\n最后几行：\n```\n{output}\n```"
     finished_ok: "✅ Hermes 更新已成功完成。"
     failed_details: "❌ Hermes 更新失败。请查看网关日志，或手动运行 `hermes update` 查看详情。"
     needs_input: "⚕ **更新需要你的输入：**\n\n{prompt}{default_hint}\n\n回复 `{command_prefix}approve`（是）或 `{command_prefix}deny`（否），或直接输入你的答案。"
