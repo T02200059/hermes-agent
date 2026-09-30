@@ -613,6 +613,9 @@ class GatewayTurnMixin:
         approx_tokens: int
         msg_count: int
         warn_token_threshold: int
+        # [owner] resolved model context length, carried for the hygiene compression notice
+        # (owner/gateway/hygiene_compression_notice.py) so it can print the threshold scale.
+        context_length: int = 0
 
     @staticmethod
     def _hmwa_hygiene_read_config(hs, data):
@@ -790,7 +793,9 @@ class GatewayTurnMixin:
                 _msg_count, f"{_approx_tokens:,}", _token_source,
                 int(hs.threshold_pct * 100), f"{_hyg_context_length:,}", f"{_compress_token_threshold:,}",
             )
-        return self._HygienePlan(_needs_compress, _approx_tokens, _msg_count, _warn_token_threshold)
+        return self._HygienePlan(
+            _needs_compress, _approx_tokens, _msg_count, _warn_token_threshold, _hyg_context_length,
+        )
 
     async def _hmwa_hygiene_wait_for_summary(self, attempt, hs, session_entry):
         """Progress-aware inline wait for the detached hygiene compressor. Returns the compressed
@@ -1156,6 +1161,27 @@ class GatewayTurnMixin:
             attempt, _compressed, history, plan, session_entry=session_entry, source=source,
             _quick_key=_quick_key, run_generation=run_generation,
         )
+        # [owner] hygiene compression notice: thin
+        # delegate to owner/gateway/hygiene_compression_notice.py
+        _hyg_adapter = self.adapters.get(source.platform)
+        try:
+            from owner.gateway.hygiene_compression_notice import (
+                send_hygiene_compression_notice,
+            )
+            await send_hygiene_compression_notice(
+                _hyg_adapter,
+                source,
+                msg_count=plan.msg_count,
+                new_count=_new_count,
+                approx_tokens=plan.approx_tokens,
+                new_tokens=_new_tokens,
+                hard_msg_limit=hs.hard_msg_limit,
+                hyg_threshold_pct=hs.threshold_pct,
+                hyg_context_length=plan.context_length,
+                metadata=attempt.meta,
+            )
+        except Exception:
+            pass
         # Summary failure aborts the compressor (nothing dropped). Warn the user visibly — agent.log
         # is invisible on TG/Discord — so they know the chat is "frozen" and can /compress or /reset.
         _comp = getattr(attempt.agent, "context_compressor", None)
@@ -1607,9 +1633,11 @@ class GatewayTurnMixin:
             display_reasoning = last_reasoning.strip()
         # Per-platform render style: Discord defaults to "-# " subtext, others keep the code block.
         try:
-            from gateway.display_config import resolve_display_setting
-            _reasoning_style = resolve_display_setting(
+            # [owner] use for_source helper to reduce chat_id repetition + centralize extraction
+            from gateway.display_config import resolve_display_setting_for_source as _rds
+            _reasoning_style = _rds(
                 _load_gateway_config(), _platform_config_key(source.platform), "reasoning_style", "code",
+                source=source,  # [owner] per-chat display override (via owner/display_overrides)
             )
         except Exception:
             _reasoning_style = "code"
@@ -1979,6 +2007,13 @@ class GatewayTurnMixin:
                 await self._hmwa_close_failed_turn(session_entry.session_id, PARTIAL_FAILED_TURN_NOTICE)
         except Exception:
             logger.debug("Failed to persist inbound user message after agent exception", exc_info=True)
+        # [owner] §17.2 Gateway restart race: the loop's default executor was
+        # torn down by an in-progress SIGTERM/restart drain while this turn was
+        # running. Not a real failure — tell the user to resend instead of
+        # dumping a RuntimeError.
+        from gateway.run import _gateway_lifecycle_msg, _is_executor_shutdown_error
+        if _is_executor_shutdown_error(e):
+            return _gateway_lifecycle_msg("gateway.model.gateway_restarting")
         # Never expose raw exception types/messages to end users (info-leakage risk).
         status_hint = self._STATUS_HINTS.get(status_code, "")
         if status_code == 401:
@@ -2213,6 +2248,23 @@ class GatewayTurnMixin:
             # Streaming already delivered the body: the footer goes out as a trailing send instead.
             if _footer_line and response and not agent_result.get("already_sent") and not _intentional_silence:
                 response = f"{response}\n\n{_footer_line}"
+
+            # [owner] auto-card: try wrapping long response in interactive card at agent:end
+            try:
+                from owner.feishu.agent_end import try_auto_card_on_end
+                response, _footer_line = await try_auto_card_on_end(
+                    runner=self,
+                    source=source,
+                    event=event,
+                    agent_result=agent_result,
+                    response=response,
+                    footer_line=_footer_line,
+                )
+            except ImportError:
+                pass
+            except Exception:
+                logger.debug("[owner] auto_card_on_end failed", exc_info=True)
+
             await self._hmwa_post_turn_hooks(hook_ctx, agent_result, response)
 
             agent_failed_early, hidden_reasoning_incomplete, is_context_overflow_failure = (
@@ -2412,6 +2464,13 @@ class GatewayTurnMixin:
                 except Exception as e:
                     logger.warning("Background task vision enrichment failed: %s", e)
 
+            # [owner] stable per-chat key for background-task agents so memory
+            # approval cards can resolve Feishu chat_id (parity with main turn).
+            try:
+                _bg_session_key = self._session_key_for_source(source)
+            except Exception:
+                _bg_session_key = None
+
             def run_sync():
                 agent = AIAgent(
                     model=turn_route["model"],
@@ -2436,6 +2495,7 @@ class GatewayTurnMixin:
                     **{k: getattr(source, k) for k in (
                         "user_id", "user_id_alt", "user_name", "chat_id", "chat_name", "chat_type", "thread_id",
                     )},
+                    gateway_session_key=_bg_session_key,  # [owner]
                     session_db=getattr(self._session_db, "_db", self._session_db),
                     # Reload from disk — do not reuse the startup snapshot.
                     # See #60955.
@@ -2684,8 +2744,11 @@ class GatewayTurnMixin:
         if _scfg is None:
             from gateway.config import StreamingConfig
             _scfg = StreamingConfig()
-        from gateway.display_config import resolve_display_setting
-        _plat_streaming = resolve_display_setting(_load_gateway_config(), _platform_config_key(source.platform), "streaming")
+        from gateway.display_config import resolve_display_setting_for_source
+        _plat_streaming = resolve_display_setting_for_source(
+            _load_gateway_config(), _platform_config_key(source.platform), "streaming",
+            source=source,  # [owner] per-chat display override (via owner/display_overrides)
+        )
         _streaming_enabled = (
             _scfg.enabled and _scfg.transport != "off" if _plat_streaming is None else bool(_plat_streaming)
         )
@@ -2901,7 +2964,10 @@ class GatewayTurnMixin:
             _gateway_platform_value, _has_platform_display_override, _load_gateway_config,
             _platform_config_key,
         )
-        from gateway.display_config import resolve_display_setting, resolve_tool_progress
+        # [owner] prefer for_source helper for chat_id / per_chat support
+        from gateway.display_config import (
+            resolve_display_setting_for_source as resolve_display_setting, resolve_tool_progress,
+        )
         from gateway.status_phrases import choose_status_phrase, resolve_status_phrase_catalog
         user_config = _load_gateway_config()
         platform_key = _platform_config_key(source.platform)
@@ -2914,15 +2980,24 @@ class GatewayTurnMixin:
         ):
             with suppress(Exception):
                 from agent import display as _agent_display
-                _val = resolve_display_setting(user_config, platform_key, _setting, _default)
+                # Both settings in this loop resolve through the source-aware alias, so a
+                # display.per_chat.<platform>.<chat_id>.<key> override applies to each.
+                _val = resolve_display_setting(
+                    user_config, platform_key, _setting, _default,
+                    source=source,  # [owner] per-chat display override (via owner/display_overrides)
+                )
                 getattr(_agent_display, _setter)(_cast(_val))
 
         # Resolve the mode and its provenance together: null inherits, tier off is not intent.
         progress_mode, _tool_progress_explicit = resolve_tool_progress(
             user_config, platform_key, os.getenv("HERMES_TOOL_PROGRESS_MODE"),
+            source=source,  # [owner] per-chat display override (via owner/display_overrides)
         )
         # "accumulate" (edit one bubble) or "separate" (one msg per tool)
-        progress_grouping = resolve_display_setting(user_config, platform_key, "tool_progress_grouping") or "accumulate"
+        progress_grouping = resolve_display_setting(
+            user_config, platform_key, "tool_progress_grouping",
+            source=source,  # [owner] per-chat display override (via owner/display_overrides)
+        ) or "accumulate"
         _generic_status_recent: List[str] = []
         _generic_status_catalog = resolve_status_phrase_catalog(user_config, platform_key)
 
@@ -2939,7 +3014,10 @@ class GatewayTurnMixin:
                     and not _has_platform_display_override(user_config, platform_key, setting)
                 ):
                     return "off"
-            value = resolve_display_setting(user_config, platform_key, setting, default)
+            # [owner] per-chat display override: resolve_display_setting_for_source
+            value = resolve_display_setting(
+                user_config, platform_key, setting, default, source=source,
+            )
             if isinstance(value, str) and value.strip().lower() == "generic":
                 return "generic" if allow_generic else "off"
             return "raw" if bool(value) else "off"
@@ -2958,7 +3036,10 @@ class GatewayTurnMixin:
         is_webhook = source.platform == Platform.WEBHOOK
         tool_progress_enabled = progress_mode not in {"off", "log"} and not is_webhook
         # Live status for text-rendering typing indicators (Slack); independent of tool_progress.
-        _live_status_mode = resolve_display_setting(user_config, platform_key, "live_status", "full")
+        _live_status_mode = resolve_display_setting(
+            user_config, platform_key, "live_status", "full",
+            source=source,  # [owner] per-chat display override
+        )
         _live_status_adapter = (
             adapter if getattr(adapter, "supports_status_text", False) and _live_status_mode != "off" else None
         )
@@ -2994,7 +3075,8 @@ class GatewayTurnMixin:
                 logger.debug("Slack native task-card config check failed", exc_info=True)
         return self._RunAgentDisplay(
             user_config=user_config, platform_key=platform_key, enabled_toolsets=enabled_toolsets,
-            disabled_toolsets=disabled_toolsets, resolve_display_setting=resolve_display_setting,
+            disabled_toolsets=disabled_toolsets,
+            resolve_display_setting=resolve_display_setting,  # [owner] per-chat via source
             progress_mode=progress_mode, progress_grouping=progress_grouping,
             _display_surface_mode=_display_surface_mode,
             tool_progress_enabled=tool_progress_enabled, _live_status_mode=_live_status_mode,
@@ -3037,7 +3119,10 @@ class GatewayTurnMixin:
         # Auto-cleanup of temporary progress bubbles needs a real ``delete_message`` (getattr on the
         # type: a fake adapter without it means "can't delete", not a crash).
         _cleanup_progress = bool(
-            disp.resolve_display_setting(disp.user_config, disp.platform_key, "cleanup_progress")
+            disp.resolve_display_setting(
+                disp.user_config, disp.platform_key, "cleanup_progress",
+                source=source,  # [owner] per-chat display override (via owner/display_overrides)
+            )
         )
         _cleanup_adapter = self._delivery_adapter_for(source) if _cleanup_progress else None
         if _cleanup_adapter is not None and getattr(type(_cleanup_adapter), "delete_message", None) in (
@@ -3129,6 +3214,9 @@ class GatewayTurnMixin:
             ),
             platform=source.platform,
         )
+        # [owner] auto-card: tag progress bubble metadata so try_auto_card skips it
+        _progress_metadata = dict(_progress_metadata or {})
+        _progress_metadata["__hermes_progress_bubble"] = True
         if _native_slack_task_cards:
             # chat.startStream in channels requires the recipient team/user pair; harmless elsewhere.
             _progress_metadata = dict(_progress_metadata or {})
@@ -3244,6 +3332,14 @@ class GatewayTurnMixin:
                 "Skipping stale agent promotion for %s — generation %s is no longer current",
                 session_key or "", run_generation,
             )
+            # [owner] stop-orphan-run: 这个 run 被跳过提升，但它的执行线程已经在跑并持有
+            # session turn lease → 补一次硬中断，否则它会挡住该会话的后续消息。
+            # 实现见 owner/patches/stop_orphan_run.py（fail-open）。
+            try:
+                from owner.patches.stop_orphan_run import cancel_stale_run
+                cancel_stale_run(self, session_key, run_generation, agent_holder[0])
+            except Exception:
+                pass
             return
         self._session_state(session_key).turn.agent = agent_holder[0]
         if self._draining:
@@ -3878,12 +3974,20 @@ class GatewayTurnMixin:
     async def _run_agent_cleanup_turn_tasks(
         self, turn_ctx: TurnContext, *, progress_task: Any, log_task: Any, interrupt_monitor: "asyncio.Task",
         _notify_task: "asyncio.Task", tracking_task: "asyncio.Task", stream_task: Any,
+        _pe_explainer: Any = None,
     ) -> None:
         """``finally`` half of a turn: cancel background tasks, flush stream, release the session slot."""
         stream_consumer_holder, session_key = turn_ctx.stream_consumer_holder, turn_ctx.session_key
         for task in (progress_task, log_task, interrupt_monitor, _notify_task):
             if task:
                 task.cancel()
+
+        # [owner] progress_explainer: stop tick task + restore callbacks
+        try:  # [owner]
+            from owner.progress_explainer.dispatcher import stop as _pe_stop  # [owner]
+            _pe_stop(_pe_explainer)
+        except Exception:  # [owner]
+            logger.debug("progress_explainer stop failed", exc_info=True)
 
         if stream_task:
             # No stream consumer was created: nothing to flush, cancel instead of waiting out 5s.
@@ -4115,7 +4219,10 @@ class GatewayTurnMixin:
             # Terse heartbeat by default; the iteration counter is gated on busy_ack_detail.
             _status_detail = ""
             _want_iteration_detail = bool(
-                disp.resolve_display_setting(disp.user_config, disp.platform_key, "busy_ack_detail", True)
+                disp.resolve_display_setting(
+                    disp.user_config, disp.platform_key, "busy_ack_detail", True,
+                    source=source,  # [owner] per-chat display override (via owner/display_overrides)
+                )
             )
             _a = self._agent_activity_summary(agent_holder[0])
             with suppress(Exception):
@@ -4232,6 +4339,23 @@ class GatewayTurnMixin:
             else spawn(self._run_agent_notify_long_running(disp, turn_ctx, _executor_task_holder))
         )
 
+        # [owner] progress_explainer: silent-period progress narration for the
+        # gateway (design: owner/docs/design/silent-progress-narration/). Installs
+        # tick task + callback wrappers; disabled unless patch.yaml enables it.
+        # [owner] 方案①: agent 在 executor 线程里才 spin-up（此 holder 现为 [None]），
+        # 传容器本体而非快照值——模块侧 tick 惰性解出（同 executor_ref 惯例）。
+        _pe_explainer = None  # [owner]
+        try:  # [owner]
+            from owner.progress_explainer.dispatcher import install_progress_explainer  # [owner]
+            _pe_explainer = install_progress_explainer(  # [owner]
+                runner=self, source=source,
+                session_key=session_key, turn_ctx=turn_ctx,
+                executor_ref=lambda: _executor_task_holder,
+                agent_holder=turn_ctx.agent_holder,
+            )
+        except Exception:  # [owner]
+            logger.debug("progress_explainer install failed", exc_info=True)
+
         try:
             # run_sync is TurnRunner.run_sync (bound method; executor call unchanged).
             worker = self._run_agent_start_turn_worker(turn_ctx, turn_runner.run_sync)
@@ -4254,6 +4378,7 @@ class GatewayTurnMixin:
             await self._run_agent_cleanup_turn_tasks(
                 turn_ctx, progress_task=progress_task, log_task=log_task, interrupt_monitor=interrupt_monitor,
                 _notify_task=_notify_task, tracking_task=tracking_task, stream_task=stream_task,
+                _pe_explainer=_pe_explainer,
             )
 
         await self._run_agent_mark_streamed_delivery(response, turn_ctx)
