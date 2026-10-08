@@ -968,6 +968,8 @@ gateway:
     info_provider:          "◆ 提供方：{provider}"
     info_context:           "◆ 上下文：{ctx} tokens（{source}）"
     info_endpoint:          "◆ 端点：{base_url}"
+    # [owner] i18n: 上游新增的 moa 行走新键承载；聚合器会跑满每一轮工具循环，故为「实际计费对象」。
+    info_acting_model:      "◆ 实际调用模型（本次计费对象）：{provider}:{model}"
     ctx_source_config:      "配置"
     ctx_source_default:     "默认 — 在 config 中设置 model.context_length 可覆盖"
     ctx_source_detected:    "检测"

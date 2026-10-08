@@ -2353,18 +2353,22 @@ class GatewayTurnMixin:
         from gateway.run import _resolve_gateway_model_context
         resolved = _resolve_gateway_model_context()
         context_length = resolved.context_length
+        # [owner] i18n: upstream's dict lookup is kept; only the values go through `t()`
+        # (the retired if/elif chain mapped the same three cases).
         ctx_source = {
-            "config": "config",
-            "default": "default — set model.context_length in config to override",
-        }.get(resolved.context_source, "detected")
+            "config": t("gateway.model.ctx_source_config"),
+            "default": t("gateway.model.ctx_source_default"),
+        }.get(resolved.context_source, t("gateway.model.ctx_source_detected"))
         ctx_display = (
             f"{context_length / 1_000_000:.1f}M" if context_length >= 1_000_000
             else f"{context_length // 1_000}K" if context_length >= 1_000 else str(context_length)
         )
+        # [owner] i18n: the `◆ …` labels live in the catalog, so the block is assembled at
+        # call time instead of inline.
         lines = [
-            f"◆ Model: `{resolved.model}`",
-            f"◆ Provider: {resolved.provider or 'openrouter'}",
-            f"◆ Context: {ctx_display} tokens ({ctx_source})",
+            t("gateway.model.info_model", model=resolved.model),
+            t("gateway.model.info_provider", provider=resolved.provider or "openrouter"),
+            t("gateway.model.info_context", ctx=ctx_display, source=ctx_source),
         ]
         if (resolved.provider or "") == "moa":
             # The preset name hides who pays: the aggregator runs every tool-loop step (#112359).
@@ -2372,10 +2376,15 @@ class GatewayTurnMixin:
             from hermes_cli.moa_config import normalize_moa_config
             agg = normalize_moa_config(load_config().get("moa"))["presets"].get(resolved.model, {}).get("aggregator") or {}
             if agg:
-                lines.append(f"◆ Acting model (billed for the run): {agg.get('provider')}:{agg.get('model')}")
+                # [owner] i18n: upstream-new line (#112359) with no owner counterpart, so the
+                # key was added alongside it (rule ⑥: keep upstream wording, carry i18n on a new key).
+                lines.append(t(
+                    "gateway.model.info_acting_model",
+                    provider=agg.get("provider"), model=agg.get("model"),
+                ))
         base_url = resolved.base_url
         if base_url and base_url_hostname(base_url) in ("localhost", "127.0.0.1", "0.0.0.0"):
-            lines.append(f"◆ Endpoint: {base_url}")
+            lines.append(t("gateway.model.info_endpoint", base_url=base_url))
         return "\n".join(lines)
 
     async def _run_background_task(

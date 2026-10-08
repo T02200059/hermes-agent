@@ -978,6 +978,9 @@ Install it with: `hermes skills install {path}`"
     info_provider:          "◆ Provider: {provider}"
     info_context:           "◆ Context: {ctx} tokens ({source})"
     info_endpoint:          "◆ Endpoint: {base_url}"
+    # [owner] i18n: upstream-new moa line (#112359) has no owner counterpart, so the key
+    # was added alongside it; the moa aggregator runs every tool-loop step, hence "billed".
+    info_acting_model:      "◆ Acting model (billed for the run): {provider}:{model}"
     ctx_source_config:      "config"
     ctx_source_default:     "default — set model.context_length in config to override"
     ctx_source_detected:    "detected"
