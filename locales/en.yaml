@@ -715,11 +715,18 @@ gateway:
   # Long-running / inactivity notifications.
   still_working:           "⏳ Working — {elapsed} min{status_detail}"
   no_activity_warning:     "⚠️ No activity for {elapsed} min. If the agent does not respond soon, it will be timed out in {remaining} min. You can continue waiting or use /reset."
+  # [owner] i18n: upstream replaced the staged-warning copy after BASE (names /stop + /new and says
+  # it will give up), so the new copy rides a new key; the old key stays until A4.
+  no_activity_stuck_warning: "⚠️ I seem to be stuck (no activity for {elapsed} min). If nothing happens in the next {remaining} min I'll give up on this task. You can keep waiting, send /stop to cancel it, or /new to start a fresh conversation."
 
   # Agent timeout diagnostic — shown when a turn is killed for inactivity.
   agent_timeout:           "⏱️ Agent inactive for {timeout_mins} min — no tool calls or API responses.\n{detail}\nTo increase the limit, set agent.gateway_timeout in config.yaml (value in seconds, 0 = no limit) and restart the gateway.\nTry again, or use /reset to start fresh."
   agent_timeout_detail_tool:     "The agent appears stuck on tool `{cur_tool}` ({secs_since}s since last activity, iteration {iter_n}/{iter_max})."
+  # [owner] i18n: upstream's `format_iteration_progress` hides the unbounded `sys.maxsize` cap
+  # (#102806); its output arrives as `{iter_progress}`. The old pair-based keys stay until A4.
+  agent_timeout_detail_tool_progress:     "The agent appears stuck on tool `{cur_tool}` ({secs_since}s since last activity, {iter_progress})."
   agent_timeout_detail_activity: "Last activity: {last_desc} ({secs_since}s ago, iteration {iter_n}/{iter_max}). The agent may have been waiting on an API response."
+  agent_timeout_detail_activity_progress: "Last activity: {last_desc} ({secs_since}s ago, {iter_progress}). The agent may have been waiting on an API response."
 
   # Agent-running guard messages — shown when a slash command is blocked while agent is active.
   busy_agent_starting:     "Agent still starting — /steer queued for the next turn."

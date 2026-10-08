@@ -3613,10 +3613,15 @@ class GatewayTurnMixin:
             return
         try:
             await _warn_adapter.emit_warning(
-                source.chat_id, f"⚠️ I seem to be stuck (no activity for {int(worker.agent_warning // 60) or 1} min). "
-                "If nothing happens in the next "
-                f"{int((worker.agent_timeout - worker.agent_warning) // 60) or 1} min I'll give up on this task. "
-                "You can keep waiting, send /stop to cancel it, or /new to start a fresh conversation.",
+                source.chat_id,
+                # [owner] i18n: upstream replaced this warning after BASE (it now names /stop + /new and
+                # says it will give up on the task), so the owner customization rides the new copy on a
+                # new key; the old key stays until A4. `emit_warning` is upstream's send channel.
+                t(
+                    "gateway.no_activity_stuck_warning",
+                    elapsed=int(worker.agent_warning // 60) or 1,
+                    remaining=int((worker.agent_timeout - worker.agent_warning) // 60) or 1,
+                ),
                 metadata=_interim_metadata(_status_thread_metadata), logical_platform=source.platform,
             )
         except Exception as _warn_err:
@@ -3645,26 +3650,29 @@ class GatewayTurnMixin:
             request_hard_interrupt(_timed_out_agent, _INTERRUPT_REASON_TIMEOUT, tool_reason=_INTERRUPT_TOOL_REASON_TIMEOUT)
         _timeout_mins = int(worker.agent_timeout // 60) or 1
         _iter_progress = format_iteration_progress(_iter_n, _iter_max)
-        _diag_lines = [
-            f"⏱️ Agent inactive for {_timeout_mins} min — no tool calls or API responses."
-        ]
+        # [owner] i18n: the diagnostic block is assembled from the catalog. Upstream's
+        # `format_iteration_progress` is kept (it hides the unbounded `sys.maxsize` cap, #102806)
+        # and its output is passed to the owner keys as `{iter_progress}`.
         if _cur_tool:
-            _diag_lines.append(
-                f"The agent appears stuck on tool `{_cur_tool}` ({_secs_ago:.0f}s since last "
-                f"activity, {_iter_progress})."
+            _timeout_detail = t(
+                "gateway.agent_timeout_detail_tool_progress",
+                cur_tool=_cur_tool,
+                secs_since=round(_secs_ago),
+                iter_progress=_iter_progress,
             )
         else:
-            _diag_lines.append(
-                f"Last activity: {_last_desc} ({_secs_ago:.0f}s ago, "
-                f"{_iter_progress}). "
-                "The agent may have been waiting on an API response."
+            _timeout_detail = t(
+                "gateway.agent_timeout_detail_activity_progress",
+                last_desc=_last_desc,
+                secs_since=round(_secs_ago),
+                iter_progress=_iter_progress,
             )
-        _diag_lines.append(
-            "To increase the limit, set agent.gateway_timeout in config.yaml (value in seconds, 0 "
-            "= no limit) and restart the gateway.\nTry again, or use /reset to start fresh."
-        )
         return {
-            "final_response": "\n".join(_diag_lines),
+            "final_response": t(
+                "gateway.agent_timeout",
+                timeout_mins=_timeout_mins,
+                detail=_timeout_detail,
+            ),
             "messages": result_holder[0].get("messages", []) if result_holder[0] else [],
             "api_calls": _iter_n,
             "tools": tools_holder[0] or [],

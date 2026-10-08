@@ -712,11 +712,16 @@ gateway:
   # 长时间运行/无活动通知
   still_working:           "⏳ 工作中 — {elapsed} 分钟{status_detail}"
   no_activity_warning:     "⚠️ 已 {elapsed} 分钟无活动。如果代理未在 {remaining} 分钟内响应，将会超时。可继续等待或使用 /reset。"
+  # [owner] i18n: 上游新句（指引 /stop 与 /new、并说明会放弃任务）的 i18n 由新键承载。
+  no_activity_stuck_warning: "⚠️ 我似乎卡住了（已 {elapsed} 分钟无活动）。如果接下来 {remaining} 分钟内仍无响应，我会放弃这个任务。你可以继续等待、发送 /stop 取消，或用 /new 开始新会话。"
 
   # Agent 超时诊断 —— 当一轮因无活动被终止时显示。
   agent_timeout:           "⏱️ 代理已不活跃 {timeout_mins} 分钟 — 没有工具调用或 API 响应。\n{detail}\n如需提高限制，请在 config.yaml 中设置 agent.gateway_timeout（单位为秒，0 = 无限制）并重启网关。\n请重试，或使用 /reset 重新开始。"
   agent_timeout_detail_tool:     "代理似乎卡在工具 `{cur_tool}` 上（距离上次活动 {secs_since} 秒，迭代 {iter_n}/{iter_max}）。"
+  # [owner] i18n: `{iter_progress}` 由上游 `format_iteration_progress` 产出（无界时只印 iteration N）。
+  agent_timeout_detail_tool_progress:     "代理似乎卡在工具 `{cur_tool}` 上（距离上次活动 {secs_since} 秒，{iter_progress}）。"
   agent_timeout_detail_activity: "上次活动：{last_desc}（{secs_since} 秒前，迭代 {iter_n}/{iter_max}）。代理可能一直在等待 API 响应。"
+  agent_timeout_detail_activity_progress: "上次活动：{last_desc}（{secs_since} 秒前，{iter_progress}）。代理可能一直在等待 API 响应。"
 
   # Agent 运行中拦截文案 —— 当 slash command 在 Agent 活跃时被阻塞显示。
   busy_agent_starting:     "Agent 正在启动 — /steer 已排队到下一轮。"
