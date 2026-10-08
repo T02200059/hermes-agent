@@ -248,7 +248,14 @@ class TurnRunner:
         ):
             return None, None
         cmd_full = args["command"].rstrip()
-        header = "" if self._ctx.last_was_terminal_block[0] else f"{emoji} {tool_name}\n"
+        # [owner] i18n: the header comes from the catalog. `terminal_block_header_label()` returns the
+        # raw `terminal` in English (byte-identical to upstream) and a localized label elsewhere
+        # (`display.tool_label.terminal_header`, zh: 运行命令); friendly-labels-off also yields `terminal`.
+        from agent.display import terminal_block_header_label
+        header = (
+            "" if self._ctx.last_was_terminal_block[0]
+            else f"{emoji} {terminal_block_header_label()}\n"
+        )
         cap = self._preview_cap()
         lines = cmd_full.splitlines()
         cmd_short = lines[0] if lines else cmd_full
@@ -289,15 +296,17 @@ class TurnRunner:
             return code
         if not preview:
             return f"{emoji} {tool_name}..."
-        from agent.display import get_tool_verb, prepare_tool_preview, tool_verb_connector, verb_drops_preview
+        from agent.display import compose_tool_label, prepare_tool_preview
         prepared = prepare_tool_preview(tool_name, args, fallback=preview, max_len=self._preview_cap())
         preview = adapter.format_tool_preview(prepared) if adapter is not None else prepared.text
-        # Friendly labels: human-phrased line for built-in tools ("🔍 Searching the web for ...")
-        # by prefixing the verb onto the computed preview, so the command/url/query is kept.
-        verb = get_tool_verb(tool_name)
-        if not verb:
-            return f"{emoji} {tool_name}: \"{preview}\""
-        return f"{emoji} {verb}" if verb_drops_preview(tool_name) else f"{emoji} {verb}{tool_verb_connector(tool_name)}{preview}"
+        # [owner] i18n: friendly labels are whole-sentence catalog templates, so a language can reorder
+        # words ("🔍 Searching the web for …" / "🔍 正在搜索网页：…"). Composing
+        # `get_tool_verb + tool_verb_connector + preview` cannot be reordered across languages (the
+        # helper's own docstring forbids the concatenation). Uncurated tools fall back to the raw form.
+        label = compose_tool_label(tool_name, preview)
+        if label:
+            return f"{emoji} {label}"
+        return f"{emoji} {tool_name}: \"{preview}\""
 
     def _progress_emit(self, msg: str) -> None:
         """Dedup consecutive identical lines (execute_code boilerplate), then route to the native
