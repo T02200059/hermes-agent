@@ -1974,11 +1974,13 @@ class GatewayTurnMixin:
 
     # Chat-side next steps keyed by HTTP status; Hermes commands only (/login is the gateway's own
     # sign-in, `{relogin}` the profile-aware host equivalent, filled from the turn's agent provider).
+    # [owner] i18n: the map holds catalog KEYS, not copy — a `t()` inside the class body would be
+    # evaluated once at class-definition (import) time and freeze both the copy and the language
+    # (same reason `PAIRING_RATE_LIMITED_REPLY` / `_BUSY_REJECT_I18N_KEYS` hold keys).
     _STATUS_HINTS = {
-        401: (" Your sign-in to the AI model service has expired or the API key is wrong. "
-              "Use /login here, or run `{relogin}` on the host."),
-        402: " Your AI model service balance or quota is used up. Top it up on the service's website, or use /model to switch models.",
-        529: " The AI model service is temporarily overloaded. Wait a moment, then use /retry.",
+        401: "gateway.agent_error_hint_signin_expired",
+        402: "gateway.agent_error_hint_billing",
+        529: "gateway.agent_error_hint_overloaded",
     }
 
     async def _hmwa_agent_error_reply(self, e, event, source, session_entry, session_key, prepared):
@@ -1991,8 +1993,10 @@ class GatewayTurnMixin:
         if status_code in {400, 500} and len(prepared.history) > 50:
             # Context overflow / payload too large: a deterministic rejection (#107567), and the same
             # no-grow rule as the persist path (#1630) — nothing is written into an oversized session.
-            from gateway.run import _CONTEXT_OVERFLOW_REPLY
-            return _CONTEXT_OVERFLOW_REPLY
+            # [owner] i18n: upstream's `_CONTEXT_OVERFLOW_REPLY` constant cannot be per-language
+            # (resolved at import), so run_turn resolves the catalog here; the constant stays in
+            # `gateway/run.py` for its other consumer.
+            return t("gateway.model.context_too_large")
         # Replay can coalesce inputs; only this input's durable marker establishes ownership.
         try:
             if prepared.message_text is not None and session_entry is not None:
@@ -2017,13 +2021,17 @@ class GatewayTurnMixin:
         if _is_executor_shutdown_error(e):
             return _gateway_lifecycle_msg("gateway.model.gateway_restarting")
         # Never expose raw exception types/messages to end users (info-leakage risk).
-        status_hint = self._STATUS_HINTS.get(status_code, "")
+        # [owner] i18n: resolve the mapped catalog key at call time (401 carries the `{relogin}`
+        # slot, so its kwarg is filled before the single resolution below).
+        _hint_key = self._STATUS_HINTS.get(status_code, "")
+        _hint_kwargs: dict = {}
         if status_code == 401:
             from agent.turn_failure_copy import relogin_command_hint
 
             _turn_agent = getattr(self._session_state(session_key).turn, "agent", None)
-            status_hint = status_hint.format(relogin=relogin_command_hint(getattr(_turn_agent, "provider", None)))
-        elif status_code == 429:
+            _hint_kwargs["relogin"] = relogin_command_hint(getattr(_turn_agent, "provider", None))
+        status_hint = t(_hint_key, **_hint_kwargs) if _hint_key else ""
+        if status_code == 429:
             # Plan usage limit (resets on a schedule) vs a transient rate limit
             _err_json = {}
             with suppress(Exception):
@@ -2032,18 +2040,21 @@ class GatewayTurnMixin:
                 _err_json = {}
             _resets_in = _err_json.get("resets_in_seconds")
             if _err_json.get("type") != "usage_limit_reached":
-                status_hint = " You are being rate-limited. Please wait a moment and try again."
+                status_hint = t("gateway.agent_error_hint_rate_limited")
             elif _resets_in and _resets_in > 0:
                 import math
-                status_hint = f" Your plan's usage limit has been reached. It resets in ~{math.ceil(_resets_in / 3600)}h."
+                status_hint = t(
+                    "gateway.agent_error_hint_usage_limit_resets",
+                    hours=math.ceil(_resets_in / 3600),
+                )
             else:
-                status_hint = " Your plan's usage limit has been reached. Please wait until it resets."
+                status_hint = t("gateway.agent_error_hint_usage_limit")
         elif status_code == 400:
-            status_hint = " The AI model service rejected the request."
+            status_hint = t("gateway.agent_error_hint_rejected")
         return self._hmwa_add_failed_turn_notice(
-            f"⚠️ Something went wrong and I couldn't finish this reply.{status_hint}\n"
-            "Use /retry to try again, or /new to start a fresh conversation. "
-            "Technical details are in the gateway log (`hermes logs`).",
+            # [owner] i18n: the tail sentence lives in the catalog; the notice suffix is appended
+            # by `_hmwa_add_failed_turn_notice` exactly as before.
+            t("gateway.agent_error", status_hint=status_hint),
             PARTIAL_FAILED_TURN_NOTICE,
         )
 

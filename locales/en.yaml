@@ -660,14 +660,17 @@ gateway:
   # never raw exception types/messages (info-leakage risk).  {status_hint} is
   # either empty or one of the agent_error_hint_* strings below (leading space
   # preserved so English reads as "...error. Hint…").
-  agent_error: "Sorry, I encountered an unexpected error.{status_hint}\nTry again or use /reset to start a fresh session."
+  agent_error: "⚠️ Something went wrong and I couldn't finish this reply.{status_hint}\nUse /retry to try again, or /new to start a fresh conversation. Technical details are in the gateway log (`hermes logs`)."
   agent_error_hint_auth: " Check your API key or run `claude /login` to refresh OAuth credentials."
-  agent_error_hint_billing: " Your API balance or quota is exhausted. Check your provider dashboard."
+  # [owner] i18n: upstream replaced the 401 hint after BASE (provider-aware `{relogin}` slot, which
+  # the still-live monolith never supplies), so the new copy rides a new key; the old key stays until A4.
+  agent_error_hint_signin_expired: " Your sign-in to the AI model service has expired or the API key is wrong. Use /login here, or run `{relogin}` on the host."
+  agent_error_hint_billing: " Your AI model service balance or quota is used up. Top it up on the service's website, or use /model to switch models."
   agent_error_hint_rate_limited: " You are being rate-limited. Please wait a moment and try again."
   agent_error_hint_usage_limit: " Your plan's usage limit has been reached. Please wait until it resets."
   agent_error_hint_usage_limit_resets: " Your plan's usage limit has been reached. It resets in ~{hours}h."
-  agent_error_hint_overloaded: " The API is temporarily overloaded. Please try again shortly."
-  agent_error_hint_rejected: " The request was rejected by the API."
+  agent_error_hint_overloaded: " The AI model service is temporarily overloaded. Wait a moment, then use /retry."
+  agent_error_hint_rejected: " The AI model service rejected the request."
 
   # Background task completion/failure notifications.
   background_task_complete: "✅ Background task complete\nPrompt: \"{preview}\"\n\n{response}"
@@ -1057,7 +1060,7 @@ Install it with: `hermes skills install {path}`"
     provider_auth_failed_detail:       "⚠️ Provider authentication failed: {error}"
     provider_policy_rejected:          "⚠️ The model provider rejected the request. I kept the raw provider error out of chat; check gateway logs for details or try rephrasing."
     provider_failed_after_retries:     "⚠️ The model provider failed after retries. I kept raw provider details out of chat; check gateway logs for diagnostics."
-    context_too_large:                 "⚠️ Session too large for the model's context window.\nUse /compact to compress the conversation, or /reset to start fresh."
+    context_too_large:                 "⚠️ This conversation has grown too long for me to read all at once. Use /compress to shorten the history, or /new to start a fresh conversation."
     request_failed:                    "The request failed: {error}\nTry again or use /reset to start a fresh session."
     no_response_generated:             "⚠️ Processing completed but no response was generated. This may be a transient error — try sending your message again."
     not_processed_prev_turn:           "⚠️ Your message wasn't processed (the previous turn was still being cleaned up). Please send it again."
