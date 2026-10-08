@@ -686,8 +686,8 @@ gateway:
 
   # Gateway lifecycle messages — shown during restart/shutdown/draining.
   # {profile_tag} is "" for the default profile, or " [<name>]" for named/custom.
-  shutdown_notify_restart: "🌆 Gateway{profile_tag} restarting — Your current task will be interrupted. Send any message after restart and I'll try to resume where you left off."
-  shutdown_notify_stop:    "⚠️ Gateway{profile_tag} shutting down — Your current task will be interrupted."
+  shutdown_notify_restart: "⚠️ Hermes{profile_tag} is restarting — your current task will be interrupted. Send any message after the restart and I'll try to resume where you left off."
+  shutdown_notify_stop:    "⚠️ Hermes{profile_tag} is shutting down — your current task will be interrupted. When it is back online, send any message and I'll try to pick up where we left off."
   restart_success:         "🌃 Gateway{profile_tag} restarted successfully. Your session continues."
   online:                  "🏙 Gateway{profile_tag} online — Hermes is back and ready."
 

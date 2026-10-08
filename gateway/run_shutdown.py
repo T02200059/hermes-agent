@@ -26,6 +26,7 @@ from gateway.restart import (
 )
 from gateway.run_common import _UNSET
 from gateway.shutdown_watchdog import arm_shutdown_watchdog, resolve_shutdown_watchdog_delay
+from owner.gateway.lifecycle_copy import lifecycle_msg as _gateway_lifecycle_msg
 
 # Log-record parity with the origin module.
 logger = logging.getLogger("gateway.run")
@@ -979,15 +980,14 @@ class GatewayShutdownMixin:
         Called at the start of stop() while adapters are connected; send failures never block shutdown.
         """
         restart_source = self._restart_command_source if self._restart_requested else None
-        msg = (
-            "⚠️ Hermes is shutting down — your current task will be interrupted. "
-            "When it is back online, send any message and I'll try to pick up where we left off."
+        # [owner] i18n: the two notices live in the catalog. `owner/gateway/lifecycle_copy` also
+        # injects the `{profile_tag}` (one-process-per-tenant fleets must tell which process is
+        # going down); the copy itself is upstream's post-BASE wording.
+        msg = _gateway_lifecycle_msg(
+            "gateway.shutdown_notify_restart"
+            if self._restart_requested
+            else "gateway.shutdown_notify_stop"
         )
-        if self._restart_requested:
-            msg = (
-                "⚠️ Hermes is restarting — your current task will be interrupted. "
-                "Send any message after the restart and I'll try to resume where you left off."
-            )
         restart_key = None
         if restart_source is not None:
             with suppress(Exception):
@@ -1422,9 +1422,13 @@ class GatewayShutdownMixin:
             GatewayShutdownMixin._spawn_windows_restart_watcher(hermes_cmd, current_pid, restart_after_s)
             return
         cmd = " ".join(shlex.quote(part) for part in hermes_cmd)
+        # [owner] purge stale bytecode before the respawn: a restart usually follows a code update,
+        # and a leftover `__pycache__` can make the new process import the OLD modules.
+        project_root_escaped = shlex.quote(str(Path(__file__).resolve().parent.parent))
         shell_cmd = (
             f"deadline=$(( $(date +%s) + {int(restart_after_s)} )); "
             f"while kill -0 {current_pid} 2>/dev/null && [ $(date +%s) -lt $deadline ]; do sleep 0.2; done; "
+            f"find {project_root_escaped} -type d -name __pycache__ -not -path '*/venv/*' -not -path '*/node_modules/*' -not -path '*/.git/*' -exec rm -rf {{}} + 2>/dev/null; "
             f"{cmd} gateway restart"
         )
         setsid_bin = shutil.which("setsid")

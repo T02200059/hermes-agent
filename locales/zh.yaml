@@ -683,8 +683,8 @@ gateway:
 
   # Gateway 生命周期消息 — 重启/关闭/排空时显示
   # {profile_tag} 对 default 为空，命名/custom profile 为 " [<name>]"。
-  shutdown_notify_restart: "🌆 网关{profile_tag}正在重启 — 当前任务将被中断。重启后发送任意消息，我会尝试从断点处继续。"
-  shutdown_notify_stop:    "⏸️ 网关{profile_tag}正在关闭 — 当前任务将被中断。"
+  shutdown_notify_restart: "⚠️ Hermes{profile_tag}正在重启 — 当前任务将被中断。重启后发送任意消息，我会尝试从断点处继续。"
+  shutdown_notify_stop:    "⚠️ Hermes{profile_tag}正在关闭 — 当前任务将被中断。恢复在线后发送任意消息，我会尝试从上次中断处继续。"
   restart_success:         "🌃 网关{profile_tag}重启成功。你的会话继续。"
   online:                  "🏙 网关{profile_tag}已上线 — Hermes 已准备就绪。"
 
