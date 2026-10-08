@@ -1646,7 +1646,14 @@ class GatewayTurnMixin:
             _show_reasoning_effective = (
                 False if source.platform == Platform.MATTERMOST else getattr(self, "_show_reasoning", False)
             )
-        last_reasoning = agent_result.get("last_reasoning")
+        # [owner] reasoning display: filter whitespace-only / single-space pad stubs before the
+        # guard. Several thinking-mode providers (Kimi Coding Plan, DeepSeek) replay
+        # `reasoning_content` as `" "`, and a pad-only stub is truthy — it would surface as an
+        # empty "1-char" 💭 box on Feishu/CLI/TUI. `displayable_reasoning` is owner-side
+        # (`agent/agent_runtime_helpers.py`).
+        from agent.agent_runtime_helpers import displayable_reasoning as _disp_reasoning
+
+        last_reasoning = _disp_reasoning(agent_result.get("last_reasoning"))
         if not (_show_reasoning_effective and response and not _intentional_silence and last_reasoning):
             return response
         from gateway.stream_consumer_fences import escape_code_fences_for_display
