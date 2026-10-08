@@ -4301,10 +4301,13 @@ class GatewayTurnMixin:
                         _parts.append(str(_action))
                     if _parts:
                         _status_detail = " — " + ", ".join(_parts)
+            # [owner] i18n: the heartbeat copy is a catalog entry, so the em-dash phrasing and
+            # the "min" unit follow the session language; the f-string here stayed English under
+            # every locale. `gateway.still_working` renders byte-identically in en.
             _heartbeat_text = (
                 disp._generic_status_phrase("status")
                 if _long_running_mode == "generic"
-                else f"⏳ Working — {_elapsed_mins} min{_status_detail}"
+                else t("gateway.still_working", elapsed=_elapsed_mins, status_detail=_status_detail)
             )
             try:
                 _notify_res = None

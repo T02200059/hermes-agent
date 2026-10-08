@@ -539,7 +539,7 @@ def test_gateway_lifecycle_msg_includes_profile_tag(monkeypatch):
         lambda: "work",
     )
     msg = lifecycle_msg("gateway.shutdown_notify_stop")
-    assert " [work] " in msg or msg.startswith("⚠️ Gateway [work]")
+    assert " [work] " in msg or msg.startswith("⚠️ Hermes [work]")
     assert "shutting down" in msg
 
 
@@ -551,8 +551,12 @@ def test_gateway_lifecycle_msg_matches_original_when_default(monkeypatch):
         lambda: "default",
     )
     msg = lifecycle_msg("gateway.shutdown_notify_stop")
+    # default 档不插 profile 标记 ⇒ 与关闭通知的 catalog 原文逐字一致
+    # （文案措辞在 T2-20 A3 簇 7b-6 换成上游口径：名词 Hermes + 复工指引尾句）。
     assert msg == (
-        "⚠️ Gateway shutting down — Your current task will be interrupted."
+        "⚠️ Hermes is shutting down — your current task will be interrupted. "
+        "When it is back online, send any message and I'll try to pick up where "
+        "we left off."
     )
 
 
@@ -581,7 +585,9 @@ async def test_shutdown_notification_includes_named_profile(monkeypatch):
 
     adapter.send.assert_awaited_once()
     assert adapter.send.await_args.args[1] == (
-        "⚠️ Gateway [ops] shutting down — Your current task will be interrupted."
+        "⚠️ Hermes [ops] is shutting down — your current task will be interrupted. "
+        "When it is back online, send any message and I'll try to pick up where "
+        "we left off."
     )
 
 
