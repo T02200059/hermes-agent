@@ -673,6 +673,11 @@ gateway:
   background_task_no_response: "（未生成响应）"
   background_task_error_prefix: "错误：{error}"
   background_task_failed: "❌ 后台任务 {task_id} 失败：{error}"
+  # [owner] i18n: 上游新句（凭据缺失 / 未完成即失败）的 i18n 由新键承载。
+  background_task_no_credentials: "❌ 后台任务无法启动：未配置 AI 模型登录信息。请使用 /login，或在宿主机上运行 `hermes setup`。"
+  background_task_failed_before_finish: "❌ 你的后台任务\"{preview}\"未完成即失败。可再次发送 /bg 重试，或用 /agents 查看仍在运行的任务。"
+  # [owner] i18n: 头部单独出键（与上游的 `header` 变量粒度对齐）。
+  background_task_complete_header: "✅ 后台任务完成\n提示：\"{preview}\"\n\n"
 
   # Gateway 生命周期消息 — 重启/关闭/排空时显示
   # {profile_tag} 对 default 为空，命名/custom profile 为 " [<name>]"。

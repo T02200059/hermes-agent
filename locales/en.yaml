@@ -674,6 +674,12 @@ gateway:
   background_task_no_response: "(No response generated)"
   background_task_error_prefix: "Error: {error}"
   background_task_failed: "❌ Background task {task_id} failed: {error}"
+  # [owner] i18n: 上游在 BASE 之后把两处失败文案换成更可操作的新句（各自带 /login 与 /bg 指引），
+  # 故 i18n 落在新键上；旧键 background_task_failed 仍由未切换的单体驱动，随单体在 A4 退休。
+  background_task_no_credentials: "❌ The background task couldn't start because no AI model sign-in is configured. Use /login, or run `hermes setup` on the host."
+  background_task_failed_before_finish: "❌ Your background task \"{preview}\" failed before finishing. Send /bg again to retry, or /agents to see what is still running."
+  # [owner] i18n: 上游把 no-response 那处改成复用 `header` 变量，故把头部单独出键承载（粒度对齐上游）。
+  background_task_complete_header: "✅ Background task complete\nPrompt: \"{preview}\"\n\n"
 
   # Gateway lifecycle messages — shown during restart/shutdown/draining.
   # {profile_tag} is "" for the default profile, or " [<name>]" for named/custom.
