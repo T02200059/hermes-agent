@@ -23,8 +23,7 @@ from gateway.platforms.base import EphemeralReply
 from gateway.platforms.event import MessageEvent, MessageType
 from gateway.run_common import _UNSET
 from gateway.run_inbound_unauthorized import (
-    PAIRING_RATE_LIMITED_REPLY, UnauthorizedOwnerNotifier, pairing_code_reply, pairing_profile_arg,
-    unauthorized_owner_hint,
+    UnauthorizedOwnerNotifier, pairing_code_reply, pairing_profile_arg, unauthorized_owner_hint,
 )
 from gateway.session import (
     SessionSource, is_shared_multi_user_session, neutralize_untrusted_inline_text
@@ -117,7 +116,9 @@ class GatewayInboundMixin:
         if code:
             reply = pairing_code_reply(platform_name, code, pairing_profile_arg(pairing_store))
         else:
-            reply = PAIRING_RATE_LIMITED_REPLY
+            # [owner] i18n: resolved at call time — a module-level constant would freeze the
+            # copy and the language at import (upstream carries it as a constant).
+            reply = t("gateway.pairing.rate_limited")
         if adapter:
             await adapter.send(source.chat_id, reply)
         if not code:

@@ -771,7 +771,10 @@ Install it with: `hermes skills install {path}`"
 
   pairing:
     unrecognized: "Hi~ I don't recognize you yet!\n\nHere's your pairing code: `{code}`\n\nAsk the bot owner to run:\n`hermes {profile_arg}pairing approve {platform_name} {code}`"
-    rate_limited: "Too many pairing requests right now~ Please try again later!"
+    rate_limited: "Too many pairing requests right now. Wait a few minutes, then send your message again."
+    code_reply: "Hi! I don't recognize you yet, so I can't reply until the person running this bot approves you.\n\nYour pairing code: `{code}` (valid for {validity})\n\nIf you run this bot, open a terminal and run: `{approve_cmd}`. Otherwise send that command to the bot owner. After approval, send your message again."
+    validity_one: "{hours} hour"
+    validity_many: "{hours} hours"
 
   proxy:
     aiohttp_missing: "⚠️ Proxy mode requires aiohttp. Install with: pip install aiohttp"

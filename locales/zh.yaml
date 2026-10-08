@@ -770,7 +770,10 @@ gateway:
 
   pairing:
     unrecognized: "嗨~ 我还不认识你！\n\n你的配对码：`{code}`\n\n请让机器人所有者运行：\n`hermes {profile_arg}pairing approve {platform_name} {code}`"
-    rate_limited: "配对请求过多~ 请稍后再试！"
+    rate_limited: "当前配对请求过多。请等几分钟后重新发送消息。"
+    code_reply: "你好！我还不太认识你，在机器人所有者通过之前我暂时没法回复你。\n\n你的配对码：`{code}`（有效期 {validity}）\n\n如果你在运行这个机器人，请打开终端执行：`{approve_cmd}`。否则请把这条命令发给机器人所有者；通过之后，请重新发送你的消息。"
+    validity_one: "{hours} 小时"
+    validity_many: "{hours} 小时"
 
   proxy:
     aiohttp_missing: "⚠️ 代理模式需要 aiohttp。请安装：pip install aiohttp"

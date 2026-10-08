@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 from collections import OrderedDict
 
+from agent.i18n import t
 from gateway.pairing import CODE_TTL_SECONDS, _allowlist_env_for_platform
 
 # Display names come from the stranger. Bound them and keep the mention/markdown surface small in
@@ -40,19 +41,21 @@ def pairing_code_reply(platform_name: str, code: str, profile_arg: str = "") -> 
     """The DM a first-time sender receives: what happened, how long the code lives, what to do
     whether they are the owner or a guest, and that they must message again after approval."""
     hours = max(1, CODE_TTL_SECONDS // 3600)
-    validity = f"{hours} hour" if hours == 1 else f"{hours} hours"
-    approve_cmd = f"hermes {profile_arg}pairing approve {platform_name} {code}"
-    return (
-        "Hi! I don't recognize you yet, so I can't reply until the person running this bot "
-        "approves you.\n\n"
-        f"Your pairing code: `{code}` (valid for {validity})\n\n"
-        f"If you run this bot, open a terminal and run: `{approve_cmd}`. "
-        "Otherwise send that command to the bot owner. After approval, send your message again."
+    # [owner] i18n: the duration is localized as well, so the Chinese DM reads "1 小时" rather
+    # than embedding the English "1 hour"; which plural to use is the catalog's call, not a
+    # Python ternary. English stays "1 hour" / "2 hours" because both entries spell the unit.
+    validity = t(
+        "gateway.pairing.validity_one" if hours == 1 else "gateway.pairing.validity_many",
+        hours=hours,
     )
-
-
-PAIRING_RATE_LIMITED_REPLY = (
-    "Too many pairing requests right now. Wait a few minutes, then send your message again.")
+    approve_cmd = f"hermes {profile_arg}pairing approve {platform_name} {code}"
+    # [owner] i18n: stranger-facing copy is assembled at call time.
+    return t(
+        "gateway.pairing.code_reply",
+        code=code,
+        validity=validity,
+        approve_cmd=approve_cmd,
+    )
 
 
 def unauthorized_owner_hint(
