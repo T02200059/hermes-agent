@@ -1240,11 +1240,11 @@ class GatewayTurnMixin:
                 from agent.redact import redact_sensitive_text
                 _err = redact_sensitive_text(getattr(_comp, "_last_summary_error", None) or "unknown error", force=True)
                 logger.warning("Session hygiene compression aborted: %s", _err)
+                # [owner] i18n: upstream replaced this copy after BASE (it now points at
+                # `hermes doctor`); the catalog carries the new wording in both locales.
                 await self._hmwa_hygiene_notify(
                     source, attempt.meta,
-                    "⚠️ Shortening the conversation history failed, so I kept everything as-is. "
-                    "Run /compress to try again or /new to start fresh. If this keeps happening, "
-                    "run `hermes doctor` on the host.",
+                    t("gateway.model.history_shortening_failed"),
                     "compression-failure warning",
                 )
         # Configured aux model failed, recovered on the main model: only the user can fix that config.
@@ -1252,10 +1252,8 @@ class GatewayTurnMixin:
             _aux_model = getattr(_comp, "_last_aux_model_failure_model", "")
             _aux_err = getattr(_comp, "_last_aux_model_failure_error", None) or "unknown error"
             await self._hmwa_hygiene_notify(
-                source, attempt.meta, f"ℹ️ Configured compression model `{_aux_model}` "
-                f"failed ({_aux_err}). Recovered using your main "
-                "model — context is intact — but you may want to "
-                "check `auxiliary.compression.model` in config.yaml.",
+                source, attempt.meta,
+                t("gateway.aux_model_fallback", model=_aux_model, error=_aux_err),
                 "aux-model-fallback notice",
             )
 
@@ -1496,12 +1494,8 @@ class GatewayTurnMixin:
         if not home_env:
             # Slack routes every command through the parent `/hermes`; bare `/sethome` would fail.
             sethome_cmd = "/hermes sethome" if source.platform == Platform.SLACK else "/sethome"
-            await self._deliver_platform_notice(
-                source, f"📬 No home channel is set for {platform_name.title()}. "
-                f"A home channel is where Hermes delivers cron job results and cross-platform "
-                f"messages.\n\nType {sethome_cmd} to make this chat your home channel, or ignore "
-                f"to skip.",
-            )
+            notice = t("gateway.home_channel_notice", platform=platform_name.title(), sethome_cmd=sethome_cmd)
+            await self._deliver_platform_notice(source, notice)
 
     def _hmwa_apply_message_timestamp(self, event, message_text):
         """Capture the platform event time as message metadata and keep the persisted transcript
@@ -1575,14 +1569,15 @@ class GatewayTurnMixin:
             _intentional_silence = False
             response = _UNEXPECTED_SILENCE_REPLY
 
-        # "(empty)" = the model produced no visible content after exhausting all retries. One
-        # text with the CLI explainer and the desktop (agent/turn_explainers.py) so the user
-        # reads the same words on every surface.
+        # "(empty)" = the model produced no visible content after exhausting all retries. The
+        # sentence lives in the catalog (the `# [owner]` note below carries the why); upstream
+        # reuses the same words for the CLI explainer and the desktop.
         if response == "(empty)" and not _intentional_silence:
-            from agent.turn_explainers import EMPTY_RESPONSE_EXPLANATION
-
             _model = str(agent_result.get("model") or "").strip() or "The model"
-            response = "⚠️ " + EMPTY_RESPONSE_EXPLANATION.format(model=_model)
+            # [owner] i18n: the body lives in the catalog so the sentence localises. Upstream
+            # shares it with the CLI/desktop through agent.turn_explainers, a module this tree
+            # does not carry yet (A4 forward-port); the en rendering is identical either way.
+            response = "⚠️ " + t("gateway.model.empty_response_explanation", model=_model)
         agent_messages = agent_result.get("messages", [])
         logger.info(
             "response ready: platform=%s chat=%s session=%s time=%.1fs api_calls=%d response=%d chars",
@@ -1840,9 +1835,8 @@ class GatewayTurnMixin:
                 await asyncio.to_thread(
                     self._sync_telegram_topic_binding, source, session_entry, reason="compression-exhausted-reset",
                 )
-            response = (response or "") + (
-                "\n\n🔄 Session auto-reset — the conversation exceeded the maximum context size and "
-                "could not be compressed further. Your next message will start a fresh session."
+            response = (response or "") + t(
+                "gateway.session_auto_reset_exhausted"
             )
         return response, session_entry
 
@@ -2843,11 +2837,11 @@ class GatewayTurnMixin:
         try:
             from aiohttp import ClientSession as _AioClientSession, ClientTimeout
         except ImportError:
-            return self._proxy_error_result("⚠️ Proxy mode requires aiohttp. Install with: pip install aiohttp")
+            return self._proxy_error_result(t("gateway.proxy.aiohttp_missing"))
 
         proxy_url = self._get_proxy_url()
         if not proxy_url:
-            return self._proxy_error_result("⚠️ Proxy URL not configured (GATEWAY_PROXY_URL or gateway.proxy_url)")
+            return self._proxy_error_result(t("gateway.proxy.url_not_configured"))
 
         # The proxy key is a per-profile credential: honor the installed secret scope under multiplex.
         # Only UnscopedSecretError / import failures fall back to the env; any other get_secret()
@@ -2938,7 +2932,7 @@ class GatewayTurnMixin:
                     if resp.status != 200:
                         error_text = await resp.text()
                         logger.warning("Proxy error (%d) from %s: %s", resp.status, proxy_url, error_text[:500])
-                        return self._proxy_error_result(f"⚠️ Proxy error ({resp.status}): {error_text[:300]}")
+                        return self._proxy_error_result(t("gateway.proxy.http_error", status=resp.status, error=error_text[:300]))
 
                     buffer = ""
                     async for chunk in resp.content.iter_any():
@@ -2976,7 +2970,7 @@ class GatewayTurnMixin:
         except Exception as e:
             logger.error("Proxy connection error to %s: %s", proxy_url, e)
             if not full_response:
-                return self._proxy_error_result(f"⚠️ Proxy connection error: {e}")
+                return self._proxy_error_result(t("gateway.proxy.connection_error", error=e))
             # Partial response — return what we got
         finally:
             if _stream_consumer:
@@ -2995,7 +2989,7 @@ class GatewayTurnMixin:
             proxy_url, (session_id or "")[:20], _elapsed, len(full_response),
         )
         return {
-            "final_response": full_response or "(No response from remote agent)",
+            "final_response": full_response or t("gateway.no_proxy_response"),
             "messages": [
                 {"role": "user", "content": message},
                 {"role": "assistant", "content": full_response},

@@ -1056,8 +1056,10 @@ gateway:
     no_response_generated:             "⚠️ 处理已完成但未生成回复。这可能是暂时性错误 — 请重新发送你的消息。"
     not_processed_prev_turn:           "⚠️ 你的消息未被处理（上一轮仍在清理中）。请重新发送。"
     empty_tool_response:               "⚠️ 模型在处理工具结果后未返回响应。某些模型可能会出现这种情况 — 请重试或重新表述你的问题。"
+    empty_response_explanation:        "{model} 本次没有产出回复，即使重试之后亦然。发送 `continue` 再试一次，或用 /model 切换模型。"
     gateway_restarting:                "⚠️ 网关{profile_tag}正在重启，因此你的消息未被完整处理。\n请几秒后重新发送。"
     compression_aborted:               "⚠️ 上下文压缩已中止（{error}）。没有消息被丢弃 — 对话保持不变。运行 /compress 重试，/reset 开始新会话，或检查 auxiliary.compression 模型配置。"
+    history_shortening_failed:         "⚠️ 缩短对话历史失败，已原样保留全部内容。可运行 /compress 重试，或用 /new 开始新会话。若反复出现，请在宿主机上运行 `hermes doctor`。"
 
   agents:
     header:                "🤖 **活跃代理与任务**"
