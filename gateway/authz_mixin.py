@@ -17,7 +17,15 @@ import time -> no import cycle. The lazy import preserves the exact logger name
 
 from __future__ import annotations
 
+import contextlib
+import logging
 import os
+import threading
+from pathlib import Path
+
+from gateway.bot_loop_guard import BotLoopGuard
+
+logger = logging.getLogger(__name__)
 from typing import Optional
 
 from gateway.config import Platform
@@ -229,7 +237,162 @@ class GatewayAuthorizationMixin:
         adapters = getattr(self, "adapters", None) or {}
         return adapters.get(platform)
 
+    # [owner] forward-ported from upstream (BASE 之后新增): the delivery/intake adapter
+    # resolution chain. Upstream split our single _adapter_for_source into _intake_adapter_for
+    # (receiving bot) + _delivery_adapter_for (answering bot) with profile-scope semantics;
+    # the run_* host mixins (run_shutdown/run_busy/...) call _delivery_adapter_for directly.
+
+    def _primary_adapters(self) -> dict:
+        return getattr(self, "adapters", None) or {}
+
+    def _profile_adapters_map(self) -> dict:
+        return getattr(self, "_profile_adapters", None) or {}
+
+    def _adapters_for_profile(self, profile: Optional[str]) -> dict:
+        """The live adapter map *profile* may deliver through: ``_profile_adapters[p]`` for a
+        secondary, ``self.adapters`` only for the primary/default. Fail closed for named
+        secondaries with no entry (see upstream authz_mixin)."""
+        profile_name = (profile or "").strip() or None
+        if not profile_name or profile_name == "default":
+            return self._primary_adapters()
+        profile_adapters = self._profile_adapters_map()
+        if profile_name in profile_adapters:
+            adapters = profile_adapters[profile_name]
+            if adapters or not self._is_shared_bot_satellite(profile_name):
+                return adapters
+            return self._primary_adapters()
+        primary_profile = getattr(self, "_primary_profile_name", None)
+        if not primary_profile:
+            with contextlib.suppress(Exception):
+                primary_profile = self._active_profile_name()
+        return self._primary_adapters() if profile_name == primary_profile else {}
+
+    def _is_shared_bot_satellite(self, profile_name: str) -> bool:
+        config = getattr(self, "config", None)
+        if not getattr(config, "multiplex_profiles", False):
+            return False
+        if (getattr(self, "_profile_failed_platforms", None) or {}).get(profile_name):
+            return False
+        routes = getattr(config, "profile_routes", None) or []
+        if not any(r.enabled and r.profile == profile_name and r.bot_profile is None for r in routes):
+            return False
+        from gateway.run import _multiplex_profile_homes
+        try:
+            return profile_name in {name for name, _home in _multiplex_profile_homes(config)}
+        except Exception:
+            return False
+
+    def _owning_profile(self, adapter, platform):
+        """Return (registered, profile) for a live adapter: profile is None for primary."""
+        if adapter is self._primary_adapters().get(platform):
+            return True, None
+        for profile, profile_adapters in self._profile_adapters_map().items():
+            if adapter is profile_adapters.get(platform):
+                return True, profile
+        return False, None
+
+    def _transport_owner(self, source: SessionSource):
+        """``(adapter, profile)`` of the registered adapter that created *source*, if retained; else None."""
+        adapter_ref = getattr(source, "_transport_adapter_ref", None)
+        adapter = adapter_ref() if callable(adapter_ref) else None
+        platform = getattr(source, "platform", None)
+        if adapter is None or platform is None:
+            return None
+        registered, profile = self._owning_profile(adapter, platform)
+        return (adapter, profile) if registered else None
+
+    def _intake_adapter_for(self, source: Optional[SessionSource]):
+        """The adapter that RECEIVED *source*'s event (upstream authz_mixin, verbatim semantics)."""
+        if source is None:
+            return None
+        owner = self._transport_owner(source)
+        if owner is not None:
+            return owner[0]
+        if getattr(source, "delivered_via_upstream_relay", False) is True:
+            return self._primary_adapters().get(Platform.RELAY)
+        platform = getattr(source, "platform", None)
+        from gateway.session_identity import identity_of
+        identity = identity_of(source)
+        if identity is not None and identity.multiplexed:
+            return self._adapters_for_profile(identity.transport_profile).get(platform) if platform else None
+        if not getattr(getattr(self, "config", None), "multiplex_profiles", False):
+            return self._primary_adapters().get(platform) if platform else None
+        return None
+
+    def _delivery_adapter_for(self, source: Optional[SessionSource]):
+        """The adapter that ANSWERS *source* (upstream authz_mixin, verbatim semantics)."""
+        if source is None:
+            return None
+        adapter = self._intake_adapter_for(source)
+        if adapter is not None:
+            return adapter
+        from gateway.session_identity import identity_of
+        identity = identity_of(source)
+        if identity is not None and identity.multiplexed and not identity.transport_inferred:
+            return None
+        return self._authorization_adapter(getattr(source, "platform", None), getattr(source, "profile", None))
+
+    def _authorization_home_for_source(self, source: SessionSource):
+        """HERMES_HOME whose allowlist admits *source* (upstream authz_mixin, verbatim semantics)."""
+        from gateway.session_identity import identity_of
+        identity = identity_of(source)
+        if identity is not None:
+            return identity.authorization_home if identity.multiplexed else None
+        stamped = getattr(source, "_authorization_profile_home", None)
+        if stamped is not None:
+            return Path(stamped)
+        if not getattr(getattr(self, "config", None), "multiplex_profiles", False):
+            return None
+        adapter = self._delivery_adapter_for(source)
+        if adapter is None:
+            return None
+        _registered, profile = self._owning_profile(adapter, getattr(source, "platform", None))
+        if profile is None:
+            from hermes_constants import get_process_hermes_home
+            return get_process_hermes_home()
+        from hermes_cli.profiles import get_profile_dir
+        return get_profile_dir(profile)
+
+    _BOT_LOOP_GUARD_INIT_LOCK = threading.Lock()
+    _bot_loop_guard = None
+
+    def _bot_loop_guard_instance(self) -> BotLoopGuard:
+        guard = getattr(self, "_bot_loop_guard", None)
+        if guard is None:
+            with _BOT_LOOP_GUARD_INIT_LOCK:
+                guard = getattr(self, "_bot_loop_guard", None)
+                if guard is None:
+                    guard = self._bot_loop_guard = BotLoopGuard()
+        return guard
+
+    def _bot_loop_guard_conversation(self, source: SessionSource) -> tuple:
+        # One budget per conversation, not per sender pair: a per-pair key would hand N bots N budgets.
+        platform = source.platform.value if source.platform else ""
+        return (self._adapter_profile_for_source(source) or "", platform, str(source.chat_id or ""))
+
+    def _admit_bot_message(self, source: SessionSource) -> bool:
+        """Count one authorized bot-authored inbound message (upstream authz_mixin, verbatim)."""
+        if not getattr(source, "is_bot", False):
+            return True
+        allowed, state = self._bot_loop_guard_instance().admit(self._bot_loop_guard_conversation(source))
+        if state == "tripped":
+            logger.warning(
+                "Bot loop guard is dropping bot messages in %s chat %s: bot %s sent one message too many "
+                "for the window, cooling down (gateway.bot_loop_guard in config.yaml).",
+                source.platform.value if source.platform else "", source.chat_id, source.user_id,
+            )
+        return allowed
+
     def _adapter_for_source(self, source: Optional[SessionSource]):
+        """Resolve the live adapter for an inbound ``SessionSource``.
+
+        [owner] legacy alias kept for the 9 pre-swap call sites (slash_commands,
+        queue_cancel_patch, progress_explainer...); now delegates to the
+        upstream delivery chain. Retire with the call-site re-point (A4-2).
+        """
+        return self._delivery_adapter_for(source)
+
+    def _legacy_adapter_for_source(self, source: Optional[SessionSource]):
         """Resolve the live adapter for an inbound ``SessionSource``."""
         if source is None:
             return None
