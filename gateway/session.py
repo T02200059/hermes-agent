@@ -1087,6 +1087,18 @@ def _session_key_namespace(profile: Optional[str]) -> str:
     return f"agent:{profile}"
 
 
+def profile_from_session_key_namespace(namespace: str) -> str:
+    """Inverse of :func:`_session_key_namespace` for the ``<ns>`` slot of a key: ``"default"`` for
+    ``main``, ``"main"`` for the marked ``main~``, else the slot is the profile id."""
+    # [owner] forward-ported from upstream (BASE 之后新增): upstream run.py imports it at module load.
+    # Upstream's _session_key_namespace marks the named "main" profile as "main~"; ours does not
+    # branch on it, so the inverse here keeps upstream's mapping verbatim for when the multiplex
+    # host module arrives with the A4 code swap.
+    if namespace == "main":
+        return "default"
+    return "main" if namespace == "main~" else namespace
+
+
 def build_session_key(
     source: SessionSource,
     group_sessions_per_user: bool = True,

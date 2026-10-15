@@ -40,6 +40,18 @@ def resolve_entry_api_key(entry: dict[str, Any] | None) -> str | None:
     return None
 
 
+def pre_agent_fallback_notice(
+    primary_provider: Any, primary_model: Any, fallback_provider: Any, fallback_model: Any
+) -> str:
+    """User-visible one-shot line for a provider switch made during credential resolution, before
+    any AIAgent exists (#74349). Shared by the messaging gateway, the TUI/Desktop gateway and cron
+    so the three pre-agent fallback paths cannot drift in wording."""
+    # [owner] forward-ported from upstream (BASE 之后新增): upstream run.py imports it at module load.
+    primary_desc = "/".join(str(p).strip() for p in (primary_provider, primary_model) if p) or "primary"
+    fallback_desc = "/".join(str(p).strip() for p in (fallback_provider, fallback_model) if p) or "fallback"
+    return f"⚠️ Provider fallback: {primary_desc} unavailable; using {fallback_desc} for this response."
+
+
 def _iter_fallback_entries(raw: Any) -> list[dict[str, Any]]:
     if isinstance(raw, dict):
         candidates = [raw]

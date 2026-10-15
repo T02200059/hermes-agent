@@ -3045,6 +3045,27 @@ def _env_ref_var_name(ref: str) -> Optional[str]:
     return ref
 
 
+def _env_ref_lookup(name: str) -> Optional[str]:
+    """Resolve the env var behind a ``${VAR}`` / ``${env:VAR}`` ref — plain ``os.environ`` outside
+    a profile secret scope (legacy behavior for the default profile).
+
+    Inside a scope (a multiplexed gateway turn, a secondary profile's config load, a cron job) the read goes
+    through ``agent.secret_scope.get_secret`` so the ref resolves against *that* profile's ``.env``: under
+    multiplexing a miss is a miss, never another profile's ``os.environ`` value (#84079 — every profile
+    "had" the default profile's ``${MATRIX_ACCESS_TOKEN}`` and fanned out). Same policy as
+    ``gateway.config._getenv`` and ``get_env_value``.
+    """
+    # [owner] forward-ported from upstream (BASE 之后新增): the config_effective module
+    # (also forward-ported) reads it for env-snapshot cache validation.
+    try:
+        from agent.secret_scope import current_secret_scope, get_secret as _get_secret
+    except Exception:
+        return os.environ.get(name)
+    if current_secret_scope() is None:
+        return os.environ.get(name)
+    return _get_secret(name)
+
+
 def _expand_env_vars(obj):
     """Recursively expand ``${VAR}`` / ``${env:VAR}`` references in config
     values.
@@ -3091,6 +3112,30 @@ def _env_ref_snapshot(obj, snapshot=None):
         for item in obj:
             _env_ref_snapshot(item, snapshot)
     return snapshot
+
+
+def _load_config_cache_sig(config_path: Path) -> Tuple[Optional[Tuple[int, int, int, int]], Optional[Tuple[int, ...]]]:
+    """Return ``(user_sig, cache_sig)`` for ``_LOAD_CONFIG_CACHE``.
+    The managed config file's signature is folded in ((0, 0, 0, 0) = none) so editing it invalidates
+    the merged result. ``cache_sig`` is None only when neither file exists (nothing to cache on)."""
+    # [owner] forward-ported from upstream (BASE 之后新增): the config_effective module
+    # (also forward-ported) reads it for signature-based cache validation.
+    from utils import file_signature
+    from hermes_cli import managed_scope
+    try:
+        st = config_path.stat()
+        user_sig: Optional[Tuple[int, int, int, int]] = file_signature(st)
+    except FileNotFoundError:
+        user_sig = None
+    managed_dir = managed_scope.get_managed_dir()
+    try:
+        mst = (managed_dir / "config.yaml").stat() if managed_dir else None
+        managed_sig = file_signature(mst) if mst else (0, 0, 0, 0)
+    except OSError:
+        managed_sig = (0, 0, 0, 0)
+    if user_sig is None and managed_sig == (0, 0, 0, 0):
+        return None, None
+    return user_sig, (*(user_sig or (0, 0, 0, 0)), *managed_sig)
 
 
 def _items_by_unique_name(items):

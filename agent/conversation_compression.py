@@ -110,6 +110,12 @@ COMPACTION_STATUS_MARKER = "Compacting context"
 COMPACTION_STATUS = (
     f"🗜️ {COMPACTION_STATUS_MARKER} — summarizing earlier conversation so I can continue..."
 )
+# Periodic heartbeat re-emitted while a long compression is still running so remote transports with
+# idle-turn watchdogs (#98371) see progress. Same marker as COMPACTION_STATUS so consumers classify it alike.
+# [owner] forward-ported from upstream (BASE 之后新增): upstream run.py imports it at module load.
+COMPACTION_HEARTBEAT_STATUS = (
+    f"🗜️ {COMPACTION_STATUS_MARKER} — still summarizing earlier conversation so I can continue..."
+)
 
 COMPACTION_DONE_STATUS = "✓ Context compaction complete — continuing turn..."
 
@@ -5952,6 +5958,7 @@ def try_shrink_image_parts_in_messages(
 __all__ = [
     "COMPACTION_STATUS",
     "COMPACTION_DONE_STATUS",
+    "COMPACTION_HEARTBEAT_STATUS",
     "COMPACTION_STATUS_MARKER",
     "get_compaction_status",
     "get_compaction_done_status",

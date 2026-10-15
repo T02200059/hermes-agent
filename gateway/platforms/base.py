@@ -2178,6 +2178,24 @@ def _normalize_media_tag_path(raw: str) -> str:
     return path.lstrip("`\"'").rstrip("`\"',.;:)}]")
 
 
+# A provider can leak its exact end-of-sequence control token glued to the last MEDIA path
+# (``MEDIA:/x.png<|eos|>``). Neither tag regex accepts ``<`` as a path terminator — deliberately,
+# since widening the delimiter set re-opens the glue classes #68773/#88038 — so the attachment was
+# silently dropped (#111046). The one exact token is recognised here, at the seam every scan shares
+# (extraction, display strip, stream cleanup), and only when it terminates the whole response.
+# [owner] forward-ported from upstream (BASE 之后新增): upstream run.py imports it at module load.
+_TERMINAL_SENTINEL = "<|eos|>"
+
+
+def _terminal_sentinel_start(text: str) -> int:
+    """Offset where the run of exact ``<|eos|>`` tokens closing ``text`` (trailing whitespace
+    ignored) begins, else -1; the run ends at ``len(text.rstrip())``."""
+    end = start = len(text.rstrip())
+    while start >= len(_TERMINAL_SENTINEL) and text[start - len(_TERMINAL_SENTINEL):start] == _TERMINAL_SENTINEL:
+        start -= len(_TERMINAL_SENTINEL)
+    return start if start < end else -1
+
+
 def _path_lacks_deliverable_extension(path: str) -> bool:
     """True when MEDIA_TAG_CLEANUP_RE's extension alternation does not cover
     ``path`` — either the basename has no extension at all (Caddyfile,
