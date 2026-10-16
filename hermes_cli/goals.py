@@ -1866,6 +1866,7 @@ class GoalManager:
         *,
         user_initiated: bool = True,
         background_processes: Optional[List[Dict[str, Any]]] = None,
+        active_delegations: int = 0,  # [owner] A4-2: upstream passes the live delegation count; accepted for signature parity
     ) -> Dict[str, Any]:
         """Run the judge and update state. Return a decision dict.
 

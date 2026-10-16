@@ -51,6 +51,13 @@ async def test_gateway_prepare_inbound_message_uses_resolved_session_key(monkeyp
         ),
         _session_key_for_source=lambda _source: "derived-session-key",
         _consume_pending_native_image_paths=lambda _session_key: [],
+        # [owner] A4-2: swapped run_inbound (upstream form) chains several self._ helpers;
+        # the stub returns empty media so the enrichment chain no-ops.
+        _prefix_inbound_sender_context=lambda _event, _source, text: text,
+        _classify_inbound_media=lambda _event, _stt: ([], [], [], []),
+        _prepend_inbound_media_file_notes=lambda text, _audio, _video: text,
+        _prepend_inbound_document_notes=lambda _event, text: text,
+        _prepend_inbound_reply_context=lambda _event, _source, text: text,
     )
     source = SessionSource(
         platform=Platform.FEISHU,
@@ -126,9 +133,13 @@ def test_gateway_long_running_surface_keeps_source_aware_display_resolver():
     """
     import inspect
 
-    from gateway.run import GatewayRunner
+    from gateway.run_turn import GatewayTurnMixin  # [owner] A4-2: host moved with the decomposition
 
-    body = inspect.getsource(GatewayRunner._run_agent_inner)
+    # [owner] A4-2: with the decomposition the surface-mode helper + per-chat resolver live in
+    # _run_agent_display_settings, and the long-running key is consumed in _run_agent_notify_long_running.
+    body = inspect.getsource(GatewayTurnMixin._run_agent_display_settings) + inspect.getsource(
+        GatewayTurnMixin._run_agent_notify_long_running
+    )
     # The helper closure calls the per-chat resolver with the live source.
     assert "_display_surface_mode" in body
     assert "resolve_display_setting_for_source" in body

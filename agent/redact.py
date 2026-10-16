@@ -1163,6 +1163,29 @@ def is_env_dump_command(command: str | None) -> bool:
     return False
 
 
+# [owner] forward-ported from upstream (BASE 之后新增): the swapped run.py's
+# _redact_gateway_user_facing_secrets resolves the egress scrub through this function.
+REDACTION_UNAVAILABLE = "[redaction-unavailable]"
+# The opaque branch needs a 20-char floor (the floor the gateway/A2A sweeps always had): without it the
+# English word "bearer" turns "the bearer of bad news" into "Bearer [redacted] bad news" on every chat
+_BEARER_RESIDUE_RE = re.compile(r"\bBearer\s+(?:\[[^\]]+\]|[A-Za-z0-9._~+/-]{20,}=*)", re.IGNORECASE)
+
+
+def redact_for_egress(text: str) -> str:
+    """The one scrub for text leaving the process for a remote reader (chat platforms, A2A peers,
+    telemetry). ``redact_sensitive_text(force=True)`` — the only secret-pattern list — plus a bearer
+    sweep, because a ``Bearer <opaque>`` value with no vendor prefix carries no shape the prefix
+    matcher can key on. Fails CLOSED: if the redactor raises, the raw text is never returned."""
+    text = str(text or "")
+    try:
+        text = redact_sensitive_text(text, force=True)
+    except Exception:
+        return REDACTION_UNAVAILABLE
+    if "earer" in text:
+        text = _BEARER_RESIDUE_RE.sub("Bearer [redacted]", text)
+    return text
+
+
 def redact_terminal_output(
     output: str, command: str | None = None, *, force: bool = False
 ) -> str:

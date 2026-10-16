@@ -874,7 +874,7 @@ class GatewayShutdownMixin:
             return 0
         try:
             from cron.jobs import get_job
-            from cron.scheduler import _resolve_delivery_targets
+            from cron.scheduler_delivery import _resolve_delivery_targets  # [owner] A4-2: failure-lane chain (forward-ported)
         except Exception as e:
             logger.debug("Cron interrupt notification unavailable: %s", e)
             return 0

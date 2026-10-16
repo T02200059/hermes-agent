@@ -2494,3 +2494,7 @@ def build_context_files_prompt(
     if not sections:
         return ""
     return "# Project Context\n\nThe following project context files have been loaded and should be followed:\n\n" + "\n".join(sections)
+
+# [owner] forward-ported from upstream (BASE 之后新增): context_compressor's
+# split_user_originated_turn (forward-ported) filters steer display kinds via this constant.
+STEER_DISPLAY_KIND = "steer"

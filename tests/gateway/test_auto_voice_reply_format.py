@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from gateway.config import Platform
-from gateway.platforms.base import MessageEvent, MessageType
+from gateway.platforms.event import MessageEvent, MessageType  # [owner] A4-2: match the swapped host's enum source
 from gateway.run import GatewayRunner
 from gateway.session import SessionSource
 

@@ -1785,13 +1785,6 @@ class GatewayInboundMixin:
         except Exception as exc:
             logger.warning("@ context reference expansion failed: %s", exc)
             logger.debug("@ context reference expansion failure detail", exc_info=True)
-        # [owner] inbound context: Feishu append open_id/chat_id/user_name (see owner/gateway/inbound_context.py)
-        try:
-            from owner.gateway.inbound_context import append_inbound_context as _append_inbound_context
-
-            message_text = _append_inbound_context(message_text, source, session_id=session_key)
-        except Exception:
-            logger.debug("Inbound context append failed (non-fatal)", exc_info=True)
         return message_text
 
     async def _prepare_inbound_message_text(
@@ -1822,6 +1815,15 @@ class GatewayInboundMixin:
             message_text = await self._expand_inbound_context_references(source, session_key, message_text)
             if message_text is None:
                 return None
+        # [owner] inbound context: Feishu append open_id/chat_id/user_name (see owner/gateway/inbound_context.py).
+        # Unconditional (our contract since the monolith): upstream parks this inside the @ branch,
+        # we keep it on every message — re-externalized here at A4-2 to preserve the owner contract.
+        try:
+            from owner.gateway.inbound_context import append_inbound_context as _append_inbound_context
+
+            message_text = _append_inbound_context(message_text, source, session_id=session_key)
+        except Exception:
+            logger.debug("Inbound context append failed (non-fatal)", exc_info=True)
         # After expansion: the quoted reply is someone else's text and stays literal — an
         # ``@file:`` inside it must never read a local file on the replier's behalf.
         return self._prepend_inbound_reply_context(event, source, message_text)

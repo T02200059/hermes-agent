@@ -30,6 +30,7 @@ from typing import Callable, Dict, List, Optional, Any, Tuple
 from urllib.parse import quote, urljoin
 
 from agent.i18n import t
+from plugins.platforms.discord.adapter_media import DiscordMediaMixin  # [owner] A4-2: upstream mounts the media send lane here
 from agent.async_utils import (
     consume_detached_task_result as _consume_background_task_result,
 )
@@ -1073,7 +1074,17 @@ def _read_discord_prompt_timeout() -> int:
     return seconds
 
 
-class DiscordAdapter(BasePlatformAdapter):
+class DiscordAdapter(DiscordMediaMixin, BasePlatformAdapter):  # [owner] A4-2: base list mirrors upstream (media lane)
+    # [owner] A4-2: forward-ported from upstream — DiscordMediaMixin resolves channels through this.
+
+    async def _resolve_channel(self, channel_id: Any) -> Any:
+        """Cached ``get_channel`` first, REST ``fetch_channel`` on miss (raises on API error)."""
+        channel = self._client.get_channel(int(channel_id))
+        if not channel:
+            channel = await self._client.fetch_channel(int(channel_id))
+        return channel
+
+
     """
     Discord bot adapter.
 
@@ -4019,208 +4030,9 @@ class DiscordAdapter(BasePlatformAdapter):
             continuation_message_ids=tuple(continuation_ids),
         )
 
-    async def _send_file_attachment(
-        self,
-        chat_id: str,
-        file_path: str,
-        caption: Optional[str] = None,
-        file_name: Optional[str] = None,
-    ) -> SendResult:
-        """Send a local file as a Discord attachment.
+    # [owner] A4-2: _send_file_attachment moved to DiscordMediaMixin (upstream form: preflight + metadata + no-attachment guard)
 
-        Forum channels (type 15) get a new thread whose starter message
-        carries the file — they reject direct POST /messages.
-
-        Uses a path-based ``discord.File`` (same pattern as
-        ``send_multiple_images``) rather than an open file handle. The
-        handle form can race with Discord's multipart encoder after an
-        earlier image batch on the same channel and produce a successful
-        message with zero attachments — a silent drop for video/document
-        MEDIA tags (#66797).
-        """
-        if not self._client:
-            return SendResult(success=False, error="Not connected")
-
-        if not os.path.isfile(file_path):
-            return SendResult(success=False, error=f"File not found: {file_path}")
-
-        channel = self._client.get_channel(int(chat_id))
-        if not channel:
-            channel = await self._client.fetch_channel(int(chat_id))
-        if not channel:
-            return SendResult(success=False, error=f"Channel {chat_id} not found")
-
-        filename = file_name or os.path.basename(file_path)
-        logger.info(
-            "[%s] Sending file attachment %s (%s) to %s",
-            self.name,
-            filename,
-            os.path.splitext(filename)[1].lower() or "no-ext",
-            chat_id,
-        )
-        # Path-based File: discord.py owns open/close for the upload, matching
-        # the working image-batch path. Prefer ``files=[...]`` over deprecated
-        # singular ``file=`` for the same reason.
-        discord_file = discord.File(file_path, filename=filename)
-        if self._is_forum_parent(channel):
-            result = await self._forum_post_file(
-                channel,
-                content=(caption or "").strip(),
-                files=[discord_file],
-            )
-            return result
-        msg = await channel.send(
-            content=caption if caption else None,
-            files=[discord_file],
-        )
-        attachments = getattr(msg, "attachments", None) or []
-        if not attachments:
-            # Discord accepted the message but attached nothing — the failure
-            # mode reported in #66797 (MEDIA video stripped from text, no
-            # attachment, no prior log line). Fail loud so the dispatch loop
-            # surfaces a warning instead of a silent drop.
-            logger.warning(
-                "[%s] Discord returned message %s with no attachments for %s",
-                self.name,
-                getattr(msg, "id", "?"),
-                filename,
-            )
-            return SendResult(
-                success=False,
-                error=f"Discord accepted the message but attached no files ({filename})",
-                message_id=str(getattr(msg, "id", "") or "") or None,
-            )
-        return SendResult(success=True, message_id=str(msg.id))
-
-    async def send_multiple_images(
-        self,
-        chat_id: str,
-        images: List[Tuple[str, str]],
-        metadata: Optional[Dict[str, Any]] = None,
-        human_delay: float = 0.0,
-    ) -> None:
-        """Send a batch of images as a single Discord message with multiple attachments.
-
-        Discord permits up to 10 file attachments per message. Batches are
-        chunked accordingly. URL images are downloaded into memory and
-        uploaded as inline attachments (same pattern as ``send_image`` so
-        they render inline, not as bare links). Local files are opened
-        directly. On per-chunk failure the remaining images in that chunk
-        fall back to the base per-image loop.
-        """
-        if not self._client:
-            return
-        if not images:
-            return
-
-        try:
-            import discord as _discord_mod
-            import io as _io
-            from urllib.parse import unquote as _unquote
-        except Exception:  # pragma: no cover
-            await super().send_multiple_images(chat_id, images, metadata, human_delay)
-            return
-
-        try:
-            channel = self._client.get_channel(int(chat_id))
-            if not channel:
-                channel = await self._client.fetch_channel(int(chat_id))
-            if not channel:
-                logger.warning("[%s] Channel %s not found for multi-image send", self.name, chat_id)
-                return
-        except Exception as e:
-            logger.warning("[%s] Failed to resolve channel for multi-image send: %s", self.name, e)
-            await super().send_multiple_images(chat_id, images, metadata, human_delay)
-            return
-
-        CHUNK = 10
-        chunks = [images[i:i + CHUNK] for i in range(0, len(images), CHUNK)]
-
-        for chunk_idx, chunk in enumerate(chunks):
-            if human_delay > 0 and chunk_idx > 0:
-                await asyncio.sleep(human_delay)
-
-            files: List[Any] = []
-            captions: List[str] = []
-            aiohttp_session = None
-            try:
-                for image_url, alt_text in chunk:
-                    if alt_text:
-                        captions.append(alt_text)
-                    if image_url.startswith("file://"):
-                        local_path = _unquote(image_url[7:])
-                        if not os.path.exists(local_path):
-                            logger.warning("[%s] Skipping missing image: %s", self.name, local_path)
-                            continue
-                        files.append(_discord_mod.File(local_path, filename=os.path.basename(local_path)))
-                    else:
-                        if not is_safe_url(image_url):
-                            logger.warning("[%s] Blocked unsafe image URL in batch", self.name)
-                            continue
-                        # Download to BytesIO so it renders inline
-                        try:
-                            import aiohttp as _aiohttp
-                            from gateway.platforms.base import resolve_proxy_url, proxy_kwargs_for_aiohttp
-                            _proxy = resolve_proxy_url(platform_env_var="DISCORD_PROXY")
-                            _sess_kw, _req_kw = proxy_kwargs_for_aiohttp(_proxy)
-                            if aiohttp_session is None:
-                                aiohttp_session = _aiohttp.ClientSession(**_sess_kw)
-                            status, data, headers = await _read_url_image_with_redirect_guard(
-                                aiohttp_session,
-                                image_url,
-                                timeout=_aiohttp.ClientTimeout(total=30),
-                                request_kwargs=_req_kw,
-                            )
-                            if status != 200:
-                                logger.warning(
-                                    "[%s] Failed to download image (HTTP %d) in batch: %s",
-                                    self.name, status, image_url[:80],
-                                )
-                                continue
-                            ct = headers.get("content-type", "image/png")
-                            ext = "png"
-                            if "jpeg" in ct or "jpg" in ct:
-                                ext = "jpg"
-                            elif "gif" in ct:
-                                ext = "gif"
-                            elif "webp" in ct:
-                                ext = "webp"
-                            files.append(_discord_mod.File(_io.BytesIO(data), filename=f"image_{len(files)}.{ext}"))
-                        except Exception as dl_err:
-                            logger.warning("[%s] Download failed for %s: %s", self.name, image_url[:80], dl_err)
-                            continue
-
-                if not files:
-                    continue
-
-                # Use the first caption if any (Discord only has one message body for the group)
-                content = captions[0] if captions else None
-                logger.info(
-                    "[%s] Sending %d image(s) as single Discord message (chunk %d/%d)",
-                    self.name, len(files), chunk_idx + 1, len(chunks),
-                )
-
-                if self._is_forum_parent(channel):
-                    await self._forum_post_file(
-                        channel,
-                        content=(content or "").strip(),
-                        files=files,
-                    )
-                else:
-                    await channel.send(content=content, files=files)
-            except Exception as e:
-                logger.warning(
-                    "[%s] Multi-image Discord send failed (chunk %d/%d), falling back to per-image: %s",
-                    self.name, chunk_idx + 1, len(chunks), e,
-                    exc_info=True,
-                )
-                await super().send_multiple_images(chat_id, chunk, metadata, human_delay=human_delay)
-            finally:
-                if aiohttp_session is not None:
-                    try:
-                        await aiohttp_session.close()
-                    except Exception:
-                        pass
+    # [owner] A4-2: send_multiple_images moved to DiscordMediaMixin (upstream form: oversized-skip + notice)
 
     async def play_tts(
         self,
@@ -4240,117 +4052,7 @@ class DiscordAdapter(BasePlatformAdapter):
                 return SendResult(success=success)
         return await self.send_voice(chat_id=chat_id, audio_path=audio_path, **kwargs)
 
-    async def send_voice(
-        self,
-        chat_id: str,
-        audio_path: str,
-        caption: Optional[str] = None,
-        reply_to: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-        **kwargs,
-    ) -> SendResult:
-        """Send audio as a Discord file attachment."""
-        try:
-            import io
-
-            channel = self._client.get_channel(int(chat_id))
-            if not channel:
-                channel = await self._client.fetch_channel(int(chat_id))
-            if not channel:
-                return SendResult(success=False, error=f"Channel {chat_id} not found")
-
-            if not os.path.exists(audio_path):
-                return SendResult(success=False, error=f"Audio file not found: {audio_path}")
-
-            filename = os.path.basename(audio_path)
-
-            # ids-only reference — same no-fetch rationale as the text path.
-            reference = self._reply_reference_for_send(reply_to, channel)
-
-            with open(audio_path, "rb") as f:
-                file_data = f.read()
-
-            # Forum channels (type 15) reject direct POST /messages — the
-            # native voice flag path also targets /messages so it would fail
-            # too.  Create a thread post with the audio as the starter
-            # attachment instead.
-            if self._is_forum_parent(channel):
-                forum_file = discord.File(io.BytesIO(file_data), filename=filename)
-                return await self._forum_post_file(
-                    channel,
-                    content=(caption or "").strip(),
-                    file=forum_file,
-                )
-
-            # Try sending as a native voice message via raw API (flags=8192).
-            try:
-                import base64
-
-                duration_secs = 5.0
-                try:
-                    from mutagen.oggopus import OggOpus
-                    info = OggOpus(audio_path)
-                    duration_secs = info.info.length
-                except Exception:
-                    duration_secs = max(1.0, len(file_data) / 2000.0)
-
-                waveform_bytes = bytes([128] * 256)
-                waveform_b64 = base64.b64encode(waveform_bytes).decode()
-
-                import json as _json
-                payload_data = {
-                    "flags": 8192,
-                    "attachments": [{
-                        "id": "0",
-                        "filename": "voice-message.ogg",
-                        "duration_secs": round(duration_secs, 2),
-                        "waveform": waveform_b64,
-                    }],
-                }
-                if reference is not None:
-                    payload_data["message_reference"] = {
-                        "message_id": str(reply_to),
-                        "fail_if_not_exists": False,
-                    }
-                payload = _json.dumps(payload_data)
-                form = [
-                    {"name": "payload_json", "value": payload},
-                    {
-                        "name": "files[0]",
-                        "value": file_data,
-                        "filename": "voice-message.ogg",
-                        "content_type": "audio/ogg",
-                    },
-                ]
-                msg_data = await self._client.http.request(
-                    discord.http.Route("POST", "/channels/{channel_id}/messages", channel_id=channel.id),
-                    form=form,
-                )
-                return SendResult(success=True, message_id=str(msg_data["id"]))
-            except Exception as voice_err:
-                logger.debug("Voice message flag failed, falling back to file: %s", voice_err)
-                file = discord.File(io.BytesIO(file_data), filename=filename)
-                try:
-                    msg = await channel.send(file=file, reference=reference)
-                except Exception as send_err:
-                    err_text = str(send_err)
-                    if (
-                        reference is not None
-                        and (
-                            (
-                                "error code: 50035" in err_text
-                                and "Cannot reply to a system message" in err_text
-                            )
-                            or "error code: 10008" in err_text
-                        )
-                    ):
-                        msg = await channel.send(file=file, reference=None)
-                    else:
-                        raise
-                return SendResult(success=True, message_id=str(msg.id))
-        except Exception as e:  # pragma: no cover - defensive logging
-            logger.error("[%s] Failed to send audio, falling back to base adapter: %s", self.name, e, exc_info=True)
-            return await super().send_voice(chat_id, audio_path, caption, reply_to, metadata=metadata)
+    # [owner] A4-2: send_send_voice moved to DiscordMediaMixin (upstream form; preflight + no-attachment guard)
 
     # ------------------------------------------------------------------
     # Voice channel methods (join / leave / play)
@@ -5609,40 +5311,9 @@ class DiscordAdapter(BasePlatformAdapter):
             )
             return await super().send_animation(chat_id, animation_url, caption, reply_to, metadata=metadata)
 
-    async def send_video(
-        self,
-        chat_id: str,
-        video_path: str,
-        caption: Optional[str] = None,
-        reply_to: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> SendResult:
-        """Send a local video file natively as a Discord attachment."""
-        try:
-            return await self._send_file_attachment(chat_id, video_path, caption)
-        except FileNotFoundError:
-            return SendResult(success=False, error=f"Video file not found: {video_path}")
-        except Exception as e:  # pragma: no cover - defensive logging
-            logger.error("[%s] Failed to send local video, falling back to base adapter: %s", self.name, e, exc_info=True)
-            return await super().send_video(chat_id, video_path, caption, reply_to, metadata=metadata)
+    # [owner] A4-2: send_send_video moved to DiscordMediaMixin (upstream form; preflight + no-attachment guard)
 
-    async def send_document(
-        self,
-        chat_id: str,
-        file_path: str,
-        caption: Optional[str] = None,
-        file_name: Optional[str] = None,
-        reply_to: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> SendResult:
-        """Send an arbitrary file natively as a Discord attachment."""
-        try:
-            return await self._send_file_attachment(chat_id, file_path, caption, file_name=file_name)
-        except FileNotFoundError:
-            return SendResult(success=False, error=f"File not found: {file_path}")
-        except Exception as e:  # pragma: no cover - defensive logging
-            logger.error("[%s] Failed to send document, falling back to base adapter: %s", self.name, e, exc_info=True)
-            return await super().send_document(chat_id, file_path, caption, file_name, reply_to, metadata=metadata)
+    # [owner] A4-2: send_send_document moved to DiscordMediaMixin (upstream form; preflight + no-attachment guard)
 
     async def send_typing(self, chat_id: str, metadata=None) -> None:
         """Start a persistent typing indicator for a channel.
@@ -10696,3 +10367,23 @@ def register(ctx) -> None:
         emoji="🎮",
         allow_update_command=True,
     )
+
+# [owner] A4-2: forward-ported from upstream — DiscordMediaMixin (forward-ported) imports
+# these helpers from the adapter module.
+
+def _image_ext_from_content_type(content_type: str) -> str:
+    """Attachment extension for a downloaded image (png unless jpeg/gif/webp is evident)."""
+    if "jpeg" in content_type or "jpg" in content_type:
+        return "jpg"
+    if "gif" in content_type:
+        return "gif"
+    if "webp" in content_type:
+        return "webp"
+    return "png"
+
+
+def _prompt_target_id(chat_id: str, metadata: Optional[dict]) -> str:
+    """Interactive prompts post into ``metadata["thread_id"]`` when present, else ``chat_id``."""
+    if metadata and metadata.get("thread_id"):
+        return metadata["thread_id"]
+    return chat_id

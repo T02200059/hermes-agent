@@ -129,7 +129,7 @@ def test_fail_open_when_gateway_probe_raises():
 
 def test_gateway_glue_is_wired():
     """契约测试：官方文件里的 5 行 [owner] 委托必须在（防 merge 丢失）。"""
-    src = Path("gateway/run.py").read_text(encoding="utf-8")
+    src = Path("gateway/run_turn.py").read_text(encoding="utf-8")  # [owner] A4-2: glue landed in run_turn
     assert "Skipping stale agent promotion" in src
     anchor = "from owner.patches.stop_orphan_run import cancel_stale_run"
     assert src.count(anchor) == 1

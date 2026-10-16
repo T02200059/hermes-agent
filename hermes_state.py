@@ -101,6 +101,7 @@ from hermes_state_common import (  # noqa: F401  (re-exported for back-compat)
     _describe_lock_holder,
     _read_lock_holder_record,
 )
+from hermes_state_messages import SessionMessagesMixin  # [owner] A4-2: forward-ported upstream mixin
 from hermes_state_portability import SessionPortabilityMixin
 from hermes_state_schema import SessionSchemaMixin
 from hermes_state_search import SessionSearchMixin
@@ -4876,7 +4877,7 @@ def classify_session_status(
     return SESSION_STATUS_COMPLETE
 
 
-class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin):
+class SessionDB(SessionMessagesMixin, SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin):  # [owner] A4-2: SessionMessagesMixin forward-ported (append_delegation_delivery etc.)
     """
     SQLite-backed session storage with FTS5 search.
 

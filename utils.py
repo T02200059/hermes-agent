@@ -1,5 +1,6 @@
 """Shared utility functions for hermes-agent."""
 
+from contextlib import suppress  # [owner] A4-2: atomic-write helper uses it
 import errno
 import json
 import logging
@@ -565,87 +566,48 @@ def atomic_yaml_write(
         raise
 
 
-def atomic_roundtrip_yaml_update(
-    path: Union[str, Path],
-    key_path: str,
-    value: Any,
-) -> None:
-    """Update one dotted YAML key while preserving comments and readable text.
+# [owner] A4-2: upstream form (value=None removes the key)
+def atomic_roundtrip_yaml_update(path: Union[str, Path], key_path: str, value: Any) -> None:
+    """Update one dotted YAML key while preserving comments, ordering, quoting and Unicode.
 
-    This is intentionally narrower than :func:`atomic_yaml_write`: it is for
-    user-edited config files where comments, ordering, quoting, and Unicode
-    should survive a single setting mutation.  Writes still use the same temp
-    file + fsync + atomic replace pattern.
+    Narrower than :func:`atomic_yaml_write` on purpose: for user-edited config files where a
+    single setting mutation must not disturb the rest. Still writes via temp file + atomic replace.
+    ``value=None`` removes the key (a ``key: null`` leftover reads as absent everywhere but
+    litters the file and diverges from whole-document writers that drop the key).
     """
-    from ruamel.yaml import YAML
     from ruamel.yaml.comments import CommentedMap
-
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    yaml_rt = YAML(typ="rt")
-    yaml_rt.preserve_quotes = True
-    yaml_rt.allow_unicode = True
-    yaml_rt.default_flow_style = False
-    yaml_rt.indent(mapping=2, sequence=4, offset=2)
-
-    if path.exists():
-        with path.open("r", encoding="utf-8") as f:
-            config = yaml_rt.load(f) or CommentedMap()
-    else:
-        config = CommentedMap()
-
-    if not isinstance(config, CommentedMap):
-        config = CommentedMap(config)
-
-    current = config
-    # Honor escaped dots and prefer existing literal dotted keys (e.g. model
-    # IDs like ``glm-5.3``) over blind splitting — same navigation as
-    # ``hermes config set``'s ``_set_nested`` (#91607: /model + TUI
-    # persistence route through here and used to write ``glm-5: {'3': ...}``
-    # phantom siblings while the runtime kept reading the literal key).
+    # Honor escaped dots and prefer existing literal dotted keys (model IDs like ``glm-5.3``) over
+    # blind splitting — same navigation as ``hermes config set``'s ``_set_nested``; otherwise
+    # /model + TUI persistence wrote ``glm-5: {'3': ...}`` phantom siblings.
+    # See #91607.
     from hermes_cli.config import _greedy_literal_match, _split_key_path
 
+    path = Path(path)
+    from hermes_constants import mkdir_under_hermes_home
+
+    mkdir_under_hermes_home(path.parent)
+    yaml_rt, config = _roundtrip_load(path)
+    current = config
     keys = _split_key_path(key_path)
     i = 0
     while True:
         remaining = keys[i:]
-        seg, consumed = remaining[0], 1
-        match = _greedy_literal_match(dict(current), remaining)
-        if match is not None:
-            seg, consumed = match
+        seg, consumed = _greedy_literal_match(dict(current), remaining) or (remaining[0], 1)
         if i + consumed == len(keys):
-            current[seg] = value
+            if value is None:
+                current.pop(seg, None)
+            else:
+                current[seg] = value
             break
         next_value = current.get(seg)
         if not isinstance(next_value, CommentedMap):
+            if value is None:
+                return  # nothing to remove under a missing/scalar parent
             next_value = CommentedMap()
             current[seg] = next_value
         current = next_value
         i += consumed
-
-    original_mode = _preserve_file_mode(path)
-    original_owner = _preserve_file_owner(path)
-    fd, tmp_path = tempfile.mkstemp(
-        dir=str(path.parent),
-        prefix=f".{path.stem}_",
-        suffix=".tmp",
-    )
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            yaml_rt.dump(config, f)
-            f.flush()
-            os.fsync(f.fileno())
-        real_path = atomic_replace(tmp_path, path)
-        real_path_obj = Path(real_path)
-        _restore_file_owner(real_path_obj, original_owner)
-        _restore_file_mode(real_path_obj, original_mode)
-    except BaseException:
-        try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
-        raise
+    _roundtrip_dump(path, yaml_rt, config)
 
 
 def atomic_roundtrip_yaml_save(
@@ -980,3 +942,75 @@ def base_url_host_matches(base_url: str, domain: str) -> bool:
     if not domain:
         return False
     return hostname == domain or hostname.endswith("." + domain)
+
+def _roundtrip_load(path: Path):
+    """``(yaml_rt, CommentedMap)``: a ruamel round-trip loader keeping quotes/Unicode with 2-space
+    indents, plus *path* loaded through it (empty map when missing/blank)."""
+    from ruamel.yaml import YAML
+    from ruamel.yaml.comments import CommentedMap
+
+    yaml_rt = YAML(typ="rt")
+    yaml_rt.preserve_quotes = True
+    yaml_rt.allow_unicode = True
+    yaml_rt.default_flow_style = False
+    yaml_rt.indent(mapping=2, sequence=4, offset=2)
+    data = yaml_rt.load(path.read_text(encoding="utf-8")) if path.exists() else None
+    return yaml_rt, data if isinstance(data, CommentedMap) else CommentedMap(data or {})
+
+def _roundtrip_dump(path: Path, yaml_rt, config) -> None:
+    _atomic_write(path, lambda f: yaml_rt.dump(config, f), prefix=f".{path.stem}_", mode=_preserve_file_mode(path))
+
+def _atomic_write(path: Path, write, *, prefix: str, encoding: str = "utf-8", mode: "int | None" = None,
+                  preserve_owner: bool = True, binary: bool = False, fsync_dir: bool = False) -> None:
+    """Temp file + fsync + :func:`atomic_replace`, then re-apply owner/mode.
+
+    *write(f)* emits the payload into the open handle (text, or bytes when *binary*). The temp file
+    is created by ``mkstemp`` — ``O_CREAT|O_EXCL`` at 0600 regardless of umask — so a secret is
+    never readable at process umask, not even between create and chmod. *mode* is fchmod'd onto
+    the temp fd BEFORE the replace so the target never transits through mkstemp's 0600 (fchmod is
+    Unix-only; the post-replace chmod is the sole path on Windows). With no *mode* a NEW target
+    gets what ``open(path, "w")`` would have given it (process umask) — the callers this replaced
+    wrote at umask, and silently tightening every fresh cache/state file to 0600 breaks shared
+    volume mounts; an existing target with no *mode* keeps mkstemp's bits, as before. *fsync_dir*
+    also fsyncs the parent so the rename itself is durable. The temp file is removed on any
+    failure — ``BaseException`` on purpose, so KeyboardInterrupt / SystemExit still clean up.
+    """
+    # A profile delete leaves a tombstone beside its removed home.  Background
+    # writers may retain that home in a context variable, so a plain mkdir here
+    # would resurrect the profile before the write can fail.
+    from hermes_constants import mkdir_under_hermes_home
+
+    mkdir_under_hermes_home(path.parent)
+    if mode is None and not path.exists():
+        mode = default_new_file_mode()
+    original_owner = _preserve_file_owner(path) if preserve_owner else None
+    fd, tmp_path = tempfile.mkstemp(dir=str(path.parent), prefix=prefix, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "wb" if binary else "w", encoding=None if binary else encoding) as f:
+            if mode is not None and hasattr(os, "fchmod"):
+                os.fchmod(f.fileno(), mode)
+            write(f)
+            f.flush()
+            os.fsync(f.fileno())
+        _restore_file_metadata(Path(atomic_replace(tmp_path, path)), original_owner, mode)  # symlink-preserving
+        if fsync_dir:
+            fsync_directory(path.parent)
+    except BaseException:
+        with suppress(OSError):
+            os.unlink(tmp_path)
+        raise
+
+def _restore_file_metadata(path: Path, owner: "tuple[int, int] | None", mode: "int | None") -> None:
+    """Best-effort re-apply of uid/gid and permission bits after an atomic replace.
+
+    Docker/NAS installs often run some commands as root on a volume owned by the runtime user;
+    ``os.replace`` swaps in the temp file's owner, so privileged callers chown it back. ``mkstemp``
+    creates 0o600 files; without re-applying *mode* the target would inherit that and break
+    volume mounts relying on broader permissions.
+    """
+    if owner is not None and hasattr(os, "chown"):
+        with suppress(OSError):
+            os.chown(path, owner[0], owner[1])
+    if mode is not None:
+        with suppress(OSError):
+            os.chmod(path, mode)

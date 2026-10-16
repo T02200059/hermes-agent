@@ -487,7 +487,9 @@ CREATE TABLE IF NOT EXISTS messages (
     cache_write_tokens INTEGER DEFAULT 0,
     api_content TEXT,
     display_kind TEXT,
-    display_metadata TEXT
+    display_metadata TEXT,
+    display_identity BLOB,  -- [owner] A4-2: forward-ported columns (upstream display paging)
+    display_order INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS session_model_usage (
@@ -1218,3 +1220,28 @@ def fts_rebuild_admission(db_path):
             pass
         finally:
             handle.close()
+
+
+def _sql_json_extract(expression: str, path: str) -> str:
+    """Build a non-throwing JSON marker lookup for a JSON TEXT column."""
+
+    safe_json = (
+        f"(CASE WHEN json_valid({expression}) "
+        f"THEN {expression} ELSE json_object() END)"
+    )
+    return f"json_extract({safe_json}, {_sql_literal(path)})"
+
+
+_ENDED_ROW_SQL = "SELECT ended_at, end_reason FROM sessions WHERE id = ?"
+
+
+_COMPRESSION_LOCK_ROW_SQL = "SELECT holder, expires_at FROM compression_locks WHERE session_id = ?"
+
+
+def _ended_by_compression(row) -> bool:
+    return row is not None and row["ended_at"] is not None and row["end_reason"] == "compression"
+
+
+def _placeholders(items) -> str:
+    """``?,?,?`` for one bound parameter per element of *items* (a sequence or an int count)."""
+    return ",".join("?" for _ in range(items if isinstance(items, int) else len(items)))

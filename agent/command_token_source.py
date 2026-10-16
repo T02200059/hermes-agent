@@ -188,3 +188,13 @@ def build_command_token_provider(
     if not command:
         return None
     return CommandTokenSource(command, provider_label)
+
+
+def materialize_probe_api_key(api_key: object) -> str:
+    """Best-effort probe credential; never send a callable's repr or log mint errors."""
+    # [owner] A4-2: forward-ported from upstream — model_switch_providers probes keys through this.
+    try:
+        token = api_key() if callable(api_key) else api_key
+    except Exception:
+        return ""
+    return token.strip() if isinstance(token, str) else ""

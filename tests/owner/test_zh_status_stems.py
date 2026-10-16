@@ -78,22 +78,13 @@ BEARING = [
 
 # ------------------------------------------------------------------ 前向兼容类 5 条
 FORWARD = [
+    # [owner] A4-2 (user decision): the five forward-compat stems (pre_api_compression /
+    # preflight_compression / compressed_messages / compressed_tokens /
+    # context_too_large_compressing) were REMOVED — zero call sites, no forward compat.
+    # Only the load-bearing compaction stem (real emit via get_compaction_status) stays.
     (r"compacting\s+context\s+[—-]\s+正在总结",
      lambda: _zh("gateway.runtime.compaction", marker=COMPACTION_STATUS_MARKER),
      "gateway.runtime.compaction"),
-    (r"预\s*API\s*压缩",
-     lambda: _zh("gateway.runtime.pre_api_compression", tokens=123456),
-     "gateway.runtime.pre_api_compression"),
-    (r"预检压缩",
-     lambda: _zh("gateway.runtime.preflight_compression", tokens=120000, threshold=100000),
-     "gateway.runtime.preflight_compression"),
-    (r"已压缩：",
-     lambda: _zh("gateway.runtime.compressed_messages", before=30, after=12),
-     "gateway.runtime.compressed_messages / compressed_tokens"),
-    (r"上下文过大",
-     lambda: _zh("gateway.runtime.context_too_large_compressing", tokens=250000,
-                 current=1, total=3),
-     "gateway.runtime.context_too_large_compressing"),
 ]
 
 

@@ -414,7 +414,7 @@ _OWNER_MARKER_TOKEN_STOPWORDS = {
 
 _UPSTREAM_SYMBOLS = {
     "resolve_display_setting_for_source": "gateway/display_config.py",
-    "_adapter_for_source": None,
+    "_delivery_adapter_for": None,  # [owner] A4-2: re-pointed with the upstream chain rename
 }
 
 

@@ -391,7 +391,8 @@ items:
           - 'resolve_display_setting_for_source'
           - 'resolve_per_chat_override'
       - type: file_contains
-        file: gateway/run.py
+        # [owner] A4-2: display override call sites landed in run_turn (A3 cluster 7b)
+        file: gateway/run_turn.py
         contains:
           - 'resolve_display_setting_for_source'
           - 'source=source'
@@ -478,7 +479,8 @@ items:
         module: owner.feishu.agent_end
         symbol: try_auto_card_on_end
       - type: file_contains
-        file: gateway/run.py
+        # [owner] A4-2: agent-end glue landed in run_turn (A3 cluster 7b)
+        file: gateway/run_turn.py
         contains:
           - 'owner.feishu.agent_end'
           - 'try_auto_card_on_end'
@@ -511,7 +513,8 @@ items:
         module: owner.diff_card.qqbot
         symbol: send_qqbot_diff_markdown
       - type: file_contains
-        file: gateway/run.py
+        # [owner] A4-2: diff-card callback glue landed in run_turn_runner (A3 cluster 7b-7)
+        file: gateway/run_turn_runner.py
         contains:
           - 'owner.diff_card.dispatcher'
           - 'install_diff_card_support'
@@ -681,7 +684,8 @@ items:
     source: owner/docs/owner改动清单.md#712-pycache-cleanup
     static_checks:
       - type: file_contains
-        file: gateway/run.py
+        # [owner] A4-2: pycache cleanup landed in run_shutdown (A3 cluster 7b-6)
+        file: gateway/run_shutdown.py
         contains:
           - '__pycache__'
           - 'find'

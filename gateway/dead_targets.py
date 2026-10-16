@@ -45,6 +45,24 @@ def _normalize(platform: str, chat_id: str) -> str:
     return f"{str(platform).strip().lower()}:{str(chat_id).strip()}"
 
 
+# [owner] A4-2: forward-ported from upstream — delivery_ledger's retry lane classifies
+# dead targets through this.
+def classify_dead_error(error_text: Optional[str]) -> Optional[str]:
+    """Best-effort dead-target error_kind from a raised error's text, else None. ``_deliver_to_platform``
+    raises on hard failure (no SendResult), so ``deliver()`` only has the exception string. ``not_found``
+    collapses chat-level and thread/topic/message-level failures: only a whole-chat not_found means the
+    target is dead — a deleted forum topic or edited-away message must not mark the entire chat dead."""
+    if not error_text:
+        return None
+    try:
+        from .platforms.base import classify_send_error, is_chat_level_not_found
+    except Exception:  # pragma: no cover - import guard
+        return None
+    kind = classify_send_error(None, error_text=error_text)
+    dead = kind in _DEAD_ERROR_KINDS and (kind != "not_found" or is_chat_level_not_found(error_text=error_text))
+    return kind if dead else None
+
+
 class DeadTargetRegistry:
     """Thread-safe, persistent set of confirmed-dead delivery targets.
 

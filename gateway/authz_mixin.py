@@ -383,77 +383,24 @@ class GatewayAuthorizationMixin:
             )
         return allowed
 
-    def _adapter_for_source(self, source: Optional[SessionSource]):
-        """Resolve the live adapter for an inbound ``SessionSource``.
-
-        [owner] legacy alias kept for the 9 pre-swap call sites (slash_commands,
-        queue_cancel_patch, progress_explainer...); now delegates to the
-        upstream delivery chain. Retire with the call-site re-point (A4-2).
-        """
-        return self._delivery_adapter_for(source)
-
-    def _legacy_adapter_for_source(self, source: Optional[SessionSource]):
-        """Resolve the live adapter for an inbound ``SessionSource``."""
+    def _restored_source(self, entry) -> Optional[SessionSource]:
+        """``entry.origin`` with its identity re-pinned (upstream authz_mixin, verbatim)."""
+        source = getattr(entry, "origin", None)
         if source is None:
             return None
-        transport_adapter = self._registered_transport_adapter(source)
-        if transport_adapter is not None:
-            return transport_adapter
-        # Relay ingress deliberately keeps the underlying platform on the
-        # source so session keys and display policy remain Slack/Discord/etc.
-        # Delivery still has to use the one live RelayAdapter that owns the
-        # authenticated connector socket. Looking up the underlying platform
-        # here silently disables streaming, typing, and tool progress when a
-        # managed gateway does not also run that platform's native adapter.
-        if getattr(source, "delivered_via_upstream_relay", False) is True:
-            # One process-level RelayAdapter owns the connector socket for all
-            # multiplexed profiles. Secondary profiles intentionally do not
-            # register their own relay adapters, so profile-aware lookup would
-            # fail and suppress streamed delivery for those profiles.
-            adapters = getattr(self, "adapters", None) or {}
-            return adapters.get(Platform.RELAY)
-        # ``getattr`` guards test fixtures that build a bare source via
-        # SimpleNamespace and omit ``profile`` (see AGENTS.md pitfall #17).
-        return self._authorization_adapter(
-            getattr(source, "platform", None),
-            getattr(source, "profile", None),
-        )
-
-    def _registered_transport_adapter(self, source: SessionSource):
-        """Return the registered adapter that created *source*, if retained.
-
-        ``source.profile`` is the runtime/session namespace. A chat-based
-        profile route can therefore differ from the adapter profile when one
-        shared credential serves several routed runtimes. ``build_source``
-        keeps the receiving adapter as in-process provenance so replies and
-        intake-policy checks stay on that transport without weakening the
-        fail-closed fallback for restored or hand-built sources.
-        """
-        adapter_ref = getattr(source, "_transport_adapter_ref", None)
-        adapter = adapter_ref() if callable(adapter_ref) else None
-        platform = getattr(source, "platform", None)
-        if adapter is None or platform is None:
-            return None
-        if adapter is (getattr(self, "adapters", None) or {}).get(platform):
-            return adapter
-        profile_maps = getattr(self, "_profile_adapters", None) or {}
-        for profile_adapters in profile_maps.values():
-            if adapter is profile_adapters.get(platform):
-                return adapter
-        return None
+        from gateway.session_identity import restore_identity
+        restore_identity(source, runner=self, transport_profile=getattr(entry, "transport_profile", None))
+        return source
 
     def _adapter_profile_for_source(self, source: SessionSource) -> Optional[str]:
-        """Resolve the transport-owning profile for adapter policy lookups."""
-        adapter = self._registered_transport_adapter(source)
-        platform = getattr(source, "platform", None)
-        if adapter is not None:
-            if adapter is (getattr(self, "adapters", None) or {}).get(platform):
-                return None
-            for profile, profile_adapters in (
-                getattr(self, "_profile_adapters", None) or {}
-            ).items():
-                if adapter is profile_adapters.get(platform):
-                    return profile
+        """Resolve the transport-owning profile for adapter policy lookups (upstream form)."""
+        owner = self._transport_owner(source)
+        if owner is not None:
+            return owner[1]
+        from gateway.session_identity import identity_of
+        identity = identity_of(source)
+        if identity is not None and identity.multiplexed:
+            return None if identity.transport_profile == "default" else identity.transport_profile
         return getattr(source, "profile", None)
 
     def _adapter_authorization_is_upstream(
@@ -746,7 +693,7 @@ class GatewayAuthorizationMixin:
             # so the env-var-only check above misses config.yaml-configured
             # allowlists.  Read the live adapter's config.extra as a fallback.
             try:
-                adapter = self._adapter_for_source(source)
+                adapter = self._delivery_adapter_for(source)  # [owner] A4-2: upstream delivery chain
                 if adapter is not None:
                     extra = getattr(getattr(adapter, "config", None), "extra", None) or {}
                     adapter_group_allowed = extra.get("group_allowed_chats")
@@ -953,7 +900,7 @@ class GatewayAuthorizationMixin:
             # group_allow_from at intake but do not override enforces_own_access_policy.
             # Check their allowlist here so config.yaml-configured allow_from works
             # without requiring a separate {PLATFORM}_ALLOWED_USERS env var.
-            adapter = self._adapter_for_source(source)
+            adapter = self._delivery_adapter_for(source)  # [owner] A4-2: upstream delivery chain
             if adapter is not None:
                 extra = getattr(getattr(adapter, "config", None), "extra", None) or {}
                 if source.chat_type in {"group", "forum", "channel"}:
@@ -1058,7 +1005,7 @@ class GatewayAuthorizationMixin:
         # (pitfall #17) cannot auto-truthy their way into an authorization.
         if platform_allowlist:
             try:
-                adapter = self._adapter_for_source(source)
+                adapter = self._delivery_adapter_for(source)  # [owner] A4-2: upstream delivery chain
             except Exception:
                 adapter = None
             resolver = getattr(adapter, "resolved_allowlist_user_ids", None)

@@ -105,26 +105,28 @@ anchors:
       - 'normalize_choices'
 
   - id: inbound-context-gateway-glue
-    file: gateway/run.py
+    # [owner] A4-2: glue landed in run_inbound (A3 cluster 5); file re-pointed from run.py
+    file: gateway/run_inbound.py
     contains:
       - 'owner.gateway.inbound_context'
       - 'append_inbound_context'
-      - '_append_inbound_context(message_text, source, session_id=session_key)'
 
   - id: hygiene-compression-notice-gateway-glue
-    file: gateway/run.py
+    # [owner] A4-2: glue landed in run_turn (A3 cluster 7b); file re-pointed from run.py
+    file: gateway/run_turn.py
     contains:
-      - 'owner.gateway.hygiene_compression_notice'
       - 'send_hygiene_compression_notice'
 
   - id: auto-card-agent-end-glue
-    file: gateway/run.py
+    # [owner] A4-2: glue landed in run_turn (A3 cluster 7b); file re-pointed from run.py
+    file: gateway/run_turn.py
     contains:
       - 'owner.feishu.agent_end'
       - 'try_auto_card_on_end'
 
   - id: diff-card-callback-glue
-    file: gateway/run.py
+    # [owner] A4-2: glue landed in run_turn_runner (A3 cluster 7b-7); file re-pointed from run.py
+    file: gateway/run_turn_runner.py
     contains:
       - 'owner.diff_card.dispatcher'
       - 'install_diff_card_support'

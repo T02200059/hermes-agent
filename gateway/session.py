@@ -3778,7 +3778,9 @@ class SessionStore:
             self._save()
             return entry
 
-    def switch_session(self, session_key: str, target_session_id: str) -> Optional[SessionEntry]:
+    def switch_session(
+        self, session_key: str, target_session_id: str, *, expected_session_id: Optional[str] = None,
+    ) -> Optional[SessionEntry]:
         """Switch a session key to point at an existing session ID.
 
         Used by ``/resume`` to restore a previously-named session.
@@ -3786,6 +3788,12 @@ class SessionStore:
         generating a fresh session ID, re-uses ``target_session_id`` so the
         old transcript is loaded on the next message. If the target session was
         previously ended, re-open it so gateway resume semantics match the CLI.
+
+        ``expected_session_id`` makes the repoint a compare-and-swap: ``None``
+        is returned when the key no longer points at that session (upstream
+        #expected-cas), so a caller that resolved against a snapshot across an
+        await (async-delegation re-pin) cannot overwrite a concurrent /new or
+        /resume.
         """
         db_end_session_id = None
         new_entry = None
@@ -3797,6 +3805,15 @@ class SessionStore:
                 return None
 
             old_entry = self._entries[session_key]
+
+            # [owner] A4-2: compare-and-swap guard (upstream form) — refuse when the
+            # route moved after the caller's snapshot.
+            if expected_session_id is not None and old_entry.session_id != expected_session_id:
+                logger.info(
+                    "Session switch for %s refused: route moved from %s to %s after the caller's snapshot",
+                    session_key, expected_session_id, old_entry.session_id,
+                )
+                return None
 
             # Don't switch if already on that session
             if old_entry.session_id == target_session_id:
@@ -4558,3 +4575,23 @@ def build_session_context(
         context.updated_at = session_entry.updated_at
     
     return context
+
+
+# [owner] forward-ported from upstream (BASE 之后新增): steer-chain (run_busy) redacts PII via this.
+# Platforms where user IDs can be redacted: no ``<@user_id>``-style mention
+# system that needs raw IDs (which is why Discord is excluded).
+_PII_SAFE_PLATFORMS = frozenset({
+    Platform.WHATSAPP, Platform.SIGNAL, Platform.TELEGRAM, Platform.BLUEBUBBLES,
+})
+
+
+def _should_redact_pii(platform: Platform, enabled: bool) -> bool:
+    """Keep model-visible identifiers usable on platforms requiring raw mentions."""
+    if not enabled or platform in _PII_SAFE_PLATFORMS:
+        return enabled
+    try:
+        from gateway.platform_registry import platform_registry
+        entry = platform_registry.get(platform.value)
+        return bool(entry and entry.pii_safe)
+    except Exception:
+        return False

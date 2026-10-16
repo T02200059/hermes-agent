@@ -73,7 +73,7 @@ class FakeRunner:
         self._agent = agent
         self.adapter: Any = None
 
-    def _adapter_for_source(self, source):
+    def _delivery_adapter_for(self, source):
         return self.adapter
 
     def _peek_session_state(self, key):

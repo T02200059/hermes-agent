@@ -480,13 +480,17 @@ def _arch_probes_head(head: str) -> List[Finding]:
         )
 
     # 11) Progress dedup helper still present even if Chinese comments reshuffled
-    if "_append_dedup_counter" in run_py:
+    # [owner] A4-2: the helper's implementation lives in owner/gateway/turn_helpers.py since A1;
+    # run.py keeps only the thin delegate. Check both so either location satisfies the audit.
+    if "_append_dedup_counter" in run_py or "_append_dedup_counter" in blob(
+        "owner/gateway/turn_helpers.py"
+    ):
         findings.append(
             Finding(
                 "INFO",
                 "arch",
                 "gateway progress fence-safe dedup helper _append_dedup_counter present",
-                "Deleted Chinese [owner] comments are cosmetic if helper + call sites remain.",
+                "Implementation in owner/gateway/turn_helpers.py (A1); run.py keeps a thin delegate.",
             )
         )
 

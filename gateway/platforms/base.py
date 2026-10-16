@@ -2419,6 +2419,25 @@ def cache_media_bytes(
     return CachedMedia(to_agent_visible_cache_path(path), out_mime, "document", display or fallback_name)
 
 
+async def cache_media_bytes_async(
+    data: bytes,
+    *,
+    filename: str = "",
+    mime_type: str = "",
+    default_kind: Optional[str] = None,
+) -> Optional[CachedMedia]:
+    """Classify and cache attachment bytes without blocking the event loop."""
+    # [owner] A4-2: forward-ported from upstream — the swapped adapters (buzz etc.)
+    # offload media caching off the event loop through this.
+    return await asyncio.to_thread(
+        cache_media_bytes,
+        data,
+        filename=filename,
+        mime_type=mime_type,
+        default_kind=default_kind,
+    )
+
+
 class MessageType(Enum):
     """Types of incoming messages."""
     TEXT = "text"
@@ -3651,6 +3670,19 @@ class BasePlatformAdapter(ABC):
         self._fatal_error_retryable = retryable
         self._write_runtime_status_safe("fatal", platform_state="fatal", error_code=code, error_message=message)
 
+    # [owner] A4-2: forward-ported from upstream — the swapped adapters (buzz ws loop etc.)
+    # publish the degraded ("retrying") runtime status through this.
+    DEGRADED_STATUS_MESSAGE = "delivery path unproven; retrying"
+
+    def _mark_degraded(self) -> None:
+        """Publish ``retrying`` for a running adapter whose delivery path is unproven."""
+        self._write_runtime_status_safe(
+            "connected_degraded",
+            platform_state="retrying",
+            error_code=None,
+            error_message=self.DEGRADED_STATUS_MESSAGE,
+        )
+
     def _write_runtime_status_safe(self, context: str, **kwargs) -> None:
         """Write runtime status; log first failure per context at warning, rest at debug.
 
@@ -4865,6 +4897,101 @@ class BasePlatformAdapter(ABC):
             text = re.sub(r'<think[\s>].*?</think>', ' ', text, flags=re.DOTALL)
             return re.sub(r'[*_`#\[\]()]', '', text).strip()
 
+    # [owner] A4-2: forward-ported from upstream — multiplex profile adapters route busy-path
+    # messages through this (bypass commands inline, queue the rest).
+
+    async def _handle_message_while_active(self, event: MessageEvent, session_key: str) -> None:
+        """Route a message that arrived while ``session_key`` is busy: bypass
+        commands / clarify replies dispatch inline, everything else is queued."""
+        # Bypass commands run inline: queued they'd leak as user text (/new) or deadlock
+        # (/approve, /deny — the agent is blocked on Event.wait).  Dispatch inline by
+        # calling the message handler directly and sending the response.  Do NOT use
+        # _process_message_background — it manages session lifecycle and its cleanup
+        # races with the running task (split-brain, see PR #4926).
+        # Certain commands must bypass the active-session guard and be dispatched directly to the gateway
+        # runner. Without this, they are queued as pending messages and either: See #4926.
+        self._canonicalize(event.source)  # identity FIRST (direct callers may skip handle_message)
+        cmd = event.get_command()
+        from hermes_cli.commands import (is_interrupt_then_dispatch, should_bypass_active_session)
+        if should_bypass_active_session(cmd):
+            try:
+                # /stop, /new, /reset: cancel + response + drain; other bypasses don't cancel.
+                if cmd and is_interrupt_then_dispatch(cmd):
+                    self._discard_text_debounce(session_key)
+                    await self._dispatch_active_session_command(event, session_key, cmd)
+                else:
+                    logger.debug("[%s] Command '/%s' bypassing active-session guard for %s",
+                                 self.name, cmd, session_key)
+                    await self._dispatch_inline_reply(event)
+            except Exception as e:
+                logger.error("[%s] Command '/%s' dispatch failed: %s", self.name, cmd, e, exc_info=True)
+            return
+        # Clarify bypass: while blocked on clarify_tool the next message must reach the
+        # text-intercept so numeric/exact/"Other" answers resolve it and unblock the agent.
+        # Otherwise it lands in _pending_messages as a follow-up turn and the answer is
+        # discarded.  Same shape as the /approve deadlock fix (PR #4926): agent thread
+        # blocked on Event.wait, message must reach the resolver before being a new turn.
+        # See #4926.
+        if not cmd and event.allow_gateway_control:
+            try:
+                from tools import clarify_gateway as _clarify_mod
+                _has_text_clarify = _clarify_mod.get_pending_for_session(
+                    session_key, include_choice_prompts=True) is not None
+            except Exception:
+                _has_text_clarify = False
+            if _has_text_clarify:
+                logger.debug("[%s] Routing message to clarify text-intercept for %s", self.name, session_key)
+                try:
+                    await self._dispatch_inline_reply(event)
+                except Exception as e:
+                    logger.error("[%s] Clarify text-intercept dispatch failed: %s", self.name, e, exc_info=True)
+                return
+        if self._busy_session_handler is not None:
+            try:
+                if await self._busy_session_handler(event, session_key):
+                    return
+            except Exception as e:
+                logger.error("[%s] Busy-session handler failed: %s", self.name, e, exc_info=True)
+        # Without a runner FIFO, do not merge a wake into an occupied human slot
+        # (or collapse distinct wakes into one turn). Its caller can retry admission.
+        if event.internal and session_key in self._pending_messages:
+            return
+        # Photo bursts/albums: queue without interrupting; they run after the current task.
+        if event.message_type == MessageType.PHOTO:
+            logger.debug("[%s] Queuing photo follow-up for session %s without interrupt", self.name, session_key)
+            merge_pending_message_event(self._pending_messages, session_key, event)
+            event._gateway_accepted = True
+            return
+        if self._is_queue_text_debounce_candidate(event):
+            logger.debug("[%s] New text message while session %s is active — "
+                         "debouncing follow-up (busy_text_mode=queue, window=%.2fs)", self.name,
+                         session_key, self._busy_text_debounce_seconds)
+            await self._queue_text_debounce(session_key, event)
+        else:
+            logger.debug("[%s] New message while session %s is active — queuing follow-up "
+                         "(no interrupt, will cascade after current turn)", self.name, session_key)
+            merge_pending_message_event(self._pending_messages, session_key, event,
+                                        merge_text=event.message_type == MessageType.TEXT)
+            event._gateway_accepted = True
+
+
+
+    # [owner] A4-2: forward-ported from upstream — warning-notice presentation (media lane)
+    def warning_text(self, visible: str, hidden: Optional[str] = "", *, logical_platform=None, chat_id=None, metadata=None) -> Optional[str]:
+        """Project mixed content: the diagnostic variant when visible, else the requested remainder.
+
+        For payloads that combine a requested result (caption, answer) with an automatic
+        diagnostic. The requested part must be present in BOTH variants; never hide it.
+        """
+        if self.warning_notifications_enabled(logical_platform, chat_id=chat_id, metadata=metadata):
+            return visible
+        return hidden
+
+    def warning_notifications_enabled(self, logical_platform=None, *, chat_id=None, metadata=None) -> bool:
+        """Presentation policy under the caller's owning profile; old plugins inherit it."""
+        from gateway.warning_notifications import warning_notifications_enabled
+        return warning_notifications_enabled(logical_platform or self.platform)
+
     async def play_tts(
         self,
         chat_id: str,
@@ -5788,7 +5915,7 @@ class BasePlatformAdapter(ABC):
         adapter: those operations remain owned by the old transport.
         """
         runner = getattr(self, "gateway_runner", None)
-        resolve = getattr(runner, "_adapter_for_source", None)
+        resolve = getattr(runner, "_delivery_adapter_for", None)  # [owner] A4-2: upstream delivery chain
         if not callable(resolve):
             return self
         try:

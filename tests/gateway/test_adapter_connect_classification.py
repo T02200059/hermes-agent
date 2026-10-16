@@ -290,17 +290,18 @@ class TestReconnectNeedsAttention:
         info = {"queued_at": now - 60}
         assert _reconnect_needs_attention(info, now) is False
 
-    def test_past_threshold_is_flagged(self):
+    def test_past_threshold_is_flagged(self, monkeypatch):
         import gateway.run as run_module
 
         now = time.monotonic()
-        info = {"queued_at": now - (run_module._RECONNECT_ATTENTION_AFTER_SECONDS + 1)}
+        info = {"queued_at": now - 61}  # [owner] A4-2: upstream reads the threshold dynamically
+        monkeypatch.setattr(run_module, "_reconnect_attention_after_secs", lambda: 60)
         assert _reconnect_needs_attention(info, now) is True
 
     def test_zero_threshold_disables_escalation(self, monkeypatch):
         import gateway.run as run_module
 
-        monkeypatch.setattr(run_module, "_RECONNECT_ATTENTION_AFTER_SECONDS", 0)
+        monkeypatch.setattr(run_module, "_reconnect_attention_after_secs", lambda: 0)  # [owner] A4-2
         info = {"queued_at": time.monotonic() - 999999}
         assert _reconnect_needs_attention(info, time.monotonic()) is False
 
@@ -343,7 +344,7 @@ class TestWatcherAttentionEscalation:
             lambda platform, **kw: status_writes.append((platform, kw)),
         )
 
-        threshold = run_module._RECONNECT_ATTENTION_AFTER_SECONDS
+        threshold = run_module._reconnect_attention_after_secs()  # [owner] A4-2: dynamic threshold
         runner._failed_platforms[Platform.TELEGRAM] = {
             "config": PlatformConfig(enabled=True, token="test"),
             "attempts": 40,
@@ -387,7 +388,7 @@ class TestWatcherAttentionEscalation:
             lambda platform, **kw: status_writes.append((platform, kw)),
         )
 
-        threshold = run_module._RECONNECT_ATTENTION_AFTER_SECONDS
+        threshold = run_module._reconnect_attention_after_secs()  # [owner] A4-2: dynamic threshold
         runner._failed_platforms[Platform.TELEGRAM] = {
             "config": PlatformConfig(enabled=True, token="test"),
             "attempts": 40,

@@ -4017,23 +4017,19 @@ def _is_anthropic_fast_model(model_id: Optional[str]) -> bool:
     return "opus-4-6" in base or "opus-4.6" in base
 
 
-def resolve_fast_mode_overrides(model_id: Optional[str]) -> dict[str, Any] | None:
-    """Return request_overrides for fast/priority mode, or None if unsupported.
-
-    Returns provider-appropriate overrides:
-    - OpenAI models: ``{"service_tier": "priority"}`` (Priority Processing)
-    - Anthropic models: ``{"speed": "fast"}`` (Anthropic Fast Mode beta)
-    - Grok 4.6: ``{"service_tier": "priority"}`` (xAI Priority Processing)
-
-    The overrides are injected into the API request kwargs by
-    ``_build_api_kwargs`` in run_agent.py — each API path handles its own
-    keys (service_tier for OpenAI/Codex, speed for Anthropic Messages).
-    """
+# [owner] A4-2: upstream form (provider/base_url route gating)
+def resolve_fast_mode_overrides(
+    model_id: Optional[str], *, provider: Optional[str] = None, base_url: Optional[str] = None
+) -> dict[str, Any] | None:
+    """Fast/priority request_overrides — ``{"speed": "fast"}`` (Anthropic Fast Mode) or
+    ``{"service_tier": "priority"}`` (OpenAI / xAI Priority Processing) — or None if unsupported.
+    With ``provider``/``base_url`` the route is gated too (``_fast_mode_route_supported``) so proxies
+    never see the params. Single fast-mode gate for ``/fast`` and ``agent.fast_mode`` windows."""
     if not model_supports_fast_mode(model_id):
         return None
-    if _is_anthropic_fast_model(model_id):
-        return {"speed": "fast"}
-    return {"service_tier": "priority"}
+    if (provider or base_url) and not _fast_mode_route_supported(model_id, provider, base_url):
+        return None
+    return {"speed": "fast"} if _is_anthropic_fast_model(model_id) else {"service_tier": "priority"}
 
 
 def _resolve_copilot_catalog_api_key() -> str:
@@ -7669,3 +7665,22 @@ def validate_requested_model(
             t("gateway.model.validation_api_unreachable", requested=requested, provider_label=provider_label)
         ),
     }
+
+def _fast_mode_route_supported(
+    model_id: Optional[str], provider: Optional[str], base_url: Optional[str]) -> bool:
+    """Only the first-party endpoint that bills for fast mode may receive its params."""
+    from urllib.parse import urlparse
+
+    from agent.model_metadata import is_grok_46_family
+
+    if _is_anthropic_fast_model(model_id):
+        allowed = {"anthropic": "api.anthropic.com"}
+    elif is_grok_46_family(str(model_id or "")):
+        allowed = {"xai": "api.x.ai"}
+    else:
+        allowed = {"openai": "api.openai.com", "openai-codex": "chatgpt.com"}
+    if provider and normalize_provider(provider) not in allowed:
+        return False
+    host = (urlparse(str(base_url or "")).hostname or "").lower()
+    return not host or host in allowed.values()
+

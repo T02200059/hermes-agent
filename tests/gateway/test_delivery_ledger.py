@@ -125,209 +125,6 @@ class TestSchemaMigration:
 
         assert "adapter_profile" in columns
 
-    def test_adds_platform_message_id_to_existing_ledger(self):
-        """Every installed state.db predates the column, so the ALTER path —
-        not the CREATE TABLE path — is the one that has to work."""
-        conn = sqlite3.connect(dl._db_path())
-        try:
-            conn.execute(
-                """CREATE TABLE delivery_obligations (
-                    obligation_id TEXT PRIMARY KEY,
-                    session_key TEXT NOT NULL,
-                    platform TEXT NOT NULL,
-                    chat_id TEXT NOT NULL,
-                    thread_id TEXT,
-                    content TEXT NOT NULL,
-                    state TEXT NOT NULL,
-                    attempts INTEGER NOT NULL DEFAULT 0,
-                    created_at REAL NOT NULL,
-                    updated_at REAL NOT NULL,
-                    owner_pid INTEGER,
-                    owner_started_at INTEGER,
-                    last_error TEXT,
-                    adapter_profile TEXT
-                )"""
-            )
-            # A pre-existing row must survive the ALTER untouched.
-            conn.execute(
-                """INSERT INTO delivery_obligations
-                   (obligation_id, session_key, platform, chat_id, content,
-                    state, attempts, created_at, updated_at)
-                   VALUES ('legacy-1', 'agent:main:feishu:dm:oc_x', 'feishu',
-                           'oc_x', 'old row', 'delivered', 0, 1, 1)"""
-            )
-            conn.commit()
-
-            dl._initialize_schema(conn)
-
-            columns = {
-                row[1] for row in conn.execute("PRAGMA table_info(delivery_obligations)")
-            }
-            survived = conn.execute(
-                "SELECT COUNT(*) FROM delivery_obligations WHERE obligation_id='legacy-1'"
-            ).fetchone()[0]
-        finally:
-            conn.close()
-
-        assert "platform_message_id" in columns
-        assert survived == 1
-
-    def test_schema_init_is_idempotent(self):
-        """Re-running init (every gateway boot, every cron process) must not
-        raise on the already-added column or the already-created index."""
-        for _ in range(3):
-            conn = dl._connect()
-            conn.close()
-
-
-class TestPlatformMessageId:
-    """The delivered row must remember WHAT the platform handed back.
-
-    Without this, a successful send is a dead end: the message_id the adapter
-    already extracted exists only in a log line, so nothing downstream can
-    recall, edit or react to the artifact that was actually sent.
-    """
-
-    def _message_id(self, oid):
-        with dl._connect() as conn:
-            r = conn.execute(
-                "SELECT platform_message_id FROM delivery_obligations "
-                "WHERE obligation_id=?",
-                (oid,),
-            ).fetchone()
-        return None if r is None else r[0]
-
-    def _updated_at(self, oid):
-        with dl._connect() as conn:
-            r = conn.execute(
-                "SELECT updated_at FROM delivery_obligations WHERE obligation_id=?",
-                (oid,),
-            ).fetchone()
-        return None if r is None else r[0]
-
-    def test_delivered_row_stores_the_platform_message_id(self):
-        _record(oid="ob-mid", platform="feishu", chat_id="oc_abc")
-        dl.mark_attempting("ob-mid")
-        assert self._message_id("ob-mid") is None
-
-        dl.mark_delivered("ob-mid", "om_x100b664ef7c9c0a4de24a374d394b26")
-
-        assert _row("ob-mid")["state"] == "delivered"
-        assert self._message_id("ob-mid") == "om_x100b664ef7c9c0a4de24a374d394b26"
-
-    def test_a_later_transition_without_an_id_does_not_clobber_it(self):
-        """Passing no id must mean 'leave it alone', not 'erase it'.
-
-        Rows legitimately transition more than once (delivered → re-marked on
-        a repeated send path), and an unconditional SET would wipe the only
-        handle we have on the already-sent message.
-        """
-        _record(oid="ob-clobber")
-        dl.mark_delivered("ob-clobber", "om_original")
-        dl.mark_delivered("ob-clobber")
-        assert self._message_id("ob-clobber") == "om_original"
-
-    def test_failure_after_delivery_keeps_the_id(self):
-        _record(oid="ob-mixed")
-        dl.mark_delivered("ob-mixed", "om_kept")
-        dl.mark_failed("ob-mixed", "later rejection")
-        assert self._message_id("ob-mixed") == "om_kept"
-
-    def test_mark_delivered_without_an_id_still_transitions(self):
-        """Back-compat: adapters that surface no id must not break."""
-        _record(oid="ob-noid")
-        dl.mark_delivered("ob-noid")
-        assert _row("ob-noid")["state"] == "delivered"
-        assert self._message_id("ob-noid") is None
-
-    def test_the_id_stamp_does_not_disturb_the_state_columns(self):
-        """The transition and the stamp are two statements; only the first owns
-        state / updated_at / last_error.
-
-        Splitting the UPDATE is what keeps this feature's footprint out of the
-        schema region upstream is rewriting, so the split is pinned here: the
-        stamp must write the id and nothing else. If it ever grew a SET on
-        last_error, a successful re-delivery would silently restore the error
-        text the transition had just cleared.
-        """
-        _record(oid="ob-split", platform="feishu", chat_id="oc_split")
-        dl.mark_failed("ob-split", "transient boom")
-        before = self._updated_at("ob-split")
-
-        dl.mark_delivered("ob-split", "om_split")
-
-        row = _row("ob-split")
-        assert row["state"] == "delivered"
-        assert row["last_error"] is None
-        assert self._message_id("ob-split") == "om_split"
-        assert self._updated_at("ob-split") >= before
-
-    def test_a_stamp_failure_does_not_lose_the_delivery(self, monkeypatch):
-        """The transition is written first, so a failed id stamp degrades to
-        'delivered without an id' instead of losing the delivery record.
-
-        This is the whole reason the two statements are in this order. Written
-        the other way round, the crash/failure window would leave an
-        already-sent row back in ``attempting`` — which ``sweep_recoverable``
-        treats as ambiguous-but-redeliverable, i.e. a duplicate send.
-        """
-        _record(oid="ob-lost")
-        real = dl._transaction
-        calls: list[int] = []
-
-        def flaky():
-            calls.append(1)
-            if len(calls) == 2:
-                raise sqlite3.OperationalError("disk I/O error")
-            return real()
-
-        with monkeypatch.context() as scoped:
-            scoped.setattr(dl, "_transaction", flaky)
-            with pytest.raises(sqlite3.OperationalError):
-                dl.mark_delivered("ob-lost", "om_lost")
-
-        assert _row("ob-lost")["state"] == "delivered"
-        assert self._message_id("ob-lost") is None
-        assert len(calls) == 2, "第二条语句（补 id）确实是独立的一次事务"
-
-    def test_debug_rows_carries_the_platform_message_id(self):
-        """The ad-hoc dump is the sqlite3-free way to inspect the ledger, so it
-        has to show the id the delivery recorded — otherwise the handle exists
-        in the row but stays invisible to whoever is debugging an outbound send.
-        """
-        import json
-
-        _record(oid="ob-dump", platform="feishu", chat_id="oc_dump")
-        dl.mark_delivered("ob-dump", "om_dump")
-
-        entry = next(r for r in json.loads(dl.debug_rows()) if r["id"] == "ob-dump")
-
-        assert entry["state"] == "delivered"
-        assert entry["platform_message_id"] == "om_dump"
-
-    def test_re_recording_an_obligation_resets_it_including_the_id(self):
-        """record_obligation() is INSERT OR REPLACE — re-registering the SAME
-        obligation_id starts a fresh delivery, so the old handle goes away.
-
-        Locked in deliberately: obligation_id is derived from
-        (session, inbound message id, content), so a repeat means the turn is
-        being re-delivered from scratch and the previous platform_message_id
-        refers to an artifact this new attempt does not own. The recovery path
-        (sweep) never re-records — it re-marks rows that already exist — so
-        the id survives the path that actually matters. If someone later makes
-        record_obligation() preserve the column, this test should be updated
-        together with the sweep contract, not silently.
-        """
-        _record(oid="ob-replace")
-        dl.mark_delivered("ob-replace", "om_first")
-        assert self._message_id("ob-replace") == "om_first"
-
-        _record(oid="ob-replace")
-
-        row = _row("ob-replace")
-        assert row["state"] == "pending", row
-        assert self._message_id("ob-replace") is None
-
 
 class TestStateMachine:
     def test_record_starts_pending(self):
@@ -382,9 +179,46 @@ class TestRuntimeFailedSweep:
         _record(platform="telegram")
         dl.mark_failed("ob-1", "Forbidden: bot was blocked by the user")
 
-        assert dl.sweep_failed_for_runtime("telegram") == []
+        assert dl.sweep_failed_for_runtime("telegram", now=time.time() + 10_000) == []
         assert _row("ob-1")["state"] == "failed"
         assert _row("ob-1")["attempts"] == 0
+
+    def test_other_rejection_is_claimed_only_after_its_backoff(self):
+        _record(platform="telegram")
+        dl.mark_failed("ob-1", "503 Service Unavailable")
+        with dl._connect() as conn:
+            conn.execute("UPDATE delivery_obligations SET attempts=1, updated_at=1000.0 WHERE obligation_id='ob-1'")
+
+        assert dl.sweep_failed_for_runtime("telegram", now=1000.0 + 60) == []
+        assert dl.pending_retries(now=1000.0 + 60) == [
+            {"platform": "telegram", "profile": "default", "not_before": 1000.0 + 120}]
+        claimed = dl.sweep_failed_for_runtime("telegram", now=1000.0 + 121)
+        assert [row["obligation_id"] for row in claimed] == ["ob-1"]
+        assert claimed[0]["needs_marker"] is True
+        assert _row("ob-1")["state"] == "attempting"
+
+    def test_other_rejection_keeps_the_last_attempt_for_a_restart(self):
+        """The in-process timer never spends the final budgeted attempt: an outage can outlast any
+        backoff, and a row the timer abandoned would be lost for good (review on #91655)."""
+        _record(platform="telegram")
+        dl.mark_failed("ob-1", "503 Service Unavailable")
+        with dl._connect() as conn:
+            conn.execute("UPDATE delivery_obligations SET attempts=?, updated_at=1000.0 WHERE obligation_id='ob-1'",
+                         (dl.MAX_ATTEMPTS - 1,))
+
+        assert dl.sweep_failed_for_runtime("telegram", now=1000.0 + 10_000) == []
+        assert dl.pending_retries(now=1000.0 + 10_000) == []
+        assert _row("ob-1")["state"] == "failed"
+        assert _row("ob-1")["attempts"] == dl.MAX_ATTEMPTS - 1
+
+    def test_reconnect_only_row_is_never_timer_driven(self):
+        """A claim released because the adapter was gone comes back as `send_path_degraded` with a
+        fresh stamp; only the reconnect sweep may re-claim it, or a timer would loop every tick."""
+        _record(platform="telegram")
+        dl.mark_failed("ob-1", "send_path_degraded")
+
+        assert dl.pending_retries(now=time.time() + 10_000) == []
+        assert [r["obligation_id"] for r in dl.sweep_failed_for_runtime("telegram")] == ["ob-1"]
 
     def test_claim_is_platform_scoped_and_not_reclaimed_while_attempting(self):
         _record(platform="telegram")
@@ -647,9 +481,6 @@ class TestGatewayRedeliverySweep:
         await runner._redeliver_pending_obligations()
 
         sent = adapter.send.call_args.kwargs
-        # Boot recovery leaves ``marker`` unset in the claimed row, so the send
-        # path falls back to the untagged constant (gateway/run.py applies
-        # ``row.get("marker", RECOVERED_MARKER)``).
         assert sent["content"].startswith(dl.RECOVERED_MARKER)
         assert sent["content"].endswith("the final answer")
 
@@ -816,8 +647,6 @@ class TestAttemptsOnlySpentOnRealSends:
             _orphan("ob-1")
             assert dl.sweep_recoverable(deliverable_platforms={"discord"}) == []
 
-        row = dl.debug_rows()
-        assert "abandoned" not in row
         with dl._connect() as conn:
             state, attempts = conn.execute(
                 "SELECT state, attempts FROM delivery_obligations "

@@ -1114,7 +1114,7 @@ async def _busy_queue_command(self, event: Any, quick_key: str, source: Any) -> 
 
     adapter = None
     try:
-        adapter = self._adapter_for_source(source)
+        adapter = self._delivery_adapter_for(source)  # [owner] A4-2: upstream delivery chain
     except Exception:
         adapter = None
     if adapter is None or not hasattr(adapter, "send_queue_status_card"):

@@ -3639,30 +3639,26 @@ def resolve_ephemeral_system_prompt_from_config(cfg: Optional[Dict[str, Any]]) -
     return resolve_ephemeral_system_prompt(cfg)
 
 
-def read_raw_config() -> Dict[str, Any]:
-    """Read ~/.hermes/config.yaml as-is, without merging defaults or migrating.
+def file_signature(st: "os.stat_result") -> tuple:
+    """(mtime_ns, size, ino, ctime_ns) — the cache key shared by read_raw_config and
+    config_effective's user-sig lane. [owner] A4-2: forward-ported from upstream so both
+    writers agree on ONE _RAW_CONFIG_CACHE entry shape: (*sig, raw)."""
+    return (st.st_mtime_ns, st.st_size, st.st_ino, st.st_ctime_ns)
 
-    Returns the raw YAML dict, or ``{}`` if the file doesn't exist or can't
-    be parsed.  Use this for lightweight config reads where you just need a
-    single value and don't want the overhead of ``load_config()``'s deep-merge
-    + migration pipeline.
 
-    Cached on the config file's (mtime_ns, size) — same strategy as
-    ``load_config()``. Returns a deepcopy on every call since some callers
-    mutate the result before passing to ``save_config()``.
-    """
+def _read_raw_config_impl(*, want_deepcopy: bool) -> Dict[str, Any]:
     with _CONFIG_LOCK:
         try:
             config_path = get_config_path()
             st = config_path.stat()
-            cache_key = (st.st_mtime_ns, st.st_size)
+            cache_key = file_signature(st)
         except (FileNotFoundError, OSError):
             return {}
 
         path_key = str(config_path)
         cached = _RAW_CONFIG_CACHE.get(path_key)
-        if cached is not None and cached[:2] == cache_key:
-            return copy.deepcopy(cached[2])
+        if cached is not None and cached[:len(cache_key)] == cache_key:
+            return copy.deepcopy(cached[len(cache_key)]) if want_deepcopy else cached[len(cache_key)]
 
         try:
             with open(config_path, encoding="utf-8") as f:
@@ -3673,9 +3669,24 @@ def read_raw_config() -> Dict[str, Any]:
 
         if not isinstance(data, dict):
             data = {}
-        _RAW_CONFIG_CACHE[path_key] = (cache_key[0], cache_key[1], copy.deepcopy(data))
-        return data
+        # The cache stores its own deepcopy. The readonly path returns THAT object (identity
+        # invariant: later cache hits return the same dict); the mutable path returns the parse.
+        cached_copy = copy.deepcopy(data)
+        _RAW_CONFIG_CACHE[path_key] = (*cache_key, cached_copy)
+        return data if want_deepcopy else cached_copy
 
+
+def read_raw_config() -> Dict[str, Any]:
+    """Read config.yaml as-is (no defaults merged, no migration); ``{}`` if missing/unparseable.
+    Cached on the file signature (mtime_ns, size, ino, ctime_ns); returns a deepcopy since callers
+    mutate before ``save_config()``. [owner] A4-2: upgraded to the upstream cache shape — the
+    forward-ported config_effective writes 5-tuples; the old 3-tuple reads misread the signature."""
+    return _read_raw_config_impl(want_deepcopy=True)
+
+
+def read_raw_config_readonly() -> Dict[str, Any]:
+    """``read_raw_config()`` without the per-call deepcopy, for callers that ONLY READ."""
+    return _read_raw_config_impl(want_deepcopy=False)
 
 def read_user_config_raw(config_path: Optional[Path] = None) -> Dict[str, Any]:
     """Read a user ``config.yaml`` EXACTLY as written on disk.

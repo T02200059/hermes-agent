@@ -59,7 +59,7 @@ def _make_runner() -> GatewayRunner:
     runner._transcribe_and_echo_pending_voice = AsyncMock(return_value=("", []))
     runner._reply_anchor_for_event = lambda _event: None
     runner._thread_metadata_for_source = lambda *_a, **_kw: {}
-    runner._adapter_for_source = lambda _source: _make_adapter()
+    runner._delivery_adapter_for = lambda _source: _make_adapter()
     runner._send_busy_ack = AsyncMock()
     return runner
 

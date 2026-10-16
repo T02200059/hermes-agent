@@ -500,7 +500,7 @@ class ProgressExplainer:
 
     def _adapter(self):
         try:
-            return self._runner._adapter_for_source(self._source)
+            return self._runner._delivery_adapter_for(self._source)  # [owner] A4-2: upstream delivery chain
         except Exception:
             return None
 

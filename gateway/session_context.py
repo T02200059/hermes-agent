@@ -221,79 +221,36 @@ def scoped_current_session_id(session_id: str | None = None) -> Iterator[None]:
         _SESSION_ID.set(previous)
 
 
+# [owner] A4-2: upstream form (parent_chat_id + session_history_delivery params)
 def set_session_vars(
-    platform: str = "",
-    source: str = "",
-    chat_id: str = "",
-    chat_type: str = "",
-    chat_name: str = "",
-    thread_id: str = "",
-    user_id: str = "",
-    user_id_alt: str = "",
-    user_name: str = "",
-    scope_id: str = "",
-    session_key: str = "",
-    session_id: str = "",
-    message_id: str = "",
-    profile: str = "",
-    browser_control_principal: str = "",
-    browser_control_transport_family: str = "",
-    cwd: str = "",
-    async_delivery: bool = True,
-    ui_session_id: str = "",
-    cron_session: Any = _UNSET,
+    platform: str = "", source: str = "", chat_id: str = "", chat_type: str = "",
+    chat_name: str = "", thread_id: str = "", user_id: str = "", user_id_alt: str = "",
+    user_name: str = "", scope_id: str = "", session_key: str = "", session_id: str = "",
+    message_id: str = "", profile: str = "", browser_control_principal: str = "",
+    browser_control_transport_family: str = "", cwd: str = "", async_delivery: bool = True,
+    ui_session_id: str = "", cron_session: Any = _UNSET, parent_chat_id: str = "",
+    session_history_delivery: str | None = None,
 ) -> list:
-    """Set all session context variables and return reset tokens.
+    """Set all session context variables and return reset tokens.  Call
+    ``clear_session_vars(tokens)`` in a ``finally``; not nestable, clearing resets every var
+    to ``""`` rather than restoring prior values (tokens are accepted only for API compat).
 
-    Call ``clear_session_vars(tokens)`` in a ``finally`` block when the handler
-    exits. Note ``clear_session_vars`` resets every var to ``""`` (to suppress
-    the ``os.environ`` fallback) rather than restoring prior values — these
-    helpers are not nestable/stack-safe, and the returned tokens are accepted
-    only for API compatibility.
-
-    ``cwd`` pins the logical working directory for this context.
-
-    ``async_delivery`` declares whether this session's channel can route a
-    background completion back to the agent after the turn ends (see
-    ``_SESSION_ASYNC_DELIVERY`` / ``async_delivery_supported``). Stateless
-    request/response adapters (the API server) pass ``False``.
-
-    ``cron_session`` is tri-state: ``_UNSET`` preserves legacy
-    ``os.environ["HERMES_CRON_SESSION"]`` fallback, ``"1"`` marks a cron job,
-    and ``""`` explicitly marks a non-cron session while masking leaked env.
-    """
-    # Mark the session-context machinery engaged for this process. The
-    # subprocess-env bridge uses this to switch from "os.environ fallback" to
-    # "ContextVar-authoritative, strip on _UNSET" — see session_context_engaged.
+    ``session_history_delivery`` declares whether the bound chat id is one the client can address again:
+    ``"1"`` (audited producers — explicit session-id header, native API sessions, /v1/runs) or
+    ``""`` / omitted (default-deny, #98619).  ``None`` leaves the var at ``_UNSET`` ("never
+    declared"), which ``session_history_delivery_supported()`` treats as NOT capable — an omitted declaration
+    cannot grant wake authority."""
     global _session_context_engaged
     _session_context_engaged = True
-    tokens = [
-        _SESSION_PLATFORM.set(platform),
-        _SESSION_SOURCE.set(source),
-        _SESSION_CHAT_ID.set(chat_id),
-        _SESSION_CHAT_TYPE.set(chat_type),
-        _SESSION_CHAT_NAME.set(chat_name),
-        _SESSION_THREAD_ID.set(thread_id),
-        _SESSION_USER_ID.set(user_id),
-        _SESSION_USER_ID_ALT.set(user_id_alt),
-        _SESSION_USER_NAME.set(user_name),
-        _SESSION_SCOPE_ID.set(scope_id),
-        _SESSION_KEY.set(session_key),
-        _SESSION_ID.set(session_id),
-        _SESSION_UI_SESSION_ID.set(ui_session_id),
-        _SESSION_MESSAGE_ID.set(message_id),
-        _SESSION_PROFILE.set(profile),
-        _BROWSER_CONTROL_PRINCIPAL.set(browser_control_principal),
-        _BROWSER_CONTROL_TRANSPORT_FAMILY.set(browser_control_transport_family),
-        _CRON_SESSION.set(cron_session),
-        _SESSION_ASYNC_DELIVERY.set(bool(async_delivery)),
-    ]
-    try:
-        from agent.runtime_cwd import set_session_cwd
-
-        set_session_cwd(cwd)
-    except Exception:
-        pass
+    values = (
+        platform, source, chat_id, chat_type, chat_name, thread_id, user_id, user_id_alt,
+        user_name, scope_id, session_key, session_id, ui_session_id, message_id, profile,
+        browser_control_principal, browser_control_transport_family, cron_session, parent_chat_id,
+    )
+    tokens = [var.set(value) for var, value in zip(_SESSION_VARS, values)]
+    tokens.append(_SESSION_ASYNC_DELIVERY.set(bool(async_delivery)))
+    tokens.append(_SESSION_HISTORY_DELIVERY.set(_UNSET if session_history_delivery is None else session_history_delivery))
+    _runtime_cwd("set_session_cwd", cwd)
     return tokens
 
 
@@ -540,3 +497,27 @@ except Exception:
         "not registered — cron approval mode may not be detected",
         exc_info=True,
     )
+
+
+# [owner] forward-ported from upstream (BASE 之后新增): run_busy's busy-ack reply chain
+# (and other swapped hosts) resolve route metadata / session-id helpers through these.
+
+def _runtime_cwd(func: str, *args: Any) -> None:
+    """Best-effort call of ``agent.runtime_cwd.<func>``; import/runtime failures are ignored."""
+    try:
+        from agent import runtime_cwd
+        getattr(runtime_cwd, func)(*args)
+    except Exception:
+        pass
+
+def source_route_metadata(source: Any, metadata: dict | None) -> dict | None:
+    """Keep inbound route anchors for durable deliveries after the source is gone."""
+    anchors = {key: str(value) for key in ("scope_id", "parent_chat_id")
+               if (value := getattr(source, key, None))}
+    return {**(metadata or {}), **anchors} if anchors else metadata
+
+def session_history_delivery_supported() -> bool:
+    """Whether this request declares a server-history consumer for detached results.
+
+    Fail closed on omitted bindings; never borrow authority from the environment."""
+    return _SESSION_HISTORY_DELIVERY.get() == "1"

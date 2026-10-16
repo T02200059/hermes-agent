@@ -5842,6 +5842,12 @@ This compaction should PRIORITISE preserving all information related to the focu
         return True
 
     @classmethod
+    def _is_real_user_turn(cls, message: Dict[str, Any]) -> bool:
+        """Actionable user turn that is not synthetic scaffolding (upstream form, forward-ported)."""
+        # [owner] A4-2: forward-ported from upstream — index scans share this row test.
+        return cls._is_actionable_user_turn(message) and not cls._is_synthetic_compression_user_turn(message)
+
+    @classmethod
     def _is_actionable_user_turn(cls, message: Any) -> bool:
         """Return whether *message* contains user input worth anchoring."""
         if not isinstance(message, dict) or message.get("role") != "user":
@@ -8857,3 +8863,112 @@ def is_user_originated_turn(message: Any) -> bool:
     count.
     """
     return user_originated_turn_view(message) is not None
+
+from agent.prompt_builder import STEER_DISPLAY_KIND  # [owner] A4-2: needed by the forward-ported split helper below
+
+# [owner] forward-ported from upstream (BASE 之后新增): hermes_state_messages (forward-ported
+# mixin) imports these checkpoint/split helpers. Upstream also refactored this module heavily
+# (8859 -> 5299 lines); only these symbols are ported — the refactor itself stays out of A4-2.
+
+
+_DB_PERSISTED_MARKER = "_db_persisted"
+
+
+def _is_checkpoint_item(item: Any) -> bool:
+    return isinstance(item, dict) and item.get("type") == "compaction"
+
+
+def _newest_checkpoint_carrier(messages: List[Dict[str, Any]], key: str) -> int:
+    """Index of the last assistant message carrying a ``type: "compaction"`` item under *key*, or -1.
+    Transcript-side mirror of ``native_compaction.prune_pre_checkpoint_items``' newest-run-wins rule:
+    the wire builder drops every checkpoint before the last one, so this is the only carrier whose
+    checkpoint can still reach a request."""
+    for i in range(len(messages) - 1, -1, -1):
+        msg = messages[i]
+        if not isinstance(msg, dict) or msg.get("role") != "assistant":
+            continue
+        items = msg.get(key)
+        if isinstance(items, list) and any(_is_checkpoint_item(item) for item in items):
+            return i
+    return -1
+
+
+def split_user_originated_turn(message: Any) -> tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+    """Split a user row into ``(handoff_only, live_view)``; either may be None; fresh dicts."""
+    if not isinstance(message, dict) or message.get("role") != "user":
+        return None, None
+
+    is_summary = is_compaction_summary_message(message)
+    handoff: Optional[Dict[str, Any]] = None
+    if is_summary:
+        handoff = {
+            "role": "user", "content": _handoff_only_content(message.get("content")),
+            COMPRESSED_SUMMARY_METADATA_KEY: True, "display_kind": "hidden",
+        }
+        if COMPRESSED_SUMMARY_HAS_USER_TURN_KEY in message:
+            handoff[COMPRESSED_SUMMARY_HAS_USER_TURN_KEY] = bool(message.get(COMPRESSED_SUMMARY_HAS_USER_TURN_KEY))
+        if message.get(MICRO_COMPACT_MARKER_KEY):
+            handoff[MICRO_COMPACT_MARKER_KEY] = True
+        if message.get("timestamp") is not None:
+            handoff["timestamp"] = message["timestamp"]
+        drop_stale_api_content(handoff)
+        # Hidden is the legacy compaction wrapper and doesn't hide an unwrapped human payload; other
+        # kinds are synthetic.
+        display_kind = message.get("display_kind")
+        candidate = None if display_kind and display_kind != "hidden" else ContextCompressor._strip_context_summary_handoff_message(message)
+        if candidate is None:
+            return handoff, None
+    elif message.get("display_kind") and message.get("display_kind") != STEER_DISPLAY_KIND:
+        return None, None
+    else:
+        candidate = message.copy()  # includes a typed /steer row: full user authority
+
+    for key in (
+        COMPRESSED_SUMMARY_METADATA_KEY, COMPRESSED_SUMMARY_HAS_USER_TURN_KEY, MICRO_COMPACT_MARKER_KEY,
+        _DB_PERSISTED_MARKER, *(("_row_id",) if is_summary else ()), "display_kind", "display_metadata",
+    ):
+        candidate.pop(key, None)
+    carrier_metadata = message.get("display_metadata")
+    if isinstance(carrier_metadata, dict):
+        durable_metadata = {
+            key: copy.deepcopy(carrier_metadata[key]) for key in SUMMARY_CARRIER_DURABLE_DISPLAY_METADATA_KEYS if key in carrier_metadata
+        }
+        if durable_metadata:
+            candidate["display_metadata"] = durable_metadata
+    drop_stale_api_content(candidate)
+    cls = ContextCompressor
+    if not cls._is_real_user_turn(candidate):
+        return handoff, None
+    return handoff, candidate
+
+# [owner] forward-ported from upstream (A4-2): cached-history guard's select chain consumes
+# drop_shadowed_checkpoints / _set_sidecar.
+
+def _set_sidecar(msg: Dict[str, Any], key: str, kept: List[Any]) -> None:
+    """Filter items, never leave an empty sidecar behind."""
+    if kept:
+        msg[key] = kept
+    else:
+        msg.pop(key, None)
+
+def drop_shadowed_checkpoints(
+    messages: List[Dict[str, Any]], key: str = "codex_reasoning_items", *, before: Optional[int] = None,
+) -> List[int]:
+    """Drop ``type: "compaction"`` items from every assistant row older than the newest carrier (rows at
+    index >= *before* are left alone). A checkpoint a newer carrier shadows has no reader on any wire:
+    ``prune_pre_checkpoint_items`` rebuilds each request around the newest checkpoint run and the replay
+    gate drops checkpoints wholesale once native compaction is ineligible. Non-checkpoint items stay.
+    In place; returns the indices rewritten."""
+    newest = _newest_checkpoint_carrier(messages, key)
+    stop = newest if before is None else min(newest, before)
+    rewritten: List[int] = []
+    for i in range(max(stop, 0)):
+        msg = messages[i]
+        if not isinstance(msg, dict) or msg.get("role") != "assistant":
+            continue
+        items = msg.get(key)
+        if not isinstance(items, list) or not any(_is_checkpoint_item(item) for item in items):
+            continue
+        _set_sidecar(msg, key, [item for item in items if not _is_checkpoint_item(item)])
+        rewritten.append(i)
+    return rewritten
