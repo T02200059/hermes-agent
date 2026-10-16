@@ -724,8 +724,13 @@ class GatewayStartupMixin:
             raise RuntimeError("Group Chat worker did not start")
         return service
 
-    async def _ensure_hosted_room_worker(self):
-        return await asyncio.to_thread(self._start_hosted_room_worker_sync)
+    async def _ensure_hosted_room_worker(self) -> None:
+        """[owner] A4-2 hotfix: bounded so a wedged Group Chat worker start can never hang
+        the whole startup sequence (2026-10-16 feishu incident: adapter acks still flow from
+        their own threads while every inbound sat queued behind a never-returning to_thread).
+        The watcher loop retries every 1s, so a slow-but-healthy start still converges."""
+        with _log_suppressed(logging.WARNING, "Group Chat worker start failed: %s"):
+            await asyncio.wait_for(asyncio.to_thread(self._start_hosted_room_worker_sync), timeout=10.0)
 
     async def _hosted_room_worker_watcher(self, interval: float = 1.0) -> None:
         """Keep the room worker alive for the messaging gateway lifetime."""
