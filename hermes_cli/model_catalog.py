@@ -469,3 +469,21 @@ def reset_cache() -> None:
     global _catalog_cache, _catalog_cache_source_mtime
     _catalog_cache = None
     _catalog_cache_source_mtime = 0.0
+
+
+# [owner] A4-2: forward-ported — the gateway's model_catalog_refresh_watcher calls this.
+def refresh_catalogs() -> bool:
+    """Force-refresh every remote catalog the picker reads (manifest, OpenRouter live list, Nous Portal
+    recommendations), writing each disk cache so the next ``/model`` open in ANY process sees them.
+    Blocking; run it off the event loop."""
+    if not _load_catalog_config()["enabled"]:
+        return False
+    catalog = get_catalog(force_refresh=True)
+    try:
+        from hermes_cli.models import fetch_nous_recommended_models, fetch_openrouter_models
+
+        fetch_openrouter_models(force_refresh=True)
+        fetch_nous_recommended_models(force_refresh=True)
+    except Exception:
+        logger.debug("provider catalog refresh failed", exc_info=True)
+    return bool(catalog)
