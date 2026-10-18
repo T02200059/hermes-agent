@@ -136,11 +136,10 @@ PRIVATE_SYMBOLS: List[Tuple[str, str, str]] = [
 # 可降级的前提是「降级后语义仍然成立」。注册类依赖不满足这一点：目标表没了
 # 就注册不了，静默跳过只会让 cron 悄悄丢掉会话上下文 —— 比启动即报错更糟。
 FAIL_LOUD_ALLOWLIST: Dict[str, str] = {
-    "owner/cron/session_context.py": (
-        "模块的全部职责就是往官方 _VAR_MAP 注入；表没了就没有可回退的语义，"
-        "且 _UNSET 必须**就是**上游那个哨兵（被按身份比较），换成本地占位符会改"
-        "变比较结果。故保留硬导入 + 由本文件的用例钉住。"
-    ),
+    # [owner] A4-2: owner/cron/session_context.py removed — upstream's unpacked
+    # _SESSION_VARS now natively includes HERMES_CRON_SESSION, so the bridge reuses
+    # the native var (guarded import with a legacy fallback path) instead of
+    # injecting a second ContextVar. No longer a fail-loud site.
 }
 
 

@@ -1,5 +1,9 @@
 """Dependency-free Nostr signing (secp256k1 / BIP-340) for Buzz WebSocket authentication."""
 
+# [owner] A4-2: forward-ported from upstream (buzz ws auth lane; verbatim port listed
+# in upstream_port_files.txt).
+
+
 from __future__ import annotations
 
 import hashlib

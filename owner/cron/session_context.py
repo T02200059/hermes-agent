@@ -32,8 +32,16 @@ of appearing as "cron jobs lost their session".
 
 from contextvars import ContextVar
 
-from gateway.session_context import _UNSET, _VAR_MAP
+from gateway import session_context as _sc
 
-_CRON_SESSION: ContextVar = ContextVar("HERMES_CRON_SESSION", default=_UNSET)
+# [owner] A4-2: upstream's unpacked _SESSION_VARS now natively includes HERMES_CRON_SESSION
+# (set/clear/reset zip it directly). This bridge must REUSE that var instead of creating a
+# second ContextVar of the same name — a second instance split set_session_vars() writes
+# from get_session_env() reads (2026-10-18 cron tristate failures).
+_CRON_SESSION: ContextVar = _sc._VAR_MAP.get("HERMES_CRON_SESSION") or _sc._CRON_SESSION
 
-_VAR_MAP["HERMES_CRON_SESSION"] = _CRON_SESSION
+if _VAR_MAP_HAS_NATIVE := ("HERMES_CRON_SESSION" in _sc._VAR_MAP):
+    _CRON_SESSION = _sc._VAR_MAP["HERMES_CRON_SESSION"]  # upstream native var
+else:  # legacy BASE bridge path (kept for safety)
+    _CRON_SESSION = ContextVar("HERMES_CRON_SESSION", default=_sc._UNSET)
+    _sc._VAR_MAP["HERMES_CRON_SESSION"] = _CRON_SESSION
