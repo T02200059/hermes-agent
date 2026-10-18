@@ -5934,8 +5934,15 @@ class FeishuAdapter(BasePlatformAdapter):
             # See https://github.com/NousResearch/hermes-agent/issues/50656
             extra_ua_tags=["channel"],
         )
+        # [owner] A4-2 hotfix: the WS client runs run_forever for the process lifetime. On the
+        # loop's DEFAULT executor it permanently occupies a default-executor slot AND blocks
+        # loop.shutdown_default_executor() forever at asyncio.run teardown (2026-10-16/18
+        # feishu-ack-only incident: gateway startup froze after platform connects settled;
+        # main thread wedged in runners.close -> shutdown_default_executor join). Route it to
+        # the adapter-owned SDK executor instead, which _shutdown_sdk_executor tears down
+        # explicitly on disconnect.
         self._ws_future = loop.run_in_executor(
-            None,
+            self._get_sdk_executor(),
             _run_official_feishu_ws_client,
             self._ws_client,
             self,

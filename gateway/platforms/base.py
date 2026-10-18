@@ -3672,7 +3672,16 @@ class BasePlatformAdapter(ABC):
 
     # [owner] A4-2: forward-ported from upstream — the swapped adapters (buzz ws loop etc.)
     # publish the degraded ("retrying") runtime status through this.
-    DEGRADED_STATUS_MESSAGE = "delivery path unproven; retrying"
+    DEGRADED_STATUS_MESSAGE = "connected but not yet confirmed active; recovering in background"
+
+    @property
+    def send_path_degraded(self) -> bool:
+        """True while connect() succeeded but delivery is not confirmed.
+
+        Adapters with a separately-proven receive path override this; the
+        default adapter is either connected or not.
+        """
+        return False
 
     def _mark_degraded(self) -> None:
         """Publish ``retrying`` for a running adapter whose delivery path is unproven."""
