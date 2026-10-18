@@ -8671,3 +8671,14 @@ def _stop_mcp_loop(*, only_if_idle: bool = False) -> bool:
         # since the loop is gone and no session can still be in flight.
         _kill_orphaned_mcp_children(include_active=True)
     return True
+
+
+# [owner] A4-2: forward-ported from upstream (symbol-level sweep).
+def _server_visible_in_scope(key, scope: Optional[str]) -> bool:
+    """Whether the live connection under *key* is visible from ``scope`` without changing its
+    teardown owner."""
+    if scope is None:
+        return True
+    return (_server_scope_keys.get(key) == scope
+            or scope in _server_tool_scopes.get(key, ()))
+

@@ -6642,3 +6642,16 @@ def request_elicitation_consent(
 
 # Load permanent allowlist from config on module import
 load_permanent_allowlist()
+
+
+# [owner] A4-2: forward-ported from upstream (symbol-level sweep).
+def register_gateway_settle(session_key: str, request_id: str, settle) -> bool:
+    """Attach ``settle(reason)`` to one pending approval; it runs once when that wait ends by any path.
+    False when the request is no longer pending (the surface should withdraw its prompt itself)."""
+    with _lock:
+        for entry in _gateway_queues.get(session_key, []):
+            if entry.data.get("request_id") == request_id:
+                entry.settle = settle
+                return True
+    return False
+

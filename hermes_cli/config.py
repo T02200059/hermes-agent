@@ -6573,3 +6573,15 @@ def _inject_platform_plugin_env_vars() -> None:
 
 # Eagerly inject so that platform plugin env vars show up in the setup wizard.
 _inject_platform_plugin_env_vars()
+
+# [owner] A4-2: re-export shim — upstream re-exports these from config.py; the local
+# config_providers module carries the definitions.
+try:
+    from hermes_cli.config_providers import (  # noqa: F401
+        get_compatible_custom_providers, get_custom_provider_api_mode,
+        get_custom_provider_context_length, get_custom_provider_extra_headers,
+        get_custom_provider_model_capability, get_custom_provider_session_affinity_header,
+        get_custom_provider_tls_settings, is_provider_enabled,
+    )
+except ImportError:
+    pass

@@ -665,3 +665,16 @@ def _claimed_row(oid, session_key, platform, chat_id, thread_id, content, attemp
             **({"marker": marker} if needs_marker and marker else {}), "profile": profile,
             **({"runtime_recovery": True} if runtime else {}),
             **({"last_error": last_error} if last_error else {}), "attempts": attempts + 1}
+
+
+# [owner] A4-2: forward-ported from upstream (A4-2 symbol sweep).
+def flood_retry_delay(seconds: Any) -> float:
+    """How long a redelivery timer sleeps for a wait of ``seconds``: capped so a huge or bogus value cannot
+    park the timer for hours (the row's own deadline, not the timer, decides eligibility when it fires),
+    plus a little slack so the timer lands after the deadline rather than on it."""
+    try:
+        wait = float(seconds)
+    except (TypeError, ValueError):
+        wait = FLOOD_RETRY_DEFAULT_SECONDS
+    return min(max(wait, 0.0), FLOOD_RETRY_CAP_SECONDS) + FLOOD_RETRY_SLACK_SECONDS
+

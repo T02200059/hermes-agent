@@ -5873,3 +5873,14 @@ class GatewaySlashCommandsMixin(
 
         self._schedule_update_notification_watch()
         return t("gateway.update.starting")
+
+
+# [owner] A4-2: forward-ported from upstream (symbol-level sweep).
+def _nested_dict(root: dict, *keys: str) -> dict:
+    """Walk/create ``root[k1][k2]...`` as dicts, replacing any non-dict value on the path."""
+    for k in keys:
+        if not isinstance(root.get(k), dict):
+            root[k] = {}
+        root = root[k]
+    return root
+

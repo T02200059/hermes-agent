@@ -2961,6 +2961,7 @@ def _gateway_config_home() -> Path:
 
 
 def _load_gateway_config(config_path: "Path | None" = None) -> dict:
+    """[owner] A4-2: upstream alias — swapped hosts import _load_gateway_runtime_config."""
     """The effective user config.yaml (managed overlay, ``${VAR}`` expansion, model-key canon; no
     DEFAULT_CONFIG merge) — ``{}`` on any error (fail-open). Defaults to the active gateway home
     (``_hermes_home`` monkeypatches apply); multiplexers pass a path.
@@ -5812,3 +5813,6 @@ def __getattr__(name):  # PEP 562 — lazy so no import cycles
     warn_once(__name__, name, *target)
     return getattr(importlib.import_module(target[0]), target[1])
 # ---- END PLUGIN-COMPAT ----
+
+# [owner] A4-2: upstream alias for the loader (upstream calls it _load_gateway_runtime_config).
+_load_gateway_runtime_config = _load_gateway_config

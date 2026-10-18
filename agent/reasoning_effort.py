@@ -228,3 +228,14 @@ def requested_effort(reasoning_config: Optional[dict]) -> Optional[str]:
         return None
     effort = str(reasoning_config.get("effort") or "").strip().lower()
     return effort or None
+
+
+# [owner] A4-2: forward-ported (final symbol sweep round 3).
+def effort_display_label(effort: Optional[str], provider: Optional[str] = None, model: Optional[str] = None) -> str:
+    """Picker / ``/reasoning`` status label for a ladder level: the level itself when the route sends
+    it verbatim, else ``"<level> (sends <clamped> on this route)"`` so a Hermes-internal step such as
+    ``ultra`` (#61634) is never presented as a distinct wire level the route does not have."""
+    requested = str(effort or "").strip().lower()
+    clamped = clamp_effort(requested, route_supported_efforts(provider, model))
+    return requested if not requested or clamped == requested else f"{requested} (sends {clamped} on this route)"
+

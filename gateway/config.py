@@ -2946,3 +2946,9 @@ def _dict_slot(container: dict, key: str) -> dict:
         container[key] = value
     return value
 
+
+# [owner] A4-2: forward-ported from upstream (A4-2 symbol sweep).
+DEFAULT_UNAUTHORIZED_DM_DECLINE_MESSAGE = (
+    "Hi! I'm a personal assistant and can only chat with my owner, so I can't help you directly. Sorry!"
+)
+

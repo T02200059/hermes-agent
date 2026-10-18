@@ -206,3 +206,23 @@ def zai_coding_overload_retry_ceiling(short_attempts: int = _ZAI_CODING_OVERLOAD
     value for Z.AI Coding overload 429s so the 30/60/90/120s waits run.
     """
     return short_attempts + len(_ZAI_CODING_OVERLOAD_LONG_BACKOFF) + 1
+
+
+# [owner] A4-2: forward-ported (final symbol sweep round 3).
+def format_reset_window(seconds: float) -> str:
+    """``~9h`` / ``~45 min`` for chat copy naming when a quota window reopens (ceilinged)."""
+    seconds = int(seconds)
+    return f"~{-(-seconds // 3600)}h" if seconds >= 3600 else f"~{-(-seconds // 60)} min"
+
+
+# [owner] A4-2: forward-ported (final symbol sweep round 3).
+def reset_delay_from_message(message: str) -> Optional[float]:
+    """Seconds-until-reset parsed from free-text provider error messages, or None."""
+    if not message:
+        return None
+    for pattern, to_seconds in RETRY_DELAY_PATTERNS:
+        m = pattern.search(message)
+        if m and (seconds := to_seconds(m)) is not None:
+            return seconds
+    return None
+

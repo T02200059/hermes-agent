@@ -74,6 +74,8 @@ DEFAULT_IDLE_TIMEOUT_MINUTES = 2
 _TRUTHY = {"1", "true", "yes", "on"}
 
 
+BROKERED_SUSPEND_TIMEOUT_S = 40.0  # [owner] A4-2: moved before first use (default arg reads it at def time)
+
 def scale_to_zero_enabled(environ: Optional[dict] = None) -> bool:
     """Whether the per-instance Labs toggle is on (the HERMES_SCALE_TO_ZERO stamp).
 
@@ -243,3 +245,109 @@ def suspend_self(
             json.dumps(body)[:500],
         )
     return ok
+
+
+# [owner] A4-2: forward-ported from upstream (symbol-level sweep).
+def dashboard_client_last_seen(path: Optional[os.PathLike | str] = None, *,
+                               now: Optional[float] = None) -> Optional[float]:
+    """Epoch seconds a dashboard client last sent a WS frame, or None if never. Missing marker ->
+    None (steady state when nobody has the dashboard open — NOT fail-awake, or no instance would
+    ever sleep). Unreadable marker -> ``now`` (fail-awake, as in ``is_idle``). Clamped to now: an
+    NTP step-back can leave the mtime in the future."""
+    current = time.time() if now is None else now
+    p = dashboard_client_heartbeat_path() if path is None else path
+    try:
+        return min(os.stat(p).st_mtime, current)
+    except FileNotFoundError:
+        return None
+    except OSError:
+        return current
+
+
+# [owner] A4-2: forward-ported from upstream (symbol-level sweep).
+def request_brokered_suspend(
+    url: str,
+    *,
+    timeout: float = BROKERED_SUSPEND_TIMEOUT_S,
+    opener: Any = None,
+) -> bool:
+    """POST the NAS sleep URL so NAS stops this machine on our behalf.
+
+    Same contract as ``suspend_self``: never raises, True only on 2xx, fail-awake.
+    """
+    import urllib.error
+    import urllib.request
+
+    # urllib sets Content-Length itself for a bytes body.
+    request = urllib.request.Request(url, data=b"", method="POST")
+    open_url = opener or urllib.request.urlopen
+    try:
+        with open_url(request, timeout=timeout) as response:
+            status = int(getattr(response, "status", 0) or 0)
+    except urllib.error.HTTPError as exc:
+        # Not retried here: the watcher re-runs on its own interval.
+        logger.warning(
+            "scale-to-zero: brokered suspend rejected: %s %s",
+            exc.code,
+            exc.reason,
+        )
+        return False
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        logger.warning("scale-to-zero: brokered suspend request failed: %s", exc)
+        return False
+    ok = 200 <= status < 300
+    if ok:
+        logger.info("scale-to-zero: machine suspend accepted by NAS (%s)", status)
+    else:
+        logger.warning("scale-to-zero: brokered suspend returned %s", status)
+    return ok
+
+
+# [owner] A4-2: forward-ported from upstream (symbol-level sweep).
+def suspend_available(environ: Optional[dict] = None) -> bool:
+    """Whether ANY suspend lever exists, in-guest or brokered.
+
+    Quiescing without one is worse than not quiescing: the re-dial clears the flip.
+    """
+    env = environ if environ is not None else os.environ
+    return self_suspend_available(env) or brokered_sleep_url(env) is not None
+
+
+# [owner] A4-2: forward-ported from upstream (A4-2 symbol sweep).
+
+
+# [owner] A4-2: forward-ported (final symbol sweep).
+FLY_FREEZE_GRACE_S = 15.0
+
+
+# [owner] A4-2: forward-ported (final symbol sweep).
+FLY_FREEZE_GRACE_TICK_S = 0.25
+
+
+# [owner] A4-2: forward-ported (final symbol sweep).
+def brokered_sleep_url(environ: Optional[dict] = None) -> Optional[str]:
+    """The NAS sleep endpoint to POST, or None when this backend has no broker.
+
+    Validated here rather than at POST time: a malformed value would otherwise let
+    the watcher mark draining, hold the re-dial and flip the connector before
+    urllib rejected it, quiescing for a suspend that could never happen.
+    """
+    env = environ if environ is not None else os.environ
+    url = str(env.get(SLEEP_URL_ENV, "")).strip()
+    if not url:
+        return None
+    parsed = urllib.parse.urlsplit(url)
+    if parsed.scheme != "https" or not parsed.netloc:
+        # Once per process: the watcher calls this every idle tick, and its own
+        # no-lever latch sits AFTER this, so an unlatched warning here would
+        # repeat for the life of a misconfigured deployment.
+        global _malformed_sleep_url_logged
+        if not _malformed_sleep_url_logged:
+            _malformed_sleep_url_logged = True
+            logger.warning(
+                "scale-to-zero: ignoring malformed %s (want an absolute https URL)",
+                SLEEP_URL_ENV,
+            )
+        return None
+    return url
+

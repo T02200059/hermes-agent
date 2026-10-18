@@ -333,3 +333,18 @@ __all__ = [
     "MIN_INTERVAL_SECONDS",
     "POLL_SECONDS",
 ]
+
+
+# [owner] A4-2: forward-ported from upstream (symbol-level sweep).
+def store_has_active_heartbeat(db: Any) -> bool:
+    """True when *db* holds an ACTIVE ``heartbeat:*`` row — or one that cannot be parsed (unknown, so
+    the caller keeps its full sweep). ``clear``/``pause`` keep their rows (status ``cleared``/``paused``),
+    so key existence alone is not "active". Read errors propagate: "unavailable" is the caller's call."""
+    for _key, raw in db.list_meta_prefix(_META_PREFIX):
+        try:
+            if HeartbeatState.from_json(raw).status == "active":
+                return True
+        except Exception:
+            return True
+    return False
+

@@ -468,3 +468,28 @@ def flush_agent_history_to_file(
             "Agent-history shutdown preservation failed for session %s: %s",
             session_id, _e,
         )
+
+
+# [owner] A4-2: forward-ported from upstream (symbol-level sweep).
+def flush_overflow_to_file(overflow_by_session: Dict[str, Any], *, reason: str = "shutdown") -> int:
+    """Serialise the FIFO overflow tails (``queued_events``) to disk; return events flushed.
+
+    The adapter slot holds the queue head and ``SessionState.conversation.queued_events`` the
+    tail; both must survive restart. Each event is its own payload in the slot-flush shape so
+    ``recover_pending_to_db`` replays them unchanged; ``seq`` preserves arrival order per session.
+    """
+    if not overflow_by_session:
+        return 0
+    flush_dir, ts, flushed = _get_flush_dir(), int(time.time()), 0
+    for session_key, events in list(overflow_by_session.items()):
+        if not session_key or not events:
+            continue
+        for seq, value in enumerate(list(events)):
+            if value is not None:
+                flushed += _flush_value(flush_dir, "overflow", session_key, value, reason=reason,
+                                        ts=ts, seq=seq)
+    if flushed:
+        logger.info("Flushed %d queued overflow message(s) to %s (reason=%s)", flushed, flush_dir,
+                    reason)
+    return flushed
+

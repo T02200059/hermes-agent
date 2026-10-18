@@ -2325,3 +2325,16 @@ __all__ = [
     "judge_goal",
     "run_kanban_goal_loop",
 ]
+
+
+# [owner] A4-2: forward-ported from upstream (symbol-level sweep).
+def count_active_delegations(session_id: Optional[str]) -> int:
+    """Live async delegation batches spawned by this session (fail-safe 0)."""
+    if not session_id:
+        return 0
+    try:
+        from tools.async_delegation import _LIVE_STATES, _session_records
+        return len(_session_records(_LIVE_STATES, "", "", str(session_id)))
+    except Exception:
+        return 0
+

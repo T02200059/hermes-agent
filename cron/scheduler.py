@@ -8487,3 +8487,17 @@ def _finish_interrupted_run(job: dict, execution_id: str, delivery_error: Option
     finish_execution(
         execution_id, success=False,
         error="Interrupted by gateway shutdown before terminal completion.")
+
+
+# [owner] A4-2: forward-ported from upstream (A4-2 symbol sweep).
+def get_running_job_details() -> list[dict]:
+    """Per in-flight job: ``{"job_id", "elapsed_s", "worker_pid"}`` (``worker_pid`` None for in-process
+    runs). The drain wait publishes this so ``hermes update`` can say WHICH job it is waiting on."""
+    now = time.time()
+    with _running_lock:
+        return [
+            {"job_id": jid, "elapsed_s": round(now - _running_since[jid], 1) if jid in _running_since else None,
+             "worker_pid": _running_worker_pids.get(jid)}
+            for jid in sorted(_running_job_ids | _running_fire_owners.keys())
+        ]
+

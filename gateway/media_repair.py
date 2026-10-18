@@ -211,3 +211,17 @@ def _repair_explicit_computer_use_media_paths_inner(
         if canonical and emitted_path != canonical:
             repaired = repaired.replace(emitted_path, canonical)
     return repaired
+
+
+# [owner] A4-2: forward-ported from upstream (A4-2 symbol sweep).
+def _current_turn_messages(messages: List[Dict[str, Any]], history_offset: int) -> List[Dict[str, Any]]:
+    if not history_offset or len(messages) >= history_offset:
+        return messages[history_offset:]
+    # Compression can invalidate the slice boundary: recover the turn from its last user
+    # message, fail closed if none remains.  Narrower than run.py's scan-everything fallback
+    # for auto-attach — that decides whether to ATTACH; this only rewrites emitted paths.
+    for index in range(len(messages) - 1, -1, -1):
+        if messages[index].get("role") == "user":
+            return messages[index:]
+    return []
+

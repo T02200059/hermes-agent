@@ -2241,3 +2241,25 @@ def clear_legacy(checkpoint_base: Optional[Path] = None) -> Dict[str, int]:
         except OSError as exc:
             logger.warning("Could not delete legacy archive %s: %s", child, exc)
     return out
+
+
+# [owner] A4-2: forward-ported from upstream (symbol-level sweep).
+def auto_prune_from_config() -> Dict[str, object]:
+    """``maybe_auto_prune_checkpoints`` driven by the ``checkpoints:`` config section — the one
+    startup/housekeeping entry point for the CLI and the gateway. ``delete_orphans`` is never
+    honoured unattended: a missing workdir is ambiguous (deleted vs. unmounted share); orphan
+    cleanup is only via explicit ``hermes checkpoints prune``. Never raises."""
+    try:
+        from hermes_cli.config import load_config
+        cfg = load_config().get("checkpoints") or {}
+        if not cfg.get("auto_prune", False):
+            return {"skipped": True}
+        return maybe_auto_prune_checkpoints(
+            retention_days=int(cfg.get("retention_days", 7)),
+            min_interval_hours=int(cfg.get("min_interval_hours", 24)),
+            delete_orphans=False,
+            max_total_size_mb=int(cfg.get("max_total_size_mb", 500)))
+    except Exception as exc:
+        logger.debug("checkpoint auto-maintenance skipped: %s", exc)
+        return {"skipped": True, "error": str(exc)}
+

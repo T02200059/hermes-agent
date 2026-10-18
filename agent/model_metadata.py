@@ -13,7 +13,7 @@ import os
 import re
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
+from typing import Any, Callable, Dict, List, Optional, Tuple, TYPE_CHECKING  # [owner] A4-2: +Callable (upstream sweep)
 from urllib.parse import urlparse
 
 import yaml
@@ -4120,3 +4120,826 @@ def _longest_key_match(table: Dict[str, int], model_lower: str) -> Optional[Tupl
         if _catalog_key_matches(key, model_lower):
             return key, value
     return None
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+def _parse_base_url(base_url: str, scheme: str = "http"):
+    """``urlparse`` of the normalized URL (``scheme`` prepended when absent); None when empty."""
+    normalized = _normalize_base_url(base_url)
+    if not normalized:
+        return None
+    return urlparse(normalized if "://" in normalized else f"{scheme}://{normalized}")
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+def _note_if_connect_timeout(exc: BaseException, base_url: str) -> None:
+    """Blackhole ``base_url`` when ``exc`` is a connect-phase timeout."""
+    if _is_connect_timeout(exc):
+        _note_endpoint_blackholed(base_url)
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+def _cache_file(name: str) -> Path:
+    from hermes_constants import get_hermes_home
+    return get_hermes_home() / "cache" / name
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+def _load_json_dict(path: Path) -> Dict[str, Any]:
+    """JSON object at ``path``, or {} when missing/invalid."""
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+def _ttl_memo_get(path: Path, key: str, ttl: float, *, ts_key: str, value_key: str) -> Optional[Any]:
+    """Fresh (< ``ttl`` seconds) ``value_key`` of the ``key`` entry in a TTL memo file, else None."""
+    entry = _load_json_dict(path).get(key)
+    if not isinstance(entry, dict):
+        return None
+    try:
+        if (time.time() - float(entry[ts_key])) >= ttl:
+            return None
+        return entry[value_key]
+    except Exception:
+        return None
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+def _ttl_memo_put(path: Path, key: str, value: Any, ttl: float, *, ts_key: str, value_key: str, what: str, ts_first: bool = False) -> None:
+    """Write ``key`` into a TTL memo file, dropping expired siblings. Best-effort."""
+    try:
+        now = time.time()
+        data = {k: v for k, v in _load_json_dict(path).items() if isinstance(v, dict) and (now - float(v.get(ts_key, 0))) < ttl}
+        data[key] = {ts_key: now, value_key: value} if ts_first else {value_key: value, ts_key: now}
+        atomic_json_write(path, data, indent=0, separators=(",", ":"))
+    except Exception as e:
+        logger.debug("Failed to save %s: %s", what, e)
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+def _get_endpoint_metadata_cache_path() -> Path:
+    """On-disk memo of remote ``/models`` probes (see ``_endpoint_disk_cache_get``)."""
+    return _cache_file("endpoint_model_metadata.json")
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+def _endpoint_disk_cache_get(normalized: str) -> Optional[Dict[str, Dict[str, Any]]]:
+    """Fresh cross-process memo of a remote ``/models`` probe (same TTL as in-memory): one-shot
+    runs (``hermes -q``, cron) start cold and Nous bypasses the persistent context cache, so
+    without this every launch paid the live probe. Local endpoints are never memoized."""
+    models = _ttl_memo_get(_get_endpoint_metadata_cache_path(), normalized, _ENDPOINT_MODEL_CACHE_TTL, ts_key="at", value_key="models")
+    return models if isinstance(models, dict) else None
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+def _endpoint_disk_cache_put(normalized: str, cache: Dict[str, Dict[str, Any]]) -> None:
+    """Memoize a successful remote ``/models`` probe; expired siblings are dropped."""
+    _ttl_memo_put(
+        _get_endpoint_metadata_cache_path(), normalized, cache, _ENDPOINT_MODEL_CACHE_TTL,
+        ts_key="at", value_key="models", what="endpoint model metadata disk cache", ts_first=True)
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+_BEDROCK_PROBE_FAILURE_TTL_SECONDS = 300.0
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+_OPENAI_NON_REASONING_RE = re.compile(r"^(?:ft:)?(?:gpt-3\.5|gpt-4(?![0-9])|chatgpt-)")
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+def openai_model_rejects_reasoning(model: str) -> bool:
+    """True for an OpenAI model id (aggregator ``openai/`` prefix stripped) that rejects the
+    Responses ``reasoning`` parameter outright, so callers send no ``reasoning`` key at all."""
+    name = (model or "").strip().lower().rsplit("/", 1)[-1]
+    return bool(_OPENAI_NON_REASONING_RE.match(name))
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+def _strip_openrouter_routing_variant(
+    model: str, base_url: str = "", provider: str = ""
+) -> str:
+    """Strip an OpenRouter routing-variant suffix for catalog lookup.
+
+    ``:nitro`` / ``:floor`` / ``:exacto`` / ``:online`` are request-time
+    routing modifiers, NOT catalog entries — OpenRouter's ``/models`` lists
+    only the base id, and a variant shares the base model's context window.
+    Without this, every lookup below misses and the resolver falls through to
+    a generic family default (``x-ai/grok-4.6:nitro`` → the 131K ``grok``
+    catch-all instead of its real 2M window).
+
+    Only the id used for LOOKUP is rewritten. The suffixed id the caller holds
+    stays on the wire, so the routing opt-in is preserved — the same rule
+    :func:`hermes_cli.models.validate_requested_model` applies. Sharing the
+    base's cache key is intentional: the window is identical, so a variant and
+    its base must never disagree.
+
+    Narrow by design: only applied when the request actually routes through
+    OpenRouter, so a local ``model:tag`` that happens to end in one of these
+    words is untouched.
+    """
+    if not model:
+        return model
+    is_openrouter = (provider or "").strip().lower() == "openrouter" or (
+        bool(base_url) and _infer_provider_from_url(base_url) == "openrouter"
+    )
+    if not is_openrouter:
+        return model
+    base = openrouter_variant_base(model)
+    if base is None:
+        return model
+    logger.debug(
+        "Resolving context length for OpenRouter routing variant %r via base id %r",
+        model, base,
+    )
+    return base
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+def _server_root(base_url: str) -> str:
+    """Probe root for a local server: IPv4-resolved, ``/v1`` suffix stripped."""
+    server_url = _localhost_to_ipv4(base_url.rstrip("/"))
+    return server_url[:-3] if server_url.endswith("/v1") else server_url
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+def _ollama_show_context(data: Dict[str, Any], *, gguf_first: bool, minimum: Optional[int] = None) -> Optional[int]:
+    """Context length from an Ollama ``/api/show`` payload. ``parameters.num_ctx`` is the RUNTIME
+    window (Modelfile override), ``model_info.*.context_length`` the GGUF training max. Local users
+    control num_ctx (prefer it); hosted operators may cap it arbitrarily (``gguf_first``)."""
+    def _num_ctx():
+        for line in data.get("parameters", "").split("\n"):
+            parts = line.strip().split()
+            if "num_ctx" in line and len(parts) >= 2:
+                try:
+                    yield int(parts[-1])
+                except ValueError:
+                    continue
+    def _gguf():
+        for key, value in data.get("model_info", {}).items():
+            if "context_length" in key and isinstance(value, (int, float)):
+                yield int(value)
+    for reader in ((_gguf, _num_ctx) if gguf_first else (_num_ctx, _gguf)):
+        for ctx in reader():
+            if minimum is None or ctx >= minimum:
+                return ctx
+    return None
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+_ENDPOINT_SCOPED_CONTEXT = (
+    ("api.kimi.com", {"/coding", "/coding/v1"}, {"k3", "kimi-k3", "kimi-k3-cot"}, 1_048_576),
+    ("integrate.api.nvidia.com", {"/v1"}, {"deepseek-ai/deepseek-v4-pro"}, 262_144),
+)
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+def _is_codex_route(provider: str, base_url: str, custom_providers: list | None) -> bool:
+    """True when the request travels the Codex Responses wire regardless of host: the native
+    ``openai-codex`` provider (also behind a ``HERMES_CODEX_BASE_URL`` / ``model.base_url`` proxy)
+    or a custom entry declaring ``api_mode: codex_responses``. The transport, not the hostname,
+    decides which window the model actually gets (#116191)."""
+    if (provider or "").strip().lower() == "openai-codex":
+        return True
+    if not base_url:
+        return False
+    with contextlib.suppress(Exception):  # config unreadable → not a known Codex route
+        from hermes_cli.config import get_custom_provider_api_mode
+        return get_custom_provider_api_mode(base_url, custom_providers) == "codex_responses"
+    return False
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+def _save_unless_skipped(model: str, base_url: str, ctx: int, provider: str) -> None:
+    """Persist ``ctx`` unless the provider opts out of the disk cache."""
+    if not _skip_persistent_context_cache(base_url, provider):
+        save_context_length(model, base_url, ctx)
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+def _probe_local_context_length(model: str, base_url: str, api_key: str, provider: str) -> Optional[int]:
+    """Live local probe; persists a positive result unless the provider opts out of the disk cache."""
+    local_ctx = _query_local_context_length(model, base_url, api_key=api_key)
+    if not (local_ctx and local_ctx > 0):
+        return None
+    if not _skip_persistent_context_cache(base_url, provider):
+        _maybe_cache_local_context_length(model, base_url, local_ctx)
+    return local_ctx
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+_PRICING_UNIT_DIVISORS = {
+    "per_token": 1, "per_1k_tokens": 1_000, "per_thousand_tokens": 1_000,
+    "per_1m_tokens": 1_000_000, "per_million_tokens": 1_000_000,
+}
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+_PER_MILLION_QUOTE_MIN = 0.001
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+_TOKEN_RATE_FIELDS = ("prompt", "completion", "cache_read", "cache_write")
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+def _normalize_token_rates(pricing: Dict[str, Any], unit: Any) -> Dict[str, Any]:
+    """Rescale the generic path's token rates to per-token strings (the contract usage_pricing
+    multiplies by 1e6), the way the Novita/DeepInfra branches already do for their known units."""
+    rates: Dict[str, float] = {}
+    for key in _TOKEN_RATE_FIELDS:
+        try:
+            rates[key] = float(pricing[key])
+        except (KeyError, TypeError, ValueError):
+            continue
+    divisor = _PRICING_UNIT_DIVISORS.get(str(unit or "").strip().lower())
+    if divisor is None:
+        divisor = 1_000_000 if any(v >= _PER_MILLION_QUOTE_MIN for v in rates.values()) else 1
+    if divisor != 1:
+        pricing.update({key: str(value / divisor) for key, value in rates.items()})
+    return pricing
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+def _endpoint_model_entry(model: Dict[str, Any], model_id: str, context_length: Optional[int]) -> Dict[str, Any]:
+    """Cache entry for one ``/models`` item; optional keys are set only when known."""
+    optional = (("context_length", context_length), ("max_completion_tokens", _extract_first_int(model, _MAX_COMPLETION_KEYS)), ("pricing", _extract_pricing(model) or None))
+    return {"name": model.get("name", model_id), **{k: v for k, v in optional if v is not None}}
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+def _lmstudio_loaded_context(model: Dict[str, Any]) -> Optional[int]:
+    """Context of the first loaded LM Studio instance (the runtime value), else None."""
+    for inst in model.get("loaded_instances", []) or []:
+        cfg = inst.get("config", {}) if isinstance(inst, dict) else None
+        ctx = cfg.get("context_length") if isinstance(cfg, dict) else None
+        if isinstance(ctx, int) and ctx > 0:
+            return ctx
+    return None
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+def _lmstudio_native_models(normalized: str, headers: Dict[str, str]) -> Dict[str, Dict[str, Any]]:
+    """LM Studio ``/api/v1/models`` → cache; context comes from the first loaded instance."""
+    response = requests.get(_lmstudio_server_root(normalized).rstrip("/") + "/api/v1/models", headers=headers, timeout=(5, 10), verify=_resolve_requests_verify(normalized))
+    response.raise_for_status()
+    cache: Dict[str, Dict[str, Any]] = {}
+    for model in response.json().get("models", []):
+        model_id = (model.get("key") or model.get("id")) if isinstance(model, dict) else None
+        if not model_id:
+            continue
+        entry = _endpoint_model_entry(model, model_id, _lmstudio_loaded_context(model))
+        _add_model_aliases(cache, model_id, entry)
+        alt_id = model.get("id")
+        if isinstance(alt_id, str) and alt_id and alt_id != model_id:
+            _add_model_aliases(cache, alt_id, entry)
+    return cache
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+def _apply_llamacpp_props(cache: Dict[str, Dict[str, Any]], request_candidate: str, headers: Dict[str, str], verify) -> None:
+    """Overwrite ``context_length`` with llama.cpp's allocated ``n_ctx`` from /props (``/v1/props``, then
+    ``/props`` for older builds). In router mode the bare endpoint 400s, so each LOADED child is read
+    via ``/props?model=``; unloaded children are skipped — probing could autoload them."""
+    base = request_candidate.rstrip("/").replace("/v1", "")
+    def _props(params=None):
+        resp = requests.get(base + "/v1/props", params=params, headers=headers, timeout=5, verify=verify)
+        if not resp.ok:
+            resp = requests.get(base + "/props", params=params, headers=headers, timeout=5, verify=verify)
+        return resp
+    def _n_ctx(props: Dict[str, Any]) -> Any:
+        return (props.get("default_generation_settings") or {}).get("n_ctx")
+    props_resp = _props()
+    if props_resp.ok:
+        props = props_resp.json()
+        n_ctx, model_alias = _n_ctx(props), props.get("model_alias", "")
+        if n_ctx and model_alias and model_alias in cache:
+            cache[model_alias]["context_length"] = n_ctx
+        return
+    native = requests.get(base + "/models", headers=headers, timeout=5, verify=verify)
+    if not native.ok:
+        return
+    for child in (native.json() or {}).get("data", [])[:16]:
+        child_id = child.get("id") if isinstance(child, dict) else None
+        if not child_id or child_id not in cache or (child.get("status") or {}).get("value") not in ("loaded", "ready"):
+            continue
+        pr = _props({"model": child_id})
+        child_ctx = _n_ctx(pr.json()) if pr.ok else None
+        if child_ctx:
+            cache[child_id]["context_length"] = child_ctx
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+def _endpoint_memo_key(normalized: str, api_key: object) -> Tuple[str, str]:
+    from agent.credential_persistence import fingerprint_secret_value
+    # Callable (minted) keys are not fingerprinted here: doing so would mint on every cache hit.
+    return normalized, (fingerprint_secret_value(api_key) or "") if isinstance(api_key, str) else ""
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+def _remember_endpoint_models(memo_key: Tuple[str, str], cache: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    _endpoint_model_metadata_cache[memo_key] = cache
+    _endpoint_model_metadata_cache_time[memo_key] = time.time()
+    return cache
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+def _parse_models_payload(payload: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    cache: Dict[str, Dict[str, Any]] = {}
+    for model in payload.get("data", []):
+        model_id = model.get("id") if isinstance(model, dict) else None
+        if model_id:
+            _add_model_aliases(cache, model_id, _endpoint_model_entry(model, model_id, _extract_first_int(model, _CONTEXT_LENGTH_KEYS)))
+    return cache
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+def _load_context_cache_document() -> dict:
+    """Read scalar lengths and their provenance from the same atomic document."""
+    path = _get_context_cache_path()
+    if not path.exists():
+        return {}
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+            if not isinstance(data, dict):
+                return {}
+            for section in ("context_lengths", "bedrock_confirmed_v1"):
+                if not isinstance(data.get(section), dict):
+                    data[section] = {}
+            return data
+    except Exception as e:
+        logger.debug("Failed to load context length cache: %s", e)
+        return {}
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+def _write_context_cache(cache: Dict[str, int], bedrock_confirmed: dict | None = None) -> None:
+    """Atomic write (a truncating write killed mid-dump leaves a partial file that
+    _load_context_cache() swallows as {}, wiping EVERY cached length). Raises on failure."""
+    document = {"context_lengths": cache}
+    if bedrock_confirmed:
+        document["bedrock_confirmed_v1"] = bedrock_confirmed
+    atomic_yaml_write(_get_context_cache_path(), document)
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+def save_provider_context_length(model: str, base_url: str, length: int, provider: str = "") -> None:
+    """Persist a provider-confirmed window, distinguishing it from legacy Bedrock fallbacks."""
+    if _is_bedrock_context(base_url, provider):
+        save_context_length(model, base_url or "bedrock://", length, source="bedrock-confirmed-v1")
+    else:
+        save_context_length(model, base_url, length)
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+_COMPLETION_SPLIT_RE = re.compile(
+    r'\((\d+)\s+(?:tokens\s+)?in (?:the messages|your prompt|the prompt)\s*[;,]\s*'
+    r'(\d+)\s+(?:tokens\s+)?(?:in|for) the completion\)'
+)
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+def _completion_split_budget(error_lower: str) -> Optional[int]:
+    """window - measured prompt from the OpenAI-style parenthetical split, or None when the wording
+    is absent or the prompt alone fills the window (a genuine input overflow -> compress)."""
+    split = _COMPLETION_SPLIT_RE.search(error_lower)
+    ctx = re.search(r'maximum context length is (\d+)', error_lower)
+    if not split or not ctx:
+        return None
+    available = int(ctx.group(1)) - int(split.group(1))
+    return available if available >= 1 else None
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+_OUTPUT_CAP_SIGNALS = (
+    ("range of max_tokens should be",), ("available_tokens",), ("available tokens",),
+    ("in the output", "maximum context length"), ("requested", "output tokens"),
+    ("should be",), ("less than or equal",), ("must be",), ("exceeds model", "maximum output tokens"),
+    ("output limit",), ("maximum allowed number of output tokens",),
+    ("max_tokens is too large", "supports at most"), ("tokens from the input messages", "tokens for the completion"),
+    ("limited to",),  # Scaleway: "max_completion_tokens is limited to 16384 for <model>" (#67453)
+)
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+_INPUT_OVERFLOW_SIGNALS = (
+    "prompt is too long", "prompt too long", "input is too long", "input token",
+    "prompt length", "prompt contains", "reduce the length",
+)
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+_PARSEABLE_OUTPUT_CAP_SIGNALS = (
+    ("max_tokens", "available_tokens"), ("max_tokens", "available tokens"),
+    ("in the output", "maximum context length"),
+    ("maximum context length", "requested", "output tokens"),
+    ("maximum context length", "in the completion"), ("maximum context length", "for the completion"),
+    ("range of max_tokens should be",), ("exceeds model", "maximum output tokens"),
+    ("output limit",), ("max_tokens", "maximum allowed number of output tokens"),
+    ("max_tokens is too large", "supports at most"), ("tokens from the input messages", "tokens for the completion"),
+    ("limited to",),
+)
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+def _sglang_window_and_input(error_lower: str) -> Optional[Tuple[int, int]]:
+    """``(window, input_tokens)`` from SGLang's wording, else None; both figures are explicit there."""
+    _m_ctx = re.search(r'maximum context length of (\d+)\s*token', error_lower)
+    _m_in = re.search(r'(\d+)\s*tokens from the input messages', error_lower)
+    return (int(_m_ctx.group(1)), int(_m_in.group(1))) if _m_ctx and _m_in else None
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+def _any_phrase_group(text: str, groups: tuple) -> bool:
+    return any(all(p in text for p in group) for group in groups)
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+def _ollama_show(server_url: str, api_key: str, bare_model: str, timeout: float = 3.0, *, note_blackhole: bool = False) -> Optional[Dict[str, Any]]:
+    """Ollama ``/api/show`` JSON for ``bare_model``, or None on any failure (``note_blackhole``: connect timeouts condemn the host)."""
+    import httpx
+    try:
+        with httpx.Client(timeout=timeout, headers=_auth_headers(api_key)) as client:
+            resp = client.post(f"{server_url}/api/show", json={"name": bare_model})
+            return resp.json() if resp.status_code == 200 else None
+    except Exception as exc:
+        if note_blackhole:
+            _note_if_connect_timeout(exc, server_url)
+        return None
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+def _is_ollama_server(base_url: str, api_key: str) -> bool:
+    try:
+        # Forward the API key: a remote API-keyed endpoint answers the probe waterfall with 401s without it,
+        # and an unauthorized probe can never produce a positive verdict (#89863).
+        return detect_local_server_type(base_url, api_key=api_key) == "ollama"
+    except Exception:
+        return False
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+def _memo_local_probe(cache_key: tuple, probe: Callable[[], Optional[int]]) -> Optional[int]:
+    """Short-TTL, positive-only memo of a local probe (see _LOCAL_CTX_PROBE_CACHE): a failure during
+    a startup race must not suppress the retry once the server is up, so only truthy results memoize."""
+    now = time.monotonic()
+    cached = _LOCAL_CTX_PROBE_CACHE.get(cache_key)
+    if cached is not None and (now - cached[1]) < _LOCAL_CTX_PROBE_TTL_SECONDS:
+        return cached[0]
+    result = probe()
+    if result:
+        _LOCAL_CTX_PROBE_CACHE[cache_key] = (result, now)
+    return result
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+def _positive_int(value: Any) -> Optional[int]:
+    return int(value) if isinstance(value, (int, float)) and value else None
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+def _lmstudio_context(client, lmstudio_url: str, model: str) -> Optional[int]:
+    """LM Studio native /api/v1/models (the OpenAI-compat list omits context);
+    loaded-instance config is the runtime value."""
+    resp = client.get(f"{lmstudio_url}/api/v1/models")
+    if resp.status_code != 200:
+        return None
+    for m in resp.json().get("models", []):
+        if _model_id_matches(m.get("key", ""), model) or _model_id_matches(m.get("id", ""), model):
+            return next((ctx for ctx in (_positive_int(inst.get("config", {}).get("context_length")) for inst in m.get("loaded_instances", [])) if ctx is not None), None)
+    return None
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+def _llamacpp_context(client, server_url: str, model: str) -> Optional[int]:
+    """llama.cpp /props: the RUNTIME n_ctx, answered by the router even for a not-yet-loaded model
+    (while /v1/models has meta=null), so a lazily-loaded model doesn't fall to a family catch-all."""
+    import httpx
+    for props_path in (f"/props?model={model}", "/props"):
+        try:
+            resp = client.get(f"{server_url}{props_path}")
+        except httpx.HTTPError:
+            return None
+        if resp.status_code != 200:
+            continue
+        n_ctx = _positive_int((resp.json().get("default_generation_settings") or {}).get("n_ctx"))
+        if n_ctx is not None:
+            return n_ctx
+    return None
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+def _openai_models_list_context(client, server_url: str, model: str) -> Optional[int]:
+    """/v1/models list: match by id, else the sole model on single-model servers (llama.cpp reports a GGUF path as id)."""
+    resp = client.get(f"{server_url}/v1/models")
+    if resp.status_code != 200:
+        return None
+    models_list = resp.json().get("data", [])
+    matched = next((m for m in models_list if isinstance(m, dict) and _model_id_matches(m.get("id", ""), model)), None)
+    if matched is None and len(models_list) == 1:
+        matched = models_list[0]
+    if matched is None:
+        return None
+    # Runtime n_ctx (llama.cpp nests it under meta) beats n_ctx_train, which can exceed what the server allocates.
+    sources = [s for s in (matched, matched.get("meta") or {}) if isinstance(s, dict)]
+    for reader in (lambda src: _positive_int(src.get("n_ctx")), _context_length_from_model_payload):
+        for source in sources:
+            ctx = reader(source)
+            if ctx is not None:
+                return ctx
+    return None
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+def _codex_variant_base(model: Optional[str]) -> Optional[str]:
+    """Lowercased eligible base of a VALID ``-900k`` variant, else None (``gpt-5.5-900k`` is an invalid alias)."""
+    slug = _bare_codex_slug(model)
+    base = slug[: -len(CODEX_CONTEXT_VARIANT_SUFFIX)] if slug.endswith(CODEX_CONTEXT_VARIANT_SUFFIX) else None
+    return base if base is not None and is_codex_900k_base(base) else None
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+CODEX_UNGATED_CLIENT_VERSION = "0.0.0"
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+CODEX_MODELS_CATALOG_URL = f"https://chatgpt.com/backend-api/codex/models?client_version={CODEX_UNGATED_CLIENT_VERSION}"
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+def _validate_cached_context_length(model: str, base_url: str, cached: int, *, api_key: str = "") -> Optional[int]:
+    """Step 1 of get_model_context_length: accept, repair, or drop a persisted entry. Returns the
+    value to use, or None to fall through to live resolution. Order matters: a value must be
+    rejected as bogus before any provider-specific handling."""
+    # Drop rules: (predicate, log level, message, shown value). 0/negative is always a bug (`0 is not
+    # None` would hand the compressor a zero window); Kimi/MiniMax are underreported as 32K by stale
+    # third-party metadata; pre-catalog leftovers persisted a shorter catch-all (see _PRE_CATALOG_STALE_KEYS).
+    drop_rules = (
+        (cached <= 0, logger.warning, "Dropping non-positive cache entry %s@%s -> %s; re-resolving", cached),
+        (cached <= 32768 and _model_name_suggests_stale_32k_underreport(model), logger.info,
+         "Dropping stale cached context entry %s@%s -> %s (known 32K underreport); re-resolving via hardcoded defaults", f"{cached:,}"),
+        (_stale_pre_catalog_cache_entry(model, cached), logger.info,
+         "Dropping stale pre-catalog cache entry %s@%s -> %s; re-resolving via hardcoded defaults", f"{cached:,}"),
+    )
+    for hit, log, msg, shown in drop_rules:
+        if hit:
+            log(msg, model, base_url, shown)
+            _invalidate_cached_context_length(model, base_url)
+            return None
+    # Nous Portal: /v1/models is authoritative. Bypass (don't drop) the cache so step
+    # 5b reconciles OR-seeded entries without touching disk when the portal is down.
+    if _infer_provider_from_url(base_url) == "nous":
+        logger.debug("Bypassing persistent cache for %s@%s (Nous portal authoritative)", model, base_url)
+        return None
+
+    # For local endpoints, run the probe that respects configured Modelfile context values first.
+    # _query_local_context_length prefers num_ctx from Modelfile, while _query_ollama_api_show returns the
+    # GGUF training max first which can be larger and would create a false-safe window for compression
+    # (#63122). Non-local endpoints preserve the existing GGUF-first behavior.
+    if is_local_endpoint(base_url):
+        return _reconcile_local_cached_context_length(model, base_url, cached, api_key=api_key)
+    return cached
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+def _bedrock_probe_failed_recently(key: tuple) -> bool:
+    """Prune expired failures and check this home/endpoint/model/region's cooldown."""
+    now = time.monotonic()
+    for memo_key, failed_at in list(_BEDROCK_PROBE_FAILURE_CACHE.items()):
+        if now - failed_at >= _BEDROCK_PROBE_FAILURE_TTL_SECONDS:
+            _BEDROCK_PROBE_FAILURE_CACHE.pop(memo_key, None)
+    return key in _BEDROCK_PROBE_FAILURE_CACHE
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+def _is_bedrock_context(base_url: str, provider: str = "") -> bool:
+    return provider == "bedrock" or bool(
+        base_url and base_url_hostname(base_url).startswith("bedrock-runtime.")
+        and base_url_host_matches(base_url, "amazonaws.com")
+    )
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+def _resolve_bedrock_context_length(model: str, base_url: str) -> Optional[int]:
+    """Step 1b: Bedrock static table + one cached live probe (Bedrock exposes no context window via
+    metadata APIs); None when boto3 is absent. Only provider-confirmed windows from a probe
+    or runtime error are reused. The table answers a call, never the cache. Keys use base_url,
+    or synthetic bedrock:// when absent, consistently with provider-error writers."""
+    try:
+        from agent.bedrock_adapter import get_bedrock_context_length, probe_bedrock_context_length, resolve_bedrock_region
+    except ImportError:
+        return None  # boto3 not installed — fall through to generic resolution
+    cache_key_url = base_url or "bedrock://"
+    cached = get_cached_context_length(model, cache_key_url, bedrock_confirmed=True)
+    if cached is not None and cached > 0:
+        return cached
+    # Legacy scalars have no trustworthy source. Ignore them until a successful
+    # probe replaces them; deleting here could erase a concurrent confirmed write
+    # or reset the failure cooldown repeatedly when the cache is read-only.
+    # Region from the base_url host first, then the standard AWS chain. An empty region disables probing (table only).
+    _m = re.search(r"bedrock-runtime\.([a-z0-9-]+)\.", base_url) if base_url else None
+    region = _m.group(1) if _m else ""
+    if not region:
+        with contextlib.suppress(Exception):
+            region = resolve_bedrock_region()
+    from hermes_constants import hermes_home_key
+    memo_key = (hermes_home_key(), cache_key_url.rstrip('/'), model, region)
+    if region and not _bedrock_probe_failed_recently(memo_key):
+        probed = probe_bedrock_context_length(model, region)
+        if probed:
+            # The probe is the only authoritative source, so it is the only thing worth persisting:
+            # a table fallback written here would be served forever (this branch runs before it),
+            # and the probe would never be consulted for the model again.
+            save_provider_context_length(model, cache_key_url, probed, provider="bedrock")
+            _BEDROCK_PROBE_FAILURE_CACHE.pop(memo_key, None)  # success ends the failure window
+            return probed
+        _BEDROCK_PROBE_FAILURE_CACHE[memo_key] = time.monotonic()
+    return get_bedrock_context_length(model, probe=False)  # static table / default: answers this call only
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+def _resolve_custom_endpoint_context_length(model: str, base_url: str, api_key: str, provider: str) -> int:
+    """Steps 2-3 for a truly custom endpoint: /models, local probes, Ollama /api/show, catalog, default."""
+    context_length = _resolve_endpoint_context_length(model, base_url, api_key=api_key)
+    if context_length is not None:
+        return context_length
+    # Local endpoints: the num_ctx-aware probe first — _query_ollama_api_show is GGUF-first, which
+    # can be larger and create a false-safe compression window.
+    local_ctx = _probe_local_context_length(model, base_url, api_key, provider) if is_local_endpoint(base_url) else None
+    if local_ctx:
+        return local_ctx
+    # 2b. Ollama native /api/show (GGUF-first for non-local). Non-Ollama servers 404/405 quickly.
+    ctx = _query_ollama_api_show(model, base_url, api_key=api_key)
+    if ctx is not None:
+        _save_unless_skipped(model, base_url, ctx, provider)
+        return ctx
+    # 3. Probe-down fallback after endpoint-specific detection failed
+    logger.info(
+        "Could not detect context length for model %r at %s — defaulting to %s tokens (probe-down). "
+        "Set model.context_length in config.yaml to override.",
+        model, base_url, f"{DEFAULT_FALLBACK_CONTEXT:,}",
+    )
+    # 3b. Hardcoded catalog as a last resort: a proxied Anthropic gateway fails the probes above
+    # but its model name still matches DEFAULT_CONTEXT_LENGTHS.
+    hit = _longest_key_match(DEFAULT_CONTEXT_LENGTHS, model.lower())
+    if hit:
+        logger.info("Using hardcoded context length %s for model %r (custom endpoint, catalog match on %r)", f"{hit[1]:,}", model, hit[0])
+        return hit[1]
+    # Same silent-256K bug class as the step-9 fallback — warn here too.
+    _warn_context_length_fallback(model, base_url)
+    return DEFAULT_FALLBACK_CONTEXT
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+def _resolve_custom_codex_route_context_length(model: str, base_url: str, api_key: str, provider: str) -> int:
+    """Step 2 for a custom ``api_mode: codex_responses`` route — a Codex proxy on a generic URL.
+    The Codex OAuth table (with the opted-in ``-900k`` bump) answers first: the proxy's own /models
+    and the direct-API catalog both advertise the 1.05M direct window that Codex does not honour.
+    No live catalog probe — the route's key is the proxy's, not a ChatGPT token. Slugs the table
+    does not know take the ordinary endpoint probes."""
+    ctx, _source = _resolve_codex_oauth_context_length_with_source(model)
+    if ctx:
+        logger.info("Using Codex OAuth context length %s for model %r (codex_responses route at %s)", f"{ctx:,}", model, base_url)
+        return ctx
+    return _resolve_custom_endpoint_context_length(model, base_url, api_key, provider)
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+def _resolve_moa_context_length(model: str, custom_providers: list | None) -> Optional[int]:
+    """Step 0a: MoA virtual provider — ``model`` is a preset name, so every probe would miss. Resolve
+    the aggregator's real provider+model (references are advisory). None on any failure."""
+    try:
+        from hermes_cli.config import get_compatible_custom_providers, load_config
+        from hermes_cli.moa_config import resolve_moa_preset
+        from hermes_cli.runtime_provider import resolve_runtime_provider
+        config = load_config()
+        if custom_providers is None:
+            custom_providers = get_compatible_custom_providers(config)
+        agg = resolve_moa_preset(config.get("moa") or {}, model).get("aggregator") or {}
+        agg_provider = str(agg.get("provider") or "").strip()
+        agg_model = str(agg.get("model") or "").strip()
+        if agg_model and agg_provider and agg_provider.lower() != "moa":
+            rt = resolve_runtime_provider(requested=agg_provider, target_model=agg_model)
+            return get_model_context_length(
+                agg_model, base_url=rt.get("base_url", "") or "", api_key=rt.get("api_key", "") or "",
+                provider=rt.get("provider") or agg_provider, custom_providers=custom_providers,
+            )
+    except Exception:
+        logger.debug("MoA aggregator context-length resolution failed", exc_info=True)
+    return None
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+def _config_override_context_length(model: str, base_url: str, provider: str, custom_providers: list | None) -> Optional[int]:
+    """Steps 0b-0c: config-only overrides (never touch the network). 0b: EXPLICIT model_overrides
+    only — fill-gap _default entries apply inside lookup_models_dev_context once the catalog has
+    missed, so a _default can never preempt custom_providers or live probes. 0c: custom_providers."""
+    # This is the supported self-unblock path for models with wrong context in models.dev (#84482) and for
+    # custom/local models (#8731).
+    if provider and model:
+        with contextlib.suppress(Exception):  # fall through to other resolution paths
+            from agent.models_dev import _override_context_window
+            mo_ctx = _override_context_window(provider, model)
+            if mo_ctx is not None and mo_ctx > 0:
+                return mo_ctx
+    # 0c. custom_providers per-model override — check before any probe. This closes the gap where /model
+    # switch and display paths used to fall back to 128K despite the user having a per-model context_length
+    # set. See #15779.
+    if custom_providers and base_url and model:
+        with contextlib.suppress(Exception):  # fall through to probing
+            from hermes_cli.config import get_custom_provider_context_length
+            cp_ctx = get_custom_provider_context_length(model=model, base_url=base_url, custom_providers=custom_providers)
+            if cp_ctx:
+                return cp_ctx
+    return None
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+def _resolve_provider_aware_context_length(model: str, base_url: str, api_key: str, provider: str, effective_provider: str) -> Optional[int]:
+    """Step 5: provider-specific sources, tried in order; None when all miss."""
+    # 5a. Copilot live /models — account-specific models (claude-opus-4.6-1m) absent from
+    # models.dev, and the provider-enforced limit for the rest.
+    if effective_provider in {"copilot", "copilot-acp", "github-copilot"}:
+        with contextlib.suppress(Exception):  # fall through to models.dev
+            from hermes_cli.models import get_copilot_model_context
+            ctx = get_copilot_model_context(model, api_key=api_key)
+            if ctx:
+                return ctx
+    # 5b/5c. Nous portal and Codex OAuth (lower limits than the direct API for the same slug; its
+    # own /models is authoritative). Persist ONLY the authoritative source ("portal" / "live"): an
+    # OR-fallback or static-table value cached on a blip would be frozen in by step 1 forever.
+    sourced = {
+        "nous": lambda: _resolve_nous_context_length(model, base_url=base_url or "", api_key=api_key or "") + ("portal",),
+        "openai-codex": lambda: _resolve_codex_oauth_context_length_with_source(model, access_token=api_key or "") + ("live",),
+    }.get(effective_provider)
+    if sourced is not None:
+        ctx, source, persist_on = sourced()
+        if ctx:
+            if base_url and source == persist_on:
+                save_context_length(model, base_url, ctx)
+            return ctx
+    if effective_provider in {"gmi", "commandcode", "commandcode-anthropic"} and base_url:
+        # GMI and CommandCode expose authoritative context_length via /models (e.g. muse-spark 1M) but are
+        # not in models.dev, and as known providers they skip step 2's probe — else they fell to 256K.
+        ctx = _resolve_endpoint_context_length(model, base_url, api_key=api_key)
+        if ctx is not None:
+            return ctx
+    # 5e. Ollama native /api/show for any base_url that is not a known non-Ollama provider (there
+    # the POST always 404s and cost ~300ms on the first turn).
+    if base_url:
+        inferred = _infer_provider_from_url(base_url)
+        ctx = _query_ollama_api_show(model, base_url, api_key=api_key) if inferred is None or "ollama" in inferred else None
+        if ctx is not None:
+            _save_unless_skipped(model, base_url, ctx, provider)
+            return ctx
+    # 5f. OpenRouter live /models — authoritative for OR-routed models, so it must win over models.dev
+    # and the family catch-all (a brand-new slug would otherwise fall to the generic "claude": 200K).
+    if effective_provider == "openrouter":
+        or_ctx = (fetch_model_metadata().get(model) or {}).get("context_length")
+        # Guard against the known OpenRouter Kimi-family 32k underreport.
+        if isinstance(or_ctx, int) and or_ctx > 0 and not (or_ctx == 32768 and _model_name_suggests_kimi(model)):
+            return or_ctx
+    if effective_provider:
+        from agent.models_dev import lookup_models_dev_context
+        ctx = lookup_models_dev_context(effective_provider, model)
+        if ctx:
+            # MiniMax M3: models.dev reports 512K but actual context is 1M — prefer the hardcoded catalog.
+            catalog = DEFAULT_CONTEXT_LENGTHS.get("minimax-m3") if _model_name_suggests_minimax_m3(model) else None
+            if catalog and ctx < catalog:
+                logger.info("Rejecting models.dev context=%s for %r (MiniMax-M3 underreport); using hardcoded default %s", ctx, model, f"{catalog:,}")
+                ctx = catalog
+            return ctx
+    return None
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+CHARS_PER_TOKEN = 4
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+def _count_parts(parts: Any, types: set) -> int:
+    return sum(1 for part in parts if isinstance(part, dict) and part.get("type") in types) if isinstance(parts, list) else 0
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+_IMAGE_PART_TYPES = frozenset({"image", "image_url", "input_image"})
+
+
+# [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
+def strip_opaque_replay_items(items: Any) -> Any:
+    """``codex_reasoning_items`` with ``encrypted_content`` blanked for local token estimation.
+    The ciphertext is priced by the provider's own count, never by its bytes (a compaction
+    checkpoint alone can be 5M chars, #100611); only real usage prices it."""
+    if not isinstance(items, list):
+        return items
+    return [
+        {k: ("" if k == "encrypted_content" else v) for k, v in item.items()} if isinstance(item, dict) else item
+        for item in items
+    ]
+
