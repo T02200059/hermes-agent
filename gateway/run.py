@@ -5435,6 +5435,27 @@ async def _start_gateway_shutdown_tail(
     return _resolve_gateway_exit_verdict(runner, _signal_initiated_shutdown[0])
 
 
+async def start_gateway_diag_wrap(config=None, replace: bool = False, verbosity: Optional[int] = 0) -> bool:
+    """[owner] permanent diag wrapper: record main-task death cause to /tmp (sync write,
+    immune to the async-log swallowing that hid prior failures). Keep; do not remove."""
+    import time as _t
+    def _note(msg: str) -> None:
+        try:
+            with open("/tmp/t220/gw_diag.log", "a") as f:
+                f.write(f"{_t.strftime('%m-%d %H:%M:%S')} {msg}\n")
+        except Exception:
+            pass
+    _note("main task alive")
+    try:
+        result = await start_gateway(config, replace=replace, verbosity=verbosity)
+        _note(f"start_gateway returned {result!r}")
+        return result
+    except BaseException as e:
+        import traceback
+        _note(f"start_gateway DIED: {type(e).__name__}: {e!r:.200s}\n{traceback.format_exc()[:1500]}")
+        raise
+
+
 async def start_gateway(config: Optional[GatewayConfig] = None, replace: bool = False, verbosity: Optional[int] = 0) -> bool:
     """Start the gateway and run until interrupted; False if it failed to start (non-zero exit so
     systemd can auto-restart). ``replace`` kills any existing instance first (avoids restart-loop deadlocks)."""
