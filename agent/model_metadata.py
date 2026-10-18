@@ -4087,3 +4087,36 @@ def _estimate_tools_tokens_rough(tools: List[Dict[str, Any]]) -> int:
         _TOOLS_TOKENS_CACHE.pop(next(iter(_TOOLS_TOKENS_CACHE)), None)
     _TOOLS_TOKENS_CACHE[key] = (n, first, last, tokens)
     return tokens
+
+
+# [owner] A4-2: forward-ported from upstream — _resolve_gateway_model_context (the
+# /new banner's model-info block) imports these.
+_BOUNDARY_MATCHED_KEY_PREFIXES = ("solar-",)  # [owner] A4-2: forward-ported
+# [owner] A4-2: forward-ported — _catalog_key_matches normalises hyphenated generations.
+import re as _re_mod
+_HYPHENATED_GENERATION_RE = _re_mod.compile(
+    rf"((?:{'|'.join(map(_re_mod.escape, _BOUNDARY_MATCHED_KEY_PREFIXES))})[a-z]+)-(\d{{1,2}})(?=[-:.@]|$)")
+
+
+def _catalog_key_matches(key: str, model_lower: str) -> bool:
+    """Substring match with version separators normalised on both sides, so a relay slug like
+    ``z-ai-glm-5-3`` still hits the ``glm-5.3`` entry instead of the ``glm`` catch-all (#97398).
+    Boundary-matched families: a key must be followed by ``-:.@`` or the end, and a key ending in
+    ``-`` is the family default for bare names (``org/`` allowed) continuing with a lineup letter."""
+    if key.startswith(_BOUNDARY_MATCHED_KEY_PREFIXES):
+        model_lower = _HYPHENATED_GENERATION_RE.sub(r"\1\2", model_lower)
+        if key.endswith("-"):
+            return re.match(re.escape(key) + "[a-z]", model_lower.rsplit("/", 1)[-1]) is not None
+        return re.search(re.escape(key) + r"(?:[-:.@]|$)", model_lower) is not None
+    return key in model_lower or _normalize_model_version(key) in _normalize_model_version(model_lower)
+
+
+# [owner] A4-2: forward-ported from upstream — _resolve_gateway_model_context (the
+# /new banner's model-info block) imports these.
+def _longest_key_match(table: Dict[str, int], model_lower: str) -> Optional[Tuple[str, int]]:
+    """First ``(key, value)`` whose key is a substring of ``model_lower``, longest key first so
+    specific entries (``gpt-5.4-mini``) beat their family catch-all (``gpt-5``); ties keep table order."""
+    for key, value in sorted(table.items(), key=lambda x: len(x[0]), reverse=True):
+        if _catalog_key_matches(key, model_lower):
+            return key, value
+    return None

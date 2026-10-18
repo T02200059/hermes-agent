@@ -487,3 +487,9 @@ def refresh_catalogs() -> bool:
     except Exception:
         logger.debug("provider catalog refresh failed", exc_info=True)
     return bool(catalog)
+
+
+# [owner] A4-2: forward-ported — the gateway's model_catalog_refresh_watcher reads the interval through this.
+def refresh_interval_seconds() -> float:
+    """Return the configured catalog TTL in seconds (the gateway poll cadence)."""
+    return max(60.0, _load_catalog_config()["ttl_hours"] * 3600.0)
