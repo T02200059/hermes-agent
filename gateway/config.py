@@ -2924,3 +2924,25 @@ def _apply_env_overrides(config: GatewayConfig) -> None:
 
     for platform_config in config.platforms.values():
         platform_config.extra.pop("_enabled_explicit", None)
+
+
+# [owner] A4-2: forward-ported — gateway.config_loader (forward-ported) imports this.
+UNAUTHORIZED_DM_BEHAVIORS = {"pair", "ignore", "decline"}
+
+
+# [owner] A4-2: forward-ported — gateway.config_loader imports these.
+def _normalize_choice(value: Any, choices: set, default: str) -> str:
+    """Lower-cased *value* when it is one of *choices*, else *default*."""
+    normalized = value.strip().lower() if isinstance(value, str) else None
+    return normalized if normalized in choices else default
+
+
+# [owner] A4-2: forward-ported — gateway.config_loader imports these.
+def _dict_slot(container: dict, key: str) -> dict:
+    """Get-or-create ``container[key]`` as a dict, replacing a non-dict value with ``{}``."""
+    value = container.setdefault(key, {})
+    if not isinstance(value, dict):
+        value = {}
+        container[key] = value
+    return value
+
