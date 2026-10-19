@@ -640,10 +640,21 @@ def _clip_tool_args_for_sse(args: Any) -> dict:
         encoded = ""
     if len(encoded) <= _TOOL_ARGS_MAX_CHARS:
         return _redact_args_for_sse(out)
+    # [owner] T3-11: the slim fallback must honour the SAME wire budget as the
+    # main path. It used to clip each primary key to 4000 with no total cap, so
+    # 11 present keys encoded to ~44 KB — 7x the declared _TOOL_ARGS_MAX_CHARS.
+    # Add keys in priority order, each clipped to the remaining budget (minus a
+    # 64-char reserve for the key name and JSON punctuation), and stop once the
+    # encoded form is full. The result is provably within _TOOL_ARGS_MAX_CHARS.
     slim: Dict[str, Any] = {}
     for key in _TOOL_ARG_PRIMARY_KEYS:
-        if key in args:
-            slim[key] = _clip_jsonable_value(args[key], 4000)
+        if key not in args:
+            continue
+        used = len(json.dumps(slim, ensure_ascii=False, default=str))
+        remaining = _TOOL_ARGS_MAX_CHARS - used
+        if remaining <= 64:
+            break
+        slim[key] = _clip_jsonable_value(args[key], remaining - 64)
     return _redact_args_for_sse(slim)
 
 

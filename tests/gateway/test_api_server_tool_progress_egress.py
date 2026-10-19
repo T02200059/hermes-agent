@@ -74,6 +74,32 @@ class TestRedactionAtTheBoundary:
         assert set(out) == {"command"}
         assert SECRET not in json.dumps(out)
 
+    def test_slim_fallback_honours_the_total_budget(self):
+        """[owner] T3-11: the slim path must stay within _TOOL_ARGS_MAX_CHARS.
+
+        Every primary key carrying an oversized value used to clip each to 4000
+        with no total cap, so the encoded form reached ~7x the declared budget.
+        """
+        big = "x" * 5000
+        args = {key: big for key in api_server._TOOL_ARG_PRIMARY_KEYS}
+        out = _clip_tool_args_for_sse(args)
+        encoded = json.dumps(out, ensure_ascii=False, default=str)
+        assert len(encoded) <= api_server._TOOL_ARGS_MAX_CHARS
+
+    def test_slim_fallback_budget_holds_for_one_huge_value(self):
+        """A single primary key with a giant value is also capped."""
+        out = _clip_tool_args_for_sse({"command": "y" * 99999})
+        encoded = json.dumps(out, ensure_ascii=False, default=str)
+        assert len(encoded) <= api_server._TOOL_ARGS_MAX_CHARS
+
+    def test_slim_fallback_keeps_priority_order(self):
+        """The budget is spent on primary keys in declared order."""
+        big = "x" * 5000
+        args = {key: big for key in api_server._TOOL_ARG_PRIMARY_KEYS}
+        out = _clip_tool_args_for_sse(args)
+        first_key = api_server._TOOL_ARG_PRIMARY_KEYS[0]
+        assert first_key in out
+
     def test_redaction_precedes_the_per_value_cut(self):
         """Ordering is load-bearing, but only for the fragment case.
 
