@@ -369,7 +369,15 @@ def test_resolve_sender_profile_uses_open_id_for_bot_name_lookup():
         seen_ids.extend(bot_ids)
         return {"ou_peer": "Peer Bot"}
 
-    adapter._fetch_bot_names = _fake_fetch_bot_names
+    # [owner] bot-name lookup runs inside FeishuUserStore (adapter keeps only a thin
+    # delegate); a partial instance still materializes the store via the lazy property,
+    # so the stub must bind there — and the store needs a non-None client plus a clean
+    # name cache (the real on-disk cache may hold this fixture id from earlier runs).
+    _store = adapter._user_store
+    _store.bind_client(adapter._client)
+    _store._name_ttl.clear()
+    _store._users.clear()
+    _store._fetch_bot_names = _fake_fetch_bot_names
 
     profile = asyncio.run(
         adapter._resolve_sender_profile(
@@ -379,7 +387,9 @@ def test_resolve_sender_profile_uses_open_id_for_bot_name_lookup():
     )
 
     assert seen_ids == ["ou_peer"]
-    assert profile["user_id"] == "u_peer"
+    # [owner] primary id prefers open_id (not upstream's user_id-first) so approval
+    # callback and sender-name cache keys stay aligned (owner/feishu/sender_name_cache.py).
+    assert profile["user_id"] == "ou_peer"
     assert profile["user_name"] == "Peer Bot"
 
 

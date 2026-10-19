@@ -1872,8 +1872,19 @@ class TestSenderNameResolution(unittest.TestCase):
         adapter._client = SimpleNamespace(
             contact=SimpleNamespace(v3=SimpleNamespace(user=_ContactAPI()))
         )
+        # [owner] name resolution lives in FeishuUserStore (owner/feishu/user_store.py);
+        # its client is bound at connect() in production, so bind the stub here, and patch
+        # that module's asyncio.to_thread as well (the delegate runs in both modules).
+        adapter._user_store.bind_client(adapter._client)
+        # [owner] the store loads the REAL ~/.hermes/feishu_chat_id_cache.json; its
+        # stale-but-kept display names would satisfy the lookup without hitting the
+        # stubbed API, so clear both maps for hermetic behavior.
+        adapter._user_store._name_ttl.clear()
+        adapter._user_store._users.clear()
 
-        with patch("plugins.platforms.feishu.adapter.asyncio.to_thread", side_effect=_direct):
+        with patch("plugins.platforms.feishu.adapter.asyncio.to_thread", side_effect=_direct), patch(
+            "owner.feishu.user_store.asyncio.to_thread", side_effect=_direct
+        ):
             result = asyncio.run(adapter._resolve_sender_name_from_api("ou_bob"))
 
         self.assertEqual(result, "Bob")
@@ -1927,7 +1938,15 @@ class TestBotNameResolution(unittest.TestCase):
         async def _direct(func, *args, **kwargs):
             return func(*args, **kwargs)
 
-        with patch("plugins.platforms.feishu.adapter.asyncio.to_thread", side_effect=_direct):
+        # [owner] bot names resolve through FeishuUserStore (same rationale as the
+        # contact-API test above): bind the stub client and patch that module's to_thread.
+        adapter._user_store.bind_client(adapter._client)
+        # [owner] same disk-cache hygiene as the contact-API test above.
+        adapter._user_store._name_ttl.clear()
+        adapter._user_store._users.clear()
+        with patch("plugins.platforms.feishu.adapter.asyncio.to_thread", side_effect=_direct), patch(
+            "owner.feishu.user_store.asyncio.to_thread", side_effect=_direct
+        ):
             result = asyncio.run(adapter._resolve_sender_name_from_api("ou_peer", is_bot=True))
 
         self.assertEqual(result, "Peer Bot")

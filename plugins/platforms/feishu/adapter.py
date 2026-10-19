@@ -1864,7 +1864,7 @@ class FeishuAdapter(BasePlatformAdapter):
 
         # Env-only so adapter and gateway auth bypass share one source; yaml
         # feishu.allow_bots is bridged to this env var at config load.
-        allow_bots = os.getenv("FEISHU_ALLOW_BOTS", "none").strip().lower()
+        allow_bots = _get_scoped_secret("FEISHU_ALLOW_BOTS", "none").strip().lower()
         if allow_bots not in {"none", "mentions", "all"}:
             logger.warning(
                 "[Feishu] Unknown allow_bots=%r, falling back to 'none'. Valid: none, mentions, all.",
@@ -1873,7 +1873,7 @@ class FeishuAdapter(BasePlatformAdapter):
             allow_bots = "none"
 
         return FeishuAdapterSettings(
-            app_id=str(extra.get("app_id") or os.getenv("FEISHU_APP_ID", "")).strip(),
+            app_id=str(extra.get("app_id") or _get_scoped_secret("FEISHU_APP_ID", "")).strip(),
             app_secret=str(extra.get("app_secret") or _get_scoped_secret("FEISHU_APP_SECRET", "")).strip(),
             domain_name=str(extra.get("domain") or os.getenv("FEISHU_DOMAIN", "feishu")).strip().lower(),
             connection_mode=str(
@@ -1883,15 +1883,15 @@ class FeishuAdapter(BasePlatformAdapter):
             verification_token=str(
                 extra.get("verification_token") or _get_scoped_secret("FEISHU_VERIFICATION_TOKEN", "")
             ).strip(),
-            group_policy=os.getenv("FEISHU_GROUP_POLICY", "allowlist").strip().lower(),
+            group_policy=_get_scoped_secret("FEISHU_GROUP_POLICY", "allowlist").strip().lower(),
             allowed_group_users=frozenset(
                 item.strip()
-                for item in os.getenv("FEISHU_ALLOWED_USERS", "").split(",")
+                for item in _get_scoped_secret("FEISHU_ALLOWED_USERS", "").split(",")
                 if item.strip()
             ),
-            bot_open_id=os.getenv("FEISHU_BOT_OPEN_ID", "").strip(),
-            bot_user_id=os.getenv("FEISHU_BOT_USER_ID", "").strip(),
-            bot_name=os.getenv("FEISHU_BOT_NAME", "").strip(),
+            bot_open_id=_get_scoped_secret("FEISHU_BOT_OPEN_ID", "").strip(),
+            bot_user_id=_get_scoped_secret("FEISHU_BOT_USER_ID", "").strip(),
+            bot_name=_get_scoped_secret("FEISHU_BOT_NAME", "").strip(),
             dedup_cache_size=max(
                 32,
                 env_int("HERMES_FEISHU_DEDUP_CACHE_SIZE", _DEFAULT_DEDUP_CACHE_SIZE),
@@ -1932,11 +1932,11 @@ class FeishuAdapter(BasePlatformAdapter):
             group_rules=group_rules,
             allow_bots=allow_bots,
             allow_all_dm=any(
-                os.getenv(var, "").strip().lower() in {"true", "1", "yes"}
+                _get_scoped_secret(var, "").strip().lower() in {"true", "1", "yes"}
                 for var in ("FEISHU_ALLOW_ALL_USERS", "GATEWAY_ALLOW_ALL_USERS")
             ),
             require_mention=_to_boolean(
-                extra.get("require_mention", os.getenv("FEISHU_REQUIRE_MENTION", "true"))
+                extra.get("require_mention", _get_scoped_secret("FEISHU_REQUIRE_MENTION", "true"))
             ),
         )
 
