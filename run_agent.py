@@ -3849,6 +3849,11 @@ class AIAgent:
                 self._interrupt_requested = False
                 self._interrupt_message = None
                 self._tool_interrupt_reason = None
+                # [owner] T3-17: clear the stream-stop attribution too — leaving
+                # it set made a stale guard reason ride on the NEXT interrupt's
+                # result (a user /stop mislabelled as "degenerate").
+                self._stream_stop_reason = ""
+                self._stream_stop_latched_turn = None
                 getattr(self, "_hard_interrupt_requested", threading.Event()).clear()
                 if not preserve_redirect:
                     self._pending_redirect = None
@@ -3858,6 +3863,8 @@ class AIAgent:
             self._interrupt_requested = False
             self._interrupt_message = None
             self._tool_interrupt_reason = None
+            self._stream_stop_reason = ""  # [owner] T3-17
+            self._stream_stop_latched_turn = None  # [owner] T3-17
             getattr(self, "_hard_interrupt_requested", threading.Event()).clear()
             if not preserve_redirect:
                 self._pending_redirect = None
@@ -9460,6 +9467,15 @@ class AIAgent:
                             interrupt_result["interrupt_message"] = (
                                 interrupt_message
                             )
+                        # [owner] T3-17: surface WHY the stream stopped. This
+                        # field was written by _request_stream_stop but only ever
+                        # reached logger.warning — the structured result (and so
+                        # the relay/frontend) could not tell a degenerate-stream
+                        # guard abort from a user /stop. Diagnostic only; consumers
+                        # read it with .get() so its absence is safe.
+                        _stop_reason = getattr(self, "_stream_stop_reason", "")
+                        if _stop_reason:
+                            interrupt_result["stream_stop_reason"] = _stop_reason
                         # Conversation-loop finalizer never runs on this
                         # early return. Clear so a cached agent cannot
                         # fail-close the next turn as interrupted.

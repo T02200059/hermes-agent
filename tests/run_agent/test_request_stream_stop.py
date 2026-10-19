@@ -188,3 +188,32 @@ def test_real_stream_path_reaches_the_guard_and_aborts(agent, monkeypatch):
 
     shutdown_plugin_stream_hook_dispatcher()
     sgm.reset_state()
+
+
+def test_clear_interrupt_resets_stream_stop_reason(agent):
+    """[owner] T3-17: clear_interrupt must reset the stream-stop attribution.
+
+    Without the reset a stale guard reason ("degenerate…") survived the turn
+    boundary and would ride on the NEXT interrupt's structured result — a user
+    /stop mislabelled as a degenerate-stream abort.
+    """
+    assert agent._request_stream_stop(reason="degenerate stream", turn_id="turn-1") is True
+    assert agent._stream_stop_reason == "degenerate stream"
+
+    agent.clear_interrupt()
+
+    assert getattr(agent, "_stream_stop_reason", None) == ""
+    assert getattr(agent, "_stream_stop_latched_turn", None) is None
+
+
+def test_stale_reason_does_not_ride_the_next_user_interrupt(agent):
+    """[owner] T3-17 leak scenario: guard stop on turn N, user stop on turn N+1
+    — the user interrupt must carry no stream-stop reason."""
+    assert agent._request_stream_stop(reason="degenerate", turn_id="turn-1") is True
+    agent.clear_interrupt()  # turn boundary
+
+    # next turn: user /stop (does not go through _request_stream_stop)
+    agent._interrupt_requested = True
+    agent._interrupt_message = "user pressed stop"
+
+    assert getattr(agent, "_stream_stop_reason", "") == ""
