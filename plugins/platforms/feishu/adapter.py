@@ -4448,11 +4448,13 @@ class FeishuAdapter(BasePlatformAdapter):
             return
         existing.media_urls.extend(event.media_urls)
         existing.media_types.extend(event.media_types)
+        existing.media_text_inlined.extend(event.media_text_inlined)
         if event.text:
             existing.text = self._merge_caption(existing.text, event.text)
         existing.timestamp = event.timestamp
         if event.message_id:
             existing.message_id = event.message_id
+            existing.source.message_id = event.message_id
         self._schedule_media_batch_flush(key)
 
     def _schedule_media_batch_flush(self, key: str) -> None:
@@ -4773,10 +4775,14 @@ class FeishuAdapter(BasePlatformAdapter):
             return
 
         existing.text = next_text
+        existing.media_urls.extend(event.media_urls)
+        existing.media_types.extend(event.media_types)
+        existing.media_text_inlined.extend(event.media_text_inlined)
         existing._last_chunk_len = chunk_len  # type: ignore[attr-defined]
         existing.timestamp = event.timestamp
         if event.message_id:
             existing.message_id = event.message_id
+            existing.source.message_id = event.message_id
         self._pending_text_batch_counts[key] = next_count
         self._schedule_text_batch_flush(key)
 
