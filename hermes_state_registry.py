@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import contextlib
 from pathlib import Path
 from typing import TYPE_CHECKING, Dict, Optional, Tuple
 
@@ -237,6 +238,51 @@ def release(db: "SessionDB") -> bool:
     return True
 
 
+def close_all_under(directory: str | Path) -> int:
+    """Force-close every shared SessionDB whose file lives under *directory*; returns the count.
+
+    # [owner] A5-2b: forward-ported from upstream 9573f44ca5 but WITHOUT the
+    # _TeardownBarrier wait family (#102827) -- our registry predates that
+    # generation-aware teardown machinery, so this returns after admitting
+    # retirement without waiting for in-flight drains. The caller
+    # (run_profile_reconcile profile delete) wraps this in _log_suppressed and
+    # the subsequent rmtree surfaces any handle that is still open.
+    """
+    try:
+        root = Path(directory).expanduser().resolve()
+    except OSError:
+        root = Path(directory).expanduser()
+    closed = 0
+    with _lock:
+        generations = [
+            generation
+            for generation in list(_generations.values()) + list(_retired.values())
+            if _path_is_under(generation.path, root)
+        ]
+        for generation in generations:
+            generation.retired = True
+            if _generations.get(generation.path) is generation:
+                _generations.pop(generation.path, None)
+            _retired.pop(id(generation.db), None)
+    for generation in generations:
+        _teardown(generation.db)
+        closed += 1
+    return closed
+
+
+def _path_is_under(path: Path, root: Path) -> bool:
+    """True when *path* is *root* or a file inside it (normcase, resolved)."""
+    import os as _os
+
+    try:
+        path_key = _os.path.normcase(str(path.resolve()))
+        root_key = _os.path.normcase(str(root.resolve()))
+    except OSError:
+        path_key = _os.path.normcase(str(path))
+        root_key = _os.path.normcase(str(root))
+    return path_key == root_key or path_key.startswith(root_key + _os.sep)
+
+
 def close_all() -> int:
     """Close every shared SessionDB in this process, regardless of refcount.
 
@@ -257,6 +303,31 @@ def close_all() -> int:
         _teardown(generation.db)
         closed += 1
     return closed
+
+
+
+@contextlib.contextmanager
+def borrow_live_shared_session_dbs() -> Iterator[List["SessionDB"]]:
+    """Borrow live handles with registry references pinned for the whole block.
+
+    Maintenance must not operate on the unowned snapshot returned by
+    :func:`live_shared_session_dbs`: the last real owner could otherwise
+    release and physically close the connection between the snapshot and the
+    maintenance call. Each borrowed generation gets one temporary reference;
+    the ``finally`` block releases it even when maintenance raises.
+    """
+    with _lock:
+        borrowed_generations = [
+            generation for generation in _generations.values() if not generation.retired
+        ]
+        borrowed = [generation.db for generation in borrowed_generations]
+        for generation in borrowed_generations:
+            generation.refcount += 1
+    try:
+        yield borrowed
+    finally:
+        for db in reversed(borrowed):
+            release(db)
 
 
 def stats() -> Dict[str, int]:
