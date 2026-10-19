@@ -46,6 +46,22 @@ from plugins.platforms.feishu.adapter import FeishuAdapter
 # Helpers
 # ---------------------------------------------------------------------------
 
+def _assert_fail_card(response, reason: str) -> None:
+    """[owner] 失败点击给**显式失败卡**，不是上游的空响应。
+
+    依据：``owner/feishu/approval.py::handle_approval_card_action`` 的 docstring
+    （"Failure paths return a frozen error CallBackCard (not an empty response) so the
+    click is never silent."）与 owner 规格 ``tests/owner/test_feishu_approval_fail_card.py``。
+    上游版测试此处断言 ``response.card is None``，是上游语义；本 fork 刻意不同。
+    """
+    from agent.i18n import t
+
+    assert response is not None, "callback 必须回应（否则客户端一直转圈）"
+    assert response.card is not None, "失败点击必须给失败卡（我方规格）"
+    card = response.card.data
+    assert card["header"]["title"]["content"] == t(f"approval.feishu_fail_{reason}_title")
+
+
 def _make_adapter() -> FeishuAdapter:
     """Create a FeishuAdapter with mocked internals."""
     config = PlatformConfig(enabled=True)
@@ -88,7 +104,11 @@ class TestFeishuExecApproval:
     """Test send_exec_approval sends an interactive card."""
 
     @pytest.mark.asyncio
-    async def test_sends_interactive_card(self):
+    async def test_sends_interactive_card(self, monkeypatch):
+        # [owner] 「Always」按钮受 `approval.allow_permanent` 门控（禁用时只给
+        # once/session/deny，并在正文明示 `feishu_permanent_disabled`）。本测试断言的是
+        # **四按钮形态**，故显式开启该门。
+        monkeypatch.setattr("owner.feishu.approval.get_allow_permanent", lambda: True)
         adapter = _make_adapter()
 
         mock_response = SimpleNamespace(
@@ -382,8 +402,7 @@ class TestCardActionCallbackResponse:
         with patch("asyncio.run_coroutine_threadsafe") as mock_submit:
             response = adapter._on_card_action_trigger(data)
 
-        assert response is not None
-        assert response.card is None
+        _assert_fail_card(response, "unauthorized")
         mock_submit.assert_not_called()
 
     def test_rejects_approval_click_when_group_policy_open(self, _patch_callback_card_types):
@@ -406,8 +425,7 @@ class TestCardActionCallbackResponse:
         with patch("asyncio.run_coroutine_threadsafe") as mock_submit:
             response = adapter._on_card_action_trigger(data)
 
-        assert response is not None
-        assert response.card is None
+        _assert_fail_card(response, "unauthorized")
         mock_submit.assert_not_called()
 
 
@@ -558,8 +576,7 @@ class TestCardActionCallbackResponse:
         with patch("asyncio.run_coroutine_threadsafe") as mock_submit:
             response = adapter._on_card_action_trigger(data)
 
-        assert response is not None
-        assert response.card is None
+        _assert_fail_card(response, "unauthorized")
         mock_submit.assert_not_called()
         assert 24 in adapter._approval_state
 
@@ -595,7 +612,9 @@ class TestCardActionCallbackResponse:
         adapter._loop = MagicMock()
         adapter._loop.is_closed = MagicMock(return_value=False)
         adapter._admins = set()
-        adapter._allowed_group_users = set()
+        # [owner] 让**鉴权**门放行（否则会先撞 unauthorized，测不到 chat 校验这一支）；
+        # 本例要验证的是「卡被转发到别的会话」由 chat 校验拒绝。
+        adapter._allowed_group_users = {"ou_dm_user"}
         adapter._approval_state[26] = {
             "session_key": "sess-26",
             "message_id": "msg-26",
@@ -610,8 +629,7 @@ class TestCardActionCallbackResponse:
         with patch("asyncio.run_coroutine_threadsafe") as mock_submit:
             response = adapter._on_card_action_trigger(data)
 
-        assert response is not None
-        assert response.card is None
+        _assert_fail_card(response, "chat_mismatch")
         mock_submit.assert_not_called()
         assert 26 in adapter._approval_state
 

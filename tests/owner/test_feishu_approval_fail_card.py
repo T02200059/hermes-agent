@@ -92,7 +92,16 @@ def test_handle_missing_approval_id_returns_fail_card(monkeypatch):
     assert resp.card.data["header"]["template"] == "red"
 
 
-def test_handle_unauthorized_group_policy(monkeypatch):
+def test_handle_unauthorized_operator(monkeypatch):
+    """Out-of-allowlist operator ⇒ 红卡且不弹 state。
+
+    注意：审批路径**不再**过 `_allow_group_message`（群策略门问的是「此人能否在这个群说话」，
+    而不是「此人能否批这次审批」；group_policy=open 时它对谁都返回 True，而空 allowlist 的
+    DM 配对模式又会被它误杀 —— 见 a89706e4cb / #96045）。授权唯一入口是
+    `_is_interactive_operator_authorized`（admins ∪ allowed_group_users，通配 `*` 与
+    空 allowlist 保持放行语义）。
+    """
+
     class FakeCallBackCard:
         def __init__(self):
             self.type = None
@@ -117,8 +126,7 @@ def test_handle_unauthorized_group_policy(monkeypatch):
     monkeypatch.setattr(builtins, "__import__", import_mock)
 
     adapter = MagicMock()
-    adapter._allow_group_message.return_value = False
-    adapter._is_interactive_operator_authorized.return_value = True
+    adapter._is_interactive_operator_authorized.return_value = False
 
     ctx = fa.FeishuApprovalContext()
     aid = ctx.next_id()

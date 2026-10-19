@@ -288,13 +288,11 @@ def handle_approval_card_action(
         open_id=open_id,
         user_id=str(getattr(operator, "user_id", "") or ""),
     )
-    if not adapter._allow_group_message(sender_id, state.get("chat_id", ""), is_bot=False):
-        logger.warning(
-            "[Feishu] Unauthorized approval click by %s (group policy)",
-            open_id or "<unknown>",
-        )
-        return _fail("unauthorized", command)
-
+    # Authorize on the OPERATOR allowlist only (admins ∪ allowed_group_users, wildcard and
+    # the empty pairing-mode allowlist keep their allow semantics). A group-policy gate here
+    # would be the wrong question — "may this sender chat in this group?" — and with
+    # group_policy=open it answers True for everyone (see a89706e4cb / #96045), while the
+    # empty-allowlist DM paired mode must still let the card recipient act.
     if not adapter._is_interactive_operator_authorized(open_id):
         logger.warning(
             "[Feishu] Unauthorized approval click by %s for approval %s "
