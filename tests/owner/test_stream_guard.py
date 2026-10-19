@@ -334,3 +334,50 @@ def test_malformed_delta_is_ignored(harness):
     sg.observe(delta=None, request_stop=None)
     sg.observe(delta="", request_stop=None)
     sg.observe(delta=123, request_stop=None)
+
+
+def test_s3_solo_message_not_self_contradictory():
+    """[owner] T3-16: the s3_solo hard-guard trip must not print the vote
+    threshold wording.
+
+    S3 trips on ONE signal by design (the official repetition guard, 100%
+    precision on this repo's real incidents), so votes(1) < vote_threshold(2)
+    yet the guard fires. The old message said "命中 1 项信号（阈值 2）", which
+    reads as "didn't reach the threshold but tripped anyway" — self-
+    contradictory and misleading during triage. Drive the real evaluate_window
+    on a pure-repeat window (S1/S2 = 0, S3 alone) and pin the honest wording.
+    """
+    sig = sg.evaluate_window(_REPEAT_TEXT[-4096:], dict(sg.DEFAULTS))
+    # precondition: this really is the s3_solo path
+    assert sig["s3_no_progress"] == 1
+    assert sig["trip"] is True
+    assert sig["s3_solo_trip"] is True
+    assert sig["votes"] < int(sg.DEFAULTS["vote_threshold"])
+
+    msg = sg._build_message(
+        sig, dict(sg.DEFAULTS), kind="output", model="m",
+        interrupted=True, stopped=True, action="interrupt",
+    )
+    # the contradictory vote-threshold framing must be gone on this path
+    assert "阈值 2" not in msg
+    assert "硬护栏" in msg
+
+
+def test_vote_path_message_keeps_threshold_wording():
+    """[owner] T3-16 negative: a genuine vote-threshold trip keeps the
+    "命中 N 项信号（阈值 M）" wording — only the s3_solo path changes."""
+    sig = {
+        "s1_marker_rate": 5.0,
+        "s2_signature_multiple": 3.0,
+        "s3_no_progress": 0,
+        "votes": 2,
+        "trip": True,
+        "s3_solo_trip": False,
+        "window_chars": 8000,
+    }
+    msg = sg._build_message(
+        sig, dict(sg.DEFAULTS), kind="output", model="m",
+        interrupted=True, stopped=True, action="interrupt",
+    )
+    assert "命中 2 项信号（阈值 2）" in msg
+    assert "硬护栏" not in msg

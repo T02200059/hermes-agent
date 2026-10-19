@@ -210,6 +210,10 @@ def evaluate_window(buf: str, cfg: dict) -> dict:
         "s3_no_progress": 0,
         "votes": 0,
         "trip": False,
+        # [owner] T3-16: set only on the s3_solo hard-guard path, so the user
+        # message can tell it apart from a vote-threshold trip (which the
+        # "hit N of threshold M" wording describes). Never set on the vote path.
+        "s3_solo_trip": False,
     }
     if kb <= 0:
         return out
@@ -270,6 +274,7 @@ def evaluate_window(buf: str, cfg: dict) -> dict:
         # 最常见的一类。故 S3 命中即触发。
         if out["s3_no_progress"] and bool(cfg.get("s3_solo", DEFAULTS["s3_solo"])):
             out["trip"] = True
+            out["s3_solo_trip"] = True  # [owner] T3-16
             return out
         out["trip"] = votes >= int(cfg.get("vote_threshold", DEFAULTS["vote_threshold"]))
     except Exception:
@@ -308,13 +313,21 @@ def _build_message(sig: dict, cfg: dict, *, kind: str, model: str, interrupted: 
         "灰度观察模式，本轮未中止。" if action != "interrupt"
         else "中止请求未被采纳（轮次可能已结束，或已有其它中断）。"
     )
+    # [owner] T3-16: the s3_solo hard-guard path trips on ONE signal by design
+    # (S3 = the official repetition guard, 100% precision on this repo's real
+    # incidents), so the vote-threshold wording ("hit 1 of threshold 2") would
+    # read as self-contradictory. State the actual trigger path instead.
+    if sig.get("s3_solo_trip"):
+        trigger = "零进展硬护栏命中（S3 复读检测，不经投票阈值）"
+    else:
+        trigger = f"命中 {sig['votes']} 项信号（阈值 {cfg.get('vote_threshold', 2)}）"
     return (
         f"⚠️ [stream-guard] 检测到生成退化（思考/输出阶段边界循环），{verdict}\n"
         f"   判定：阶段终止语 {sig['s1_marker_rate']:.1f}/KB、"
         f"风格签名 ×{sig['s2_signature_multiple']:.1f}"
         f"（基线 {cfg.get('signature_baseline_per_kb', 1.0)}/KB）、"
         f"零进展 {sig['s3_no_progress']}；"
-        f"命中 {sig['votes']} 项信号（阈值 {cfg.get('vote_threshold', 2)}）\n"
+        f"{trigger}\n"
         f"   窗口 {sig['window_chars']} 字符；通道 {kind}；模型 {model or '-'}"
         + ("；本轮生成已被中断。" if interrupted else "")
     )
