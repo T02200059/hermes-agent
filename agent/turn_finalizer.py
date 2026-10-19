@@ -475,6 +475,12 @@ def finalize_turn(
                     and _last.get("content") == _pre_transform_response
                 ):
                     _last["content"] = final_response
+                    # [owner] T3-14: complete the mirror of
+                    # _fill_assistant_tail_content — it also stamps the
+                    # creation timestamp (idempotent: an existing one is kept),
+                    # so a repaired blank tail row never reaches the flush
+                    # without a timeline anchor.
+                    stamp_message_timestamp(_last)
                     _last.pop(_DB_PERSISTED_MARKER, None)
                     agent._db_flush_scan_prefix = None
 

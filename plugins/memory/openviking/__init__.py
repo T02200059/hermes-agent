@@ -2372,11 +2372,20 @@ class OpenVikingMemoryProvider(MemoryProvider):
         """
         if not value:
             return ""
+        # [owner] T3-13: '.' and '..' are URI path-segment reserved relative
+        # references — a peer_id is spliced straight into URL paths, so those
+        # two exact values would change resource-location semantics. They match
+        # the charset whitelist, so exclude them explicitly and fall through to
+        # the ext-<sha1> form (same route as every other illegal value).
         slug = value.strip().lower()
-        if re.fullmatch(r"[a-z0-9_.@-]+", slug):
+        if slug not in (".", "..") and re.fullmatch(r"[a-z0-9_.@-]+", slug):
             return slug
         mapped = cls._KNOWN_USER_SLUGS.get(value.strip())
-        if mapped and re.fullmatch(r"[a-z0-9_.@-]+", mapped):
+        if (
+            mapped
+            and mapped not in (".", "..")
+            and re.fullmatch(r"[a-z0-9_.@-]+", mapped)
+        ):
             return mapped
         digest = hashlib.sha1(value.encode("utf-8")).hexdigest()[:10]
         return f"ext-{digest}"

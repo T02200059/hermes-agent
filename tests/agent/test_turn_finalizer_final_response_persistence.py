@@ -409,3 +409,50 @@ def test_delivery_only_reasoning_excerpt_does_not_fill_blank_assistant(monkeypat
         for m in result["messages"]
     )
 
+
+
+def test_transform_hook_sync_block_stamps_timestamp(monkeypatch):
+    """[owner] T3-14: the C2 transform-sync block must mirror
+    ``_fill_assistant_tail_content`` — including ``stamp_message_timestamp``.
+
+    Without the stamp, a blank tail row repaired by the hook sync reaches the
+    flush with ``timestamp=None`` and the transcript loses its timeline anchor.
+    """
+    # The transform hook lives on hermes_cli.lifecycle (not .plugins).
+    monkeypatch.setattr(
+        "hermes_cli.lifecycle.invoke_hook",
+        lambda *_a, **_kw: ["TRANSFORMED answer."],
+    )
+    agent = FakeAgent()
+    messages = [
+        {"role": "user", "content": "q"},
+        {
+            "role": "assistant",
+            "content": "Original answer.",   # tail matches pre-transform text
+            "tool_calls": [
+                {"id": "t1", "type": "function",
+                 "function": {"name": "f", "arguments": "{}"}}
+            ],
+            "_db_persisted": True,
+        },
+    ]
+
+    result = finalize_turn(
+        agent,
+        final_response="Original answer.",   # non-empty → hook fires; sync matches the tail
+        api_call_count=3,
+        interrupted=False,
+        failed=False,
+        messages=messages,
+        conversation_history=[],
+        effective_task_id="t",
+        turn_id="tid",
+        user_message="q",
+        original_user_message="q",
+        _should_review_memory=False,
+        _turn_exit_reason="text_response(final)",
+    )
+
+    tail = messages[-1]
+    assert tail["content"] == "TRANSFORMED answer.", "C2 sync block did not fire"
+    assert isinstance(tail.get("timestamp"), float), "C2 sync must stamp the timestamp"

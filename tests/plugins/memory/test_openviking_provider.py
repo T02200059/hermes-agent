@@ -1931,6 +1931,12 @@ def _peer_slug_cases():  # [owner] peer_id slug 化契约测试
         ("John.Doe@ex-1", "john.doe@ex-1"),  # 天然合法 → 原样小写
         ("  yangtb ", "yangtb"),             # 空白清洗
         ("", ""),                            # 空值
+        # [owner] T3-13: '.' / '..' are URI path-segment reserved values — they
+        # match the charset whitelist but must fall through to ext-<sha1>.
+        (".", "ext-" + hashlib.sha1(b".").hexdigest()[:10]),
+        ("..", "ext-" + hashlib.sha1(b"..").hexdigest()[:10]),
+        ("...", "..."),                      # not a reserved value → passes
+        ("../etc", "ext-" + hashlib.sha1("../etc".encode()).hexdigest()[:10]),
     ]
 
 
