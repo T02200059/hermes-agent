@@ -4201,6 +4201,10 @@ class FeishuAdapter(BasePlatformAdapter):
             thread_id=thread_id,
             user_id_alt=sender_profile["user_id_alt"],
             is_bot=is_bot,
+            # [owner] A4-3d: carry the inbound message_id into the session source
+            # (upstream 6f7847bbd3) — reply anchors and slash-command thread checks
+            # read source.message_id, not event.message_id.
+            message_id=message_id,
         )
         normalized = MessageEvent(
             text=text,
@@ -4552,8 +4556,9 @@ class FeishuAdapter(BasePlatformAdapter):
             default_name=preferred_name,
             default_ext=default_ext,
         )
-        cached_path = cache_document_from_bytes(body, filename)
-        return cached_path, filename
+        # [owner] A4-3d: offload the disk cache write off the event loop
+        # (upstream cb0b66c161); the async wrapper is already imported above.
+        return await cache_document_from_bytes_async(body, filename), filename
 
     @staticmethod
     def _guess_remote_extension(url: str, *, default: str) -> str:

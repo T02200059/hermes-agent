@@ -968,7 +968,9 @@ class TestAdapterBehavior(unittest.TestCase):
         adapter._dispatch_inbound_event.assert_awaited_once()
         event = adapter._dispatch_inbound_event.await_args.args[0]
         self.assertEqual(event.message_type, MessageType.TEXT)
-        self.assertEqual(event.source.user_id, "u_user")  # tenant-scoped user_id preferred over app-scoped open_id
+        # [owner] primary id prefers open_id over upstream's tenant-first order so approval
+        # callback and sender-name cache keys stay aligned (owner/feishu/sender_name_cache.py).
+        self.assertEqual(event.source.user_id, "ou_user")
         self.assertEqual(event.source.user_name, "张三")
         self.assertEqual(event.source.user_id_alt, "on_union")
         self.assertEqual(event.source.chat_name, "Feishu DM")
