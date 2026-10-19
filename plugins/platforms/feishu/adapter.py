@@ -48,6 +48,7 @@ user is seen through different apps in the future.
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import collections
 import concurrent.futures
 import hashlib
@@ -2051,9 +2052,15 @@ class FeishuAdapter(BasePlatformAdapter):
             return executor
 
     async def _run_blocking(self, func, *args):
-        """Run a blocking Feishu SDK call on the adapter-owned thread pool."""
+        """Run a blocking Feishu SDK call on the adapter-owned thread pool.
+
+        ``contextvars.copy_context().run`` mirrors ``asyncio.to_thread``: the worker sees the
+        caller's profile HERMES_HOME override / secret scope (multiplexed dedup flush, thread
+        lookup), which a bare ``run_in_executor`` does not carry.
+        """
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(self._get_sdk_executor(), func, *args)
+        return await loop.run_in_executor(
+            self._get_sdk_executor(), contextvars.copy_context().run, func, *args)
 
     def _shutdown_sdk_executor(self) -> None:
         """Stop the adapter-owned SDK executor without touching the loop default."""
@@ -3014,7 +3021,7 @@ class FeishuAdapter(BasePlatformAdapter):
             return
 
         message_id = getattr(message, "message_id", None)
-        if not message_id or self._is_duplicate(message_id):
+        if not message_id or await self._is_duplicate(message_id):
             logger.debug("[Feishu] Dropping duplicate/missing message_id: %s", message_id)
             return
 
@@ -5589,21 +5596,32 @@ class FeishuAdapter(BasePlatformAdapter):
         except OSError:
             logger.warning("[Feishu] Failed to persist dedup state to %s", self._dedup_state_path, exc_info=True)
 
-    def _is_duplicate(self, message_id: str) -> bool:
-        now = time.time()
-        ttl = _FEISHU_DEDUP_TTL_SECONDS
+    async def _is_duplicate(self, message_id: str) -> bool:
+        now, ttl = time.time(), _FEISHU_DEDUP_TTL_SECONDS
         with self._dedup_lock:
             seen_at = self._seen_message_ids.get(message_id)
             if seen_at is not None and (ttl <= 0 or now - seen_at < ttl):
                 return True
-            # Record with current wall-clock timestamp so TTL works across restarts.
-            self._seen_message_ids[message_id] = now
+            self._seen_message_ids[message_id] = now  # wall-clock so TTL survives restarts
             self._seen_message_order.append(message_id)
             while len(self._seen_message_order) > self._dedup_cache_size:
-                stale = self._seen_message_order.pop(0)
-                self._seen_message_ids.pop(stale, None)
-            self._persist_seen_message_ids()
-            return False
+                self._seen_message_ids.pop(self._seen_message_order.pop(0), None)
+        # atomic_json_write() fsyncs, and this runs on the event loop for every inbound
+        # message; offload the flush onto the adapter-owned pool (the loop's default executor
+        # may already be torn down by a dead background loop, which used to wedge every
+        # inbound message in the dedup gate — #111020). The lock keeps flushes in mutation
+        # order: the snapshot is taken under _dedup_lock, the write itself is not.
+        async with self._dedup_persist_lock_or_create():
+            await self._run_blocking(self._persist_seen_message_ids)
+        return False
+
+    def _dedup_persist_lock_or_create(self) -> asyncio.Lock:
+        # Tests build bare adapters via object.__new__ and install dedup state by hand;
+        # create the lock lazily so those fixtures keep working.
+        lock = getattr(self, "_dedup_persist_lock", None)
+        if lock is None:
+            lock = self._dedup_persist_lock = asyncio.Lock()
+        return lock
 
     # =========================================================================
     # Outbound payload construction and send pipeline
