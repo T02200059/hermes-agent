@@ -1380,7 +1380,9 @@ class TestAdapterBehavior(unittest.TestCase):
 
         with patch.object(
             adapter, "truncate_message", return_value=[first_chunk, second_chunk],
-        ), patch("plugins.platforms.feishu.adapter.asyncio.to_thread", side_effect=_direct):
+        ), patch("plugins.platforms.feishu.adapter.asyncio.to_thread", side_effect=_direct), patch(
+            "owner.feishu.auto_card.get_auto_card_threshold", return_value=0,
+        ):
             result = asyncio.run(
                 adapter.send(
                     chat_id="oc_chat",
@@ -1431,7 +1433,12 @@ class TestAdapterBehavior(unittest.TestCase):
             "后续说明仍应保留。"
         )
 
-        with patch("plugins.platforms.feishu.adapter.asyncio.to_thread", side_effect=_direct):
+        with patch("plugins.platforms.feishu.adapter.asyncio.to_thread", side_effect=_direct), patch(
+            "owner.feishu.auto_card.get_auto_card_threshold", return_value=0,
+        ):
+            # [owner] auto-card reads the real ~/.hermes/config.yaml (streaming flag),
+            # which env-clearing cannot isolate; disable it so this upstream test pins
+            # the post-row semantics it was written for.
             result = asyncio.run(
                 adapter.send(
                     chat_id="oc_chat",
