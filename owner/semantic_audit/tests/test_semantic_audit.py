@@ -949,3 +949,63 @@ def test_unreconciled_tool_names_excludes_classified_tools():
 
     unknown = set(unreconciled_tool_names())
     assert not (unknown & classified_tool_names())
+
+
+# ---------------------------------------------------------------------------
+# [owner] T3-6 / T3-7: hardline comment-gap + gate-input sensitive paths
+# ---------------------------------------------------------------------------
+
+
+def test_detector_drop_table_with_sql_comment_gap_is_hardline():
+    """[owner] T3-6: comment insertion between DROP and its object must not bypass."""
+    from owner.semantic_audit.detector import classify_tool_call
+
+    for cmd in (
+        "drop /*x*/ table users",
+        "DROP -- note\n TABLE users",
+        "drop\ntable users",
+        "truncate /*x*/ table t",
+        "truncate \n-- c\ntable t",
+    ):
+        c = classify_tool_call(_tc("1", "terminal", {"command": cmd}))
+        assert c.tier == "hardline", f"{cmd!r} → {c.tier}"
+
+
+def test_detector_drop_plain_english_not_hardline():
+    """[owner] T3-6 negative: ordinary English containing 'drop' stays quiet."""
+    from owner.semantic_audit.detector import classify_tool_call
+
+    c = classify_tool_call(_tc("1", "terminal", {"command": "drop the tablecloth"}))
+    assert c.tier != "hardline"
+
+
+def test_detector_gate_inputs_are_sensitive_paths():
+    """[owner] T3-7: the gate's own config/auth inputs escalate as sensitive."""
+    from owner.semantic_audit.detector import _is_sensitive_path
+
+    for path in (
+        "/home/u/.hermes/config.yaml",
+        "config.yaml",
+        "/root/.hermes/patch.yaml",
+        "owner/semantic_audit/detector.py",
+        "owner/gateway/ldap_auth.py",
+        "/x/.hermes/ldap_identity_cache.json",
+    ):
+        assert _is_sensitive_path(path), path
+
+    for path in (
+        "/tmp/config.yaml.bak",
+        "src/myconfig.yamlx",
+        "owner/other/mod.py",
+    ):
+        assert not _is_sensitive_path(path), path
+
+
+def test_detector_write_config_yaml_is_tier1():
+    """[owner] T3-7 end-to-end: writing the gate's config file escalates."""
+    from owner.semantic_audit.detector import classify_tool_call
+
+    c = classify_tool_call(
+        _tc("1", "write_file", {"path": "/home/u/.hermes/config.yaml", "content": "x"})
+    )
+    assert c.tier == "tier1"

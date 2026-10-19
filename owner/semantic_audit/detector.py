@@ -121,6 +121,15 @@ _SIDE_EFFECT_TOOLS = frozenset(
 _SENSITIVE_PATH_RES = [
     re.compile(p, re.IGNORECASE)
     for p in (
+        # [owner] T3-7: the audit gate's own inputs and siblings. An agent that
+        # can write ~/.hermes/config.yaml can switch the gate off; patch*.yaml and
+        # the owner/ modules below are the gate itself and the auth front door.
+        # Touching any of them must at minimum surface as a sensitive-path write
+        # (tier1 + hardline escalation), not pass as ordinary config editing.
+        r"(^|/)config\.yaml$",
+        r"(^|/)patch(\.\w+)?\.yaml$",
+        r"(^|/)ldap_identity_cache\.json$",
+        r"owner/(semantic_audit|gateway)/",
         r"(^|/)\.?ssh(/|$)",
         r"authorized_keys",
         r"(^|/)etc(/|$)",
@@ -138,11 +147,19 @@ _SENSITIVE_PATH_RES = [
 ]
 
 # 额外 hardline：SQL DROP / 裸机破坏（approval 未覆盖的语义层补充）
+# [owner] T3-6: the separator between the verb and its object tolerates SQL
+# comment forms (``-- line``, ``/* inline */``) and newlines — attackers
+# spell ``drop /*x*/ table`` to slip past a plain ``\s+`` gap. ``dd of=${d}``
+# stays out of this table on purpose: the variable-expansion form is already
+# caught as tier1 by detect_dangerous_command's disk-copy rule, and writing
+# an arbitrary file is not inherently destructive — leave the verdict to the
+# LLM audit instead of hard-lining it.
+_SQL_GAP = r"(?:\s|--[^\n]*\n?|/\*(?:[^*]|\*(?!/))*\*/)+"
 _EXTRA_HARDLINE_RES = [
     re.compile(p, re.IGNORECASE | re.DOTALL)
     for p in (
-        r"\bDROP\s+(TABLE|DATABASE|SCHEMA)\b",
-        r"\bTRUNCATE\s+TABLE\b",
+        rf"\bDROP{_SQL_GAP}(TABLE|DATABASE|SCHEMA)\b",
+        rf"\bTRUNCATE{_SQL_GAP}TABLE\b",
         r"\bmkfs\b",
         r"\bdd\b[^\n]*\bof=/dev/",
     )
