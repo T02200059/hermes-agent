@@ -727,3 +727,62 @@ class TestStopRestoresLazyCallbacks:
             assert agent.tool_progress_callback is foreign
 
         asyncio.run(_case())
+
+
+class TestIdentityRekeyLatch:
+    """[owner] T3-15: the rekey latch must wait for a real turn id.
+
+    Scheme ① can resolve the agent before its turn starts. Latching on an
+    empty turn id rekeyed the tracker to ``sid|`` and froze it there, so every
+    later on_stream_delta lookup (keyed ``sid|turn``) missed for the whole
+    turn — deltas lost, silence timer inflated.
+    """
+
+    def test_empty_turn_id_does_not_latch(self):
+        agent = FakeAgent()
+        agent._current_turn_id = None
+        runner = FakeRunner(agent)
+        runner.adapter = FakeAdapter()
+        expl = ProgressExplainer(
+            runner=runner,
+            agent=None,
+            agent_holder=[agent],
+            source=_source(),
+            session_key="sk",
+            turn_ctx=SimpleNamespace(message="m", _cleanup_msg_ids=[]),
+            executor_ref=lambda: None,
+        )
+        expl._cfg = _full_cfg()
+        expl._sync_identity_and_callbacks()
+        assert expl._identity_resolved is False, "empty turn id must not latch"
+
+    def test_rekey_happens_once_turn_id_arrives(self):
+        from owner.progress_explainer import dispatcher as _d
+
+        agent = FakeAgent()
+        agent._current_turn_id = None
+        runner = FakeRunner(agent)
+        runner.adapter = FakeAdapter()
+        expl = ProgressExplainer(
+            runner=runner,
+            agent=None,
+            agent_holder=[agent],
+            source=_source(),
+            session_key="sk",
+            turn_ctx=SimpleNamespace(message="m", _cleanup_msg_ids=[]),
+            executor_ref=lambda: None,
+        )
+        expl._cfg = _full_cfg()
+        # install registers the placeholder key; mirror that here
+        _d._register_tracker(expl._session_id, expl._turn_id, expl._tracker)
+        try:
+            expl._sync_identity_and_callbacks()  # still empty → no latch
+            assert expl._identity_resolved is False
+            agent._current_turn_id = "turn-real"
+            expl._sync_identity_and_callbacks()  # now latch + rekey
+            assert expl._identity_resolved is True
+            assert expl._turn_id == "turn-real"
+            # the stream-delta key now resolves to the SAME tracker object
+            assert _d._tracker_for(agent.session_id, "turn-real") is expl._tracker
+        finally:
+            _d._unregister_tracker(expl._session_id, expl._turn_id)

@@ -253,9 +253,15 @@ class ProgressExplainer:
         if not self._identity_resolved:
             new_sid = str(getattr(agent, "session_id", "") or "") or self._session_id
             new_tid = str(getattr(agent, "_current_turn_id", None) or "")
-            _rekey_tracker(f"{self._session_id}|{self._turn_id}", f"{new_sid}|{new_tid}")
-            self._session_id, self._turn_id = new_sid, new_tid
-            self._identity_resolved = True
+            # [owner] T3-15: latch ONLY once the real turn id is visible. The
+            # agent can resolve before its turn starts (scheme ①); rekeying to
+            # an empty turn id and latching here made every later
+            # on_stream_delta lookup (keyed "sid|turn") miss for the whole turn
+            # — deltas lost and the silence timer inflated. Retry next tick.
+            if new_tid:
+                _rekey_tracker(f"{self._session_id}|{self._turn_id}", f"{new_sid}|{new_tid}")
+                self._session_id, self._turn_id = new_sid, new_tid
+                self._identity_resolved = True
 
         # 回调包装（幂等：换 agent 实例才重包）
         if self._wrapped_agent_id == id(agent):
