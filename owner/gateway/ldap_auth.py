@@ -114,6 +114,53 @@ def _load_ldap_config() -> Dict[str, Any]:
         return {}
 
 
+def _ldap_config_broken_reason() -> Optional[str]:
+    """[owner] T2-23: distinguish "cannot determine" from "not configured".
+
+    ``_load_ldap_config`` is fail-open: a missing file, an unparseable file,
+    and a structurally broken ``ldap:`` section all collapse to ``{}``, which
+    the gate would read as "not enabled" and wave through. For a *security*
+    gate that is the wrong default — this config is a symlink an agent edits
+    live, so a half-written YAML must not silently disable second-factor auth.
+
+    Returns ``None`` for every actionable state (file absent, no ``ldap:``
+    section, empty section, or a well-formed section — the normal ``enabled``
+    check decides those), and a human-readable reason only for the
+    "cannot determine" state (exists but unreadable / unparseable / the
+    ``ldap:`` value is not a mapping). Reads fresh from disk on purpose: the
+    point is to catch a just-broken file, not a cached good copy.
+    """
+    try:
+        from hermes_constants import get_hermes_home
+
+        path = get_hermes_home() / "patch_feishu_profile.yaml"
+    except Exception as exc:  # cannot even resolve HERMES_HOME
+        return f"hermes home unresolvable: {exc}"
+    try:
+        if not path.exists():
+            return None  # genuinely not configured -> ALLOW is correct
+        import yaml
+
+        try:
+            data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            return f"YAML parse error: {exc}"
+        if data is None:
+            return None  # empty file -> not configured
+        if not isinstance(data, dict):
+            return f"top level is {type(data).__name__}, not a mapping"
+        if "ldap" not in data:
+            return None  # no ldap section -> not configured
+        section = data["ldap"]
+        if section is None:
+            return None  # `ldap:` with empty body -> not configured
+        if not isinstance(section, dict):
+            return f"ldap section is {type(section).__name__}, not a mapping"
+        return None  # well-formed -> the enabled check decides
+    except Exception as exc:
+        return f"config unreadable: {exc}"
+
+
 def _rfc4514_escape(value: str) -> str:
     escaped = value.replace("\\", "\\5c")
     escaped = escaped.replace('"', "\\22")
@@ -459,6 +506,20 @@ async def ldap_gate(login: str, password: Optional[str]) -> str:
     """
     cfg = _load_ldap_config()
     if not cfg.get("enabled", False):
+        # [owner] T2-23: "not enabled" has two very different causes — the
+        # config genuinely does not turn the gate on (ALLOW, the documented
+        # pass-through contract), OR the config could not be read/parsed and
+        # the fail-open loader handed us an empty dict. The latter must NOT
+        # wave the request through: report backend-unavailable (503) so the
+        # caller retries later instead of silently losing second-factor auth.
+        _broken = _ldap_config_broken_reason()
+        if _broken is not None:
+            logger.error(
+                "[LDAP] config unreadable/malformed (%s); failing CLOSED as "
+                "backend-unavailable rather than treating it as 'not enabled'",
+                _broken,
+            )
+            return DENY_BACKEND_UNAVAILABLE
         return ALLOW
 
     if not login or not _LOGIN_RE.match(login):

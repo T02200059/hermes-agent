@@ -1014,3 +1014,121 @@ class TestCacheHardening:
         ldap_auth.reset_for_tests()  # wipe memory; file stays
         os.utime(ldap_home / "ldap_identity_cache.json", (0, 0))
         assert ldap_auth._cache_get("dave") is not None
+
+
+# ---------------------------------------------------------------------------
+# [owner] T2-23: a config that cannot be read/parsed must NOT be treated as
+# "not enabled". The shared fail-open loader collapses {missing, unparseable,
+# structurally broken, not-configured} all into {}, and the gate's
+# `if not enabled: return ALLOW` would wave every one of them through — so a
+# half-written YAML (this config is a symlink an agent edits live) silently
+# disables second-factor auth. The gate now distinguishes "cannot determine"
+# (fail CLOSED → 503) from "genuinely not configured" (still ALLOW).
+# ---------------------------------------------------------------------------
+
+
+def _rewrite_cfg(home: Path, content: str) -> None:
+    (home / "patch_feishu_profile.yaml").write_text(content, encoding="utf-8")
+    from owner.patch_config import invalidate_patch_feishu_profile_config_cache
+
+    invalidate_patch_feishu_profile_config_cache()
+
+
+class TestT2_23BrokenReasonClassifier:
+    def test_absent_file_is_not_broken(self, ldap_home):
+        (ldap_home / "patch_feishu_profile.yaml").unlink()
+        assert ldap_auth._ldap_config_broken_reason() is None
+
+    def test_syntax_error_is_broken(self, ldap_home):
+        _rewrite_cfg(ldap_home, "ldap:\n  enabled: true\n   bad:\n\t x")
+        reason = ldap_auth._ldap_config_broken_reason()
+        assert reason is not None and "parse" in reason.lower()
+
+    def test_non_mapping_ldap_section_is_broken(self, ldap_home):
+        _rewrite_cfg(ldap_home, 'ldap: "oops"\n')
+        reason = ldap_auth._ldap_config_broken_reason()
+        assert reason is not None and "not a mapping" in reason
+
+    def test_non_mapping_top_level_is_broken(self, ldap_home):
+        _rewrite_cfg(ldap_home, "- just\n- a\n- list\n")
+        assert ldap_auth._ldap_config_broken_reason() is not None
+
+    def test_disabled_section_is_not_broken(self, ldap_home):
+        _rewrite_cfg(ldap_home, "ldap:\n  enabled: false\n")
+        assert ldap_auth._ldap_config_broken_reason() is None
+
+    def test_no_ldap_section_is_not_broken(self, ldap_home):
+        _rewrite_cfg(ldap_home, "feishu:\n  bots: {}\n")
+        assert ldap_auth._ldap_config_broken_reason() is None
+
+    def test_empty_ldap_section_is_not_broken(self, ldap_home):
+        _rewrite_cfg(ldap_home, "ldap:\n")
+        assert ldap_auth._ldap_config_broken_reason() is None
+
+    def test_valid_config_is_not_broken(self, ldap_home):
+        assert ldap_auth._ldap_config_broken_reason() is None
+
+
+class TestT2_23GateFailsClosed:
+    @pytest.mark.asyncio
+    async def test_syntax_error_does_not_allow(self, ldap_home):
+        """The headline defect: a half-edited YAML must not open the gate."""
+        _rewrite_cfg(ldap_home, "ldap:\n  enabled: true\n   bad:\n\t x")
+        ldap_auth.reset_for_tests()
+        assert (
+            await ldap_auth.ldap_gate("yangtb", "wrong-password")
+            == ldap_auth.DENY_BACKEND_UNAVAILABLE
+        )
+
+    @pytest.mark.asyncio
+    async def test_broken_ldap_section_does_not_allow(self, ldap_home):
+        _rewrite_cfg(ldap_home, 'ldap: "oops"\n')
+        ldap_auth.reset_for_tests()
+        assert (
+            await ldap_auth.ldap_gate("yangtb", "wrong-password")
+            == ldap_auth.DENY_BACKEND_UNAVAILABLE
+        )
+
+    @pytest.mark.asyncio
+    async def test_genuinely_disabled_still_allows(self, ldap_home):
+        """Negative: an explicit `enabled: false` is a real choice, not a fault."""
+        _rewrite_cfg(ldap_home, "ldap:\n  enabled: false\n")
+        ldap_auth.reset_for_tests()
+        assert await ldap_auth.ldap_gate("yangtb", "wrong-password") == ldap_auth.ALLOW
+
+    @pytest.mark.asyncio
+    async def test_absent_config_still_allows(self, ldap_home):
+        """Negative: never-configured must keep the documented pass-through."""
+        (ldap_home / "patch_feishu_profile.yaml").unlink()
+        from owner.patch_config import invalidate_patch_feishu_profile_config_cache
+
+        invalidate_patch_feishu_profile_config_cache()
+        ldap_auth.reset_for_tests()
+        assert await ldap_auth.ldap_gate("yangtb", "wrong-password") == ldap_auth.ALLOW
+
+    @pytest.mark.asyncio
+    async def test_no_ldap_section_still_allows(self, ldap_home):
+        _rewrite_cfg(ldap_home, "feishu:\n  bots: {}\n")
+        ldap_auth.reset_for_tests()
+        assert await ldap_auth.ldap_gate("yangtb", "wrong-password") == ldap_auth.ALLOW
+
+
+class TestT2_23MiddlewareMapsTo503:
+    @pytest.mark.asyncio
+    async def test_broken_config_yields_503_not_a_wave_through(self, routing_home):
+        """End-to-end: the middleware must surface the fail-closed verdict as
+        503 (retry later), never let the request reach the handler."""
+        middleware, _ = _make_middleware()
+        _rewrite_cfg(
+            routing_home, "ldap:\n  enabled: true\n   bad:\n\t x"
+        )
+        _reload_config(routing_home)
+        ldap_auth.reset_for_tests()
+        req = _FakeRequest(
+            {"X-Hermes-Identity": "yangtb", "X-Hermes-Identity-Password": "secret"}
+        )
+        resp = await middleware(req, _DenyHandler())
+        assert resp.status == 503
+        assert "ldap_backend_unavailable" in resp.text
+        # must NOT be misreported as a credential failure
+        assert "ldap_auth_failed" not in resp.text
