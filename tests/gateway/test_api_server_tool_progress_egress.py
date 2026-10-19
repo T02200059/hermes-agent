@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -375,3 +376,63 @@ async def test_nested_secret_one_level_down_is_also_masked():
             body = await resp.text()
 
     assert SECRET not in body
+
+
+@pytest.mark.asyncio
+async def test_stream_finish_chunk_carries_hermes_files(tmp_path, monkeypatch):
+    """[owner] T3-21: a MEDIA deliverable in the final response must surface as
+    ``hermes.files`` on the finish chunk — streamed deltas still carry the raw
+    MEDIA: tags (already flushed), and clients strip them using this list to
+    render download cards. Without the assertion a regression could silently
+    drop the card list while the text still looks delivered."""
+    monkeypatch.setenv("HERMES_API_MEDIA_STORE_DIR", str(tmp_path / "media-store"))
+    deliverable = tmp_path / "report.md"
+    deliverable.write_text("# report body\n", encoding="utf-8")
+
+    async def _mock_run_agent(**kwargs):
+        cb = kwargs.get("stream_delta_callback")
+        if cb:
+            cb(f"Here is your report.\nMEDIA:{deliverable}\n")
+        return (
+            {
+                "final_response": f"Here is your report.\nMEDIA:{deliverable}\n",
+                "messages": [],
+                "api_calls": 1,
+            },
+            {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2},
+        )
+
+    adapter = _make_adapter()
+    app = _create_app(adapter)
+    async with TestClient(TestServer(app)) as cli:
+        with patch.object(adapter, "_run_agent", side_effect=_mock_run_agent):
+            resp = await cli.post(
+                "/v1/chat/completions",
+                json={
+                    "model": "test",
+                    "messages": [{"role": "user", "content": "go"}],
+                    "stream": True,
+                },
+            )
+            assert resp.status == 200
+            body = await resp.text()
+
+    # the finish chunk is the last JSON data frame before [DONE]
+    chunks = []
+    for line in body.splitlines():
+        if line.startswith("data: ") and line.strip() != "data: [DONE]":
+            try:
+                chunks.append(json.loads(line[len("data: ") :]))
+            except json.JSONDecodeError:
+                pass
+    assert chunks, "no SSE json chunks"
+    finish = chunks[-1]
+    assert finish.get("hermes", {}).get("files"), (
+        "finish chunk must carry hermes.files for the MEDIA deliverable"
+    )
+    files = finish["hermes"]["files"]
+    assert files[0]["name"] == "report.md"
+    # the registered entry is downloadable through the public id
+    rec = adapter._media_store.get(files[0]["id"])
+    assert rec is not None
+    assert Path(rec.path).read_text(encoding="utf-8") == "# report body\n"

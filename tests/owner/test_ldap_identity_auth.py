@@ -657,6 +657,23 @@ class TestMiddleware:
         assert resp.status == 200
         assert recorder.forwarded_headers, "request must have been proxied"
 
+    @pytest.mark.asyncio
+    async def test_invalid_login_returns_401_identity_invalid(self, routing_home):
+        """[owner] T3-21: the deny_invalid_login verdict maps to 401 with the
+        distinct ``ldap_identity_invalid`` code (not ``ldap_auth_failed`` — the
+        login never reached a bind, it failed the charset gate)."""
+        middleware, _ = _make_middleware()
+        # '/' is rejected by _LOGIN_RE before any bind attempt.
+        req = _FakeRequest(
+            {"X-Hermes-Identity": "bad/login", "X-Hermes-Identity-Password": "secret"}
+        )
+        with _fake_bind(FakeBind(raise_for_unknown=True)):
+            resp = await middleware(req, _DenyHandler())
+        assert resp.status == 401
+        assert "ldap_identity_invalid" in resp.text
+        # must NOT be conflated with the bad-credentials code
+        assert "ldap_auth_failed" not in resp.text
+
 
 # ---------------------------------------------------------------------------
 # T2-6: the gate is a step of its own, ahead of every routing decision

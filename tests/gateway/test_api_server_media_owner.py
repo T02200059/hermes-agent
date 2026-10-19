@@ -170,3 +170,76 @@ class TestOwnerTokenDeliberatelyUnkeyed:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-q"])
+
+
+class TestMediaDownloadEndpoint:
+    """[owner] T3-21: end-to-end assertions on GET /v1/media/{id} responses.
+
+    The unit-level ``_media_owner_matches`` tests above pin the matching rule;
+    these drive the real handler so the wire contract (404 + the exact
+    ``media_account_mismatch`` code, never 403) is pinned too — 403 would let a
+    caller probe whether someone else's media id exists.
+    """
+
+    def _adapter_with_store(self, tmp_path):
+        adapter = object.__new__(APIServerAdapter)
+        adapter._media_store = ApiMediaStore(root=tmp_path / "store")
+        # _check_auth passthrough: no expected key on the default listener
+        adapter._expected_api_key = lambda: ""
+        return adapter
+
+    @staticmethod
+    def _request(tmp_path, media_id: str, **headers: str):
+        from types import SimpleNamespace
+
+        return SimpleNamespace(
+            match_info={"media_id": media_id},
+            headers=headers,
+        )
+
+    @pytest.mark.asyncio
+    async def test_owner_mismatch_returns_404_with_mismatch_code(self, tmp_path):
+        adapter = self._adapter_with_store(tmp_path)
+        src = tmp_path / "report.md"
+        src.write_text("hello", encoding="utf-8")
+        _, files, _ = finalize_api_media(
+            f"MEDIA:{src}\n", adapter._media_store, session_id="s", owner="sess-owner"
+        )
+        media_id = files[0]["id"]
+
+        resp = await adapter._handle_media_download(
+            self._request(tmp_path, media_id, **{"X-Hermes-Session-Id": "sess-other"})
+        )
+        assert resp.status == 404  # not 403 — no existence oracle
+        import json as _json
+
+        body = _json.loads(resp.text)
+        assert body["error"]["code"] == "media_account_mismatch"
+
+    @pytest.mark.asyncio
+    async def test_owner_match_serves_the_file(self, tmp_path):
+        adapter = self._adapter_with_store(tmp_path)
+        src = tmp_path / "report.md"
+        src.write_text("hello", encoding="utf-8")
+        _, files, _ = finalize_api_media(
+            f"MEDIA:{src}\n", adapter._media_store, session_id="s", owner="sess-owner"
+        )
+        media_id = files[0]["id"]
+
+        resp = await adapter._handle_media_download(
+            self._request(tmp_path, media_id, **{"X-Hermes-Session-Id": "sess-owner"})
+        )
+        # FileResponse (200) — the owner matches, bytes are served
+        assert resp.status == 200
+
+    @pytest.mark.asyncio
+    async def test_unknown_id_returns_not_found_code(self, tmp_path):
+        adapter = self._adapter_with_store(tmp_path)
+        resp = await adapter._handle_media_download(
+            self._request(tmp_path, "med_nonexistent0")
+        )
+        assert resp.status == 404
+        import json as _json
+
+        body = _json.loads(resp.text)
+        assert body["error"]["code"] == "media_not_found"
