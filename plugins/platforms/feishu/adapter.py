@@ -127,6 +127,7 @@ from gateway.platforms.base import (
     SendResult,
     SUPPORTED_DOCUMENT_TYPES,
     cache_document_from_bytes,
+    cache_document_from_bytes_async,
     cache_image_from_url,
     cache_audio_from_bytes,
     cache_image_from_bytes,
@@ -482,6 +483,10 @@ class FeishuAdapterSettings:
     ws_ping_timeout: Optional[int] = None
     admins: frozenset[str] = frozenset()
     default_group_policy: str = ""
+    # DM admission switch: forward every DM to gateway intake (pairing auth still
+    # fail-closes). Snapshotted per profile so multiplexed adapters read their own
+    # scope instead of the default profile's env.
+    allow_all_dm: bool = False
     group_rules: Dict[str, FeishuGroupRule] = field(default_factory=dict)
     allow_bots: str = "none"  # "none" | "mentions" | "all"
     require_mention: bool = True
@@ -1745,12 +1750,10 @@ class FeishuAdapter(BasePlatformAdapter):
         # Set on disconnect/shutdown so a real teardown can't be resurrected
         # by the recreate-on-shutdown path; cleared on connect for reconnects.
         self._sdk_executor_closing = False
-        # [owner] user store: unified open_id state (name TTL + p2p chat_id disk cache)
-        from owner.feishu.user_store import FeishuUserStore
-
-        self._user_store = FeishuUserStore(
-            cache_path=get_hermes_home() / "feishu_chat_id_cache.json",
-        )
+        # [owner] user store: unified open_id state (name TTL + p2p chat_id disk cache).
+        # Touched here so production creates it at construction time; the property below
+        # also creates it on demand for partial instances (`FeishuAdapter.__new__` in tests).
+        _ = self._user_store
         self._feishu_user_cache_impl: Dict[str, Any] = {}
         self._sender_name_cache: Dict[str, tuple] = {}
         self._ws_client: Optional[Any] = None
@@ -1924,10 +1927,38 @@ class FeishuAdapter(BasePlatformAdapter):
             default_group_policy=default_group_policy,
             group_rules=group_rules,
             allow_bots=allow_bots,
+            allow_all_dm=any(
+                os.getenv(var, "").strip().lower() in {"true", "1", "yes"}
+                for var in ("FEISHU_ALLOW_ALL_USERS", "GATEWAY_ALLOW_ALL_USERS")
+            ),
             require_mention=_to_boolean(
                 extra.get("require_mention", os.getenv("FEISHU_REQUIRE_MENTION", "true"))
             ),
         )
+
+    # DM admission switch: class-level default so partial instances (upstream tests build
+    # the adapter with `FeishuAdapter.__new__`) fall back to "off" instead of AttributeError.
+    # `_apply_settings` snapshots the per-profile value on real constructions.
+    _allow_all_dm: bool = False
+
+    @property
+    def _user_store(self):
+        """[owner] open_id state store (name TTL + p2p chat_id disk cache), created lazily.
+
+        Lazy on purpose: upstream's tests build the adapter with ``FeishuAdapter.__new__``
+        and set only the attributes the method under test needs, so an eager ``__init__``
+        assignment is not guaranteed to have run. Production still creates it in
+        ``__init__`` (which touches this property).
+        """
+        store = self.__dict__.get("_owner_user_store")
+        if store is None:
+            from owner.feishu.user_store import FeishuUserStore
+
+            store = FeishuUserStore(
+                cache_path=get_hermes_home() / "feishu_chat_id_cache.json",
+            )
+            self.__dict__["_owner_user_store"] = store
+        return store
 
     def _apply_settings(self, settings: FeishuAdapterSettings) -> None:
         self._app_id = settings.app_id
@@ -1940,6 +1971,7 @@ class FeishuAdapter(BasePlatformAdapter):
         self._allowed_group_users = set(settings.allowed_group_users)
         self._admins = set(settings.admins)
         self._default_group_policy = settings.default_group_policy or settings.group_policy
+        self._allow_all_dm = settings.allow_all_dm
         self._group_rules = settings.group_rules
         self._bot_open_id = settings.bot_open_id
         self._bot_user_id = settings.bot_user_id
@@ -4018,7 +4050,14 @@ class FeishuAdapter(BasePlatformAdapter):
         message_id: str,
         is_bot: bool = False,
     ) -> None:
-        text, inbound_type, media_urls, media_types, mentions = await self._extract_message_content(message)
+        (
+            text,
+            inbound_type,
+            media_urls,
+            media_types,
+            media_text_inlined,
+            mentions,
+        ) = await self._extract_message_content(message)
 
         if inbound_type == MessageType.TEXT:
             text = _strip_edge_self_mentions(text, mentions)
@@ -4134,6 +4173,7 @@ class FeishuAdapter(BasePlatformAdapter):
             message_id=message_id,
             media_urls=media_urls,
             media_types=media_types,
+            media_text_inlined=media_text_inlined,
             reply_to_message_id=reply_to_message_id,
             reply_to_text=reply_to_text,
             channel_prompt=self._resolve_channel_prompt(chat_id, thread_id or None),
@@ -4294,6 +4334,7 @@ class FeishuAdapter(BasePlatformAdapter):
 
         media_urls: List[str] = []
         media_types: List[str] = []
+        media_text_inlined: List[bool] = []
         if media_expected:
             if not message_id or not raw_message_type or not raw_content:
                 raise ValueError(
@@ -4307,9 +4348,14 @@ class FeishuAdapter(BasePlatformAdapter):
                     content=raw_content,
                     mentions=None,
                 )
-                extracted_text, extracted_type, media_urls, media_types, _ = (
-                    await self._extract_message_content(media_message)
-                )
+                (
+                    extracted_text,
+                    extracted_type,
+                    media_urls,
+                    media_types,
+                    media_text_inlined,
+                    _mentions,
+                ) = await self._extract_message_content(media_message)
                 if not media_urls:
                     raise RuntimeError(
                         f"failed to rehydrate forwarded Feishu media for {message_id}"
@@ -4325,6 +4371,7 @@ class FeishuAdapter(BasePlatformAdapter):
             message_id=message_id,
             media_urls=media_urls,
             media_types=media_types,
+            media_text_inlined=media_text_inlined,
             reply_to_message_id=reply_to_message_id,
             reply_to_text=reply_to_text,
             channel_prompt=_channel_prompt,
@@ -4783,7 +4830,7 @@ class FeishuAdapter(BasePlatformAdapter):
 
     async def _extract_message_content(
         self, message: Any
-    ) -> tuple[str, MessageType, List[str], List[str], List[FeishuMentionRef]]:
+    ) -> tuple[str, MessageType, List[str], List[str], List[bool], List[FeishuMentionRef]]:
         raw_content = getattr(message, "content", "") or ""
         raw_type = getattr(message, "message_type", "") or ""
         message_id = str(getattr(message, "message_id", "") or "")
@@ -4808,17 +4855,22 @@ class FeishuAdapter(BasePlatformAdapter):
         )
         inbound_type = self._resolve_normalized_message_type(normalized, media_types)
         text = normalized.text_content
+        # Per-attachment "its text was inlined into the body" flags (carried on
+        # MessageEvent.media_text_inlined so the transcript can render attachment and body
+        # consistently). The inlined text is APPENDED: replacing the body dropped a post's
+        # caption whenever the single attachment was a text document.
+        media_text_inlined: List[bool] = []
+        inlined_parts: List[str] = []
+        for media_url, media_type in zip(media_urls, media_types):
+            extracted = await self._maybe_extract_text_document(media_url, media_type)
+            media_text_inlined.append(bool(extracted))
+            if extracted:
+                inlined_parts.append(extracted)
+        if inlined_parts:
+            extracted_text = "\n\n".join(inlined_parts)
+            text = f"{text}\n\n{extracted_text}" if text else extracted_text
 
-        if (
-            inbound_type in {MessageType.DOCUMENT, MessageType.AUDIO, MessageType.VIDEO, MessageType.PHOTO}
-            and len(media_urls) == 1
-            and normalized.preferred_message_type in {"document", "audio"}
-        ):
-            injected = await self._maybe_extract_text_document(media_urls[0], media_types[0])
-            if injected:
-                text = injected
-
-        return text, inbound_type, media_urls, media_types, list(normalized.mentions)
+        return text, inbound_type, media_urls, media_types, media_text_inlined, list(normalized.mentions)
 
     async def _download_feishu_message_resources(
         self,
@@ -5285,9 +5337,10 @@ class FeishuAdapter(BasePlatformAdapter):
                 return "bot_not_mentioned"
 
         if not is_group:
-            if os.getenv("FEISHU_ALLOW_ALL_USERS", "").strip().lower() in {"true", "1", "yes"}:
-                return None
-            if os.getenv("GATEWAY_ALLOW_ALL_USERS", "").strip().lower() in {"true", "1", "yes"}:
+            # The allow-all switch is snapshotted per profile in _apply_settings: _admit runs
+            # on the lark_oapi WS thread with no secret scope, so a bare os.getenv would read
+            # the default profile's value.
+            if self._allow_all_dm:
                 return None
             # Empty FEISHU_ALLOWED_USERS is the pairing-mode default from setup:
             # forward DMs to gateway intake so the pairing handshake can run.

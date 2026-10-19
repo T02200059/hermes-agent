@@ -2299,6 +2299,11 @@ def cache_document_from_bytes(data: bytes, filename: str) -> str:
     return str(filepath)
 
 
+async def cache_document_from_bytes_async(data: bytes, filename: str) -> str:
+    """Cache document bytes without blocking the caller's event loop."""
+    return await asyncio.to_thread(cache_document_from_bytes, data, filename)
+
+
 def cleanup_document_cache(max_age_hours: int = 24) -> int:
     """
     Delete cached documents older than *max_age_hours*.

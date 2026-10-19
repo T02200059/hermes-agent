@@ -88,6 +88,7 @@ async def test_native_ingress_passes_complete_envelope_to_profile_router(monkeyp
                 MessageType.PHOTO,
                 ["/ingress/cache/image.jpg"],
                 ["image/jpeg"],
+                [False],
                 [],
             )
         ),
@@ -175,7 +176,7 @@ def _forwarded_event_adapter(*, extracted=None):
     )
     fake._extract_message_content = AsyncMock(
         return_value=extracted
-        or ("", MessageType.PHOTO, ["/child/cache/image.jpg"], ["image/jpeg"], [])
+        or ("", MessageType.PHOTO, ["/child/cache/image.jpg"], ["image/jpeg"], [False], [])
     )
     return fake
 
