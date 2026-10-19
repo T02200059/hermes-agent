@@ -21,3 +21,4 @@ gateway/response_filters.py  INTERNAL_NOTIFICATION_DISPLAY_KIND, MACHINERY_DISPL
 gateway/restart.py  is_global_startup_conflict added verbatim from upstream/main, T2-20
 gateway/streaming_tts_consumer.py  whole file replaced with upstream/main@9573f44ca5 verbatim (streaming TTS consumer extract); local diff vs that commit is empty, T2-20 A4
 hermes_cli/timefmt.py  EPOCH_MIN, EPOCH_MAX, coerce_epoch added verbatim from upstream/main, T2-20
+hermes_constants.py  profile_name_for_home + profile_cli_selector added verbatim from upstream/main, T2-20 A5-2
