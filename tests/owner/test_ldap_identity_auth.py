@@ -44,6 +44,7 @@ Contract asserted here (behavior, not source shape):
 from __future__ import annotations
 
 import asyncio
+import os
 import textwrap
 import tempfile
 from pathlib import Path
@@ -104,11 +105,13 @@ def _seed_valid_cache(home: Path, login: str) -> None:
     T2-4 rejects every unauthenticated request without a valid cache even under
     ``enforce=seen``.
     """
-    (home / "ldap_identity_cache.json").write_text(
-        '{"version": 2, "entries": {"%s": %r}, "seen": ["%s"]}'
-        % (login, _FAR_FUTURE_EXPIRY, login),
-        encoding="utf-8",
-    )
+    # [owner] T3-2: the state file is integrity-tagged (HMAC over a
+    # per-process key) since the cache-forgery fix; hand-writing an unsigned
+    # file would be rejected by the loader. Seed through the real put path,
+    # pinning the expiry, so the helper stays an ordinary "valid cache"
+    # precondition for transport-behaviour tests.
+    with patch.object(ldap_auth, "_now", return_value=_FAR_FUTURE_EXPIRY - 3600.0):
+        ldap_auth._cache_put(login, 3600.0)
 
 
 class FakeBind:
@@ -912,3 +915,85 @@ class TestSSEProxyStreaming:
         assert recorder.forwarded_timeout is not None
         assert recorder.forwarded_timeout.total == 120
         assert handler.requests == []
+
+
+# ---------------------------------------------------------------------------
+# [owner] T3-1 / T3-2 / T3-12: cache hardening regression tests
+# ---------------------------------------------------------------------------
+
+
+class TestCacheHardening:
+    """T3 first batch: login-key canonicalization, state-file MAC, replace-on-load."""
+
+    @pytest.mark.asyncio
+    async def test_t3_1_cache_key_is_casefolded(self, ldap_home):
+        """Positive cache is shared across spellings of the same login."""
+        ldap_auth.reset_for_tests()
+        ldap_auth._cache_put("Alice", 3600.0)
+        assert ldap_auth._cache_get("alice") is not None
+        assert ldap_auth._cache_get("ALICE") is not None
+        assert ldap_auth._cache_get(" Alice ") is not None  # strip too
+
+    @pytest.mark.asyncio
+    async def test_t3_1_negative_cache_covers_spellings(self, ldap_home):
+        """A negative-cache entry filed under one spelling throttles the others."""
+        ldap_auth.reset_for_tests()
+        ldap_auth._negative_put("Bob", 60.0)
+        assert ldap_auth._negative_active("bob")
+        assert ldap_auth._negative_active("BOB")
+
+    @pytest.mark.asyncio
+    async def test_t3_12_disk_eviction_replaces_memory(self, ldap_home):
+        """A signed state file lacking an entry evicts it from memory (rotation)."""
+        import json as _json
+
+        ldap_auth.reset_for_tests()
+        ldap_auth._cache_put("carol", 3600.0)
+        path = ldap_auth._state_file_path()
+        entries: dict = {}
+        seen: list = []
+        (ldap_home / "ldap_identity_cache.json").write_text(
+            _json.dumps(
+                {
+                    "version": 3,
+                    "entries": entries,
+                    "seen": seen,
+                    "mac": ldap_auth._state_file_mac(entries, seen),
+                }
+            ),
+            encoding="utf-8",
+        )
+        os.utime(path, (0, 0))  # force mtime-driven reload
+        assert ldap_auth._cache_get("carol") is None
+
+    @pytest.mark.asyncio
+    async def test_t3_2_forged_state_file_is_rejected(self, ldap_home):
+        """Unsigned v2 / wrong-signature v3 payloads must not grant cache hits."""
+        import json as _json
+
+        path = ldap_home / "ldap_identity_cache.json"
+        forged_v2 = {"version": 2, "entries": {"mallory": 9e9}, "seen": []}
+        path.write_text(_json.dumps(forged_v2), encoding="utf-8")
+        os.utime(path, (0, 0))
+        assert ldap_auth._cache_get("mallory") is None
+
+        forged_v3 = {"version": 3, "entries": {"eve": 9e9}, "seen": [], "mac": "0" * 64}
+        path.write_text(_json.dumps(forged_v3), encoding="utf-8")
+        os.utime(path, (0, 0))
+        assert ldap_auth._cache_get("eve") is None
+
+    @pytest.mark.asyncio
+    async def test_t3_2_own_signature_round_trips(self, ldap_home):
+        """A file signed by this process loads normally (no false rejection)."""
+        import json as _json
+
+        ldap_auth.reset_for_tests()
+        with patch.object(ldap_auth, "_now", return_value=_FAR_FUTURE_EXPIRY - 3600.0):
+            ldap_auth._cache_put("dave", 3600.0)
+        payload = _json.loads(
+            (ldap_home / "ldap_identity_cache.json").read_text(encoding="utf-8")
+        )
+        assert payload.get("version") == 3 and isinstance(payload.get("mac"), str)
+        ldap_auth.reset_for_tests()  # wipe memory; file stays
+        os.utime(ldap_home / "ldap_identity_cache.json", (0, 0))
+        assert ldap_auth._cache_get("dave") is not None

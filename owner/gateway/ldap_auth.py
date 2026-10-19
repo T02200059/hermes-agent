@@ -49,10 +49,13 @@ Security invariants:
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
 import json
 import logging
 import os
 import re
+import secrets
 import tempfile
 import threading
 import time
@@ -78,6 +81,26 @@ _negative_cache: Dict[str, float] = {}
 _seen_logins: set = set()
 _cache_lock = threading.Lock()
 _state_file_mtime: Optional[float] = None
+
+# [owner] T3-2: per-process HMAC key for the state-file integrity tag. Never
+# written to disk, so a file signed by a previous process generation (or by
+# anything else, e.g. the agent writing a far-future expiry for itself) fails
+# verification and is ignored — the login simply re-authenticates. Restarting
+# therefore costs one re-login per cached identity, which the cache TTL was
+# already willing to trade away for availability.
+_state_hmac_key: bytes = secrets.token_bytes(32)
+_STATE_FILE_VERSION = 3
+
+
+def _normalize_login(login: str) -> str:
+    """[owner] T3-1: canonical cache key for a login (casefold + strip).
+
+    LDAP DN matching semantics are the server's business and stay on the raw
+    login; the *cache* key must be canonical, otherwise ``Alice`` and ``alice``
+    hold two separate TTL windows and a negative-cache entry filed under one
+    spelling never throttles the other.
+    """
+    return (login or "").strip().casefold()
 
 
 def _load_ldap_config() -> Dict[str, Any]:
@@ -138,16 +161,29 @@ def _prune_expired(now: float) -> None:
             del _negative_cache[login]
 
 
+def _state_file_mac(entries: Dict[str, float], seen: list) -> str:
+    """[owner] T3-2: HMAC-SHA256 tag over the canonical file body."""
+    body = json.dumps(
+        {"entries": entries, "seen": seen}, sort_keys=True, separators=(",", ":")
+    )
+    return hmac.new(_state_hmac_key, body.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
 def _persist_positive_cache() -> None:
     path = _state_file_path()
     if path is None:
         return
     global _state_file_mtime
     try:
+        entries = dict(_positive_cache)
+        seen = sorted(_seen_logins)
         payload = {
-            "version": 2,
-            "entries": dict(_positive_cache),
-            "seen": sorted(_seen_logins),
+            "version": _STATE_FILE_VERSION,
+            "entries": entries,
+            "seen": seen,
+            # [owner] T3-2: HMAC over the canonical body; verified by
+            # _load_state_file_locked with this process's key.
+            "mac": _state_file_mac(entries, seen),
         }
         directory = os.path.dirname(path) or "."
         fd, tmp = tempfile.mkstemp(prefix=".ldap_cache.", dir=directory)
@@ -175,24 +211,50 @@ def _load_state_file_locked() -> None:
         with open(path, encoding="utf-8") as fh:
             data = json.load(fh)
         if isinstance(data, dict):
-            if isinstance(data.get("entries"), dict):
-                now = _now()
-                for login, expires in data["entries"].items():
-                    if (
-                        isinstance(login, str)
-                        and isinstance(expires, (int, float))
-                        and expires > now
-                    ):
-                        _positive_cache[login] = float(expires)
-            if isinstance(data.get("seen"), list):
-                for login in data["seen"]:
-                    if isinstance(login, str):
-                        _seen_logins.add(login)
-            elif data.get("version") != 2:
-                # v1 state files (pre-seen split): any previously cached login
-                # was authenticated at least once — treat it as seen so the
-                # enforce=seen policy keeps denying after the window lapses.
-                for login in list(_positive_cache):
+            # [owner] T3-2: integrity gate. Unsigned v2 files (the old
+            # format) and anything failing the HMAC are untrusted: the file
+            # is world-writable-by-uid and the agent runs under the same uid.
+            # Re-authentication is the safe fallback; diagnostics keep the
+            # reason out of the request path.
+            entries = data.get("entries")
+            seen = data.get("seen")
+            mac = data.get("mac")
+            if not (
+                isinstance(entries, dict)
+                and isinstance(seen, list)
+                and isinstance(mac, str)
+                and hmac.compare_digest(mac, _state_file_mac(entries, seen))
+            ):
+                logger.warning(
+                    "[LDAP] state file failed integrity check; ignoring it "
+                    "(unsigned or foreign signature) — cached logins must "
+                    "re-authenticate"
+                )
+                # [owner] T3-12: replace, don't merge — an untrusted file is
+                # also authoritative-by-absence for eviction purposes: keep
+                # nothing from memory.
+                _positive_cache.clear()
+                _state_file_mtime = mtime
+                return
+            now = _now()
+            # [owner] T3-12: REPLACEMENT semantics. The file is the
+            # cross-process eviction channel (password rotation writes it
+            # without the evicted entry); merging would let an evicted login
+            # ride its in-memory TTL until natural expiry. seen is diagnostic
+            # only, so keeping the union there is harmless.
+            fresh = {
+                login: float(expires)
+                for login, expires in entries.items()
+                if (
+                    isinstance(login, str)
+                    and isinstance(expires, (int, float))
+                    and expires > now
+                )
+            }
+            _positive_cache.clear()
+            _positive_cache.update(fresh)
+            for login in seen:
+                if isinstance(login, str):
                     _seen_logins.add(login)
         _state_file_mtime = mtime
     except Exception as exc:
@@ -200,17 +262,19 @@ def _load_state_file_locked() -> None:
 
 
 def _cache_get(login: str) -> Optional[float]:
+    key = _normalize_login(login)  # [owner] T3-1
     with _cache_lock:
         _load_state_file_locked()
         _prune_expired(_now())
-        return _positive_cache.get(login)
+        return _positive_cache.get(key)
 
 
 def _cache_put(login: str, ttl_seconds: float) -> None:
+    key = _normalize_login(login)  # [owner] T3-1
     with _cache_lock:
-        _positive_cache[login] = _now() + ttl_seconds
-        _seen_logins.add(login)
-        _negative_cache.pop(login, None)
+        _positive_cache[key] = _now() + ttl_seconds
+        _seen_logins.add(key)
+        _negative_cache.pop(key, None)
         _persist_positive_cache()
 
 
@@ -220,19 +284,20 @@ def _cache_evict(login: str) -> None:
     # password rotation no longer needs the marker to prevent a downgrade — an
     # evicted login is re-challenged whether or not it was ever seen.
     with _cache_lock:
-        _positive_cache.pop(login, None)
+        _positive_cache.pop(_normalize_login(login), None)  # [owner] T3-1
         _persist_positive_cache()
 
 
 def _negative_put(login: str, seconds: float) -> None:
     with _cache_lock:
-        _negative_cache[login] = _now() + seconds
+        _negative_cache[_normalize_login(login)] = _now() + seconds  # [owner] T3-1
 
 
 def _negative_active(login: str) -> bool:
+    key = _normalize_login(login)  # [owner] T3-1
     with _cache_lock:
         _prune_expired(_now())
-        until = _negative_cache.get(login)
+        until = _negative_cache.get(key)
         return until is not None and until > _now()
 
 
@@ -244,9 +309,10 @@ def _has_seen(login: str) -> bool:
     so "has this login ever authenticated" no longer changes the verdict.
     Kept as a supported introspection point for the state-file semantics.
     """
+    key = _normalize_login(login)  # [owner] T3-1
     with _cache_lock:
         _load_state_file_locked()
-        return login in _seen_logins or login in _positive_cache
+        return key in _seen_logins or key in _positive_cache
 
 
 # ---------------------------------------------------------------------------
