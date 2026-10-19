@@ -178,3 +178,8 @@ jobs:
 
       - name: Run footgun checker
         run: python scripts/check-windows-footguns.py --all
+
+      # [owner] T2-20 A5: symbol-level import check for the code-swap hosts
+      # (catches lazy in-function imports that top-level sweeps miss).
+      - name: Owner symbol check (code-swap hosts)
+        run: python scripts/ci/owner_symbol_check.py
