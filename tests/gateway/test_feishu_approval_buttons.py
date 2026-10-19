@@ -353,8 +353,16 @@ class TestCardActionCallbackResponse:
             response = adapter._on_card_action_trigger(data)
 
         card = response.card.data
-        assert "Old Name" not in card["elements"][0]["content"]
-        assert "ou_expired" in card["elements"][0]["content"]
+        body = card["elements"][0]["content"]
+        assert "Old Name" not in body
+        # [owner] 裁决（保我方）：过期缓存**不回落成裸 open_id**。
+        # 我方文案刻意不泄漏 `ou_xxx`（见 owner/feishu/sender_name_helpers.operator_display_name
+        # 的 docstring「never the raw ou_xxx」），改走 feishu_resolved_body_no_name；
+        # 上游测试此处断言的是上游行为（把 open_id 当兜底标签）。
+        from agent.i18n import t
+
+        assert "ou_expired" not in body
+        assert body == t("approval.feishu_resolved_body_no_name", command="")
 
     def test_rejects_approval_click_from_unauthorized_user(self, _patch_callback_card_types):
         adapter = _make_adapter()
