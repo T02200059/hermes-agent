@@ -2271,7 +2271,7 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
       **结果**：feishu 家族 **36 → 31**（−5，**零新增红**）、`tests/owner` **1173 全绿**、`tests/gateway/test_platform_base.py` + `test_interactive_prompt_base.py` **110 passed**。
     - **⚠️ A3 两台仪器在 A4 后失效**：行级仪器的输入是「相对 `BASE(00b2e03c80)` 的 802 行」，换码后该前提不成立（实测跑不动）；宿主严格锚点审计同因（其锚点基于「单体里未落位的英文」）。**A5 的行级判据须另立基线**（候选：以「上游 `9573f44ca5` → HEAD 的 `run.py` 定制行」为输入，或改为「未回收的 `[owner]` 标记 + 薄委托」口径）。
     - **A4-3 余量（31 例）分类**：approval 卡 8（内容/鉴权）、admission 4、async/sync 契约 4、batch 3、send-mode 1、markdown 转义 1、其余 ≈10。**A4-3 的规模基线**：我方 adapter 6,907 行 / 267 符号 vs 上游 4,447 行 / 285 符号 ⇒ **缺 58 个上游符号 / 545 行**（约 20 个是既有方法的嵌套助手，须按父方法整体取舍），我方自研 **40 个符号**须保。
-    - **A4-3 推进（2026-10-19，36 → 25，四批零新增红）**：
+    - **A4-3 推进（2026-10-19，36 → 24，四批零新增红）**：
       · **A4-3a** 符号/字段/6 元组契约（36 → 31）：`cache_document_from_bytes_async` 前移、`allow_all_dm`（含类级默认）、`_extract_message_content` 5→6 元组且 inlined 正文改**追加**、两处 `MessageEvent` 带 `media_text_inlined`、`_user_store` 惰性属性、`_Builder` 桩补 bot-menu、owner 桩改 6 元组。
       · **A4-3b** dedup 持久化改异步契约（31 → 27）：`_is_duplicate` → async，flush 经 `_run_blocking` 移出事件循环（上游 #111020 的 fsync 阻塞原因），新增 `_dedup_persist_lock_or_create` 保突变顺序；`_run_blocking` 加 `contextvars.copy_context().run`（worker 才看得到 profile 作用域）；调用点加 `await`。
       · **A4-3c(1)** 姓名缓存打通（27 → 25）：`_sender_name_cache` **别名**到 `store._name_ttl` —— 两者同形却曾是两份 dict，legacy 写入无人读，导致审批卡退化成 `feishu_resolved_body_no_name`。
