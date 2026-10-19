@@ -133,3 +133,89 @@ def test_no_plugins_returns_empty_results(tmp_path, monkeypatch):
         platform="",
     )
     assert results == []
+
+
+# ---------------------------------------------------------------------------
+# [owner] T3-18: the invocation was MOVED (C1/C2) — pin that it exists EXACTLY
+# once. A future sync/merge could re-introduce upstream's original post-persist
+# call site; two invocations would transform the response twice (and fire the
+# C2 transcript sync twice). The old position keeps only a comment block.
+# ---------------------------------------------------------------------------
+
+
+def _count_transform_invocations(source: str) -> int:
+    """Count ``invoke_hook("transform_llm_output", ...)`` call sites via AST."""
+    import ast as _ast
+
+    tree = _ast.parse(source)
+    count = 0
+    for node in _ast.walk(tree):
+        if not isinstance(node, _ast.Call):
+            continue
+        fname = getattr(node.func, "id", None) or getattr(node.func, "attr", None)
+        if fname not in ("invoke_hook", "_invoke_hook") or not node.args:
+            continue
+        first = node.args[0]
+        if isinstance(first, _ast.Constant) and first.value == "transform_llm_output":
+            count += 1
+    return count
+
+
+def test_transform_hook_invoked_exactly_once_in_turn_finalizer():
+    from pathlib import Path as _Path
+
+    repo = _Path(__file__).resolve().parents[1]
+    src = (repo / "agent" / "turn_finalizer.py").read_text(encoding="utf-8")
+    assert _count_transform_invocations(src) == 1, (
+        "transform_llm_output must be invoked exactly once in turn_finalizer "
+        "(moved before persist by C1/C2 — see the MOVED comment block). Two "
+        "sites would double-transform the response; zero would disable the "
+        "degenerate-stream guard's durable-write fix."
+    )
+    # the MOVED tombstone comment must remain so the next sync reviewer sees it
+    assert "transform_llm_output — MOVED" in src
+
+
+def test_transform_hook_not_gated_on_interrupted():
+    """[owner] C1: the hook must fire even for interrupted turns — a runaway
+    stream is almost always ended BY an interrupt, and gating on ``not
+    interrupted`` (upstream's old position) skipped the guard exactly when it
+    was needed. Assert no enclosing ``if`` gate references ``interrupted``.
+
+    (The call itself passes ``interrupted=bool(...)`` as a kwarg so the hook can
+    see the state — that is expected and is NOT a gate; only ancestor If-tests
+    count here.)
+    """
+    from pathlib import Path as _Path
+
+    repo = _Path(__file__).resolve().parents[1]
+    src = (repo / "agent" / "turn_finalizer.py").read_text(encoding="utf-8")
+    import ast as _ast
+
+    tree = _ast.parse(src)
+    for node in _ast.walk(tree):
+        for child in _ast.iter_child_nodes(node):
+            child._parent = node
+
+    call = None
+    for node in _ast.walk(tree):
+        if not isinstance(node, _ast.Call):
+            continue
+        fname = getattr(node.func, "id", None) or getattr(node.func, "attr", None)
+        if fname not in ("invoke_hook", "_invoke_hook") or not node.args:
+            continue
+        first = node.args[0]
+        if isinstance(first, _ast.Constant) and first.value == "transform_llm_output":
+            call = node
+            break
+    assert call is not None, "transform_llm_output invocation not found"
+
+    n = call
+    while hasattr(n, "_parent"):
+        n = n._parent
+        if isinstance(n, _ast.If):
+            gate = _ast.unparse(n.test)
+            assert "interrupted" not in gate, (
+                f"transform_llm_output is gated by `if {gate}` — the C1 move "
+                f"requires it to fire on interrupted turns too"
+            )
