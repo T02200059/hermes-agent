@@ -3695,7 +3695,10 @@ class FeishuAdapter(BasePlatformAdapter):
         #     this is state misfiling inside one container, not a cross-user
         #     read. Cross-*container* delivery is guarded at the receiving
         #     doorway (T2-9: target_profile check).
-        # ``TestReactionRoutingRecordsTheOwnershipDecision`` pins both halves.
+        # Pinned by tests/owner/test_feishu_profile_transport.py
+        # (test_reaction_ownership_decision_is_recorded_beside_the_code,
+        # test_group_reaction_route_skips_whitelist_as_documented) and
+        # tests/owner/test_feishu_profile_routing.py::TestReactionRouting.
         _try_msg_route = _owner_import(
             "owner.feishu.profile_routing", "try_route_inbound_message"
         )
