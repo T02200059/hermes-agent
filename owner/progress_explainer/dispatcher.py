@@ -262,6 +262,11 @@ class ProgressExplainer:
             return
         tracker = self._tracker
         orig_tool_progress = getattr(agent, "tool_progress_callback", None)
+        # [owner] T3-8: write the originals back NOW — under scheme ① the
+        # constructor ran with agent=None, so self._orig_* are all None there;
+        # the true originals are only knowable at wrapping time. stop() restores
+        # from these, and restoring None would silently kill the host callbacks.
+        self._orig_tool_progress_cb = orig_tool_progress
 
         def _tool_progress_cb(event_type: str, *args, **kwargs) -> None:
             if orig_tool_progress is not None:
@@ -276,9 +281,11 @@ class ProgressExplainer:
             except Exception:
                 logger.debug("pe: record tool event failed", exc_info=True)
 
+        _tool_progress_cb._pe_wrapped = True  # [owner] T3-8 restore guard
         agent.tool_progress_callback = _tool_progress_cb
 
         orig_tool_gen = getattr(agent, "tool_gen_callback", None)
+        self._orig_tool_gen_cb = orig_tool_gen  # [owner] T3-8
 
         def _tool_gen_cb(tool_name: str) -> None:
             if orig_tool_gen is not None:
@@ -293,9 +300,11 @@ class ProgressExplainer:
             except Exception:
                 pass
 
+        _tool_gen_cb._pe_wrapped = True  # [owner] T3-8 restore guard
         agent.tool_gen_callback = _tool_gen_cb
 
         orig_interim = getattr(agent, "interim_assistant_callback", None)
+        self._orig_interim_cb = orig_interim  # [owner] T3-8
 
         def _interim_cb(text: Any, *args, **kwargs) -> None:
             if orig_interim is not None:
@@ -308,6 +317,7 @@ class ProgressExplainer:
             except Exception:
                 pass
 
+        _interim_cb._pe_wrapped = True  # [owner] T3-8 restore guard
         agent.interim_assistant_callback = _interim_cb
         self._wrapped_agent_id = id(agent)
 
@@ -560,14 +570,22 @@ class ProgressExplainer:
         if task is not None and not task.done():
             task.cancel()
         agent = self._resolve_agent() or self._agent
-        if agent is not None:
-            try:
-                if getattr(agent, "tool_progress_callback", None) is not None:
-                    agent.tool_progress_callback = self._orig_tool_progress_cb
-                agent.tool_gen_callback = self._orig_tool_gen_cb
-                agent.interim_assistant_callback = self._orig_interim_cb
-            except Exception:
-                pass
+        # [owner] T3-8: restore the ORIGINAL callbacks (written back at wrapping
+        # time — the constructor-time captures are None under scheme ①), and only
+        # for the agent instance we last wrapped: an unrelated agent object, or
+        # callbacks someone else installed afterwards, must not be clobbered.
+        if agent is not None and self._wrapped_agent_id == id(agent):
+            for attr, orig in (
+                ("tool_progress_callback", self._orig_tool_progress_cb),
+                ("tool_gen_callback", self._orig_tool_gen_cb),
+                ("interim_assistant_callback", self._orig_interim_cb),
+            ):
+                try:
+                    current = getattr(agent, attr, None)
+                    if current is not None and getattr(current, "_pe_wrapped", False):
+                        setattr(agent, attr, orig)
+                except Exception:
+                    pass
         _unregister_tracker(self._session_id, self._turn_id)
 
     @property

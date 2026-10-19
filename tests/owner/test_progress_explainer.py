@@ -661,3 +661,69 @@ class TestLazyAgentHolder:
             return agent, orig_progress
         agent, orig_progress = asyncio.run(_case())
         assert agent.tool_progress_callback is orig_progress
+
+
+class TestStopRestoresLazyCallbacks:
+    """[owner] T3-8: scheme ① installs with agent=None; the real callbacks are
+    only knowable at wrapping time. stop() must restore those, not the
+    constructor-time None — otherwise the host's callbacks are silently killed."""
+
+    def test_stop_restores_originals_when_agent_resolved_late(self):
+        async def _case():
+            holder: list = []
+            runner = FakeRunner(None)
+            runner.adapter = FakeAdapter()
+            expl = ProgressExplainer(
+                runner=runner,
+                agent=None,
+                source=_source(),
+                session_key="s",
+                turn_ctx=SimpleNamespace(message="m", _cleanup_msg_ids=[]),
+                executor_ref=lambda: None,
+                agent_holder=holder,
+            )
+            expl._cfg = _full_cfg()
+            # constructor-time captures are None under scheme ①
+            assert expl._orig_tool_progress_cb is None
+
+            agent = FakeAgent()
+            seen = []
+            agent.tool_progress_callback = lambda *a, **k: seen.append("host")
+            agent.tool_gen_callback = lambda *a, **k: seen.append("gen")
+            agent.interim_assistant_callback = lambda *a, **k: seen.append("ia")
+            holder.append(agent)
+
+            expl._sync_identity_and_callbacks()
+            assert getattr(agent.tool_progress_callback, "_pe_wrapped", False)
+            expl.stop()
+            # the HOST callbacks are back and callable
+            agent.tool_progress_callback("e")
+            agent.tool_gen_callback("t")
+            agent.interim_assistant_callback("x")
+            assert seen == ["host", "gen", "ia"]
+
+        asyncio.run(_case())
+
+    def test_stop_leaves_foreign_callbacks_untouched(self):
+        """A callback installed by someone else after wrapping (no _pe_wrapped
+        flag) must not be clobbered by stop()."""
+        async def _case():
+            agent = FakeAgent()
+            runner = FakeRunner(agent)
+            runner.adapter = FakeAdapter()
+            expl = ProgressExplainer(
+                runner=runner,
+                agent=agent,
+                source=_source(),
+                session_key="s",
+                turn_ctx=SimpleNamespace(message="m", _cleanup_msg_ids=[]),
+                executor_ref=lambda: None,
+            )
+            expl._cfg = _full_cfg()
+            expl._sync_identity_and_callbacks()
+            foreign = lambda *a, **k: None  # noqa: E731 — someone else's install
+            agent.tool_progress_callback = foreign
+            expl.stop()
+            assert agent.tool_progress_callback is foreign
+
+        asyncio.run(_case())
