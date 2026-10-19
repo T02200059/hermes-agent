@@ -1756,7 +1756,10 @@ class FeishuAdapter(BasePlatformAdapter):
         # also creates it on demand for partial instances (`FeishuAdapter.__new__` in tests).
         _ = self._user_store
         self._feishu_user_cache_impl: Dict[str, Any] = {}
-        self._sender_name_cache: Dict[str, tuple] = {}
+        # [owner] legacy view: `_sender_name_cache` IS the store's name-TTL dict
+        # ({open_id: (name, expire_at)} — same shape). Aliasing keeps pre-warm writes and
+        # store reads in one place; the legacy attribute alone used to diverge silently.
+        self._sender_name_cache: Dict[str, tuple] = self._user_store._name_ttl
         self._ws_client: Optional[Any] = None
         self._ws_future: Optional[asyncio.Future] = None
         self._ws_thread_loop: Optional[asyncio.AbstractEventLoop] = None
