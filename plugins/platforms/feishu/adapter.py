@@ -582,7 +582,11 @@ def _render_text_element(element: Dict[str, Any]) -> str:
     if _is_style_enabled(style_dict, "code"):
         return _wrap_inline_code(text)
 
-    rendered = _escape_markdown_text(text)
+    # Post text elements carry raw text plus separate style flags; the style
+    # wrappers below re-create the markdown. Escaping the text here put
+    # ``\`print\('hi'\)\`` into the model's context and those backslashes came
+    # straight back out in replies (#9816) — pass the text through untouched.
+    rendered = text
     if not rendered:
         return ""
     if _is_style_enabled(style_dict, "bold"):
@@ -750,6 +754,21 @@ def parse_feishu_post_payload(
         )
         if row_text:
             parts.append(row_text)
+    # Top-level ``files`` carry attachments that never appear in the content rows
+    # (Feishu puts shared-drive references there); skip folders and keyless stubs,
+    # and let _render_post_element dedup keys already seen in rows.
+    for entry in resolved.get("files", []) or []:
+        if (
+            not isinstance(entry, dict)
+            or _to_boolean(entry.get("is_folder"))
+            or not str(entry.get("file_key", "")).strip()
+        ):
+            continue
+        placeholder = _render_post_element(
+            {**entry, "tag": "file"}, image_keys, media_refs, mentions_map,
+        )
+        if placeholder:
+            parts.append(placeholder)
 
     return FeishuPostParseResult(
         text_content="\n".join(parts).strip() or FALLBACK_POST_TEXT,
@@ -796,9 +815,11 @@ def _to_post_payload(candidate: Any) -> Dict[str, Any]:
     content = candidate.get("content")
     if not isinstance(content, list):
         return {}
+    files = candidate.get("files")
     return {
         "title": str(candidate.get("title", "") or ""),
         "content": content,
+        "files": files if isinstance(files, list) else [],
     }
 
 
@@ -852,14 +873,17 @@ def _render_post_element(
             or str(element.get("title", "")).strip()
             or str(element.get("text", "")).strip()
         )
-        if file_key:
-            media_refs.append(
-                FeishuPostMediaRef(
-                    file_key=file_key,
-                    file_name=file_name,
-                    resource_type=tag if tag in {"audio", "video"} else "file",
-                )
+        if not file_key:
+            return f"[Attachment: {file_name}]" if file_name else "[Attachment]"
+        if any(ref.file_key == file_key for ref in media_refs):
+            return ""
+        media_refs.append(
+            FeishuPostMediaRef(
+                file_key=file_key,
+                file_name=file_name,
+                resource_type=tag if tag in {"audio", "video"} else "file",
             )
+        )
         return f"[Attachment: {file_name}]" if file_name else "[Attachment]"
     if tag in {"emotion", "emoji"}:
         label = str(element.get("text", "")).strip() or str(element.get("emoji_type", "")).strip()
@@ -4084,7 +4108,10 @@ class FeishuAdapter(BasePlatformAdapter):
             if hint:
                 text = f"{hint}\n\n{text}" if text else hint
 
-        thread_id = getattr(message, "thread_id", None) or getattr(message, "root_id", None) or None
+        # Only a native ``thread_id`` marks a topic. ``root_id`` is present on every quoted reply
+        # too, so using it as a fallback (#19711) turned ordinary quote replies into topic
+        # sessions and pushed the bot's answer into a fresh thread (#20548).
+        thread_id = getattr(message, "thread_id", None) or None
         reply_to_message_id = (
             getattr(message, "parent_id", None)
             or getattr(message, "upper_message_id", None)

@@ -1819,18 +1819,21 @@ class TestGroupMentionAtAll(unittest.TestCase):
 
     @patch.dict(os.environ, {"FEISHU_GROUP_POLICY": "allowlist", "FEISHU_ALLOWED_USERS": "ou_allowed"}, clear=True)
     def test_at_all_still_requires_policy_gate(self):
-        """@_all bypasses mention gating but NOT the allowlist policy."""
+        """[owner] @_all does NOT bypass mention gating (2026-08-13: an @everyone ping
+        must not wake the bot — only an explicit @bot mention does), and the allowlist
+        policy applies regardless."""
         from gateway.config import PlatformConfig
         from plugins.platforms.feishu.adapter import FeishuAdapter
 
         adapter = FeishuAdapter(PlatformConfig())
         message = SimpleNamespace(content='{"text":"@_all attention"}', mentions=[])
-        # Non-allowlisted user — should be blocked even with @_all.
+        # Non-allowlisted user — blocked by the allowlist policy either way.
         blocked_sender = SimpleNamespace(open_id="ou_blocked", user_id=None)
         self.assertFalse(_admits_group(adapter, message, blocked_sender, ""))
-        # Allowlisted user — should pass.
+        # Allowlisted user — still mention-gated: @_all alone does not count as a
+        # bot mention under the owner policy.
         allowed_sender = SimpleNamespace(open_id="ou_allowed", user_id=None)
-        self.assertTrue(_admits_group(adapter, message, allowed_sender, ""))
+        self.assertFalse(_admits_group(adapter, message, allowed_sender, ""))
 
 
 @unittest.skipUnless(_HAS_LARK_OAPI, "lark-oapi not installed")
