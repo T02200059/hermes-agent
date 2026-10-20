@@ -42,7 +42,9 @@ import json
 import logging
 import os
 import socket
+import time
 import urllib.parse
+from pathlib import Path
 from typing import Any, Iterable, Optional
 
 logger = logging.getLogger(__name__)
@@ -50,6 +52,13 @@ logger = logging.getLogger(__name__)
 # Env flag stamped by NAS when the scaleToZero Labs toggle is on (D11/Q8=A),
 # mirroring how the `relay` feature stamps GATEWAY_RELAY_URL. Truthy values only.
 SCALE_TO_ZERO_ENV = "HERMES_SCALE_TO_ZERO"
+
+# [owner] T2-21: restored with the dashboard-heartbeat function family below —
+# the A4-2 forward-port brought dashboard_client_last_seen() across but dropped
+# its path helper, touch() and these imports/constant, so the function NameError'd
+# on every call. The watcher's _read_or_awake swallowed it as "dashboard busy"
+# (fail-awake) ⇒ scale-to-zero could never quiesce while this crash stood.
+DASHBOARD_CLIENT_HEARTBEAT_REL = os.path.join("state", "dashboard_clients.heartbeat")
 
 # Fly-injected machine identity (present on every Fly machine). Used by the
 # self-suspend call; both must be present for self_suspend_available().
@@ -259,6 +268,27 @@ def suspend_self(
 
 
 # [owner] A4-2: forward-ported from upstream (symbol-level sweep).
+def dashboard_client_heartbeat_path(hermes_home: Optional[os.PathLike | str] = None):
+    """Path of the dashboard-client liveness marker under HERMES_HOME."""
+    if hermes_home is None:
+        from hermes_constants import get_hermes_home
+        hermes_home = get_hermes_home()
+    return Path(hermes_home) / DASHBOARD_CLIENT_HEARTBEAT_REL
+
+
+def touch_dashboard_client_heartbeat(path: Optional[os.PathLike | str] = None) -> bool:
+    """Mark "a dashboard client is attached right now". Best-effort, never raises."""
+    try:
+        p = dashboard_client_heartbeat_path() if path is None else path
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        open(p, "a", encoding="utf-8").close()
+        os.utime(p, None)
+        return True
+    except Exception:  # noqa: BLE001 - liveness garnish must never break the WS
+        logger.debug("scale-to-zero: dashboard heartbeat touch failed", exc_info=True)
+        return False
+
+
 def dashboard_client_last_seen(path: Optional[os.PathLike | str] = None, *,
                                now: Optional[float] = None) -> Optional[float]:
     """Epoch seconds a dashboard client last sent a WS frame, or None if never. Missing marker ->
