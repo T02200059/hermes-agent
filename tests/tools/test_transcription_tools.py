@@ -382,6 +382,12 @@ class TestTranscribeLocalExtended:
         # WhisperModel should be created only once
         assert mock_whisper_cls.call_count == 1
 
+    # [owner] T2-21: Linux-gated — owner's _should_force_faster_whisper_cpu()
+    # (Apple Silicon / Rosetta crash defense, absent upstream) hardcodes
+    # device=cpu + compute_type=int8 BEFORE the config passthrough added by
+    # #9088, so on this Mac the explicit compute_type never reaches
+    # WhisperModel. The passthrough contract stays pinned on the Linux lane.
+    @pytest.mark.linux_only
     def test_config_device_and_compute_type_passed_to_whisper(self, tmp_path):
         """User-configured device and compute_type should be forwarded to WhisperModel.
 

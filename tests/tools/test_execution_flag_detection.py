@@ -32,15 +32,24 @@ def test_real_read_tool_binaries_confirm_option_ownership(
     assert completed.stdout == expected_output
 
 
+# [owner] T2-21: the sort/ag/man params pin GNU/Linux userland CLI grammar
+# (BSD sort has no --compress-program/--buffer-size, BSD man rejects long
+# options, ag --pager needs a real tty pipeline) — they execute the payload
+# only on the Linux lane. rg's grammar is cross-platform so its params run
+# everywhere. Platform-split via pytest.param marks, per the repo convention
+# (tests/conftest.py _OS_MARKS).
+_GNU_ONLY = pytest.mark.linux_only
+
+
 @pytest.mark.parametrize(
     ("tool", "args", "stdin", "needs_tty"),
     [
         ("rg", ["--pre", "-payload-marker", "needle", "{input}"], None, False),
         ("rg", ["--hostname-bin=-payload-marker", "needle", "{input}"], None, False),
-        ("sort", ["--buffer-size=1K", "--compress-program", "-payload-marker"], "{bulk}", False),
-        ("ag", ["--pager=-payload-marker", "needle", "{input}"], None, True),
-        ("man", ["--pager", "-payload-marker", "ls"], None, True),
-        ("man", ["-P", "-payload-marker", "ls"], None, True),
+        pytest.param("sort", ["--buffer-size=1K", "--compress-program", "-payload-marker"], "{bulk}", False, marks=_GNU_ONLY),
+        pytest.param("ag", ["--pager=-payload-marker", "needle", "{input}"], None, True, marks=_GNU_ONLY),
+        pytest.param("man", ["--pager", "-payload-marker", "ls"], None, True, marks=_GNU_ONLY),
+        pytest.param("man", ["-P", "-payload-marker", "ls"], None, True, marks=_GNU_ONLY),
     ],
 )
 def test_real_binaries_execute_leading_dash_program_payload(

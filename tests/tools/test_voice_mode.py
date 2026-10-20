@@ -120,6 +120,11 @@ def fake_clock(monkeypatch):
 # detect_audio_environment — WSL / SSH / Docker detection
 # ============================================================================
 
+# [owner] T2-21: Linux-only — PulseAudio/PipeWire is the Linux sound-server
+# probe, and macOS's 104-byte AF_UNIX path limit (vs Linux 108) breaks the
+# tmp_path-based socket fixtures outright. Same convention as
+# TestPlayAudioFile::test_play_wav_via_sounddevice below.
+@pytest.mark.linux_only
 class TestPulseSocketReachable:
     def test_stale_socket_file_not_reachable(self, monkeypatch, tmp_path):
         """A socket file with no listener should not count as reachable."""
@@ -695,6 +700,10 @@ class TestCleanupTempRecordings:
 # ============================================================================
 
 class TestPlayBeep:
+    # [owner] T2-21: Linux-gated — on macOS play_beep deliberately routes
+    # through afplay (_sounddevice_output_allowed() is False; TCC policy
+    # pinned by TestMacOSAudioOutputPolicy), so sd.play is never called here.
+    @pytest.mark.linux_only
     def test_beep_calls_sounddevice_play(self, mock_sd):
         np = pytest.importorskip("numpy")
 
@@ -1376,6 +1385,10 @@ class TestDefaultInputSamplerate:
             assert wf.getframerate() == 48000
 
 
+# [owner] T2-21: Linux-only — the WSL2 PowerShell fallback branch is gated on
+# platform.system() == "Linux" in _play_audio_file_impl (WSL2 IS Linux);
+# patching _is_wsl2_env alone cannot make the branch reachable on macOS.
+@pytest.mark.linux_only
 class TestWSL2PowerShellFallback:
     """Regression tests for WSL2 PowerShell TTS fallback (issue #17608).
 
