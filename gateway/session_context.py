@@ -61,6 +61,18 @@ _UNSET: Any = object()
 _session_context_engaged: bool = False
 
 
+def session_context_engaged() -> bool:
+    """True if any session has been bound via set_session_vars in this process.
+
+    [owner] T2-21: restored from upstream verbatim — the forward-ported
+    subprocess-env sanitizer (tools/environments/local.py) imports this
+    accessor; without it the import raised, its ``except Exception: return``
+    swallowed the failure, and the foreign-session-key stripping protection
+    silently never ran (tests/tools/test_local_env_session_leak.py pins it).
+    """
+    return _session_context_engaged
+
+
 _SESSION_VARS = (
     _SESSION_PLATFORM, _SESSION_SOURCE, _SESSION_CHAT_ID, _SESSION_CHAT_TYPE,
     _SESSION_CHAT_NAME, _SESSION_THREAD_ID, _SESSION_USER_ID, _SESSION_USER_ID_ALT,
