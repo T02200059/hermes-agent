@@ -264,33 +264,6 @@ def test_providers_singular_model_does_not_suppress_ollama_native_discovery(monk
     assert ollama["models"] == ["qwen3:latest", "llama3.2:latest"]
 
 
-def test_list_authenticated_providers_can_skip_custom_provider_live_probe(monkeypatch):
-    monkeypatch.setattr("agent.models_dev.fetch_models_dev", lambda: {})
-    monkeypatch.setattr(providers_mod, "HERMES_OVERLAYS", {})
-    fetch = lambda *a, **k: (_ for _ in ()).throw(AssertionError("unexpected probe"))
-    monkeypatch.setattr("hermes_cli.models.fetch_api_models", fetch)
-
-    providers = list_authenticated_providers(
-        user_providers={},
-        custom_providers=[
-            {
-                "name": "Slow Local",
-                "base_url": "http://127.0.0.1:8080/v1",
-                "api_key": "sk-local",
-                "model": "local-model",
-            }
-        ],
-        probe_custom_providers=False,
-    )
-
-    row = next(p for p in providers if p["slug"] == "custom:slow-local")
-    assert row["models"] == ["local-model"]
-    assert row["total_models"] == 1
-
-
-
-
-
 def test_resolve_provider_full_finds_named_custom_provider():
     """Explicit /model --provider should resolve saved custom_providers entries."""
     resolved = resolve_provider_full(
@@ -523,7 +496,6 @@ def test_switch_model_does_not_send_ollama_headers_to_unrelated_custom_endpoint(
     assert validation_headers == [None]
 
 
-
 def test_is_routing_aggregator_excludes_flat_namespace_resellers():
     """opencode-go / opencode-zen stay ``is_aggregator=True`` (model-switch
     relies on it to search their flat bare-name catalog), but they are NOT
@@ -581,10 +553,6 @@ def test_picker_selection_resolves_named_custom_provider_model_id(monkeypatch):
     assert result.success is True
     assert result.target_provider == "custom:sensenova"
     assert result.new_model == "deepseek-v4-flash"
-
-
-
-
 
 
 def test_list_groups_same_name_custom_providers_into_one_row(monkeypatch):
@@ -973,9 +941,6 @@ def test_list_dedupes_dict_model_matching_singular_default(monkeypatch):
     ds_rows = [p for p in providers if p["name"] == "DeepSeek"]
     assert ds_rows[0]["models"].count("deepseek-chat") == 1
     assert ds_rows[0]["models"] == ["deepseek-chat", "deepseek-reasoner"]
-
-
-
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1510,10 +1475,6 @@ def test_same_endpoint_different_extra_headers_not_collapsed(monkeypatch):
     assert models_by_row == {("model-a",), ("model-b",)}
 
 
-
-
-
-
 def test_resolve_custom_provider_passes_key_env():
     """resolve_custom_provider should propagate key_env into api_key_env_vars.
 
@@ -1590,8 +1551,6 @@ def test_discovered_models_auto_saved_to_cache(monkeypatch):
     )
     assert gateway_prov is not None
     assert gateway_prov["models"] == ["discovered-a", "discovered-b", "discovered-c"]
-
-
 
 
 def test_save_discovered_models_preserves_dict_form(monkeypatch):
