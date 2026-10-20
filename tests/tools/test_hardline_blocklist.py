@@ -813,3 +813,32 @@ def test_sudo_stdin_guard_container_bypass(clean_session):
         for cmd in _SUDO_STDIN_BLOCK:
             result = check_all_command_guards(cmd, env)
             assert result["approved"] is True, f"container {env} should bypass sudo guard on {cmd!r}"
+
+
+class TestLanguageHermeticity:
+    """[owner] T2-22: the suite must be immune to an ambient HERMES_LANGUAGE.
+
+    The ~48 English-literal assertions across tests/tools (e.g. "BLOCKED
+    (hardline)") are only stable because tests/conftest.py pins
+    HERMES_LANGUAGE=en in the hermetic-environment fixture. This test fails if
+    that pin is ever removed while an ambient language differs from en — the
+    exact wholesale-failure mode this machine (ambient zh) reproduced.
+    """
+
+    def test_conftest_pins_language_regardless_of_ambient_env(self):
+        import os
+
+        from agent.i18n import get_language
+
+        assert os.environ.get("HERMES_LANGUAGE") == "en", (
+            "tests/conftest.py must pin HERMES_LANGUAGE=en for every test "
+            "(ambient language leaked in — catalog-driven literal assertions "
+            "would flip wholesale)"
+        )
+        assert get_language() == "en"
+
+    def test_hardline_message_is_english_under_the_pin(self, clean_session):
+        """Concrete canary: the message a zh-ambient run used to localize."""
+        result = check_dangerous_command("rm -rf /", "local")
+        assert result["approved"] is False
+        assert "BLOCKED" in result["message"]

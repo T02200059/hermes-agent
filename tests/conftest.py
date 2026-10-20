@@ -475,6 +475,25 @@ def _hermetic_environment(tmp_path, monkeypatch):
     # custom host resolution override/delete this explicitly.
     monkeypatch.setenv("HERMES_HONCHO_HOST", "hermes")
 
+    # [owner] T2-22: pin the i18n language so an ambient HERMES_LANGUAGE in the
+    # developer's shell (e.g. `zh`) cannot leak in and flip every catalog-driven
+    # string. ~48 assertions across tests/tools check English literals like
+    # "BLOCKED (hardline)"; under an ambient zh they fail wholesale even though
+    # the product is correct. This is the same hermeticity this fixture already
+    # provides for credentials/behavioral vars — language was simply missing
+    # from the list. Pin explicitly (not delenv) so the config-fallback path
+    # can't reintroduce drift, and clear the lru_cache'd config language + the
+    # loaded catalogs so the pin takes effect this process-instant. Tests that
+    # genuinely exercise another language still override via their own
+    # monkeypatch.setenv + reset_language_cache (they run after this fixture).
+    monkeypatch.setenv("HERMES_LANGUAGE", "en")
+    try:
+        from agent.i18n import reset_language_cache
+
+        reset_language_cache()
+    except Exception:
+        pass
+
     # 3. Redirect HERMES_HOME to a per-test tempdir. Code that reads
     #    ``~/.hermes/*`` via ``get_hermes_home()`` now gets the tempdir.
     #
