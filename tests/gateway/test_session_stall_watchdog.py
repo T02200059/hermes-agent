@@ -164,7 +164,14 @@ def _runner_for_stall(adapter: _FakeAdapter) -> GatewayRunner:
 
 
 def _pending_event(chat_id: str = "chat-1", thread_id: str | None = None):
-    source = SimpleNamespace(chat_id=chat_id, thread_id=thread_id, platform=None)
+    # [owner] T2-21: restored to upstream's real SessionSource — the owner
+    # simplification to SimpleNamespace(platform=None) broke the notify path:
+    # _resolve_profile_home_for_source hits its AttributeError fallback (no
+    # .profile attr), whose warning log reads source.platform.value → crash
+    # on None, so every stall notify "failed" and the tests saw 0 sends.
+    from gateway.session import SessionSource
+    from gateway.config import Platform
+    source = SessionSource(chat_id=chat_id, thread_id=thread_id, platform=Platform.TELEGRAM)
     return SimpleNamespace(text="follow-up", source=source, timestamp=time.time())
 
 
