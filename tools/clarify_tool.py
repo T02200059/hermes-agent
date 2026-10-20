@@ -106,7 +106,7 @@ def _flatten_choice(c) -> str:
     return str(c).strip()
 
 
-def mark_recommended(choices: List[str]) -> List[str]:
+def mark_recommended(choices: List[Any]) -> List[Any]:
     """Label the first choice as the agent's recommendation.
 
     The schema tells the model to order ``choices`` best-first, so element 0 is
@@ -115,6 +115,14 @@ def mark_recommended(choices: List[str]) -> List[str]:
     desktop card, Telegram buttons) reads the same way without four copies of
     the same string concatenation, and the label can never drift between them.
 
+    [owner] T2-21: shape-aware. The single-question path normalizes choices to
+    ``{"display", "key"}`` dicts (owner.clarify.choice_normalizer, for Feishu
+    rich cards) BEFORE this runs; the batch path and the owner-absent degraded
+    path keep plain strings. The label is presentation, so it belongs on
+    ``display`` — never on ``key``, which is the stable id the gateway echoes
+    back as the answer. Stringifying a dict here (the pre-fix behaviour, a
+    merge artifact) leaked ``{'display': ...}`` onto every rendered button.
+
     Idempotent: a model that writes its own "(recommended)" into the choice is
     left alone rather than getting the suffix twice. A lone choice isn't a
     recommendation — there's nothing to prefer it over — so single-choice lists
@@ -122,10 +130,21 @@ def mark_recommended(choices: List[str]) -> List[str]:
     """
     if len(choices) < 2:
         return choices
-    first = str(choices[0]).strip()
-    if first != strip_recommended(first):
+    first = choices[0]
+    if isinstance(first, dict):
+        display = first.get("display")
+        if not isinstance(display, str):
+            return choices
+        display = display.strip()
+        if display != strip_recommended(display):
+            return choices  # already carries a label — idempotent
+        marked = dict(first)  # copy-on-write: never mutate the caller's dict
+        marked["display"] = f"{display} {RECOMMENDED_LABEL}"
+        return [marked] + list(choices[1:])
+    first_str = str(first).strip()
+    if first_str != strip_recommended(first_str):
         return choices
-    return [f"{first} {RECOMMENDED_LABEL}"] + list(choices[1:])
+    return [f"{first_str} {RECOMMENDED_LABEL}"] + list(choices[1:])
 
 
 def strip_recommended(text: str) -> str:

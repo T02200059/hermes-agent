@@ -40,8 +40,11 @@ class TestClarifyToolBasics:
         """
         def mock_callback(question: str, choices: Optional[List[str]]) -> str:
             assert question == "Pick a number"
+            # [owner] T2-21: the first choice carries the recommendation label
+            # on its ``display`` field (key stays the clean id). The pre-fix
+            # code stringified the whole dict here.
             assert choices == [
-                {"display": "1", "key": "1"},
+                {"display": "1 (Recommended)", "key": "1"},
                 {"display": "2", "key": "2"},
                 {"display": "3", "key": "3"},
             ]
@@ -53,6 +56,8 @@ class TestClarifyToolBasics:
             callback=mock_callback
         ))
         assert result["question"] == "Pick a number"
+        # choices_offered is the BARE list (label is presentation-only, never
+        # echoed back to the agent as part of the offered set).
         assert result["choices_offered"] == [
             {"display": "1", "key": "1"},
             {"display": "2", "key": "2"},
@@ -61,10 +66,15 @@ class TestClarifyToolBasics:
         assert result["user_response"] == "2"
 
     def test_empty_question_returns_error(self):
-        """Should return error for empty question."""
+        """Should return error for empty question.
+
+        [owner] T2-21: the schema-diet refactor (#95907) rewrote this error to
+        point at the ``questions[]`` batch interface — the message no longer
+        says "required" but must still name the empty-question cause.
+        """
         result = json.loads(clarify_tool("", callback=lambda q, c: "ignored"))
         assert "error" in result
-        assert "required" in result["error"].lower()
+        assert "no question provided" in result["error"].lower()
 
     def test_whitespace_only_question_returns_error(self):
         """Should return error for whitespace-only question."""
@@ -121,7 +131,7 @@ class TestClarifyToolChoicesValidation:
 
         clarify_tool("Pick", choices=["valid", "  ", "", "also valid"], callback=mock_callback)
         assert choices_received == [
-            {"display": "valid", "key": "valid"},
+            {"display": "valid (Recommended)", "key": "valid"},
             {"display": "also valid", "key": "also valid"},
         ]
 
@@ -149,7 +159,7 @@ class TestClarifyToolChoicesValidation:
 
         clarify_tool("Pick", choices=[1, 2, 3], callback=mock_callback)  # type: ignore
         assert choices_received == [
-            {"display": "1", "key": "1"},
+            {"display": "1 (Recommended)", "key": "1"},
             {"display": "2", "key": "2"},
             {"display": "3", "key": "3"},
         ]
@@ -247,14 +257,16 @@ class TestClarifyDictChoices:
             callback=cb,
         ))  # type: ignore
         # Each item is normalized to a {"display", "key"} dict — never a raw
-        # Python dict repr landing on a button label.
+        # Python dict repr landing on a button label. The first carries the
+        # recommendation label on ``display`` (T2-21 reconciled contract).
         assert seen == [
-            {"display": "Tight, covers all 3 points", "key": None},
+            {"display": "Tight, covers all 3 points (Recommended)", "key": None},
             {"display": "Loose layout", "key": None},
             {"display": "abc", "key": None},
             {"display": "A plain string choice", "key": "A plain string choice"},
         ]
-        # and the resolved answer is clean text, not a dict repr
+        # and the resolved answer is clean text, not a dict repr; the label is
+        # stripped from the answer even though the callback echoed display.
         assert result["user_response"] == "Tight, covers all 3 points"
         assert "{" not in result["user_response"]
         assert all("{" not in c["display"] for c in result["choices_offered"])
@@ -384,23 +396,32 @@ class TestClarifyRecommendedLabel:
 
         def cb(question, choices):
             seen.extend(choices or [])
-            return choices[1]
+            return choices[1]["key"]  # gateway echoes the clean key, not display
 
         clarify_tool("Pick", choices=["Rebase", "Merge"], callback=cb)
-        assert seen == ["Rebase (Recommended)", "Merge"]
+        # [owner] T2-21: label rides on ``display`` of the first dict; ``key``
+        # stays the clean id. (Upstream kept choices as bare strings; owner
+        # normalizes to dicts for rich platform cards — reconciled here.)
+        assert seen == [
+            {"display": "Rebase (Recommended)", "key": "Rebase"},
+            {"display": "Merge", "key": "Merge"},
+        ]
 
     def test_answer_strips_the_label(self):
         """Picking the recommended option returns the bare option text."""
         def cb(question, choices):
-            return choices[0]
+            return choices[0]["display"]  # user tapped the labelled button
 
         result = json.loads(clarify_tool("Pick", choices=["Rebase", "Merge"], callback=cb))
         assert result["user_response"] == "Rebase"
-        assert result["choices_offered"] == ["Rebase", "Merge"]
+        assert result["choices_offered"] == [
+            {"display": "Rebase", "key": "Rebase"},
+            {"display": "Merge", "key": "Merge"},
+        ]
 
     def test_multi_select_answers_strip_the_label(self):
         def cb(question, choices, multi_select=False):
-            return ", ".join(choices[:2])
+            return ", ".join(c["display"] for c in choices[:2])
 
         result = json.loads(clarify_tool(
             "Pick some",
@@ -416,10 +437,10 @@ class TestClarifyRecommendedLabel:
 
         def cb(question, choices):
             seen.extend(choices or [])
-            return choices[0]
+            return choices[0]["key"]
 
         clarify_tool("Confirm", choices=["Ship it"], callback=cb)
-        assert seen == ["Ship it"]
+        assert seen == [{"display": "Ship it", "key": "Ship it"}]
 
     def test_label_is_not_doubled(self):
         """A model that wrote its own label doesn't get a second one."""
@@ -427,10 +448,14 @@ class TestClarifyRecommendedLabel:
 
         def cb(question, choices):
             seen.extend(choices or [])
-            return choices[0]
+            return choices[0]["key"]
 
         clarify_tool("Pick", choices=["Rebase (recommended)", "Merge"], callback=cb)
-        assert seen == ["Rebase (recommended)", "Merge"]
+        # idempotent: the display keeps the model's own casing, no second label
+        assert seen == [
+            {"display": "Rebase (recommended)", "key": "Rebase (recommended)"},
+            {"display": "Merge", "key": "Merge"},
+        ]
 
     def test_open_ended_unaffected(self):
         def cb(question, choices):
