@@ -199,6 +199,11 @@ class TestGetServicePidsScoping:
     def _wire(self, monkeypatch):
         monkeypatch.setattr(gw, "is_macos", lambda: True)
         monkeypatch.setattr(gw, "supports_systemd_services", lambda: False)
+        # [owner] T2-21: restore upstream's subprocess isolation — the
+        # all_profiles branch runs a real ``launchctl list`` prefix scan; a
+        # developer box with a live ai.hermes.gateway* fleet leaks its PIDs
+        # into the assertion (observed {100,200,782,67821} vs {100,200}).
+        monkeypatch.setattr(gw.subprocess, "run", lambda *a, **k: _completed(0, ""))
         monkeypatch.setattr(gw, "get_launchd_label", lambda: "ai.hermes.gateway")
         monkeypatch.setattr(
             gw,
@@ -642,13 +647,21 @@ class TestWaitForLaunchdServicePid:
 
 
 class TestIncompleteWarningMentionsLaunchctl:
-    def test_launchd_labels_get_launchctl_hint(self, capsys):
+    """[owner] T2-21: these two pin the NON-macOS (systemd) hint branch — the
+    owner rewrite of upstream's macos bootstrap-hint test. They must mock
+    is_macos False: without it a real macOS host takes the bootstrap branch
+    and both assertions fail (product code is verbatim-identical to upstream;
+    this was purely a missing-mock test bug)."""
+
+    def test_launchd_labels_get_launchctl_hint(self, capsys, monkeypatch):
+        monkeypatch.setattr(gw, "is_macos", lambda: False)
         _warn_incomplete_gateway_fleet_restart(["ai.hermes.gateway-merit-ops"])
         out = capsys.readouterr().out
         assert "Update incomplete" in out
         assert "launchctl kickstart -k" in out
 
-    def test_systemd_units_keep_systemctl_hint(self, capsys):
+    def test_systemd_units_keep_systemctl_hint(self, capsys, monkeypatch):
+        monkeypatch.setattr(gw, "is_macos", lambda: False)
         _warn_incomplete_gateway_fleet_restart(["hermes-gateway-coder"])
         out = capsys.readouterr().out
         assert "systemctl" in out
