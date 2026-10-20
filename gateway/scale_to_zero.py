@@ -42,6 +42,7 @@ import json
 import logging
 import os
 import socket
+import urllib.parse
 from typing import Any, Iterable, Optional
 
 logger = logging.getLogger(__name__)
@@ -60,6 +61,16 @@ FLY_MACHINE_ID_ENV = "FLY_MACHINE_ID"
 # suspends THIS machine — the Fly-endorsed replacement for proxy autostop when
 # the app must own the idle decision (https://fly.io/docs/reference/suspend-resume/).
 FLY_API_SOCKET = "/.fly/api"
+
+# [owner] T2-21: restored — brokered_sleep_url() (forward-ported, A4-2) reads
+# these three module-level symbols but the forward-port dropped them, so every
+# call raised NameError (SLEEP_URL_ENV) / UnboundLocalError (the `global`
+# _malformed_sleep_url_logged latch) and urllib.parse was never imported at
+# module scope. NAS-brokered suspend, stamped where the guest cannot suspend
+# itself; carries its own signed credential in the query string.
+SLEEP_URL_ENV = "GATEWAY_RELAY_SLEEP_URL"
+
+_malformed_sleep_url_logged = False
 
 
 # config.yaml default (D2). Behavioural setting -> config, not env.

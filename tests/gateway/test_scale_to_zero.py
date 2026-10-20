@@ -8,6 +8,8 @@ test without a live gateway.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from gateway.scale_to_zero import (
@@ -122,6 +124,37 @@ from gateway.scale_to_zero import (  # noqa: E402 - grouped with their section
 _FLY_ENV = {FLY_APP_NAME_ENV: "hermes-agent-stg-test", FLY_MACHINE_ID_ENV: "d891234f"}
 
 
+# [owner] T2-21: restored from upstream — the owner prune replaced this fixture
+# with bare tmp_path, but pytest's tmp_path nests deep enough on macOS that
+# binding an AF_UNIX socket under it fails with "path too long" (sun_path is
+# 104 bytes on Darwin). Production uses the fixed /.fly/api so this only
+# affects the fake flaps server.
+_SUN_PATH_MAX = 100
+
+
+@pytest.fixture()
+def short_sock_dir():
+    """A directory short enough that ``<dir>/fly-api.sock`` fits in sun_path."""
+    import shutil
+    import tempfile
+
+    candidates = [tempfile.gettempdir(), "/tmp"]
+    for base in candidates:
+        try:
+            path = Path(tempfile.mkdtemp(prefix="s2z-", dir=base))
+        except OSError:
+            continue
+        if len(str(path / "fly-api.sock").encode()) <= _SUN_PATH_MAX:
+            break
+        shutil.rmtree(path, ignore_errors=True)
+    else:
+        pytest.skip(f"no temp dir short enough for an AF_UNIX socket (tried {candidates})")
+    try:
+        yield path
+    finally:
+        shutil.rmtree(path, ignore_errors=True)
+
+
 def _fake_flaps(tmp_path, status_line, capture):
     """One-shot unix-socket HTTP server standing in for flaps."""
     sock_path = str(tmp_path / "fly-api.sock")
@@ -150,9 +183,9 @@ def _fake_flaps(tmp_path, status_line, capture):
     return sock_path, t
 
 
-def test_suspend_self_posts_suspend_for_this_machine(tmp_path):
+def test_suspend_self_posts_suspend_for_this_machine(short_sock_dir):
     captured: list[bytes] = []
-    sock_path, t = _fake_flaps(tmp_path, "200 OK", captured)
+    sock_path, t = _fake_flaps(short_sock_dir, "200 OK", captured)
     assert suspend_self(_FLY_ENV, socket_path=sock_path) is True
     t.join(timeout=5)
     request = captured[0].decode()
@@ -164,9 +197,9 @@ def test_suspend_self_posts_suspend_for_this_machine(tmp_path):
     assert "Host: flaps\r\n" in request
 
 
-def test_suspend_self_non_2xx_is_false_not_raise(tmp_path):
+def test_suspend_self_non_2xx_is_false_not_raise(short_sock_dir):
     captured: list[bytes] = []
-    sock_path, t = _fake_flaps(tmp_path, "412 Precondition Failed", captured)
+    sock_path, t = _fake_flaps(short_sock_dir, "412 Precondition Failed", captured)
     assert suspend_self(_FLY_ENV, socket_path=sock_path) is False
     t.join(timeout=5)
 
@@ -186,3 +219,45 @@ def test_self_suspend_available_needs_identity_and_socket():
         assert self_suspend_available(_FLY_ENV) is False
     # Missing identity -> unavailable regardless of socket.
     assert self_suspend_available({}) is False
+
+
+# ---------------------------------------------------------------------------
+# [owner] T2-21: brokered_sleep_url's module-level symbols were dropped by the
+# A4-2 forward-port (SLEEP_URL_ENV / _malformed_sleep_url_logged / urllib.parse
+# import) — every call raised NameError, silently killing the NAS-brokered
+# suspend lever (the watcher's except-swallow made it look like "no lever").
+# Restored; these pin the function end-to-end without mocking it.
+# ---------------------------------------------------------------------------
+
+
+def test_brokered_sleep_url_symbols_are_defined():
+    from gateway import scale_to_zero as stz
+
+    assert stz.SLEEP_URL_ENV == "GATEWAY_RELAY_SLEEP_URL"
+    assert stz._malformed_sleep_url_logged is False
+
+
+def test_brokered_sleep_url_accepts_valid_https(caplog):
+    from gateway.scale_to_zero import brokered_sleep_url
+
+    url = "https://nas.internal/sleep?sig=abc"
+    assert brokered_sleep_url({"GATEWAY_RELAY_SLEEP_URL": url}) == url
+
+
+def test_brokered_sleep_url_rejects_missing_and_malformed(caplog):
+    from gateway.scale_to_zero import brokered_sleep_url
+
+    assert brokered_sleep_url({}) is None
+    # non-https must be rejected with a single latched warning
+    assert brokered_sleep_url({"GATEWAY_RELAY_SLEEP_URL": "ftp://nas/sleep"}) is None
+    assert "malformed" in caplog.text.lower()
+
+
+def test_suspend_available_with_brokered_url(monkeypatch):
+    """A stamped broker URL is a suspend lever even without Fly sockets."""
+    from gateway import scale_to_zero as stz
+
+    monkeypatch.setenv("GATEWAY_RELAY_SLEEP_URL", "https://nas.internal/sleep?sig=x")
+    monkeypatch.delenv("FLY_APP_NAME", raising=False)
+    monkeypatch.delenv("FLY_MACHINE_ID", raising=False)
+    assert stz.suspend_available() is True
