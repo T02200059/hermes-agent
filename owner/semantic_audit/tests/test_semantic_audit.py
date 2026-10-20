@@ -1009,3 +1009,135 @@ def test_detector_write_config_yaml_is_tier1():
         _tc("1", "write_file", {"path": "/home/u/.hermes/config.yaml", "content": "x"})
     )
     assert c.tier == "tier1"
+
+
+# ── [owner] T2-19①: 关闭态与 cron_enforce 语义 ─────────────────────────
+# 现网 config.yaml 正是 semantic_audit.enabled: false —— 此前 43 用例全部
+# 钉 enabled: True，「门关闭时绝不拦」这一现网唯一活跃形态零覆盖。
+
+
+class TestDisabledGate:
+    """enabled: false（现网形态）下门必须完全透传。"""
+
+    @pytest.fixture
+    def disabled_cfg(self, monkeypatch):
+        cfg = {
+            "enabled": False,
+            "max_strikes": 2,
+            "cron_enforce": True,
+            "respect_yolo": False,
+            "provider": "auto",
+            "model": "auto",
+            "timeout": 5.0,
+        }
+        monkeypatch.setattr(
+            "owner.semantic_audit.config.get_semantic_audit_cfg",
+            lambda: dict(cfg),
+        )
+        monkeypatch.setattr(
+            "owner.semantic_audit.gate.get_semantic_audit_cfg",
+            lambda: dict(cfg),
+        )
+        return cfg
+
+    def test_disabled_gate_is_passthrough(self, disabled_cfg, monkeypatch):
+        """hardline 级调用在关闭态也必须放行，且 detector 根本不被调用。
+
+        探针用「记录调用」而非「抛 AssertionError」——公开入口的 fail-open
+        try/except 会吞掉探针异常并照样返回 False，抛异常式探针对该变异
+        不敏感（T2-19① 变异验证实测发现）。
+        """
+        from owner.semantic_audit import detector, gate
+
+        calls: list = []
+        monkeypatch.setattr(
+            detector, "classify_batch", lambda *a, **k: calls.append("classify") or []
+        )
+        monkeypatch.setattr(
+            detector,
+            "warn_unreconciled_tools",
+            lambda *a, **k: calls.append("reconcile"),
+        )
+
+        agent = _agent("sess-disabled")
+        msg = SimpleNamespace(
+            tool_calls=[_tc("1", "terminal", {"command": "rm -rf /"})]
+        )
+        messages = []
+        assert gate.maybe_audit_batch(agent, msg, messages, "t") is False
+        assert calls == [], f"关闭态 detector 不得运行，实际: {calls}"
+        assert messages == [], "关闭态不得注入 synthetic tool result"
+        assert agent._interrupt_requested is False
+
+    def test_disabled_master_switch_precedes_cron_enforce(self, disabled_cfg):
+        """cron_enforce 不是主开关的旁路：enabled:false 时 cron 会话同样透传。
+
+        gate 的实现顺序是 enabled 短路在前、cron 豁免在后 —— cron_enforce
+        的语义是「门开启时是否豁免 cron 会话」，而不是「无视主开关强制
+        cron 会话过门」。本用例把该顺序钉住。
+        """
+        from owner.semantic_audit import gate, policy
+
+        agent = _agent("sess-cron", platform="cron")
+        assert policy.is_cron_session(agent) is True
+        msg = SimpleNamespace(
+            tool_calls=[_tc("1", "terminal", {"command": "rm -rf /"})]
+        )
+        messages = []
+        assert gate.maybe_audit_batch(agent, msg, messages, "t") is False
+        assert messages == []
+        assert agent._interrupt_requested is False
+
+
+class TestCronEnforceSemantics:
+    """enabled: true 时 cron_enforce 两态的豁免语义。"""
+
+    def _cfg(self, cron_enforce: bool) -> dict:
+        return {
+            "enabled": True,
+            "max_strikes": 2,
+            "cron_enforce": cron_enforce,
+            "respect_yolo": False,
+            "provider": "auto",
+            "model": "auto",
+            "timeout": 5.0,
+        }
+
+    def test_cron_enforce_false_exempts_cron_session(self, monkeypatch):
+        from owner.semantic_audit import detector, gate
+
+        cfg = self._cfg(cron_enforce=False)
+        monkeypatch.setattr(
+            "owner.semantic_audit.gate.get_semantic_audit_cfg", lambda: dict(cfg)
+        )
+        monkeypatch.setattr(detector, "warn_unreconciled_tools", lambda: None)
+
+        calls: list = []
+        monkeypatch.setattr(
+            detector, "classify_batch", lambda *a, **k: calls.append("classify") or []
+        )
+        agent = _agent("sess-cron", platform="cron")
+        msg = SimpleNamespace(
+            tool_calls=[_tc("1", "terminal", {"command": "rm -rf /"})]
+        )
+        messages = []
+        assert gate.maybe_audit_batch(agent, msg, messages, "t") is False
+        assert calls == [], "豁免的 cron 会话不得进入 classify（同样防 fail-open 吞探针）"
+
+    def test_cron_enforce_true_audits_cron_session(self, enabled_cfg, monkeypatch):
+        """默认 cron_enforce: true —— cron 会话不豁免，hardline 照拦。"""
+        from owner.semantic_audit import gate
+
+        agent = _agent("sess-cron", platform="cron")
+        msg = SimpleNamespace(
+            tool_calls=[_tc("1", "terminal", {"command": "rm -rf /"})]
+        )
+        messages = []
+        # 复用既有 hardline 判定路径（detector 真实分类，无 LLM 参与）
+        assert gate.maybe_audit_batch(agent, msg, messages, "t") is True
+        assert agent._interrupt_requested is True
+        assert any(
+            getattr(m, "tool_call_id", None) == "1" or m.get("tool_call_id") == "1"
+            for m in messages
+            if isinstance(m, dict) or hasattr(m, "tool_call_id")
+        ), "HALT 必须为被拦的 tool_call_id 注入 synthetic result"

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import threading
+import time
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -515,3 +517,75 @@ def test_prefetch_provider_waits_for_inflight(monkeypatch):
     assert result == "ctx"
     assert joined  # waited
     assert called == ["queue2"]
+
+
+# ---------------------------------------------------------------------------
+# [owner] T2-19②: _token_lock guards _token_state across register / get_meta /
+# prune. Black-box hammering cannot deterministically catch lock removal under
+# the GIL, so use an exclusion-detecting dict: it widens each op with sleep(0)
+# and counts re-entrant entry. With the lock held ops serialize (0 violations);
+# drop the lock and overlapping ops are caught.
+# ---------------------------------------------------------------------------
+
+
+class _ExclusionDetector(dict):
+    def __init__(self):
+        super().__init__()
+        self._inside = 0
+        self._guard = threading.Lock()
+        self.violations = 0
+
+    def _enter(self):
+        with self._guard:
+            self._inside += 1
+            if self._inside > 1:
+                self.violations += 1
+
+    def _exit(self):
+        with self._guard:
+            self._inside -= 1
+
+    def __setitem__(self, k, v):
+        self._enter(); time.sleep(0); super().__setitem__(k, v); self._exit()
+
+    def __getitem__(self, k):
+        self._enter(); r = super().__getitem__(k); time.sleep(0); self._exit(); return r
+
+    def __delitem__(self, k):
+        self._enter(); time.sleep(0); super().__delitem__(k); self._exit()
+
+    def items(self):
+        self._enter(); r = list(super().items()); time.sleep(0); self._exit(); return r
+
+    def get(self, k, d=None):
+        self._enter(); r = super().get(k, d); time.sleep(0); self._exit(); return r
+
+    def pop(self, k, *a):
+        self._enter(); r = super().pop(k, *a); time.sleep(0); self._exit(); return r
+
+
+def test_token_state_ops_are_mutually_exclusive(monkeypatch):
+    import concurrent.futures as _cf
+
+    detector = _ExclusionDetector()
+    monkeypatch.setattr(qcp, "_token_state", detector)
+    # keep prune cheap and deterministic (it iterates the same guarded dict)
+    monkeypatch.setattr(qcp, "_TOKEN_STALE_AFTER", 1e9)
+
+    n_workers = 16
+    barrier = threading.Barrier(n_workers)
+
+    def worker(idx):
+        barrier.wait()  # release all threads into the critical section at once
+        token = f"tok{idx % 4}"  # shared pool -> overlapping keys
+        for i in range(200):
+            qcp.register_scheduled_token(token, text=f"t{i}")
+            qcp.get_token_meta(token)
+
+    with _cf.ThreadPoolExecutor(max_workers=n_workers) as ex:
+        list(ex.map(worker, range(n_workers)))
+
+    assert detector.violations == 0, (
+        f"_token_lock failed to serialize _token_state ops: "
+        f"{detector.violations} concurrent entries"
+    )

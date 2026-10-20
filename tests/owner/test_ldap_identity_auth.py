@@ -47,6 +47,8 @@ import asyncio
 import os
 import textwrap
 import tempfile
+import threading
+import time
 from pathlib import Path
 from unittest.mock import patch
 
@@ -1132,3 +1134,88 @@ class TestT2_23MiddlewareMapsTo503:
         assert "ldap_backend_unavailable" in resp.text
         # must NOT be misreported as a credential failure
         assert "ldap_auth_failed" not in resp.text
+
+
+# ---------------------------------------------------------------------------
+# [owner] T2-19②: _cache_lock has no concurrency regression test. The cache
+# accessors guard a shared dict that _persist_positive_cache snapshots with
+# dict(_positive_cache) and sorted(_seen_logins) — both iterate, so an
+# unguarded concurrent mutation raises "dictionary changed size during
+# iteration". Hammer the real accessors from many threads and require zero
+# errors + a consistent final state.
+# ---------------------------------------------------------------------------
+
+
+class _ExclusionDetector(dict):
+    """A dict that flags concurrent entry — the reliable way to pin a lock.
+
+    Black-box hammering cannot deterministically catch lock removal under the
+    GIL (the guarded critical sections are single bytecodes). This detector
+    widens each dict op with ``sleep(0)`` and counts re-entrant entry: with the
+    surrounding lock held, ops are serialized (0 violations); drop the lock and
+    overlapping ops are caught immediately.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self._inside = 0
+        self._guard = threading.Lock()
+        self.violations = 0
+
+    def _enter(self):
+        with self._guard:
+            self._inside += 1
+            if self._inside > 1:
+                self.violations += 1
+
+    def _exit(self):
+        with self._guard:
+            self._inside -= 1
+
+    def __setitem__(self, k, v):
+        self._enter(); time.sleep(0); super().__setitem__(k, v); self._exit()
+
+    def __delitem__(self, k):
+        self._enter(); time.sleep(0); super().__delitem__(k); self._exit()
+
+    def items(self):
+        self._enter(); r = list(super().items()); time.sleep(0); self._exit(); return r
+
+    def get(self, k, d=None):
+        self._enter(); r = super().get(k, d); time.sleep(0); self._exit(); return r
+
+    def pop(self, k, *a):
+        self._enter(); r = super().pop(k, *a); time.sleep(0); self._exit(); return r
+
+
+class TestCacheLockConcurrency:
+    """[owner] T2-19②: the ``_cache_lock`` guards ``_negative_cache`` across
+    ``_negative_put`` / ``_negative_active`` (which prunes). Swap in an
+    exclusion-detecting dict and hammer from many threads: the lock must
+    serialize every op (0 violations)."""
+
+    def test_negative_cache_ops_are_mutually_exclusive(self, ldap_home, monkeypatch):
+        import concurrent.futures as _cf
+
+        ldap_auth.reset_for_tests()
+        detector = _ExclusionDetector()
+        monkeypatch.setattr(ldap_auth, "_negative_cache", detector)
+
+        keys = [f"k{i}" for i in range(4)]
+        n_workers = 16
+        barrier = threading.Barrier(n_workers)
+
+        def worker(_idx):
+            barrier.wait()  # release all threads into the critical section at once
+            for _ in range(200):
+                for k in keys:
+                    ldap_auth._negative_put(k, 10.0)
+                    ldap_auth._negative_active(k)
+
+        with _cf.ThreadPoolExecutor(max_workers=n_workers) as ex:
+            list(ex.map(worker, range(n_workers)))
+
+        assert detector.violations == 0, (
+            f"_cache_lock failed to serialize negative-cache ops: "
+            f"{detector.violations} concurrent entries"
+        )
