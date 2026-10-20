@@ -81,6 +81,40 @@ _KIMI_FAMILY_MODEL_PREFIXES = (
 _KIMI_FAMILY_EXACT_SLUGS = frozenset({"k3"})
 
 
+def _normalize_kimi_model_id(model: str | None) -> str:
+    """Bare model id lowercased (strip ``vendor/`` prefix if present)."""
+    if not isinstance(model, str):
+        return ""
+    m = model.strip().lower()
+    if not m:
+        return ""
+    # Strip vendor prefix (e.g. ``moonshotai/kimi-k2.5`` → ``kimi-k2.5``)
+    if "/" in m:
+        m = m.rsplit("/", 1)[-1]
+    return m
+
+
+def _kimi_model_always_thinking(model: str | None) -> bool:
+    """True for models whose thinking + Preserved Thinking cannot be disabled.
+
+    Official docs (``kimi-k2.7-code`` / highspeed): thinking is always on,
+    ``thinking.keep`` is always ``"all"``, and passing ``type: disabled``
+    errors. Company proxies (damodel/custom) that front the same upstream
+    share this contract when the model id is the k2.7-code family.
+
+    [owner] T2-21: restored — the adapter godfile split (7cbffdd125) dropped
+    this definition while plugins/model-providers/kimi-coding still imports it
+    from agent.anthropic_adapter, so the plugin's ``except Exception`` silently
+    degraded always_thinking to False and k2.7-code users hit HTTP 400 on every
+    ``thinking: {type: disabled}``.
+    """
+    m = _normalize_kimi_model_id(model)
+    if not m:
+        return False
+    # kimi-k2.7-code, kimi-k2.7-code-highspeed, future kimi-k2.7-*
+    return m.startswith("kimi-k2.7")
+
+
 def _model_name_is_kimi_family(model: str | None) -> bool:
     if not isinstance(model, str):
         return False
