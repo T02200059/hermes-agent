@@ -1704,7 +1704,13 @@ class TestReaderLoopOrphanedPipe:
 # =========================================================================
 # systemd cgroup isolation for gateway-spawned local executors (#70716)
 # =========================================================================
-@pytest.mark.skipif(sys.platform == "win32", reason="POSIX-only: systemd scopes")
+# [owner] T2-21: Linux-only, not merely "POSIX-only" — the product probe is
+# gated on ``_IS_LINUX`` (tools/process_registry.py: systemd-run --user needs
+# the user D-Bus session bus), so on macOS every test here exercises the
+# fallback path while asserting the wrap happened. The old win32-only guard
+# left 8 tests red on every Mac. Use the repo's canonical linux_only marker
+# (tests/conftest.py) so the runner tallies it with the other platform splits.
+@pytest.mark.linux_only
 class TestSystemdCgroupIsolation:
     """Verify spawn_local wraps the worker in ``systemd-run --user --scope``
     when running under a supervisor and systemd-run is available, and falls
