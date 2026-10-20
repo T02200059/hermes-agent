@@ -4,6 +4,16 @@ Topic mode makes the root Telegram DM a system lobby while user-created
 Telegram topics act as independent Hermes session lanes.
 """
 
+# [owner] T2-21 KNOWN GAP — these 8 failures are EXPECTED on this fork
+# (deferred by user decision 2026-10-20, do NOT "fix" the tests):
+# the forward-ported gateway host (gateway/run_topics.py et al.) calls the
+# SessionDB telegram-topic family with profile_name= / record_telegram_
+# topic_binding (upstream #76423 v3 shape), but hermes_state.SessionDB is
+# still the pre-profile v2 shape ⇒ TypeError swallowed by gateway try/except
+# ⇒ Telegram DM topic mode silently dead. The tests pin the correct upstream
+# contract; the DB layer is what's behind. Full diagnosis + fix plan is
+# documented at hermes_state.apply_telegram_topic_migration's docstring.
+
 from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock

@@ -15449,6 +15449,26 @@ class SessionDB(SessionMessagesMixin, SessionSearchMixin, SessionSchemaMixin, Se
     def apply_telegram_topic_migration(self) -> None:
         """Create Telegram DM topic-mode tables on explicit /topic opt-in.
 
+        [owner] T2-21 KNOWN GAP (2026-10-20, deferred by user decision):
+        the T2-20 forward-ported gateway host modules (gateway/run_topics.py,
+        run_turn.py, slash_commands.py) call this table family with a
+        ``profile_name=`` kwarg (upstream #76423 multi-profile isolation,
+        upstream hermes_state_telegram.py v3 schema) and also call
+        ``record_telegram_topic_binding`` — NEITHER EXISTS HERE: this
+        SessionDB is still the pre-profile v2 shape (no profile_name column,
+        no record_* method). Every such call raises TypeError/AttributeError
+        and is swallowed by the gateway's try/except, so **Telegram DM topic
+        mode is silently dead on this fork** (bindings never persist; topic
+        restore/rename/relay all no-op). tests/gateway/test_telegram_topic_mode.py
+        (8 official tests) pins the upstream contract and stays red until the
+        gap is closed. Proper fix = port upstream hermes_state_telegram.py
+        (SessionTelegramTopicsMixin, 377 lines) + its internal-API deps
+        (_read_one/_read_all/_write_sql/_write_rowcount/_rich_row/
+        _rebuild_table/_read_retrying_ioerr) + the v2→v3 profile_name
+        migration — deliberately deferred (schema migration on the core
+        state DB needs its own window). Do not "fix" the tests instead:
+        they are correct; the DB layer is behind the gateway layer.
+
         This migration is deliberately not part of automatic SessionDB startup
         reconciliation. Operators must be able to upgrade Hermes, keep the old
         Telegram bot behavior running, and only mutate topic-mode state when the
