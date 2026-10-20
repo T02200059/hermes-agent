@@ -192,6 +192,12 @@ def wait_for_response(clarify_id: str, timeout: float) -> Optional[str]:
                 break
             slice_s = min(1.0, remaining)
         if entry.event.wait(timeout=slice_s):
+            # [owner] T2-21: restore the flag the heartbeat-polling refactor
+            # dropped. Without it the sentinel branch below is dead code, so a
+            # session-boundary cleanup (clear_session sets response="" + event)
+            # returns "" instead of CLARIFY_STOP_SENTINEL and Feishu cannot tell
+            # cleanup apart from a genuine user-inactivity timeout.
+            resolved_by_event = True
             break
         if touch_activity_if_due is not None:
             touch_activity_if_due(activity_state, "waiting for user clarify response")

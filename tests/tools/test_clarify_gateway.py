@@ -275,11 +275,26 @@ class TestCoverageGaps:
         assert sig["choices"] == ["A", "B"]
 
 
-    def test_wait_for_response_unknown_id_returns_none(self):
-        """wait_for_response on a non-existent id returns None immediately."""
-        from tools import clarify_gateway as cm
+    def test_wait_for_response_unknown_id_returns_stop_sentinel(self):
+        """[owner] T2-21 adjudication: a missing entry returns the STOP sentinel.
 
-        assert cm.wait_for_response("nonexistent-id", timeout=0.1) is None
+        Upstream (#69774) pins ``unknown id → None`` ("returns None
+        immediately"). Owner §15 (e488cb3488, Feishu clarify race defense)
+        deliberately changed this branch: an entry that vanished before the
+        wait means a concurrent ``clear_session()`` won the race during card
+        send, and reporting ``None`` would surface a misleading "user did not
+        respond" timeout instead of stopping the turn cleanly. The 2026-09-02
+        merge kept upstream's stale assertion next to owner's behaviour — this
+        test is updated to the owner contract (same T1-3 family disposition:
+        owner customization wins, the upstream pin is rewritten in place).
+        """
+        from tools import clarify_gateway as cm
+        from tools.clarify_tool import CLARIFY_STOP_SENTINEL
+
+        assert (
+            cm.wait_for_response("nonexistent-id", timeout=0.1)
+            == CLARIFY_STOP_SENTINEL
+        )
 
 
     def test_get_clarify_timeout_exception_returns_default(self, monkeypatch):
