@@ -44,6 +44,11 @@ ALLOWLIST = {
     "hermes_cli/managed_scope.py",
     # Parse-health probe: intentionally answers "does the raw file parse?".
     "gateway/readiness.py",
+    # [owner] T2-21: the gateway's YAML-layer loader (extracted from run.py by
+    # the A4 host-split; read_yaml_layers IS what the gateway loader sees —
+    # it deliberately bypasses hermes_cli.config.load_config to apply the
+    # managed overlay itself, same class as gateway/run.py above).
+    "gateway/config_loader.py",
 }
 
 # Directories that never count (tests may build fixture configs freely).
