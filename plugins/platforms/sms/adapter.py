@@ -24,6 +24,7 @@ import hashlib
 import hmac
 import logging
 import os
+import re  # [owner] T2-21: restored — _strip_markdown_for_sms NameError'd without it (upstream has it)
 import urllib.parse
 from typing import Any, Dict, Optional
 

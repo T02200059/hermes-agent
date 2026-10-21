@@ -83,6 +83,13 @@ RECONNECTED_MARKER = (
     "delivery failed, so this may be a duplicate:\n\n"
 )
 
+# [owner] T2-21: restored from upstream verbatim — the A4-2 forward-port brought
+# _claimed_row()'s ``FLOOD_MARKER if flood else ...`` across but dropped the
+# constant, so claiming any flood-refused row raised AttributeError and the
+# recovered-reply banner never rendered.
+FLOOD_MARKER = ("♻️ Recovered reply — the messaging platform's rate limit refused the original, so part of "
+                "it may already have arrived above:\n\n")
+
 # Runtime replay is deliberately fail-closed. Only errors whose send contract
 # proves they are transient reconnect failures belong here; permanent rejects
 # (blocked bot, bad auth, missing chat) must not be retried merely because an
@@ -606,6 +613,12 @@ def pending_retries(now: Optional[float] = None) -> List[Dict[str, Any]]:
             for (platform, profile), due in sorted(earliest.items())]
 
 FLOOD_ERROR_PREFIX = "flood_control:"
+# [owner] T2-21: restored from upstream verbatim — flood_retry_delay() (already
+# forward-ported) reads all three; without them every redelivery-timer arming
+# for a flood-refused row raised NameError.
+FLOOD_RETRY_DEFAULT_SECONDS = 60.0
+FLOOD_RETRY_CAP_SECONDS = 15 * 60.0
+FLOOD_RETRY_SLACK_SECONDS = 2.0
 
 _RAW_FLOOD_RE = re.compile(r"flood control exceeded.*?retry in\s+(\d+(?:\.\d+)?)", re.IGNORECASE)
 
@@ -643,11 +656,36 @@ def retry_not_before(updated_at: Any, last_error: Any, attempts: Any) -> Optiona
         return None
     return _failed_stamp(updated_at) + _RETRY_BACKOFF_SECONDS[spent]
 
+def flood_wait_seconds(error: Any, default: float = FLOOD_RETRY_DEFAULT_SECONDS) -> float:
+    """The wait the platform asked for, read from ``flood_control:<seconds>``; ``default`` when unreadable."""
+    text = str(error or "").strip().lower()
+    wait = default
+    if text.startswith(FLOOD_ERROR_PREFIX):
+        try:
+            wait = float(text[len(FLOOD_ERROR_PREFIX):].strip())
+        except ValueError:
+            wait = default
+    else:
+        # A row still carrying the platform's own flood wording states its delay just as precisely,
+        # and the deadline must use it rather than the generic default.
+        raw = _raw_flood_wait(text)
+        if raw is not None:
+            wait = raw
+    return wait if wait > 0 else default
+
+
 def _failed_stamp(updated_at: Any) -> float:
     try:
         return float(updated_at or 0.0)
     except (TypeError, ValueError):
         return 0.0
+
+
+def flood_not_before(updated_at: Any, last_error: Any) -> float:
+    """Earliest moment a flood-refused row may be resent: the refusal's timestamp (``mark_failed`` sets
+    ``updated_at``) plus the platform's wait. Enforced by the sweeps so neither an early timer nor a
+    reconnect sweep spends a redelivery attempt inside the penalty window."""
+    return _failed_stamp(updated_at) + flood_wait_seconds(last_error)
 
 _RETRY_BACKOFF_SECONDS = (30.0, 120.0)  # [owner] A4-2: forward-ported (upstream asserts len == MAX_ATTEMPTS-1)
 
