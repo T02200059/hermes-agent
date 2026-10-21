@@ -478,3 +478,65 @@ class TestPerProviderReasoningEcho:
         api_msg = {"role": "assistant", "content": "hi"}
         apply_reasoning_content_policy(source, api_msg, needs_thinking_pad=False)
         assert "reasoning_content" not in api_msg
+
+
+class TestKimiEchoLayer2ProxyHosts:
+    """[owner] T2-21: kimi echo-back on company proxies (damodel / ark / NewAPI).
+
+    The rule table is host-driven and cannot enumerate every proxy that fronts
+    the official Kimi API, so the kimi family carries a second layer: a
+    kimi-family *model id* on a non-aggregator host. Both the runtime predicate
+    and the token-accounting estimator read this ONE implementation — if they
+    ever diverge, reasoning_content ships on every turn while the compressor
+    charges newest-turn-only, and a reasoning-heavy session overflows context
+    before compaction fires (#84371).
+    """
+
+    PROXY_CASES = (
+        ("damodel", "kimi-k3", "https://genai.damodel.com/v1"),
+        ("damodel", "moonshotai/Kimi-K2.7-Code", "https://genai.damodel.com/v1"),
+        ("custom", "k3", "https://newapi.internal.example.com/v1"),
+        ("ark", "kimi-k3", "https://ark.cn-beijing.volces.com/api/v3"),
+    )
+
+    @pytest.mark.parametrize("provider,model,base_url", PROXY_CASES)
+    def test_proxy_host_with_kimi_model_requires_echo(self, provider, model, base_url):
+        assert matches_reasoning_echo_family("kimi", provider, model, base_url) is True
+
+    @pytest.mark.parametrize("provider,model,base_url", PROXY_CASES)
+    def test_accounting_agrees_with_runtime(self, provider, model, base_url):
+        """The estimator must charge every turn exactly when the wire replays them."""
+        from agent.message_sanitization import stale_thinking_reaches_wire
+
+        runtime = matches_reasoning_echo_family("kimi", provider, model, base_url)
+        accounted = stale_thinking_reaches_wire("chat_completions", provider, model, base_url)
+        assert runtime is accounted
+
+    @pytest.mark.parametrize(
+        "provider,model,base_url",
+        [
+            # Aggregators re-export Kimi under their own protocol and reject an
+            # inbound reasoning_content — never echo through them.
+            ("openrouter", "kimi-k3", "https://openrouter.ai/api/v1"),
+            ("openrouter", "moonshotai/kimi-k2.6", "https://openrouter.ai/api/v1"),
+            ("nous", "kimi-k3", "https://nousresearch.com/api/v1"),
+            # Non-kimi model on the same proxy must not be swept in.
+            ("damodel", "xy-max", "https://genai.damodel.com/v1"),
+            ("damodel", "claude-sonnet-4-6", "https://genai.damodel.com/v1"),
+            ("damodel", None, "https://genai.damodel.com/v1"),
+        ],
+    )
+    def test_aggregators_and_non_kimi_models_excluded(self, provider, model, base_url):
+        assert matches_reasoning_echo_family("kimi", provider, model, base_url) is False
+
+    def test_layer2_does_not_leak_into_other_families(self):
+        """deepseek / mimo keep their original table-only semantics."""
+        assert matches_reasoning_echo_family(
+            "deepseek", "damodel", "kimi-k3", "https://genai.damodel.com/v1") is False
+        assert matches_reasoning_echo_family(
+            "mimo", "damodel", "kimi-k3", "https://genai.damodel.com/v1") is False
+
+    def test_official_hosts_still_match_without_model(self):
+        """Layer 1 is unchanged: host/provider match works with model=None."""
+        assert matches_reasoning_echo_family("kimi", "kimi-coding", None, "https://x") is True
+        assert matches_reasoning_echo_family("kimi", "custom", None, "https://api.moonshot.ai/v1") is True

@@ -8473,24 +8473,14 @@ class AIAgent:
         Rule table owner: ``agent.message_sanitization.reasoning_echo_family``.
         """
         from agent.message_sanitization import matches_reasoning_echo_family
-        if matches_reasoning_echo_family(
-            "kimi", self.provider, None, self.base_url
-        ):
-            return True
-
-        # [owner] Layer 2: kimi-family model on company proxies (damodel, …)
-        try:
-            from agent.anthropic_adapter import _model_name_is_kimi_family
-        except Exception:
-            return False
-        if not _model_name_is_kimi_family(self.model):
-            return False
-        provider = (self.provider or "").lower()
-        if provider in {"openrouter", "nous"}:
-            return False
-        if base_url_host_matches(self.base_url, "openrouter.ai"):
-            return False
-        return True
+        # Single source of truth: the shared rule table owns BOTH the host/
+        # provider match (layer 1) and the kimi-family-model-on-a-proxy-host
+        # match (layer 2), so the token-accounting estimator
+        # (stale_thinking_reaches_wire) can never disagree with the runtime
+        # about whether reasoning_content actually reaches the wire (#84371).
+        return matches_reasoning_echo_family(
+            "kimi", self.provider, self.model, self.base_url
+        )
 
     def _needs_deepseek_tool_reasoning(self) -> bool:
         """Return True when the current provider is DeepSeek thinking mode.

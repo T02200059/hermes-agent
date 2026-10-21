@@ -866,6 +866,18 @@ def matches_reasoning_echo_family(
     Families can overlap (e.g. a deepseek-named model pointed at a kimi
     host); this membership test is independent per family so per-family
     predicates keep their original semantics.
+
+    The kimi family additionally matches **layer 2**: a kimi-family *model id*
+    served through a company proxy / gateway whose host is not in the table
+    (damodel, ark, a self-hosted NewAPI, …). Those proxies forward to the
+    official Kimi API and therefore enforce the same echo-back, but the table
+    is host-driven and cannot enumerate them. Aggregators are excluded because
+    they re-export Kimi under *their own* protocol and reject
+    ``reasoning_content`` on input. This is the single source of truth shared
+    by the runtime predicate (``run_agent._needs_kimi_tool_reasoning``) and the
+    token-accounting estimator (``stale_thinking_reaches_wire``) — they must
+    agree, or a reasoning-heavy session is charged newest-turn-only while the
+    wire actually replays every turn (#84371).
     """
     from utils import base_url_host_matches
 
@@ -876,7 +888,32 @@ def matches_reasoning_echo_family(
         return True
     if any(sub in model_lower for sub in model_subs):
         return True
-    return any(base_url_host_matches(base_url, host) for host in hosts)
+    if any(base_url_host_matches(base_url, host) for host in hosts):
+        return True
+    if family == "kimi":
+        return _kimi_family_on_proxy_host(provider, model, base_url)
+    return False
+
+
+#: Aggregators that re-export Kimi models under their own protocol and reject
+#: an inbound ``reasoning_content`` — never echo back through them.
+_KIMI_ECHO_EXCLUDED_PROVIDERS = frozenset({"openrouter", "nous"})
+_KIMI_ECHO_EXCLUDED_HOSTS = ("openrouter.ai",)
+
+
+def _kimi_family_on_proxy_host(provider: Any, model: Any, base_url: Any) -> bool:
+    """Layer 2 of the kimi echo rule: kimi-family model id on a non-aggregator host."""
+    from utils import base_url_host_matches
+
+    try:
+        from agent.anthropic_endpoints import _model_name_is_kimi_family
+    except Exception:  # pragma: no cover - defensive; the module is a hard dep
+        return False
+    if not _model_name_is_kimi_family(model):
+        return False
+    if (provider or "").lower() in _KIMI_ECHO_EXCLUDED_PROVIDERS:
+        return False
+    return not any(base_url_host_matches(base_url, h) for h in _KIMI_ECHO_EXCLUDED_HOSTS)
 
 
 def reasoning_echo_family(provider: Any, model: Any, base_url: Any) -> "str | None":
