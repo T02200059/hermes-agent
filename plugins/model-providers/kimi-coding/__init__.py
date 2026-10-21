@@ -99,23 +99,33 @@ class KimiProfile(ProviderProfile):
         "Optional" so an explicit ``disabled`` is honoured. Both are pinned by
         tests/plugins/model_providers/test_kimi_profile.py.
 
-        [owner] T2-21 OPEN DISCREPANCY (deliberately NOT changed — see below):
-        the docs' parameter table marks top-level ``reasoning_effort`` as
-        不支持 for ``kimi-k2.7-code`` and ``kimi-k2.6`` (k3-only, low/high/max),
-        yet this profile clamps onto the K3 vocabulary and sends it for ANY
-        model — including when the caller passes no model (model=None, which is
-        how the existing test suite exercises it). Unlike the ``thinking`` rule,
-        the docs give NO error code or message for an unsupported
-        ``reasoning_effort``, so it is not established whether the endpoint
-        rejects it (fatal) or ignores it (harmless). Gating it on k3 would
-        silently change behaviour for every non-k3 Kimi call on the strength of
-        a table entry alone, and would break the model=None path the tests pin.
-        Left as-is pending either a live probe of
-        ``api.moonshot.ai/v1`` with ``reasoning_effort`` + ``kimi-k2.6`` (a 400
-        settles it) or an upstream/vendor clarification. The invariant that IS
-        proven fatal — never sending ``thinking`` and ``reasoning_effort``
-        together — holds for every model/config combination (verified
-        exhaustively).
+        [owner] T2-21 probe result (2026-10-21, live against the company
+        gateway ``genai.damodel.com/v1``, model ``kimi-k3``): the docs'
+        parameter table marks top-level ``reasoning_effort`` 不支持 for
+        ``kimi-k2.7-code`` / ``kimi-k2.6`` (k3-only, low/high/max), yet this
+        profile clamps onto the K3 vocabulary and sends it for ANY model —
+        including model=None, which is how the test suite exercises it. The
+        probe settled it: ``reasoning_effort`` in {low, high, max} AND in
+        {medium, minimal, xhigh} all returned HTTP 200, and so did
+        ``thinking`` {enabled, disabled} plus both sent together. A NewAPI-style
+        proxy normalises/tolerates what the official endpoint would reject, so
+        no gating change was made — it would silently alter every non-k3 Kimi
+        call and break the model=None path the tests pin, to protect against a
+        rejection that does not occur on the route actually in use. If this
+        profile is ever pointed at ``api.moonshot.ai/v1`` or
+        ``api.kimi.com/coding/v1`` directly, re-probe before relying on that
+        tolerance.
+
+        Verified on the same probe (all HTTP 200): non-streaming + streaming
+        (``reasoning_content`` deltas arrive before ``content``), tool calling
+        with a two-turn replay (both with and without ``reasoning_content``
+        retained — the proxy does not enforce preserved thinking), and
+        ``max_tokens=16000`` as the docs require. The proxy even accepted
+        ``thinking`` and ``reasoning_effort`` sent TOGETHER — a pairing this
+        docstring's first paragraph calls a 400 on the official endpoint — so
+        the never-both invariant is kept on doc + code-review authority, not on
+        the probe's tolerance; tests/plugins/model_providers/test_kimi_profile.py
+        pins it exhaustively across every model/config combination.
         """
 # [owner] Kimi thinking 回显 + vision
         extra_body: dict[str, Any] = {}
