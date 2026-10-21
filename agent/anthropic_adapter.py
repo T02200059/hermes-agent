@@ -360,12 +360,12 @@ def _supports_adaptive_thinking(model: str) -> bool:
     that require manual budget-based thinking. Non-Claude Anthropic-Messages
     models (minimax, qwen3, …) return False so they keep the manual path.
 
-    Kimi / Moonshot models are the exception: their Anthropic-compatible
-    endpoints implement the adaptive contract (``thinking.type="adaptive"``
-    + ``output_config.effort``, including ``xhigh`` and ``display``).
+    Kimi / Moonshot are NOT adaptive: ``thinking.type="adaptive"`` and its
+    ``display`` field are Anthropic-proprietary. Kimi's Messages-compatible
+    endpoints accept only ``enabled``/``disabled`` (and reject *omission* for
+    the always-thinking family), with reasoning strength carried by
+    ``output_config.effort``. See :func:`_apply_kimi_anthropic_thinking`.
     """
-    if _model_name_is_kimi_family(model):
-        return True
     if not _is_claude_model(model):
         return False
     m = model.lower()
@@ -402,10 +402,10 @@ def _accepts_thinking_disable(model: str) -> bool:
     disable: thinking is opt-in there via ``budget_tokens``, so not sending
     the block already means off.
 
-    Scoped to Claude deliberately.  Kimi/Moonshot endpoints also speak the
-    adaptive contract, but their documented disable behavior is omission
-    (#13848) and they are not part of this bug; sending them a new parameter
-    on the strength of Claude's contract would be a guess.
+    Scoped to Claude deliberately.  Kimi/Moonshot have their own documented
+    contract (``enabled``/``disabled`` per model, with the always-thinking
+    family rejecting both ``disabled`` *and* omission) and are handled by
+    :func:`_apply_kimi_anthropic_thinking` instead of this predicate.
     """
     if not _is_claude_model(model):
         return False
@@ -415,16 +415,88 @@ def _accepts_thinking_disable(model: str) -> bool:
     return not any(v in m for v in _MANDATORY_THINKING_CLAUDE_SUBSTRINGS)
 
 
+def _apply_kimi_anthropic_thinking(
+    kwargs: dict, model: str, reasoning_config: Optional[dict],
+) -> None:
+    """Set Kimi's ``thinking`` / ``output_config`` on a Messages-compatible request.
+
+    Contract source: platform.kimi.com — ``use-thinking-models`` (OpenAI-compat
+    parameter table) and ``claude-code-kimi`` + ``api/messages`` (the
+    Anthropic-compatible endpoint, which is what this builder targets). Kimi's
+    two endpoints are NOT interchangeable, and neither speaks Anthropic's
+    ``adaptive``/``display`` vocabulary:
+
+    * ``kimi-k2.7-code`` / ``-highspeed`` — thinking **forced on, cannot be
+      turned off**. The endpoint rejects a missing or non-``enabled`` value
+      with ``400 invalid thinking: only type=enabled is allowed for this
+      model``. So ``{"type": "enabled"}`` is sent **unconditionally**, even
+      when the caller passed no reasoning_config and even when the user asked
+      for thinking off (honouring that request would hard-fail every turn).
+    * ``kimi-k3`` — on by default, can be turned off ⇒ ``enabled``/``disabled``.
+    * ``kimi-k2.6`` — optional ⇒ ``enabled``/``disabled``.
+
+    Reasoning strength lives in ``output_config.effort``, documented for
+    **k3 only** (``low``/``high``/``max``, server default ``max``; the
+    parameter table marks it 不支持 for k2.7-code and k2.6). It is therefore
+    sent only for k3, only when the caller actually asked for an effort, and
+    clamped through the shared Kimi vocabulary + documented overrides
+    (``medium→high``, ``xhigh→max``) — never Anthropic's ``medium``/``xhigh``.
+    Omitted otherwise so the server default applies.
+
+    ``thinking.keep`` (preserved-thinking history retention) is deliberately not
+    sent: on the Messages endpoint reasoning comes back as ``thinking`` content
+    blocks that :mod:`agent.anthropic_adapter`'s replay path already preserves,
+    and ``keep`` is an OpenAI-compat-extra_body field whose only legal value for
+    k2.7-code (``"all"``) is also its unchangeable default.
+    """
+    from agent.reasoning_effort import (
+        KIMI_K3_EFFORTS, KIMI_K3_OVERRIDES, clamp_effort, kimi_supported_efforts,
+    )
+
+    config = reasoning_config if isinstance(reasoning_config, dict) else {}
+    wants_off = config.get("enabled") is False
+
+    if _kimi_model_always_thinking(model):
+        # Forced-on family: omission AND disabled are both 400s.
+        kwargs["thinking"] = {"type": "enabled"}
+        return
+
+    kwargs["thinking"] = {"type": "disabled"} if wants_off else {"type": "enabled"}
+    if wants_off:
+        return
+
+    efforts = kimi_supported_efforts(model)
+    if efforts != KIMI_K3_EFFORTS:
+        return  # k2.6 / k2.5-era: no effort knob on this endpoint
+    requested = config.get("effort")
+    if not requested:
+        return  # let the server default (max) apply
+    clamped = clamp_effort(str(requested).strip().lower(), efforts, KIMI_K3_OVERRIDES)
+    if clamped:
+        kwargs["output_config"] = {"effort": clamped}
+
+
 def _forbids_sampling_params(model: str) -> bool:
     """Return True for models that 400 on any non-default temperature/top_p/top_k.
 
     Opus 4.7 introduced this restriction; later Claude releases follow it.
     Defaults unknown Claude models to forbidding sampling params (the modern
     contract). The 4.6 family still accepts them, and the legacy manual-thinking
-    families (4.5 and older) accept them too, so both are excluded. Non-Claude
-    models are unaffected. Callers should omit these fields entirely rather than
-    passing zero/default values (the API rejects anything non-null).
+    families (4.5 and older) accept them too, so both are excluded.
+
+    Kimi / Moonshot thinking models are included on their own documentation's
+    authority: "无需设置 ``temperature``。``kimi-k2.7-code``、``kimi-k2.6`` 的
+    ``temperature`` 不可修改，使用默认值即可，请勿显式传入" (platform.kimi.com
+    use-thinking-models, tool-calling requirements). Callers such as
+    auxiliary_client set temperature generically, so it is stripped here rather
+    than at every call site.
+
+    Other non-Claude models are unaffected. Callers should omit these fields
+    entirely rather than passing zero/default values (the API rejects anything
+    non-null).
     """
+    if _model_name_is_kimi_family(model):
+        return True
     if not _is_claude_model(model):
         return False
     m = model.lower()
@@ -1098,19 +1170,18 @@ def build_anthropic_kwargs(
     # MiniMax Anthropic-compat endpoints support thinking (manual mode only,
     # not adaptive).  Haiku does NOT support extended thinking — skip entirely.
     #
-    # Kimi / Moonshot models also use adaptive thinking: their
-    # Anthropic-compatible endpoints (api.moonshot.cn/anthropic,
-    # api.kimi.com/coding) accept ``thinking.type="adaptive"`` +
-    # ``output_config.effort``, and the replay-validation 400s that
-    # originally motivated dropping the parameter (#13848) no longer
-    # occur.  (Kimi on chat_completions enables thinking via extra_body
+    # Kimi / Moonshot have their OWN documented contract and never take the
+    # adaptive path below — see _apply_kimi_anthropic_thinking for the
+    # per-model rules (k2.7-code forced-on, k3/k2.6 enabled|disabled, effort
+    # for k3 only).  (Kimi on chat_completions enables thinking via extra_body
     # in the ChatCompletionsTransport — see #13503.)
-    #
-    # On 4.7+ the `thinking.display` field defaults to "omitted", which
-    # silently hides reasoning text that Hermes surfaces in its CLI. We
-    # request "summarized" so the reasoning blocks stay populated — matching
-    # 4.6 behavior and preserving the activity-feed UX during long tool runs.
-    if reasoning_config and isinstance(reasoning_config, dict):
+    if _model_name_is_kimi_family(model):
+        _apply_kimi_anthropic_thinking(kwargs, model, reasoning_config)
+    elif reasoning_config and isinstance(reasoning_config, dict):
+        # On 4.7+ the `thinking.display` field defaults to "omitted", which
+        # silently hides reasoning text that Hermes surfaces in its CLI. We
+        # request "summarized" so the reasoning blocks stay populated — matching
+        # 4.6 behavior and preserving the activity-feed UX during long tool runs.
         if reasoning_config.get("enabled") is False:
             # "Thinking off". Adaptive models think by DEFAULT, so omitting the
             # parameter is not a disable — it silently leaves thinking on and

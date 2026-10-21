@@ -79,12 +79,31 @@ class TestThinkingOffIsSentExplicitly:
         kwargs = _kwargs("anthropic/claude-haiku-4.5", {"enabled": False})
         assert "thinking" not in kwargs
 
-    def test_kimi_keeps_its_documented_omission(self) -> None:
-        """Kimi speaks the adaptive contract but is out of scope here (#13848)."""
+    def test_kimi_sends_its_own_documented_disable(self) -> None:
+        """Kimi is out of scope for Claude's disable rule — it has its own contract.
+
+        platform.kimi.com documents ``kimi-k2.6`` (and the K2-era line) as
+        "Optional": thinking is on by default and *can* be turned off with
+        ``thinking.type="disabled"``. Omission is NOT the disable here — the
+        server default is on, exactly the trap this test class guards against.
+        The forced-on family (``kimi-k2.7-code``) is the opposite: it rejects
+        both ``disabled`` and omission, and is pinned in
+        tests/agent/test_kimi_coding_anthropic_thinking.py.
+        """
         kwargs = _kwargs(
             "kimi-k2.5", {"enabled": False}, base_url="https://api.kimi.com/coding"
         )
-        assert "thinking" not in kwargs
+        assert kwargs["thinking"] == {"type": "disabled"}
+        assert "output_config" not in kwargs
+
+    def test_kimi_forced_on_family_ignores_disable(self) -> None:
+        """``kimi-k2.7-code`` answers a disable with
+        ``400 invalid thinking: only type=enabled is allowed for this model``,
+        so the forced-on family keeps ``enabled`` even when asked to stop."""
+        kwargs = _kwargs(
+            "kimi-k2.7-code", {"enabled": False}, base_url="https://api.kimi.com/coding"
+        )
+        assert kwargs["thinking"] == {"type": "enabled"}
 
 
 class TestEnablePathIsUnchanged:

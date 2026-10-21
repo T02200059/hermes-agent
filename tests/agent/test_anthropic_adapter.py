@@ -1031,8 +1031,9 @@ class TestBuildAnthropicKwargs:
 
     def test_non_claude_anthropic_models_use_manual_path(self):
         """Non-Claude Anthropic-Messages models (minimax, qwen3, glm) must not
-        be misclassified as adaptive by the default-to-modern rule. Kimi is
-        the deliberate exception — see test_kimi_family_uses_adaptive_path."""
+        be misclassified as adaptive by the default-to-modern rule. Kimi has its
+        own documented contract — see
+        tests/agent/test_kimi_coding_anthropic_thinking.py."""
         from agent.anthropic_adapter import (
             _supports_adaptive_thinking,
             _supports_xhigh_effort,
@@ -1046,16 +1047,27 @@ class TestBuildAnthropicKwargs:
 
     def test_bare_k3_coding_plan_slug_is_kimi_family(self):
         """Kimi Coding Plan serves K3 as the bare slug ``k3`` — it must be
-        classified as Kimi family (adaptive thinking) even on proxied
-        endpoints where only the model name is available. Lookalike
-        non-Kimi names must NOT match the exact-slug rule."""
+        classified as Kimi family even on proxied endpoints where only the
+        model name is available. Lookalike non-Kimi names must NOT match the
+        exact-slug rule.
+
+        Kimi is NOT adaptive: ``thinking.type="adaptive"``/``display`` are
+        Anthropic-proprietary, while Kimi's Messages endpoint takes a binary
+        ``enabled``/``disabled`` switch (platform.kimi.com api/messages).
+        Sampling params are forbidden because Kimi documents ``temperature`` as
+        immutable. See tests/agent/test_kimi_coding_anthropic_thinking.py.
+        """
         from agent.anthropic_adapter import (
             _model_name_is_kimi_family,
             _supports_adaptive_thinking,
+            _supports_xhigh_effort,
+            _forbids_sampling_params,
         )
         for m in ("k3", "K3", "moonshotai/k3", "k3.1-preview", "k3-turbo"):
             assert _model_name_is_kimi_family(m) is True, m
-        assert _supports_adaptive_thinking("k3") is True
+        assert _supports_adaptive_thinking("k3") is False
+        assert _supports_xhigh_effort("k3") is False
+        assert _forbids_sampling_params("k3") is True
         # Prefix-lookalikes without a separator must not be swept in.
         for m in ("k30", "k3000-chat", "keras-3"):
             assert _model_name_is_kimi_family(m) is False, m
