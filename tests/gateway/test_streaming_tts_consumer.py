@@ -247,7 +247,16 @@ def gateway_tts_turn(monkeypatch, tmp_path):
         tts = StreamingTTSConsumer(adapter, "voice", {}, loop)
         ctx = TurnContext(
             streaming_tts_consumer_holder=[tts], user_config={},
-            resolve_display_setting=lambda *args: True, interim_assistant_messages_enabled=True,
+            # [owner] ``**kwargs`` — this fork's per-chat display override passes
+            # ``source=ctx.source`` through ``resolve_display_setting`` (see
+            # gateway/run_turn_runner.py, tagged "[owner] per-chat display
+            # override"), so the real callable is
+            # ``resolve_display_setting_for_source(..., *, source=None,
+            # chat_id=None)``. Upstream's ``lambda *args`` stub predates that
+            # keyword and rejects it with a TypeError. The stub is widened to
+            # match the signature it stands in for; the assertion below is
+            # untouched (any non-None value enables the platform check).
+            resolve_display_setting=lambda *args, **kwargs: True, interim_assistant_messages_enabled=True,
             source=SimpleNamespace(platform=SimpleNamespace(value="realtime"), chat_id="voice"),
             _run_still_current=lambda: True,
         )
