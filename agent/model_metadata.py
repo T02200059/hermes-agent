@@ -5,6 +5,7 @@ and run_agent.py for pre-flight context checks.
 """
 
 import base64
+import contextlib  # [owner] T2-21: restored — bedrock probe path's contextlib.suppress NameError'd
 import hashlib
 import ipaddress
 import json
@@ -23,7 +24,7 @@ if TYPE_CHECKING:  # pragma: no cover — runtime import is lazy (see below)
 
 from utils import atomic_json_write, atomic_yaml_write, base_url_host_matches, base_url_hostname
 
-from hermes_constants import OPENROUTER_MODELS_URL
+from hermes_constants import OPENROUTER_MODELS_URL, openrouter_variant_base  # [owner] T2-21: +variant resolver (upstream :26 form)
 from agent.message_metadata import PERSISTENCE_ONLY_MESSAGE_FIELDS
 
 logger = logging.getLogger(__name__)
@@ -4206,6 +4207,10 @@ def _endpoint_disk_cache_put(normalized: str, cache: Dict[str, Dict[str, Any]]) 
 
 # [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
 _BEDROCK_PROBE_FAILURE_TTL_SECONDS = 300.0
+# [owner] T2-21: restored — the forward-ported probe cooldown (below) reads and
+# writes this cache but the module-level dict was dropped; every bedrock
+# context-length probe NameError'd.
+_BEDROCK_PROBE_FAILURE_CACHE: Dict[tuple, float] = {}
 
 
 # [owner] A4-2: forward-ported from upstream (model_metadata symbol-alignment sweep).
