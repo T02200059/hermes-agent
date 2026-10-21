@@ -85,6 +85,53 @@ def _restore_file_owner(path: Path, owner: "tuple[int, int] | None") -> None:
         pass
 
 
+def default_new_file_mode() -> "int | None":
+    """The mode ``open(path, "w")`` gives a file it has to create (``0o666 & ~umask``); ``None``
+    when the umask cannot be read or on non-POSIX hosts (Windows mode bits are synthesized).
+
+    ``mkstemp`` always creates at 0600, so publishing a *new* non-secret file through a temp
+    file would tighten it to owner-only — the Docker/NAS volume-mount hazard
+    :func:`_restore_file_metadata` documents. The transient mask is 0o077: a thread that opens
+    a file in the read window gets a tighter file, never a looser one.
+
+    [owner] T2-21: restored from upstream verbatim — _atomic_write() (already
+    here) reads it for every new-file publish; without it _roundtrip_dump of a
+    NEW config file (mode=None from _preserve_file_mode) raised NameError, so
+    first-time config writes through this path died.
+    """
+    if os.name != "posix":
+        return None
+    try:
+        current = os.umask(0o077)
+        os.umask(current)
+    except OSError:
+        return None
+    return 0o666 & ~current
+
+
+def fsync_directory(path: "Union[str, Path]") -> None:
+    """Best-effort fsync of a directory entry so a just-renamed file survives power loss.
+
+    No-op on Windows (directories can't be opened with ``os.open``; the file fsync still applies)
+    and on any OSError — durability of the directory entry is never worth failing a write that
+    has already been replaced into place.
+
+    [owner] T2-21: restored from upstream verbatim — _atomic_write(fsync_dir=True)
+    calls it; the flag path NameError'd without this.
+    """
+    if os.name == "nt":
+        return
+    try:
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    except OSError:
+        return
+    try:
+        with suppress(OSError):
+            os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
 def _restore_file_mode(path: Path, mode: "int | None") -> None:
     """Re-apply *mode* to *path* after an atomic replace.
 

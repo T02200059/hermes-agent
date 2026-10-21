@@ -767,6 +767,16 @@ _parallel_pool: Optional[concurrent.futures.ThreadPoolExecutor] = None
 _parallel_pool_max_workers: Optional[int] = None
 _running_job_ids: set = set()
 _running_fire_owners: dict[str, dict[object, tuple[Optional[str], Path]]] = {}
+# [owner] T2-21: restored from upstream (:524) — job_id -> pid of the restart-safe
+# external worker executing it (absent for in-process runs), so a drain observer
+# can name the process holding the gateway open. get_running_job_details()
+# already reads it; without the registry every call WITH an in-flight job
+# NameError'd, and gateway/run_shutdown's suppress(Exception) hid it — cron
+# work was invisible to the update drain ("hermes update" could not say which
+# job it waited on). This fork has no restart-safe worker write site yet; the
+# dict stays empty and worker_pid reports None (in-process), matching upstream
+# semantics for in-process runs.
+_running_worker_pids: dict = {}
 _running_lock = threading.Lock()
 
 # Wall-clock (time.time()) instant each in-flight job id was claimed by
