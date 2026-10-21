@@ -84,6 +84,38 @@ class KimiProfile(ProviderProfile):
         always on. Official docs say do not pass the ``thinking`` parameter
         (and ``type: disabled`` errors). For that family we omit the toggle
         entirely and only optionally send ``reasoning_effort``.
+
+        Contract source (retrieved 2026-10-21, platform.kimi.com
+        ``guide/use-thinking-models`` — the OpenAI-compatible endpoint this
+        profile targets). NOTE this endpoint's rules are the OPPOSITE of Kimi's
+        Anthropic Messages endpoint (``api.moonshot.ai/anthropic``,
+        ``api.kimi.com/coding``) on one point: there, omitting ``thinking`` for
+        k2.7-code is itself a 400 (``invalid thinking: only type=enabled is
+        allowed for this model``), so that route must send ``enabled``
+        unconditionally — see
+        ``agent.anthropic_adapter._apply_kimi_anthropic_thinking``. Here
+        omission is the documented correct form ("无需（也不应）传入 ``thinking``
+        参数"), and ``kimi-k2.6`` is
+        "Optional" so an explicit ``disabled`` is honoured. Both are pinned by
+        tests/plugins/model_providers/test_kimi_profile.py.
+
+        [owner] T2-21 OPEN DISCREPANCY (deliberately NOT changed — see below):
+        the docs' parameter table marks top-level ``reasoning_effort`` as
+        不支持 for ``kimi-k2.7-code`` and ``kimi-k2.6`` (k3-only, low/high/max),
+        yet this profile clamps onto the K3 vocabulary and sends it for ANY
+        model — including when the caller passes no model (model=None, which is
+        how the existing test suite exercises it). Unlike the ``thinking`` rule,
+        the docs give NO error code or message for an unsupported
+        ``reasoning_effort``, so it is not established whether the endpoint
+        rejects it (fatal) or ignores it (harmless). Gating it on k3 would
+        silently change behaviour for every non-k3 Kimi call on the strength of
+        a table entry alone, and would break the model=None path the tests pin.
+        Left as-is pending either a live probe of
+        ``api.moonshot.ai/v1`` with ``reasoning_effort`` + ``kimi-k2.6`` (a 400
+        settles it) or an upstream/vendor clarification. The invariant that IS
+        proven fatal — never sending ``thinking`` and ``reasoning_effort``
+        together — holds for every model/config combination (verified
+        exhaustively).
         """
 # [owner] Kimi thinking 回显 + vision
         extra_body: dict[str, Any] = {}
