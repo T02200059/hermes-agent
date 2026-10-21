@@ -159,6 +159,20 @@ def kimi_supported_efforts(model: Optional[str]) -> tuple[str, ...]:
     return KIMI_K2_EFFORTS
 
 
+def route_supported_efforts(provider: Optional[str], model: Optional[str]) -> tuple[str, ...]:
+    """Levels the (provider, model) route's ENTRY clamp accepts: the Codex/OpenAI Responses set per
+    model generation, else the widest OpenAI-compatible vocabulary (narrower providers clamp again
+    downstream, never upward).
+
+    [owner] T2-21: restored from upstream verbatim — the forward-ported
+    effort_display_label() below calls it; without it every /reasoning label
+    render raised NameError.
+    """
+    if (provider or "").strip().lower() == "openai-codex":
+        return codex_supported_efforts(model)
+    return OPENAI_COMPAT_WIRE_EFFORTS
+
+
 def clamp_effort(
     effort: Optional[str],
     supported: Optional[Sequence[str]],

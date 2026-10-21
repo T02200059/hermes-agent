@@ -470,6 +470,25 @@ def flush_agent_history_to_file(
         )
 
 
+def _flush_value(flush_dir: Path, kind: str, session_key: str, value: Any, **extra: Any) -> bool:
+    """Serialise and write one pending value; return True when a payload was written.
+
+    [owner] T2-21: restored from upstream verbatim — the forward-ported
+    flush_overflow_to_file() below calls it per queued event; without it every
+    shutdown overflow flush raised NameError and no queued-event tail survived
+    a restart.
+    """
+    try:
+        serialised = _serialise_value(value)
+        if serialised is None:
+            return False
+        _write_payload(flush_dir, {"session_key": session_key, **extra, "data": serialised})
+        return True
+    except Exception as exc:
+        logger.debug("Failed to flush %s message for %s: %s", kind, session_key, exc)
+        return False
+
+
 # [owner] A4-2: forward-ported from upstream (symbol-level sweep).
 def flush_overflow_to_file(overflow_by_session: Dict[str, Any], *, reason: str = "shutdown") -> int:
     """Serialise the FIFO overflow tails (``queued_events``) to disk; return events flushed.

@@ -645,6 +645,7 @@ class CLIAgentSetupMixin:
         """
         if not self._session_db:
             return None
+        from cli import logger  # [owner] T2-21: restored (upstream :747 form) — the fail-open except branch below logs via it
         from hermes_state import (
             SessionExportTooLargeError,
             SessionResumeTooLargeError,

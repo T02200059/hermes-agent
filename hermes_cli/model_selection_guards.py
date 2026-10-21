@@ -37,6 +37,22 @@ class SelectionWarning:
     message: str
 
 
+@dataclass(frozen=True)
+class SelectionContext:
+    """Live-session facts a surface threads into the registry. Model-only guards (cost, data-policy)
+    ignore it; guards about the *switch itself* (context-cache) need the size of the conversation at
+    stake and the model it is currently on. Surfaces without a live agent omit it and those guards
+    stay silent.
+
+    [owner] T2-21: restored from upstream verbatim — the forward-ported
+    selection_context_for_agent() below constructs it; without the class every
+    call raised NameError and context-cache guards stayed silently dead.
+    """
+
+    context_tokens: Optional[int] = None
+    current_model: Optional[str] = None
+
+
 def _cost_guard(
     model_name: str,
     provider: Optional[str],

@@ -26,6 +26,12 @@ from pathlib import Path
 from gateway.bot_loop_guard import BotLoopGuard
 
 logger = logging.getLogger(__name__)
+
+# [owner] T2-21: restored from upstream (:29) — _bot_loop_guard_instance()'s
+# double-checked locking does ``with _BOT_LOOP_GUARD_INIT_LOCK`` against the
+# MODULE-level lock; only a class attribute existed here, so the first lazy
+# BotLoopGuard construction raised NameError.
+_BOT_LOOP_GUARD_INIT_LOCK = threading.Lock()
 from typing import Optional
 
 from gateway.config import Platform

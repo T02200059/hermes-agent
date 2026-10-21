@@ -142,8 +142,14 @@ class HeartbeatState:
 # ──────────────────────────────────────────────────────────────────────
 
 
+# [owner] T2-21: restored from upstream (:102) — the forward-ported
+# store_has_active_heartbeat() scans db.list_meta_prefix(_META_PREFIX);
+# without it the sweep NameError'd on every call.
+_META_PREFIX = "heartbeat:"
+
+
 def _meta_key(session_id: str) -> str:
-    return f"heartbeat:{session_id}"
+    return f"{_META_PREFIX}{session_id}"
 
 
 def _get_session_db() -> Optional[Any]:

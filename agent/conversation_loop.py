@@ -2271,7 +2271,7 @@ def run_conversation(
         elif not agent.iteration_budget.consume():
             _turn_exit_reason = "budget_exhausted"
             if not agent.quiet_mode:
-                _budget_msg = _t(
+                _budget_msg = t(
                     "iteration.budget_exhausted",
                     used=agent.iteration_budget.used,
                     max_total=agent.iteration_budget.max_total,

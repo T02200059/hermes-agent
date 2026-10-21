@@ -6,6 +6,7 @@ rate-limited provider concurrently.
 """
 
 import random
+import re  # [owner] T2-21: restored — the forward-ported reset-grammar table below needs it
 import threading
 import time
 from datetime import datetime, timezone
@@ -206,6 +207,47 @@ def zai_coding_overload_retry_ceiling(short_attempts: int = _ZAI_CODING_OVERLOAD
     value for Z.AI Coding overload 429s so the 30/60/90/120s waits run.
     """
     return short_attempts + len(_ZAI_CODING_OVERLOAD_LONG_BACKOFF) + 1
+
+
+# [owner] T2-21: restored from upstream verbatim — the forward-ported
+# reset_delay_from_message() below iterates RETRY_DELAY_PATTERNS, which (with
+# its four regexes and two parsers) was dropped by the A4-2 sweep; every
+# free-text reset-delay parse NameError'd.
+# Free-text "reset" grammars providers put in error bodies, tried in order. One table so the
+# conversation loop's error context and the credential pool's cooldown agree on the same wait.
+_QUOTA_RESET_DELAY_RE = re.compile(r"quotaResetDelay[:\s\"]+(\d+(?:\.\d+)?)(ms|s)", re.IGNORECASE)
+# "Resets in 4hr 5min" (weekly usage limits), "resets in 2 hours 5 minutes", "resets in 30s".
+_RESETS_IN_RE = re.compile(
+    r"resets?\s+in\s+"
+    r"(?:(\d+(?:\.\d+)?)\s*(?:h|hr|hrs|hour|hours)\b\s*)?"
+    r"(?:(\d+(?:\.\d+)?)\s*(?:m|min|mins|minute|minutes)\b\s*)?"
+    r"(?:(\d+(?:\.\d+)?)\s*(?:s|sec|secs|second|seconds)\b)?", re.IGNORECASE,
+)
+_RETRY_AFTER_SECONDS_RE = re.compile(r"retry\s+(?:after\s+)?(\d+(?:\.\d+)?)\s*(?:sec|secs|seconds|s\b)", re.IGNORECASE)
+# The plan usage-limit body field as it appears once stringified: ``'resets_in_seconds': 30995``.
+_RESETS_IN_SECONDS_FIELD_RE = re.compile(r"resets_in_seconds\W{1,4}(\d+(?:\.\d+)?)", re.IGNORECASE)
+
+
+def _quota_reset_seconds(m: "re.Match[str]") -> float:
+    value = float(m.group(1))
+    return value / 1000.0 if m.group(2).lower() == "ms" else value
+
+
+def _resets_in_seconds(m: "re.Match[str]") -> Optional[float]:
+    if not any(m.groups()):  # "resets in" with no unit-bearing number: not this grammar
+        return None
+    return float(m.group(1) or 0) * 3600 + float(m.group(2) or 0) * 60 + float(m.group(3) or 0)
+
+
+# An explicit "retry after N s" wins over "resets in ..." (the credential pool's precedence):
+# a body carrying both describes a short throttle inside a long quota window, and the
+# shorter explicit wait is the one the provider actually asks for.
+RETRY_DELAY_PATTERNS = (
+    (_QUOTA_RESET_DELAY_RE, _quota_reset_seconds),
+    (_RETRY_AFTER_SECONDS_RE, lambda m: float(m.group(1))),
+    (_RESETS_IN_SECONDS_FIELD_RE, lambda m: float(m.group(1))),
+    (_RESETS_IN_RE, _resets_in_seconds),
+)
 
 
 # [owner] A4-2: forward-ported (final symbol sweep round 3).

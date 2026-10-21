@@ -4481,6 +4481,16 @@ class MCPServerTask:
 _servers: Dict[str, MCPServerTask] = {}
 _server_connecting: set[str] = set()
 _server_connect_errors: Dict[str, str] = {}
+# [owner] T2-21: restored from upstream (:419/:422) — the forward-ported
+# _server_visible_in_scope() reads both registries; without them any call
+# NameError'd. (No caller in this fork yet — ported for the multiplex
+# /reload-mcp scoping work the function belongs to.)
+# Profile registry scope per live connection (None outside multiplex) so a multiplexed
+# /reload-mcp tears down only its own profile's servers.
+_server_scope_keys: Dict[Any, Optional[str]] = {}
+# Registry scopes that have adopted a live server connection. The owning scope above remains
+# authoritative for connection teardown; this set preserves visibility for shared connections.
+_server_tool_scopes: Dict[Any, set] = {}
 # Lazy MCP startup (#56832): servers whose tools were registered from the
 # on-disk schema cache without spawning/connecting. Keyed by server name;
 # entries are popped once a real connection is established on first use.

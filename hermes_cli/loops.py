@@ -973,6 +973,21 @@ __all__ = [
 ]
 
 
+def _parse_state(raw: str, session_id: str = "") -> Optional[LoopState]:
+    """``LoopState`` from stored JSON; None (warning when *session_id* given) on corrupt data.
+
+    [owner] T2-21: restored from upstream verbatim — the forward-ported
+    store_has_active_loop() below calls it; without it the idle-gate's
+    active-loop check raised NameError on every non-empty loop store.
+    """
+    try:
+        return LoopState.from_json(raw)
+    except Exception as exc:
+        if session_id:
+            logger.warning("LoopManager: could not parse stored loop for %s: %s", session_id, exc)
+        return None
+
+
 # [owner] A4-2: forward-ported from upstream (symbol-level sweep).
 def store_has_active_loop(db: Any) -> bool:
     """True when *db* holds an ACTIVE ``loop:*`` row — or a row that cannot be parsed (unknown, so the
