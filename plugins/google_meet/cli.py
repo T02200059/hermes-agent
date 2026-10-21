@@ -92,8 +92,12 @@ def register_cli(subparser: argparse.ArgumentParser) -> None:
         # If the node module fails to import for any reason (optional dep
         # missing at import time etc.), leave the subparser present but
         # flag it. The argparse dispatch will surface a clear error.
-        def _node_unavailable(args):
-            print(f"hermes meet node: module unavailable ({e})")
+        # [owner] T2-21: bind the exception via default arg — a bare closure
+        # over ``e`` late-binds, and Python deletes the except name when the
+        # block exits, so calling _node_unavailable later raised NameError
+        # ("cannot access free variable 'e'") instead of printing the reason.
+        def _node_unavailable(args, _err=str(e)):
+            print(f"hermes meet node: module unavailable ({_err})")
             return 1
         node_p.set_defaults(func=_node_unavailable)
 
