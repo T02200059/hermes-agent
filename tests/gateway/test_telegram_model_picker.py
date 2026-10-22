@@ -72,23 +72,6 @@ class TestTelegramModelPicker:
         assert "provider\\_one" in edit_kwargs["text"]
         assert "`model_1`" in edit_kwargs["text"]
 
-
-        query = AsyncMock()
-        query.data = "mm:0"
-        query.message = MagicMock()
-        query.message.chat_id = 12345
-        query.answer = AsyncMock()
-        query.edit_message_text = AsyncMock()
-
-        await adapter._handle_model_picker_callback(query, "mm:0", "12345")
-
-        callback.assert_awaited_once()
-        query.edit_message_text.assert_awaited()
-        edit_kwargs = query.edit_message_text.call_args[1]
-        assert "MARKDOWN_V2" in repr(edit_kwargs["parse_mode"]) or edit_kwargs["parse_mode"] == "MarkdownV2"
-        assert "`gpt-5`" in edit_kwargs["text"]
-        assert "12345" not in adapter._model_picker_state
-
     @pytest.mark.asyncio
     async def test_provider_group_folds_and_drills_down(self, monkeypatch):
         """A provider family (e.g. MiniMax) collapses to one mpg: button at

@@ -1353,6 +1353,41 @@ def _live_system_guard(request, monkeypatch):
         _psutil = None
         _initial_children = set()
 
+    # [owner] Tests that legitimately SIGTERM a child they spawned themselves
+    # (the LSP e2e client, PTY children) tripped the guard at random under the
+    # 22-worker suite: the walk below only follows a LIVE parent chain, and by
+    # shutdown time the child has usually exited — so the PID either belongs to
+    # an unrelated process (reused) or has no chain back to us, and the kill is
+    # refused. Recording (pid -> create_time) at spawn time identifies OUR child
+    # even after it dies, and the create_time check keeps a reused PID from
+    # laundering a foreign kill. Without this the only escape was a whole-test
+    # `live_system_guard_bypass`, which also disables the command-string checks.
+    _spawned: dict = {}
+
+    def _note_spawned(pid) -> None:
+        try:
+            _pid = int(pid)
+        except Exception:
+            return
+        try:
+            _spawned[_pid] = _psutil.Process(_pid).create_time() if _psutil is not None else None
+        except Exception:
+            _spawned[_pid] = None
+
+    def _is_recorded_child(pid: int) -> bool:
+        """True when ``pid`` is a process this test spawned (survives its exit)."""
+        if pid not in _spawned:
+            return False
+        recorded = _spawned[pid]
+        if recorded is None or _psutil is None:
+            return True
+        try:
+            # Same PID, same start time => still the child we spawned. A reused
+            # PID has a later create_time, so its kill stays blocked.
+            return abs(_psutil.Process(pid).create_time() - recorded) < 0.01
+        except Exception:
+            return True  # gone already: the signal would be a no-op
+
     def _is_own_subtree(pid: int) -> bool:
         # PID 0 means "our own process group"; -1 means "every process we
         # can signal". Both are dangerous when paired with SIGTERM/SIGKILL,
@@ -1363,6 +1398,8 @@ def _live_system_guard(request, monkeypatch):
         if pid < 0:
             return False
         if pid == test_pid or pid in _initial_children:
+            return True
+        if _is_recorded_child(pid):
             return True
         if _psutil is None:
             return False
@@ -1590,6 +1627,7 @@ def _live_system_guard(request, monkeypatch):
             def __init__(self, cmd, *args, **kwargs):
                 _check_subprocess_cmd("Popen", cmd)
                 super().__init__(cmd, *args, **kwargs)
+                _note_spawned(self.pid)
 
         _GuardedPopen.__name__ = "Popen"
         _GuardedPopen.__qualname__ = "Popen"
@@ -1662,11 +1700,15 @@ def _live_system_guard(request, monkeypatch):
             _check_subprocess_cmd(
                 "asyncio.create_subprocess_exec", [program, *args]
             )
-            return await real_async_exec(program, *args, **kwargs)
+            _proc = await real_async_exec(program, *args, **kwargs)
+            _note_spawned(getattr(_proc, "pid", None))
+            return _proc
 
         async def _guarded_async_shell(cmd, *args, **kwargs):
             _check_subprocess_cmd("asyncio.create_subprocess_shell", cmd)
-            return await real_async_shell(cmd, *args, **kwargs)
+            _proc = await real_async_shell(cmd, *args, **kwargs)
+            _note_spawned(getattr(_proc, "pid", None))
+            return _proc
 
         monkeypatch.setattr(_asyncio, "create_subprocess_exec", _guarded_async_exec)
         monkeypatch.setattr(

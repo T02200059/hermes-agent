@@ -59,6 +59,7 @@ def _cost_guard(
     base_url: Optional[str],
     api_key: Optional[str],
     model_info: Optional[ModelInfo],
+    ctx: Optional[SelectionContext] = None,
 ) -> Optional[SelectionWarning]:
     from hermes_cli.model_cost_guard import expensive_model_warning
 
@@ -88,6 +89,7 @@ def _data_policy_guard(
     base_url: Optional[str],
     api_key: Optional[str],
     model_info: Optional[ModelInfo],
+    ctx: Optional[SelectionContext] = None,
 ) -> Optional[SelectionWarning]:
     from hermes_cli.model_data_policy_guard import data_training_warning
 
@@ -123,6 +125,7 @@ def selection_warnings(
     api_key: Optional[str] = None,
     model_info: Optional[ModelInfo] = None,
     include_kinds: Optional[Iterable[str]] = None,
+    selection_context: Optional[SelectionContext] = None,
 ) -> List[SelectionWarning]:
     """Run every registered selection guard and return the warnings that fired.
 
@@ -140,7 +143,7 @@ def selection_warnings(
     results: List[SelectionWarning] = []
     for guard in _GUARDS:
         try:
-            warning = guard(model_name, provider, base_url, api_key, model_info)
+            warning = guard(model_name, provider, base_url, api_key, model_info, selection_context)
         except Exception:
             continue
         if warning is None:
@@ -168,6 +171,7 @@ def combined_selection_warning(
     base_url: Optional[str] = None,
     api_key: Optional[str] = None,
     model_info: Optional[ModelInfo] = None,
+    selection_context: Optional[SelectionContext] = None,
 ) -> Optional[SelectionWarning]:
     """Drop-in replacement for ``expensive_model_warning`` call sites.
 
@@ -183,6 +187,7 @@ def combined_selection_warning(
         base_url=base_url,
         api_key=api_key,
         model_info=model_info,
+        selection_context=selection_context,
     )
     if not warnings:
         return None
