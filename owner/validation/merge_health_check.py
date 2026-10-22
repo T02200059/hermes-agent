@@ -798,7 +798,79 @@ def _check_inventory_file_exists(item_id: str, check: Dict[str, Any]) -> List[st
     return []
 
 
-def _check_inventory_file_contains(item_id: str, check: Dict[str, Any]) -> List[str]:
+# ---------------------------------------------------------------------------
+# Acknowledged test-coverage gaps (see owner/validation/coverage_gaps.txt)
+# ---------------------------------------------------------------------------
+
+_COVERAGE_GAPS = REPO_ROOT / "owner" / "validation" / "coverage_gaps.txt"
+
+
+def _load_coverage_gaps() -> Tuple[Dict[str, str], List[str]]:
+    """``({item_id: reason}, issues)`` from ``coverage_gaps.txt``.
+
+    A missing file is not an error (a fully drained register may be removed), but
+    then nothing may declare a gap either -- see the failure text in
+    ``_check_inventory_test_coverage``.
+    """
+    try:
+        raw = _COVERAGE_GAPS.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return {}, []
+    except OSError as exc:
+        return {}, [f"cannot read {_COVERAGE_GAPS.relative_to(REPO_ROOT)}: {exc}"]
+
+    gaps: Dict[str, str] = {}
+    issues: List[str] = []
+    for lineno, line in enumerate(raw.splitlines(), start=1):
+        line = line.split("#", 1)[0].strip()
+        if not line:
+            continue
+        item_id, _, reason = line.partition("  ")
+        item_id = item_id.strip()
+        reason = reason.strip()
+        if not item_id or not reason:
+            issues.append(
+                f"coverage_gaps.txt:{lineno}: malformed entry (need `<item id><two spaces><reason>`)"
+            )
+            continue
+        if item_id in gaps:
+            issues.append(f"coverage_gaps.txt:{lineno}: duplicate entry for {item_id!r}")
+            continue
+        gaps[item_id] = reason
+    return gaps, issues
+
+
+def _check_inventory_test_coverage(
+    item_id: str,
+    check: Dict[str, Any],
+    gaps: Dict[str, str],
+) -> Tuple[List[str], bool]:
+    """Return ``(issues, acknowledged)`` for a ``test_coverage`` check.
+
+    The invariant is "this divergence has a regression test". Deleting the test
+    must not make the invariant vanish: it either fails, or is explicitly
+    acknowledged in ``coverage_gaps.txt`` with a reason (and then it is reported
+    as debt, and the entry is checked for staleness elsewhere).
+    """
+    rel_path = str(check.get("path") or "").strip()
+    if not rel_path:
+        return [f"{item_id}: test_coverage check missing path"], False
+
+    if (REPO_ROOT / rel_path).is_file():
+        return [], False
+    if item_id in gaps:
+        return [], True
+    return [
+        f"{item_id}: expected test {rel_path} to exist; restore it, or declare the "
+        f"gap in owner/validation/coverage_gaps.txt with a reason"
+    ], False
+
+
+def _check_inventory_file_contains(
+    item_id: str,
+    check: Dict[str, Any],
+    claimed_paths: Set[str] = None,
+) -> List[str]:
     rel_path = str(check.get("file") or "").strip()
     contains = check.get("contains")
     if isinstance(contains, str):
@@ -812,6 +884,13 @@ def _check_inventory_file_contains(item_id: str, check: Dict[str, Any]) -> List[
 
     path = REPO_ROOT / rel_path
     if not path.is_file():
+        # When the same item also asserts this path's existence (file_exists /
+        # test_coverage), that check owns the failure message: the needles cannot
+        # be verified either way, so reporting the missing file here as well would
+        # turn one problem into two independent-looking issues. The needles resume
+        # being enforced the moment the file exists.
+        if claimed_paths and rel_path in claimed_paths:
+            return []
         return [f"{item_id}: expected file {rel_path} to exist"]
     try:
         source = path.read_text(encoding="utf-8", errors="replace")
@@ -841,29 +920,94 @@ def _check_inventory_module_symbol(item_id: str, check: Dict[str, Any]) -> List[
     return []
 
 
-def _run_inventory_static_check(item_id: str, check: Dict[str, Any]) -> List[str]:
+def _run_inventory_static_check(
+    item_id: str,
+    check: Dict[str, Any],
+    gaps: Dict[str, str] = None,
+    claimed_paths: Set[str] = None,
+) -> Tuple[List[str], bool]:
+    """Return ``(issues, acknowledged_coverage_gap)`` for one static check."""
+    gaps = gaps or {}
     check_type = str(check.get("type") or "").strip()
     if check_type == "file_exists":
-        return _check_inventory_file_exists(item_id, check)
+        return _check_inventory_file_exists(item_id, check), False
+    if check_type == "test_coverage":
+        return _check_inventory_test_coverage(item_id, check, gaps)
     if check_type == "file_contains":
-        return _check_inventory_file_contains(item_id, check)
+        return _check_inventory_file_contains(item_id, check, claimed_paths), False
     if check_type == "module_symbol":
-        return _check_inventory_module_symbol(item_id, check)
-    return [f"{item_id}: unknown static check type {check_type!r}"]
+        return _check_inventory_module_symbol(item_id, check), False
+    return [f"{item_id}: unknown static check type {check_type!r}"], False
+
+
+def _claimed_existence_paths(checks: List[Dict[str, Any]]) -> Set[str]:
+    """Paths this item already asserts the existence of."""
+    paths = set()
+    for check in checks:
+        if str(check.get("type") or "").strip() not in ("file_exists", "test_coverage"):
+            continue
+        rel_path = str(check.get("path") or "").strip()
+        if rel_path:
+            paths.add(rel_path)
+    return paths
 
 
 def check_validation_inventory() -> CheckResult:
-    """Run simple static checks from the owner change inventory."""
+    """Run simple static checks from the owner change inventory.
+
+    Returns ``(name, issues, checks_run, item_count, acknowledged_gaps)``.  The
+    acknowledged gaps are debts recorded in ``coverage_gaps.txt``: reported as
+    information, not as failures -- but any *undeclared* missing test still
+    fails, and a declaration that no longer applies fails as a stale entry, so
+    the register can only shrink.
+    """
     items, issues = _load_inventory_items()
+    gaps, gap_issues = _load_coverage_gaps()
+    issues.extend(gap_issues)
     checks_run = 0
+    acknowledged: Dict[str, str] = {}
+    coverage_items: Dict[str, str] = {}
 
     for item in items:
         item_id = str(item.get("id") or "").strip()
-        for check in item.get("static_checks", []):
+        item_checks = item.get("static_checks", [])
+        claimed = _claimed_existence_paths(item_checks)
+        for check in item_checks:
             checks_run += 1
-            issues.extend(_run_inventory_static_check(item_id, check))
+            check_issues, is_acknowledged = _run_inventory_static_check(
+                item_id, check, gaps, claimed
+            )
+            issues.extend(check_issues)
+            if is_acknowledged:
+                acknowledged[item_id] = gaps[item_id]
+            if str(check.get("type") or "").strip() == "test_coverage":
+                coverage_items[item_id] = str(check.get("path") or "").strip()
 
-    return "Check 7: Owner inventory static validation", issues, checks_run, len(items)
+    # Stale declarations.  Both directions matter: a gap whose test came back must
+    # be retired (otherwise the register hides a coverage demand that is now
+    # satisfiable), and a gap naming an item that no longer asserts coverage is
+    # dead weight that would silence a future re-introduction.
+    for item_id, reason in sorted(gaps.items()):
+        if item_id not in coverage_items:
+            issues.append(
+                f"{item_id} — stale entry in coverage_gaps.txt: no inventory item "
+                f"declares a test_coverage check with this id ({reason}); retire the entry"
+            )
+            continue
+        if (REPO_ROOT / coverage_items[item_id]).is_file():
+            issues.append(
+                f"{item_id} — stale entry in coverage_gaps.txt: "
+                f"{coverage_items[item_id]} exists again ({reason}); retire the entry so "
+                "the item enforces the test"
+            )
+
+    return (
+        "Check 7: Owner inventory static validation",
+        issues,
+        checks_run,
+        len(items),
+        acknowledged,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1107,8 +1251,16 @@ def main() -> int:
             checked, total = counts
             print(f"  Checked {checked}/{total} critical owner anchors")
         elif check_fn == check_validation_inventory:
-            checks_run, item_count = counts
+            checks_run, item_count, acknowledged = counts
             print(f"  Ran {checks_run} static checks across {item_count} inventory items")
+            if acknowledged:
+                print(
+                    f"  {len(acknowledged)} acknowledged test-coverage gap"
+                    f"{'s' if len(acknowledged) != 1 else ''} "
+                    "(debt in owner/validation/coverage_gaps.txt):"
+                )
+                for gap_id, reason in sorted(acknowledged.items()):
+                    print(f"    · {gap_id}: {reason}")
         elif check_fn == check_changed_file_markers:
             examined, covered = counts
             print(f"  {covered}/{examined} modified official files carry an [owner] marker")

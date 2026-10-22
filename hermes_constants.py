@@ -1765,11 +1765,14 @@ FINISH_REASON_LENGTH = "length"
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 OPENROUTER_MODELS_URL = f"{OPENROUTER_BASE_URL}/models"
 
-# [owner] T2-21: restored from upstream verbatim — agent/model_metadata.py's
+# T2-21: restored from upstream verbatim — agent/model_metadata.py's
 # forward-ported OpenRouter variant resolver calls openrouter_variant_base();
 # without it every context-length lookup for a ":nitro"/":floor" variant id
 # raised NameError. Lives here (dependency-free by contract) so the metadata
-# layer shares one definition without importing the CLI.
+# layer shares one definition without importing the CLI. Deliberately carries no
+# owner marker: this block is upstream's code byte-for-byte, so a conflict must
+# resolve to upstream's side (the file is allowlisted as a verbatim port in
+# owner/validation/upstream_port_files.txt).
 # OpenRouter request-time routing variants (docs: guides/routing/model-variants).
 # These suffixes are per-request routing modifiers valid on ANY model id —
 # ":nitro" sorts the endpoint pool by throughput and admits priority-tier

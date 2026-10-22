@@ -23,7 +23,7 @@ items:
       - type: module_symbol
         module: owner.extra_body_injection
         symbol: inject_model_extra_body
-      - type: file_exists
+      - type: test_coverage
         path: tests/owner/test_extra_body_injection.py
 
   - id: skill-script-auto-approval
@@ -40,7 +40,7 @@ items:
       - type: module_symbol
         module: owner.approval.skill_script_approval
         symbol: reset_session_skills_viewed
-      - type: file_exists
+      - type: test_coverage
         path: tests/owner/test_skill_script_approval.py
 
   - id: feishu-inbound-context
@@ -54,7 +54,7 @@ items:
       - type: module_symbol
         module: owner.feishu.inbound_context
         symbol: build_feishu_inbound_context_block
-      - type: file_exists
+      - type: test_coverage
         path: tests/owner/test_feishu_inbound_context.py
 
   - id: checkpoint-mutation-predictor
@@ -65,7 +65,7 @@ items:
       - type: module_symbol
         module: owner.checkpoint_predictor
         symbol: predict_and_checkpoint
-      - type: file_exists
+      - type: test_coverage
         path: tests/owner/test_checkpoint_predictor.py
       - type: file_exists
         path: owner/docs/checkpoint-mutation-predictor.md
@@ -81,7 +81,7 @@ items:
       - type: module_symbol
         module: owner.file_tool_timeout
         symbol: resolve_file_tool_timeout
-      - type: file_exists
+      - type: test_coverage
         path: tests/owner/test_file_tool_timeout.py
 
   - id: file-binary-detection
@@ -100,7 +100,7 @@ items:
         contains:
           - 'file_binary_detection_patch'
           - 'apply_patch()'
-      - type: file_exists
+      - type: test_coverage
         path: tests/owner/patches/test_file_binary_detection_patch.py
       - type: file_exists
         path: owner/docs/read-file-utf8-boundary-fix.md
@@ -118,7 +118,7 @@ items:
         contains:
           - 'ctx.register_command('
           - '"providers"'
-      - type: file_exists
+      - type: test_coverage
         path: tests/owner/test_providers_command.py
 
   - id: feishu-media-guard
@@ -132,7 +132,7 @@ items:
       - type: module_symbol
         module: owner.feishu.media_guard
         symbol: check_image_size
-      - type: file_exists
+      - type: test_coverage
         path: tests/owner/test_feishu_media_guard.py
 
   - id: hygiene-compression-notice
@@ -143,7 +143,7 @@ items:
       - type: module_symbol
         module: owner.gateway.hygiene_compression_notice
         symbol: send_hygiene_compression_notice
-      - type: file_exists
+      - type: test_coverage
         path: tests/owner/test_hygiene_compression_notice.py
 
   - id: memory-approval-card
@@ -157,7 +157,7 @@ items:
       - type: module_symbol
         module: owner.owner-extensions.memory_feishu_bridge
         symbol: register_hooks
-      - type: file_exists
+      - type: test_coverage
         path: tests/owner/test_memory_approval_card_routing.py
 
   - id: owner-provider-attribution-chain
@@ -231,7 +231,7 @@ items:
         contains:
           - 'memory_synthetic_guard_patch'
           - 'apply_patch()'
-      - type: file_exists
+      - type: test_coverage
         path: tests/owner/patches/test_memory_synthetic_guard_patch.py
       - type: file_exists
         path: owner/docs/memory-synthetic-recall-guard.md
@@ -264,7 +264,7 @@ items:
         contains:
           - 'openviking_owner_recall_patch'
           - 'openviking_owner_recall_patch applied via plugin register'
-      - type: file_exists
+      - type: test_coverage
         path: tests/owner/patches/test_openviking_owner_recall_patch.py
 
   - id: feishu-profile-routing
@@ -294,7 +294,7 @@ items:
           - 'try_route_card_action'
           - 'try_route_inbound_message'
           - 'allow_profile_routing'
-      - type: file_exists
+      - type: test_coverage
         path: tests/owner/test_feishu_profile_routing.py
 
   - id: feishu-clarify-card
@@ -367,7 +367,7 @@ items:
         contains:
           - 'ContextVar("HERMES_CRON_SESSION"'
           - '_VAR_MAP["HERMES_CRON_SESSION"]'
-      - type: file_exists
+      - type: test_coverage
         path: tests/tools/test_cron_session_contextvar_isolation.py
 
   - id: per-chat-display-overrides
@@ -404,7 +404,7 @@ items:
     category: validation
     source: tests/owner/test_contract_entrypoints.py
     static_checks:
-      - type: file_exists
+      - type: test_coverage
         path: tests/owner/test_contract_entrypoints.py
       - type: file_contains
         file: tests/owner/test_contract_entrypoints.py
@@ -489,7 +489,7 @@ items:
         contains:
           - 'owner.feishu.auto_card'
           - 'try_auto_card'
-      - type: file_exists
+      - type: test_coverage
         path: tests/owner/test_feishu_agent_end_media.py
 
   - id: feishu-diff-card-dispatch
@@ -644,7 +644,7 @@ items:
         file: agent/chat_completion_helpers.py
         contains:
           - '_clean_leading_thinking_debris(_san_content)'
-      - type: file_exists
+      - type: test_coverage
         path: tests/run_agent/test_qwen_thinking_debris.py
 
   - id: damodel-prompt-cache-policy
@@ -658,7 +658,7 @@ items:
           - '[owner] damodel (genai.damodel.com)'
           - 'provider_lower == "damodel"'
           - 'base_url_host_matches(eff_base_url, "genai.damodel.com")'
-      - type: file_exists
+      - type: test_coverage
         path: tests/run_agent/test_anthropic_prompt_cache_policy.py
 
   - id: rate-limit-quota-classification
@@ -683,7 +683,7 @@ items:
         contains:
           - 'wait_time >= 60'
           - '_emit_status'
-      - type: file_exists
+      - type: test_coverage
         path: tests/owner/test_owner_429_reset_window.py
 
   - id: gateway-restart-pycache-cleanup
