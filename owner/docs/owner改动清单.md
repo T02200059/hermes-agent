@@ -2589,6 +2589,18 @@ _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请先�
 
 ## 附录 E：变更日志
 
+### 2026-10-21：T2-21 批次收口——kimi echo 记账统一 + 吸收上游 mixin 拆包 + 三个静默生产 bug（11 提交）
+
+- **类型**：架构对齐（吸收上游拆包）+ 缺陷修复 + 测试基线切换
+- **提交**：`e8eb45747d`…`93f416e4ac`（2026-10-21 全天 11 个）
+- **① kimi reasoning echo 判定分歧（`c2eb7d6d83`）**：运行时 `run_agent._needs_kimi_tool_reasoning`（layer 2：kimi 模型名+非聚合器主机）与记账 `message_sanitization.stale_thinking_reaches_wire`（只查主机表）对 damodel+kimi-k3 判定相反（True/False）⇒ 压缩触发估算器低估上下文 ⇒ 长推理会话溢出风险。修法=layer 2 上移进共享 `matches_reasoning_echo_family`，两侧委托同一真相源；+5 回归测试钉死「记账=运行时」不变量。**该分歧不会让任何测试变红**，是真实端点探测（damodel+kimi-k3）交叉比对两条代码路径发现的
+- **② 吸收上游 mixin 拆包（`93f416e4ac`）**：上游 `c274125690`（2026-09-02，分叉点 `00b2e03c80` 后**一天**）把 `StreamDeliveryMixin`+`StatusOutputMixin` 从 run_agent.py 抽成 `agent/stream_delivery.py`(349行)+`agent/status_output.py`(228行)，owner 从未吸收 ⇒ 官方测试（`8564967b57` 同步到上游版）import 悬空。现已补齐：新增两模块 + `class AIAgent(StreamDeliveryMixin, StatusOutputMixin)` + 删 40 个内联方法（10164→9329 行）。**4 处 owner 定制逐字移植**进 `agent/stream_delivery.py` 并加 `[owner]` 注记：Kimi 空白推理块守卫（`_fire_reasoning_delta`，原实现**无标记**，靠三方比对发现）、DeepSeek BOS/EOS scrub×2（收敛为 `_owner_scrub_outbound_specials`，**刻意不进 `_visible_commentary`**——它还喂去重键）、stream observer `request_stop` 通道。**行为变化面已量化**：29 个方法从分叉点版切到上游较新版（全部收缩，抽查最大者 `_fire_stream_delta` 68→32 行确认为良性重构：抽 helper+性能改进）
+- **③ 三个静默生产 bug（同族：前移丢符号+except 吞）**：`SentenceChunker.from_config` 缺失 ⇒ 语音流式 TTS 构造即崩、被 `run_turn.py:3345` try/except 吞掉（`93f416e4ac`）；delivery_ledger flood 6 符号+SMS `import re`（`e8eb45747d`）；pyflakes 全仓扫描共修 **19+ 处**（`451bbb80b3`/`d60d8604b2`/`b509bfd228`）
+- **④ kimi 双端点契约（`ec410b4dba`/`e4f9afb17c`/`69fce3c29f`）**：Anthropic Messages 端点按官方文档重写（k2.7-code 省略 thinking 即 400，必须发 `enabled`；k3 用 `output_config.effort`；27 红转绿）；OpenAI 兼容端点（damodel NewAPI 代理）真实探测了结未决项——代理容忍 `reasoning_effort` 各档与 thinking 同发（官方会 400），**勿据此加门控**
+- **⑤ 测试基线切换（`eee05c3090`，用户裁决）**：owner 全部独有测试删除（715 文件），套件回**纯官方基线**。连带修复两处「重命名/移动过的上游测试模块」悬空 import（`b71bf57794`）。**删除纪律**：差集判定必须叠加「幸存官方测试跨文件 import 扫描」+全仓 collect-only
+- **验证**：tests/agent+tools+gateway 全量 stash 对照（集合级差集）真回归 **0**、修好 3；gateway 75→69 failed；全仓 collect-only 37787 collected / 0 error；改动后真实 agent 端到端（damodel+kimi-k3 工具调用）通过
+- **剩余 ~93 failed 的性质**：绝大多数=官方测试撞 owner 分叉产品（mock 断言/文案/结构），逐簇处置中；大头簇：error_classifier 9（429 usage-limit 归 billing vs rate_limit，owner 有意分歧，**待用户裁决**）、telegram_topic 8（已裁决暂缓）、scale_to_zero 5（已登记）
+
 ### 2026-09-30：新增 §16.16 采纳上游 `run.py` 拆包，定制重落完毕（T2-20）
 
 - **新建正文**：**§16.16**（23 个 `gateway/run_*.py` 结构落地；7 处 import-time 符号 + 5 个 import-time 模块 + `FailoverReason` 5 成员；`gateway/run_turn.py` 重落 25 处标记；`gateway/display_config.py` 补 `resolve_tool_progress` / `_configured_display_value` / `_owner_display_hooks`）。本清单 §16.16 正文 + §0.2 导航行 + 附录 B（新增 `gateway/run_*.py` 行、修订 `gateway/run.py` 与 `gateway/display_config.py` 两行）+ 本条
