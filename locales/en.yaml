@@ -1099,9 +1099,6 @@ Install it with: `hermes skills install {path}`"
     always_plural:         "✅ Commands approved (pattern approved permanently) ({count} commands). The agent is resuming..."
     singular:              "✅ Memory updated — approved {count} proposal(s)."
 
-  credits:
-    not_logged_in:         "Not logged in to Nous Portal. Run `hermes login` to view your credits."
-
   background:
     usage:                 "Usage: /bg <prompt>\nExample: /bg Summarize the top HN stories today\n\nRuns the prompt in a separate session. You can keep chatting — the result will appear here when done."
     started:               "🔄 Background task started: \"{preview}\"\nTask ID: {task_id}\nYou can keep chatting — results will appear when done."
@@ -1524,6 +1521,9 @@ Install it with: `hermes skills install {path}`"
     no_data:                  "No usage data available for this session."
     unknown_subcommand:       "Unknown /usage subcommand: `{args}`. Try `/usage` or `/usage reset [--force]`."
     reset_wrong_provider:     "Banked usage resets are only available on the openai-codex provider. Switch with `/model` first."
+
+  credits:
+    not_logged_in:            "Not logged into Nous Portal. Log in to see your credit balance and top up."
 
   verbose:
     not_enabled:           "The `/verbose` command is not enabled for messaging platforms.\n\nEnable it in `config.yaml`:\n```yaml\ndisplay:\n  tool_progress_command: true\n```"

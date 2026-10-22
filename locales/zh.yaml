@@ -1083,9 +1083,6 @@ gateway:
     always_plural:         "✅ 命令已批准（永久允许该模式）（{count} 条命令）。代理正在恢复…"
     singular:              "✅ 记忆已更新 — 已批准 {count} 条提案。"
 
-  credits:
-    not_logged_in:         "尚未登录 Nous Portal。请运行 `hermes login` 后查看额度。"
-
   background:
     usage:                 "用法：/bg <提示>\n示例：/bg 总结今天 HN 上热门的故事\n\n在独立会话中运行该提示。你可以继续聊天 — 结果完成后将在此显示。"
     started:               "🔄 后台任务已启动：「{preview}」\n任务 ID：{task_id}\n你可以继续聊天 — 完成后结果将在此显示。"
@@ -1507,6 +1504,9 @@ gateway:
     no_data:                  "此会话暂无使用数据。"
     unknown_subcommand:       "未知的 /usage 子命令：`{args}`。请尝试 `/usage` 或 `/usage reset [--force]`。"
     reset_wrong_provider:     "存储的用量重置仅在 openai-codex 提供商上可用。请先使用 `/model` 切换。"
+
+  credits:
+    not_logged_in:            "未登录 Nous Portal。登录后即可查看额度余额并充值。"
 
   verbose:
     not_enabled:           "`/verbose` 命令未在消息平台启用。\n\n请在 `config.yaml` 中启用：\n```yaml\ndisplay:\n  tool_progress_command: true\n```"

@@ -162,3 +162,83 @@ def test_locales_dir_env_override_ignored_when_missing(tmp_path, monkeypatch):
     assert result.name == "locales"
 
 
+# ---------------------------------------------------------------------------
+# [owner] Catalog copy must not instruct a command the user cannot run.
+#
+# A removed CLI subcommand keeps its subparser registered so old scripts get a
+# deprecation notice instead of an argparse error, and it is registered WITHOUT
+# `help=` precisely so it disappears from `hermes --help`. That makes "no help
+# kwarg" the machine-readable definition of "do not tell the user to run this".
+#
+# Motivating defect (2026-07-01, owner i18n commit): the `gateway.credits.
+# not_logged_in` copy was reworded to "Run `hermes login` to view your credits"
+# in both en and zh while the block was being moved. `hermes login` had already
+# been removed, so the copy pointed users at a command whose only output is the
+# removal notice. Nothing caught it because the only test on that string is an
+# English-only content assertion — the zh catalog could drift freely.
+# ---------------------------------------------------------------------------
+
+_CLI_SOURCE_ROOTS = ("hermes_cli/subcommands", "hermes_cli")
+
+
+def _hidden_subcommands() -> set:
+    """Subcommands registered without ``help=`` — i.e. deliberately hidden."""
+    import ast
+
+    repo_root = LOCALES_DIR.parent
+    files = []
+    for rel in _CLI_SOURCE_ROOTS:
+        base = repo_root / rel
+        files.extend(sorted(base.glob("*.py")) if base.is_dir() else [base.with_suffix(".py")])
+    hidden = set()
+    for path in files:
+        if not path.is_file():
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "add_parser"
+                and node.args
+                and isinstance(node.args[0], ast.Constant)
+                and isinstance(node.args[0].value, str)
+            ):
+                continue
+            if "help" not in {k.arg for k in node.keywords}:
+                hidden.add(node.args[0].value)
+    return hidden
+
+
+def _command_references(text: str) -> set:
+    """Every ``hermes <sub>`` command mentioned in a catalog."""
+    import re
+
+    return set(re.findall(r"hermes\s+([a-z][a-z0-9_-]*)", text))
+
+
+def test_hidden_subcommand_extraction_still_works():
+    """The guard below is only as good as this extraction.
+
+    If a refactor moves subcommand registration somewhere unparsed, the hidden
+    set would go empty and every catalog would pass vacuously. Pin the premise:
+    `login` is the known-removed deprecation shim, so it must be found.
+    """
+    hidden = _hidden_subcommands()
+    assert hidden, "no help-less subcommands found — extraction is broken, not the CLI"
+    assert "login" in hidden, f"removed `hermes login` shim not detected: {sorted(hidden)}"
+
+
+@pytest.mark.parametrize("lang", sorted(_MAINTAINED_LOCALES))
+def test_catalog_never_instructs_a_hidden_command(lang: str):
+    """No user-facing string may tell the user to run a removed/deprecated command."""
+    hidden = _hidden_subcommands()
+    text = (LOCALES_DIR / f"{lang}.yaml").read_text(encoding="utf-8")
+    offenders = sorted(_command_references(text) & hidden)
+    assert not offenders, (
+        f"{lang}.yaml tells the user to run removed command(s) {offenders}; "
+        "point at a discoverable command (see `hermes --help`) or drop the invocation"
+    )
+
+
+
