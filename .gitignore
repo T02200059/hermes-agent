@@ -245,3 +245,8 @@ owner/feishu_profile/hermesxiyun/.env
 owner/owner-extensions/output_guard/samples/
 # stream_guard real incident samples (contain user conversation content)
 owner/owner-extensions/stream_guard/samples/
+
+# Test-runner scratch: Mock() objects used as HERMES_HOME resolve to a literal
+# "MagicMock/" directory, which the suite then populates with a fake profile home.
+# Never commit it.
+MagicMock/
