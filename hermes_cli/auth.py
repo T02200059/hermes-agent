@@ -2264,6 +2264,7 @@ def resolve_provider(
     *,
     explicit_api_key: Optional[str] = None,
     explicit_base_url: Optional[str] = None,
+    skip_free_tier: bool = False,
 ) -> str:
     """
     Determine which inference provider to use.
@@ -2276,8 +2277,16 @@ def resolve_provider(
     4. OpenRouter credential pool
     5. Provider-specific API keys (GLM, Kimi, MiniMax, ...) -> that provider
     6. auth.json `active_provider` (logged-in OAuth) — last-resort fallback
-    7. AWS Bedrock credential chain
-    8. Error (no provider configured)
+    7. Nous free tier, when it is on and its guest identity exists — never
+       CREATED here (that is the boot bootstrap's job), so resolution stays free
+       of network and a fresh install resolves as if this rung were absent
+    8. AWS Bedrock credential chain
+    9. Error (no provider configured)
+
+    ``skip_free_tier`` hides the free-tier rung (and a free-tier OAuth identity
+    in rung 6): the boot bootstrap asks "what would carry inference if the free
+    tier did not exist?" to decide whether a fresh identity may become
+    ``active_provider``.
     """
     normalized = (requested or "auto").strip().lower()
 
@@ -2474,6 +2483,19 @@ def resolve_provider(
                 _oauth_active,
             )
         return _oauth_active
+
+    # Nous free tier: the guest identity that carries inference on a fresh
+    # install. Only a *lookup* here — never creates the identity (that is the
+    # boot bootstrap's job), so provider resolution stays free of network.
+    # Hidden entirely under skip_free_tier, which the bootstrap uses to ask
+    # "what would carry inference if the free tier did not exist?".
+    if not skip_free_tier:
+        try:
+            from hermes_cli.anon_auth import guest_enabled, has_guest
+            if guest_enabled() and has_guest():
+                return "nous"
+        except Exception as exc:
+            logger.debug("free tier check during provider resolution skipped: %s", exc)
 
     # AWS Bedrock — detect via boto3 credential chain (IAM roles, SSO, env vars).
     # This runs after API-key providers so explicit keys always win.
@@ -7635,6 +7657,8 @@ def _update_config_for_provider(
     provider_id: str,
     inference_base_url: str,
     default_model: Optional[str] = None,
+    *,
+    clear_default: bool = False,
 ) -> Path:
     """Update config.yaml and auth.json to reflect the active provider.
 
@@ -7644,6 +7668,10 @@ def _update_config_for_provider(
     before the caller has finished model selection, resulting in a
     mismatched model/provider (e.g. ``anthropic/claude-opus-4.6`` sent to
     MiniMax's API).
+
+    *clear_default* removes ``model.default`` in that same write, for a caller
+    that has no model to offer and must not leave the previous provider's model
+    paired with the new host.
     """
     # Set active_provider in auth.json so auto-resolution picks this provider
     with _auth_store_lock():
@@ -7687,6 +7715,10 @@ def _update_config_for_provider(
         cur_default = model_cfg.get("default", "")
         if not cur_default or "/" in cur_default:
             model_cfg["default"] = default_model
+    elif clear_default:
+        # The caller has no model to offer, and leaving the previous provider's
+        # default in place would pair it with the new host in the same write.
+        model_cfg.pop("default", None)
 
     config["model"] = model_cfg
 

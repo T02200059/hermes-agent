@@ -922,6 +922,7 @@ def build_subprocess_env(
     inherit_profile_home: bool = True,
     scrub_secrets: bool = True,
     extra: "Mapping[str, str] | None" = None,
+    strip_launch_profile: bool = False,
 ) -> dict[str, str]:
     """Single factory for building a child-process environment.
 
@@ -959,17 +960,26 @@ def build_subprocess_env(
       overrides (e.g. a session-scoped ``HERMES_HOME``) always win.  On the
       scrub path it is forwarded as ``_sanitize_subprocess_env``'s
       ``extra_env`` (same force-prefix / blocklist handling as today).
+    * ``strip_launch_profile`` — drop the LAUNCH profile's ``.env`` residue from
+      the base first (:func:`strip_launch_profile_env`; a no-op unless a routed
+      home is active), so a child acting for a routed profile sees only that
+      profile's declared names, never the launch profile's.
     """
+    env: dict[str, str] = dict(base) if base is not None else os.environ.copy()
+    # Strip before either branch: a launch-profile setting must not survive into
+    # the scrub path either (the scrub removes credentials, not settings).
+    if strip_launch_profile:
+        strip_launch_profile_env(env)
+
     if scrub_secrets:
         # _sanitize_subprocess_env already performs HERMES_HOME override
         # bridging + apply_subprocess_home_env unconditionally; delegating
         # wholesale keeps one owner and zero drift.
         return _sanitize_subprocess_env(
-            dict(base) if base is not None else os.environ.copy(),
+            env,
             dict(extra) if extra else None,
         )
 
-    env: dict[str, str] = dict(base) if base is not None else os.environ.copy()
     if inherit_profile_home:
         _inject_context_hermes_home(env)
         from hermes_constants import apply_subprocess_home_env
@@ -977,6 +987,72 @@ def build_subprocess_env(
     if extra:
         env.update(extra)
     return env
+
+
+# Platform authorization gates: profile-scoped policy (``DISCORD_ALLOWED_CHANNELS``,
+# ``TELEGRAM_ALLOW_ALL_USERS``, ``GATEWAY_ALLOWED_USERS``, ``WHATSAPP_GROUP_ALLOW_FROM`` …)
+# that a child acting for ANOTHER profile must never inherit. The secret scrub handles
+# credentials but deliberately ignores non-secret settings, so these need their own pass.
+#
+# Ported verbatim from upstream ``tools/environments/local_env_policy.py`` (which our tree
+# has not absorbed as a module split); kept next to their only caller.
+_PROFILE_GATE_ENV_MARKERS = (
+    "_ALLOWED_", "_ALLOW_ALL_", "_ALLOW_FROM", "_ALLOW_BOTS", "_ALLOW_PUBLIC_", "_IGNORED_CHANNELS",
+    "_NO_THREAD_CHANNELS", "_FREE_RESPONSE_CHANNELS", "_BACKFILL_CHANNELS", "_GROUP_ALLOWED",
+)
+
+
+def is_profile_gate_env(name: str) -> bool:
+    """True for a platform authorization gate a child of another profile must not inherit."""
+    upper = name.upper()
+    if upper.startswith("HERMES_") or upper.startswith("_"):
+        return False
+    return any(marker in upper for marker in _PROFILE_GATE_ENV_MARKERS)
+
+
+def strip_profile_gate_env(env: dict) -> dict:
+    """Drop every authorization gate from *env* in place (see :func:`is_profile_gate_env`)."""
+    for key in [k for k in env if is_profile_gate_env(k)]:
+        del env[key]
+    return env
+
+
+def _is_routed_home(target_home: "str | Path") -> bool:
+    """True when ``target_home`` is not the process's own (launch) home."""
+    try:
+        return Path(target_home).resolve() != get_process_hermes_home().resolve()
+    except OSError:
+        return True
+
+
+def strip_launch_profile_env(env: dict, target_home: "str | Path | None" = None) -> dict:
+    """Drop the LAUNCH profile's residue from a child env built for another served profile.
+
+    ``os.environ`` holds the default profile's ``.env`` and its bridged ``TERMINAL_*``
+    settings; the secret scrub removes credentials but not settings (``HERMES_MODEL``,
+    ``TERMINAL_ENV``, ``HERMES_LANGUAGE``...), so a standalone ``hermes -p X`` worker and a
+    served one saw different envs. The child re-loads X's own ``.env`` and bridges X's
+    config itself. ``target_home`` defaults to the active home override; no-op when there
+    is no target or the target IS the launch profile. The authority test is "does this task
+    serve a routed home", not "is the gateway-wide multiplex flag on": the Desktop/dashboard
+    backend serves ``?profile=B`` by installing a HERMES_HOME override without that flag.
+    """
+    from agent.secret_scope import _is_global_env, load_env_file
+    from hermes_constants import get_hermes_home_override
+
+    target = target_home or get_hermes_home_override()
+    if not target or not _is_routed_home(target):
+        return env
+    launch_home = get_process_hermes_home()
+    from hermes_cli.config import TERMINAL_CONFIG_ENV_MAP
+
+    for key in set(load_env_file(launch_home / ".env")) | set(TERMINAL_CONFIG_ENV_MAP.values()):
+        if not _is_global_env(key) or key.startswith("TERMINAL_"):
+            env.pop(key, None)
+    # Authorization gates are the one residue a name list cannot see: a unit-file
+    # ``Environment=`` or an operator export never appears in the launch ``.env``, and the
+    # target's own ``.env`` rarely defines the key to overwrite it.
+    return strip_profile_gate_env(env)
 
 
 def _find_bash() -> str:

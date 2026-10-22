@@ -129,11 +129,11 @@ def _browser_env() -> dict:
         return os.environ.copy()
 
 
-def _cdp_ready(url: str) -> bool:
+def _cdp_ready(url: str, timeout: float = 0.2) -> bool:
     try:
         from hermes_cli.browser_connect import is_browser_debug_ready
 
-        return is_browser_debug_ready(url, timeout=0.2)
+        return is_browser_debug_ready(url, timeout=timeout)
     except Exception as e:
         logger.debug("CDP readiness probe failed for %s: %s", url, e)
         return False
@@ -150,7 +150,8 @@ def _read_log_tail(path: str) -> str:
     return lines[-1] if lines else ""
 
 
-def _terminate(proc: subprocess.Popen) -> None:
+def _terminate(proc: subprocess.Popen, what: str = "lightpanda") -> None:
+    """poll -> terminate -> wait(5) -> kill; shared with the real-profile Chrome cleanup."""
     try:
         if proc.poll() is None:
             proc.terminate()
@@ -159,7 +160,7 @@ def _terminate(proc: subprocess.Popen) -> None:
             except Exception:
                 proc.kill()
     except Exception as e:
-        logger.debug("lightpanda terminate failed: %s", e)
+        logger.debug("%s terminate failed: %s", what, e)
 
 
 def _safe_start_time(pid: int) -> Optional[int]:

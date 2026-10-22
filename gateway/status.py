@@ -1181,6 +1181,7 @@ def write_runtime_status(
     retrying_since: Any = _UNSET,
     served_profiles: Any = _UNSET,
     session_store: Any = _UNSET,
+    multiplex_standalone_reason: Any = _UNSET,
     clear_profile_platforms: bool = False,
 ) -> None:
     """Persist gateway runtime health information for diagnostics/status."""
@@ -1233,6 +1234,12 @@ def write_runtime_status(
             if candidate in {"ok", "unavailable", "retrying", "unknown"}:
                 state = candidate
         payload["session_store"] = {"status": state}
+    if multiplex_standalone_reason is not _UNSET:
+        # Why this gateway serves one profile while the default says multiplex (a
+        # guard refusal, not a config choice). None clears it — any non-guard
+        # verdict means multiplexing is following the config again, and a stale
+        # reason would misreport the next gateway status.
+        payload["multiplex_standalone_reason"] = str(multiplex_standalone_reason) if multiplex_standalone_reason else None
 
     if platform is not _UNSET:
         platform_payload = payload["platforms"].get(platform, {})

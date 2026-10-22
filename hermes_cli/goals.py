@@ -1302,7 +1302,11 @@ def judge_goal(
     return verdict, reason, parse_failed, wait_directive, False
 
 
-def gather_background_processes(task_id: Optional[str] = None) -> List[Dict[str, Any]]:
+def gather_background_processes(
+    task_id: Optional[str] = None,
+    *,
+    owner_task_id: Optional[str] = None,
+) -> List[Dict[str, Any]]:
     """Return the live background-process snapshot for the goal judge.
 
     Thin, fail-safe wrapper over ``process_registry.list_sessions(task_id)``.
@@ -1311,6 +1315,12 @@ def gather_background_processes(task_id: Optional[str] = None) -> List[Dict[str,
     degrades to its pre-wait-barrier behavior (judge just won't see processes).
     The drivers (CLI + gateway) call this and pass the result into
     ``GoalManager.evaluate_after_turn(background_processes=...)``.
+
+    ``owner_task_id`` restricts the snapshot to processes the goal's OWN session
+    spawned. The registry's ``task_id`` is the container key and collapses to one
+    value for every agent in the process, so without this filter a fan-out
+    parent's judge sees every subagent's pollers and parks the goal on a
+    grandchild's ``proc_*`` session.
     """
     try:
         from tools.process_registry import process_registry
@@ -1319,7 +1329,13 @@ def gather_background_processes(task_id: Optional[str] = None) -> List[Dict[str,
     except Exception as exc:
         logger.debug("gather_background_processes failed: %s", exc)
         return []
-    return [s for s in sessions if isinstance(s, dict) and s.get("status") != "exited"]
+    running = [s for s in sessions if isinstance(s, dict) and s.get("status") != "exited"]
+    if owner_task_id:
+        running = [
+            s for s in running
+            if str(s.get("owner_task_id") or s.get("task_id") or "") == str(owner_task_id)
+        ]
+    return running
 
 
 def draft_contract(objective: str, *, timeout: Optional[float] = None) -> Optional[GoalContract]:

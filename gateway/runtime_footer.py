@@ -115,19 +115,36 @@ def format_runtime_footer(
     context_length: Optional[int],
     cwd: Optional[str] = None,
     turn_seconds: Optional[float] = None,
+    requested_model: Optional[str] = None,
+    served_model: Optional[str] = None,
     fields: Iterable[str] = _DEFAULT_FIELDS,
 ) -> str:
     """Render the footer line, or return "" if no fields have data.
 
     Fields are skipped silently when their underlying data is missing — a
     partially-populated footer is better than a line with ``?%`` or empty slots.
+
+    ``served_model`` renders only when the provider actually served a different
+    model than requested (fallback/alias), as ``alias → served``; a plain match
+    adds nothing.
     """
+    def _served() -> str:
+        requested = requested_model or model
+        alias = _model_short(requested)
+        if served_model and served_model not in (alias, requested):
+            return f"{alias} → {served_model}"
+        return ""
+
     parts: list[str] = []
     for field in fields:
         if field == "model":
             m = _model_short(model)
             if m:
                 parts.append(m)
+        elif field == "served_model":
+            served = _served()
+            if served:
+                parts.append(served)
         elif field == "context_pct":
             if context_length and context_length > 0 and context_tokens >= 0:
                 pct = max(0, min(100, round((context_tokens / context_length) * 100)))
@@ -157,6 +174,8 @@ def build_footer_line(
     context_length: Optional[int],
     cwd: Optional[str] = None,
     turn_seconds: Optional[float] = None,
+    requested_model: Optional[str] = None,
+    served_model: Optional[str] = None,
 ) -> str:
     """Top-level entry point used by gateway/run.py.
 
@@ -177,5 +196,7 @@ def build_footer_line(
         context_length=context_length,
         cwd=cwd,
         turn_seconds=turn_seconds,
+        requested_model=requested_model,
+        served_model=served_model,
         fields=cfg.get("fields") or _DEFAULT_FIELDS,
     )

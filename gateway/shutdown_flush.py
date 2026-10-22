@@ -190,13 +190,22 @@ def spool_dropped_transcript_message(
 _TRANSCRIPT_SPOOL_SEQ = itertools.count()
 
 
-def drain_transcript_spool(session_id: str, replay) -> tuple[int, int]:
+def drain_transcript_spool(
+    session_id: str,
+    replay,
+    *,
+    db_known_failing: bool = False,
+) -> tuple[int, int]:
     """Replay cap-dropped transcript messages spooled for *session_id*.
 
     ``replay(message_dict)`` is invoked for each spooled message in drop
     order; the spool file is deleted only after a successful replay.  On
     the first replay failure the drain stops and remaining files are kept
     for the next attempt (the DB is likely still unhealthy).
+
+    ``db_known_failing`` means the caller's own last write already failed and
+    is being logged/escalated, so a replay failure here is expected: it logs at
+    DEBUG instead of adding one WARNING per append on top of that ERROR.
 
     Returns ``(replayed, remaining)`` — messages replayed and spool files
     left behind for a later retry.
@@ -214,9 +223,14 @@ def drain_transcript_spool(session_id: str, replay) -> tuple[int, int]:
             payload = json.loads(path.read_text(encoding="utf-8"))
         except Exception:
             continue
-        if payload.get("reason") != TRANSCRIPT_CAP_DROP_REASON:
-            continue
-        if payload.get("session_key") != session_id:
+        # A parseable non-object payload (scalar/list) cannot be attributed to any
+        # session: skip it like unparseable JSON instead of letting ``.get`` abort
+        # the whole drain.
+        if (
+            not isinstance(payload, dict)
+            or payload.get("reason") != TRANSCRIPT_CAP_DROP_REASON
+            or payload.get("session_key") != session_id
+        ):
             continue
         message = (payload.get("data") or {}).get("message")
         if not isinstance(message, dict):
@@ -236,7 +250,7 @@ def drain_transcript_spool(session_id: str, replay) -> tuple[int, int]:
         try:
             replay(message)
         except Exception as exc:
-            logger.warning(
+            (logger.debug if db_known_failing else logger.warning)(
                 "Replay of spooled transcript message %s for %s failed; "
                 "keeping spool file for retry: %s",
                 path, session_id, exc,
@@ -285,6 +299,8 @@ def _serialise_value(value: Any) -> Optional[dict]:
 
 def recover_pending_to_db(
     session_db=None,
+    *,
+    session_resolver=None,
 ) -> int:
     """Recover flushed pending messages into state.db via SessionDB.
 
@@ -298,6 +314,14 @@ def recover_pending_to_db(
     session_db:
         An existing ``SessionDB`` instance.  If ``None``, a new one is
         opened on the default ``state.db`` path.
+    session_resolver:
+        Optional ``(session_key, not_after=ts) -> (session_id, db) | None``,
+        e.g. ``SessionStore.resolve_session_id_for_key``. Required for real
+        flush files: adapter ``MessageEvent`` objects carry no ``session_id``,
+        so without it every recovery lands in the skip branch. A returned
+        ``db`` routes the append to the profile store owning the key
+        (multiplexed gateways); ``None`` means "preserve the file", not
+        "fall back to ``session_db``".
 
     Returns
     -------
@@ -369,28 +393,37 @@ def recover_pending_to_db(
                 continue
 
             # The session_key is a gateway routing key (e.g.
-            # "agent:main:telegram:supergroup:...").  We need the actual
-            # session_id (e.g. "20260728_120000_abc123") to append a
-            # message row.  Try the session_id field from the serialised
-            # data first; fall back to scanning sessions for a matching
-            # session_key in the source column.
+            # "agent:main:telegram:supergroup:...").
+            # We need the actual session_id (e.g. "20260728_120000_abc123") to append a
+            # message row. Real flush payloads carry no session_id — the caller-supplied
+            # resolver supplies it together with the store owning the key (multiplexed
+            # gateways). A None db from the resolver is not a fallback signal: it means
+            # "preserve this file" (the ambient root store must never take another
+            # profile's rows).
             session_id = data.get("session_id", "")
+            target_db = session_db
+
+            if not session_id and session_resolver is not None:
+                try:
+                    resolved = session_resolver(session_key, not_after=payload.get("ts"))
+                except Exception as exc:
+                    logger.debug(
+                        "Session key->id resolution failed for %s: %s", session_key, exc,
+                    )
+                    resolved = None
+                if resolved and resolved[1] is not None:
+                    session_id, target_db = resolved
 
             if not session_id:
-                # Try to extract from the session_key itself — gateway
-                # session keys contain the session_id as the last segment
-                # in some formats, but that's not guaranteed.  Log and
-                # skip if we can't resolve it.
                 logger.warning(
                     "Cannot recover pending message for %s: no session_id "
-                    "in flush file and session_key-to-id resolution is not "
-                    "available at this recovery stage. The message text is "
-                    "preserved in %s",
+                    "in flush file and session_key-to-id resolution failed. "
+                    "The message text is preserved in %s",
                     session_key, path,
                 )
                 continue
 
-            session_db.append_message(
+            target_db.append_message(
                 session_id=session_id,
                 role="user",
                 content=text,
