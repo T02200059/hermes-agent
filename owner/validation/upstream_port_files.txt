@@ -26,3 +26,4 @@ gateway/runtime_footer.py  requested_model + served_model params and the served_
 gateway/status.py  multiplex_standalone_reason param + its set-field added verbatim from upstream/main, T2-21 (signature drift)
 tools/browser_lightpanda.py  _cdp_ready(timeout=) and _terminate(what=) signatures added verbatim from upstream/main, T2-21 (signature drift)
 tools/environments/local.py  strip_launch_profile param + strip_launch_profile_env/_is_routed_home/strip_profile_gate_env/_PROFILE_GATE_ENV_MARKERS added verbatim from upstream/main (local_env_policy.py split not absorbed), T2-21
+tools/bot_mode_dm.py  message_agent_authorized() + ensure_message_agent_tool() rewritten to call it, verbatim from upstream/main, T2-21 (SignatureDrift: caller in mcp_tool_agent imported a symbol this file never defined)

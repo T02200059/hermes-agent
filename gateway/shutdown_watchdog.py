@@ -199,6 +199,27 @@ def start_loop_liveness_watchdog(
                 mark_exited(exit_code, reason="loop_liveness_watchdog")
             except Exception:
                 pass
+            # Also stamp ``gateway_state.json``: without it every reader
+            # (``hermes gateway status``, /api/status, the desktop popover) keeps
+            # reporting ``running`` for a process this thread just killed, so the
+            # death stays invisible until the next boot. Written LAST: that record
+            # is what housekeeping refreshes, so nothing may overwrite it after.
+            # Only the supervisor-restart code asserts a restart; other codes leave
+            # the recorded operator intent alone.
+            try:
+                from gateway.status import write_runtime_status
+                _restart = (
+                    {"restart_requested": True}
+                    if exit_code == GATEWAY_SERVICE_RESTART_EXIT_CODE
+                    else {}
+                )
+                write_runtime_status(
+                    gateway_state="degraded",
+                    exit_reason="loop_liveness_watchdog",
+                    **_restart,
+                )
+            except Exception:
+                pass
             os._exit(exit_code)
             return
 
@@ -443,6 +464,27 @@ def arm_shutdown_watchdog(
             mark_exited(exit_code, reason="shutdown_watchdog")
         except Exception:
             pass
+        # Also stamp ``gateway_state.json``: without it every reader (``hermes gateway
+        # status``, /api/status, the desktop popover) keeps reporting ``running`` for a
+        # process the watchdog just killed, so the death is invisible until the next boot.
+        # Written LAST: housekeeping refreshes that record, so nothing may overwrite it
+        # after this stamp. Only the supervisor-restart code asserts a restart; other codes
+        # leave the recorded operator intent alone (a wedged restart-drain is still a
+        # requested restart).
+        try:
+            from gateway.status import write_runtime_status
+            _restart = (
+                {"restart_requested": True}
+                if exit_code == GATEWAY_SERVICE_RESTART_EXIT_CODE
+                else {}
+            )
+            write_runtime_status(
+                gateway_state="degraded",
+                exit_reason="shutdown_watchdog",
+                **_restart,
+            )
+        except Exception:
+            pass
         os._exit(exit_code)
 
     try:
@@ -526,30 +568,41 @@ async def loop_heartbeat_forever(
     # disables the witness, and the payload flag tells probes that staleness is
     # no longer sufficient authority to escalate.
     #
-    # Windows: asyncio.start_unix_server raises (no AF_UNIX event-loop
-    # support), so the witness is PERMANENTLY absent there — the payload
-    # records loop_tick_socket=False and every stale-file probe classifies
-    # UNKNOWN, never WEDGED. That is deliberate fail-safe: a wedged native
-    # Windows gateway keeps the graceful-drain backstop instead of an
-    # escalation verdict built on a witness that cannot exist. (WSL2 — the
-    # #90502 incident environment — is Linux and arms the socket normally.)
+    # asyncio AF_UNIX is POSIX-only (ungated, start_unix_server raised
+    # AttributeError on native Windows), which left the witness PERMANENTLY
+    # absent there and made every stale-file probe classify UNKNOWN. Non-POSIX
+    # therefore binds a loopback TCP port and publishes it as
+    # ``loop_tick_tcp_port``, so those platforms get a real witness too.
+    # (WSL2 — the #90502 incident environment — is Linux: unix socket as usual.)
     tick_server = None
     tick_socket_path = None
+    tick_tcp_port = None
     try:
-        tick_socket_path = get_loop_tick_socket_path(home)
-        tick_socket_path.parent.mkdir(parents=True, exist_ok=True)
-        # Re-bind over a leftover node from a dead process (os._exit(75) /
-        # SIGKILL skip the finally-unlink; PID reuse re-lands on this
-        # PID-suffixed path) is handled by asyncio itself:
-        # create_unix_server os.remove()s an existing socket node before
-        # binding — guarded by test_producer_rebinds_over_stale_socket_node.
-        # What asyncio does NOT do is clean up SIBLING nodes from other
-        # dead PIDs, so sweep those to keep state/ from accumulating
-        # gateway.loop-tick.*.sock nodes across crash-restart cycles.
-        # POSIX-only: os.kill(pid, 0) is a liveness probe here, but on
-        # Windows os.kill calls TerminateProcess for non-CTRL signals —
-        # and AF_UNIX server nodes are never created there anyway.
-        if os.name == "posix":
+        if os.name != "posix":
+            tick_server = await asyncio.start_server(
+                _tick_socket_handler, host="127.0.0.1", port=0
+            )
+            for _sock in tick_server.sockets or []:
+                try:
+                    _sname = _sock.getsockname()
+                except Exception:
+                    continue
+                if isinstance(_sname, tuple) and len(_sname) >= 2:
+                    tick_tcp_port = int(_sname[1])
+                    break
+            if tick_tcp_port is None:
+                raise RuntimeError("TCP loop-tick witness bound no usable address")
+        else:
+            tick_socket_path = get_loop_tick_socket_path(home)
+            tick_socket_path.parent.mkdir(parents=True, exist_ok=True)
+            # Re-bind over a leftover node from a dead process (os._exit(75) /
+            # SIGKILL skip the finally-unlink; PID reuse re-lands on this
+            # PID-suffixed path) is handled by asyncio itself:
+            # create_unix_server os.remove()s an existing socket node before
+            # binding — guarded by test_producer_rebinds_over_stale_socket_node.
+            # What asyncio does NOT do is clean up SIBLING nodes from other
+            # dead PIDs, so sweep those to keep state/ from accumulating
+            # gateway.loop-tick.*.sock nodes across crash-restart cycles.
             try:
                 for _stale in tick_socket_path.parent.glob(
                     "gateway.loop-tick.*.sock"
@@ -569,11 +622,16 @@ async def loop_heartbeat_forever(
                 logger.debug(
                     "stale loop-tick socket sweep failed", exc_info=True
                 )
-        tick_server = await asyncio.start_unix_server(
-            _tick_socket_handler, path=str(tick_socket_path)
-        )
+            tick_server = await asyncio.start_unix_server(
+                _tick_socket_handler, path=str(tick_socket_path)
+            )
     except Exception:
-        tick_server = None
+        if tick_server is not None:
+            try:
+                tick_server.close()
+            except Exception:
+                pass
+        tick_server = tick_tcp_port = None
         logger.warning(
             "Loop tick socket unavailable — liveness probes will have no "
             "loop-scheduling witness and will not escalate on a stale heartbeat",
@@ -588,7 +646,10 @@ async def loop_heartbeat_forever(
                 write_loop_heartbeat,
                 start_time=start_time,
                 home=home,
-                extra={"loop_tick_socket": tick_server is not None},
+                extra={
+                    "loop_tick_socket": tick_server is not None,
+                    "loop_tick_tcp_port": tick_tcp_port,
+                },
             )
         except asyncio.CancelledError:
             raise

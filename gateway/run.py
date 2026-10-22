@@ -3221,8 +3221,10 @@ def _normalize_empty_agent_response(
             return _CONTEXT_OVERFLOW_REPLY
         # Raw exception text (class names, JSON bodies, URLs) stays in the gateway log.
         logger.warning("Agent turn failed; reply sanitized for chat. Detail: %s", str(error_detail)[:500])
-        from agent.i18n import t  # [owner] i18n replay (A4-1 组C)
-        return t("gateway.model.request_failed", error=str(error_detail)[:300])
+        return (
+            "⚠️ Something went wrong and I couldn't finish this reply. Use /retry to try again, "
+            "or /new to start a fresh conversation. Technical details are in the gateway log "
+            "(`hermes logs`).")
 
     api_calls = int(agent_result.get("api_calls", 0) or 0)
     if agent_result.get("interrupted"):
@@ -3265,8 +3267,9 @@ def _normalize_empty_agent_response(
                 reason = ""
             else:
                 reason = f": {err[:200]}"
-            from agent.i18n import t  # [owner] i18n replay (A4-1 组C)
-            return t("gateway.processing_stopped", error=reason[2:] if reason else "")
+            return (
+                f"⚠️ I had to stop before finishing{reason}. Use /retry to try again, or /compress "
+                "if this conversation has grown very long.")
         from agent.i18n import t  # [owner] i18n replay (A4-1 组C)
         return t("gateway.model.no_response_generated")
 

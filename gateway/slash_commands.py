@@ -1514,26 +1514,39 @@ class GatewaySlashCommandsMixin(
             )
             return EphemeralReply(t("gateway.stop.stopped"))
 
-        # No run under the caller's own session key.  In a per-user thread
-        # (thread_sessions_per_user=True) each participant is isolated even
-        # inside one shared thread, so a run another user started lives under
-        # a different key.  Authorized users should still be able to /stop it
-        # (#bernard-thread-stop).  Fall back to interrupting any running
-        # agent(s) that share this thread, gated on authorization.
-        sibling_keys = self._sibling_thread_run_keys(source, session_key)
-        if sibling_keys and self._is_user_authorized(source):
-            for sibling_key in sibling_keys:
+        # No run under the caller's own session key: a live turn in THIS chat may
+        # still carry a differently shaped key. One scan feeds both tiers; the chat
+        # tier is a superset of the thread-sibling tier (a sibling needs the
+        # caller's own thread slot, which satisfies the chat predicate), so it is
+        # the set to act on — acting on the sibling subset alone would reply
+        # "Stopped" while a same-thread run under a differently shaped key kept
+        # going. See `_chat_scoped_run_keys` for the shapes and isolation bounds;
+        # both tiers are authorization-gated.
+        runs = self._same_chat_runs(source, session_key)
+        sibling_keys = self._sibling_thread_run_keys(source, runs)
+        fallback_keys = self._chat_scoped_run_keys(source, runs)
+        # Reason is per-stop, not per-key: a stop that only ever had thread
+        # siblings keeps its own label for hook consumers, anything wider is a
+        # chat-scope stop.
+        reason = (
+            "stop_command_thread_sibling"
+            if fallback_keys == sibling_keys
+            else "stop_command_chat_scope"
+        )
+        if fallback_keys and self._is_user_authorized_for_source(source):
+            for fallback_key in fallback_keys:
                 await self._interrupt_and_clear_session(
-                    sibling_key,
+                    fallback_key,
                     source,
                     interrupt_reason=_INTERRUPT_REASON_STOP,
-                    invalidation_reason="stop_command_thread_sibling",
+                    invalidation_reason=reason,
                 )
             logger.info(
-                "STOP (thread sibling) by %s — interrupted %d run(s) in thread: %s",
+                "STOP (%s) by %s — interrupted %d run(s) in chat: %s",
+                reason,
                 session_key,
-                len(sibling_keys),
-                ", ".join(sibling_keys),
+                len(fallback_keys),
+                ", ".join(fallback_keys),
             )
             return EphemeralReply(t("gateway.stop.stopped"))
 
@@ -2623,9 +2636,13 @@ class GatewaySlashCommandsMixin(
         args = event.get_command_args().strip().lower()
         chat_id = event.source.chat_id
         platform = event.source.platform
-        voice_key = self._voice_key(platform, chat_id)
+        # Voice state belongs to the (bot, chat) pair: resolve the adapter that received the
+        # command and key the mode by its owning profile so two multiplexed bots in one chat keep
+        # independent /voice state. Without the profile namespace one bot's `/voice` flips the
+        # other's — the modes dict is keyed only by `<platform>:<chat_id>`. See #75198.
+        voice_key = self._voice_key_for_source(event.source)
 
-        adapter = self.adapters.get(platform)
+        adapter = self._delivery_adapter_for(event.source)
 
         if args in {"on", "enable"}:
             self._voice_mode[voice_key] = "voice_only"
