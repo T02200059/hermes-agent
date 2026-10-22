@@ -1271,6 +1271,7 @@ _元数据统计口径：范围取「基点后未出现在上游 `00b2e03c80` �
 - **Commit**：`872ffe0ce`、`b5aa55c65`、`b50da840b`、`d6757b656`、`ca80a4957`
 - **补充说明**（`ca80a4957`）：新增 `tests/owner/test_contract_entrypoints.py`（7 个 P1 contract test，验证 owner 逻辑确实接到 upstream entrypoint：gateway inbound session_key 透传、per-chat display override、long-running surface source-aware resolver、build_api_kwargs 透传 owner_provider_name、chat_completions transport extra_body、cron scheduler run_job 设置 HERMES_CRON_SESSION contextvar、owner-extensions plugin apply memory_synthetic_guard patch）；同时 `owner/validation/inventory.yaml` 扩充 11 项 inventory（pool base_url override、credential prefix gate、feishu auto-card、diff card dispatch、approval card、feishu-guide command、cron job args、message token breakdown、qwen thinking debris、damodel prompt cache policy、rate-limit quota classification、gateway restart pycache cleanup）。
 - **后续**：`e21239389` — 新增 `owner/validation/merge_loss_audit.py`（合入后做 volume / glue-loss / arch / orphan 审计）；`anchors.yaml` + `inventory.yaml` 跟上游 main schema split 对齐（DDL 在 `hermes_state_common`，cron ContextVar 已是官方原生）。
+- **测试覆盖断言（2026-10-22）**：inventory 里断言「某测试文件存在」的检查一律用 `type: test_coverage`（**不是** `file_exists`）：缺失且已在 `owner/validation/coverage_gaps.txt` 登记理由 → 记为**已确认债务**打印、不判红；缺失未登记 → 判红；登记了但测试文件又回来 / item id 不存在 → 判为 stale entry 要求撤销。登记表**只能收缩**，不能用来消红。现有 18 条登记均为 `eee05c3090` 摘除旧 owner 测试后的行为覆盖缺口。机制与门禁见 `tests/owner/test_owner_coverage_gap_register.py`（11 例，变异 5/5 咬住），偿还策略见 `二次开发规范.md` §2.2.0。
 
 ### 12.5 owner/examples 参考文档（base config 模板）
 
@@ -2590,9 +2591,9 @@ _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请先�
 
 ## 附录 E：变更日志
 
-### 2026-10-22：T2-21 第二段——429 配额墙收窄为减法式改写 + **重建新基线 owner 测试**
+### 2026-10-22：T2-21 第二段——429 配额墙收窄为减法式改写 + 重建新基线 owner 测试 + 覆盖率缺口债务登记
 
-- **类型**：缺陷修复（自制判定与上游重复且更弱）+ 测试基线口径澄清
+- **类型**：缺陷修复（自制判定与上游重复且更弱；校验器双报）+ 测试基线口径澄清 + 校验机制加固（`test_coverage` + 债务登记表）
 - **① 429 配额墙改写（`agent/error_classifier.py`，净 `+29/−23`）**：删除 §7.9 原有的整套自制判定（429 分支入口处 22 行，自带 `_USAGE_LIMIT_PATTERNS` 扫描 + 短窗口白名单 + `rate limit` 排除），改为在**上游** `_has_usage_limit_transient_signal` 求出 `has_transient_signal` 之后做一次单向降级：新纯函数 `_has_long_reset_window()` 命中 `resets?…(in|after) N day(s)/week(s)` 时把 transient 置 False。判据是**可证明的**而非猜的：重试循环把 `Retry-After` 封顶 600s，天/周级窗口物理上等不到；分钟/小时级可等待，保持 transient。取舍明确写在注释里——未识别文案**一律保留上游判定**，宁可漏判成 rate_limit，不误升 billing。**结果：`tests/agent/test_error_classifier.py` 9 failed / 113 passed → 122 passed / 0 failed**；语义矩阵两侧同时满足（`2 days`/`3 days`/`2 weeks` ⇒ billing；`6hr 29min`/ISO 时间戳/structured reset 字段/`Retry-After`/`x-ratelimit-reset`/`reset after 3600s` ⇒ rate_limit；上游既有 bare `usage limit reached` ⇒ billing、显式 `insufficient credit` ⇒ billing、显式 `Rate limit exceeded` ⇒ rate_limit 全部未变）。原 §7.9 的**另一半**（`conversation_loop.py` 的 `wait_time >= 60` 立即显示）核实仍完好，与本改写正交
 - **② owner 测试口径澄清（用户裁决 2026-10-22）**：2026-10-20 删除的 715 个文件是**旧** owner 测试 —— 那批用例编码的是 fork 之前的产品预期，与 owner 现产品互撞，反而掩盖真实缺口，故整体摘除、套件回纯官方基线。**但这不等于「owner 不得有测试」**。自 2026-10-22 起，`tests/owner/` 重新作为**新基线**的合法组成部分，规则是「一例一书」：
   - **只在**存在有意为之的 owner 分歧（即上游语义被我方明确改掉的地方）时新增；
@@ -2601,7 +2602,14 @@ _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请先�
   - 文件头注明所属 §编号，便于 sync 时对照
 - **③ 首例（`tests/owner/test_owner_429_reset_window.py`，35 例）**：三组行为断言 + 一条 AST 结构守卫（钉死「`_classify_by_status` 的 429 分支内 `FailoverReason.billing` 返回点仅 1 个」，防下次 sync 把 22 行自制判定搬回）。变异 **3/3 咬住**：helper 恒 False（10 例红）、正则放宽为 `resets?`（7 例红）、塞回第二个 billing 返回（19 例红）
 - **验证**：定向 11 文件 **280 passed / 0 failed**（含 `test_error_classifier` / `test_billing_unverified_carrythrough` / `test_credential_pool_*` / `test_anthropic_billing_guidance` / `test_error_surface` 等所有引 `classify_api_error` 的用例）；全仓 `--collect-only` **37822 collected / 0 error**（84 deselected）
-- **未纳入**：全仓权威失败面基线（用户指示暂缓）；error_classifier 之外的 45+ 失败文件逐簇处置
+- **④ 覆盖率缺口登记表（`owner/validation/coverage_gaps.txt` 新建 + `test_coverage` 检查类型）**：`eee05c3090` 删旧测试后，Check 7 里 **19 条断言仍指向已删的 18 个测试文件**，健康检查长期红着 19 条。**处理方式不是删断言**——断言「这个分歧有回归测试」随文件一起删掉，登记表的沉默就等于宣称已覆盖（§16.11 教训）。改为：
+  - 新检查类型 `test_coverage`（取代这 19 处的 `file_exists`）：测试文件在 → 过；缺失**且**在 `coverage_gaps.txt` 登记了理由 → 记为**已确认债务**（打印，不判红）；缺失**未**登记 → **判红**，报错文案直接给出两条出路
+  - 登记表**只能收缩**，Check 7 双向把关：登记了但测试文件回来了 ⇒ stale entry 要求撤销；登记了但 item id 不存在或无 `test_coverage` 断言 ⇒ stale entry。**改登记表消红不成立**——撤销的前提是测试真的补上
+  - **顺带修掉一个真缺陷**：`_check_inventory_file_contains` 在文件缺失时输出与 `file_exists` 逐字相同的消息，于是 `owner-entrypoint-contract-tests` 一个缺失文件被报成两条独立失败。改为「同一 item 已用 `file_exists`/`test_coverage` 声明过该路径存在时，`file_contains` 不再重复报缺失」，但**文件回来时 needle 立即恢复强制**
+  - **门禁**：新建 `tests/owner/test_owner_coverage_gap_register.py`（11 例），前半用 `monkeypatch` 把 `merge_health_check` 指向一次性仓库根、断言**机制**而非今日仓库状态；末了跑真实 inventory 断言零未满足需求 + 登记表恰好 18 条。变异 **5/5 咬住**（未登记缺失降级为过 / stale 检查删除 / 未知 id 检查删除 / 双报恢复 / 登记表清空）
+- **⑤ `hermes_constants.py` 的伪标记（Check 8 stale entry）**：该文件是 `upstream_port_files.txt` 里的逐字前移文件，但 2026-10-21 为说明 `openrouter_variant_base` 的来历写了 `# [owner] T2-21: restored from upstream verbatim` —— 按 §16.16「前向移植的上游代码逐字复制、不加 `[owner]` 标记」，这个标记**方向是错的**（解冲时该以谁的一侧为准写反了）。改法：删掉标记 token 只留说明文字，并补一句「为何刻意不带标记」；同时把 allowlist 的 reason 补上 `OPENROUTER_VARIANT_SUFFIXES + openrouter_variant_base`。**踩到的坑**：改后的说明里又出现了 `[owner]` 字面量，而 Check 8 是纯子串扫描、不区分代码与注释 ⇒ 仍报 stale entry。二次改写为「owner marker」后才通过。已写进 `二次开发规范.md`
+- **验证（第 4 段）**：健康检查 **7 passed / 1 warning**（唯一 warning 是 Check 5 的 5 条存量 dead-marker，属 merge `315551234`，与本次无关）、exit 0；`tests/owner/` **46 passed / 0 failed**；引 `hermes_constants` 的 17 文件 **381 passed / 1 failed**，该失败经 `git stash -u` 对照确认为**存量**（`tests/honcho_plugin/test_pin_peer_name.py::TestCacheBusting…`，stash 前后同红）
+- **未纳入**：全仓权威失败面基线（用户指示暂缓）；error_classifier 之外的 45+ 失败文件逐簇处置；18 条登记缺口的**偿还**（按 §2.2.0 的偿还策略，随各簇动到时逐个替换为新基线守卫）
 
 ### 2026-10-21：T2-21 批次收口——kimi echo 记账统一 + 吸收上游 mixin 拆包 + 三个静默生产 bug（11 提交）
 
