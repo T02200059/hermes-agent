@@ -672,11 +672,19 @@ items:
           - 'status_code == 429'
           - 'usage limit'
           - 'FailoverReason.billing'
+          # T2-21 (2026-10-22): the quota-wall verdict is a *subtractive*
+          # narrowing on top of upstream's transient-signal result. Pinning the
+          # hook by name catches a sync that drops it; pinning the call shape
+          # catches a re-port of the old self-contained 22-line block.
+          - '_has_long_reset_window'
+          - 'has_transient_signal and _has_long_reset_window'
       - type: file_contains
         file: agent/conversation_loop.py
         contains:
           - 'wait_time >= 60'
           - '_emit_status'
+      - type: file_exists
+        path: tests/owner/test_owner_429_reset_window.py
 
   - id: gateway-restart-pycache-cleanup
     title: "owner change list 7.12 gateway restart pycache cleanup"

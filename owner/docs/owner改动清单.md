@@ -831,11 +831,12 @@ _元数据统计口径：范围取「基点后未出现在上游 `00b2e03c80` �
 
 - **背景**：部分 provider（如 opencode-go）对硬配额耗尽返回 HTTP 429（`GoUsageLimitError: Weekly usage limit reached. Resets in 2 days.`），但 `error_classifier.py` 的 429 处理路径不做 billing 检测，一律归类为 `rate_limit`（retryable=True）。同时 `conversation_loop.py` 对非 Z.AI 的 rate limit 重试用 `_buffer_status`（缓冲），用户在 600s × 3 次重试（30 分钟）内完全看不到任何提示。
 - **方案**：
-  - `agent/error_classifier.py`：429 handler 入口处加 billing/quota 检测（`[owner]` 标记）— 当 error_msg 含 "usage limit" 但无短时间窗口信号（minute/second/hour）且非 "rate limit" 时，归类为 `billing`（retryable=False），立即中止重试并显示错误
-  - `agent/conversation_loop.py`：rate limit 状态显示逻辑加 `wait_time >= 60` 条件（`[owner]` 标记）— 长等待（≥60s）时用 `_emit_status` 立即显示，而非 `_buffer_status` 缓冲
-- **侵入类型**：inline（两处各 ~10 行，`[owner]` 标记 + 委托已有分类逻辑）
+  - `agent/error_classifier.py`：**2026-10-22 收窄为减法式改写**（T2-21）。原实现是在 429 handler 入口处自带一套判定（"usage limit" 且无 minute/second/hour 短窗口且非 "rate limit" ⇒ `billing`），与上游同期演进出的 `_has_usage_limit_transient_signal`（文本 + body 结构化字段 + 响应头三重判据）重复且更弱，导致上游 9 个 429 用例全红（structured reset / Retry-After 头 / `6hr 29min` 大小写 / `reset after 3600s` 全部误判 billing）。现改为：删掉整套自制判定，只在上游求出 `has_transient_signal` 之后加一次**单向降级** —— `_has_long_reset_window()` 命中「`resets in|after N day(s)/week(s)`」时把 transient 置 False。**依据**：重试循环把 `Retry-After` 封顶在 600s（`conversation_loop.py`），天/周级墙永远等不到，3 次重试只是白烧；分钟/小时级窗口可等待，保持 transient。未识别文案一律保留上游判定（宁可漏判成 rate_limit，不误升 billing）
+  - `agent/conversation_loop.py`：rate limit 状态显示逻辑加 `wait_time >= 60` 条件（`[owner]` 标记）— 长等待（≥60s）时用 `_emit_status` 立即显示，而非 `_buffer_status` 缓冲。**该半边与分类器独立，2026-10-22 核实仍完好生效**；即使某次 429 落到 `rate_limit`，用户也不会静默（600s 等待会立即出状态行）
+- **侵入类型**：减法式改写（`error_classifier.py` 净 `+29/−23`：删 22 行自制判定、加 1 个纯函数 + 1 处 3 行调用点 + `import re`）；`conversation_loop.py` 为 inline 条件
+- **守卫**：`tests/owner/test_owner_429_reset_window.py`（35 例，2026-10-22 新建基线首例）—— 分三组：天/周墙必须 billing（含 provider 同时给 `Retry-After: 172800` 的情形）、次天级窗口必须 rate_limit（镜像上游 9 例的形状）、上游既有判定不得被升级（bare usage limit / 显式 credit / 显式 rate limit 字样优先）；另有一条 AST 结构守卫钉死「429 分支内 `FailoverReason.billing` 返回点仅 1 个」，防下次 sync 把自制判定整块搬回。变异 3/3 咬住（helper 恒 False / 正则放宽为 `resets?` / 塞回第二个 billing 返回）
 - **文件**：`agent/error_classifier.py`、`agent/conversation_loop.py`
-- **Commit**：`e81221af6`
+- **Commit**：`e81221af6`（原实现）；`T2-21` 收窄改写见附录 E 2026-10-22 条
 
 ### 7.10 Gateway 运行中 Agent 的插件命令隔离
 
@@ -2588,6 +2589,19 @@ _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请先�
 ---
 
 ## 附录 E：变更日志
+
+### 2026-10-22：T2-21 第二段——429 配额墙收窄为减法式改写 + **重建新基线 owner 测试**
+
+- **类型**：缺陷修复（自制判定与上游重复且更弱）+ 测试基线口径澄清
+- **① 429 配额墙改写（`agent/error_classifier.py`，净 `+29/−23`）**：删除 §7.9 原有的整套自制判定（429 分支入口处 22 行，自带 `_USAGE_LIMIT_PATTERNS` 扫描 + 短窗口白名单 + `rate limit` 排除），改为在**上游** `_has_usage_limit_transient_signal` 求出 `has_transient_signal` 之后做一次单向降级：新纯函数 `_has_long_reset_window()` 命中 `resets?…(in|after) N day(s)/week(s)` 时把 transient 置 False。判据是**可证明的**而非猜的：重试循环把 `Retry-After` 封顶 600s，天/周级窗口物理上等不到；分钟/小时级可等待，保持 transient。取舍明确写在注释里——未识别文案**一律保留上游判定**，宁可漏判成 rate_limit，不误升 billing。**结果：`tests/agent/test_error_classifier.py` 9 failed / 113 passed → 122 passed / 0 failed**；语义矩阵两侧同时满足（`2 days`/`3 days`/`2 weeks` ⇒ billing；`6hr 29min`/ISO 时间戳/structured reset 字段/`Retry-After`/`x-ratelimit-reset`/`reset after 3600s` ⇒ rate_limit；上游既有 bare `usage limit reached` ⇒ billing、显式 `insufficient credit` ⇒ billing、显式 `Rate limit exceeded` ⇒ rate_limit 全部未变）。原 §7.9 的**另一半**（`conversation_loop.py` 的 `wait_time >= 60` 立即显示）核实仍完好，与本改写正交
+- **② owner 测试口径澄清（用户裁决 2026-10-22）**：2026-10-20 删除的 715 个文件是**旧** owner 测试 —— 那批用例编码的是 fork 之前的产品预期，与 owner 现产品互撞，反而掩盖真实缺口，故整体摘除、套件回纯官方基线。**但这不等于「owner 不得有测试」**。自 2026-10-22 起，`tests/owner/` 重新作为**新基线**的合法组成部分，规则是「一例一书」：
+  - **只在**存在有意为之的 owner 分歧（即上游语义被我方明确改掉的地方）时新增；
+  - 用例必须钉住**分歧本身**，且**删掉 owner 产品代码后必须变红**（写不红的断言等于没写）；
+  - 优先断言行为面（`reason` / `retryable` / `should_rotate_credential` / `should_fallback` 全字段），另配结构守卫防 sync 把自制实现整块搬回；
+  - 文件头注明所属 §编号，便于 sync 时对照
+- **③ 首例（`tests/owner/test_owner_429_reset_window.py`，35 例）**：三组行为断言 + 一条 AST 结构守卫（钉死「`_classify_by_status` 的 429 分支内 `FailoverReason.billing` 返回点仅 1 个」，防下次 sync 把 22 行自制判定搬回）。变异 **3/3 咬住**：helper 恒 False（10 例红）、正则放宽为 `resets?`（7 例红）、塞回第二个 billing 返回（19 例红）
+- **验证**：定向 11 文件 **280 passed / 0 failed**（含 `test_error_classifier` / `test_billing_unverified_carrythrough` / `test_credential_pool_*` / `test_anthropic_billing_guidance` / `test_error_surface` 等所有引 `classify_api_error` 的用例）；全仓 `--collect-only` **37822 collected / 0 error**（84 deselected）
+- **未纳入**：全仓权威失败面基线（用户指示暂缓）；error_classifier 之外的 45+ 失败文件逐簇处置
 
 ### 2026-10-21：T2-21 批次收口——kimi echo 记账统一 + 吸收上游 mixin 拆包 + 三个静默生产 bug（11 提交）
 
