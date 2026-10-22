@@ -54,6 +54,15 @@ from agent.skill_commands import (
     describe_skill_invocation,
 )
 from hermes_constants import get_hermes_home
+from hermes_state_errors import (
+    # One definition site for the state.db failure taxonomy. Redefining these
+    # here made ``isinstance`` fail across modules: code raised the local copy
+    # while callers (the transcript divert/spool paths) caught the
+    # ``hermes_state_errors`` copy, so a replaced or corrupt store was never
+    # recognised and writes kept going to it.
+    StateDbCorruptError,
+    StateDbReplacedError,
+)
 from hermes_startup_watchdog import report_startup_progress
 from hermes_cli.sqlite_runtime import (
     is_sqlite_wal_reset_vulnerable as _is_sqlite_wal_reset_vulnerable,
@@ -4197,13 +4206,8 @@ class SessionTurnLeaseLostError(RuntimeError):
     """
 
 
-class StateDbReplacedError(RuntimeError):
-    """The state.db path no longer names the file this SessionDB opened.
-
-    Raised when an out-of-band ``cp``/``mv``/restore replaces the database
-    under a live gateway. In-place FTS repair and fail-open trigger
-    dropping cannot fix a generation mismatch; they amplify it.
-    """
+# StateDbReplacedError is imported from ``hermes_state_errors`` at the top of
+# this module (single definition site — see the import comment).
 
 
 # SQLite header: 4-byte big-endian application_id at offset 68. Distinct from
