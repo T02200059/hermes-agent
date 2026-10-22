@@ -4543,10 +4543,16 @@ class GatewaySlashCommandsMixin(
         async def _list_titled_sessions() -> list[dict]:
             user_source = source.platform.value if source.platform else None
             widen = allow_all and self._resume_caller_is_admin(source)
+            # Rank by lineage activity, not root ``started_at``: a lineage compressed
+            # for days is projected onto its live tip, so it must sit where the user
+            # last touched it rather than where the conversation originally began
+            # (#114271). ``order_by_last_active`` makes ``list_sessions_rich`` build
+            # the compression-chain CTE and sort on the chain's MAX activity.
             sessions = await self._session_db.list_sessions_rich(
                 source=user_source,
                 session_key=None if widen else session_key,
                 limit=10,
+                order_by_last_active=True,
             )
             return [s for s in sessions if s.get("title")][:10]
 

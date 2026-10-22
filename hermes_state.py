@@ -15635,6 +15635,7 @@ class SessionDB(SessionMessagesMixin, SessionSearchMixin, SessionSchemaMixin, Se
         *,
         chat_id: str,
         clear_bindings: bool = True,
+        profile_name: str = "default",
     ) -> None:
         """Disable Telegram DM topic mode for one private chat.
 
@@ -15663,8 +15664,17 @@ class SessionDB(SessionMessagesMixin, SessionSearchMixin, SessionSchemaMixin, Se
                 return
         self._execute_write(_do)
 
-    def is_telegram_topic_mode_enabled(self, *, chat_id: str, user_id: str) -> bool:
-        """Return whether Telegram DM topic mode is enabled for this chat/user."""
+    def is_telegram_topic_mode_enabled(
+        self, *, chat_id: str, user_id: str, profile_name: str = "default",
+    ) -> bool:
+        """[owner] ``profile_name`` is accepted for signature parity with upstream's v3 schema,
+        where both topic tables carry a ``profile_name`` column so multiplexed gateways
+        sharing one state.db isolate topic state per profile. This build's tables predate
+        that column, so the argument is currently ignored and every profile sees every row.
+        Passing it is load-bearing: ``gateway.run_topics`` always supplies it, and without
+        the parameter the resulting ``TypeError`` was swallowed by its ``except`` block —
+        which silently disabled ALL Telegram DM topic handling, single-profile included
+        (#103363 tracks the v3 table rebuild)."""
         with self._read_ctx() as conn:
             try:
                 row = conn.execute(
@@ -15686,6 +15696,7 @@ class SessionDB(SessionMessagesMixin, SessionSearchMixin, SessionSchemaMixin, Se
         *,
         chat_id: str,
         thread_id: str,
+        profile_name: str = "default",
     ) -> Optional[Dict[str, Any]]:
         """Return the session binding for a Telegram DM topic, if present."""
         with self._read_ctx() as conn:
@@ -15705,11 +15716,21 @@ class SessionDB(SessionMessagesMixin, SessionSearchMixin, SessionSchemaMixin, Se
         self,
         *,
         chat_id: str,
+        profile_name: str = "default",
     ) -> List[Dict[str, Any]]:
         """All Telegram DM topic bindings for one chat, newest first.
 
         Read-only; returns [] if the bindings table doesn't exist yet
         (does not trigger the topic-mode migration).
+
+        ``profile_name`` is accepted for signature parity with upstream's v3 schema, where
+        both topic tables carry a ``profile_name`` column so multiplexed gateways sharing one
+        state.db isolate topic state per profile. **This build's tables predate that column**,
+        so the argument is currently ignored and every profile sees every binding. Passing it
+        anyway is load-bearing: ``gateway.run_topics._recover_telegram_topic_thread_id`` always
+        supplies it, and before this parameter existed the resulting ``TypeError`` was swallowed
+        by its ``except`` block, which silently disabled Telegram DM topic recovery for
+        **every** deployment — single-profile included (#103363 tracks the v3 rebuild).
         """
         with self._read_ctx() as conn:
             try:
@@ -15832,7 +15853,15 @@ class SessionDB(SessionMessagesMixin, SessionSearchMixin, SessionSchemaMixin, Se
         session_key: str,
         session_id: str,
         managed_mode: str = "auto",
+        profile_name: str = "default",
     ) -> None:
+        """[owner] ``profile_name`` is accepted for signature parity with upstream's v3 schema,
+        where both topic tables carry a ``profile_name`` column so multiplexed gateways sharing
+        one state.db isolate topic state per profile. This build's tables predate that column, so
+        the argument is currently ignored and every profile sees every row. Passing it is
+        load-bearing: ``gateway.run_topics`` always supplies it, and without the parameter the
+        resulting ``TypeError`` was swallowed by its ``except`` block — which silently disabled ALL
+        Telegram DM topic handling, single-profile included (#103363 tracks the v3 rebuild)."""
         """Bind one Telegram DM topic thread to one Hermes session.
 
         A Hermes session may only be linked to one Telegram topic in MVP.
@@ -15915,8 +15944,15 @@ class SessionDB(SessionMessagesMixin, SessionSearchMixin, SessionSchemaMixin, Se
         chat_id: str,
         user_id: str,
         limit: int = 10,
+        profile_name: str = "default",
     ) -> List[Dict[str, Any]]:
-        """List previous Telegram sessions for this user that are not bound to a topic.
+        """[owner] ``profile_name`` is accepted for signature parity with upstream's v3 schema,
+        where both topic tables carry a ``profile_name`` column so multiplexed gateways sharing
+        one state.db isolate topic state per profile. This build's tables predate that column, so
+        the argument is currently ignored and every profile sees every row. Passing it is
+        load-bearing: ``gateway.run_topics`` always supplies it, and without the parameter the
+        resulting ``TypeError`` was swallowed by its ``except`` block — which silently emptied the
+        "Previous unlinked sessions" restore list, single-profile included (#103363).
 
         Read-only: does NOT trigger the telegram-topic migration. If the
         topic-mode tables are absent, fall back to a simpler query that
