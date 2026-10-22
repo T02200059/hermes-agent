@@ -126,12 +126,29 @@ def message_agent_tool_schema() -> dict:
     }
 
 
+def message_agent_authorized(agent: Any) -> bool:
+    """The ``message_agent`` gate: a protocol-enabled agent whose session is a managed
+    Bot-Mode canonical Bot Chat. Session-stable, so it is prompt-cache safe to re-evaluate
+    on every tool-snapshot rebuild. Never raises."""
+    try:
+        if not getattr(agent, "_bot_mode_protocol", True):
+            return False
+        from tools.bot_mode_probe import BOT_CHAT_TITLE, is_bot_mode_managed
+
+        # Managed-install check, NOT section non-emptiness: a SOUL.md carrying the
+        # legacy protocol text gets an empty section but must still get the tool.
+        return _session_title(agent) == BOT_CHAT_TITLE and is_bot_mode_managed(_agent_home(agent))
+    except Exception:  # pragma: no cover — must never break a turn
+        logger.debug("message_agent_authorized failed", exc_info=True)
+        return False
+
+
 def ensure_message_agent_tool(agent: Any) -> bool:
     """Inject the ``message_agent`` schema into a Bot Chat agent's tool list.
 
     Called once per turn from the conversation loop. Idempotent and
-    deterministic for the life of a session: the gate (canonical Bot Chat
-    title on a Bot-Mode-managed install) is stable from the session's first
+    deterministic for the life of a session: the gate
+    (:func:`message_agent_authorized`) is stable from the session's first
     turn, so the tool list is byte-identical across turns — prompt-cache
     safe. Every non-Bot-Chat session fails the gate on every turn and never
     sees the schema. Never raises.
@@ -140,26 +157,19 @@ def ensure_message_agent_tool(agent: Any) -> bool:
         if not getattr(agent, "_bot_mode_protocol", True):
             return False
         tools = getattr(agent, "tools", None)
-        if tools:
-            for tool in tools:
-                if (
-                    isinstance(tool, dict)
-                    and tool.get("function", {}).get("name") == MESSAGE_AGENT_TOOL_NAME
-                ):
-                    return True
-        from tools.bot_mode_probe import BOT_CHAT_TITLE, is_bot_mode_managed
-
-        if _session_title(agent) != BOT_CHAT_TITLE:
-            return False
-        # Managed-install check, NOT section non-emptiness: a profile whose
-        # SOUL.md carries the legacy plugin-appended protocol text gets an
-        # empty section (dedupe) but must still receive the tool — otherwise
-        # upgraded installs silently lose A2A messaging (Aug 2026).
-        if not is_bot_mode_managed(_agent_home(agent)):
-            return False
-        if agent.tools is None:
-            agent.tools = []
-        agent.tools.append(message_agent_tool_schema())
+        present = bool(tools) and any(
+            isinstance(t, dict) and t.get("function", {}).get("name") == MESSAGE_AGENT_TOOL_NAME
+            for t in tools
+        )
+        if not present:
+            if not message_agent_authorized(agent):
+                return False
+            if agent.tools is None:
+                agent.tools = []
+            agent.tools.append(message_agent_tool_schema())
+        # Success means BOTH halves hold: a tool-surface rebuild (compaction, MCP refresh)
+        # can keep the schema while valid_tool_names is republished without it, and an
+        # advertised-but-nondispatchable tool sends the model hunting for shellouts (#96105).
         valid = getattr(agent, "valid_tool_names", None)
         if isinstance(valid, set):
             valid.add(MESSAGE_AGENT_TOOL_NAME)

@@ -6234,18 +6234,19 @@ def _running_under_gateway_supervisor() -> bool:
     return is_gateway_supervisor_process()
 
 
-def named_profile_served_by_running_multiplexer() -> bool:
+def named_profile_served_by_running_multiplexer(profile_name: str | None = None) -> bool:
     """True when a live default multiplexer already ticks this named profile.
 
     Shared by the named-profile start guard and cron liveness: a satellite
     profile has no gateway.pid of its own, but the default multiplexer's
-    ticker still fires its jobs (#97120).
+    ticker still fires its jobs (#97120). ``profile_name`` defaults to the
+    current profile so callers probing another profile pass it explicitly.
     """
     try:
-        suffix = _profile_suffix()
+        suffix = profile_name if profile_name is not None else _profile_suffix()
     except Exception:
         return False
-    if not suffix:
+    if not suffix or suffix == "default":
         return False
 
     try:
@@ -6266,6 +6267,20 @@ def named_profile_served_by_running_multiplexer() -> bool:
         if not pid or not _pid_exists(pid):
             return False
 
+        from hermes_cli.profiles import normalize_profile_name
+
+        # The live gateway's own ``served_profiles`` record wins over config: this CLI
+        # process cannot see an env-only opt-in on the default profile (``hermes -p X``
+        # loads X's .env), and a config edit after start is not live yet. Only a record
+        # WITHOUT the key (a pre-multiplex writer) falls through to config derivation;
+        # an empty list is an authoritative "serves nobody else".
+        from gateway.status import read_runtime_status
+
+        runtime = read_runtime_status(default_root / "gateway_state.json")
+        served = (runtime or {}).get("served_profiles")
+        if isinstance(served, list):
+            return normalize_profile_name(suffix) in {normalize_profile_name(p) for p in served}
+
         from gateway.config import _env_multiplex_profiles_override
 
         cfg_path = default_root / "config.yaml"
@@ -6279,35 +6294,18 @@ def named_profile_served_by_running_multiplexer() -> bool:
         if env_multiplex is False:
             return False
         if env_multiplex is True:
-            multiplex = True
-        else:
-            if not cfg_path.exists():
-                return False
-            multiplex = bool(
-                cfg.get("multiplex_profiles")
-                or (cfg.get("gateway", {}) or {}).get("multiplex_profiles")
-            )
-        if not multiplex:
+            return True  # a multiplexer serves every named profile
+        if not cfg_path.exists():
             return False
-
-        gateway_cfg = cfg.get("gateway", {}) or {}
-        if "multiplex_profile_allowlist" in cfg:
-            raw_allowlist = cfg.get("multiplex_profile_allowlist")
-        else:
-            raw_allowlist = gateway_cfg.get("multiplex_profile_allowlist")
-        from gateway.config import _normalize_multiplex_profile_allowlist
-        from hermes_cli.profiles import normalize_profile_name
-
-        profile_allowlist = _normalize_multiplex_profile_allowlist(raw_allowlist)
-        if (
-            profile_allowlist is not None
-            and normalize_profile_name(suffix) not in profile_allowlist
-        ):
-            return False
-        return True
+        multiplex = bool(
+            cfg.get("multiplex_profiles")
+            or (cfg.get("gateway", {}) or {}).get("multiplex_profiles")
+        )
+        return multiplex
     except Exception:
         logger.debug("Multiplexer-serving probe failed", exc_info=True)
         return False
+
 
 
 def _guard_named_profile_under_multiplexer(force: bool = False) -> None:

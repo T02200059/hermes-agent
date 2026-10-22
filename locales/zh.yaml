@@ -1409,12 +1409,12 @@ gateway:
     state_no:              "否"
     queued:                "**排队的后续：** {count}"
     platforms:             "**已连接平台：** {platforms}"
-    matrix_scope_header:   "**Matrix 会话作用域：**"
-    matrix_scope_room:     "**房间：** {room}"
-    matrix_scope_room_id:  "**房间 ID：** `{room_id}`"
-    matrix_scope_thread:   "**话题：** {thread_id}"
-    matrix_scope_mode:     "**作用域模式：** {scope}"
-    matrix_scope_key:      "**会话键：** `{session_key}`"
+    matrix_scope_header:   "**Matrix 作用域：**"
+    matrix_scope_room:     "  房间：{room}"
+    matrix_scope_room_id:  "  房间 ID：{room_id}"
+    matrix_scope_thread:   "  话题：{thread_id}"
+    matrix_scope_mode:     "  session_scope：{scope}"
+    matrix_scope_key:      "  session_key：{session_key}"
 
   stop:
     stopped_pending:       "⚡ 已停止。代理尚未启动 — 你可以继续此会话。"

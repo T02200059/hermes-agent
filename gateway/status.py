@@ -1173,6 +1173,7 @@ def write_runtime_status(
     exit_reason: Any = _UNSET,
     restart_requested: Any = _UNSET,
     active_agents: Any = _UNSET,
+    active_work: Any = _UNSET,
     platform: Any = _UNSET,
     platform_state: Any = _UNSET,
     error_code: Any = _UNSET,
@@ -1183,6 +1184,7 @@ def write_runtime_status(
     session_store: Any = _UNSET,
     multiplex_standalone_reason: Any = _UNSET,
     clear_profile_platforms: bool = False,
+    drop_profile_platforms: Optional[str] = None,
 ) -> None:
     """Persist gateway runtime health information for diagnostics/status."""
     path = _get_runtime_status_path()
@@ -1190,19 +1192,24 @@ def write_runtime_status(
     previous_payload = copy.deepcopy(payload)
     current_record = _build_pid_record()
     payload.setdefault("platforms", {})
-    if clear_profile_platforms:
+    if clear_profile_platforms or drop_profile_platforms:
         # Secondary-profile adapter health is stored in the process-level
         # status file as ``<profile>:<platform>``.  A fresh gateway process
         # must not inherit those entries from the prior process: they would
         # otherwise keep /api/status degraded until every old adapter emitted
         # a new state (and removed profiles would remain degraded forever).
+        # ``drop_profile_platforms`` is the HOT-UNROUTE variant: remove one
+        # deleted profile's entries instead of every profile's.
         platforms = payload["platforms"]
         if not isinstance(platforms, dict):
             platforms = {}
+        drop_prefix = f"{drop_profile_platforms}:" if drop_profile_platforms else None
         payload["platforms"] = {
             key: value
             for key, value in platforms.items()
-            if not isinstance(key, str) or ":" not in key
+            if not isinstance(key, str)
+            or ":" not in key
+            or (drop_prefix is not None and not key.startswith(drop_prefix))
         }
     payload["kind"] = current_record["kind"]
     payload["pid"] = current_record["pid"]
@@ -1222,6 +1229,10 @@ def write_runtime_status(
         payload["restart_requested"] = bool(restart_requested)
     if active_agents is not _UNSET:
         payload["active_agents"] = parse_active_agents(active_agents)
+    if active_work is not _UNSET:
+        # Named in-flight units (see GatewayShutdownMixin._describe_active_work) so an
+        # observer can tell a draining gateway WHAT is holding it open; None clears.
+        payload["active_work"] = list(active_work) if active_work else None
     if served_profiles is not _UNSET:
         # Profiles this gateway multiplexes (multi-profile mode). Absent/empty
         # for a single-profile gateway. Lets `hermes status` show per-profile

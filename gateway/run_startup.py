@@ -724,13 +724,18 @@ class GatewayStartupMixin:
             raise RuntimeError("Group Chat worker did not start")
         return service
 
-    async def _ensure_hosted_room_worker(self) -> None:
-        """[owner] A4-2 hotfix: bounded so a wedged Group Chat worker start can never hang
-        the whole startup sequence (2026-10-16 feishu incident: adapter acks still flow from
-        their own threads while every inbound sat queued behind a never-returning to_thread).
-        The watcher loop retries every 1s, so a slow-but-healthy start still converges."""
-        with _log_suppressed(logging.WARNING, "Group Chat worker start failed: %s"):
-            await asyncio.wait_for(asyncio.to_thread(self._start_hosted_room_worker_sync), timeout=10.0)
+    async def _ensure_hosted_room_worker(self):
+        """[owner] A4-2 hotfix: bounded so a wedged Group Chat worker start can never hang the
+        whole startup sequence (2026-10-16 feishu incident: adapter acks still flow from their
+        own threads while every inbound sat queued behind a never-returning to_thread).
+
+        The timeout is the whole hotfix. Failures are NOT swallowed here: this helper runs inside
+        ``_spawn_supervised``, whose backoff plus ``_MAX_SUPERVISED_RESTARTS`` cap is what bounds a
+        permanently broken worker. Swallowing turned that into a 1s hot-retry loop (measured: 12k
+        start attempts in 2s), which hammers the session backend and never gives up."""
+        return await asyncio.wait_for(
+            asyncio.to_thread(self._start_hosted_room_worker_sync), timeout=10.0
+        )
 
     async def _hosted_room_worker_watcher(self, interval: float = 1.0) -> None:
         """Keep the room worker alive for the messaging gateway lifetime."""
