@@ -9466,6 +9466,17 @@ class SessionDB(SessionMessagesMixin, SessionSearchMixin, SessionSchemaMixin, Se
     _TOKEN_DELTA_ROUTE_FIELDS = (
         "model", "cost_status", "cost_source", "pricing_version",
         "billing_provider", "billing_base_url", "billing_mode",
+        # [owner] owner_provider_name is an owner-added attribution column
+        # (owner/docs/owner改动清单.md §17.15). Its SQL is
+        # ``COALESCE(?, owner_provider_name)`` — last-non-None-wins, exactly
+        # like cost_status/cost_source above — so it belongs here rather than
+        # in the summed sets: a string cannot be added. Leaving it out made the
+        # merge keep the FIRST delta's value, silently dropping the attribution
+        # whenever the first queued delta carried None (the common case, since
+        # only the gateway path populates it). Same session can also switch
+        # provider mid-turn, and then the differing key correctly blocks the
+        # merge so sequential ORDER is preserved.
+        "owner_provider_name",
     )
 
     def queue_token_counts(self, session_id: str, **kwargs) -> None:
