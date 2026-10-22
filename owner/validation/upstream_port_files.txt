@@ -22,3 +22,7 @@ gateway/restart.py  is_global_startup_conflict added verbatim from upstream/main
 gateway/streaming_tts_consumer.py  whole file replaced with upstream/main@9573f44ca5 verbatim (streaming TTS consumer extract); local diff vs that commit is empty, T2-20 A4
 hermes_cli/timefmt.py  EPOCH_MIN, EPOCH_MAX, coerce_epoch added verbatim from upstream/main, T2-20
 hermes_constants.py  profile_name_for_home + profile_cli_selector (T2-20 A5-2) and OPENROUTER_VARIANT_SUFFIXES + openrouter_variant_base (T2-21) added verbatim from upstream/main
+gateway/runtime_footer.py  requested_model + served_model params and the served_model renderer added verbatim from upstream/main, T2-21 (signature drift)
+gateway/status.py  multiplex_standalone_reason param + its set-field added verbatim from upstream/main, T2-21 (signature drift)
+tools/browser_lightpanda.py  _cdp_ready(timeout=) and _terminate(what=) signatures added verbatim from upstream/main, T2-21 (signature drift)
+tools/environments/local.py  strip_launch_profile param + strip_launch_profile_env/_is_routed_home/strip_profile_gate_env/_PROFILE_GATE_ENV_MARKERS added verbatim from upstream/main (local_env_policy.py split not absorbed), T2-21

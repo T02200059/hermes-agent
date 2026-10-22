@@ -1290,14 +1290,15 @@ async def _run_with_agent(
 async def test_slack_native_progress_correlates_concurrent_duplicate_tools_by_id(
     monkeypatch, tmp_path
 ):
+    # No display config: Slack's tier default (tool_progress off) keeps the TEXT lane
+    # quiet while the card lane stays on. An operator-written ``off`` is a different
+    # thing — it means "no tool progress at all", so it disables the cards too
+    # (gateway/run_turn.py: `not (_tool_progress_explicit and progress_mode == "off")`).
     adapter, result = await _run_with_agent(
         monkeypatch,
         tmp_path,
         DuplicateNativeToolsAgent,
         session_id="sess-native-ids",
-        config_data={
-            "display": {"platforms": {"slack": {"tool_progress": "off"}}}
-        },
         platform=Platform.SLACK,
         chat_id="C1",
         thread_id="thread-1",

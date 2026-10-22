@@ -107,8 +107,14 @@ async def test_steer_calls_agent_steer_and_does_not_interrupt():
     # The handler replied with a confirmation
     assert result is not None
     assert "steer" in result.lower() or "queued" in result.lower()
-    # The agent's steer() was called with the payload (prefix stripped)
-    running_agent.steer.assert_called_once_with("also check auth.log")
+    # The agent's steer() was called with the payload (prefix stripped), carrying the
+    # gateway origin block: the injection tells the model where the message came from
+    # without putting that context in the cached system prompt
+    # (gateway/run_busy.py::_steer_text_with_origin).
+    running_agent.steer.assert_called_once()
+    injected = running_agent.steer.call_args.args[0]
+    assert injected.endswith("\n\nalso check auth.log")
+    assert '"chat_id": "c1"' in injected
     # Critically: interrupt was NOT called
     running_agent.interrupt.assert_not_called()
     # And no user-text queueing happened — the steer doesn't go into
@@ -137,7 +143,10 @@ async def test_steer_reaches_ancient_turn_via_fresh_timestamp_fallback(
 
     result = await runner._handle_message(_make_event("/steer pause safely"))
 
-    running_agent.steer.assert_called_once_with("pause safely")
+    running_agent.steer.assert_called_once()
+    injected = running_agent.steer.call_args.args[0]
+    assert injected.endswith("\n\npause safely")
+    assert '"chat_id": "c1"' in injected
     assert runner._running_agents[sk] is running_agent
     assert result is not None
 
