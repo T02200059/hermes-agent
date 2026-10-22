@@ -190,11 +190,30 @@ def _clean_error_text(error: Any, max_chars: int = 200) -> str:
     return line
 
 
+def describe_subagent_failure(failure_reason: Any, error: Any, max_chars: int = 200) -> str:
+    """Plain-language reason for a failed child.
+
+    The child loop classifies most deaths into a ``failure_reason`` code; the
+    shared gloss table (``agent/turn_failure_copy.py``) turns that into a clause
+    a human can act on, which beats echoing the raw exception. Falls back to the
+    child's own error text reduced to one clean line when the code has no gloss.
+
+    Ported verbatim from upstream ``tools/delegate_tool_progress.py``; see
+    ``format_subagent_failure_line`` for why it exists here.
+    """
+    # One gloss table for every surface (agent/turn_failure_copy.py); the child is the subject.
+    from agent.turn_failure_copy import failure_cause_gloss
+
+    gloss = failure_cause_gloss(failure_reason, subject="it", possessive="its")
+    return gloss or _clean_error_text(error, max_chars)
+
+
 def format_subagent_failure_line(
     goal: Optional[str],
     status: Optional[str],
     error: Any = None,
     duration_seconds: Any = None,
+    failure_reason: Any = None,
 ) -> str:
     """One clean, human-readable line describing a failed subagent.
 
@@ -211,7 +230,7 @@ def format_subagent_failure_line(
     line = f"⚠️ Subagent {verb}"
     if goal_label:
         line += f' — "{goal_label}"'
-    err = _clean_error_text(error)
+    err = describe_subagent_failure(failure_reason, error)
     if err:
         line += f": {err}"
     if isinstance(duration_seconds, (int, float)) and duration_seconds > 0:
