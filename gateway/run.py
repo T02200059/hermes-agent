@@ -1743,7 +1743,12 @@ class HygieneTurnHoldExceeded(Exception):
 
 
 def _multiplex_profile_homes(config: object) -> list[tuple[str, "Path"]]:
-    """Return the authoritative profile set for one multiplex gateway config."""
+    """Return the authoritative profile set for one multiplex gateway config.
+
+    The served set is every live profile: ``gateway.multiplex_profile_allowlist`` was
+    retired upstream (v43 migration drops the key), so this must NOT read it — a
+    leftover allowlist in an old config.yaml is inert by design.
+    """
     from hermes_cli.profiles import profiles_to_serve
     return list(profiles_to_serve(multiplex=True))
 

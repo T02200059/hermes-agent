@@ -21,6 +21,12 @@ def mock_runner():
     # Bind the actual methods to the mock
     runner._profile_name_for_source = GatewayRunner._profile_name_for_source.__get__(runner)
     runner._resolve_profile_home_for_source = GatewayRunner._resolve_profile_home_for_source.__get__(runner)
+    # _handle_message's ingress gates (profile route rejection) live in this helper.
+    runner._hm_admit_event = GatewayRunner._hm_admit_event.__get__(runner)
+    # The identity seam the gate canonicalizes through; a hand-built source has no transport owner.
+    runner._canonicalize = GatewayRunner._canonicalize.__get__(runner)
+    runner._transport_owner = lambda _source: None
+    runner._primary_profile_name = "default"
     return runner
 
 
@@ -172,8 +178,11 @@ class TestNonDiscordProfileRouting:
         ):
             assert mock_runner._profile_name_for_source(telegram_source) == "tg-profile"
 
-    def test_route_inside_allowlist_resolves(self, mock_runner, telegram_source):
-        mock_runner.config.multiplex_profile_allowlist = ["worker"]
+    def test_route_to_served_profile_resolves(self, mock_runner, telegram_source):
+        # No allowlist here: `gateway.multiplex_profile_allowlist` was retired upstream
+        # (v43 migration drops the key), so the served set is every live profile and the
+        # enumeration must NOT be narrowed. A leftover allowlist in an old config.yaml is
+        # deliberately inert.
         mock_runner.config.profile_routes = [
             ProfileRoute(
                 name="worker-route",
@@ -191,12 +200,11 @@ class TestNonDiscordProfileRouting:
         ) as enumerate_profiles:
             assert mock_runner._profile_name_for_source(telegram_source) == "worker"
 
-        enumerate_profiles.assert_called_once_with(
-            multiplex=True, profile_allowlist=["worker"]
-        )
+        enumerate_profiles.assert_called_once_with(multiplex=True)
 
     def test_route_outside_allowlist_rejects(self, mock_runner, telegram_source, caplog):
-        mock_runner.config.multiplex_profile_allowlist = ["worker"]
+        # "Unserved" now means "not in profiles_to_serve" (a tombstoned / missing profile
+        # dir), not "outside an allowlist".
         mock_runner.config.profile_routes = [
             ProfileRoute(
                 name="restricted-route",
@@ -218,7 +226,6 @@ class TestNonDiscordProfileRouting:
         assert "target profile 'restricted' is not served" in caplog.text
 
     def test_no_route_match_preserves_default_sentinel(self, mock_runner, telegram_source):
-        mock_runner.config.multiplex_profile_allowlist = ["worker"]
         mock_runner.config.profile_routes = [
             ProfileRoute(
                 name="other-chat",
@@ -310,7 +317,6 @@ class TestAdapterToSessionKeyIntegration:
 
     @pytest.mark.asyncio
     async def test_adapter_drops_rejected_route_before_dispatch(self, mock_runner):
-        mock_runner.config.multiplex_profile_allowlist = []
         mock_runner.config.profile_routes = [
             ProfileRoute(
                 name="restricted-route",
@@ -341,7 +347,6 @@ class TestAdapterToSessionKeyIntegration:
     @pytest.mark.asyncio
     async def test_direct_source_is_rejected_at_shared_ingress(self, mock_runner):
         mock_runner.config.multiplex_profiles = True
-        mock_runner.config.multiplex_profile_allowlist = []
         mock_runner.config.profile_routes = [
             ProfileRoute(
                 name="restricted-route",

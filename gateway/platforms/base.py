@@ -3930,6 +3930,54 @@ class BasePlatformAdapter(ABC):
         name = (profile_name or "").strip() or None
         self._owner_profile = None if name == "default" else name
 
+    def _owner_transport_profile(self) -> Optional[str]:
+        """Transport profile for :func:`resolve_identity`.
+
+        The owner name, or ``None`` = derive it from the registry (the primary's
+        identity then spells ``"default"`` out itself).
+        """
+        owner = getattr(self, "_owner_profile", None)
+        return owner if isinstance(owner, str) and owner.strip() else None
+
+    def _canonicalize(self, source: Optional["SessionSource"]):
+        """Pin the source's :class:`RoutingIdentity` before anything derives a key from it.
+
+        Every ingress path (fresh event, batch merge, busy path, control command,
+        callback) calls this FIRST. Returns the identity, or ``None`` when it cannot be
+        resolved — a rejected route under multiplexing marks
+        ``source.profile_route_rejected``, and hand-built adapters / restored sources
+        have no runner seam, in which case the legacy key readers stay in charge.
+
+        Without this, two bots seeing the same Telegram ``chat.id == user.id`` derived
+        one ``agent:main`` lane, and a route to an unserved profile still reached the
+        default lane's running task. Ported verbatim from upstream
+        ``1654575c6c``; its caller in :meth:`_handle_message_while_active` was already
+        forward-ported by T2-20 while this definition was not, so the busy path raised
+        ``AttributeError`` on every adapter.
+        """
+        if source is None:
+            return None
+        from gateway.session_identity import canonical_identity, identity_of
+
+        identity = identity_of(source)
+        if identity is not None:
+            return identity
+        runner = getattr(self, "gateway_runner", None)
+        if runner is None or not callable(getattr(runner, "_transport_owner", None)):
+            return None
+        try:
+            return canonical_identity(
+                source, runner=runner, adapter=self,
+                transport_profile=self._owner_transport_profile())
+        except Exception:
+            # Duck-typed runners (SimpleNamespace / MagicMock rigs) have no registry to
+            # resolve against; the key then falls back to the pre-identity readers
+            # instead of failing ingress.
+            logger.debug(
+                "[%s] identity resolution failed; using legacy key readers",
+                self.name, exc_info=True)
+            return None
+
     def _session_key_profile(self, source: Optional[Any] = None) -> Optional[str]:
         """Resolve the profile namespace for an adapter-derived session key.
 
