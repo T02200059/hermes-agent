@@ -393,6 +393,25 @@ def _hermetic_environment(tmp_path, tmp_path_factory, monkeypatch):
     monkeypatch.setenv("LC_ALL", "C.UTF-8")
     monkeypatch.setenv("PYTHONHASHSEED", "0")
 
+    # 4a. Pin the UI language. ``agent.i18n`` resolves
+    #     explicit lang= > HERMES_LANGUAGE > config.yaml > default, then memoises the
+    #     answer in an lru_cache — so an ambient ``HERMES_LANGUAGE=zh`` in the
+    #     developer's shell (this repo is developed on a zh_CN host) flips every
+    #     catalog-driven string, and assertions on English literals fail wholesale
+    #     while the product is correct.
+    #     Pin rather than delete: the config fallback still reaches the same cache, so
+    #     blanking the var alone does not make the run English. Reset the cache so the
+    #     pin takes effect in THIS process instant. Tests that genuinely exercise
+    #     another language setenv their own value and reset the cache again — they run
+    #     after this fixture, so their value wins.
+    monkeypatch.setenv("HERMES_LANGUAGE", "en")
+    try:
+        from agent.i18n import reset_language_cache
+
+        reset_language_cache()
+    except Exception:
+        pass
+
     # 4b. Disable AWS IMDS lookups. Without this, any test that ends up
     #     calling has_aws_credentials() / resolve_aws_auth_env_var()
     #     (e.g. provider auto-detect, status command, cron run_job) burns
