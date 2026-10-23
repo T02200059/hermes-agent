@@ -12,6 +12,12 @@ MAX_QUESTIONS = 5  # independent questions per call
 MAX_CHOICE_CHARS = 8000
 # Applied to the first choice here (not per-surface) so every adapter renders it identically.
 RECOMMENDED_LABEL = "(Recommended)"
+# Cleanup-path stop marker. Must stay equal to ``tools.clarify_gateway.CANCELLED`` so existing
+# runners already map it to outcome="cancelled" (no second sentinel). Gateway ``wait_for_response``
+# returns this when the entry vanished or was cleared without an answer — distinct from a genuine
+# inactivity timeout (``None``). Feishu adapter-side "timeout interrupts the agent loop" is a
+# separate mixed fix (owner glue / C-segment), not covered here.
+CLARIFY_STOP_SENTINEL = "\x00cancelled"
 _UNAVAILABLE = "Clarify tool is not available in this execution context."
 _SHAPE = "Pass questions=[{question, choices?, multi_select?}]; a single question is a one-entry array."
 

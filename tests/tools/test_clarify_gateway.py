@@ -197,17 +197,67 @@ class TestGatewayTextIntercept:
         cm.clear_session("sk-tf")
 
 
+
+class TestClarifyStopSentinel:
+    """Cleanup-path stop: must not look like a genuine user-inactivity timeout."""
+
+    def setup_method(self):
+        _clear_clarify_state()
+
+    def test_stop_sentinel_matches_cancelled_wire_value(self):
+        from tools import clarify_gateway as cm
+        from tools.clarify_tool import CLARIFY_STOP_SENTINEL
+
+        assert CLARIFY_STOP_SENTINEL == cm.CANCELLED
+
+    def test_wait_returns_cancelled_when_entry_vanishes_before_wait(self):
+        """clear_session during card send must not look like inactivity timeout."""
+        from tools import clarify_gateway as cm
+
+        cm.register("idRace", "skRace", "Q?", ["A"])
+        assert cm.clear_session("skRace") == 1
+        result = cm.wait_for_response("idRace", timeout=10.0)
+        assert result == cm.CANCELLED
+
+    def test_wait_returns_cancelled_when_event_set_without_response(self):
+        """Event fired with no answer = cleanup, not timeout."""
+        from tools import clarify_gateway as cm
+
+        cm.register("idRace2", "skRace2", "Q?", ["A"])
+        with cm._lock:
+            entry = cm._entries.get("idRace2")
+        assert entry is not None
+        entry.event.set()
+        result = cm.wait_for_response("idRace2", timeout=10.0)
+        assert result == cm.CANCELLED
+
+    def test_wait_returns_none_on_genuine_deadline_timeout(self):
+        """A real user-inactivity deadline still returns None."""
+        from tools import clarify_gateway as cm
+
+        cm.register("idDeadline", "skDeadline", "Q?", ["A"])
+        result = cm.wait_for_response("idDeadline", timeout=0.2)
+        assert result is None
+
+
 class TestCoverageGaps:
     """Cover remaining branches: unknown-id wait, timeout config exception."""
 
     def setup_method(self):
         _clear_clarify_state()
 
-    def test_wait_for_response_unknown_id_returns_none(self):
-        """wait_for_response on a non-existent id returns None immediately."""
-        from tools import clarify_gateway as cm
+    def test_wait_for_response_unknown_id_returns_cancelled(self):
+        """Unknown / already-cleared id is cleanup, not inactivity timeout.
 
-        assert cm.wait_for_response("nonexistent-id", timeout=0.1) is None
+        Returning None made ``_clarify_send_then_wait`` invent a "user did not respond
+        within Nm" notice. CANCELLED (``CLARIFY_STOP_SENTINEL``) maps to outcome="cancelled".
+        """
+        from tools import clarify_gateway as cm
+        from tools.clarify_tool import CLARIFY_STOP_SENTINEL
+
+        result = cm.wait_for_response("nonexistent-id", timeout=0.1)
+        assert result == cm.CANCELLED
+        assert result == CLARIFY_STOP_SENTINEL
 
 
     def test_get_clarify_timeout_exception_returns_default(self, monkeypatch):

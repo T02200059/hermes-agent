@@ -59,13 +59,20 @@ def register(clarify_id: str, session_key: str, question: str, choices: Optional
 
 
 def wait_for_response(clarify_id: str, timeout: float) -> Optional[str]:
-    """Block until the entry resolves or ``timeout`` (``<= 0`` = unlimited) elapses; None on
-    timeout/unknown id. Polls in 1s slices so the inactivity heartbeat keeps firing (a
-    single long ``Event.wait`` would let the gateway watchdog kill a live prompt)."""
+    """Block until the entry resolves or ``timeout`` (``<= 0`` = unlimited) elapses.
+
+    Returns the resolved response, ``CANCELLED`` when cleanup/stop won the race (entry
+    vanished before wait, or the event fired without an answer — same wire value as
+    ``tools.clarify_tool.CLARIFY_STOP_SENTINEL``), or ``None`` on a genuine inactivity
+    deadline. Polls in 1s slices so the inactivity heartbeat keeps firing (a single long
+    ``Event.wait`` would let the gateway watchdog kill a live prompt).
+    """
     with _lock:
         entry = _entries.get(clarify_id)
     if entry is None:
-        return None
+        # Session-boundary cleanup (or an unknown id) won before the wait started. Returning
+        # None here used to look like user inactivity; CANCELLED maps to outcome="cancelled".
+        return CANCELLED
     try:
         from tools.environments.base import touch_activity_if_due
     except Exception:  # pragma: no cover - optional
@@ -73,9 +80,13 @@ def wait_for_response(clarify_id: str, timeout: float) -> Optional[str]:
     from tools.interrupt import is_interrupted
     deadline = None if timeout is None or float(timeout) <= 0.0 else time.monotonic() + float(timeout)
     activity_state = {"last_touch": time.monotonic(), "start": time.monotonic()}
+    resolved_by_event = False
     while True:
         remaining = 1.0 if deadline is None else deadline - time.monotonic()
-        if remaining <= 0 or entry.event.wait(timeout=min(1.0, remaining)):
+        if remaining <= 0:
+            break
+        if entry.event.wait(timeout=min(1.0, remaining)):
+            resolved_by_event = True
             break
         if is_interrupted():
             # /stop or gateway shutdown on this turn's thread: withdraw the prompt the way the
@@ -97,6 +108,9 @@ def wait_for_response(clarify_id: str, timeout: float) -> Optional[str]:
             ids.remove(clarify_id)
             if not ids:
                 _session_index.pop(entry.session_key, None)
+    # Event set with no answer = cleanup (clear_session / late undeliverable), not inactivity.
+    if resolved_by_event and not entry.response:
+        return CANCELLED
     return entry.response
 
 
