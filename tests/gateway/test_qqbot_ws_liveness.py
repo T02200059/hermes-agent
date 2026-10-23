@@ -140,3 +140,67 @@ def test_never_having_heard_from_the_server_does_not_trip_the_ack_guard():
 
     assert ws.sent, "heartbeats must start before the first inbound frame arrives"
     assert ws.closed is False
+
+
+# ---------------------------------------------------------------------------
+# B15: reconnect rebuilds the REST HTTP client (stale pools after sleep/wake)
+# ---------------------------------------------------------------------------
+
+
+class _CloseableClient:
+    """Stand-in httpx.AsyncClient: records ``aclose`` and is identity-comparable."""
+
+    def __init__(self, label: str) -> None:
+        self.label = label
+        self.closed = False
+
+    async def aclose(self) -> None:
+        self.closed = True
+
+
+def test_reconnect_rebuilds_http_client_and_closes_the_old_one(monkeypatch):
+    """``_reconnect`` must swap in a fresh REST client before token/gateway calls."""
+    adapter = _adapter(app_id="a", client_secret="b")
+    old = _CloseableClient("old")
+    new = _CloseableClient("new")
+    adapter._http_client = old
+    adapter._access_token = "stale-token"
+    adapter._token_expires_at = 9_999_999_999.0
+
+    created: list = []
+
+    def _fake_platform_http_client():
+        created.append(new)
+        return new
+
+    monkeypatch.setattr(qq_adapter, "platform_http_client", _fake_platform_http_client)
+    monkeypatch.setattr(qq_adapter, "RECONNECT_BACKOFF", [0])
+
+    async def _fake_open_gateway_ws(*, log_url: bool = False) -> None:
+        assert adapter._http_client is new, "token/gateway REST must use the rebuilt client"
+        assert adapter._access_token is None, "cached OAuth token must be cleared"
+
+    monkeypatch.setattr(adapter, "_open_gateway_ws", _fake_open_gateway_ws)
+
+    assert asyncio.run(adapter._reconnect(0)) is True
+    assert old.closed is True
+    assert adapter._http_client is new
+    assert created == [new]
+    assert adapter._token_expires_at == 0.0
+
+
+def test_rebuild_http_client_closes_previous_and_clears_token(monkeypatch):
+    adapter = _adapter(app_id="a", client_secret="b")
+    old = _CloseableClient("old")
+    new = _CloseableClient("new")
+    adapter._http_client = old
+    adapter._access_token = "tok"
+    adapter._token_expires_at = 123.0
+    monkeypatch.setattr(qq_adapter, "platform_http_client", lambda: new)
+
+    asyncio.run(adapter._rebuild_http_client())
+
+    assert old.closed is True
+    assert adapter._http_client is new
+    assert adapter._access_token is None
+    assert adapter._token_expires_at == 0.0

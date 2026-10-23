@@ -419,12 +419,35 @@ class QQAdapter(OwnAccessPolicyMixin, BasePlatformAdapter):
                     return
                 await reconnect()
 
+    async def _rebuild_http_client(self) -> None:
+        """Close the REST client and open a fresh one; clear the cached OAuth token.
+
+        After sleep/wake or a network reset the old httpx pool can leave ``_ensure_token`` /
+        ``_get_gateway_url`` failing even though the network is back. Rebuild is idempotent.
+        """
+        old = self._http_client
+        self._http_client = None
+        if old is not None:
+            try:
+                await old.aclose()
+            except Exception:
+                logger.debug("[%s] Closing stale HTTP client failed", self._log_tag, exc_info=True)
+        try:
+            self._http_client = platform_http_client()
+        except Exception:
+            # ``_reconnect`` surfaces the failure when the next token/gateway call runs.
+            logger.debug("[%s] Rebuilding HTTP client failed", self._log_tag, exc_info=True)
+        self._access_token = None
+        self._token_expires_at = 0.0
+
     async def _reconnect(self, backoff_idx: int) -> bool:
         delay = RECONNECT_BACKOFF[min(backoff_idx, len(RECONNECT_BACKOFF) - 1)]
         logger.info("[%s] Reconnecting in %ds (attempt %d)...", self._log_tag, delay, backoff_idx + 1)
         await asyncio.sleep(delay)
 
         self._heartbeat_interval = 30.0  # reset until Hello
+        # Stale httpx pools survive WS teardown; rebuild before token/gateway REST calls.
+        await self._rebuild_http_client()
         try:
             await self._open_gateway_ws()
             self._mark_connected()
