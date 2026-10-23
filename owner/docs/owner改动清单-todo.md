@@ -28,7 +28,7 @@
 
 > 目标：区分「官方最新已修」vs「仍需我们带」。对照时在 v2 干净树搜代码/测例，**只读**。细节以源清单对应 § 为准。
 >
-> **对照基准**：v2 `56ab1b6d86`（= 官方 main `3ba2b0787e` + 2 个 docs）· 2026-10-23 完成 38/38 结论；随后本树落地 **O3–O8**（fork 自用、不提上游），B 段状态已回写。
+> **对照基准**：v2 `56ab1b6d86`（= 官方 main `3ba2b0787e` + 2 个 docs）· 2026-10-23 完成 38/38 结论；随后本树落地 **O3–O8**、**B15 残留**、**B17 官方半边**（fork 自用、不提上游），B 段状态已回写。
 
 ### Provider / 模型切换
 
@@ -69,12 +69,13 @@
 
 ### Gateway / Agent 运行时
 
-- [x] **B15** · 源 §7.1 · QQ Bot WebSocket 重连链不稳 · **验证状态：部分**
-  - owner：`_stop_retry` + `receive_timeout=120` + `_rebuild_http_client`。v2：重连链已重写（backoff、close-code 分类、`is_reconnect` kwarg、`disconnect()` 置 `_running=False` 停止重试）；**O4** 已补读路径 `wait_for` 90s + 心跳静默关 socket。仍缺 HTTP client 重建（`_rebuild_http_client`），故保持部分。
+- [x] **B15** · 源 §7.1 · QQ Bot WebSocket 重连链不稳 · **验证状态：官方已修**
+  - owner：`_stop_retry` + `receive_timeout=120` + `_rebuild_http_client`。v2：重连链已重写（backoff、close-code 分类、`is_reconnect` kwarg、`disconnect()` 置 `_running=False` 停止重试）；**O4** 已补读路径 `wait_for` 90s + 心跳静默关 socket；本批补 **`_rebuild_http_client`**（重连前关旧 httpx + `platform_http_client()` 新建 + 清 OAuth 缓存）。见 §「v2 已落地官方 fix」。
 - [x] **B16** · 源 §7.5 · executor-shutdown 不友好提示 · **验证状态：官方已修**
   - owner：`owner/gateway/turn_helpers.py::is_executor_shutdown_error` → 友好重启提示。v2：`agent/turn_loop_errors.py` 识别 interpreter/executor shutdown 后走 `site_copy("interpreter_shutdown", resume=…)`，不再抛裸 RuntimeError。
-- [x] **B17** · 源 §7.6 · Clarify 清理路径缺 stop sentinel / 飞书 clarify 超时未中断 · **验证状态：仍存在/需自研**
-  - owner：`tools/clarify_tool.py` `CLARIFY_STOP_SENTINEL` + `owner/clarify/`。v2 `tools/clarify_tool.py` 无 timeout/stop 路径，飞书侧超时中断属 owner 胶水。
+- [x] **B17** · 源 §7.6 · Clarify 清理路径缺 stop sentinel / 飞书 clarify 超时未中断 · **验证状态：部分**
+  - **官方半边已修**：`CLARIFY_STOP_SENTINEL`（= `clarify_gateway.CANCELLED`）+ `wait_for_response` 在 entry 消失 / event 空应答时返回 CANCELLED（不再伪造成用户超时）。见 §「v2 已落地官方 fix」。
+  - **飞书半边仍待 C 段/混合**：adapter 超时中断 agent loop + 超时补发提示属 owner 胶水，本批**不做**。
 - [x] **B18** · 源 §7.9 · 429 配额耗尽被当 transient 静默重试；长等待无即时状态 · **验证状态：官方已修**
   - owner：`error_classifier.py` `_has_long_reset_window` 单向降级 + `conversation_loop.py` `wait_time >= 60` 立即出状态。v2 本树已用 **O5**：天/周配额墙单向降为 billing，不再白等。即时状态（≥60s 立即出）未单独追平，主痛点（长墙当 transient）已消化。
 - [x] **B19** · 源 §7.10 · 运行中 agent 时 plugin 斜杠命令被当普通文本注入 · **验证状态：官方已修**
@@ -129,7 +130,7 @@
 
 **Bug 段合计：38 条。**
 
-**结论分布**：官方已修 22 · 部分 5 · 仍存在/需自研 3 · 不适用(纯 owner) 8。（O3–O8 落地后：B14/B18/B24/B26/B27 自「仍存在」迁入「官方已修」；仍剩 B11/B12/B17。）
+**结论分布**：官方已修 23 · 部分 5 · 仍存在/需自研 2 · 不适用(纯 owner) 8。（O3–O8 后本批：B15 部分→官方已修；B17 仍存在→部分。仍剩硬挂 B11/B12。）
 
 ---
 
@@ -137,7 +138,7 @@
 
 > 筛选口径：① 官方最新 main 仍有缺陷；② bug 位于**官方功能代码**，修法不需要 `owner/` 能力包或胶水；③ 不含「功能本身是我们自建」的条目（model_picker、inbound context、LDAP 门、output_guard、`_owner_import`、per-chat display、queue 卡）。
 >
-> **状态：9 条已在 v2 全部分流完毕 —— 6 条已修 + 1 条伪缺陷撤回 + 2 条判定为「非官方 bug」不改。** 详见下方逐条结论与实施记录。
+> **状态：O 段 9 条已分流完毕（6 修 + 1 撤回 + 2 不改）；另续做 B15 残留 + B17 官方半边。** 详见下方与 §「v2 已落地官方 fix」。
 >
 > **范围声明**：以上 fix **仅留在本 fork 的 `v2` 分支自用**，**不提上游**、不做 PR。与二次开发规范一致：先修官方树上的自有缺陷，再重放定制。
 
@@ -163,9 +164,29 @@
 
 ### 次级（需先解决口径，暂不实施）
 
-- **B17**（clarify 无 stop 语义）：官方 `tools/clarify_tool.py` 无 timeout/中断路径；gateway 侧可纯官方补齐，但「飞书 clarify 超时中断 agent」依赖 adapter，属混合。
+- **B17**（clarify）：**官方半边已落地**（见下表）；飞书 adapter 超时中断 agent 仍属混合，跟 C 段，不当第一步硬开。
 - **B12**（CLI OS 级 SIGINT）：v2 已用 prompt_toolkit `c-c` 覆盖按键层，且 `hermes_cli/cli_terminal_input.py:394` 明确表态「raw mode clears ISIG，内核 INTR 路径从未涉入 CLI」——上游认为无需处理。我们的场景（子 shell PTY 回弹 / 后台线程投递 SIGINT）上游大概率判 invalid，需先备证据再提。
 - **B11**（审批历史按英文文案判定）：官方功能本身的脆弱点，但**只有在我们落地 i18n（C10）后才会暴露**；建议与 C10 同批做，或直接改用结构字段。
+
+---
+
+## § v2 已落地官方 fix（fork 自用 · 不提上游）
+
+> 本树在干净官方代码上直接改的缺陷修复。**不提上游 PR**。产品 `owner/` 代码未动（仅 docs）。
+
+| 批次 | 条目 | 改动摘要 | 落点 | 回归 |
+|------|------|----------|------|------|
+| O3–O8 | O3 | 插件发现 `_TimedLock` 15s + join 超时返回 bool | `hermes_cli/plugins.py` 等 | 见 O 段表 |
+| | O4 | QQ WS 读超时 90s + 心跳静默关 socket | `plugins/platforms/qqbot/adapter.py` | 见 O 段表 |
+| | O5 | 天/周配额墙单向降为 billing | `agent/error_classifier.py` | 见 O 段表 |
+| | O6 | 出站 `platform_message_id` DDL + mark_delivered | `gateway/delivery_ledger.py` 等 | 见 O 段表 |
+| | O7 | `/stop` stale 分支 cancel 孤儿 run | `gateway/run_turn.py` | 见 O 段表 |
+| | O8 | 出站 DeepSeek BOS/EOS scrub | `gateway/platforms/base.py` 等 | 见 O 段表 |
+| B15 残留 | B15 | `_rebuild_http_client`：重连前关旧 httpx、`platform_http_client()` 新建、清 token | `plugins/platforms/qqbot/adapter.py` | `tests/gateway/test_qqbot_ws_liveness.py` +2 |
+| B17 官方半边 | B17 | `CLARIFY_STOP_SENTINEL`（= `CANCELLED`）；entry 消失 / 空 event → CANCELLED，真超时仍 `None` | `tools/clarify_tool.py`、`tools/clarify_gateway.py` | `tests/tools/test_clarify_gateway.py`（StopSentinel 组） |
+| （不做） | B17 飞书半边 | adapter 超时中断 agent + 超时补发提示 | — | 待 C 段/混合 |
+
+O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 
 ---
 
