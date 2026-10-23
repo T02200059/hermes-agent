@@ -219,8 +219,11 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
     1. `feat(owner): C01 patch 加载器挂 config.owner` — `owner/patch_config.py` + `config.owner` 叠层；官方 `hermes_cli/config.py` 仅薄 overlay
     2. `feat(owner): C01 禁用永久审批（飞书/QQ）` — `owner/approval/permanent_policy.py`；官方 `tools/approval.py` 仅 gate/sanitize/merge 委托
     3. `feat(owner): C01 归因骨架` — `owner/attribution.py`；官方 `agent_init` / `chat_completion_helpers` / `run_agent` / messages DDL·INSERT 仅 `# [owner]` 委托
-  - 风格：逻辑在 `owner/`，官方极薄胶水（P0/P1）；无 C02 billing/credential/出站剥离
-- [ ] **C02** · 源 §2.1–2.3 / §10 · per-turn 归因 + credential 合并 + billing 落盘 · **优先级：P0**
+  - 风格：逻辑在 `owner/`，官方极薄胶水（P0/P1）；无 C02 用量落盘 / credential / 出站剥离
+- [ ] **C02** · 源 §2.1–2.2（credential）+ §10 用量**数量**落盘 · per-turn 归因整链 + credential 合并 + sessions/messages token 用量明细 · **优先级：P0**
+  - **含**：runtime / oneshot / cli / delegate / mid-switch 透传；组 `api_messages` 时剥离 `owner_provider_name`（防污染请求 / prompt cache）；credential 合并（源 `credential_helpers` + model_switch 薄调用）；`sessions.owner_provider_name`（§10.1）；`messages` 四列 `input/output/cache_read/cache_write_tokens`（§10.2）
+  - **不含**：金钱价格估算、`token_cost_estimate.py`、一切 owner 侧 ¥/$ / pricing 挂靠 / 费用脚本；飞书 model_picker（不进阶段一）；§2.3 pool base_url **并 C03 或可选**（不硬塞本条必做）
+  - **边界**：官方已有 `estimated_cost_usd` / `billing_*` 等成本基建**不动也不扩展** owner 金钱逻辑；C02 只补「用量数量 + 自定义 provider 名」标签
 - [ ] **C03** · 源 §2.7–2.8 · damodel prompt cache / NewAPI proxy / MiMo thinking wire · **优先级：P0**
 - [ ] **C04** · 源 §3.1–3.4 · 飞书审批卡片 + sender_name 缓存 + inbound 身份 + 多平台审批签名 · **优先级：P0**
 - [ ] **C05** · 源 §4.1 · **飞书多 profile 舰队路由**（`profile_endpoints` HTTP 转发；**不吃**官方 `profile_routes`） · **优先级：P0**
@@ -269,6 +272,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 - [x] 用官方 `multiplex_profiles` **替换** node010 Linux 用户舰队隔离 — **明确不做**
 - [x] 把「官方测试套件全绿」当 v2 目标 — **明确不做**
 - [x] 推倒 `owner/` 换魔法 patch 框架 — **明确不做**（减负靠能力包 + 短名单）
+- [x] owner 金钱估价 / `token_cost_estimate.py` / 依赖 estimated_cost 的 owner 定制 — **明确不做**（C02 瘦身：保留 token **数量**落盘，废弃算钱）
 
 ---
 
