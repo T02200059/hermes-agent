@@ -599,9 +599,18 @@ def _resolve_child_runtime(
     # Reasoning: the task route's effort (delegation provider) > delegation.reasoning_effort > parent.
     child_reasoning = _child_reasoning(parent_agent, delegation_cfg, override_reasoning_effort)
 
+    # [owner] C02 — child attribution: override alias, else inherit parent named-custom
+    if override_provider:
+        _owner_provider_name = override_provider
+    elif not override_base_url and not override_acp_command:
+        _owner_provider_name = getattr(parent_agent, "owner_provider_name", None) or effective_provider
+    else:
+        _owner_provider_name = effective_provider
+
     kwargs: dict[str, Any] = {
         "base_url": effective_base_url, "api_key": override_api_key or parent_api_key, "model": effective_model,
         "provider": effective_provider, "requested_provider": effective_requested_provider,
+        "owner_provider_name": _owner_provider_name,
         "capabilities": _inherit_parent_capabilities(parent_agent, override_provider, override_base_url),
         "api_mode": effective_api_mode, "acp_command": effective_acp_command, "acp_args": effective_acp_args,
         "reasoning_config": child_reasoning,

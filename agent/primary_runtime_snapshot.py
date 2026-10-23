@@ -21,6 +21,8 @@ def _snapshot_primary_runtime(agent):
         "model": agent.model,
         "provider": agent.provider,
         "requested_provider": agent.requested_provider,
+        # [owner] C02 — keep named-custom attribution across restore
+        "owner_provider_name": getattr(agent, "owner_provider_name", None),
         SNAPSHOT_OWNER_KEY: runtime_entry_owner(agent.provider, agent.requested_provider, agent.base_url),
         "base_url": agent.base_url,
         "api_mode": agent.api_mode,
@@ -53,6 +55,8 @@ def _build_primary_runtime_snapshot(agent, api_mode) -> dict[str, Any]:
         "model": agent.model,
         "provider": agent.provider,
         "requested_provider": agent.requested_provider,
+        # [owner] C02 — keep named-custom attribution across switch snapshot
+        "owner_provider_name": getattr(agent, "owner_provider_name", None),
         SNAPSHOT_OWNER_KEY: runtime_entry_owner(agent.provider, agent.requested_provider, agent.base_url),
         "base_url": agent.base_url,
         "api_mode": agent.api_mode,

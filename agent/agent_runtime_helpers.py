@@ -1136,6 +1136,12 @@ def _apply_primary_runtime_fields(agent, rt: dict[str, Any]) -> None:
     agent.model = rt["model"]
     agent.provider = rt["provider"]
     agent.requested_provider = rt.get("requested_provider", agent.provider)
+    # [owner] C02 — restore named-custom attribution from primary snapshot
+    try:
+        from owner.attribution import bind_agent_attribution
+        bind_agent_attribution(agent, rt.get("owner_provider_name"))
+    except Exception:
+        agent.owner_provider_name = rt.get("owner_provider_name", agent.provider)
     agent.base_url = rt["base_url"]           # setter updates _base_url_lower
     from hermes_cli.providers import is_actual_route
     agent.api_mode = "chat_completions" if is_actual_route(agent.provider, agent.base_url) else rt["api_mode"]
@@ -2124,6 +2130,8 @@ _SWITCH_SNAPSHOT_FIELDS = (
     "_config_context_length", "_reasoning_echo_flag", "runtime_capabilities",
     "_credential_pool", "_credential_pool_entry_id",
     "_codex_reasoning_replay_enabled", "_codex_reasoning_replay_rejected",
+    # [owner] C02 — roll back named-custom attribution with the switch snapshot
+    "owner_provider_name",
 )
 _MISSING = object()
 
@@ -2445,6 +2453,12 @@ def switch_model(
         _swap_switch_runtime(
             agent, new_model, new_provider, api_key, base_url, api_mode, old_provider, old_norm, new_norm
         )
+        # [owner] C02 — rebind attribution to the switched-to identity (alias or wire name)
+        try:
+            from owner.attribution import bind_agent_attribution
+            bind_agent_attribution(agent, new_provider)
+        except Exception:
+            agent.owner_provider_name = new_provider or getattr(agent, "provider", None)
     except Exception:
         _restore_switch_snapshot(agent, snapshot)
         raise

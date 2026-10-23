@@ -46,7 +46,10 @@ PERSISTENCE_ONLY_MESSAGE_FIELDS = frozenset(
     {"timestamp", "display_kind", "display_metadata", "_row_id", "_submit_row_session_id",
      MERGED_TURN_PREFIX, MESSAGE_UID, ABSORBED_MESSAGE_UIDS, TOOL_CALL_UIDS, TOOL_CALL_UID,
      # The alternation repair's row counts: an in-place compaction reads them off the live dict.
-     MERGED_DURABLE_ROWS, UNNAMED_DURABLE_ROWS, RETIRED_DURABLE_ROWS}
+     MERGED_DURABLE_ROWS, UNNAMED_DURABLE_ROWS, RETIRED_DURABLE_ROWS,
+     # [owner] C02 — per-turn attribution + token quantity are persistence-only
+     "owner_provider_name",
+     "input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens"}
 ) | REPAIR_BOOKKEEPING_FIELDS
 
 

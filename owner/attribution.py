@@ -1,12 +1,17 @@
-"""Per-turn attribution helpers (C01 skeleton).
+"""Per-turn attribution helpers (C01 skeleton + C02 chain).
 
 Stamps ``model`` / ``provider`` / ``owner_provider_name`` onto assistant message
-dicts for persistence. Billing / credential / outbound strip belong to C02 — not here.
+dicts for persistence. C02 wires the name through runtime → agent construction →
+mid-switch / restore snapshots, and strips it from outbound ``api_messages``.
 
 Official glue sites (thin only):
 - ``agent.agent_init.init_agent`` → :func:`bind_agent_attribution`
 - ``agent.chat_completion_helpers.build_assistant_message`` → :func:`inject_attribution_into_message`
-- ``hermes_state_*`` messages DDL / INSERT for the ``owner_provider_name`` column
+- ``hermes_cli.runtime_provider_custom`` named-custom runtime stamp
+- oneshot / CLI / TUI / gateway / delegate AIAgent kwargs
+- ``agent.primary_runtime_snapshot`` + ``_apply_primary_runtime_fields`` / mid-switch
+- ``agent.message_metadata.PERSISTENCE_ONLY_MESSAGE_FIELDS`` outbound strip
+- ``hermes_state_*`` messages/sessions DDL + usage writers (C02 §10)
 """
 
 from __future__ import annotations
