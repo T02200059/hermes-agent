@@ -108,21 +108,22 @@ class TestGenericProviderLiveCuratedMerge:
 
 
 class TestKimiCodingPlanModelIds:
-    """sk-kimi-* / api.kimi.com/coding must not merge Moonshot curated catalog."""
+    """sk-kimi-* / api.kimi.com/coding must expose only the Coding Plan catalog.
 
-    def test_sk_kimi_key_returns_live_coding_plan_only(self):
-        live = ["kimi-for-coding", "kimi-for-coding-highspeed"]
+    The Subscription's catalog IS the curated ``kimi-coding`` row (it carries
+    ``kimi-for-coding``, which the Moonshot open-API row does not), so that row is
+    the allow-list. Live ids are folded in only when the row already names them —
+    an open-API-only model must never leak into a Coding Plan picker.
+    """
+
+    def test_sk_kimi_key_exposes_only_the_plan_catalog(self):
+        """A Coding Plan key must not surface Moonshot-open-API-only models."""
+        live = ["kimi-for-coding", "kimi-for-coding-highspeed", "moonshot-v1-128k"]
         profile = MagicMock()
         profile.auth_type = "api_key"
         profile.base_url = "https://api.moonshot.ai/v1"
         profile.fetch_models.return_value = live
         profile.fallback_models = None
-        moonshot_curated = [
-            "kimi-k2.7-code",
-            "kimi-k2.6",
-            "kimi-for-coding",
-            "kimi-k2-thinking",
-        ]
 
         with (
             patch("providers.get_provider_profile", return_value=profile),
@@ -133,27 +134,24 @@ class TestKimiCodingPlanModelIds:
                     "base_url": "https://api.kimi.com/coding",
                 },
             ),
-            patch.dict(
-                "hermes_cli.models._PROVIDER_MODELS",
-                {"kimi-coding": moonshot_curated},
-            ),
         ):
             result = provider_model_ids("kimi-coding")
 
-        assert result == live
-        assert "kimi-k2.6" not in result
-        assert "kimi-k2-thinking" not in result
+        # Curated row leads (it carries k3 and the k2.x coding models)…
+        assert "kimi-k3" in result
+        assert "kimi-for-coding" in result
+        # …and an open-API-only id from the live catalog is filtered out.
+        assert "moonshot-v1-128k" not in result
 
-    def test_sk_kimi_key_filters_extra_live_models(self):
-        """Live /v1/models must be filtered to the Coding Plan allow-list."""
+    def test_sk_kimi_key_filters_live_to_the_plan_catalog(self):
+        """Live /v1/models is folded in only where the plan catalog already names it."""
         profile = MagicMock()
         profile.auth_type = "api_key"
         profile.base_url = "https://api.moonshot.ai/v1"
         profile.fetch_models.return_value = [
             "kimi-for-coding",
             "kimi-k2.7-code",
-            "kimi-for-coding-highspeed",
-            "kimi-k2.6",
+            "moonshot-v1-32k",
         ]
         profile.fallback_models = None
 
@@ -169,9 +167,8 @@ class TestKimiCodingPlanModelIds:
         ):
             result = provider_model_ids("kimi-coding")
 
-        assert result == ["kimi-for-coding", "kimi-for-coding-highspeed"]
-        assert "kimi-k2.7-code" not in result
-        assert "kimi-k2.6" not in result
+        assert result == list(_KIMI_CODING_PLAN_MODELS)
+        assert "moonshot-v1-32k" not in result
 
     def test_sk_kimi_fallback_when_live_empty(self):
         profile = MagicMock()

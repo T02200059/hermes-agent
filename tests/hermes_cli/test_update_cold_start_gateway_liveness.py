@@ -33,6 +33,13 @@ def _run_cold_start(monkeypatch, capsys, *, surviving_pids):
     monkeypatch.setattr(
         gateway_windows, "_wait_for_gateway_ready", lambda *a, **k: surviving_pids
     )
+    # This host really runs Desktop, and ``_desktop_owns_gateway_lifecycle`` reads the
+    # live spawn ledger / venv holders — an unpatched read returns True here and the
+    # cold-start path exits early with "Desktop owns the gateway", which is exactly the
+    # early return these two cases must get past.
+    monkeypatch.setattr(
+        update_cmd, "_desktop_owns_gateway_lifecycle", lambda: False
+    )
 
     update_cmd._cold_start_windows_gateway_after_update()
 

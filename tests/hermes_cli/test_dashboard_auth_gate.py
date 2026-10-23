@@ -90,9 +90,17 @@ def _stub_uvicorn_run(monkeypatch):
     """Replace uvicorn.Config/Server with no-op fakes so start_server
     returns immediately (rather than blocking on the event loop). Returns the dict
     that will capture the keyword args.
+
+    Also stubs the pre-bind conflict probe: these cases pin the documented
+    ``port=9119`` example, and ``start_server`` raises ``SystemExit(75)`` when that
+    port is already listening — which it is on any machine that happens to run its
+    dashboard there. Port availability is not what these cases assert (the gate
+    wiring is); the sentinel path has its own coverage.
     """
     import asyncio
     import contextlib
+
+    monkeypatch.setattr(web_server, "_port_bind_conflict", lambda *a, **k: False)
     import uvicorn
     captured: dict = {"kwargs": {}}
 

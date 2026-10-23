@@ -188,6 +188,16 @@ def test_gateway_run_subprocess_preserves_daemon_exit_codes(
 
         fake_run = types.ModuleType("gateway.run")
         fake_run.start_gateway = start_gateway
+
+        # [owner] ``hermes_cli.gateway.run_gateway`` enters through
+        # ``start_gateway_diag_wrap`` (the permanent diagnosability wrapper), not
+        # ``start_gateway``. The stub must expose that entry too, delegating to the
+        # same outcome function, or the import fails with "cannot import name
+        # 'start_gateway_diag_wrap'" before any exit code is exercised.
+        async def start_gateway_diag_wrap(*, replace, verbosity=0):
+            return await start_gateway(replace=replace, verbosity=verbosity)
+
+        fake_run.start_gateway_diag_wrap = start_gateway_diag_wrap
         setattr(fake_run, "_exit_after_graceful_shutdown", sys.exit)
         sys.modules["gateway.run"] = fake_run
 

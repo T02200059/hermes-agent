@@ -3619,12 +3619,13 @@ _LIVE_FIRST_PICKER_PROVIDERS: frozenset[str] = frozenset(
 )
 
 # [owner] 静态目录 + owner providers 豁免
-# Kimi Coding Plan (sk-kimi-* → api.kimi.com/coding) only serves these IDs.
-# Do NOT merge with the Moonshot open-API curated list for that endpoint.
-_KIMI_CODING_PLAN_MODELS: list[str] = [
-    "kimi-for-coding",
-    "kimi-for-coding-highspeed",
-]
+# Kimi Coding Plan (sk-kimi-* → api.kimi.com/coding) serves the curated
+# ``kimi-coding`` catalog, and nothing from the Moonshot open-API list beyond it.
+# Derived from that catalog rather than restated: the previously hand-written
+# pair (``kimi-for-coding`` [+ highspeed]) was a copy that silently went stale —
+# once upstream added ``kimi-k3`` to the curated row (#68108) a Coding Plan key
+# still could not see it. One authority, no drift.
+_KIMI_CODING_PLAN_MODELS: list[str] = list(_PROVIDER_MODELS.get("kimi-coding") or ())
 
 
 def _is_kimi_coding_plan_endpoint(api_key: str = "", base_url: str = "") -> bool:
@@ -4466,17 +4467,26 @@ def provider_model_ids(provider: Optional[str], *, force_refresh: bool = False) 
                 base_url = _p.base_url
 # [owner] 静态目录 + owner providers 豁免
             # Kimi Coding Plan (sk-kimi-* → api.kimi.com/coding) is a subscription
-            # with only kimi-for-coding [+ highspeed]. Never merge the Moonshot
-            # open-API curated catalog into that picker row.
+            # whose catalog is the curated ``kimi-coding`` list — never merge the
+            # Moonshot open-API catalog into that picker row. The curated list is
+            # the authority (it already carries ``kimi-k3``); a hand-maintained
+            # allow-list beside it was a stale copy that drifted (it only ever
+            # listed ``kimi-for-coding`` [+ highspeed], so a Coding Plan key stopped
+            # seeing k3 once upstream added it to the curated row, #68108).
+            # Live ids are folded in only when the curated list already names them,
+            # so a bare wire id (``k3``) cannot produce a second row for the same
+            # model (curated ``kimi-k3`` wins).
             if normalized in {"kimi-coding", "kimi-coding-cn"} and _is_kimi_coding_plan_endpoint(
                 api_key, base_url
             ):
-                allowed = {m.lower() for m in _KIMI_CODING_PLAN_MODELS}
+                plan_models = list(_PROVIDER_MODELS.get(normalized) or ())
+                allowed = {m.lower() for m in plan_models}
                 if api_key:
                     live = _p.fetch_models(api_key=api_key, base_url=base_url or None)
-                    if live:
-                        return [m for m in live if str(m).lower() in allowed]
-                return list(_KIMI_CODING_PLAN_MODELS)
+                    for m in live or ():
+                        if str(m).lower() in allowed and m not in plan_models:
+                            plan_models.append(m)
+                return plan_models
             if api_key:
                 live = _p.fetch_models(api_key=api_key, base_url=base_url or None)
                 if live:

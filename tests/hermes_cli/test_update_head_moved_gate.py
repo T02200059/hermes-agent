@@ -119,6 +119,30 @@ def _patch_update_deps(monkeypatch, tmp_path, run_side_effect):
     monkeypatch.setattr(
         hermes_gateway, "find_profile_gateway_processes", lambda *a, **k: []
     )
+    # macOS: the launchd branch reads the REAL plist and calls launchctl restart.
+    # Without this the update tests would restart this developer's own gateway and
+    # then fail on "restarted but launchd is not supervising it" — a test-isolation
+    # hole, not a product defect. A non-existent plist makes the branch a clean no-op.
+    monkeypatch.setattr(
+        hermes_gateway,
+        "get_launchd_plist_path",
+        lambda: tmp_path / "no-such-hermes.plist",
+    )
+    monkeypatch.setattr(
+        hermes_gateway, "launchd_gateway_labels_for_install", lambda *a, **k: []
+    )
+    # The gateway-restart phase is NOT what these tests assert (they cover the
+    # head-moved / marker gates), and on macOS it reaches REAL launchd state —
+    # reading this host's plist, calling launchctl, and reporting "restarted but
+    # launchd is not supervising it". Stub both launchd entry points so the phase
+    # is a clean no-op regardless of the host.
+    import hermes_cli.update_cmd as _update_cmd
+    monkeypatch.setattr(
+        _update_cmd, "_restart_macos_launchd_gateways", lambda *a, **k: None
+    )
+    monkeypatch.setattr(
+        _update_cmd, "_restart_launchd_gateway_after_update", lambda *a, **k: ([], [])
+    )
 
 
 def test_update_success_when_head_moves(monkeypatch, tmp_path, capsys):

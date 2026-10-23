@@ -114,11 +114,15 @@ def test_list_authenticated_providers_enumerates_dict_format_models(monkeypatch)
     ]
 
 
-def test_list_authenticated_providers_prefers_config_models_over_live(monkeypatch):
-    """Config-listed models win: no live /models probe when models: is set.
+def test_list_authenticated_providers_probes_dict_models_metadata(monkeypatch):
+    """A dict-shaped ``models:`` is per-model METADATA, not an allowlist.
 
-    OpenRouter/Bifrost-style endpoints would otherwise replace a deliberate
-    2-model whitelist with hundreds of live IDs and block /providers.
+    ``hermes model`` writes ``models: {id: {context_length: N}}`` itself, so treating
+    that shape as a user pin made the picker show only the saved default while the CLI
+    still live-probed the whole catalog. Upstream f66319097e settled the direction
+    (:func:`_models_config_is_allowlist` returns False for dicts): the probe runs and the
+    endpoint's live catalog is authoritative. Pin a dict catalog with
+    ``discover_models: false`` instead.
     """
     monkeypatch.setattr("agent.models_dev.fetch_models_dev", lambda: {})
     monkeypatch.setattr("hermes_cli.providers.HERMES_OVERLAYS", {})
@@ -157,9 +161,9 @@ def test_list_authenticated_providers_prefers_config_models_over_live(monkeypatc
     )
 
     assert user_prov is not None
-    assert calls == [], "live /models must not run when config lists models"
-    assert user_prov["models"] == ["old-configured-model"]
-    assert user_prov["total_models"] == 1
+    assert calls, "a dict-shaped models: is metadata — the live probe must still run"
+    assert user_prov["models"] == ["old-configured-model", "new-live-model", "hundreds-more"]
+    assert user_prov["total_models"] == 3
 
 
 def test_list_authenticated_providers_probes_when_no_config_models(monkeypatch):

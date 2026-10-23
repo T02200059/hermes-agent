@@ -3520,21 +3520,26 @@ def list_authenticated_providers(
                     models_list.append(model_id)
             has_models_whitelist = bool(declared_models)
 
-            # If no explicit models, try the cached provider model list for
-            # known provider slugs; otherwise fall back to live endpoint
-            # probing (preserves behavior for custom-named endpoints).
-            if not models_list:
-                is_known_slug = (
-                    ep_name in PROVIDER_TO_MODELS_DEV
-                    or ep_name in PROVIDER_TO_MODELS_DEV.values()
-                    or ep_name in HERMES_OVERLAYS
-                    or ep_name in _mdev_to_hermes
-                    or any(_cp.slug == ep_name for _cp in _canon_provs)
-                )
-                if is_known_slug:
-                    cached = _safe_cached_provider_model_ids(ep_name)
-                    if cached:
-                        models_list = cached
+            # Extend the row with the discovery catalog for known provider slugs.
+            # The declared ``models:`` ids stay FIRST and win on collision, but a
+            # declaration must not HIDE the rest of the catalog: Layer 1 owns the
+            # slug (``seen_slugs``), so the built-in layer never emits its own row
+            # for this provider and the merge has to happen here (#63055). Reading
+            # the cached catalog costs no network, so it runs whether or not the
+            # entry declared models; only the *live probe* below is gated by
+            # ``has_explicit_models``.
+            is_known_slug = (
+                ep_name in PROVIDER_TO_MODELS_DEV
+                or ep_name in PROVIDER_TO_MODELS_DEV.values()
+                or ep_name in HERMES_OVERLAYS
+                or ep_name in _mdev_to_hermes
+                or any(_cp.slug == ep_name for _cp in _canon_provs)
+            )
+            if is_known_slug:
+                cached = _safe_cached_provider_model_ids(ep_name)
+                for _m in cached or ():
+                    if _m and _m not in models_list:
+                        models_list.append(_m)
 
             if group_key not in ep_groups:
                 # Strip per-model suffix so "Palantir Claude 4.7 Opus" becomes
@@ -3851,6 +3856,13 @@ def list_authenticated_providers(
                 return True  # AWS SDK uses _has_fast_aws_sdk_signal at check time
             _lc = str(slug or "").strip().lower()
             if _lc in _cred_signal_slugs:
+                return True
+            # Providers whose credentials live OUTSIDE the auth store and the env
+            # (so neither signal source below can see them) must always reach their
+            # own credential check: ``vertex`` reads a service-account file /
+            # project override, exactly like AWS reads the SDK chain. Skipping it
+            # here hid a fully-configured Vertex from the picker forever.
+            if _lc == "vertex":
                 return True
             # Always let the current provider through — even without a signal —
             # so /providers never drops the active row.

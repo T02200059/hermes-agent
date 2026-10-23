@@ -1317,11 +1317,15 @@ def test_lmstudio_picker_skips_probe_when_not_configured(monkeypatch):
     assert "base_url" not in captured
 
 
-def test_custom_providers_prefers_config_models_over_live(monkeypatch):
-    """Section 4: explicit models: wins over live /models (config-first).
+def test_custom_providers_probes_dict_models_metadata(monkeypatch):
+    """A dict-shaped ``models:`` is per-model METADATA, not an allowlist.
 
-    Gateways like OpenRouter/Bifrost expose hundreds of IDs; when the user
-    already listed a subset in config, that subset is authoritative.
+    ``hermes model`` writes ``models: {id: {context_length: N}}`` itself, so treating that
+    shape as a user pin made the picker show only the saved default while the CLI still
+    live-probed the whole catalog. Upstream f66319097e settled the direction
+    (:func:`_models_config_is_allowlist` returns False for dicts): the probe runs and the
+    endpoint's live catalog is authoritative. Pin a dict catalog with
+    ``discover_models: false`` instead.
     """
     monkeypatch.setattr("agent.models_dev.fetch_models_dev", lambda: {})
     monkeypatch.setattr("hermes_cli.providers.HERMES_OVERLAYS", {})
@@ -1364,12 +1368,13 @@ def test_custom_providers_prefers_config_models_over_live(monkeypatch):
     )
 
     assert gateway_prov is not None, "Custom provider group not found in results"
-    assert calls == [], "live /models must not run when config lists models"
+    assert calls, "a dict-shaped models: is metadata — the live probe must still run"
     assert gateway_prov["models"] == [
         "gateway-model-a",
         "gateway-model-b",
-    ], "Config models must be kept verbatim"
-    assert gateway_prov["total_models"] == 2
+        "gateway-model-c",
+    ], "live /models is authoritative for a dict-shaped (metadata) catalog"
+    assert gateway_prov["total_models"] == 3
 
 
 def test_custom_providers_probes_when_no_config_models(monkeypatch):

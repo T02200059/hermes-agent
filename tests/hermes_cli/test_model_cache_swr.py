@@ -46,13 +46,17 @@ class TestProviderModelsSWR:
     def test_stale_entry_served_immediately_with_background_refresh(self):
         import hermes_cli.models as mod
 
-        # 2h old — beyond the 1h TTL, within the 7d stale-serve window.
+        # 2h old — past the 1h TTL this case is about, within the 7d stale-serve
+        # window. ``ttl_seconds`` is passed explicitly so the case tests the SWR
+        # *mechanism* rather than the default TTL value: owner raised that default
+        # to 24h (`_PROVIDER_MODELS_CACHE_TTL`, commit c780e7a63a — a deliberate
+        # perf divergence), which would otherwise leave 2h data "fresh" here.
         cache = {"openrouter": self._cache_entry(["m1", "m2"], age_seconds=7200)}
         with patch.object(mod, "_load_provider_models_cache", return_value=cache), \
              patch.object(mod, "_credential_fingerprint", return_value="fp"), \
              patch.object(mod, "_spawn_swr_refresh") as spawn, \
              patch.object(mod, "provider_model_ids") as live:
-            out = mod.cached_provider_model_ids("openrouter")
+            out = mod.cached_provider_model_ids("openrouter", ttl_seconds=3600)
         assert out == ["m1", "m2"]  # served stale, no blocking
         spawn.assert_called_once_with("openrouter")
         live.assert_not_called()  # the caller thread never hit the network
