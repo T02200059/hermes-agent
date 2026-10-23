@@ -24,8 +24,9 @@ from gateway.config import GatewayConfig
 from gateway.session import SessionStore
 from hermes_state import SessionDB
 
-# These probe the live-DB guard against the real root on purpose.
-pytestmark = pytest.mark.allow_real_home_io
+# No module-level ``pytestmark = pytest.mark.allow_real_home_io``: that switches the
+# real-home tripwire off for the whole file, including the cases that run entirely
+# under tmp_path. The cases that must observe the real root carry the mark themselves.
 
 # Must match the root the guard itself computes.  Hardcoding ``~/.hermes``
 # silently disarmed every assertion below on Windows, where the real root is
@@ -40,27 +41,39 @@ if REAL_ROOT is None:  # pragma: no cover - no resolvable home on this platform
 
 
 class TestProductionPathRefused:
+    """Each case hands a REAL-root path to ``SessionDB`` and asserts the refusal.
+
+    The mark is per-test rather than on the class: the tripwire must stay armed for
+    anything later added here, and only the call that actually reaches the real root
+    needs the exemption.
+    """
+
+    @pytest.mark.allow_real_home_io  # probes the guard against the real root on purpose
     def test_explicit_production_db_path_raises(self):
         """SessionDB pointed at the real ~/.hermes/state.db must fail hard."""
         with pytest.raises(RuntimeError, match="live-system guard"):
             SessionDB(db_path=REAL_ROOT / "state.db")
 
+    @pytest.mark.allow_real_home_io  # probes the guard against the real root on purpose
     def test_production_profile_db_path_raises(self):
         """Profile homes under the real root are production too."""
         with pytest.raises(RuntimeError, match="live-system guard"):
             SessionDB(db_path=REAL_ROOT / "profiles" / "work" / "state.db")
 
+    @pytest.mark.allow_real_home_io  # probes the guard against the real root on purpose
     def test_read_only_open_of_production_db_raises(self):
         """Read-only opens are refused too — tests must not READ live data."""
         with pytest.raises(RuntimeError, match="live-system guard"):
             SessionDB(db_path=REAL_ROOT / "state.db", read_only=True)
 
+    @pytest.mark.allow_real_home_io  # probes the guard against the real root on purpose
     def test_unnormalized_production_path_raises(self):
         """Symlink-free but unnormalized spellings still resolve and refuse."""
         sneaky = REAL_ROOT.parent / "subdir" / ".." / REAL_ROOT.name / "state.db"
         with pytest.raises(RuntimeError, match="live-system guard"):
             SessionDB(db_path=sneaky)
 
+    @pytest.mark.allow_real_home_io  # probes the guard against the real root on purpose
     def test_default_resolution_to_production_raises(self, monkeypatch):
         """The argless-construction path is guarded, not just explicit paths.
 
