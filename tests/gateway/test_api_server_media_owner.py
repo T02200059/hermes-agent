@@ -81,15 +81,16 @@ class TestSessionHeaderMatching:
         """空白等于没声明 —— 走放行，而不是走"不匹配"。"""
         assert _matches(**{"X-Hermes-Session-Id": "   "}) is True
 
-    def test_extra_correct_header_rescues_a_wrong_one(self):
-        """多个头里只要有一个对就算命中（集合语义）。
+    def test_session_header_is_the_only_judge(self):
+        """只有一个判据，不存在"另一个头救回来"这回事（T3-10）。
 
-        注意这只对 *session* 头有意义 —— identity 头永远进不了这个集合的有效成员，
-        见下面的类。
+        旧版把多个头摘要进集合、任一命中即可，那时「带错的 session 头 + 带对的
+        identity」能通过。现在只有 session 头参与判定，故这条请求被正确拒绝 ——
+        它的含义是"我声明了一个不属于我的会话"。
         """
         assert _matches(
             **{"X-Hermes-Session-Id": "someone-else", "X-Hermes-Identity": SESSION}
-        ) is True
+        ) is False
 
     def test_unrelated_headers_are_ignored(self):
         assert _matches(**{"Authorization": "Bearer key"}) is True
@@ -101,90 +102,81 @@ class TestSessionHeaderMatching:
         ) is False
 
 
-# ── T3-10：identity 分支救不了真实调用方 ───────────────────────────────────
+# ── T3-10：identity 头不构成归属声明 ──────────────────────────────────────
 
-class TestIdentityBranchCannotRescueARoutedCaller:
-    """已知不对称：注册摘要 session，校验却额外接受 identity。
+class TestIdentityHeaderIsNotAnOwnershipClaim:
+    """`X-Hermes-Identity` 参与 profile 路由与 LDAP 认证门，但**不**确立媒体归属。
 
-    危害方向是**无效救援**而非误杀 —— 加进集合只可能让更多请求命中，不会拒绝谁。
-    但它也从未救过任何人：注册侧 5 个调用点全部 `owner=session_id`，从不摘要登录名。
+    注册侧 5 个 `_finalize_api_media` 调用点全部 `owner=session_id`，从不摘要登录名
+    —— 也就是说这个头没有任何值可以与之相等。
 
-    这些用例把事实钉住，使下面两条路不会被误认为可行：
-      - 以为「routed caller 带 identity 头就够了」（实际仍返回 404）；
-      - 以为「删掉 identity 分支会破坏 routed caller」（实际不会，它本来就没生效）。
+    它曾被一并摘要进候选集合，后果不是"无用"而是**反向激励**：集合因它而非空，
+    于是只带 identity 的请求跳过了「未声明 → 放行」的早退，被拒以 404
+    `media_account_mismatch`（报文说「属于另一个会话」，而调用方从未声明过会话）。
+    声明身份被惩罚、不声明被奖励。
+
+    现在只认 session 头：**不可用的声明等于没有声明**，这类请求与一个头都不带
+    走同一条放行路径。这组用例钉住这个契约。
     """
 
-    def test_login_name_does_not_match_a_session_registered_entry(self):
-        """真实形态：identity 是登录名，注册用的是 session id → 不命中。"""
-        assert _matches(**{"X-Hermes-Identity": LOGIN}) is False
+    def test_identity_alone_does_not_establish_ownership(self):
+        """只带 identity → 等于未声明 → 放行（不是 404）。"""
+        assert _matches(**{"X-Hermes-Identity": LOGIN}) is True
 
-    def test_identity_only_matches_when_it_happens_to_equal_the_session_id(self):
-        """identity 头只有在**恰好等于 session id** 时才命中。
+    def test_identity_alone_is_not_treated_as_a_mismatched_claim(self):
+        """关键对比：只带 identity 与什么都不带，结果必须**一致**。
 
-        这正是旧用例的构造方式（`X-Hermes-Identity: "sess-abc"`），它证明的是
-        分支可达，不是能力可用。保留这条是为了让"同义反复"这件事本身留痕。
-        """
-        assert APIServerAdapter._media_owner_matches(
-            _Request(**{"X-Hermes-Identity": SESSION}), media_owner_token(SESSION)
-        ) is True
-
-    def test_a_routed_caller_that_sends_only_identity_gets_a_404(self):
-        """只有 identity 头的 routed caller 现状就是 404 —— 与 T3-10 记载一致。"""
-        assert _matches(**{"X-Hermes-Identity": LOGIN}) is False
-
-    def test_the_digests_differ_by_construction(self):
-        """两个摘要不可能相等 —— 除非 session_id 与登录名字面相同（不会发生）。"""
-        assert media_owner_token(SESSION) != media_owner_token(LOGIN)
-
-
-class TestIdentityOnlyRequestIsDeniedWhereNoHeaderIsAllowed:
-    """反向激励：**声明身份被拒，不声明却放行**。
-
-    这是 identity 分支**唯一**改变过的判定，也是它比"死码"更糟的地方 —— 它把
-    "无可用声明 → 按已接受边界放行" 变成 "有声明但必然不匹配 → 404"。而被拒的
-    恰好是主动表明身份的一方。
-
-    危害范围（写清以免被高估）：只有**由 root 直接处理**的请求会走到这里 ——
-    routed caller 的 identity 头在反代前就被剥掉（`owner/gateway/identity_routing.py`，
-    不剥会自代理成环），因此子网关看不到它。所以受影响的典型群体是 identity
-    白名单用户（中间件命中白名单后交 root 本体处理，头原样保留）。
-
-    报文也误导：404 的文案是 "Media belongs to a different session"，而这类调用方
-    从未声明过任何 session。
-
-    本组用例钉住现状，使两种"修法"的后果都可见：
-      - 删掉 identity 分支 ⇒ 第 3 条变 True（与 §16.4 接受边界一致，推荐）；
-      - 让 identity 真正参与归属 ⇒ 需改注册侧，动 §16.4 决策。
-    """
-
-    def test_no_headers_at_all_is_allowed(self):
-        assert _matches() is True
-
-    def test_session_header_alone_still_matches(self):
-        assert _matches(**{"X-Hermes-Session-Id": SESSION}) is True
-
-    def test_identity_header_alone_is_denied(self):
-        """关键对比：只带 identity 被拒 —— 而不带任何头时同一请求放行。"""
-        assert _matches(**{"X-Hermes-Identity": LOGIN}) is False
-
-    def test_the_only_difference_is_presence_of_a_useless_header(self):
-        """把两条并排放在一起，让"反向激励"一眼可见。
-
-        两个请求都没有**可用**的归属声明：一个什么都没说，一个说了身份但系统
-        用不上。前者放行、后者被拒 —— 差别只在"多带了一个头"。
+        两者都没有可用的归属声明。曾经这两条路径分叉（404 vs 放行），差别只在
+        "多带了一个用不上的头" —— 那是本次修复要消除的行为。
         """
         none_sent = _matches()
         identity_sent = _matches(**{"X-Hermes-Identity": LOGIN})
-        assert none_sent is True
-        assert identity_sent is False
-        assert none_sent != identity_sent, (
-            "若两者相同，说明 identity 分支已被移除（或开始生效）——"
-            "无论哪种都是有意的变更，请同步更新本类文档与 §16.4"
+        assert none_sent is identity_sent is True, (
+            "identity 头不得改变判定结果：它不是一个可用的归属声明。"
+            "若两者重新分叉，说明有人把 identity 又加回了候选集合"
         )
 
-    def test_a_wrong_session_header_is_also_denied(self):
-        """对照：带了错的 session 头被拒是**正确**的（那确实是一次声明）。"""
-        assert _matches(**{"X-Hermes-Session-Id": "someone-else"}) is False
+    def test_identity_does_not_rescue_a_wrong_session_header(self):
+        """带错 session 头时，identity 也救不回来 —— 反之亦然。
+
+        session 头是唯一的归属判据：它对就是放行，错就是拒绝，identity 两向都不能
+        改变结论。这同时说明"带个 identity 兜底"不是一个可用的用法。
+        """
+        assert _matches(**{
+            "X-Hermes-Session-Id": "someone-else",
+            "X-Hermes-Identity": LOGIN,
+        }) is False
+
+    def test_identity_cannot_override_a_correct_session_header(self):
+        """session 头正确时 identity 无关；带上它不改变结论。"""
+        assert _matches(**{
+            "X-Hermes-Session-Id": SESSION,
+            "X-Hermes-Identity": LOGIN,
+        }) is True
+
+    def test_garbage_identity_value_is_harmless(self):
+        """任意 identity 值都不影响判定 —— 它压根不参与。"""
+        for value in ("", "   ", "x", "ou_1234", SESSION):
+            assert _matches(**{"X-Hermes-Identity": value}) is True
+
+    def test_only_the_session_header_is_compared(self):
+        """结构断言：即便 identity 恰为 session id 的值，也不因此命中。
+
+        旧版会命中（因为两者都被摘要进集合）—— 那正是"identity 被当成归属声明"
+        的错误假设。现在它不参与，故此类输入与不带头等价。
+        """
+        assert _matches(**{"X-Hermes-Session-Id": "different"}) is False
+        assert _matches(**{"X-Hermes-Identity": SESSION}) is True
+        # 上一行是 True（未声明 → 放行），不是因为 identity 等于 session 而命中；
+        # 用错的 session 头再确认一次判定只由 session 头决定：
+        assert _matches(**{
+            "X-Hermes-Session-Id": "different",
+            "X-Hermes-Identity": SESSION,
+        }) is False
+
+    def test_the_digests_still_differ_by_construction(self):
+        """记录事实：两个摘要本就不可能相等（注册从不摘要登录名）。"""
+        assert media_owner_token(SESSION) != media_owner_token(LOGIN)
 
 
 # ── 已接受的决策：「不声明即放行」──────────────────────────────────────────

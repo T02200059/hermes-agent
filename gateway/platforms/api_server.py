@@ -4570,31 +4570,26 @@ class APIServerAdapter(BasePlatformAdapter):
     def _media_owner_matches(request: "web.Request", owner: str) -> bool:
         """True when the request identifies itself as the entry's owning session.
 
-        Both the session-continuation header and the LDAP identity header are
-        compared, but **only the session header can actually match** (T3-10):
-        registration digests ``session_id`` at all five ``_finalize_api_media``
-        call sites and never digests the login name, so
-        ``digest(X-Hermes-Identity)`` equals the stored token only if the caller
-        happens to set the identity header to the session id itself.
+        Only ``X-Hermes-Session-Id`` participates (T3-10). Registration digests
+        ``session_id`` at all five ``_finalize_api_media`` call sites and never
+        digests a login name, so the LDAP identity header is **not an ownership
+        claim** in this system — there is nothing it could ever equal.
 
-        That makes the identity branch not "inert" but **actively harmful in the
-        one case it touches**. It changes exactly one outcome:
+        It used to be hashed into the candidate set anyway, which was worse than
+        dead code: the set became non-empty, so a request carrying only
+        ``X-Hermes-Identity`` skipped the "nothing asserted → allowed" return and
+        was rejected with 404 ``media_account_mismatch`` — "belongs to a
+        different session", a claim the caller never made. Declaring identity was
+        punished while declaring nothing was rewarded. Removed: an unusable claim
+        is no claim, so such a request now takes the same allowed path as one
+        with no header at all. Making identity a real claim would require
+        digesting it at registration or keeping an identity→session mapping;
+        both move the accepted decision below, and neither is in place.
 
-          - only ``X-Hermes-Identity`` present → the set is non-empty, so the
-            "no claim asserted" early return no longer fires, and the request is
-            rejected with 404 ``media_account_mismatch`` ("belongs to a different
-            session" — a claim the caller never made);
-          - without this branch the same request would carry no usable claim and
-            take the accepted "unattributed → allowed" path.
-
-        So declaring identity is punished while declaring nothing is rewarded —
-        a perverse incentive, and the rejected caller is precisely the one that
-        identified itself. It never rescues anyone either: a routed caller that
-        sends only identity still gets the 404. Making it functional requires
-        changing registration or adding an identity→session mapping; both would
-        move the accepted decision below. See
-        ``TestIdentityBranchCannotRescueARoutedCaller`` and
-        ``TestIdentityOnlyRequestIsDeniedWhereNoHeaderIsAllowed`` in
+        Note that ``X-Hermes-Identity`` still matters elsewhere — it selects the
+        profile route and drives the LDAP gate in
+        ``owner/gateway/identity_routing.py``. It simply does not establish media
+        ownership.
         ``tests/gateway/test_api_server_media_owner.py``.
 
         **This is an identity guard, not a security boundary** (T2-8, owner改动清单
@@ -4642,14 +4637,21 @@ class APIServerAdapter(BasePlatformAdapter):
         this check **entirely** (``if rec.owner and ...``). Tightening this
         function alone would not close that path — both must change together.
         """
-        tokens = {
-            media_owner_token(request.headers.get(header, ""))
-            for header in ("X-Hermes-Session-Id", "X-Hermes-Identity")
-        }
-        tokens.discard("")
-        if not tokens:
+        # [owner] T3-10: only the session header participates. The identity header
+        # used to be hashed into this set as well, which could never match (no
+        # registration path ever digests a login name) but did make the set
+        # non-empty — so a request carrying *only* ``X-Hermes-Identity`` skipped
+        # the "nothing asserted → allow" return below and was rejected with 404
+        # "belongs to a different session", a claim it never made. Declaring
+        # identity was punished while declaring nothing was rewarded. Removing the
+        # branch restores the rule actually written down: an unusable claim is no
+        # claim, so such a request lands on the same allowed path as no header at
+        # all. See ``TestIdentityHeaderIsNotAnOwnershipClaim`` in
+        # ``tests/gateway/test_api_server_media_owner.py``.
+        claim = media_owner_token(request.headers.get("X-Hermes-Session-Id", ""))
+        if not claim:
             return True
-        return owner in tokens
+        return owner == claim
 
     async def _handle_media_download(self, request: "web.Request") -> "web.Response":
         """GET /v1/media/{media_id} — download an agent-produced MEDIA file.
