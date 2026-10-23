@@ -4570,8 +4570,19 @@ class APIServerAdapter(BasePlatformAdapter):
     def _media_owner_matches(request: "web.Request", owner: str) -> bool:
         """True when the request identifies itself as the entry's owning session.
 
-        A routed caller carries both the session-continuation header and the
-        LDAP identity header, so either is accepted.
+        Both the session-continuation header and the LDAP identity header are
+        compared, but **only the session header can actually match** (T3-10):
+        registration digests ``session_id`` at all five ``_finalize_api_media``
+        call sites and never digests the login name, so
+        ``digest(X-Hermes-Identity)`` equals the stored token only if the caller
+        happens to set the identity header to the session id itself. The identity
+        branch is therefore inert for a real routed caller — it cannot reject
+        anyone (it only adds a candidate to the set) and it cannot rescue anyone
+        either. A routed caller that sends only ``X-Hermes-Identity`` still gets
+        the 404. Making it functional requires changing registration or adding an
+        identity→session mapping; both would move the accepted decision below.
+        See ``TestIdentityBranchCannotRescueARoutedCaller`` in
+        ``tests/gateway/test_api_server_media_owner.py``.
 
         **This is an identity guard, not a security boundary** (T2-8, owner改动清单
         §16.5). What it compares is a digest of a string the *caller* supplies, so

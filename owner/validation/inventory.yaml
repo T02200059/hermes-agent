@@ -702,3 +702,22 @@ items:
         contains:
           - '__pycache__'
           - 'os.walk'
+
+  - id: api-server-media-owner
+    title: "owner change list 16.4/16.5 media ownership assertion on GET /v1/media/{id}"
+    category: api_server
+    source: owner/docs/owner改动清单.md#164-媒体下载的归属断言
+    static_checks:
+      - type: module_symbol
+        module: gateway.platforms.api_server_media
+        symbol: media_owner_token
+      # _media_owner_matches 是类内 staticmethod，module_symbol 只认模块级符号，
+      # 故用 file_contains 断言它仍在（删掉它会让下载侧失去归属校验）。
+      - type: file_contains
+        file: gateway/platforms/api_server.py
+        contains:
+          - 'def _media_owner_matches'
+          - 'accepted decision'
+          - 'X-Hermes-Identity'
+      - type: test_coverage
+        path: tests/gateway/test_api_server_media_owner.py

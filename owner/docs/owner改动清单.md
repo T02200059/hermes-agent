@@ -1677,10 +1677,12 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
   | 收紧会锁掉设计对象 | 未声明 → 404 会拦住持有 API key 但不回带会话头的调用方，而那正是本项设计要求服务的一方；其真实行为在本仓库内不可核实（前端源码不在本仓） |
   | 单改一处不是完整修复 | 注册侧那条独立通路依然敞着，只改 `_media_owner_matches` 会给出不完整的安全感 —— 收紧必须两条一起改 |
   | 不对称是已知的 | 同文件的 `/v1/artifacts/download/{artifact_id}` 用**服务端推导**的 scope（profile principal + loopback 派生的 transport family）作 `scope_key` 精确相等比对，本身即 fail-closed，没有「不声明就放行」这一档 |
+  | identity 分支对真实调用方无效（T3-10） | 注册侧 5 个 `_finalize_api_media` 调用点**全部** `owner=session_id`，从不摘要登录名 ⇒ `digest(X-Hermes-Identity)` 只有在该头**恰为 session id** 时才命中。真实 routed caller 发的是登录名，因此仍得 404。该分支既不能误杀（只往集合里加候选）也不能救援 —— **无效但无害**。要让它生效需改注册侧或加 identity→session 映射，两者都会移动本节这条已确认决策。
+
 
   残余风险（显式记录）：在共享容器（`default_profile` 共享实例 / 白名单走 root）中，持 API key 且拿到他人 `media_id` 者可下载他人产物；与 **T2-9**（跨用户暴露面）叠加时风险上升。归属摘要**本身不掺服务端盐**（§16.5 记录了该取舍），因此这条风险的缓解仍只有 `media_id` 的不可枚举性，叠加项亦只有 T2-9。
 
-  本决策**钉在行为上**：`tests/gateway/test_api_server_media_owner.py::TestAcceptedUnattributedAccess` 断言「未声明即放行」与「注册侧落空 owner」，并断言 docstring 必须点名这是已接受的决策、必须给出本文出处。未来若要收紧，**改测试即是改决策** —— 不会作为某次重构的副作用悄悄发生（变异验证：把 `return True` 改成 `return False` → **4 例失败**；去掉 docstring 中的本文指针 → 1 例失败）。
+  本决策**钉在行为上**：`tests/gateway/test_api_server_media_owner.py::TestAcceptedUnattributedAccess` 断言「未声明即放行」与「注册侧落空 owner」，并断言 docstring 必须点名这是已接受的决策、必须给出本文出处。未来若要收紧，**改测试即是改决策** —— 不会作为某次重构的副作用悄悄发生（变异验证：把 `return True` 改成 `return False` → **3 例失败**（2026-10-23 重建后为 3 例：原版把「未声明」拆成两条，重建时合并为一条）；去掉 docstring 中的本文指针 → 1 例失败）。
 - **未纳入**：`tool.progress` 的按会话隔离（T2-9）；前端侧「下载时回带会话头」的适配 —— 本仓无法核实。归属凭据本身的处置见 **§16.5**
 
 ---
