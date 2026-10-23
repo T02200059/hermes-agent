@@ -177,6 +177,14 @@ def _credential_pool_is_usable(provider: str, *, raw_pool_present: bool = False,
         from agent.credential_pool import load_pool
         pool = load_pool(provider)
         if pool.has_credentials():
+            # [owner] C02 — treat a pool of all-expired OAuth entries as unusable
+            try:
+                from owner.providers.credential_helpers import is_token_expired
+                entries = list(pool.entries())
+                if entries and all(is_token_expired(getattr(pe, "expires_at", None)) for pe in entries):
+                    return False
+            except Exception:
+                pass
             return for_picker or pool.has_available()
     except Exception:
         pass
@@ -255,8 +263,13 @@ def _prefetch_provider_models_parallel(provider_slugs: list[str]) -> None:
         list(executor.map(_fetch_one, stale_slugs))
 
 
-def _any_env(env_vars, read_env=os.environ.get) -> bool:
-    return any(read_env(ev) for ev in env_vars)
+def _any_env(env_vars, read_env=os.environ.get, provider: str = "") -> bool:
+    # [owner] C02 — prefix-aware env credential check (official ∪ owner prefixes)
+    try:
+        from owner.providers.credential_helpers import has_valid_env_credential
+        return has_valid_env_credential(env_vars, provider, read_env=read_env)
+    except Exception:
+        return any(read_env(ev) for ev in env_vars)
 
 
 def _skip(seen: set, excluded: set, *keys: str) -> bool:
@@ -308,7 +321,21 @@ def _auth_store_has_provider(*keys: str) -> bool:
         from hermes_cli.auth import _load_auth_store
         store = _load_auth_store()
         providers_store = store.get("providers", {})
-        return bool(store and any(k in providers_store for k in keys))
+        if not store:
+            return False
+        # [owner] C02 — skip expired OAuth entries (fail-open on import/parse errors)
+        try:
+            from owner.providers.credential_helpers import is_token_expired
+        except Exception:
+            return any(k in providers_store for k in keys)
+        for k in keys:
+            entry = providers_store.get(k)
+            if not entry:
+                continue
+            if isinstance(entry, dict) and is_token_expired(entry.get("expires_at")):
+                continue
+            return True
+        return False
     except Exception as exc:
         logger.debug("Auth store check failed for %s: %s", keys[0] if keys else "", exc)
         return False
@@ -348,11 +375,11 @@ def _overlay_has_env_creds(pid: str, hermes_slug: str, overlay, read_env) -> boo
         except Exception as exc:
             logger.debug("Vertex credential check failed: %s", exc)
     elif overlay.extra_env_vars:
-        has_creds = _any_env(overlay.extra_env_vars, read_env)
+        has_creds = _any_env(overlay.extra_env_vars, read_env, provider=hermes_slug)
     if not has_creds and overlay.auth_type == "api_key":
         for key in (pid, hermes_slug):
             pcfg = PROVIDER_REGISTRY.get(key)
-            if pcfg and pcfg.api_key_env_vars and _any_env(pcfg.api_key_env_vars, read_env):
+            if pcfg and pcfg.api_key_env_vars and _any_env(pcfg.api_key_env_vars, read_env, provider=key):
                 return True
     if not has_creds and hermes_slug == "azure-foundry":
         has_creds = _azure_entra_configured(read_env)
@@ -672,7 +699,7 @@ def _collect_authed_provider_slugs(
         seen.update(k.lower() for k in keys)
 
     for hermes_id, _mdev_id, _pconfig, env_vars in _iter_builtin_candidates(models_dev_data, excluded_set, seen):
-        if _any_env(env_vars, _scoped_key_env) or _raw_pool_usable(hermes_id):
+        if _any_env(env_vars, _scoped_key_env, provider=hermes_id) or _raw_pool_usable(hermes_id):
             _emit(hermes_id, hermes_id)
 
     mdev_to_hermes = {v: k for k, v in PROVIDER_TO_MODELS_DEV.items()}
@@ -690,7 +717,7 @@ def _collect_authed_provider_slugs(
             continue
         cp_config = PROVIDER_REGISTRY.get(cp.slug)
         has_creds = bool(
-            cp_config and cp_config.api_key_env_vars and _any_env(cp_config.api_key_env_vars, _scoped_key_env))
+            cp_config and cp_config.api_key_env_vars and _any_env(cp_config.api_key_env_vars, _scoped_key_env, provider=cp.slug))
         if has_creds or _auth_store_has_provider(cp.slug) or _pool_usable(cp.slug):
             _emit(cp.slug, cp.slug)
 
@@ -849,7 +876,7 @@ def _lap_builtin_rows(b: _PickerBuild, data: dict, user_providers: dict) -> None
     for hermes_id, mdev_id, pconfig, env_vars in _iter_builtin_candidates(data, b.excluded, b.seen_slugs):
         # Per-profile scope, never raw os.environ: a secondary profile's picker otherwise listed the
         # LAUNCH profile's env-keyed providers and hid its own .env-keyed ones.
-        if not (_any_env(env_vars, _scoped_key_env) or _raw_pool_usable(hermes_id, for_picker=b.for_picker)):
+        if not (_any_env(env_vars, _scoped_key_env, provider=hermes_id) or _raw_pool_usable(hermes_id, for_picker=b.for_picker)):
             continue
         model_ids = _live_or_curated_ids(hermes_id, b.curated, non_blocking=b.non_blocking_catalogs)
         # A providers.<built-in>.models block extends the discovered catalog; section 3 cannot
