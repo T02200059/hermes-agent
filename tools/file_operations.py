@@ -1725,12 +1725,13 @@ class ShellFileOperations(FileOperations):
             return out
 
         target = _canon(filename)
-        # Local backend: read the directory straight off this host. A shell round
-        # trip through the terminal goes through PTY warm-up and its output scrubber,
-        # and the FIRST such call in a process can come back empty or noisy — which
-        # made this repair silently no-op exactly once per session, i.e. on the only
-        # attempt that matters. `os.listdir` cannot fail that way. Container/remote
-        # backends keep the shell path: their filesystem namespace is not ours.
+        # [owner] Local backend: read the directory straight off this host. A shell
+        # round trip through the terminal goes through PTY warm-up and its output
+        # scrubber, and the FIRST such call in a process can come back empty or
+        # noisy — which made this repair silently no-op exactly once per session,
+        # i.e. on the only attempt that matters. `os.listdir` cannot fail that way.
+        # Container/remote backends keep the shell path: their filesystem namespace
+        # is not ours.
         entries = None
         try:
             from tools.environments.local import LocalEnvironment

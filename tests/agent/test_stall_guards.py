@@ -200,7 +200,11 @@ def test_stub_on_second_identical_call_first_full():
     assert "byte-identical" in r2
     assert "web_search" in r2
     assert "call_1" in r2  # references the FIRST occurrence in the streak
-    assert len(r2) < len(_BIG)
+    # The duplicate PAYLOAD is replaced, which is what saves context. Comparing
+    # total lengths would be wrong here: [owner] appends the loop-guardrail
+    # guidance to the same message, so on a result sitting exactly at the stub
+    # threshold the envelope can end up longer than the payload it replaced.
+    assert _BIG not in r2
 
 
 def test_no_stub_when_fresh_result_differs():

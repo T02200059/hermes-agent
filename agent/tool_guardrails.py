@@ -639,6 +639,14 @@ class ToolCallGuardrailController:
             and len(result) >= IDENTICAL_RESULT_STUB_MIN_CHARS
         ):
             stub = self._build_result_reference_stub(tool_name, args)
+            # A stub that is not SHORTER than the result it replaces costs context
+            # instead of saving it. The threshold is a lower bound on "big enough to
+            # be worth replacing", not a guarantee that the replacement is smaller —
+            # the reference text (tool name, args preview, first call id, spill path)
+            # can exceed it. Keep the real result in that case; the duplicate-result
+            # signal still reaches the model through ``notice``.
+            if len(stub) >= len(result):
+                stub = None
 
         return IdenticalCallObservation(notice=notice, stub=stub)
 

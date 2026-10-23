@@ -159,7 +159,12 @@ def test_pending_response_does_not_mask_later_terminal_exit(
         _pending_verification_response="stale premature report",
     )
 
-    assert result["final_response"] is None
+    # The stale ``_pending_verification_response`` must not be promoted into the
+    # final reply. ``final_response`` itself is not asserted to be exactly None:
+    # [owner] replaces an empty response on an interrupted turn with the friendly
+    # "Operation interrupted …" guidance (#52807), which is not the stale report
+    # either — and that is the whole point of this case.
+    assert result["final_response"] != "stale premature report"
     assert result["turn_exit_reason"] == exit_reason
     assert result["completed"] is False
     assert agent._handle_max_iterations_called is False

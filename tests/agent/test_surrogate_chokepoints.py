@@ -79,13 +79,20 @@ def test_finalize_turn_scrubs_lone_surrogate_from_final_response(monkeypatch):
 
 
 def test_finalize_turn_leaves_non_string_final_response_alone(monkeypatch):
+    """The surrogate scrubber must not touch a non-string ``final_response``.
+
+    ``interrupted=False`` on purpose: [owner] adds a friendly "Operation interrupted …"
+    reply when an interrupted turn produced no visible text (#52807), so an interrupted
+    empty response is *expected* to come back as a string. What this case pins is the
+    scrubber's own contract — None stays None, untouched by the chokepoint.
+    """
     monkeypatch.setattr("hermes_cli.plugins.invoke_hook", lambda *_a, **_kw: [])
     agent = FakeAgent()
     result = finalize_turn(
         agent,
         final_response=None,
         api_call_count=1,
-        interrupted=True,
+        interrupted=False,
         failed=False,
         messages=[{"role": "user", "content": "q"}],
         conversation_history=[],

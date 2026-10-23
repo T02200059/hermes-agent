@@ -206,11 +206,14 @@ class TestConversationLoopWiring:
         assert "new_bytes = serialized_messages_bytes(messages)" in src
         assert "new_bytes < original_bytes * 0.95" in src
         # The old token-scored expression is gone from the 413 branch's
-        # decision. Isolate the 413 handler region: from its status line to
-        # its terminal error. (Token scoring survives in the
+        # decision. Isolate the 413 handler region between its two user-facing
+        # messages. [owner] those are i18n catalog keys now
+        # (``payload_too_large_compressing`` / ``payload_too_large_413``), whose
+        # English text is the upstream "Request payload too large (413) …"
+        # wording, so the anchors are the keys. (Token scoring survives in the
         # context-overflow branches, which ARE token-budget errors.)
-        start = src.index("Request payload too large (413) — compression attempt")
-        end = src.index("Payload too large and cannot compress further")
+        start = src.index("payload_too_large_compressing")
+        end = src.index("payload_too_large_413")
         branch = src[start:end]
         assert "new_tokens < original_tokens * 0.95" not in branch
         assert "original_bytes = serialized_messages_bytes" in branch
