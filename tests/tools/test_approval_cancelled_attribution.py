@@ -18,6 +18,15 @@ SESSION_KEY = "test-cancelled-attribution"
 
 @pytest.fixture
 def gateway_session(monkeypatch):
+    # ``_session_approved`` is a PROCESS-global table and conftest deliberately does
+    # not reset it per test (it relies on per-file process isolation, see the note in
+    # tests/conftest.py). Clearing it here without putting the previous contents back
+    # therefore hands whatever this test approved to every later test in the same
+    # process — and a carried approval is an auto-approved command, i.e. a silent
+    # downgrade of the safety gate rather than a visible test failure. Snapshot and
+    # restore, so the file still starts each case from an empty gate but leaves no
+    # trace behind.
+    saved_approved = {key: set(value) for key, value in mod._session_approved.items()}
     mod._gateway_queues.clear()
     mod._gateway_notify_cbs.clear()
     mod._session_approved.clear()
@@ -36,6 +45,8 @@ def gateway_session(monkeypatch):
     yield hooks
     mod._gateway_queues.clear()
     mod._gateway_notify_cbs.clear()
+    mod._session_approved.clear()
+    mod._session_approved.update(saved_approved)
 
 
 def _run_gate_until_pending():
