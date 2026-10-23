@@ -74,7 +74,12 @@ class TestTUIPerModelReasoningConfig:
             },
         }
         monkeypatch.setattr(tui_server, "_load_cfg", lambda: fake_cfg)
-        monkeypatch.setattr(gateway_run, "_load_gateway_runtime_config", lambda: fake_cfg)
+        # ``GatewayRunner._load_reasoning_config`` imports ``_load_gateway_config``
+        # from ``gateway.run`` at call time; that is the symbol to pin. Patching
+        # ``_load_gateway_runtime_config`` left the gateway reading the real
+        # config.yaml, so the comparison ran against this machine's settings
+        # instead of the fixture.
+        monkeypatch.setattr(gateway_run, "_load_gateway_config", lambda: fake_cfg)
 
         tui_result = tui_server._load_reasoning_config()
         gw_result = gateway_run.GatewayRunner._load_reasoning_config()

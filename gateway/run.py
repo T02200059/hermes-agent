@@ -5444,16 +5444,43 @@ async def _start_gateway_shutdown_tail(
     return _resolve_gateway_exit_verdict(runner, _signal_initiated_shutdown[0])
 
 
+_GATEWAY_DIAG_MAX_BYTES = 1_000_000
+
+
 async def start_gateway_diag_wrap(config=None, replace: bool = False, verbosity: Optional[int] = 0) -> bool:
-    """[owner] permanent diag wrapper: record main-task death cause to /tmp (sync write,
-    immune to the async-log swallowing that hid prior failures). Keep; do not remove."""
+    """[owner] permanent diag wrapper: record main-task death cause synchronously.
+
+    Motivation: a dying main task was swallowed by the async log twice (the
+    ``send_path_degraded`` AttributeError took two days to locate). A SYNC file
+    write survives the event-loop teardown that loses tail log records, so every
+    return/death of ``start_gateway`` leaves a traceback (first 1500 chars).
+
+    The destination is ``HERMES_HOME/logs/gateway_diag.log``, deliberately not a
+    fixed ``/tmp`` path: Windows has no ``/tmp``, and the original
+    ``/tmp/t220/gw_diag.log`` pointed at a one-off debug directory that no longer
+    exists — so the hook recorded nothing on any host, silently, which is the
+    exact failure mode it was built to prevent. Written with an explicit UTF-8
+    encoding (a default-encoded round trip is mojibake on Windows) and bounded in
+    size: a diagnostic that grows without limit is its own outage.
+    """
     import time as _t
+
     def _note(msg: str) -> None:
         try:
-            with open("/tmp/t220/gw_diag.log", "a") as f:
-                f.write(f"{_t.strftime('%m-%d %H:%M:%S')} {msg}\n")
+            from hermes_cli.config import get_hermes_home
+
+            log_path = get_hermes_home() / "logs" / "gateway_diag.log"
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                if log_path.stat().st_size > _GATEWAY_DIAG_MAX_BYTES:
+                    log_path.unlink()
+            except OSError:
+                pass
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write(f"{_t.strftime('%Y-%m-%d %H:%M:%S')} {msg}\n")
         except Exception:
             pass
+
     _note("main task alive")
     try:
         result = await start_gateway(config, replace=replace, verbosity=verbosity)

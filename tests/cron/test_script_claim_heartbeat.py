@@ -133,7 +133,9 @@ def test_no_agent_forwards_cancel_event_to_script_runner(monkeypatch):
     cancel = threading.Event()
     observed = []
 
-    def _script_runner(job, script_path, workdir=None, cancel_event=None):
+    def _script_runner(job, script_path, args=None, workdir=None, cancel_event=None):
+        # Mirror the real signature: ``run_job`` passes ``args=job.get("args")``
+        # so the script receives its configured arguments.
         observed.append(cancel_event)
         return True, ""
 

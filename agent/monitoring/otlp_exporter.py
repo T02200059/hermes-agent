@@ -163,8 +163,20 @@ def _span_attrs(ev: Dict[str, Any]) -> Dict[str, Any]:
     return attrs
 
 
+_map_failure_reported = False
+
+
 def export_batch(provider, batch: List[Dict[str, Any]]) -> int:
-    """Map a batch of events to OTel spans. Returns spans created."""
+    """Map a batch of events to OTel spans. Returns spans created.
+
+    Per-event failures stay isolated (one bad event must not drop the batch), but
+    the FIRST one is reported at warning level. Swallowing them at debug level
+    made a whole-class outage invisible: an ``opentelemetry-sdk`` newer than the
+    pinned ``opentelemetry-api`` raises ``AttributeError: TraceFlags has no
+    attribute 'RANDOM_TRACE_ID'`` inside ``start_span``, so every span silently
+    became zero and monitoring looked "configured but idle" rather than broken.
+    """
+    global _map_failure_reported
     tracer = provider.get_tracer("hermes.monitoring")
     n = 0
     for ev in batch:
@@ -174,7 +186,18 @@ def export_batch(provider, batch: List[Dict[str, Any]]) -> int:
             span.end()
             n += 1
         except Exception:
-            logger.debug("OTLP span map failed", exc_info=True)
+            if not _map_failure_reported:
+                _map_failure_reported = True
+                logger.warning(
+                    "OTLP span mapping is failing — monitoring spans are NOT being "
+                    "exported (first failure on event %r, batch of %d, %d mapped "
+                    "before it). Check that opentelemetry-sdk and "
+                    "opentelemetry-api are the same version.",
+                    ev.get("event"), len(batch), n,
+                    exc_info=True,
+                )
+            else:
+                logger.debug("OTLP span map failed", exc_info=True)
     return n
 
 

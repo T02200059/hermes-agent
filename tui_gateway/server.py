@@ -5733,6 +5733,16 @@ def _runtime_model_config(agent, existing: dict | None = None) -> dict:
         config.pop("provider", None)
     if base_url:
         config["base_url"] = base_url
+    elif not provider:
+        # [owner] P29 keeps an existing base_url when a switch could not resolve
+        # one (typically a ``${VAR}`` placeholder): that is a resolution gap, not
+        # a change of endpoint, and popping it sends downstream resolution back
+        # to a hardcoded default (#17101). The gap case still has a provider.
+        # With NO provider the stored endpoint belongs to the provider being
+        # dropped, so keeping it routes the resumed session to the old vendor's
+        # host under the new model — the exact desync this merge prevents. Drop
+        # it in lockstep with the provider.
+        config.pop("base_url", None)
     # [owner] P29: Don't pop base_url when switch_model returns empty.
     # An empty result.base_url means it couldn't be resolved, but the existing
     # value (typically ${VAR}) is still valid.  Popping it causes downstream

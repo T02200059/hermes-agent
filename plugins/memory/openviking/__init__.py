@@ -2391,11 +2391,18 @@ class OpenVikingMemoryProvider(MemoryProvider):
         return f"ext-{digest}"
 
     def _resolve_user_display_label(self, user_content: str) -> str:
-        """User display label for Viking payloads.
+        """User display label for Viking payloads, or "" when it cannot be inferred.
 
         Priority:
         1. Feishu Chinese name from Inbound context ``user_name: `xxx` ``
         2. Fallback to ``OPENVIKING_USER`` env (ASCII owner identity)
+
+        Returning "" (not a placeholder) when both are absent is deliberate: a
+        ``peer_id`` is spliced into viking URI path segments and speaker labels,
+        so writing a made-up identity there does not just add noise — it mints a
+        permanent fake peer that every later sync attributes the turn to. An
+        omitted field lets the server fall back to the session's own ownership,
+        which is the truthful answer when we do not know who is speaking.
         """
         if user_content:
             match = self._USER_NAME_RE.search(user_content)
@@ -2406,26 +2413,28 @@ class OpenVikingMemoryProvider(MemoryProvider):
         env_user = _clean_config_value(os.environ.get("OPENVIKING_USER"))
         if env_user:
             return self._ascii_peer_slug(env_user)
-        return "unknown-user"
+        return ""
 
     def _resolve_assistant_display_label(self) -> str:
-        """Assistant display label for Viking payloads.
+        """Assistant display label for Viking payloads, or "" when none is configured.
 
-        Priority:
-        1. Active profile name (``hermesxiyun`` / ``sunqifei``), with ``default`` mapped to ``hermes``
-        2. Fallback to ``_agent`` / fixed ASCII label
+        The actor peer configured for this provider (``OPENVIKING_AGENT`` /
+        ``providers.openviking.agent``, captured in ``self._agent``) wins: it is
+        the same value that routes the write into ``peers/<peer>/``, so the
+        speaker label can never disagree with the peer the turn is stored under.
+        Deriving it from the active profile name instead meant an explicit
+        ``agent: work-assistant`` was silently replaced by the profile's name —
+        a configured value having no effect.
+
+        With nothing configured this returns "" rather than inventing a label.
+        Optional peer identity is a per-install decision; a placeholder here is
+        written into viking as a permanent speaker, so "unknown" would become
+        indistinguishable from a real peer on every later recall.
         """
-        try:
-            from hermes_cli.profiles import get_active_profile_name
-            profile = get_active_profile_name()
-            if profile and profile not in ("", "custom"):
-                return "hermes" if profile == "default" else self._ascii_peer_slug(profile)
-        except Exception:
-            pass
-        agent = getattr(self, "_agent", "") or _DEFAULT_AGENT
-        if agent and agent != "hermes":
+        agent = _clean_config_value(getattr(self, "_agent", ""))
+        if agent:
             return self._ascii_peer_slug(agent)
-        return "hermes"
+        return ""
 
     def is_available(self) -> bool:
         """Check if OpenViking endpoint is configured. No network calls."""

@@ -96,6 +96,12 @@ _ALLOWED: dict[tuple[str, str], str] = {
         "agent-browser runs via `npx`, resolved against the extended browser "
         "PATH that _merge_browser_path() already seeds with the managed dirs."
     ),
+    ("tools/browser_tool_install.py", "npx"): (
+        "_resolve_npx_bin() asks the extended PATH FIRST (via _merge_browser_path) "
+        "and falls back to the ambient one only as a last rung, validating that "
+        "the hit is actually runnable — a system npx is a legitimate source for "
+        "an install probe, and a broken one is rejected rather than used."
+    ),
 }
 
 

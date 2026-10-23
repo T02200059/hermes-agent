@@ -66,7 +66,57 @@ class GatewayAgentCacheMixin:
             out["tools.registry_generation"] = None
         for key, value in cls._memory_provider_identity_signature(cfg_get(cfg, "memory", "provider")).items():
             out[f"memory.{key}"] = value
+        if str(cfg_get(cfg, "memory", "provider") or "").strip().lower() == "honcho":
+            out.update(cls._honcho_identity_signature())
         return out
+
+    @classmethod
+    def _honcho_identity_signature(cls) -> dict[str, Any]:
+        """Identity fields the Honcho provider freezes at first-message init.
+
+        Read from ``honcho.json`` — a separate file, so ``cfg_get`` on config.yaml
+        cannot see them, and ``memory.<provider>.<key>`` would have nothing to
+        report. ``HonchoSessionManager`` captures ``pinPeerName`` / ``peerName``
+        when the session initialises, so flipping either must rebuild the cached
+        agent; otherwise a live edit keeps attributing turns to the previously
+        pinned peer — the same staleness the runtime ``user_id`` keys guard
+        against for shared threads.
+        """
+        keys = ("honcho.pin_peer_name", "honcho.peer_name")
+        try:
+            import json as _json
+
+            from plugins.memory.honcho.client import (
+                _host_block,
+                resolve_active_host,
+                resolve_config_path,
+            )
+
+            path = resolve_config_path()
+            if not path.exists():
+                return {k: None for k in keys}
+            raw = _json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(raw, dict):
+                return {k: None for k in keys}
+            host_block = _host_block(raw, resolve_active_host())
+        except Exception:
+            return {k: None for k in keys}
+
+        def _first(names: tuple) -> Any:
+            # Host block shadows root; ``pinUserPeer`` is the current spelling,
+            # ``pinPeerName`` the legacy alias from #14984.
+            for block in (host_block, raw):
+                if not isinstance(block, dict):
+                    continue
+                for name in names:
+                    if name in block:
+                        return block[name]
+            return None
+
+        return {
+            "honcho.pin_peer_name": _first(("pinUserPeer", "pinPeerName")),
+            "honcho.peer_name": _first(("peerName",)),
+        }
 
     # Kept for the process lifetime: loading a provider imports its plugin module, and this runs on every inbound message.
     _MEMORY_IDENTITY_PROVIDER_MEMO: dict[str, Any] = {}

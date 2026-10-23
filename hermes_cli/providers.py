@@ -490,6 +490,30 @@ def normalize_provider(name: str) -> str:
     return ALIASES.get(key, key)
 
 
+def _plugin_credential_env_vars(canonical: str) -> tuple[str, ...]:
+    """Credential env vars declared by this provider's plugin profile.
+
+    ``ProviderProfile.env_vars`` lists everything a profile touches (endpoint
+    overrides included), while ``ProviderDef.api_key_env_vars`` means "the
+    variables a credential may live in". Filter to the second meaning: only
+    names that read like a secret, in declaration order.
+    """
+    try:
+        from providers import get_provider_profile
+
+        profile = get_provider_profile(canonical)
+    except Exception:
+        return ()
+    if profile is None:
+        return ()
+    kept = []
+    for var in getattr(profile, "env_vars", ()) or ():
+        name = str(var).strip()
+        if name and any(marker in name.upper() for marker in ("KEY", "TOKEN", "SECRET")):
+            kept.append(name)
+    return tuple(kept)
+
+
 def get_provider(name: str, *, allow_network: bool = True) -> Optional[ProviderDef]:
     """Look up a built-in provider by id or alias.
 
@@ -535,6 +559,18 @@ def get_provider(name: str, *, allow_network: bool = True) -> Optional[ProviderD
             for ev in overlay.extra_env_vars:
                 if ev not in env_vars:
                     env_vars.append(ev)
+
+        # A plugin profile that declares its own credential var wins when the
+        # catalog describes the provider under a DIFFERENT vendor convention:
+        # the plugin is what this build actually reads, models.dev records the
+        # upstream name (it lists ``CMD_API_KEY`` for commandcode while every
+        # credential path here uses ``COMMANDCODE_API_KEY``, so a correctly
+        # configured key looked missing). Only a disjoint set qualifies — an
+        # overlapping one means both agree on the vendor's variable and the
+        # overlay merge above already completed the list (nebius).
+        _plugin_cred = _plugin_credential_env_vars(canonical)
+        if _plugin_cred and not (set(_plugin_cred) & set(env_vars)):
+            env_vars = list(_plugin_cred) + env_vars
 
         return ProviderDef(
             id=canonical,

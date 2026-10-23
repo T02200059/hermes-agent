@@ -1948,7 +1948,9 @@ def test_ascii_peer_slug_contract(raw, expected):
 
 
 def test_resolve_user_label_slug_and_env_fallback(monkeypatch):
-    # [owner] Inbound 人名 → slug；无人名 → OPENVIKING_USER 兜底；两者皆无 → unknown-user
+    # [owner] Inbound 人名 → slug；无人名 → OPENVIKING_USER 兜底；
+    # 两者皆无 → ""（不编造身份：peer_id 会作为 speaker 写进 viking，
+    # 写占位符等于伪造一个永久存在的对端，与「可选 peer」语义冲突）
     from plugins.memory.openviking import OpenVikingMemoryProvider
 
     provider = object.__new__(OpenVikingMemoryProvider)
@@ -1957,7 +1959,7 @@ def test_resolve_user_label_slug_and_env_fallback(monkeypatch):
     assert provider._resolve_user_display_label(
         "...\nuser_name: `杨天宝`\n..."
     ) == "yangtianbao"
-    assert provider._resolve_user_display_label("no name here") == "unknown-user"
+    assert provider._resolve_user_display_label("no name here") == ""
 
     monkeypatch.setenv("OPENVIKING_USER", "YangTB")
     assert provider._resolve_user_display_label("no name here") == "yangtb"
