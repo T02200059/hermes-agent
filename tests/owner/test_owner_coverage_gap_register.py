@@ -172,6 +172,13 @@ class TestLiveRegister:
         # Eighteen divergences lost their behavioural coverage on 2026-10-20.
         # Raising this number requires a reason per entry; lowering it requires
         # actually restoring that test (the stale-entry check enforces this).
-        assert len(gaps) == 18, sorted(gaps)
+        #
+        # 18 -> 17 (2026-10-23): `feishu-auto-card-agent-end` was drained, not
+        # edited away -- `tests/owner/test_feishu_agent_end_media.py` now pins the
+        # media-before-card ordering, the MEDIA-tag leak, the no-media passthrough
+        # and the MEDIA-only success/failure split. Writing it also surfaced a real
+        # bug (the failed-delivery branch returned an already-cleared response, so
+        # a media-only reply whose upload failed produced zero output).
+        assert len(gaps) == 17, sorted(gaps)
         for item_id, reason in gaps.items():
             assert "removed 2026-10-20" in reason, item_id

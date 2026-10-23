@@ -47,6 +47,5 @@ openviking-owner-recall  tests/owner/patches/test_openviking_owner_recall_patch.
 feishu-profile-routing  tests/owner/test_feishu_profile_routing.py removed 2026-10-20; whitelist bypass, chat-over-user priority, restart re-resolution unpinned
 cron-env-isolation  tests/tools/test_cron_session_contextvar_isolation.py removed 2026-10-20; per-thread ContextVar isolation and env scrub after finally unpinned
 owner-entrypoint-contract-tests  tests/owner/test_contract_entrypoints.py removed 2026-10-20; the five official-entrypoint contracts (session key, display resolver, provider forwarding, cron ContextVar, extension register) unpinned
-feishu-auto-card-agent-end  tests/owner/test_feishu_agent_end_media.py removed 2026-10-20; media tag delivered before card and no-media passthrough unpinned
 qwen-thinking-debris-cleanup  tests/run_agent/test_qwen_thinking_debris.py removed 2026-10-20; leading thinking-debris cleanup vs legitimate code fences unpinned
 damodel-prompt-cache-policy  tests/run_agent/test_anthropic_prompt_cache_policy.py removed 2026-10-20; damodel host allowlist and message-only fallback unpinned

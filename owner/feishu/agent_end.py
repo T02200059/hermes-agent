@@ -104,6 +104,7 @@ async def try_auto_card_on_end(
                 # don't claim success — fall through so the downstream plain-
                 # text path can retry delivery and at minimum surface a message.
                 deliv_started = True
+                _original_response = response
                 try:
                     await runner._deliver_media_from_response(response, event, adapter)
                 except Exception as deliv_exc:
@@ -120,9 +121,14 @@ async def try_auto_card_on_end(
                         # 让下游 plain-text 跳过（否则 try_auto_card(force=True) 会发一张空卡片）。
                         agent_result["already_sent"] = True
                         return "", ""
-                    # 投递链异常 + 空正文：不设 already_sent，把原始 response 交还下游兜底，
-                    # 避免用户零输出。
-                    return response, footer_line
+                    # 投递链异常 + 空正文：不设 already_sent，把**原始** response 交还
+                    # 下游兜底，避免用户零输出。
+                    #
+                    # 必须返回 _original_response 而不是 response：此时 response 已被
+                    # 上一行覆盖成 _cleaned_no_paths（空串）。返回它等于"零输出"，
+                    # 正是本分支要防的情形 —— 附件没发出去，纯文本路径又被
+                    # already_sent 之外的静默丢弃封死。
+                    return _original_response, footer_line
         except Exception as exc:
             logger.debug("auto-card pre-deliver media failed: %s", exc)
 
