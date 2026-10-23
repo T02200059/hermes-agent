@@ -370,7 +370,7 @@ class SessionSessionsMixin:
         chat_id: str | None = None, chat_type: str | None = None, thread_id: str | None = None,
         parent_session_id: str | None = None, cwd: str | None = None, profile_name: Optional[str] = None,
         git_repo_root: str | None = None, origin_json: str | None = None, display_name: str | None = None,
-        transport_profile: Optional[str] = None,
+        transport_profile: Optional[str] = None, owner_provider_name: Optional[str] = None,
     ) -> None:
         """Upsert a session row, never overwriting what an earlier writer set (the gateway creates a
         bare row before create_session carries the real model/prompt) — the one exception is the
@@ -407,7 +407,7 @@ class SessionSessionsMixin:
                       chat_id=chat_id, chat_type=chat_type, thread_id=thread_id,
                       parent_session_id=parent_session_id, cwd=cwd, profile_name=profile_name,
                       git_repo_root=git_repo_root, origin_json=origin_json, display_name=display_name,
-                      transport_profile=transport_profile)
+                      transport_profile=transport_profile, owner_provider_name=owner_provider_name)
         self._execute_write(lambda conn: insert_session_row_in_transaction(self, conn, **params),
                             patience_s=self._TRANSCRIPT_WRITE_PATIENCE_S)
 

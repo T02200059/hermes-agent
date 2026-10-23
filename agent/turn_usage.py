@@ -261,6 +261,12 @@ def record_response_usage(
             # _ensure_db_session() may fail, and UPDATE on a missing row affects 0 rows.
             if not agent._session_db_created:
                 agent._ensure_db_session()
+            # [owner] C02 §10.1 — use get_current_attribution, not bare getattr
+            try:
+                from owner.attribution import get_current_attribution
+                _owner_provider_name = get_current_attribution(agent)
+            except Exception:
+                _owner_provider_name = getattr(agent, "owner_provider_name", None)
             agent._session_db.queue_token_counts(
                 agent.session_id,
                 source=_agent_session_source(agent),
@@ -276,10 +282,18 @@ def record_response_usage(
                 billing_base_url=agent.base_url,
                 billing_mode="subscription_included"
                 if cost_result.status == "included" else None,
+                owner_provider_name=_owner_provider_name,
                 model=agent.model,
                 api_call_count=1,
                 task=getattr(agent, "_turn_route_task", "") or "",
             )
+            # [owner] C02 §10.2 — stash for build_assistant_message stamp
+            agent._pending_token_breakdown = {
+                "input_tokens": canonical_usage.input_tokens,
+                "output_tokens": canonical_usage.output_tokens,
+                "cache_read_tokens": canonical_usage.cache_read_tokens,
+                "cache_write_tokens": canonical_usage.cache_write_tokens,
+            }
         except Exception as e:  # silent loss here undercounts analytics
             logger.debug(
                 "Token persistence failed (session=%s, tokens=%d): %s",

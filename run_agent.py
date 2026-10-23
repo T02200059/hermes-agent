@@ -333,6 +333,12 @@ class AIAgent(
                 profile_for_session = None
             # Carry the gateway routing identity: when the gateway SessionStore degraded to JSONL (corrupt
             # state.db) this lazy create is the ONLY durable write, and an identity-less row is unrecoverable.
+            # [owner] C02 §10.1 — stamp named-custom attribution on create
+            try:
+                from owner.attribution import get_current_attribution
+                _owner_provider_name = get_current_attribution(self)
+            except Exception:
+                _owner_provider_name = getattr(self, "owner_provider_name", None)
             self._session_db.create_session(
                 session_id=self.session_id, source=source, model=self.model,
                 model_config=self._session_row_model_config(), system_prompt=self._cached_system_prompt,
@@ -342,6 +348,7 @@ class AIAgent(
                 display_name=getattr(self, "_chat_name", None) or getattr(self, "_user_name", None),
                 origin_json=_gateway_origin_json(self), parent_session_id=self._parent_session_id,
                 cwd=_launch_cwd_for_session(source), profile_name=profile_for_session,
+                owner_provider_name=_owner_provider_name,
             )
             self._session_db_created = True
         except Exception as e:

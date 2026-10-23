@@ -1744,6 +1744,14 @@ def build_assistant_message(agent, assistant_message, finish_reason: str) -> dic
         inject_attribution_into_message(agent, msg)
     except Exception:
         pass
+    # [owner] C02 §10.2 — consume pending per-call token quantity
+    _token_bd = getattr(agent, "_pending_token_breakdown", None)
+    if _token_bd:
+        msg["input_tokens"] = _token_bd.get("input_tokens", 0)
+        msg["output_tokens"] = _token_bd.get("output_tokens", 0)
+        msg["cache_read_tokens"] = _token_bd.get("cache_read_tokens", 0)
+        msg["cache_write_tokens"] = _token_bd.get("cache_write_tokens", 0)
+        agent._pending_token_breakdown = None
     return msg
 
 

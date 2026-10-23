@@ -34,10 +34,12 @@ _INSERT_MESSAGE_SQL = """INSERT INTO messages (session_id, role, content, tool_c
                    tool_calls, tool_name, effect_disposition, timestamp, token_count, finish_reason,
                    owner_provider_name,
                    reasoning, reasoning_content, reasoning_details, codex_reasoning_items,
-                   codex_message_items, platform_message_id, observed, _compressed_summary, active, api_content, display_kind,
+                   codex_message_items, platform_message_id, observed, _compressed_summary, active,
+                   input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
+                   api_content, display_kind,
                    display_metadata, display_identity, message_uid, absorbed_message_uids, tool_call_uids,
                    tool_call_uid)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"""
 # Every column this module knows how to read: the ones it writes plus the three SQLite/compaction
 # owns. `_row_to_message_dict` drops raw bytes ONLY outside this set — a schema column keeps its
 # key (and its typed decoder) even when a row holds a BLOB, so no reader ever loses msg["content"].
@@ -298,6 +300,9 @@ class SessionMessagesMixin(SessionDetachedResultsMixin, SessionTodoResultMixin):
               for k in ("reasoning_details", "codex_reasoning_items", "codex_message_items")),
             msg.get("platform_message_id") or msg.get("message_id"),
             1 if msg.get("observed") else 0, 1 if msg.get("_compressed_summary") else 0, 1,
+            # [owner] C02 §10.2 — per-message token quantity
+            msg.get("input_tokens") or 0, msg.get("output_tokens") or 0,
+            msg.get("cache_read_tokens") or 0, msg.get("cache_write_tokens") or 0,
             _str_or_none(msg.get("api_content")), _str_or_none(msg.get("display_kind")),
             display_metadata, self._display_identity(self._display_dedupe_key(identity_row)),
             message_uid_or_none(msg), _absorbed_uids_json(msg),

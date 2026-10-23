@@ -204,7 +204,7 @@ def insert_session_row_in_transaction(
         system_prompt=None, user_id=None, session_key=None, chat_id=None,
         chat_type=None, thread_id=None, parent_session_id=None, cwd=None,
         profile_name=None, git_repo_root=None, origin_json=None, display_name=None,
-        transport_profile=None):
+        transport_profile=None, owner_provider_name=None):
     """Connection-taking body of the keep-existing constructor upsert.
 
     The ordinary constructor should delegate here too. Worker identity is
@@ -225,10 +225,10 @@ def insert_session_row_in_transaction(
         """INSERT INTO sessions (
            id, source, created_source, user_id, session_key, chat_id, chat_type, thread_id,
            model, model_config, system_prompt, system_prompt_hash,
-           parent_session_id, cwd, profile_name, transport_profile, git_repo_root,
+           parent_session_id, cwd, owner_provider_name, profile_name, transport_profile, git_repo_root,
            origin_json, display_name, started_at
         )
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(id) DO UPDATE SET
                source = CASE
                    WHEN sessions.source = 'unknown'
@@ -236,6 +236,7 @@ def insert_session_row_in_transaction(
                    ELSE sessions.source
                END,
                model = COALESCE(sessions.model, excluded.model),
+               owner_provider_name = COALESCE(sessions.owner_provider_name, excluded.owner_provider_name),
                model_config = CASE
                    WHEN excluded.model_config IS NOT NULL
                         AND json_type(
@@ -269,7 +270,7 @@ def insert_session_row_in_transaction(
         (
             session_id, source, source, user_id, session_key, chat_id, chat_type, thread_id, model,
             json.dumps(model_config) if model_config else None, system_prompt_hash,
-            parent_session_id, cwd, profile_name, transport_profile, git_repo_root, origin_json,
+            parent_session_id, cwd, owner_provider_name, profile_name, transport_profile, git_repo_root, origin_json,
             display_name, time.time(),
         ),
     )

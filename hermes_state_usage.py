@@ -40,6 +40,7 @@ def _token_update_sql(delta: bool) -> str:
                    billing_provider = COALESCE(billing_provider, ?),
                    billing_base_url = COALESCE(billing_base_url, ?),
                    billing_mode = COALESCE(billing_mode, ?),
+                   owner_provider_name = COALESCE(?, owner_provider_name),
                    model = COALESCE(model, ?),
                    api_call_count = {add0("api_call_count")}
                    WHERE id = ?"""
@@ -275,7 +276,7 @@ class SessionUsageMixin:
         cache_write_tokens: int=0, reasoning_tokens: int=0, estimated_cost_usd: Optional[float]=None,
         actual_cost_usd: Optional[float]=None, cost_status: Optional[str]=None, cost_source: Optional[str]=None,
         pricing_version: Optional[str]=None, billing_provider: Optional[str]=None, billing_base_url: Optional[str]=None,
-        billing_mode: Optional[str]=None, api_call_count: int=0, absolute: bool=False,
+        billing_mode: Optional[str]=None, owner_provider_name: Optional[str]=None, api_call_count: int=0, absolute: bool=False,
         source: Optional[str]=None, task: str = "",
     ) -> None:
         """Update totals and route attribution, ensuring the legacy missing-row backfill.
@@ -301,7 +302,7 @@ class SessionUsageMixin:
         cache_write_tokens: int=0, reasoning_tokens: int=0, estimated_cost_usd: Optional[float]=None,
         actual_cost_usd: Optional[float]=None, cost_status: Optional[str]=None, cost_source: Optional[str]=None,
         pricing_version: Optional[str]=None, billing_provider: Optional[str]=None, billing_base_url: Optional[str]=None,
-        billing_mode: Optional[str]=None, api_call_count: int=0, absolute: bool=False, task: str="",
+        billing_mode: Optional[str]=None, owner_provider_name: Optional[str]=None, api_call_count: int=0, absolute: bool=False, task: str="",
     ) -> None:
         usage = {k: v for k, v in locals().items() if k in _MODEL_USAGE_FIELDS}
         sql = _TOKEN_UPDATE_ABSOLUTE_SQL if absolute else _TOKEN_UPDATE_DELTA_SQL
@@ -313,7 +314,9 @@ class SessionUsageMixin:
             estimated_cost_usd, actual_cost_usd, actual_cost_usd, cost_status, cost_source, pricing_version,
             billing_provider if has_accounted_usage else None,
             billing_base_url if has_accounted_usage else None,
-            billing_mode if has_accounted_usage else None, model if has_accounted_usage else None,
+            billing_mode if has_accounted_usage else None,
+            owner_provider_name,  # [owner] C02 §10.1 — COALESCE last-non-None
+            model if has_accounted_usage else None,
             api_call_count, session_id)
         # Per-model attribution: the sessions row keeps one (model, provider) pair, so a
         # mid-session /model switch would attribute every token to the initial model. Only

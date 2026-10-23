@@ -488,6 +488,8 @@ CREATE TABLE IF NOT EXISTS sessions (
     cache_write_tokens INTEGER DEFAULT 0,
     reasoning_tokens INTEGER DEFAULT 0,
     cwd TEXT,
+    -- [owner] C02 §10.1 — named-custom provider label (not money)
+    owner_provider_name TEXT,
     git_branch TEXT,
     git_repo_root TEXT,
     git_metadata_generation INTEGER NOT NULL DEFAULT 0,
@@ -551,6 +553,11 @@ CREATE TABLE IF NOT EXISTS messages (
     _compressed_summary INTEGER NOT NULL DEFAULT 0,
     active INTEGER NOT NULL DEFAULT 1,
     compacted INTEGER NOT NULL DEFAULT 0,
+    -- [owner] C02 §10.2 — per-message API token quantity (not money)
+    input_tokens INTEGER DEFAULT 0,
+    output_tokens INTEGER DEFAULT 0,
+    cache_read_tokens INTEGER DEFAULT 0,
+    cache_write_tokens INTEGER DEFAULT 0,
     api_content TEXT,
     display_kind TEXT,
     display_metadata TEXT,
