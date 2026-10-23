@@ -682,6 +682,10 @@ def load_cli_config() -> Dict[str, Any]:
         "docker_mount_cwd_to_workspace": "TERMINAL_DOCKER_MOUNT_CWD_TO_WORKSPACE",
         "docker_network": "TERMINAL_DOCKER_NETWORK",
         "docker_run_as_host_user": "TERMINAL_DOCKER_RUN_AS_HOST_USER",
+        # Snap-confined Docker needs the compat mount layout; gateway/run.py already
+        # bridges it, so CLI mode setting it in config.yaml had no effect until now
+        # (the exact drift class this pair of maps is guarded against).
+        "docker_snap_compat": "TERMINAL_DOCKER_SNAP_COMPAT",
         "docker_persist_across_processes": "TERMINAL_DOCKER_PERSIST_ACROSS_PROCESSES",
         "docker_shared_container_key": "TERMINAL_DOCKER_SHARED_CONTAINER_KEY",
         "docker_orphan_reaper": "TERMINAL_DOCKER_ORPHAN_REAPER",

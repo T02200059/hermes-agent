@@ -101,7 +101,11 @@ def test_cli_memory_approve_without_live_agent_uses_fresh_store(hermes_home, cap
 
     out = capsys.readouterr().out
     assert "memory store unavailable" not in out, out
-    assert "Approved 1" in out, out
+    # [owner] the single-approval reply goes through the i18n catalog and names the
+    # write instead of counting it ("Approved pending memory write '<id>'." vs
+    # upstream's "Approved 1 memory write(s)."). Same outcome, more identifying
+    # detail; the count only ever carried information in the plural branch.
+    assert "Approved pending memory write" in out, out
     assert wa.pending_count("memory") == 0
     # The approved write landed in a freshly loaded on-disk store (MEMORY.md).
     reloaded = MemoryStore(); reloaded.load_from_disk()

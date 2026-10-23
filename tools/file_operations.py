@@ -1725,13 +1725,29 @@ class ShellFileOperations(FileOperations):
             return out
 
         target = _canon(filename)
-        ls_cmd = f"ls -1 {self._escape_shell_arg(dir_path)} 2>/dev/null"
-        ls_result = self._exec(ls_cmd)
-        if ls_result.exit_code != 0 or not ls_result.stdout.strip():
-            return None
+        # Local backend: read the directory straight off this host. A shell round
+        # trip through the terminal goes through PTY warm-up and its output scrubber,
+        # and the FIRST such call in a process can come back empty or noisy — which
+        # made this repair silently no-op exactly once per session, i.e. on the only
+        # attempt that matters. `os.listdir` cannot fail that way. Container/remote
+        # backends keep the shell path: their filesystem namespace is not ours.
+        entries = None
+        try:
+            from tools.environments.local import LocalEnvironment
+
+            if self.env is None or isinstance(self.env, LocalEnvironment):
+                entries = os.listdir(dir_path)
+        except Exception:
+            entries = None
+        if entries is None:
+            ls_cmd = f"ls -1 {self._escape_shell_arg(dir_path)} 2>/dev/null"
+            ls_result = self._exec(ls_cmd)
+            if ls_result.exit_code != 0 or not ls_result.stdout.strip():
+                return None
+            entries = _strip_terminal_fence_leaks(ls_result.stdout).splitlines()
         candidates = [
             entry
-            for entry in _strip_terminal_fence_leaks(ls_result.stdout).splitlines()
+            for entry in entries
             if entry and entry != filename and _canon(entry) == target
         ]
         # Exactly one equivalent spelling = unambiguous repair. Zero or

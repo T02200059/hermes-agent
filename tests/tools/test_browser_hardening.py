@@ -304,8 +304,13 @@ class TestEmptyStdoutFailure:
         """Verify _run_browser_command returns failure on empty stdout."""
         import tools.browser_tool as bt
         src = inspect.getsource(bt._run_browser_command)
-        assert "returned no output" in src, \
-            "_run_browser_command should treat empty stdout as failure"
+        # [owner] the message goes through the i18n catalog
+        # (``browser.command_no_output``, whose English text is the upstream
+        # "returned no output" wording), so accept either spelling. What the guard
+        # is about is that the branch exists at all — not that it inlines English.
+        assert (
+            "returned no output" in src or "command_no_output" in src
+        ), "_run_browser_command should treat empty stdout as failure"
 
     def test_empty_ok_commands_is_module_level_frozenset(self):
         """_EMPTY_OK_COMMANDS should be a module-level frozenset, not defined inside a function."""

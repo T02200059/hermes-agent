@@ -3990,6 +3990,7 @@ TERMINAL_CONFIG_ENV_MAP = {
     "docker_extra_args": "TERMINAL_DOCKER_EXTRA_ARGS",
     "docker_shm_size": "TERMINAL_DOCKER_SHM_SIZE",
     "docker_run_as_host_user": "TERMINAL_DOCKER_RUN_AS_HOST_USER",
+    "docker_snap_compat": "TERMINAL_DOCKER_SNAP_COMPAT",
     "docker_persist_across_processes": "TERMINAL_DOCKER_PERSIST_ACROSS_PROCESSES",
     "docker_shared_container_key": "TERMINAL_DOCKER_SHARED_CONTAINER_KEY",
     "docker_orphan_reaper": "TERMINAL_DOCKER_ORPHAN_REAPER",
