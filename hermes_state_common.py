@@ -540,6 +540,7 @@ CREATE TABLE IF NOT EXISTS messages (
     timestamp REAL NOT NULL,
     token_count INTEGER,
     finish_reason TEXT,
+    owner_provider_name TEXT,
     reasoning TEXT,
     reasoning_content TEXT,
     reasoning_details TEXT,

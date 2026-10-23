@@ -214,7 +214,12 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 
 ### P0 必保
 
-- [ ] **C01** · 源 §1.1–1.4 · `patch.yaml` 统一加载器 + 审批白名单合并 + 归因骨架 · **优先级：P0**
+- [x] **C01** · 源 §1.1–1.4 · `patch.yaml` 统一加载器 + 审批白名单合并 + 归因骨架 · **优先级：P0**
+  - 落地（三笔 commit，本地未 push）：
+    1. `feat(owner): C01 patch 加载器挂 config.owner` — `owner/patch_config.py` + `config.owner` 叠层；官方 `hermes_cli/config.py` 仅薄 overlay
+    2. `feat(owner): C01 禁用永久审批（飞书/QQ）` — `owner/approval/permanent_policy.py`；官方 `tools/approval.py` 仅 gate/sanitize/merge 委托
+    3. `feat(owner): C01 归因骨架` — `owner/attribution.py`；官方 `agent_init` / `chat_completion_helpers` / `run_agent` / messages DDL·INSERT 仅 `# [owner]` 委托
+  - 风格：逻辑在 `owner/`，官方极薄胶水（P0/P1）；无 C02 billing/credential/出站剥离
 - [ ] **C02** · 源 §2.1–2.3 / §10 · per-turn 归因 + credential 合并 + billing 落盘 · **优先级：P0**
 - [ ] **C03** · 源 §2.7–2.8 · damodel prompt cache / NewAPI proxy / MiMo thinking wire · **优先级：P0**
 - [ ] **C04** · 源 §3.1–3.4 · 飞书审批卡片 + sender_name 缓存 + inbound 身份 + 多平台审批签名 · **优先级：P0**

@@ -2285,6 +2285,7 @@ def init_agent(
     requested_provider: str | None = None, capabilities: Optional[dict[str, bool]] = None, cwd: Optional[str] = None,
     side_agent: bool = False, memory_manager=None,
     tool_result_metadata_callback: Optional[Callable[..., dict]] = None,
+    owner_provider_name: str | None = None,  # [owner] C01
 ):
     from agent.safe_worker_policy import safe_worker_enabled
 
@@ -2387,6 +2388,13 @@ def init_agent(
     _init_usage_state(agent)
     _clamp_compressor_to_ollama_num_ctx(agent)
     _emit_compression_summary(agent, cs)
+    # [owner] C01 attribution skeleton — normalize owner_provider_name after routing settles
+    try:
+        from owner.attribution import bind_agent_attribution
+        bind_agent_attribution(agent, owner_provider_name)
+    except Exception:
+        if not getattr(agent, "owner_provider_name", None):
+            agent.owner_provider_name = getattr(agent, "provider", None) or None
     _snapshot_primary_runtime(agent)
 
 

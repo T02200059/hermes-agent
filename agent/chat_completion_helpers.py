@@ -1738,6 +1738,12 @@ def build_assistant_message(agent, assistant_message, finish_reason: str) -> dic
 
     if assistant_tool_calls:
         msg["tool_calls"] = [_assistant_tool_call_dict(agent, tc, i) for i, tc in enumerate(assistant_tool_calls)]
+    # [owner] C01 attribution skeleton
+    try:
+        from owner.attribution import inject_attribution_into_message
+        inject_attribution_into_message(agent, msg)
+    except Exception:
+        pass
     return msg
 
 
