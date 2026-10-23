@@ -53,6 +53,17 @@ class FeishuUserStore:
         )
         load_user_cache(self._cache_path, self._users)
         self._seed_name_ttl_from_users()
+        # Persist pending debounced writes when the process exits. Without this a
+        # restart within the 5s debounce window silently dropped the latest
+        # open_id → p2p_chat_id mapping, and the next boot's menu clicks then had
+        # no chat_id to route to (reported as an unmapped menu key). atexit fires
+        # on a normal interpreter shutdown, which is what a gateway restart does.
+        try:
+            import atexit
+
+            atexit.register(self._debouncer.flush)
+        except Exception:
+            pass
 
     @property
     def users(self) -> Dict[str, FeishuUserEntry]:

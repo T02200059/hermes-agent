@@ -224,3 +224,29 @@ class ChatIdCacheDebouncer:
                 return
             self._dirty = False
         self._save_fn()
+
+    def flush(self) -> None:
+        """Persist immediately, skipping the remaining debounce window.
+
+        The 5s timer above is a *daemon* thread, so anything written in the last
+        window before the process exits was simply lost — and the p2p chat_id it
+        carried is exactly what the bot-menu handler needs to route a click. A
+        restart inside that window made the cache look empty on the next boot, so
+        a menu click on an already-mapped key reported "not configured".
+        ``FeishuUserStore`` registers this with ``atexit``.
+
+        Safe from any thread, including interpreter teardown; a no-op when nothing
+        is pending. Persist failures are swallowed here — escaping during atexit
+        only prints noise and aborts the rest of the shutdown handlers.
+        """
+        with self._lock:
+            if self._timer is not None:
+                self._timer.cancel()
+                self._timer = None
+            if not self._dirty:
+                return
+            self._dirty = False
+        try:
+            self._save_fn()
+        except Exception:
+            pass

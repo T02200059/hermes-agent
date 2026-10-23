@@ -351,16 +351,32 @@ async def _process_bot_menu_click(
     store = get_user_store(adapter)
     chat_id = store.get_p2p_chat_id(open_id) if store else None
     if not chat_id:
+        # The mapping is NOT the problem here — the p2p chat_id is simply not
+        # known yet. Report the two causes separately: telling the operator to add
+        # a patch.yaml mapping when the menu IS mapped sends them to edit the wrong
+        # file, and the real cause (no cached conversation) stays hidden.
+        # Observed right after a gateway restart: the cache is filled by inbound
+        # messages, so a menu click can precede the first one.
         logger.warning(
-            "[Feishu] Bot menu event: no cached chat_id for %s; "
-            "sending direct fallback instead of routing to session",
+            "[Feishu] Bot menu event: no cached p2p chat_id for %s "
+            "(menu key %r IS mapped; sending a hint to the operator instead of "
+            "routing to the session)",
             open_id,
+            event_key,
         )
-        fallback_text = (
-            f'⚠️ 未配置的菜单事件: event_key="{event_key}"\n'
-            f"请在 patch.yaml → owner.feishu.bot_menu 中添加映射，\n"
-            f'例如: {event_key}: "/help"'
-        )
+        resolved = resolve_bot_menu_command(event_key)
+        if resolved:
+            fallback_text = (
+                f'⚠️ 会话缓存尚未建立，无法执行菜单 "{event_key}"。\n'
+                f"该菜单已映射为 `{resolved}`，只是还没有你的私聊会话 ID。\n"
+                f"请先在私聊里发一条消息（任意内容），然后再点一次菜单。"
+            )
+        else:
+            fallback_text = (
+                f'⚠️ 未配置的菜单事件: event_key="{event_key}"\n'
+                f"请在 patch.yaml → owner.feishu.bot_menu 中添加映射，\n"
+                f'例如: {event_key}: "/help"'
+            )
         payload = json.dumps({"text": fallback_text}, ensure_ascii=False)
         await _send_with_timeout(
             adapter, label="fallback", chat_id=open_id, msg_type="text", payload=payload
