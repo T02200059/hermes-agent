@@ -368,7 +368,9 @@ items:
           - 'ContextVar("HERMES_CRON_SESSION"'
           - '_VAR_MAP["HERMES_CRON_SESSION"]'
       - type: test_coverage
-        path: tests/tools/test_cron_session_contextvar_isolation.py
+        # 新基线守卫统一放 tests/owner/（规范 §2.2.0，2026-10-22 起）；
+        # 原路径在 tests/tools/ 下，2026-10-20 随 715 个旧测试一起删除。
+        path: tests/owner/test_cron_session_contextvar_isolation.py
 
   - id: per-chat-display-overrides
     title: "owner change list 9.1 per-chat display overrides"

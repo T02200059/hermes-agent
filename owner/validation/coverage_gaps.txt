@@ -32,20 +32,14 @@
 #
 # Format: <inventory item id><two spaces><reason, one line>
 
-model-extra-body-injection  tests/owner/test_extra_body_injection.py removed 2026-10-20; allowlist/passthrough of patch.yaml extra_body unpinned
-skill-script-auto-approval  tests/owner/test_skill_script_approval.py removed 2026-10-20; skill-script auto-approve allowlist + per-session viewed set unpinned
 feishu-inbound-context  tests/owner/test_feishu_inbound_context.py removed 2026-10-20; open_id/chat_id/user_name block + name sanitising unpinned
 checkpoint-mutation-predictor  tests/owner/test_checkpoint_predictor.py removed 2026-10-20; config fail-open, LLM JSON parse and cache unpinned
-file-tool-timeout  tests/owner/test_file_tool_timeout.py removed 2026-10-20; timeout/budget/restore semantics of read_file and search_files unpinned
 file-binary-detection  tests/owner/patches/test_file_binary_detection_patch.py removed 2026-10-20; UTF-8 boundary false-positive fix (multibyte straddling byte 1000) unpinned
 providers-plugin-command  tests/owner/test_providers_command.py removed 2026-10-20; /providers card-vs-text rendering and inventory load offload unpinned
 feishu-media-guard  tests/owner/test_feishu_media_guard.py removed 2026-10-20; 30 MB file / 10 MB image limits and display-name handling unpinned
 hygiene-compression-notice  tests/owner/test_hygiene_compression_notice.py removed 2026-10-20; before/after compression notice wording + missing-adapter noop unpinned
 memory-approval-card  tests/owner/test_memory_approval_card_routing.py removed 2026-10-20; card shape, button values and chat_id extraction unpinned
-memory-synthetic-guard  tests/owner/patches/test_memory_synthetic_guard_patch.py removed 2026-10-20; synthetic-prefix detection and recall/prefetch skip unpinned
 openviking-owner-recall  tests/owner/patches/test_openviking_owner_recall_patch.py removed 2026-10-20; advisory wording, peer-mirror dedup, recall config defaults unpinned
-feishu-profile-routing  tests/owner/test_feishu_profile_routing.py removed 2026-10-20; whitelist bypass, chat-over-user priority, restart re-resolution unpinned
-cron-env-isolation  tests/tools/test_cron_session_contextvar_isolation.py removed 2026-10-20; per-thread ContextVar isolation and env scrub after finally unpinned
 owner-entrypoint-contract-tests  tests/owner/test_contract_entrypoints.py removed 2026-10-20; the five official-entrypoint contracts (session key, display resolver, provider forwarding, cron ContextVar, extension register) unpinned
 qwen-thinking-debris-cleanup  tests/run_agent/test_qwen_thinking_debris.py removed 2026-10-20; leading thinking-debris cleanup vs legitimate code fences unpinned
 damodel-prompt-cache-policy  tests/run_agent/test_anthropic_prompt_cache_policy.py removed 2026-10-20; damodel host allowlist and message-only fallback unpinned

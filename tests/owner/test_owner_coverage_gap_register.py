@@ -179,6 +179,26 @@ class TestLiveRegister:
         # and the MEDIA-only success/failure split. Writing it also surfaced a real
         # bug (the failed-delivery branch returned an already-cleared response, so
         # a media-only reply whose upload failed produced zero output).
-        assert len(gaps) == 17, sorted(gaps)
+        #
+        # 17 -> 11 (2026-10-23): the six security-control gaps were drained as one
+        # batch, because their failure mode is "a check that should deny starts
+        # allowing" rather than "a display is wrong". Each new guard was
+        # mutation-verified by disabling the specific gate it protects:
+        #   - skill-script-auto-approval  -> tests/owner/test_skill_script_approval.py
+        #     (5 gates; removing gate 2/3/4/5 turns 5/5/6/1 cases red)
+        #   - cron-env-isolation          -> tests/owner/test_cron_session_contextvar_isolation.py
+        #     (cross-thread leak + env scrub; reverting to the os.environ write turns 2 red)
+        #   - model-extra-body-injection  -> tests/owner/test_extra_body_injection.py
+        #     (allowlist bypass turns 4 red)
+        #   - memory-synthetic-guard      -> tests/owner/patches/test_memory_synthetic_guard_patch.py
+        #     (prefix widening + unguarded sync_all turn red)
+        #   - file-tool-timeout           -> tests/owner/test_file_tool_timeout.py
+        #     (blocking shutdown / global flag / 0-timeout each turn 1 red)
+        #   - feishu-profile-routing      -> tests/owner/test_feishu_profile_routing.py
+        #     (whitelist-in-group / chat-vs-user priority / ownership-strictness each turn red)
+        # The remaining eleven are behaviour-correctness gaps (B/C groups); they stay
+        # declared on purpose -- the register exists to keep silence visible, not to
+        # be emptied.
+        assert len(gaps) == 11, sorted(gaps)
         for item_id, reason in gaps.items():
             assert "removed 2026-10-20" in reason, item_id
