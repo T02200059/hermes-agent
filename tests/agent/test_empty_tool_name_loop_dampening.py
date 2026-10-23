@@ -36,6 +36,8 @@ _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__f
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
+from tests._fixtures.sys_modules_restore import restore_sys_modules  # noqa: E402
+
 
 class _MockHandler(BaseHTTPRequestHandler):
     # Set by the fixture before each request cycle.
@@ -159,15 +161,7 @@ def agent_env():
         # Put the original module objects back: sibling test files hold module-level
         # references into hermes_cli.*/tools.* and their monkeypatches would otherwise
         # land on modules the app no longer imports.
-        sys.modules.clear()
-        sys.modules.update(saved_modules)
-        for _name, _mod in saved_modules.items():
-            _parent, _, _child = _name.rpartition(".")
-            if _parent and _parent in saved_modules:
-                try:
-                    setattr(saved_modules[_parent], _child, _mod)
-                except Exception:
-                    pass
+        restore_sys_modules(saved_modules)
         if prev_home is None:
             os.environ.pop("HERMES_HOME", None)
         else:

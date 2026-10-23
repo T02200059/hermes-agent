@@ -17,6 +17,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from tests._fixtures.sys_modules_restore import restore_sys_modules, snapshot_sys_modules
+
 
 @pytest.fixture(autouse=True)
 def _restore_sys_modules():
@@ -24,23 +26,9 @@ def _restore_sys_modules():
     module objects back afterwards: sibling test files hold module-level references into
     ``hermes_cli.*`` / ``tools.*`` and their monkeypatches would otherwise land on modules
     the app no longer imports."""
-    saved = dict(sys.modules)
+    saved = snapshot_sys_modules()
     yield
-    _restore_modules(saved)
-
-
-def _restore_modules(saved):
-    sys.modules.clear()
-    sys.modules.update(saved)
-    # Re-imports rebound ``pkg.<child>`` attributes to the fresh module objects; point them
-    # back so ``from pkg import child`` and ``sys.modules["pkg.child"]`` agree again.
-    for name, mod in saved.items():
-        parent, _, child = name.rpartition(".")
-        if parent and parent in saved:
-            try:
-                setattr(saved[parent], child, mod)
-            except Exception:
-                pass
+    restore_sys_modules(saved)
 
 
 def _fresh_run_agent(hermes_home):

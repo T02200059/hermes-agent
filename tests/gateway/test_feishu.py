@@ -345,17 +345,29 @@ class TestAdapterModule(unittest.TestCase):
         fake_root_module = ModuleType("lark_oapi")
         fake_root_module.ws = fake_ws_module
 
-        original_modules = sys.modules.copy()
-        sys.modules["lark_oapi"] = fake_root_module
-        sys.modules["lark_oapi.ws"] = fake_ws_module
-        sys.modules["lark_oapi.ws.client"] = fake_client_module
+        stubbed = {
+            "lark_oapi": fake_root_module,
+            "lark_oapi.ws": fake_ws_module,
+            "lark_oapi.ws.client": fake_client_module,
+        }
+        # Replace only the three keys this case fakes. The previous form copied the whole
+        # table and did ``clear()`` + ``update()`` in ``finally``: that empties
+        # ``sys.modules`` process-wide for the duration of the call, and any thread that
+        # imports inside that window re-executes module bodies (for ``cli`` that is a
+        # second module-scope ``setup_logging`` and a duplicate file handler on the root
+        # logger). Restoring three keys has the same effect on the code under test.
+        saved_stub_modules = {name: sys.modules.get(name) for name in stubbed}
+        sys.modules.update(stubbed)
         try:
             from plugins.platforms.feishu.adapter import _run_official_feishu_ws_client
 
             _run_official_feishu_ws_client(fake_client, fake_adapter)
         finally:
-            sys.modules.clear()
-            sys.modules.update(original_modules)
+            for name, previous in saved_stub_modules.items():
+                if previous is None:
+                    sys.modules.pop(name, None)
+                else:
+                    sys.modules[name] = previous
 
         self.assertEqual(len(fake_client.configure_calls), 1)
         self.assertEqual(fake_client._reconnect_nonce, 2)
