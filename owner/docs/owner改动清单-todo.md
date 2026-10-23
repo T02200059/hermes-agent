@@ -94,8 +94,8 @@
   - owner：缓存值带 manifest，命中时重建比对。v2：manifest 直接进 `cache_key`（`agent/prompt_builder.py:1405` `files` 元素），磁盘一变即 miss 重建。
 - [x] **B26** · 源 §7.23 · `/stop` 打在 runner 构造窗口留下孤儿轮次占租约 · **验证状态：官方已修**
   - owner：`gateway/run.py::track_agent` stale 分支 5 行委托 + `owner/patches/stop_orphan_run.py`。v2 本树已用 **O7**：stale 分支 `_cancel_stale_run()`（`request_hard_interrupt`，按 session_key+generation 去重）。
-- [x] **B27** · 源 §7.27 · 出站 DeepSeek BOS/EOS 可见泄漏 · **验证状态：官方已修**
-  - owner：outbound BOS/EOS scrub。v2 本树已用 **O8**：`_strip_deepseek_special_tokens` 接入 `_sanitize_gateway_final_response`。
+- [x] **B27** · 源 §7.27 · 出站 DeepSeek BOS/EOS 可见泄漏 · **验证状态：官方已修**（终局）；interim 见 **C08**
+  - owner：outbound BOS/EOS scrub。v2 本树已用 **O8**：`_strip_deepseek_special_tokens` 接入 `_sanitize_gateway_final_response`。**C08** 补 interim/status 薄挂点（复用 O8，不重写 scrub）。
 
 ### 工具链 / Desktop / 性能
 
@@ -232,7 +232,12 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 - [ ] **C05** · 源 §4.1 · **飞书多 profile 舰队路由**（`profile_endpoints` HTTP 转发；**不吃**官方 `profile_routes`） · **优先级：P0**
 - [ ] **C06** · 源 §15.1–15.6 · API Server LDAP 身份准入 + identity_routes + 头剥离/SSE · **优先级：P0**
 - [ ] **C07** · 源 §16.1–16.6 · API 产物媒体 / `hermes.files` / tool.progress 脱敏与归属 · **优先级：P0**
-- [ ] **C08** · 源 §7.27 / design · outbound BOS/EOS scrub · **优先级：P0**（旁注：B27/O8 已在本 v2 官方树落地 sanitize；重放时收窄为**确认/回归**，勿从零再实现一遍）
+- [x] **C08** · 源 §7.27 / design · outbound BOS/EOS scrub · **优先级：P0**
+  - **终局 O8 + interim 薄补**（本地未 push）：官方 `_strip_deepseek_special_tokens` 已覆盖 `_sanitize_gateway_final_response`；本轮补 interim/status 缺口
+    1. `owner/outbound_special_token_scrub.py` — 薄包装，委托官方 O8（不迁整份源 scrub 实现）
+    2. `agent/stream_delivery.py` — `# [owner]` 在 `_fire_streamed_codex_commentary` / `_emit_interim_assistant_message` 出站前剥（stream_consumer 直送 chat，绕过 status prepare）
+    3. `gateway/run.py` `_prepare_gateway_status_message` — `# [owner]` 复用 O8；`local` 仍 passthrough；纯特殊符 → `None`
+  - 测：`tests/owner/test_outbound_special_token_scrub.py` + gateway noise filter 增补 status 例
 - [ ] **C09** · 源 §3.6 / §3.11 · skill 脚本自动审批 + skill_manage 飞书审批门 · **优先级：P0**
 - [ ] **C10** · 源 i18n 层 · 显示层 i18n / `_localized` 与护栏文案（源 §12.2 / §16.9 相关） · **优先级：P0**
 
