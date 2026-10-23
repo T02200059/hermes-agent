@@ -2549,10 +2549,10 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 | `tools/clarify_tool.py` / `clarify_gateway.py` | 中度 | ❌ 未单项评估 | 间接覆盖：归 §4.5 clarify 交互卡片（薄胶水 + try-import 已规范）|
 | `tools/skills_tool.py` | 中度 | ❌ 未单项评估 | 间接覆盖：归 §3.6 skill 脚本自动审批（1 行 track 调用，无迁移价值）|
 | `gateway/platforms/qqbot/adapter.py` | 中度 | ❌ 未单项评估 | 未评估：WS 重连链是 inline 逻辑，但属平台适配器内部实现，无 plugin hook 可迁；保持现状 |
-| `gateway/platforms/api_server.py` | 重度 | ❌ 未单项评估 | **待评估**：本批新增侵入量最大的文件（identity middleware + LDAP gate + 媒体端点 + 路由注册 + capabilities 广告 + 流式事件字段）。评估问题：identity middleware 与 LDAP gate 是否可迁入 owner-extensions plugin，或至少收敛为 `owner/gateway/` 内的单一委托入口 |
+| `gateway/platforms/api_server.py` | 中度（2026-10-23 收敛后） | ✅ 已评估（附录 C 第 11 项） | **已收敛**：SSE 脱敏族 213 行 + identity 中间件 233 行迁往 `owner/gateway/{sse_redaction,identity_routing}.py`，官方文件 9417 → 9060 行（−357），调用点零改动。**迁 plugin 判定不可行**（`pre_gateway_dispatch` 拿不到原始头、无响应控制权、无反代路径，四阶段全在路由分发之前）。剩余 35 处标记属「插在上游逻辑里的调用点」，形态上不可再收敛 |
 | 轻度侵入全部（13 文件）| 轻度 | ❌ 未单项评估 | 无需评估：均为 1-3 行 import / 透传 / 字符串，迁移收益为零 |
 
-**结论**：附录 B 列出的侵入文件中，附录 C 单独评估了主线项；剩余文件要么被间接覆盖（归因链、extra_body、clarify 等已归入对应章节），要么是 1-3 行薄胶水 / 字符串 / 平台适配器内部逻辑，迁移收益为零，无需单独评估。**唯一遗留未决项是 `gateway/platforms/api_server.py`** —— 它从轻度侵入升为重度的过程中没有伴随过迁移评估，已作为附录 C 第 11 项登记待评。
+**结论**：附录 B 列出的侵入文件中，附录 C 单独评估了主线项；剩余文件要么被间接覆盖（归因链、extra_body、clarify 等已归入对应章节），要么是 1-3 行薄胶水 / 字符串 / 平台适配器内部逻辑，迁移收益为零，无需单独评估。**原唯一遗留未决项 `gateway/platforms/api_server.py` 已于 2026-10-23 完成评估并收敛**（附录 C 第 11 项），全清单至此无待评估项。
 
 ---
 
@@ -2572,7 +2572,12 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 8. **`/providers` command**（`owner/commands/providers.py`）— 已迁入 `owner-extensions` plugin command。Hermes plugin slash command API 已扩展 opt-in `hermes_ctx`（event/adapters/runner/platform），保留 Feishu interactive provider picker；`gateway/run.py` 的 `canonical == "providers"` 分支和 `gateway/slash_commands.py::_handle_providers_command()` shim 已删除。
 9. **cron job args / owner/scripts allowlist** — **已评估（2026-07-03）：部分可迁移，人工决定维持现状。** args 链（4 处 `[owner]`）可迁移但收益低（需 monkey-patch 3 个 core 函数：`cronjob`、`create_job`、`_run_job_script`，跨 tool 期/存储期/执行期 3 个生命周期；且 args 是通用功能更应提 upstream）；allowlist（2 处副本）不可迁移（cron 运行时零 hook——`invoke_hook` 在 scheduler/jobs 出现 0 次——加上安全边界 WR-03）。评估发现 CR-002 修复遗漏了 scheduler 副本 2（`scheduler.py:1556`，process-lifetime cache 永不刷新），已修复为 mtime re-scan 与副本 1 一致。评估报告：`/tmp/zcode-cron-args-eval-result.md`（291 行，每条结论附行号引用）。
 10. **chained quick command（;;）** — 4 处 Python + 3 处 TS inline，是全平台语法增强，不适合 hook 化，建议保持。
-11. **`gateway/platforms/api_server.py`** — **待评估。** 该文件的 owner 侵入在 §15/§16 落地后已从轻度升为重度（identity routing 中间件、LDAP bind 认证门、转发头剥离 + SSE 透传、两个新增只读端点、路由注册与 capabilities 广告、`ApiMediaStore` 接线、流式事件字段扩展）。评估问题：identity 中间件与 LDAP gate 是否可迁入 `owner-extensions` plugin（`pre_gateway_dispatch` 类钩子能否覆盖中间件时机），或至少把转发路径收敛为 `owner/gateway/` 内的单一委托入口，避免每次 merge 都要逐行解冲中间件内部逻辑。注意 `owner/gateway/ldap_auth.py` 与 `owner/feishu/profile_routing.py` 本身已在 owner/ 内，可迁移的只是接线与转发骨架。
+11. **`gateway/platforms/api_server.py`** — **已评估并收敛（2026-10-23，`736e7c3d54`）。** 评估结论三问三答：
+    - **迁入 `owner-extensions` plugin：不可行，此项永久关闭。** `pre_gateway_dispatch`（`gateway/run_inbound.py:67`）拿到的是已规范化的 `MessageEvent`，能力仅 skip/rewrite/allow；而中间件四阶段需要读原始 HTTP 头、自行返回 401/503、反代改道到另一容器、逐字节透传 SSE —— 全部发生在路由分发之前，属 HTTP 层语义。
+    - **收敛为 `owner/gateway/` 单一委托入口：已完成。** 关键测量是 `_make_identity_routing_middleware` 的 233 行里 `self.` 出现 **0 次**，可整体搬迁；另外 SSE 脱敏族 10 个函数（213 行）逐个核对 `upstream/main` 确认**上游全无**，属纯 owner 新增。两块分别迁往 `owner/gateway/sse_redaction.py` 与 `owner/gateway/identity_routing.py`，官方文件 **9417 → 9060 行（−357）**，调用点零改动（委托保留原函数名与签名）。
+    - **常量不复制**：`_TOOL_ARGS_MAX_CHARS` 等 4 个 wire budget 仍以上游为真源，owner 侧设为必填关键字参数由委托传入 —— 复制副本会在上游调整预算时静默漂移。
+    - **附带发现**：这两族共 446 行安全控制原本**零测试覆盖**（违反 §八.2 ④），补 `tests/owner/test_owner_sse_redaction.py`（31 例）与 `tests/owner/test_owner_identity_routing_middleware.py`（9 例）；先绿 → 迁移 → 再绿。
+    - **剩余侵入**：35 处标记，均为「插在上游逻辑里的调用点」（流式事件字段、两个只读端点的路由注册、HMAC salt、门调用位置），形态上不可再收敛。评估报告见 `deliverables/gstack/T4-4-api_server侵入收敛评估-2026-10-23.md`。
 
 ---
 
