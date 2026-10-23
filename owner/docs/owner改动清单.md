@@ -1316,7 +1316,7 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
 - **背景**：2026-08-12 `ark-agent-plan-deepseek-v4-flash` 在 git 推送确认场景陷入复读死循环，单条输出 **265,518 字符**（"确认就推。默认不推 upstream。"反复数百遍）刷屏。根因是模型级输出退化 + 未设输出上限（无 `max_tokens` 时落到渠道超大默认值）。已加全局 `model.max_tokens: 16000` 在 API 层兜住膨胀；本功能补**第二道防线**：在响应发送给用户之前识别并修正退化输出。
 - **方案**：owner-extensions 插件注册 `transform_llm_output` 钩子（`agent/turn_finalizer.py:556`，非流式响应发送前最后一环，返回非空字符串即替换最终响应）。多重信号判定（句子级 top-1 重复率 / 独有句占比 / zlib 压缩率 / U+FFFD 乱码占比 / 长度护栏），组合阈值防误伤；命中后段落级去重折叠或截断，并附警告标注（重复次数、占比、原始长度、模型）。fail-safe：任何异常返回 None，保持原样。
 - **涉及文件**：
-  - 纯新增：`owner/owner-extensions/output_guard/__init__.py`（检测 + 折叠 + 钩子注册）、`owner/owner-extensions/output_guard/selfcheck.py`（策略自检）、`owner/docs/output-guard-design.md`（设计文档）
+  - 纯新增：`owner/owner-extensions/output_guard/__init__.py`（检测 + 折叠 + 钩子注册）、`owner/owner-extensions/output_guard/selfcheck.py`（策略自检）、`owner/docs/design/output-guard/output-guard.md`（设计文档）
   - 侵入：`owner/owner-extensions/plugin.yaml`（hooks 列表加 `transform_llm_output`）、`owner/owner-extensions/__init__.py`（register() 聚合注册）——均为 owner-extensions 插件自身，**无官方文件侵入**
 - **侵入类型**：零（P0 hook/plugin 实现，官方源码零改动）
 - **验证**：构造复读/低信息/乱码/超长样本跑策略单测（见设计文档）；`transform_llm_output` 为 VALID_HOOKS 独立钩子，不冲突现有 `post_tool_call` 等
@@ -1332,7 +1332,7 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
   - 判定先于 v1 repeat/mojibake 执行（degenerate 形态判定门槛更早）；真实样本回归 3/3（1 条事故本体 + 2 条合法引用）。
   - 部署事实：`~/.hermes/plugins/owner-extensions` 是仓内 `owner/owner-extensions/` 的**符号链接**（同 inode），改仓内即生效，无需拷贝同步；网关 launchd `ai.hermes.gateway` 重启需手动。
 - **涉及文件**：
-  - 修改：`owner/owner-extensions/output_guard/__init__.py`（+67）、`agent/turn_finalizer.py`（+14，[owner] 加法）、`owner/docs/output-guard-design.md`（§6.5）
+  - 修改：`owner/owner-extensions/output_guard/__init__.py`（+67）、`agent/turn_finalizer.py`（+14，[owner] 加法）、`owner/docs/design/output-guard/output-guard.md`（§6.5）
   - 新增：`tests/agent/test_turn_finalizer_transform_transcript_sync.py`（2 用例）、`samples/` 真实样本 fixture（gitignored，fork 有公开镜像不进 git）
 - **侵入类型**：薄胶水（turn_finalizer 钩子块后 14 行加法，[owner] 标注）+ 插件纯新增逻辑
 - **验证**：selfcheck 9 场景全绿（含事故样本截断断言 + 合成连续脏块 + 散点标记不误伤）；定向 pytest 9 passed（`tests/owner/test_output_guard.py` 3 + transcript 同步 2 + cleanup_guard 回归 4）
@@ -1365,7 +1365,7 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
   **结果：8/8 正例命中、0 误伤**。今日事故在**生成到 50%（15,360 字符）**处命中 —— 按该轮实测速率（30,742 字符 / 256 秒 ≈ 120 字符/秒）折算，比人工 Ctrl-C 早约 **2 分钟**。
 - **涉及文件**：
   - 修改：`agent/turn_finalizer.py`（C1/C2/C3）、`run_agent.py`（[owner] 一个新方法 + 一个载荷键）、`owner/owner-extensions/output_guard/__init__.py`（C3）、`owner/owner-extensions/__init__.py`、`owner/owner-extensions/plugin.yaml`、`owner/config/patch.yaml`、`.gitignore`
-  - 新增：`owner/owner-extensions/stream_guard/__init__.py`、`.../selfcheck.py`、`.../samples/`（gitignored）、`owner/docs/degenerate-stream-guard-design.md`、`tests/owner/test_stream_guard.py`、`tests/run_agent/test_request_stream_stop.py`
+  - 新增：`owner/owner-extensions/stream_guard/__init__.py`、`.../selfcheck.py`、`.../samples/`（gitignored）、`owner/docs/design/stream-guard/degenerate-stream-guard.md`、`tests/owner/test_stream_guard.py`、`tests/run_agent/test_request_stream_stop.py`
 - **侵入类型**：薄 seam（`run_agent.py` 一个新方法 + 一个载荷键；放宽到此处的原因：流式观察钩子的返回值被 `agent/plugin_stream_hooks.py` 丢弃、载荷里也没有 agent，无 hook 级替代方案）+ 薄胶水（`turn_finalizer.py` 钩子块前移）+ 插件纯新增逻辑
 - **部署事实**：`~/.hermes/plugins/owner-extensions` 是仓内 `owner/owner-extensions/` 的**符号链接**，新增子目录**改仓内即生效**、无需拷贝；但插件代码与 `max_tokens` 一样**只对新启动的 agent 进程生效**，网关/CLI 需重启。
 - **验证**：
@@ -2746,7 +2746,7 @@ _本清单基于 2026-07-02 的 owner 分支状态生成。后续 commit 请先�
 
 ### 2026-09-28：新增 §16.7 `output_guard` 复读判据由 O(n²) 正则改为线性扫描（T2-10）
 
-- **新建正文**：**§16.7**：`958594ce6f`（`owner/owner-extensions/output_guard/__init__.py` 新增 `_find_word_repeat` / `_repeat_after` / `_token_at` / `_WS_RE` 与两个常量、删去 `_WORD_REPEAT` 正则、`_degenerate_scan` 改调用点、docstring 记录成因；`tests/owner/test_output_guard.py` 新增 8 例；`owner/docs/output-guard-design.md` 同步改写把判据写成该正则的句子）
+- **新建正文**：**§16.7**：`958594ce6f`（`owner/owner-extensions/output_guard/__init__.py` 新增 `_find_word_repeat` / `_repeat_after` / `_token_at` / `_WS_RE` 与两个常量、删去 `_WORD_REPEAT` 正则、`_degenerate_scan` 改调用点、docstring 记录成因；`tests/owner/test_output_guard.py` 新增 8 例；`owner/docs/design/output-guard/output-guard.md` 同步改写把判据写成该正则的句子）
 - **类型**：性能缺陷修复（守卫自身击穿模块的 O(n) 契约）+ 零官方侵入
 - **决策**（2026-09-28 用户确认）：审查给的二选一里选**线性扫描 + 完整复刻原语义**，而非「量词加上界」。理由：`(\S{1,64})` 逐例比对后确认**不是语义等价**（重复单元 >64 字符时漏判，且 `dirty_run` / `comp_belt` 都不会补位）
 - **实测比原记录更重**：原记录「40000→2745ms / `_MAX_CHARS` 外推约 20s」把 16000 的实测值当成了 40000；真值为 40000→18 735ms、50000→**30 360ms**（翻倍 ×4）

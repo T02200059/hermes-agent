@@ -7,7 +7,7 @@
 "思考结束、现在输出"而永不输出，尾部 8% 全是 `END OF THINKING` /
 `WRITING RESPONSE` / `(stop)(stop)(stop)`。本轮最终由人工 Ctrl-C 结束
 （`agent.log`: `Turn ended: reason=interrupted_during_api_call`）。
-取证、根因与设计见 owner/docs/degenerate-stream-guard-design.md。
+取证、根因与设计见 owner/docs/design/stream-guard/degenerate-stream-guard.md。
 
 为什么既有防线都没拦住
 ----------------------
@@ -56,7 +56,7 @@ signals 分布与误伤 → 再切 `interrupt`。
   `request_stop.__self__` 取回（观察钩子载荷不含 agent，这是 route B 的唯一回溯）。
 
 配置：`~/.hermes/patch.yaml` → `owner.stream_guard`（见 owner/config/patch.yaml）
-设计文档：owner/docs/degenerate-stream-guard-design.md
+设计文档：owner/docs/design/stream-guard/degenerate-stream-guard.md
 自检：`python owner/owner-extensions/stream_guard/selfcheck.py`
 """
 

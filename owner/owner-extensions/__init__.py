@@ -113,7 +113,7 @@ def register(ctx) -> None:
 
     # § output_guard — LLM 输出复读/乱码/超长检测与折叠 (2026-08-13)
     # transform_llm_output 钩子：发送前识别退化输出并折叠/截断，防刷屏。
-    # See owner/owner-extensions/output_guard/ + owner/docs/output-guard-design.md
+    # See owner/owner-extensions/output_guard/ + owner/docs/design/output-guard/output-guard.md
     try:
         from .output_guard import register_hooks as _register_output_guard_hooks
         _register_output_guard_hooks(ctx)
@@ -126,7 +126,7 @@ def register(ctx) -> None:
     # 投票判定，命中则按配置中止本轮并告知用户。防的是"整轮生成结束之后"才
     # 判定的 output_guard 与"空闲"型 TurnLivenessWatchdog 都覆盖不到的、
     # 持续吐 token 但零进展的循环。
-    # See owner/owner-extensions/stream_guard/ + owner/docs/degenerate-stream-guard-design.md
+    # See owner/owner-extensions/stream_guard/ + owner/docs/design/stream-guard/degenerate-stream-guard.md
     try:
         from .stream_guard import register_hooks as _register_stream_guard_hooks
         _register_stream_guard_hooks(ctx)

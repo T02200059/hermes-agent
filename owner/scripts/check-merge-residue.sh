@@ -14,8 +14,20 @@
 #   owner/scripts/check-merge-residue.sh                  # 校验 HEAD（须为 merge 提交）
 #   owner/scripts/check-merge-residue.sh <merge-commit>
 #   owner/scripts/check-merge-residue.sh <merge-commit> <base>
+#   owner/scripts/check-merge-residue.sh --full           # 跑标准入口全量 tests/
 #   owner/scripts/check-merge-residue.sh --list           # 只列目标，不执行
 #   owner/scripts/check-merge-residue.sh --base <ref>     # 显式指定基线
+#
+# 两档模式：
+#   默认（targeted）  tests/owner + 本次改动过的测试文件 —— 秒级到十几分钟
+#   --full            标准入口全量 tests/ —— 约 30 分钟，零漏判
+#
+#   为什么需要 --full：动态项只认「本次改动过的**测试**文件」。一次只改了产品
+#   代码、没动测试的 merge，targeted 档完全不会看那些文件的测试，而这类改动
+#   恰恰是「解冲把上游调用方搬进来、被调方没跟」的高发区。2026-10-23 收口
+#   T2-21 时，12 个真产品 bug 的失败全落在 tests/gateway、tests/tools、
+#   tests/plugins、tests/monitoring —— 正是这个缺口放过的那类。sync 后应及时
+#   跑一次 --full；targeted 档留作日常快速自检。
 #
 # 退出码：
 #   0  全绿
@@ -36,11 +48,13 @@ cd "$REPO_ROOT" || { echo "[merge-residue] 无法 cd 到 $REPO_ROOT" >&2; exit 2
 TARGET=""
 BASE=""
 LIST_ONLY=0
+FULL=0
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --list) LIST_ONLY=1; shift ;;
+        --full) FULL=1; shift ;;
         --base) BASE="${2:-}"; shift 2 ;;
-        -h|--help) sed -n '2,28p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,34p' "$0"; exit 0 ;;
         -*) echo "[merge-residue] 未知参数: $1" >&2; exit 2 ;;
         *)  if [[ -z "$TARGET" ]]; then TARGET="$1"; else BASE="$1"; fi; shift ;;
     esac
@@ -102,13 +116,22 @@ echo " 解冲后置校验  merge-residue check"
 echo "───────────────────────────────────────────────────────────────"
 echo "   基线 base   : $BASE_SHA  ($(git log -1 --format='%ad %s' --date=short "$BASE_SHA" | cut -c1-60))"
 echo "   目标 target : $TARGET_SHA  ($(git log -1 --format='%ad %s' --date=short "$TARGET_SHA" | cut -c1-60))"
+if [[ "$FULL" -eq 1 ]]; then
+    echo "   模式        : --full（标准入口全量 tests/，零漏判）"
+else
+    echo "   模式        : targeted（tests/owner + 范围内改动的测试文件）"
+fi
 echo "   固定用例    : tests/owner"
 echo "   范围内改动的测试文件: ${#CHANGED_TESTS[@]} 个"
 for f in "${CHANGED_TESTS[@]:-}"; do [[ -n "$f" ]] && echo "                 - $f"; done
 echo "═══════════════════════════════════════════════════════════════"
 
 if [[ "$LIST_ONLY" -eq 1 ]]; then
-    printf '%s\n' "${TARGETS[@]}"
+    if [[ "$FULL" -eq 1 ]]; then
+        echo "tests/  (--full: 标准入口全量)"
+    else
+        printf '%s\n' "${TARGETS[@]}"
+    fi
     exit 0
 fi
 
@@ -118,28 +141,56 @@ mkdir -p "$LOG_DIR"
 LOG_FILE="$LOG_DIR/${TARGET_SHA}.log"
 
 START_TS=$(date +%s)
-"$PY" -m pytest "${TARGETS[@]}" -q -p no:cacheprovider 2>&1 | tee "$LOG_FILE"
-PYTEST_RC="${PIPESTATUS[0]}"
+if [[ "$FULL" -eq 1 ]]; then
+    # 标准入口：per-file 子进程隔离 + env -i + TZ=UTC/LANG=C.UTF-8/PYTHONHASHSEED=0。
+    # 必须用它而不是裸 pytest：targeted 档的裸 pytest 是单进程全量，与 CI/权威
+    # 基线口径不同，结果可能分叉（T2-21 的「测试入口」注记即此）。
+    RUNNER="$REPO_ROOT/scripts/run_tests.sh"
+    if [[ ! -x "$RUNNER" ]]; then
+        echo "[merge-residue] 找不到标准入口: $RUNNER" >&2
+        exit 2
+    fi
+    "$RUNNER" tests/ >"$LOG_FILE" 2>&1
+    RC=$?
+else
+    "$PY" -m pytest "${TARGETS[@]}" -q -p no:cacheprovider 2>&1 | tee "$LOG_FILE"
+    RC="${PIPESTATUS[0]}"
+fi
 END_TS=$(date +%s)
 ELAPSED=$(( END_TS - START_TS ))
 
-SUMMARY="$(grep -E '^[0-9]+ (passed|failed)|passed|failed|error' "$LOG_FILE" | tail -1 | sed 's/^[[:space:]]*//')"
+# --full 的摘要行是 "=== Summary: N files, X passed, Y failed, Z skipped ..."；
+# targeted 档是 pytest 自带的 "N passed, M failed in ..."。两种都认。
+# 去掉行首的 "=== " 装饰，避免拼进 "result===" 里多出一串等号。
+SUMMARY="$(grep -E '^=== Summary:|^[0-9]+ (passed|failed)' "$LOG_FILE" | tail -1 | sed 's/^[[:space:]]*//; s/^=== Summary: /Summary: /')"
 if [[ -z "$SUMMARY" ]]; then SUMMARY="（未能解析摘要，见 $LOG_FILE）"; fi
+
+# 并行 runner 有一次性 FLAKY 重试：attempt 1 的 FAILED 行会留在输出里，但重试通过
+# 不计入 failed。所以「grep 到 FAILED 行」与「Summary 的 failed 数」不一致不是矛盾。
+FAILED_LINES="$(grep -c '^FAILED ' "$LOG_FILE" 2>/dev/null || true)"
+FAILED_LINES="${FAILED_LINES:-0}"
 
 # ─── 结果与 commit message 片段 ───
 VERDICT="PASS"
-[[ "$PYTEST_RC" -eq 0 ]] || VERDICT="FAIL"
+[[ "$RC" -eq 0 ]] || VERDICT="FAIL"
 
 echo
 echo "───────── 可粘贴进 commit message 的校验记录 ─────────"
 echo "merge-residue-check: $VERDICT"
 echo "  base=$BASE_SHA target=$TARGET_SHA elapsed=${ELAPSED}s"
-echo "  targets=tests/owner + ${#CHANGED_TESTS[@]} changed test file(s)"
+if [[ "$FULL" -eq 1 ]]; then
+    echo "  mode=full targets=tests/ (standard runner)"
+else
+    echo "  mode=targeted targets=tests/owner + ${#CHANGED_TESTS[@]} changed test file(s)"
+fi
 echo "  result=$SUMMARY"
+if [[ "$FAILED_LINES" -gt 0 ]]; then
+    echo "  failed-rows=$FAILED_LINES（含 FLAKY 首轮失败痕迹，实际 failed 数见上行 Summary）"
+fi
 echo "──────────────────────────────────────────────────────"
 
-if [[ "$PYTEST_RC" -ne 0 ]]; then
-    echo "[merge-residue] 校验未通过（rc=${PYTEST_RC}），日志：${LOG_FILE}" >&2
+if [[ "$RC" -ne 0 ]]; then
+    echo "[merge-residue] 校验未通过（rc=${RC}），日志：${LOG_FILE}" >&2
     exit 1
 fi
 echo "[merge-residue] 校验通过，日志：${LOG_FILE}"

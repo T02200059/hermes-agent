@@ -6,7 +6,7 @@
 > 实现落点：`owner/owner-extensions/stream_guard/`（新插件）、
 >           `owner/owner-extensions/output_guard/`（C3）、
 >           `agent/turn_finalizer.py`（C1/C2）、`run_agent.py`（route B 薄 seam）
-> 相关：`owner/docs/output-guard-design.md`、`owner/docs/owner改动清单.md` §14
+> 相关：`owner/docs/design/output-guard/output-guard.md`、`owner/docs/owner改动清单.md` §14
 > 事故取证：`state.db` msg 108360（2026-09-17 16:25:14，session `20260917_122148_57701e`）
 > 事故样本：`owner/owner-extensions/stream_guard/samples/incident_9_17_thinking_loop.txt`
 >           （30,742 字符，含用户对话内容，已 gitignore）

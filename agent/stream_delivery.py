@@ -302,7 +302,7 @@ class StreamDeliveryMixin:
             # that detects a degenerate generation has no way to act on it.
             # This is that missing channel; the guard just calls it.
             # See _request_stream_stop below and owner/docs/
-            # degenerate-stream-guard-design.md §4.3 (route B).
+            # owner/docs/design/stream-guard/degenerate-stream-guard.md §4.3 (route B).
             "request_stop": self._request_stream_stop,
         }
 

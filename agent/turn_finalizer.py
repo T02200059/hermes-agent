@@ -430,7 +430,7 @@ def finalize_turn(
         # session load. The block now runs BEFORE ``_persist_session`` (and
         # before micro-compaction), so the durable row is the transformed
         # text by construction.
-        # See owner/docs/degenerate-stream-guard-design.md §5 (C1/C2).
+        # See owner/docs/design/stream-guard/degenerate-stream-guard.md §5 (C1/C2).
         if final_response:
             try:
                 from agent.agent_runtime_helpers import extract_last_turn_reasoning
@@ -700,7 +700,7 @@ def finalize_turn(
     # transformed text. Their former position here — after the persist, gated
     # on ``not interrupted`` — is what let today's runaway stream land raw
     # text in state.db and escape the guard entirely.
-    # See owner/docs/degenerate-stream-guard-design.md §5 (C1/C2).
+    # See owner/docs/design/stream-guard/degenerate-stream-guard.md §5 (C1/C2).
 
     # Plugin hook: post_llm_call
     # Fired once per turn after the tool-calling loop completes.

@@ -10,7 +10,7 @@
 4. 若存在真实事故样本（samples/ 已 gitignore），回放并报告命中位置；
 5. 阈值余量报告：各信号的实测值与阈值对比。
 
-真实事故样本与全库长回复的完整标定见 owner/docs/degenerate-stream-guard-design.md
+真实事故样本与全库长回复的完整标定见 owner/docs/design/stream-guard/degenerate-stream-guard.md
 §6（8 条正例全命中 / 318 条正常长回复 0 误伤）。
 """
 

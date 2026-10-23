@@ -351,7 +351,7 @@ owner:
   #   signature_rate_multiple  事故 ×21.97–25.88，负样本全部 ×0.00 → 取 8.0
   #   min_stream_chars / grace_seconds  短回复与长思考的正常区间
   # 离线回放：318 条正常长回复 0 误伤；8 条正例（今日事故 + 6 条历史失控）全命中。
-  # 取证、根因与设计：owner/docs/degenerate-stream-guard-design.md
+  # 取证、根因与设计：owner/docs/design/stream-guard/degenerate-stream-guard.md
   #
   # ⚠️ 先跑 warn_only 一周，收集 agent.log 里 "stream_guard trip" 行的 signals
   #    分布与误伤数，再切 interrupt。

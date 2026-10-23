@@ -75,7 +75,7 @@ chars > 50000                          → too_long（截断）
 owner/owner-extensions/output_guard/__init__.py   检测 + 折叠 + register_hooks
 owner/owner-extensions/plugin.yaml                hooks 列表 + transform_llm_output
 owner/owner-extensions/__init__.py                register() 聚合注册 output_guard
-owner/docs/output-guard-design.md                 本文档
+owner/docs/design/output-guard/output-guard.md                 本文档
 owner/docs/owner改动清单.md                       §14 + 附录 A 索引
 ```
 

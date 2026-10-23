@@ -3,12 +3,12 @@ r"""[owner] output_guard — transform_llm_output 钩子：复读/乱码/超长�
 背景
 ----
 2026-08-12 `ark-agent-plan-deepseek-v4-flash` 在 git 推送确认场景陷入复读
-死循环，单条输出 265,518 字符刷屏（见 owner/docs/output-guard-design.md）。
+死循环，单条输出 265,518 字符刷屏（见 owner/docs/design/output-guard/output-guard.md）。
 `model.max_tokens` 已在 API 层兜住膨胀，本模块做第二道防线：在响应发送给用户
 **之前**（transform_llm_output 钩子）识别退化输出
 （复读 / 低信息 / 乱码 / 超长），折叠或截断并附警告标注。
 
-2026-09-17 增补（C1/C2/C3，见 owner/docs/degenerate-stream-guard-design.md §5）
+2026-09-17 增补（C1/C2/C3，见 owner/docs/design/stream-guard/degenerate-stream-guard.md §5）
 ------------------------------------------------------------------------
 - **C1** 钩子调用不再带 `not interrupted` 门槛（`agent/turn_finalizer.py`）。
   失控生成的典型结局就是被人工打断，原门槛让护栏恰在最需要时失效。
@@ -36,7 +36,7 @@ r"""[owner] output_guard — transform_llm_output 钩子：复读/乱码/超长�
 - 返回 None → 保持原样（fail-safe：任何异常都回退 None，不影响主流程）
 - 纯 stdlib、O(n)、微秒~毫秒级，不影响回复延迟
 
-设计文档：owner/docs/output-guard-design.md
+设计文档：owner/docs/design/output-guard/output-guard.md
 """
 
 from __future__ import annotations

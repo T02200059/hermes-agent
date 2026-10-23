@@ -3,7 +3,7 @@
 覆盖：复读折叠 / 事故形态 / 模板化长报告防误伤 / 半模板列表防误伤 /
 乱码（长短文本）/ 短回复不判 / 超长截断 / register_hooks 挂载。
 
-设计见 owner/docs/output-guard-design.md §6。以文件路径加载（目录名带连字符，
+设计见 owner/docs/design/output-guard/output-guard.md §6。以文件路径加载（目录名带连字符，
 非合法包名，PluginManager 亦按路径加载）。
 """
 
