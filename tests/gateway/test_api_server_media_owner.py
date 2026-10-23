@@ -137,6 +137,56 @@ class TestIdentityBranchCannotRescueARoutedCaller:
         assert media_owner_token(SESSION) != media_owner_token(LOGIN)
 
 
+class TestIdentityOnlyRequestIsDeniedWhereNoHeaderIsAllowed:
+    """反向激励：**声明身份被拒，不声明却放行**。
+
+    这是 identity 分支**唯一**改变过的判定，也是它比"死码"更糟的地方 —— 它把
+    "无可用声明 → 按已接受边界放行" 变成 "有声明但必然不匹配 → 404"。而被拒的
+    恰好是主动表明身份的一方。
+
+    危害范围（写清以免被高估）：只有**由 root 直接处理**的请求会走到这里 ——
+    routed caller 的 identity 头在反代前就被剥掉（`owner/gateway/identity_routing.py`，
+    不剥会自代理成环），因此子网关看不到它。所以受影响的典型群体是 identity
+    白名单用户（中间件命中白名单后交 root 本体处理，头原样保留）。
+
+    报文也误导：404 的文案是 "Media belongs to a different session"，而这类调用方
+    从未声明过任何 session。
+
+    本组用例钉住现状，使两种"修法"的后果都可见：
+      - 删掉 identity 分支 ⇒ 第 3 条变 True（与 §16.4 接受边界一致，推荐）；
+      - 让 identity 真正参与归属 ⇒ 需改注册侧，动 §16.4 决策。
+    """
+
+    def test_no_headers_at_all_is_allowed(self):
+        assert _matches() is True
+
+    def test_session_header_alone_still_matches(self):
+        assert _matches(**{"X-Hermes-Session-Id": SESSION}) is True
+
+    def test_identity_header_alone_is_denied(self):
+        """关键对比：只带 identity 被拒 —— 而不带任何头时同一请求放行。"""
+        assert _matches(**{"X-Hermes-Identity": LOGIN}) is False
+
+    def test_the_only_difference_is_presence_of_a_useless_header(self):
+        """把两条并排放在一起，让"反向激励"一眼可见。
+
+        两个请求都没有**可用**的归属声明：一个什么都没说，一个说了身份但系统
+        用不上。前者放行、后者被拒 —— 差别只在"多带了一个头"。
+        """
+        none_sent = _matches()
+        identity_sent = _matches(**{"X-Hermes-Identity": LOGIN})
+        assert none_sent is True
+        assert identity_sent is False
+        assert none_sent != identity_sent, (
+            "若两者相同，说明 identity 分支已被移除（或开始生效）——"
+            "无论哪种都是有意的变更，请同步更新本类文档与 §16.4"
+        )
+
+    def test_a_wrong_session_header_is_also_denied(self):
+        """对照：带了错的 session 头被拒是**正确**的（那确实是一次声明）。"""
+        assert _matches(**{"X-Hermes-Session-Id": "someone-else"}) is False
+
+
 # ── 已接受的决策：「不声明即放行」──────────────────────────────────────────
 
 class TestAcceptedUnattributedAccess:

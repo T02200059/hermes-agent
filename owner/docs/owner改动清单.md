@@ -1677,7 +1677,7 @@ Desktop 桌面端（`apps/desktop/`）此前未出现在改动清单中——本
   | 收紧会锁掉设计对象 | 未声明 → 404 会拦住持有 API key 但不回带会话头的调用方，而那正是本项设计要求服务的一方；其真实行为在本仓库内不可核实（前端源码不在本仓） |
   | 单改一处不是完整修复 | 注册侧那条独立通路依然敞着，只改 `_media_owner_matches` 会给出不完整的安全感 —— 收紧必须两条一起改 |
   | 不对称是已知的 | 同文件的 `/v1/artifacts/download/{artifact_id}` 用**服务端推导**的 scope（profile principal + loopback 派生的 transport family）作 `scope_key` 精确相等比对，本身即 fail-closed，没有「不声明就放行」这一档 |
-  | identity 分支对真实调用方无效（T3-10） | 注册侧 5 个 `_finalize_api_media` 调用点**全部** `owner=session_id`，从不摘要登录名 ⇒ `digest(X-Hermes-Identity)` 只有在该头**恰为 session id** 时才命中。真实 routed caller 发的是登录名，因此仍得 404。该分支既不能误杀（只往集合里加候选）也不能救援 —— **无效但无害**。要让它生效需改注册侧或加 identity→session 映射，两者都会移动本节这条已确认决策。
+  | identity 分支非但无效，且**有害**（T3-10） | 注册侧 5 个 `_finalize_api_media` 调用点**全部** `owner=session_id`，从不摘要登录名 ⇒ `digest(X-Hermes-Identity)` 只有在该头**恰为 session id** 时才命中。它唯一改变的判定是：**只带 identity 头**的请求，因集合非空而不再命中「未声明 → 放行」的早退分支，被拒以 404 `media_account_mismatch`（报文说「属于另一个会话」—— 而调用方从未声明过会话）；同样的请求若**一个头都不带**则放行。⇒ **声明身份被惩罚、不声明被奖励**，且被拒的恰是主动表明身份的一方。无该分支时该请求按「无可用声明」走放行，与 §16.4 的接受边界一致。要让它真正生效需改注册侧或加 identity→session 映射，两者都会移动本节这条已确认决策。
 
 
   残余风险（显式记录）：在共享容器（`default_profile` 共享实例 / 白名单走 root）中，持 API key 且拿到他人 `media_id` 者可下载他人产物；与 **T2-9**（跨用户暴露面）叠加时风险上升。归属摘要**本身不掺服务端盐**（§16.5 记录了该取舍），因此这条风险的缓解仍只有 `media_id` 的不可枚举性，叠加项亦只有 T2-9。

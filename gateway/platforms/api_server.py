@@ -4575,13 +4575,26 @@ class APIServerAdapter(BasePlatformAdapter):
         registration digests ``session_id`` at all five ``_finalize_api_media``
         call sites and never digests the login name, so
         ``digest(X-Hermes-Identity)`` equals the stored token only if the caller
-        happens to set the identity header to the session id itself. The identity
-        branch is therefore inert for a real routed caller — it cannot reject
-        anyone (it only adds a candidate to the set) and it cannot rescue anyone
-        either. A routed caller that sends only ``X-Hermes-Identity`` still gets
-        the 404. Making it functional requires changing registration or adding an
-        identity→session mapping; both would move the accepted decision below.
-        See ``TestIdentityBranchCannotRescueARoutedCaller`` in
+        happens to set the identity header to the session id itself.
+
+        That makes the identity branch not "inert" but **actively harmful in the
+        one case it touches**. It changes exactly one outcome:
+
+          - only ``X-Hermes-Identity`` present → the set is non-empty, so the
+            "no claim asserted" early return no longer fires, and the request is
+            rejected with 404 ``media_account_mismatch`` ("belongs to a different
+            session" — a claim the caller never made);
+          - without this branch the same request would carry no usable claim and
+            take the accepted "unattributed → allowed" path.
+
+        So declaring identity is punished while declaring nothing is rewarded —
+        a perverse incentive, and the rejected caller is precisely the one that
+        identified itself. It never rescues anyone either: a routed caller that
+        sends only identity still gets the 404. Making it functional requires
+        changing registration or adding an identity→session mapping; both would
+        move the accepted decision below. See
+        ``TestIdentityBranchCannotRescueARoutedCaller`` and
+        ``TestIdentityOnlyRequestIsDeniedWhereNoHeaderIsAllowed`` in
         ``tests/gateway/test_api_server_media_owner.py``.
 
         **This is an identity guard, not a security boundary** (T2-8, owner改动清单
