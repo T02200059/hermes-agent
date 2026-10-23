@@ -1,0 +1,13 @@
+# Owner customization layer (runtime: ~/.hermes/patch.yaml → this file via symlink).
+#
+# v2 shape: NO outer shell (no top-level "owner:" / "patch:"). First-level keys ARE
+# the sections. Code hangs them under config.owner.xxx after fuse with official config.
+# See owner/docs/v2背景说明.md「全局性 / 规范性备忘」and owner/docs/二次开发规范.md §2.2.1.
+
+# ── Approval ─────────────────────────────────────────────────────────────────
+approvals:
+  # Permanent ("Always") approval button: disabled for Feishu / QQ (and policy-wide).
+  allow_permanent: false
+  # Merged (union) into in-memory permanent allowlist with config.yaml command_allowlist.
+  # UI still does not offer Always when allow_permanent is false.
+  command_allowlist: []
