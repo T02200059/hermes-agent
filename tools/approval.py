@@ -400,6 +400,12 @@ def load_permanent(patterns: set):
 
 def _persist_choice(session_key: str, choice: str, keys: list[str]) -> None:
     """Persist a human ``session``/``always`` choice for each pattern key. ``once`` persists nothing."""
+    # [owner] C01: refuse minting permanent grants when policy disables Always
+    try:
+        from owner.approval.permanent_policy import sanitize_permanent_choice
+        choice = sanitize_permanent_choice(choice)
+    except Exception:
+        pass
     for key in keys:
         if choice not in ("session", "always"):
             continue
@@ -436,7 +442,14 @@ def _read_permanent_allowlist() -> set:
         return set()
     if legacy:
         logger.warning("Recovered legacy string command_allowlist; re-save it as a list of strings.")
-    return set(raw)
+    patterns = set(raw)
+    # [owner] C01: union patch.yaml approvals.command_allowlist into memory
+    try:
+        from owner.approval.permanent_policy import merge_owner_command_allowlist
+        patterns = merge_owner_command_allowlist(patterns)
+    except Exception:
+        pass
+    return patterns
 
 
 # What ``command_allowlist`` held the last time this process synchronised with the
@@ -813,6 +826,12 @@ def _human_decision(spec: _GateSpec, *, command: str, description: str,
             return result
     pending_body = pending_body() if pending_body else None
     allow_permanent = not smart_denied
+    # [owner] C01: gate Always via config.owner.approvals.allow_permanent
+    try:
+        from owner.approval.permanent_policy import gate_allow_permanent
+        allow_permanent = gate_allow_permanent(allow_permanent)
+    except Exception:
+        pass
 
     def deny(template: str, outcome: str, **fmt) -> dict:
         breaker = ""
@@ -861,7 +880,7 @@ def _human_decision(spec: _GateSpec, *, command: str, description: str,
             data = {
                 "command": display_command, "pattern_key": pattern_key,
                 "pattern_keys": pattern_keys, "description": display_description,
-                "allow_permanent": not smart_denied,
+                "allow_permanent": allow_permanent,  # [owner] already gated above
                 "allow_session": not smart_denied,
             }
             if smart_denied:
