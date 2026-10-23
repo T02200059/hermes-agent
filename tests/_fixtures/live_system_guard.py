@@ -98,6 +98,39 @@ def _live_system_guard(request, monkeypatch):
         _psutil = None
         _initial_children = set()
 
+    # Spawn-time bookkeeping. ``_initial_children`` is a snapshot and the subtree walk
+    # below follows only LIVE parent chains, so a child this test spawned and that has
+    # since exited — or been reparented to init — cannot be proven ours. The only escape
+    # used to be a whole-test ``live_system_guard_bypass``, which also switches off the
+    # command-string checks. Recording (pid -> create_time) at spawn identifies our own
+    # child after it dies, while a REUSED pid carries a later create_time and stays
+    # refused.
+    _spawned: dict[int, float | None] = {}
+
+    def _note_spawned(pid) -> None:
+        try:
+            _pid = int(pid)
+        except (TypeError, ValueError):
+            return
+        try:
+            _spawned[_pid] = _psutil.Process(_pid).create_time() if _psutil is not None else None
+        except Exception:
+            _spawned[_pid] = None
+
+    def _is_recorded_child(pid: int) -> bool:
+        """True when *pid* is a process this test spawned (survives its exit)."""
+        if pid not in _spawned:
+            return False
+        recorded = _spawned[pid]
+        if recorded is None or _psutil is None:
+            return True
+        try:
+            # Same PID and same start time => still the child we spawned. A reused PID
+            # has a later create_time, so its kill stays blocked.
+            return abs(_psutil.Process(pid).create_time() - recorded) < 0.01
+        except Exception:
+            return True  # already gone: the signal would be a no-op
+
     def _is_own_subtree(pid: int) -> bool:
         # PID 0 means "our own process group"; -1 means "every process we
         # can signal". Both are dangerous when paired with SIGTERM/SIGKILL,
@@ -108,6 +141,8 @@ def _live_system_guard(request, monkeypatch):
         if pid < 0:
             return False
         if pid == test_pid or pid in _initial_children:
+            return True
+        if _is_recorded_child(pid):
             return True
         if _psutil is None:
             return False
@@ -458,6 +493,9 @@ def _live_system_guard(request, monkeypatch):
             def __init__(self, cmd, *args, **kwargs):
                 _check_subprocess_cmd("Popen", cmd, kwargs)
                 super().__init__(cmd, *args, **kwargs)
+                # subprocess.run / check_output reach Popen through this module global,
+                # so recording here covers them too.
+                _note_spawned(self.pid)
 
         _GuardedPopen.__name__ = "Popen"
         _GuardedPopen.__qualname__ = "Popen"
@@ -529,11 +567,15 @@ def _live_system_guard(request, monkeypatch):
             _check_subprocess_cmd(
                 "asyncio.create_subprocess_exec", [program, *args], kwargs
             )
-            return await real_async_exec(program, *args, **kwargs)
+            proc = await real_async_exec(program, *args, **kwargs)
+            _note_spawned(getattr(proc, "pid", None))
+            return proc
 
         async def _guarded_async_shell(cmd, *args, **kwargs):
             _check_subprocess_cmd("asyncio.create_subprocess_shell", cmd, kwargs)
-            return await real_async_shell(cmd, *args, **kwargs)
+            proc = await real_async_shell(cmd, *args, **kwargs)
+            _note_spawned(getattr(proc, "pid", None))
+            return proc
 
         monkeypatch.setattr(_asyncio, "create_subprocess_exec", _guarded_async_exec)
         monkeypatch.setattr(
