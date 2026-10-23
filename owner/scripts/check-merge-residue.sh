@@ -162,7 +162,7 @@ ELAPSED=$(( END_TS - START_TS ))
 # --full 的摘要行是 "=== Summary: N files, X passed, Y failed, Z skipped ..."；
 # targeted 档是 pytest 自带的 "N passed, M failed in ..."。两种都认。
 # 去掉行首的 "=== " 装饰，避免拼进 "result===" 里多出一串等号。
-SUMMARY="$(grep -E '^=== Summary:|^[0-9]+ (passed|failed)' "$LOG_FILE" | tail -1 | sed 's/^[[:space:]]*//; s/^=== Summary: /Summary: /')"
+SUMMARY="$(grep -E '^=== Summary:|^[0-9]+ (passed|failed)' "$LOG_FILE" | tail -1 | sed 's/^[[:space:]]*//; s/^=== Summary: /Summary: /; s/[[:space:]]*===$//')"
 if [[ -z "$SUMMARY" ]]; then SUMMARY="（未能解析摘要，见 $LOG_FILE）"; fi
 
 # 并行 runner 有一次性 FLAKY 重试：attempt 1 的 FAILED 行会留在输出里，但重试通过
@@ -185,7 +185,7 @@ else
 fi
 echo "  result=$SUMMARY"
 if [[ "$FAILED_LINES" -gt 0 ]]; then
-    echo "  failed-rows=$FAILED_LINES（含 FLAKY 首轮失败痕迹，实际 failed 数见上行 Summary）"
+    echo "  failed-rows=${FAILED_LINES} (含 FLAKY 首轮失败痕迹，实际 failed 数见上行 Summary)"
 fi
 echo "──────────────────────────────────────────────────────"
 

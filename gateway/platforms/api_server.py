@@ -477,219 +477,74 @@ _TOOL_ARG_PRIMARY_KEYS = (
 )
 
 
-# [owner] T2-9: tool args and tool results are the widest free-text channel
-# this process has — commands, file contents, command output — and until now
-# they reached the wire almost verbatim. ``redact_tool_args_for_display`` is
-# tool-scoped (``browser_type`` only), and ``_clip_tool_output_for_sse``
-# masked nothing at all, so "SSE only goes to the requester" was the single
-# thing standing between a secret in a command and a third-party consumer
-# that fans progress events out by session (S2-3). Isolation is now asserted
-# (see ``_bind_tool_frame``) *and* the payload is redacted at the boundary.
-_SSE_REDACT_PLACEHOLDER = "«redaction unavailable»"
-_sse_redaction_failed = False
+# [owner] T2-9: 实现迁入 owner/gateway/sse_redaction.py（附录 C 第 11 项收敛）。
+# 这套函数在上游完全不存在（纯 owner 新增），此前占着官方文件 213 行，每次上游
+# 在同一文件动手都要为它解冲。这里只留同名薄委托：调用点一行不改，行为不变。
+# 常量仍以上游定义为准（_TOOL_ARGS_MAX_CHARS 等），由委托传入，本模块不持副本。
+def _sse_redaction_impl():
+    """懒加载 owner 实现 —— 保持 api_server.py 在无 owner/ 时仍可 import。"""
+    from owner.gateway import sse_redaction
+
+    return sse_redaction
 
 
 def _redact_for_sse(text: str) -> str:
-    """[owner] T2-9: mask recognizable secrets in SSE-bound free text.
-
-    Reuses the log redactor rather than inventing a second pattern set, with
-    ``force=True`` — ``agent.redact`` documents that flag as the boundary
-    that must never return raw secrets regardless of the user's global
-    ``security.redact_secrets`` preference.
-
-    Returns a placeholder instead of the input when the redactor cannot be
-    loaded: this is an egress boundary, so "could not verify" must not
-    silently degrade into "emitted raw".
-    """
-    global _sse_redaction_failed
-    try:
-        from agent.redact import redact_sensitive_text
-
-        return redact_sensitive_text(text, force=True)
-    except Exception as exc:  # noqa: BLE001 - boundary fails closed, not loudly
-        if not _sse_redaction_failed:
-            _sse_redaction_failed = True
-            logger.error(
-                "[API] SSE secret redaction unavailable (%s); suppressing "
-                "tool args/results on hermes.tool.progress",
-                exc,
-            )
-        return _SSE_REDACT_PLACEHOLDER
+    """[owner] T2-9: 遮蔽 SSE 自由文本中的秘密；委托 owner/gateway/sse_redaction.py。"""
+    return _sse_redaction_impl().redact_for_sse(text)
 
 
 def _redact_args_for_sse(args: dict) -> dict:
-    """[owner] T2-9: redact the string leaves of a tool-arg dict, recursively.
-
-    Backstop for values that do not pass through ``_clip_jsonable_value``
-    (that path redacts the JSON-encoded form; the Responses channel hand-builds
-    its payload instead). Recurses through dict/list/tuple so a credential
-    nested one level down cannot ride along untouched.
-    """
-    out: Dict[str, Any] = {}
-    for key, value in args.items():
-        out[key] = _redact_nested_for_sse(value)
-    return out
+    """[owner] T2-9: 递归遮蔽参数里的字符串叶子；委托 owner 实现。"""
+    return _sse_redaction_impl().redact_args_for_sse(args)
 
 
 def _redact_nested_for_sse(value: Any) -> Any:
-    """[owner] T2-9: redact strings anywhere inside a JSON-shaped value."""
-    if isinstance(value, str):
-        return _redact_for_sse(value)
-    if isinstance(value, bytes):
-        return _redact_for_sse(value.decode("utf-8", "replace"))
-    if isinstance(value, dict):
-        return _redact_args_for_sse(value)
-    if isinstance(value, (list, tuple)):
-        return type(value)(_redact_nested_for_sse(item) for item in value)
-    return value
+    """[owner] T2-9: 遮蔽 JSON 形态值里任意深度的字符串；委托 owner 实现。"""
+    return _sse_redaction_impl().redact_nested_for_sse(value)
 
 
 def _redact_result_for_sse(result: Any) -> Any:
-    """[owner] T2-9: redact a raw tool result for the Responses channel.
-
-    Unlike :func:`_clip_tool_output_for_sse` this preserves the payload shape —
-    that channel echoes the item as JSON and has no length budget of its own,
-    so only the string leaves are masked.
-    """
-    return _redact_nested_for_sse(result)
+    """[owner] T2-9: 为 Responses 通道遮蔽原始结果（保持形状）；委托 owner 实现。"""
+    return _sse_redaction_impl().redact_result_for_sse(result)
 
 
 def _bind_tool_frame(tag: str, payload: dict, frame_token: str) -> tuple:
-    """[owner] T2-9: stamp the owning request onto a tool lifecycle frame.
-
-    The token rides in the ``queue`` tuple, never in ``payload``: the payload
-    is serialized straight onto the wire, and the isolation assertion is an
-    internal contract that consumers neither need nor should have to parse.
-    """
-    return (tag, frame_token, payload)
+    """[owner] T2-9: 把发起请求标记盖到 tool 生命周期帧上；委托 owner 实现。"""
+    return _sse_redaction_impl().bind_tool_frame(tag, payload, frame_token)
 
 
 def _tool_frame_is_ours(item: Any, frame_token: str) -> bool:
-    """[owner] T2-9: is this frame bound to *this* stream's request?
-
-    A frame that is unbound (2-tuple: produced by a writer that predates the
-    binding) or bound to a different token is not ours. Callers must degrade
-    such a frame to name+status rather than dropping it, so a leaked frame
-    still cannot carry args or output into another caller's stream.
-    """
-    return (
-        isinstance(item, tuple)
-        and len(item) == 3
-        and bool(frame_token)
-        and item[1] == frame_token
-    )
+    """[owner] T2-9: 这一帧是否属于本流；委托 owner 实现。"""
+    return _sse_redaction_impl().tool_frame_is_ours(item, frame_token)
 
 
 def _stripped_tool_frame(payload: Any) -> dict:
-    """[owner] T2-9: name+status only — the form an unbound frame degrades to."""
-    if not isinstance(payload, dict):
-        return {}
-    stripped = {k: v for k, v in payload.items() if k in ("tool", "name", "toolCallId", "tool_call_id", "status")}
-    return stripped
+    """[owner] T2-9: 未绑定帧降级为 name+status；委托 owner 实现。"""
+    return _sse_redaction_impl().stripped_tool_frame(payload)
 
 
 def _clip_jsonable_value(value: Any, max_chars: int) -> Any:
-    """Coerce a tool arg to a JSON-safe scalar/object, truncated and redacted.
-
-    [owner] T2-9: redaction runs *before* truncation. Clipping first leaves a
-    credential fragment (``…ghp_abc``) at the cut, and once truncated the
-    fragment is too short for the pattern set to recognize, so the dict-level
-    backstop cannot recover it. The full secret is absent either way — this
-    ordering is what keeps the fragment out.
-    """
-    if value is None or isinstance(value, (bool, int, float)):
-        return value
-    if isinstance(value, str):
-        value = _redact_for_sse(value)
-        return value if len(value) <= max_chars else value[: max_chars - 1] + "…"
-    if isinstance(value, bytes):
-        text = _redact_for_sse(value.decode("utf-8", "replace"))
-        return text if len(text) <= max_chars else text[: max_chars - 1] + "…"
-    try:
-        encoded = json.dumps(value, ensure_ascii=False, default=str)
-    except Exception:
-        encoded = str(value)
-    encoded = _redact_for_sse(encoded)
-    if len(encoded) <= max_chars:
-        try:
-            return json.loads(encoded)
-        except Exception:
-            return encoded
-    return encoded[: max_chars - 1] + "…"
+    """[owner] T2-9: 压成 JSON 安全值（先脱敏后截断）；委托 owner 实现。"""
+    return _sse_redaction_impl().clip_jsonable_value(value, max_chars)
 
 
 def _clip_tool_args_for_sse(args: Any) -> dict:
-    """Redact-ready args for ``hermes.tool.progress``; always JSON-serializable.
-
-    [owner] T2-9: redaction is applied per value inside
-    :func:`_clip_jsonable_value` and again as a dict-level backstop here, so
-    no code path can hand a raw string to the wire.
-    """
-    if not isinstance(args, dict):
-        return {}
-    out: Dict[str, Any] = {}
-    for key, value in args.items():
-        if not isinstance(key, str):
-            continue
-        out[key[:64]] = _clip_jsonable_value(value, _TOOL_ARG_VALUE_MAX)
-        if len(out) >= 24:
-            break
-    try:
-        encoded = json.dumps(out, ensure_ascii=False, default=str)
-    except Exception:
-        encoded = ""
-    if len(encoded) <= _TOOL_ARGS_MAX_CHARS:
-        return _redact_args_for_sse(out)
-    # [owner] T3-11: the slim fallback must honour the SAME wire budget as the
-    # main path. It used to clip each primary key to 4000 with no total cap, so
-    # 11 present keys encoded to ~44 KB — 7x the declared _TOOL_ARGS_MAX_CHARS.
-    # Add keys in priority order, each clipped to the remaining budget (minus a
-    # 64-char reserve for the key name and JSON punctuation), and stop once the
-    # encoded form is full. The result is provably within _TOOL_ARGS_MAX_CHARS.
-    slim: Dict[str, Any] = {}
-    for key in _TOOL_ARG_PRIMARY_KEYS:
-        if key not in args:
-            continue
-        used = len(json.dumps(slim, ensure_ascii=False, default=str))
-        remaining = _TOOL_ARGS_MAX_CHARS - used
-        if remaining <= 64:
-            break
-        slim[key] = _clip_jsonable_value(args[key], remaining - 64)
-    return _redact_args_for_sse(slim)
+    """[owner] T2-9: 可脱敏的工具参数；委托 owner 实现，预算常量取自本模块。"""
+    return _sse_redaction_impl().clip_tool_args_for_sse(
+        args,
+        max_chars=_TOOL_ARGS_MAX_CHARS,
+        value_max=_TOOL_ARG_VALUE_MAX,
+        primary_keys=_TOOL_ARG_PRIMARY_KEYS,
+    )
 
 
 def _clip_tool_output_for_sse(result: Any) -> str:
-    """Short, JSON-safe tool result preview for the completed progress event.
+    """[owner] T2-9: 工具结果预览（先脱敏后裁剪）；委托 owner 实现。"""
+    return _sse_redaction_impl().clip_tool_output_for_sse(
+        result, output_max=_TOOL_OUTPUT_MAX
+    )
 
-    [owner] T2-9: this helper used to be pure truncation — command output,
-    ``stdout`` and file bodies reached the wire with no redaction at all.
-    Redaction now runs before the length cut for the same reason as on the
-    args side: a clipped secret is still a secret.
-    """
-    if result is None:
-        return ""
-    if isinstance(result, bytes):
-        result = result.decode("utf-8", "replace")
-    if isinstance(result, str):
-        text = result
-    elif isinstance(result, dict):
-        text = ""
-        for key in ("output", "content", "stdout", "text", "result"):
-            val = result.get(key)
-            if isinstance(val, str) and val.strip():
-                text = val
-                break
-        if not text:
-            try:
-                text = json.dumps(result, ensure_ascii=False, default=str)
-            except Exception:
-                text = str(result)
-    else:
-        text = str(result)
-    text = _redact_for_sse(text.replace("\x00", ""))
-    if len(text) > _TOOL_OUTPUT_MAX:
-        return text[: _TOOL_OUTPUT_MAX - 1] + "…"
-    return text
+
 
 
 def _sse_frame(data: Any, *, event: str = None, ensure_ascii: bool = True) -> bytes:
@@ -2646,238 +2501,26 @@ class APIServerAdapter(BasePlatformAdapter):
         return profile_prefix_middleware
 
     def _make_identity_routing_middleware(self):
-        """Authenticate, then route, requests carrying X-Hermes-Identity.
+        """[owner] identity 认证门 + 反代 —— 实现在 owner/gateway/identity_routing.py。
 
-        Four stages, in this order:
+        四阶段（无头透传 → LDAP 二次认证门 → 白名单 → 反代）与 T2-6「门先于路由」
+        的完整说明见该模块 docstring。此处只做依赖注入：``web`` / ``_owner_import``
+        / ``_owner_identity_gate_rejection`` 都来自本模块，owner 侧不反向导入
+        （会成循环），也不复制这套逻辑。
 
-          1. no identity header      → pass through (normal handling)
-          2. LDAP second-factor gate → 401/503 rejection before anything else
-          3. identity_whitelist hit  → pass through (handled by the root gateway)
-          4. identity_routes hit     → reverse-proxy to that sub-profile
-
-        Stage 2 is a property of the *claim*, not of the route (T2-6): every
-        request presenting a header is gated — whitelisted, routable, and
-        unknown alike. Stage 3 therefore chooses only a destination; a
-        whitelisted identity is still authenticated, and the whitelist is
-        never an authentication bypass.
-
-        No identity header or unknown identity → pass through to the next
-        middleware (normal handling).
+        为什么不能迁进 plugin：``pre_gateway_dispatch`` 拿到的是已规范化的
+        MessageEvent，既不能读原始头、也不能自行返回 401/503、更不能反代 ——
+        这四阶段全部发生在路由分发之前，属 HTTP 层语义（详见该模块 docstring）。
         """
+        from owner.gateway.identity_routing import make_identity_routing_middleware
 
-        # [owner] T2-3: the dormant notice below fires at most once per
-        # process. A structural condition (identity routing never wired)
-        # repeated on every request drowns the log without adding information.
-        dormant_notice_emitted = [False]
+        return make_identity_routing_middleware(
+            web=web,
+            owner_import=_owner_import,
+            gate_rejection=_owner_identity_gate_rejection,
+            logger=logger,
+        )
 
-        @web.middleware
-        async def identity_routing_middleware(request: "web.Request", handler):
-            identity = request.headers.get("X-Hermes-Identity", "").strip()
-            if not identity:
-                return await handler(request)
-
-            # [owner] T2-6: gate first. The header is a *claim* of identity and
-            # the gate — not the routing table — decides whether that claim is
-            # authenticated. Running it before any routing decision closes two
-            # ways to skip it:
-            #   - a whitelisted identity returned early, so "root handles it"
-            #     doubled as "no second factor required" for a header anyone
-            #     able to reach the gateway can set;
-            #   - an identity whose route failed to resolve (unknown uid, or a
-            #     registered uid whose profile_endpoints entry is broken) fell
-            #     through to the ungated default path.
-            # Routing thereafter chooses a destination only; it no longer
-            # decides whether the claim gets verified.
-            _rejection = await _owner_identity_gate_rejection(identity, request)
-            if _rejection is not None:
-                return _rejection
-
-            # [owner] LDAP identity whitelist — 与飞书 user_routing.whitelist
-            # 同语义：白名单内的 LDAP 身份不反代到子容器，直接由 root
-            # gateway 本体处理（对话落在 root 实例的 memory/会话）。
-            # 优先级高于 identity_routes；owner/ 模块缺失时 fail-open 跳过。
-            # 白名单只决定「不反代」，不决定「免认证」—— 认证已在上一步完成
-            # （T2-6）。
-            _whitelisted = _owner_import(
-                "owner.feishu.profile_routing", "is_api_identity_whitelisted"
-            )
-            if _whitelisted is not None and _whitelisted(identity):
-                return await handler(request)
-
-            _resolve = _owner_import(
-                "owner.feishu.profile_routing", "resolve_api_identity_route"
-            )
-            if _resolve is None:
-                return await handler(request)
-
-            route = _resolve(identity)
-            if route is None:
-                # [owner] T2-3: "not in identity_routes" and "identity routing
-                # never wired" both land here, and the second is a security
-                # trap worth naming — a dormant config turns every identity
-                # request into a plain default-path request with no signal.
-                # The LDAP gate is no longer among the consequences (T2-6 runs
-                # it ahead of the routing decision), which is exactly why this
-                # notice must not claim it is. Report the cause, once per
-                # process.
-                _diagnose = _owner_import(
-                    "owner.feishu.profile_routing", "identity_routing_diagnostics"
-                )
-                _diag = None
-                if _diagnose is not None:
-                    try:
-                        _diag = _diagnose()
-                    except Exception:  # pragma: no cover - diagnostics never break ingress
-                        _diag = None
-                if isinstance(_diag, dict) and _diag.get("dormant"):
-                    if not dormant_notice_emitted[0]:
-                        dormant_notice_emitted[0] = True
-                        logger.warning(
-                            "[API] X-Hermes-Identity=%r ignored: identity routing "
-                            "is DORMANT — identity_routes/identity_whitelist are %s "
-                            "(routing section: %s). Consequence: no sub-profile "
-                            "reverse-proxy — the request is served by the root "
-                            "gateway, as if the header were absent. See "
-                            "owner改动清单 §15.",
-                            identity,
-                            "present but empty"
-                            if _diag.get("keys_present")
-                            else "ABSENT from user_routing",
-                            _diag.get("config_source"),
-                        )
-                    else:
-                        logger.debug(
-                            "[API] X-Hermes-Identity=%r ignored (identity routing dormant)",
-                            identity,
-                        )
-                else:
-                    logger.warning(
-                        "[API] X-Hermes-Identity=%r is unknown; falling through to default",
-                        identity,
-                    )
-                return await handler(request)
-
-            profile_name, endpoint_url, api_key = route
-
-            # Build target URL: same path + query string
-            path = request.path
-            query = request.query_string
-            target = f"{endpoint_url.rstrip('/')}{path}"
-            if query:
-                target = f"{target}?{query}"
-
-            body = await request.read()
-            try:
-                parsed_body = json.loads(body) if body else None
-            except (ValueError, TypeError):
-                parsed_body = None
-            is_sse_request = request.method == "POST" and (
-                request.path.endswith("/chat/stream")
-                or (
-                    isinstance(parsed_body, dict)
-                    and bool(parsed_body.get("stream"))
-                )
-            )
-
-            # Forward headers: strip hop-by-hop, add auth. The LDAP password
-            # header never crosses the proxy boundary. The identity header is
-            # stripped too: sub-profile containers run the same routing config
-            # (identity_routes + profile_endpoints), so forwarding it would
-            # make the sub-gateway re-resolve and proxy the request to itself
-            # in an infinite loop until aiohttp's 120s timeout / recursion
-            # kills the chain with a 503 ("Sub-gateway unavailable").
-            import aiohttp
-
-            headers = {
-                k: v
-                for k, v in request.headers.items()
-                if k.lower()
-                not in (
-                    "host",
-                    "transfer-encoding",
-                    "content-length",
-                    "x-hermes-identity-password",
-                    "x-hermes-identity",
-                )
-            }
-            headers["Authorization"] = f"Bearer {api_key}"
-            headers["X-Forwarded-For"] = getattr(request, "remote", "") or ""
-
-            # Long-lived SSE agent turns (tool loops, big generations) can run
-            # far past 120s while staying alive: the old ``total=120`` hard
-            # cap killed legitimately long streams mid-flight. Keep total
-            # unbounded for streaming (the client's disconnect propagates via
-            # connection reset); for buffered JSON replies a connect/read
-            # budget still applies.
-            timeout = (
-                aiohttp.ClientTimeout(total=None, sock_read=600, connect=10)
-                if is_sse_request
-                else aiohttp.ClientTimeout(total=120)
-            )
-            try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.request(
-                        method=request.method,
-                        url=target,
-                        headers=headers,
-                        data=body,
-                        timeout=timeout,
-                    ) as resp:
-                        content_type = (resp.headers.get("Content-Type") or "").lower()
-                        if "text/event-stream" in content_type:
-                            # SSE must stream chunk-by-chunk: buffering the
-                            # whole response delayed the first byte by the
-                            # full agent turn.
-                            resp_headers = {
-                                k: v
-                                for k, v in resp.headers.items()
-                                if k.lower()
-                                not in (
-                                    "transfer-encoding",
-                                    "content-encoding",
-                                    "content-length",
-                                    "connection",
-                                )
-                            }
-                            stream_resp = web.StreamResponse(
-                                status=resp.status, headers=resp_headers
-                            )
-                            await stream_resp.prepare(request)
-                            async for chunk in resp.content.iter_any():
-                                await stream_resp.write(chunk)
-                            await stream_resp.write_eof()
-                            return stream_resp
-                        response_body = await resp.read()
-                        # Copy response headers (strip hop-by-hop)
-                        resp_headers = {
-                            k: v
-                            for k, v in resp.headers.items()
-                            if k.lower()
-                            not in (
-                                "transfer-encoding",
-                                "content-encoding",
-                                "content-length",
-                                "connection",
-                            )
-                        }
-                        return web.Response(
-                            status=resp.status,
-                            headers=resp_headers,
-                            body=response_body,
-                        )
-            except Exception as exc:
-                logger.error(
-                    "[API] Identity proxy to %s (%s) failed: %s",
-                    profile_name,
-                    endpoint_url,
-                    exc,
-                )
-                return web.json_response(
-                    {"error": f"Sub-gateway '{profile_name}' unavailable"},
-                    status=503,
-                )
-
-        return identity_routing_middleware
 
     def _http_route_table(self) -> List[tuple]:
         """Return (method, path, handler) rows registered by ``connect()``.
