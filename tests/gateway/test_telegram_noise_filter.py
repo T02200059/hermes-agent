@@ -309,6 +309,20 @@ def test_local_surface_keeps_deepseek_special_tokens():
     assert _sanitize_gateway_final_response("local", raw) == raw
 
 
+
+# [owner] C08: status/interim path reuses O8 strip (local passthrough unchanged)
+def test_status_prepare_strips_leaked_deepseek_special_tokens():
+    """Messaging status/interim bubbles strip DeepSeek BOS/EOS; local keeps raw."""
+    raw = _DEEPSEEK_BOS + "工具调用前旁白" + _DEEPSEEK_EOS
+    assert _prepare_gateway_status_message(Platform.TELEGRAM, "lifecycle", raw) == "工具调用前旁白"
+    assert _prepare_gateway_status_message(Platform.FEISHU, "lifecycle", raw) == "工具调用前旁白"
+    assert _prepare_gateway_status_message("local", "lifecycle", raw) == raw
+
+
+def test_status_prepare_pure_deepseek_specials_drop():
+    assert _prepare_gateway_status_message(Platform.TELEGRAM, "lifecycle", _DEEPSEEK_BOS + _DEEPSEEK_EOS) is None
+
+
 def test_telegram_status_sanitizes_raw_provider_security_errors():
     """Provider policy/security bodies should be replaced before chat delivery."""
     raw = (

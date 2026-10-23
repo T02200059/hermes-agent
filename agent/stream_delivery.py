@@ -149,6 +149,22 @@ class StreamDeliveryMixin:
         """Think-stripped, redacted commentary text ("" when nothing visible remains)."""
         return visible_commentary(text, strip_thinking=self._strip_think_blocks)
 
+    @staticmethod
+    def _owner_scrub_outbound_specials(visible: str) -> str:
+        """[owner] Strip leaked DeepSeek BOS/EOS before interim outbound (C08).
+
+        Reuses official O8 via ``owner.outbound_special_token_scrub`` (thin wrap).
+        Kept out of ``_visible_commentary`` so dedup keys stay on pre-scrub text
+        shape only where we choose; here we scrub after visible extraction and
+        before delivery / delivered-set recording (same hang points as source).
+        """
+        try:
+            from owner.outbound_special_token_scrub import scrub_outbound_text as _owner_scrub_specials
+
+            return _owner_scrub_specials(visible)
+        except Exception:
+            return visible
+
     def _extract_codex_interim_visible_text(self, assistant_msg: dict[str, Any]) -> str:
         """All visible Codex commentary joined, for comparison/fallback."""
         return "\n\n".join(self._extract_codex_interim_visible_parts(assistant_msg)).strip()
@@ -190,6 +206,8 @@ class StreamDeliveryMixin:
         if getattr(self, "interim_assistant_callback", None) is None or not isinstance(text, str):
             return
         visible = self._visible_commentary(text)
+        # [owner] C08 interim outbound BOS/EOS
+        visible = self._owner_scrub_outbound_specials(visible)
         if not visible or visible == "(empty)" or self._interim_text_was_delivered(visible):
             return
         self._deliver_interim(visible, already_streamed=False, record=[visible])
@@ -209,6 +227,8 @@ class StreamDeliveryMixin:
                 pending[key] = part
         undelivered_parts = list(pending.values())
         visible = "\n\n".join(undelivered_parts).strip() if commentary_parts else self._interim_assistant_visible_text(assistant_msg)
+        # [owner] C08 interim outbound BOS/EOS
+        visible = self._owner_scrub_outbound_specials(visible)
         if not visible or visible == "(empty)" or self._interim_text_was_delivered(visible):
             return
         already_streamed = self._interim_content_fully_streamed(visible)
