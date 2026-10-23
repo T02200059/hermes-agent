@@ -80,6 +80,41 @@ class PluginToolOverrideError(PermissionError):
 
 logger = logging.getLogger(__name__)
 
+# How long a caller may wait for the discovery sweep's lock before giving up. A stuck plugin import
+# (network filesystem, a dependency that blocks on stdin) holds it for the whole sweep, so an
+# unbounded ``with lock`` turns "discovery is slow" into "the process never starts" — the blank
+# screen whose only escape is Ctrl+C. Callers that cannot take the lock leave the in-flight sweep
+# to finish the job instead of blocking behind it.
+_DISCOVERY_LOCK_TIMEOUT_S = 15.0
+# Shorter budget for the startup join: the sweep has had the foreground for this long already.
+_DISCOVERY_JOIN_TIMEOUT_S = 30.0
+
+
+class _TimedLock:
+    """``with lock`` with a deadline, as a context manager.
+
+    Yields ``True`` when the lock was acquired and ``False`` when the deadline expired first, so the
+    block can skip its work and still release correctly. Written as a context manager rather than
+    ``acquire()``/``finally: release()`` so the guarded blocks keep their original indentation —
+    re-indenting them is what makes every future upstream merge conflict here.
+    """
+
+    def __init__(self, lock, timeout: Optional[float] = None) -> None:
+        self._lock = lock
+        # Resolved at call time (not as a default argument) so tests and an operator can retune the
+        # budget on the module without rebuilding every call site.
+        self._timeout = _DISCOVERY_LOCK_TIMEOUT_S if timeout is None else timeout
+        self.acquired = False
+
+    def __enter__(self) -> bool:
+        self.acquired = bool(self._lock.acquire(timeout=self._timeout))
+        return self.acquired
+
+    def __exit__(self, *exc_info) -> bool:
+        if self.acquired:
+            self._lock.release()
+        return False
+
 # ``HERMES_PLUGINS_DEBUG=1`` tees verbose discovery logs to stderr in addition to agent.log. Read
 # once at import; tests flip it mid-process via ``_install_plugin_debug_handler(force=True)``.
 _PLUGINS_DEBUG = env_var_enabled("HERMES_PLUGINS_DEBUG")
@@ -1248,7 +1283,15 @@ class PluginManager(PluginLoaderMixin, PluginDispatchMixin, PluginLedgerMixin):
             # deadline worker that cannot re-acquire the sweep's RLock; the flag is already set for the
             # whole sweep, so return where the locked re-entry used to. Every other caller still waits.
             return
-        with self._discovery_lock, _plugin_home_scope(self.home_path):
+        with _TimedLock(self._discovery_lock) as got_lock, _plugin_home_scope(self.home_path):
+            if not got_lock:
+                # Another sweep owns the registry and is still importing. Blocking here is what turned a
+                # slow plugin into an unstartable process; leave that sweep to finish — it sets
+                # ``_discovered`` and persists the toolset cache itself.
+                logger.warning(
+                    "Plugin discovery lock still held after %.0fs — skipping this pass; the in-flight "
+                    "sweep will finish it", _DISCOVERY_LOCK_TIMEOUT_S)
+                return
             if self._discovered and not force:
                 return
             # ``on_plugin_loaded`` reports the plugins this sweep loads that the process did not have before
@@ -1723,7 +1766,16 @@ def discover_plugins(force: bool = False) -> None:
 
     if safe_worker_enabled():
         return
-    _join_background_discovery()
+    if not _join_background_discovery():
+        # The sweep outlived the join, so it still holds the discovery lock. Asking for another pass
+        # here would sit on that lock for as long as the sweep takes (forever, if a plugin hangs);
+        # an incremental caller just needs the registry that sweep is producing, and ``force``
+        # callers get the timed acquire inside ``discover_and_load``.
+        logger.warning(
+            "Background plugin discovery still running after %.0fs — not starting a second pass",
+            _DISCOVERY_JOIN_TIMEOUT_S)
+        if not force:
+            return
     get_plugin_manager().discover_and_load(force=force)
 
 
@@ -1758,13 +1810,18 @@ def start_background_plugin_discovery() -> None:
         _background_discovery_thread.start()
 
 
-def _join_background_discovery(timeout: float = 30.0) -> None:
+def _join_background_discovery(timeout: Optional[float] = None) -> bool:
     """Wait for an in-flight background discovery (no-op from its own thread or a plugin-load worker it
-    spawned — that worker's parent is blocked waiting on it)."""
+    spawned — that worker's parent is blocked waiting on it).
+
+    Returns whether there is no live sweep left for the caller to contend with: ``False`` means the
+    join expired with the thread still importing, so its ``_discovery_lock`` is still held and any
+    pass the caller starts would block behind it."""
     t = _background_discovery_thread
     if t is None or not t.is_alive() or t is threading.current_thread() or in_plugin_load_worker():
-        return
-    t.join(timeout=timeout)
+        return True
+    t.join(timeout=_DISCOVERY_JOIN_TIMEOUT_S if timeout is None else timeout)
+    return not t.is_alive()
 
 
 def _plugin_toolset_keys_cache_path() -> Path:
@@ -1826,7 +1883,10 @@ def _delivery_manager() -> PluginManager:
     """
     manager = get_plugin_manager()
     if not getattr(manager, "_discovered", True):
-        _join_background_discovery()
+        if not _join_background_discovery():
+            # Hook delivery is not worth stalling a turn on a sweep that is still importing: return the
+            # manager as-is and let the next call find it discovered (same fail-open as a plugin error).
+            return manager
         manager.discover_and_load()
     return manager
 

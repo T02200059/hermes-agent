@@ -1351,11 +1351,44 @@ class GatewayTurnMixin(GatewayTurnPrepareMixin, GatewayTurnHygieneMixin, Gateway
                 "Skipping stale agent promotion for %s — generation %s is no longer current",
                 session_key or "", run_generation,
             )
+            # Not promoting is only half the job: this turn's agent keeps running with its slot already
+            # cleared by /stop, and it took the session's durable turn lease the moment it started. The
+            # next message then finds an empty slot (so the session reads as idle) and a held lease (so
+            # it queues), producing "still waiting on another Hermes process" from the gateway's own
+            # orphan. Stop it the way /stop would; the turn's finally releases the lease.
+            self._cancel_stale_run(session_key, run_generation, agent_holder[0])
             return
         turn_state = self._session_state(session_key).turn
         turn_state.agent, turn_state.ctx = agent_holder[0], turn_ctx
         if self._draining:
             self._update_runtime_status("draining")
+
+    def _cancel_stale_run(self, session_key: str, run_generation: int, agent: Any) -> None:
+        """Interrupt an agent whose run lost its generation while it was being constructed.
+
+        Best-effort by design: a test double or a third-party agent may not expose the interrupt ABI,
+        and the stale path must never turn a cleanup into a new failure. De-duplicated per
+        ``(session_key, generation)`` so a caller that reports the same stale run twice is silent the
+        second time.
+        """
+        try:
+            seen = getattr(self, "_stale_runs_cancelled", None)
+            if seen is None:
+                seen = self._stale_runs_cancelled = set()
+            stamp = (session_key, run_generation)
+            if stamp in seen:
+                return
+            # Bounded: generations never repeat within a process, so this only has to stop growing, not
+            # stay exact — dropping the history can at worst re-send one interrupt.
+            if len(seen) >= 256:
+                seen.clear()
+            seen.add(stamp)
+            from agent.interrupt_compat import request_hard_interrupt
+            # No tool_reason: ``hard_interrupt`` falls back to its own "explicit stop requested"
+            # category, which is the same attribution a user /stop carries.
+            request_hard_interrupt(agent, "Stop requested (stale run cancelled)")
+        except Exception:
+            logger.debug("Could not cancel the stale run for %s", session_key or "", exc_info=True)
 
     async def _run_agent_fire_pending_interrupt(
         self, adapter: Any, agent: Any, source: SessionSource, session_key: str,

@@ -1376,6 +1376,29 @@ def _terminal_sentinel_start(text: str) -> int:
     return start if start < end else -1
 
 
+# DeepSeek's chat template spells its control tokens with a fullwidth bar and SentencePiece's
+# U+2581: the glyph run cannot occur in prose the model meant to write, which is why these are
+# stripped ANYWHERE in the text — unlike the ASCII ``<|eos|>`` above, whose mid-text occurrences
+# are deliberate content and stay. Some decoders emit them as visible assistant text (a raw BOS at
+# the head of a turn, an EOS the client renders as a literal bubble); they are transport metadata,
+# never a message.
+_DEEPSEEK_SPECIAL_TOKENS = ("<｜begin▁of▁sentence｜>", "<｜end▁of▁sentence｜>")
+
+
+def _strip_deepseek_special_tokens(text: str) -> str:
+    """Remove leaked DeepSeek BOS/EOS literals; "" when nothing but specials was left.
+
+    Returning "" (rather than the whitespace remainder) is what makes a turn whose only content was
+    a leaked control token read as no visible output, instead of delivering one blank bubble.
+    """
+    if not text or not any(token in text for token in _DEEPSEEK_SPECIAL_TOKENS):
+        return text
+    cleaned = text
+    for token in _DEEPSEEK_SPECIAL_TOKENS:
+        cleaned = cleaned.replace(token, "")
+    return cleaned if cleaned.strip() else ""
+
+
 def _mask_media_scan_text(text: str) -> str:
     """Offset-preserving mask of protected spans (code, quotes, JSON string values) and of a
     terminal ``<|eos|>`` sentinel, so a tag glued to it ends on whitespace like any other.
@@ -4256,7 +4279,10 @@ class BasePlatformAdapter(ABC):
             from gateway.dead_targets import classify_dead_error
             from gateway.delivery_ledger import is_reconnect_only, mark_delivered, mark_failed
             if getattr(result, "success", False):
-                await asyncio.to_thread(mark_delivered, obligation_id)
+                # Carry the platform's own id: it is what /raise, edit and react target, and until it
+                # was ledgered it survived only as long as this return value.
+                await asyncio.to_thread(
+                    mark_delivered, obligation_id, getattr(result, "message_id", None))
                 return
             error = str(getattr(result, "error", "") or "")
             await asyncio.to_thread(mark_failed, obligation_id, error)

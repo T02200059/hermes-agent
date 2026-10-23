@@ -166,12 +166,16 @@ def load_and_go_live(name: str) -> Optional[dict[str, Any]]:
 def _go_live(name: str) -> Optional[dict[str, Any]]:
     from hermes_cli.plugins_activation_live import connect_plugin_mcp, live_notice, plugin_skills
     try:
-        from hermes_cli.plugins import _join_background_discovery, get_plugin_manager
+        from hermes_cli.plugins import _TimedLock, _join_background_discovery, get_plugin_manager
         _join_background_discovery()
         manager = get_plugin_manager()
         # Other forced passes (a reload-plugins verb, the dashboard) do not take the go-live lock, so the
-        # reads share the discovery lock with the pass that produced them.
-        with manager._discovery_lock:
+        # reads share the discovery lock with the pass that produced them. Timed, because a sweep stuck
+        # importing would otherwise hang this activation (and its caller) indefinitely.
+        with _TimedLock(manager._discovery_lock) as got_lock:
+            if not got_lock:
+                logger.debug("plugin go-live for %r skipped: discovery lock still held", name)
+                return None
             manager.discover_and_load(force=True)
             activation = find_activation(activation_summaries(manager), name)
             portable = manager.get_portable_mcp_servers()

@@ -475,7 +475,8 @@ class GatewayStartupMixin:
                 result = None
             with _log_suppressed(logging.DEBUG, "delivery ledger update failed", exc_info=True):
                 if result is not None and getattr(result, "success", False):
-                    await asyncio.to_thread(mark_delivered, row["obligation_id"])
+                    await asyncio.to_thread(
+                        mark_delivered, row["obligation_id"], getattr(result, "message_id", None))
                     redelivered += 1
                     logger.info(
                         "Redelivered recovered final response to %s:%s (obligation %s, attempt %d)",

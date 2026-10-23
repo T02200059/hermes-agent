@@ -201,11 +201,18 @@ def _initialize_schema(conn: sqlite3.Connection) -> None:
             owner_pid INTEGER,
             owner_started_at INTEGER,
             last_error TEXT,
-            adapter_profile TEXT
+            adapter_profile TEXT,
+            platform_message_id TEXT
         )"""
     )
-    if "adapter_profile" not in {row[1] for row in conn.execute("PRAGMA table_info(delivery_obligations)")}:
+    _columns = {row[1] for row in conn.execute("PRAGMA table_info(delivery_obligations)")}
+    if "adapter_profile" not in _columns:
         add_column_if_missing(conn, "delivery_obligations", "adapter_profile", "adapter_profile TEXT")
+    # The platform's own id for the message we sent. ``CREATE TABLE IF NOT EXISTS`` is a no-op on an
+    # existing state.db, so the ALTER below is the only thing that adds it to a live database; both
+    # places must name it or upgraded installs silently keep the old schema.
+    if "platform_message_id" not in _columns:
+        add_column_if_missing(conn, "delivery_obligations", "platform_message_id", "platform_message_id TEXT")
 
 
 def _transaction():
@@ -311,8 +318,43 @@ def mark_attempting(obligation_id: str) -> None:
     _update_state(obligation_id, "attempting")
 
 
-def mark_delivered(obligation_id: str) -> None:
-    _update_state(obligation_id, "delivered")
+def mark_delivered(obligation_id: str, message_id: Optional[str] = None) -> None:
+    """Mark a row delivered, recording the platform's id for the message when the send returned one.
+
+    Two UPDATEs rather than ``COALESCE`` on purpose, because the two cases mean different things:
+    ``message_id=None`` is "this send reported no id" and must leave any id an earlier attempt
+    recorded intact (a redelivery that loses the id would otherwise make the message unaddressable);
+    a non-empty value is authoritative and replaces it. /raise /edit /react all need that id, and
+    before this column it existed only in the adapter's return value for the length of one call.
+    """
+    stamp = str(message_id).strip() if message_id else ""
+    with _DB_LOCK, _transaction() as conn:
+        if stamp:
+            conn.execute(
+                """UPDATE delivery_obligations
+                   SET state='delivered', updated_at=?, last_error=NULL, platform_message_id=?
+                   WHERE obligation_id=?""",
+                (time.time(), stamp[:200], obligation_id))
+        else:
+            conn.execute(
+                """UPDATE delivery_obligations
+                   SET state='delivered', updated_at=?, last_error=NULL
+                   WHERE obligation_id=?""",
+                (time.time(), obligation_id))
+
+
+def platform_message_id_for(obligation_id: str) -> Optional[str]:
+    """The platform's own id for a delivered obligation, or None when it was never recorded.
+
+    Retained only as long as the row is: :func:`_prune` keeps 7 days / 500 rows (this is a crash
+    recovery ledger, not an audit log).
+    """
+    with _DB_LOCK, _transaction() as conn:
+        row = conn.execute(
+            "SELECT platform_message_id FROM delivery_obligations WHERE obligation_id=?",
+            (obligation_id,)).fetchone()
+    value = row[0] if row else None
+    return str(value) if value else None
 
 
 def mark_failed(obligation_id: str, error: str = "") -> None:

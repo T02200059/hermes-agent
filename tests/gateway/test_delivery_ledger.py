@@ -45,7 +45,7 @@ def _record(oid="ob-1", session_key="agent:main:slack:channel:C1", **kw):
 def _row(oid):
     with dl._connect() as conn:
         r = conn.execute(
-            """SELECT state, attempts, owner_pid, content, last_error
+            """SELECT state, attempts, owner_pid, content, last_error, platform_message_id
                FROM delivery_obligations WHERE obligation_id=?""",
             (oid,),
         ).fetchone()
@@ -55,6 +55,7 @@ def _row(oid):
         "owner_pid": r[2],
         "content": r[3],
         "last_error": r[4],
+        "platform_message_id": r[5],
     }
 
 
@@ -124,6 +125,82 @@ class TestSchemaMigration:
             conn.close()
 
         assert "adapter_profile" in columns
+
+    def test_adds_platform_message_id_to_existing_ledger(self):
+        """A live state.db only gets the new column through the ALTER reconciliation loop."""
+        conn = sqlite3.connect(":memory:")
+        try:
+            conn.execute(
+                """CREATE TABLE delivery_obligations (
+                    obligation_id TEXT PRIMARY KEY,
+                    session_key TEXT NOT NULL,
+                    platform TEXT NOT NULL,
+                    chat_id TEXT NOT NULL,
+                    thread_id TEXT,
+                    content TEXT NOT NULL,
+                    state TEXT NOT NULL,
+                    attempts INTEGER NOT NULL DEFAULT 0,
+                    created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL,
+                    owner_pid INTEGER,
+                    owner_started_at INTEGER,
+                    last_error TEXT,
+                    adapter_profile TEXT
+                )"""
+            )
+            dl._initialize_schema(conn)
+            columns = {
+                row[1] for row in conn.execute("PRAGMA table_info(delivery_obligations)")
+            }
+        finally:
+            conn.close()
+
+        assert "platform_message_id" in columns
+
+
+class TestPlatformMessageId:
+    """The platform's own id is what /raise, edit and react target; it must survive the send."""
+
+    def test_delivered_row_records_the_id(self):
+        _record()
+        dl.mark_delivered("ob-1", "om_abc123")
+
+        assert _row("ob-1")["state"] == "delivered"
+        assert _row("ob-1")["platform_message_id"] == "om_abc123"
+        assert dl.platform_message_id_for("ob-1") == "om_abc123"
+
+    def test_a_later_send_without_an_id_does_not_erase_the_recorded_one(self):
+        _record()
+        dl.mark_delivered("ob-1", "om_abc123")
+        # A redelivery whose adapter returned no id must not make the message unaddressable.
+        dl.mark_delivered("ob-1", None)
+
+        assert _row("ob-1")["platform_message_id"] == "om_abc123"
+        assert _row("ob-1")["state"] == "delivered"
+
+    def test_an_empty_string_counts_as_no_id(self):
+        _record()
+        dl.mark_delivered("ob-1", "om_abc123")
+        dl.mark_delivered("ob-1", "")
+
+        assert dl.platform_message_id_for("ob-1") == "om_abc123"
+
+    def test_a_new_id_replaces_the_old_one(self):
+        _record()
+        dl.mark_delivered("ob-1", "om_first")
+        dl.mark_delivered("ob-1", "om_second")
+
+        assert dl.platform_message_id_for("ob-1") == "om_second"
+
+    def test_unknown_obligation_has_no_id(self):
+        assert dl.platform_message_id_for("does-not-exist") is None
+
+    def test_delivering_without_an_id_still_works(self):
+        _record()
+        dl.mark_delivered("ob-1")
+
+        assert _row("ob-1")["state"] == "delivered"
+        assert dl.platform_message_id_for("ob-1") is None
 
 
 class TestStateMachine:

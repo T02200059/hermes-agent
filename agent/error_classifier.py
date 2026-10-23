@@ -1116,7 +1116,11 @@ def _status_429(c: _Ctx) -> Verdict:
         p in c.msg for p in ("usage_limit_reached",) + _USAGE_LIMIT_PATTERNS + _BILLING_PATTERNS
     )
     explicit_rate_limit = any(p in c.msg for p in _RATE_LIMIT_PATTERNS)
-    if quota_wall and not explicit_rate_limit and not _has_usage_limit_transient_signal(c.msg, c.body, c.headers):
+    if quota_wall and not explicit_rate_limit and (
+        not _has_usage_limit_transient_signal(c.msg, c.body, c.headers)
+        # A day/week window is a wall, not a wait: the loop's 600 s Retry-After cap never reaches it.
+        or _quota_window_exceeds_retry_horizon(c.msg, c.body, c.headers)
+    ):
         return _V_BILLING
     # Carry the reset window so the terminal copy can name it instead of "wait a minute" (#89401).
     reset = _rate_limit_reset_seconds(c.msg, c.body, c.headers)
@@ -1340,6 +1344,29 @@ def _rate_limit_reset_seconds(error_msg: str, body: dict, response_headers) -> O
     if (seconds := parse_retry_after_seconds(response_headers)) is not None:
         return seconds
     return reset_delay_from_message(error_msg)
+
+
+# A quota wall measured in days or weeks cannot be waited out: the retry loop caps its own sleep at
+# ``retry_utils.RETRY_AFTER_CAP_S`` (600 s), so three retries burn ~30 minutes and then report the
+# same wall with nothing learned. Only day-and-longer windows are demoted — minute/hour windows do
+# reopen inside a session and stay transient — and anything unrecognized keeps upstream's
+# classification, because a missed demotion costs one long retry while a wrong one discards a
+# credential that was about to work.
+_LONG_QUOTA_WINDOW_RE = re.compile(
+    r"(?i)\breset(?:s|ting)?\s+(?:in|after)\s+"
+    r"(?:(?:\d+(?:\.\d+)?|an?)\s*)?(?:day|days|week|weeks|month|months)\b"
+)
+_LONG_QUOTA_WINDOW_SECONDS = 86_400.0
+
+
+def _quota_window_exceeds_retry_horizon(error_msg: str, body: dict, response_headers) -> bool:
+    """True when a usage-limit response names a reset a day or more out, by message grammar
+    (``resets in 2 days`` / ``reset after 1 week``) or by a reset field / ``Retry-After`` at that
+    scale. Callers use it to demote a usage-limit 429 that would otherwise read as transient."""
+    if _LONG_QUOTA_WINDOW_RE.search(error_msg or ""):
+        return True
+    seconds = _rate_limit_reset_seconds(error_msg, body, response_headers)
+    return seconds is not None and seconds >= _LONG_QUOTA_WINDOW_SECONDS
 
 
 def _model_id_missing_known_prefix(model: str, provider: str) -> bool:

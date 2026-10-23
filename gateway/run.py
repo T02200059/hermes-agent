@@ -709,6 +709,11 @@ def _sanitize_gateway_final_response(platform: Any, text: str) -> str:
     if _eos_start >= 0:
         text = text[:_eos_start].rstrip()
 
+    # DeepSeek-wire decoders leak the same class of token in a different glyph run (fullwidth bar +
+    # SentencePiece U+2581). That literal cannot be prose, so it is stripped wherever it appears, not
+    # only at the end; a turn whose entire content was one reads as no visible reply.
+    text = _strip_deepseek_special_tokens(text)
+
     # Cancellation metadata, not prose; ACP/TUI already suppress this sentinel, chat surfaces should too.
     # See #7921.
     if str(text).strip().startswith(INTERRUPT_WAITING_FOR_MODEL_PREFIX):
@@ -2207,6 +2212,7 @@ from gateway.run_plugin_rewire import GatewayPluginRewireMixin
 from gateway.platforms.base import (
     BasePlatformAdapter,
     _reply_anchor_for_event,
+    _strip_deepseek_special_tokens,
     _terminal_sentinel_start,
 )
 from gateway.platforms.event import MessageEvent, MessageType

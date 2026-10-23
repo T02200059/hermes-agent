@@ -453,6 +453,42 @@ class TestClassifyApiError:
         assert result.reason == FailoverReason.rate_limit
         assert result.retryable is True
 
+    @pytest.mark.parametrize(
+        "phrase",
+        [
+            # Codex/OpenCode-Go spell the wall out in days and weeks.
+            "GoUsageLimitError: Weekly usage limit reached. Resets in 2 days.",
+            "usage limit reached, reset after 1 week",
+            "usage limit reached; resets in 3 days",
+        ],
+    )
+    def test_429_usage_limit_day_or_week_wall_is_terminal_billing(self, phrase):
+        """A day/week quota wall is a wall, not a wait.
+
+        The retry loop caps its sleep at ``RETRY_AFTER_CAP_S`` (600 s), so three retries burn
+        ~30 minutes and then report the same wall. Only day-and-longer windows are demoted; the
+        minute/hour cases above stay transient because they DO reopen inside a session.
+        """
+        e = MockAPIError(phrase, status_code=429)
+        result = classify_api_error(e, provider="opencode-go", model="glm-5")
+        assert result.reason == FailoverReason.billing, phrase
+        assert result.retryable is False, phrase
+
+    def test_429_explicit_rate_limit_wording_wins_over_a_long_window(self):
+        """An explicit throttle phrase keeps the credential in play even with a long reset named."""
+        e = MockAPIError("Rate limit exceeded; resets in 2 days.", status_code=429)
+        result = classify_api_error(e, provider="anthropic", model="claude-opus-5")
+        assert result.reason == FailoverReason.rate_limit
+        assert result.retryable is True
+
+    def test_429_long_window_from_a_reset_field_is_terminal_billing(self):
+        """The window can arrive structurally instead of in prose (2 days of Resets-In-Seconds)."""
+        e = MockAPIError("Weekly usage limit reached.", status_code=429)
+        e.body = {"error": {"resets_in_seconds": 172_800}}
+        result = classify_api_error(e, provider="opencode-go", model="glm-5")
+        assert result.reason == FailoverReason.billing
+        assert result.retryable is False
+
     def test_alibaba_rate_increased_too_quickly(self):
         """Alibaba/DashScope returns a unique throttling message.
 

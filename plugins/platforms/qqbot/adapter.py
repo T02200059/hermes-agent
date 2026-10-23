@@ -96,6 +96,12 @@ _STT_PROVIDER_BASE_URLS = {
     "glm": "https://open.bigmodel.cn/api/coding/paas/v4"}
 _AUDIO_URL_EXTENSIONS = {".silk", ".amr", ".mp3", ".wav", ".ogg", ".m4a", ".aac", ".flac"}
 
+# Liveness bounds for the WebSocket read path. The server answers every op-1 heartbeat with op 11,
+# so silence is measurable; both numbers are generous multiples of the ~30 s Hello interval because
+# a quiet chat is normal and only an unanswered heartbeat means the peer is gone.
+_READ_TIMEOUT_S = 90.0
+_HEARTBEAT_ACK_GRACE = 2.5  # heartbeat periods with no frame at all before the link is declared dead
+
 
 class QQAdapter(OwnAccessPolicyMixin, BasePlatformAdapter):
     """QQ Bot adapter backed by the official QQ Bot WebSocket Gateway + REST API."""
@@ -162,6 +168,10 @@ class QQAdapter(OwnAccessPolicyMixin, BasePlatformAdapter):
         self._heartbeat_interval: float = 30.0  # seconds, updated by Hello
         self._session_id: Optional[str] = None
         self._last_seq: Optional[int] = None
+        # Monotonic timestamp of the last frame received from the server (0.0 = none yet). A
+        # half-open TCP link still accepts every ``send_json``, so "the socket is open" says nothing
+        # about whether the server is there; this is the liveness witness the heartbeat loop reads.
+        self._last_frame_at: float = 0.0
         self._chat_type_map: dict[str, str] = {}  # chat_id → "c2c"|"group"|"guild"|"dm"
         self._pending_responses: dict[str, asyncio.Future] = {}  # request/response correlation
         self._dedup = MessageDeduplicator(max_size=DEDUP_MAX_SIZE, ttl_seconds=DEDUP_WINDOW_SECONDS)
@@ -433,7 +443,15 @@ class QQAdapter(OwnAccessPolicyMixin, BasePlatformAdapter):
             raise RuntimeError("WebSocket closed")
 
         while self._running and self._ws and not self._ws.closed:
-            msg = await self._ws.receive()
+            # Bounded read: a half-open link (NAT timeout, middlebox drop, server gone) makes
+            # ``receive()`` wait forever while every send still succeeds, so the adapter reports
+            # connected and nothing ever arrives. Timing out raises into the reconnect loop, which is
+            # the only thing that can repair it.
+            try:
+                msg = await asyncio.wait_for(self._ws.receive(), timeout=_READ_TIMEOUT_S)
+            except asyncio.TimeoutError:
+                raise RuntimeError(
+                    f"No WebSocket frame in {_READ_TIMEOUT_S:.0f}s — treating the link as half-open")
             if msg.type == aiohttp.WSMsgType.TEXT:
                 payload = self._parse_json(msg.data)
                 if payload:
@@ -444,12 +462,26 @@ class QQAdapter(OwnAccessPolicyMixin, BasePlatformAdapter):
                 raise RuntimeError("WebSocket closed")
 
     async def _heartbeat_loop(self) -> None:
-        """Send op 1 heartbeats with the latest seq at 80% of the Hello interval."""
+        """Send op 1 heartbeats at 80% of the Hello interval, and close the socket when the server
+        stops answering them.
+
+        Sending alone proves nothing about the peer: on a half-open connection every ``send_json``
+        succeeds because the bytes go into a black hole. The server answers each heartbeat with op 11,
+        so a link that has produced no frame at all for a few heartbeat periods is dead and the
+        reconnect loop has to be woken — which only closing the socket can do.
+        """
         with contextlib.suppress(asyncio.CancelledError):
             while self._running:
                 await asyncio.sleep(self._heartbeat_interval)
                 if not self._ws or self._ws.closed:
                     continue
+                silent_for = time.monotonic() - self._last_frame_at
+                if self._last_frame_at and silent_for > self._heartbeat_interval * _HEARTBEAT_ACK_GRACE:
+                    logger.warning(
+                        "[%s] No frame from the server in %.0fs (heartbeats unanswered) — closing the "
+                        "socket so the reconnect loop takes over", self._log_tag, silent_for)
+                    await self._close_ws()
+                    return
                 try:
                     await self._ws.send_json({"op": 1, "d": self._last_seq})
                 except Exception as exc:
@@ -505,6 +537,8 @@ class QQAdapter(OwnAccessPolicyMixin, BasePlatformAdapter):
 
     def _dispatch_payload(self, payload: dict[str, Any]) -> None:
         """Route inbound WebSocket payloads (dispatch synchronously, spawn async handlers)."""
+        # Any frame — dispatch, heartbeat ACK, Hello — proves the server is still there.
+        self._last_frame_at = time.monotonic()
         op, t, s, d = payload.get("op"), payload.get("t"), payload.get("s"), payload.get("d")
         if isinstance(s, int) and (self._last_seq is None or s > self._last_seq):
             self._last_seq = s

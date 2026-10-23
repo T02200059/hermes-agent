@@ -276,6 +276,39 @@ def test_local_surface_keeps_terminal_eos_control_token():
     assert _sanitize_gateway_final_response("local", "normal answer<|eos|>") == "normal answer<|eos|>"
 
 
+_DEEPSEEK_BOS = "<｜begin▁of▁sentence｜>"
+_DEEPSEEK_EOS = "<｜end▁of▁sentence｜>"
+
+
+@pytest.mark.parametrize("platform", [*CHAT_PLATFORMS, Platform.BLUEBUBBLES])
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        # A leaked BOS opening the turn, an EOS closing it, and both together.
+        (_DEEPSEEK_BOS + "你好，需要我做什么？", "你好，需要我做什么？"),
+        ("已经处理完了。" + _DEEPSEEK_EOS, "已经处理完了。"),
+        (_DEEPSEEK_BOS + _DEEPSEEK_EOS, ""),
+        (_DEEPSEEK_EOS + "\n", ""),
+        # Mid-text leaks are control tokens too: this glyph run cannot occur in prose the model wrote.
+        ("前半句" + _DEEPSEEK_EOS + "后半句", "前半句后半句"),
+        # Ordinary prose, and the ASCII token, are untouched by this pass.
+        ("普通回答，没有任何特殊符。", "普通回答，没有任何特殊符。"),
+        ("<|eos|> stays for its own terminal-only rule", "<|eos|> stays for its own terminal-only rule"),
+        # A lone fullwidth bar is prose (e.g. a table cell), not a token.
+        ("A｜B", "A｜B"),
+    ],
+)
+def test_chat_gateways_strip_leaked_deepseek_special_tokens(platform, raw, expected):
+    """DeepSeek-wire BOS/EOS glyph runs are transport metadata, never chat content."""
+    assert _sanitize_gateway_final_response(platform, raw) == expected
+
+
+def test_local_surface_keeps_deepseek_special_tokens():
+    """The raw pass-through contract is unchanged: programmatic consumers get bytes as produced."""
+    raw = _DEEPSEEK_BOS + "答案" + _DEEPSEEK_EOS
+    assert _sanitize_gateway_final_response("local", raw) == raw
+
+
 def test_telegram_status_sanitizes_raw_provider_security_errors():
     """Provider policy/security bodies should be replaced before chat delivery."""
     raw = (
