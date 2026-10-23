@@ -132,11 +132,21 @@ async def try_auto_card_on_end(
         meta = runner._thread_metadata_for_source(
             source, runner._reply_anchor_for_event(event)
         )
-        # [owner] auto-card: split footer from response so it can be rendered after hr divider
+        # [owner] auto-card: split footer from response so it can be rendered after hr divider.
+        # ``footer_line`` is authoritative: when the response happens to NOT end with it
+        # (a caller reformatted/trimmed the body after appending), the footer must still
+        # be rendered. Requiring the suffix match silently dropped the whole footer line
+        # in exactly that case — the card still went out (setting ``already_sent``), so
+        # neither the card nor the plain-text fallback carried it any more.
         body_text = response
         footer_text = ""
-        if footer_line and response.endswith(footer_line):
-            body_text = response[: -len(footer_line)].rstrip("\n")
+        if footer_line:
+            if response.endswith(footer_line):
+                body_text = response[: -len(footer_line)].rstrip("\n")
+            elif footer_line in response:
+                # Present but not last (e.g. trailing whitespace/notice after it): pull
+                # it out so it is not rendered twice, once inside the body.
+                body_text = response.replace(footer_line, "", 1).rstrip("\n")
             footer_text = footer_line
 
         result = await try_auto_card(

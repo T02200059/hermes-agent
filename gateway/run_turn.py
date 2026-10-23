@@ -1683,8 +1683,27 @@ class GatewayTurnMixin:
         from gateway.run import _load_gateway_config, _platform_config_key, _terminal_scope_cwd
         try:
             from gateway.runtime_footer import build_footer_line as _bfl
+
+            user_config = _load_gateway_config()
+            # A per-turn profile home may have no config.yaml at all (``main`` under
+            # the multiplex layout is the common case). ``load_user_config_effective``
+            # then returns ``{}`` — indistinguishable from "the user disabled it" — so
+            # every display setting silently reverted to its built-in default and the
+            # footer, configured and enabled in the base config, simply vanished. Read
+            # the display section from the base home when the scoped one has none.
+            if not (user_config or {}).get("display"):
+                try:
+                    from gateway import run as _gw_run
+
+                    _base_cfg = _gw_run._load_gateway_config(
+                        _gw_run._hermes_home / "config.yaml"
+                    )
+                    if isinstance(_base_cfg, dict) and _base_cfg.get("display"):
+                        user_config = _base_cfg
+                except Exception as _fallback_err:
+                    logger.debug("runtime_footer config fallback failed: %s", _fallback_err)
             return _bfl(
-                user_config=_load_gateway_config(),
+                user_config=user_config,
                 platform_key=_platform_config_key(source.platform), model=agent_result.get("model"),
                 context_tokens=agent_result.get("last_prompt_tokens", 0) or 0,
                 context_length=agent_result.get("context_length") or None,

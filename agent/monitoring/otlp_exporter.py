@@ -167,6 +167,7 @@ _map_failure_reported = False
 
 
 def export_batch(provider, batch: List[Dict[str, Any]]) -> int:
+    # [owner] first failure is reported at warning level; see the docstring.
     """Map a batch of events to OTel spans. Returns spans created.
 
     Per-event failures stay isolated (one bad event must not drop the batch), but
