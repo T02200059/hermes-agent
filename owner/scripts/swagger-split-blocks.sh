@@ -74,13 +74,15 @@ router_content = Path(os.path.join(project, router_file)).read_text(encoding="ut
 
 def extract_route_snippet(block_name):
     func_names = {
-        "customer": ["CustomerRegister"],
+        "customer": ["CustomerRegister", "ChannelRegister"],
         "resource_manager": ["NodeRegister", "InstanceRegister", "GPUSpecRegister", "ClusterRegister"],
         "storage": ["StorageRegister"],
         "user": ["UserRegister", "AuthRegister"],
         "other": ["OrderRegister", "CouponRegister", "MarketingRegister", "OpsRegister",
                   "TicketRegister", "WalletRegister", "ImageRegister", "MaasRegister",
-                  "RechargeRegister", "StatisticsRegister", "ExportRegister", "OpLogRegister"],
+                  "RechargeRegister", "StatisticsRegister", "ExportRegister", "OpLogRegister",
+                  "AgentRegister", "BareMetalRegister", "CloudDiskRegister",
+                  "InboxRegister", "SMSRegister"],
     }
     names = func_names.get(block_name, [])
     snippets = []
