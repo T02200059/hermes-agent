@@ -1,5 +1,7 @@
-"""Owner provider extensions — credential helpers.
+"""Owner provider extensions.
 
-Deleting this package drops prefix-aware env filtering and OAuth expiry checks
-from /providers listing; listing falls back to non-empty env / auth-store presence.
+- ``credential_helpers`` — prefix-aware env filtering and OAuth expiry checks
+  for /providers listing.
+- ``damodel`` — Damodel NewAPI proxy ``ProviderProfile`` (registered via the
+  bundled ``plugins/model-providers/damodel/`` glue).
 """
