@@ -256,8 +256,15 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 
 - [ ] **C11** · 源 §4.2–4.6 · auto-card / early-typing / diff·clarify 卡 / bot 菜单 · **优先级：P1**
 - [ ] **C12** · 源 §4.10–4.15 · memory write-approval 卡 / feishu-guide / 上传守卫 / doc_read 图 OCR / @所有人 / merge_forward · **优先级：P1**
-- [ ] **C13** · 源 §7.24–7.26 · progress / approval / english explainer · **优先级：P1**
-- [ ] **C14** · 源 §14 · output_guard + stream_guard · **优先级：P1**
+- [ ] **C13** · 源 §7.24–7.26 · progress / approval / english explainer · **优先级：P1** · **延后**：等飞书相关基础设施（阶段二）后再做
+- [x] **C14** · 源 §14 · output_guard + stream_guard · **优先级：P1**（阶段一 · 完整版）
+  - helper：`owner/output_guard/`（`transform_llm_output`）+ `owner/stream_guard/`（`on_stream_delta`；S1/S2/S3，S3=`is_repetition_dominated`）
+  - 注册：`owner/owner-extensions` `register()` + `plugin.yaml` hooks
+  - 配置：`owner/config/patch.yaml` → `stream_guard.*`（默认 `action: interrupt`）+ `output_guard.enabled`
+  - 胶水：`agent/stream_delivery.py`（`request_stop` + latch）；`turn_finalizer.apply_llm_output_transform`（C1 interrupted + reasoning）；`turn_final_response`（C1）；`turn_api_call.handle_api_interrupt`（C2 early-persist 前 transform）
+  - 落地说明：`owner/docs/c14-output-stream-guard.md`
+  - 测：`tests/owner/test_c14_guards.py`；自检 `python -m owner.{output,stream}_guard.selfcheck`
+  - 依赖：无硬依赖未做定制；C13 只读 stream_guard.snapshot（方向 C13→C14）
 - [ ] **C15** · 源 §7.2–7.3 · Memory synthetic guard + OpenViking sync recall/card · **优先级：P1**
 - [x] **C16** · 源 §7.4 · Cron env 隔离（ContextVar + restart scrub） · **优先级：P1** · **验证状态：官方已修**
   - v2：`gateway/session_context._VAR_MAP["HERMES_CRON_SESSION"]` + `cron/scheduler._CronRunScope` set/reset；gateway/ACP/TUI bind `cron_session=""`；`tools/approval_context` ContextVar 感知；外部 worker 剥离 presence vars。无进程级 `os.environ["HERMES_CRON_SESSION"]=1` 写入。

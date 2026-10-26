@@ -57,6 +57,8 @@ class StreamDeliveryMixin:
         self._native_reasoning_streamed = False
         # Next stream re-reads plugins.stream_reasoning_deltas (config edits land per request).
         self._stream_reasoning_hooks_enabled = None
+        # [owner] C14: clear stream_guard stop latch for the next model response
+        self._stream_stop_requested = False
 
         def deliver(tail: str) -> None:
             if tail:
@@ -307,7 +309,36 @@ class StreamDeliveryMixin:
             "model": self.model or "",
             "provider": self.provider or "",
             "surface": self.platform or "cli",
+            # [owner] C14: stream_guard interrupt — callable stop for on_stream_delta
+            "request_stop": self._request_stream_stop,
         }
+
+    def _request_stream_stop(self, reason: str = "", turn_id: str = "") -> bool:
+        """[owner] Soft-stop the in-flight stream (stream_guard interrupt path).
+
+        Sets the agent interrupt flag and a delivery-local latch so further
+        deltas are dropped. Safe to call from a stream-hook thread; idempotent.
+        Returns True when this call newly armed the stop (or reinforced an
+        in-progress interrupt for the same turn).
+        """
+        current = getattr(self, "_current_turn_id", "") or ""
+        if turn_id and current and turn_id != current:
+            return False
+        already = bool(getattr(self, "_stream_stop_requested", False))
+        try:
+            self._interrupt_requested = True
+        except Exception:
+            pass
+        self._stream_stop_requested = True
+        if reason and not already:
+            try:
+                self._vprint(
+                    f"{getattr(self, 'log_prefix', '')}⏹ stream stop requested: {reason}",
+                    force=True,
+                )
+            except Exception:
+                pass
+        return True
 
     def _emit_stream_start(self) -> None:
         self._enqueue_stream_hook("on_stream_start")
@@ -321,6 +352,9 @@ class StreamDeliveryMixin:
         if self._stream_writer_superseded():
             # See #65991.
             self._note_dropped_stream_writer("_fire_stream_delta")
+            return
+        # [owner] C14: stream_guard interrupt latch — drop further visible deltas
+        if getattr(self, "_stream_stop_requested", False):
             return
         # One paragraph break before the first text delta after a tool iteration, without
         # stacking blank lines across back-to-back tool iterations.
@@ -364,6 +398,9 @@ class StreamDeliveryMixin:
             # Single-writer guard (#65991): fence out a superseded stream's reasoning deltas the same way as
             # content deltas.
             self._note_dropped_stream_writer("_fire_reasoning_delta")
+            return
+        # [owner] C14: stream_guard interrupt latch
+        if getattr(self, "_stream_stop_requested", False):
             return
         self._call_quietly(self.reasoning_callback, text)
         # Resolve the opt-in once per stream, not per token: each lookup took _CONFIG_LOCK and

@@ -343,13 +343,14 @@ def finish_text_response(
 
     # Plugins rewrite the reply BEFORE it is appended and flushed: SQLite treats a non-blank
     # assistant row as settled, so a transform after this write would reach the user but never
-    # the stored/replayed transcript (#44239). finalize_turn reads the recorded outcome; like
-    # there, an interrupted turn keeps the raw text.
+    # the stored/replayed transcript (#44239). finalize_turn reads the recorded outcome.
+    # [owner] C14 C1: interrupted turns with visible text still go through the transform.
     from agent.turn_finalizer import apply_llm_output_transform
     _transformed = False
-    if not getattr(agent, "_interrupt_requested", False):
+    if final_response:
         final_response, _transformed, _ = apply_llm_output_transform(
             agent, final_response, turn_id=getattr(agent, "_current_turn_id", "") or "", logger=logger,
+            interrupted=bool(getattr(agent, "_interrupt_requested", False)),
         )
     if _transformed:
         if _promoted:

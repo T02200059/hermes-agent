@@ -482,29 +482,48 @@ def _apply_output_hooks(
 
 def apply_llm_output_transform(
     agent, final_response, *, turn_id, platform=None, logger=None,
+    interrupted=None, reasoning_text=None,
 ) -> tuple[Any, bool, Optional[Any]]:
     """Fire ``transform_llm_output`` once per turn and return
     ``(final_response, transformed, pre_transform_response)``.
 
     Called BEFORE the final assistant row is first persisted — from ``finish_text_response``
-    ahead of its durable flush, and from ``finalize_turn._persist_step`` ahead of the
-    recovery-path tail close — so the text the user sees is the text stored in SQLite/JSON and
-    replayed next turn (#44239). SQLite treats a non-blank assistant row as settled (a re-flush
-    adopts the stored content rather than overwriting it), so transforming after that first
-    write can never reach the durable store. Idempotent per ``turn_id``: later callers in the
-    same turn get the recorded outcome instead of a second hook firing. Only the current
-    turn's not-yet-written text is touched — earlier turns and the system prompt are never
-    rewritten (prompt-cache invariant)."""
+    ahead of its durable flush, from ``finalize_turn._persist_step`` ahead of the
+    recovery-path tail close, and from the interrupt early-persist path — so the text the
+    user sees is the text stored in SQLite/JSON and replayed next turn (#44239). SQLite
+    treats a non-blank assistant row as settled (a re-flush adopts the stored content rather
+    than overwriting it), so transforming after that first write can never reach the durable
+    store. Idempotent per ``turn_id``: later callers in the same turn get the recorded
+    outcome instead of a second hook firing. Only the current turn's not-yet-written text is
+    touched — earlier turns and the system prompt are never rewritten (prompt-cache invariant).
+
+    [owner] C14: also runs on interrupted turns that still carry partial text (C1), and
+    forwards ``interrupted`` / ``reasoning_text`` so output_guard can fail-open on short
+    interrupt stubs while still folding a long degenerate partial.
+    """
     if logger is None:
         from agent.conversation_loop import logger
     recorded = getattr(agent, "_llm_output_transform", None)
     if isinstance(recorded, tuple) and len(recorded) == 3 and recorded[0] == turn_id:
         _, transformed, pre_transform = recorded
+        # [owner] C14: return the folded text recorded on first fire, not the caller's stale pre-transform.
+        if transformed:
+            folded = getattr(agent, "_llm_output_transform_text", None)
+            if isinstance(folded, str) and folded:
+                return folded, True, pre_transform
         return final_response, transformed, pre_transform
     if not final_response:
         return final_response, False, None
     if platform is None:
         platform = getattr(agent, "platform", None) or ""
+    if interrupted is None:
+        interrupted = bool(getattr(agent, "_interrupt_requested", False))
+    if reasoning_text is None:
+        reasoning_text = (
+            getattr(agent, "_current_streamed_reasoning_text", None)
+            or getattr(agent, "_last_reasoning_text", None)
+            or ""
+        )
     transformed, pre_transform = False, None
     # First hook to return a string wins; None/empty leaves the text unchanged.
     for _hook_result in _invoke_hook_safely(
@@ -514,11 +533,15 @@ def apply_llm_output_transform(
         model=agent.model,
         platform=platform,
         turn_id=turn_id,  # per-turn identity for the hook callback gate
+        # [owner] C14
+        interrupted=interrupted,
+        reasoning_text=reasoning_text or "",
     ):
         if isinstance(_hook_result, str) and _hook_result:
             pre_transform, final_response, transformed = final_response, _hook_result, True
             break
     agent._llm_output_transform = (turn_id, transformed, pre_transform)
+    agent._llm_output_transform_text = final_response if transformed else None
     return final_response, transformed, pre_transform
 
 
@@ -627,8 +650,11 @@ def finalize_turn(
         # earlier seam transformed; the normal text turn already did this before its flush and
         # gets the recorded outcome back. Either way the tail close below writes the text the
         # user will see, never the raw model text (#44239).
-        if final_response and not interrupted:
-            final_response, _, _ = apply_llm_output_transform(agent, final_response, turn_id=turn_id, logger=logger)
+        # [owner] C14 C1: still fold interrupted partials that carry visible text
+        if final_response:
+            final_response, _, _ = apply_llm_output_transform(
+                agent, final_response, turn_id=turn_id, logger=logger, interrupted=interrupted,
+            )
         _close_transcript_tail(agent, messages, final_response, interrupted, _recovered_from_stream)
         if not interrupted and not failed:
             _micro_compact_after_turn(agent, messages, final_response, logger, effective_task_id)

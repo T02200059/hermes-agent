@@ -25,3 +25,30 @@ checkpoints:
   predict_cache_size: 32
   # 静态解析候选数 >= 此阈值则跳过 LLM
   predict_static_threshold: 1
+
+# ── C14 stream_guard：生成中退化闸门 ─────────────────────────────────────────
+# 消费 on_stream_delta；滑窗三信号：S1 阶段终止语 / S2 风格签名 / S3 官方
+# is_repetition_dominated（s3_solo）。命中后 action=interrupt 中止本轮（完整版
+# 默认）| warn_only 只告警。需看纯思考空转时另开 plugins.stream_reasoning_deltas。
+# 标定与设计：owner/docs/design/stream-guard/degenerate-stream-guard.md
+stream_guard:
+  enabled: true
+  action: interrupt
+  min_stream_chars: 1200
+  grace_seconds: 20
+  window_chars: 4096
+  eval_interval_chars: 512
+  vote_threshold: 2
+  s3_solo: true
+  marker_rate_per_kb: 3.0
+  signature_rate_multiple: 8.0
+  signature_baseline_per_kb: 1.0
+  signature_tokens:
+    - "ฅ"
+  max_actions_per_turn: 1
+
+# ── C14 output_guard：终局折叠（无额外开关；钩子常开，短文 fail-open）────────
+# 阈值在代码常量；此处仅留 enabled 便于秒关。
+output_guard:
+  enabled: true
+

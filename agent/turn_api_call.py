@@ -205,6 +205,18 @@ def handle_api_interrupt(
         append_message(messages, hidden_interrupt_placeholder_row())
         final_response = REPETITION_LOOP_INTERRUPTED
     elif _partial:
+        # [owner] C14 C2: fold degenerate partial BEFORE the early interrupt persist so the
+        # SQLite/JSON row matches what the user will see (#44239 + interrupt early-flush gap).
+        try:
+            from agent.turn_finalizer import apply_llm_output_transform
+            _partial, _, _ = apply_llm_output_transform(
+                agent,
+                _partial,
+                turn_id=getattr(agent, "_current_turn_id", "") or "",
+                interrupted=True,
+            )
+        except Exception:
+            pass
         append_message(messages, {
             "role": "assistant", "content": _partial, "display_metadata": {"interrupted": True},
         })

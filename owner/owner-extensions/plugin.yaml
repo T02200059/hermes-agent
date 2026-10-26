@@ -1,5 +1,8 @@
 name: owner-extensions
 version: 0.1.0
 description: >-
-  Owner runtime extensions (/providers slash command).
+  Owner runtime extensions (/providers; C14 output_guard + stream_guard).
 author: "owner"
+hooks:
+  - transform_llm_output   # output_guard: fold/warn degenerate final replies
+  - on_stream_delta        # stream_guard: mid-generation degenerate watchdog
