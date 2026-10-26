@@ -254,6 +254,19 @@ from tests._fixtures.model_peer import model_peer  # fixture registers here
 from tests._fixtures.platform_gating import _platforms_gate_reason, _reject_contradictory_platform_marks
 
 
+def _restore_environment(baseline: dict) -> None:
+    """Delete the env names a test added and put back the ones it changed.
+
+    ``PYTEST_*`` is pytest's own per-phase bookkeeping; touching it here would race the
+    hook that sets and clears ``PYTEST_CURRENT_TEST`` around each phase.
+    """
+    for name in [k for k in os.environ if k not in baseline and not k.startswith("PYTEST_")]:
+        del os.environ[name]
+    for name, value in baseline.items():
+        if os.environ.get(name) != value:
+            os.environ[name] = value
+
+
 @pytest.fixture(autouse=True)
 def _hermetic_environment(tmp_path, tmp_path_factory, monkeypatch):
     """Blank out all credential/behavioral env vars so local and CI match.
@@ -449,6 +462,23 @@ def _hermetic_environment(tmp_path, tmp_path_factory, monkeypatch):
     # the generic credential-shaped env-var filter above.
     monkeypatch.delenv("GMI_API_KEY", raising=False)
     monkeypatch.delenv("GMI_BASE_URL", raising=False)
+
+    # 6. Snapshot the sanitized environment, and put it back when the test is over.
+    #    The curated lists in steps 1-2 can only clear names someone remembered to
+    #    list, and ``monkeypatch`` only undoes what IT set — neither sees the writes
+    #    that matter most here: product code mirroring platform config straight into
+    #    ``os.environ`` (``load_gateway_config`` / the per-platform
+    #    ``(config_key, ENV, coerce)`` tables in ``plugins/platforms/*/adapter.py``),
+    #    or a test body assigning ``os.environ[...]`` directly.
+    #    Measured consequence without this: ``tests/gateway/test_config.py`` finished a
+    #    run with DISCORD_ALLOW_BOTS=/"true", TELEGRAM_ALLOW_BOTS="true" and two
+    #    HERMES_DISCORD_LIVENESS_* values still set, i.e. the next test in the process
+    #    asserted with the bot gate already open (fail-open, not just flaky).
+    #    Taking the snapshot here — after the pins, after the blanking — means the
+    #    restore returns to the *sanitized* state, never to a developer's real keys.
+    env_baseline = {k: v for k, v in os.environ.items() if not k.startswith("PYTEST_")}
+    yield
+    _restore_environment(env_baseline)
 
 
 # Backward-compat alias — old tests reference this fixture name. Keep it
