@@ -76,20 +76,34 @@ output_guard:
   enabled: true
 
 
-# ── C13 explainers（预留 · 未启用）──────────────────────────────────────────
-# 统一块约定已敲定（见 owner/docs/owner改动清单-todo.md「二次开发可复用基建 §4」）。
-# 以下为推荐骨架注释，**不要**在 C13 落地前取消注释写成活键（避免半套配置）。
-# 旧树顶层 progress_explainer / approval_explainer / english_explainer 迁入本块；
-# call_llm task 仍用长名 progress_explainer|approval_explainer|english_explainer，
-# 对接 config.yaml auxiliary.<task>；timeout 键统一 timeout_ms。
-#
-# explainers:
-#   provider: auto
-#   model: auto
-#   timeout_ms: 30000
-#   progress:
-#     enabled: false
-#   approval:
-#     enabled: false
-#   english:
-#     enabled: false
+# ── C13 explainers：统一旁白（progress / approval / english）────────────────
+# 见 owner/docs/c13-explainers.md 与清单「二次开发可复用基建 §4」。
+# 取模：kind provider/model → 本块共用 → config.yaml auxiliary.<task> → 主模型；
+# call_llm task 长名：progress_explainer | approval_explainer | english_explainer。
+# 代码默认 enabled=false；本机对齐旧树实配 true。失败一律 fail-open。
+# 扩展：register_kind("name") + 本块 explainers.<name>: {enabled: true, ...}
+explainers:
+  provider: auto
+  model: auto
+  timeout_ms: 30000
+  progress:
+    enabled: true
+    silence_seconds: 60
+    stall_seconds: 120
+    min_interval_seconds: 120
+    max_per_turn: 5
+    tick_seconds: 5
+    platforms:
+      feishu: true
+      telegram: false
+  approval:
+    enabled: true
+    cache_ttl_seconds: 600
+    cache_max_entries: 128
+    platforms:
+      feishu: true
+  english:
+    enabled: true
+    platforms:
+      feishu: true
+      telegram: false

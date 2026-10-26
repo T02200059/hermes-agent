@@ -2060,12 +2060,20 @@ class GatewayTurnMixin(GatewayTurnPrepareMixin, GatewayTurnHygieneMixin, Gateway
     async def _run_agent_cleanup_turn_tasks(
         self, turn_ctx: TurnContext, *, progress_task: Any, log_task: Any, interrupt_monitor: asyncio.Task,
         _notify_task: asyncio.Task, tracking_task: asyncio.Task, stream_task: Any,
+        _pe_explainer: Any = None,
     ) -> None:
         """``finally`` half of a turn: cancel background tasks, flush stream, release the session slot."""
         stream_consumer_holder, session_key = turn_ctx.stream_consumer_holder, turn_ctx.session_key
         for task in (progress_task, log_task, interrupt_monitor, _notify_task):
             if task:
                 task.cancel()
+
+        # [owner] C13 progress_explainer: stop tick + restore callbacks
+        try:  # [owner]
+            from owner.explainers.progress.dispatcher import stop as _pe_stop  # [owner]
+            _pe_stop(_pe_explainer)
+        except Exception:  # [owner]
+            logger.debug("progress_explainer stop failed", exc_info=True)
 
         if stream_task:
             # No stream consumer was created: nothing to flush, cancel instead of waiting out 5s.
@@ -2427,6 +2435,20 @@ class GatewayTurnMixin(GatewayTurnPrepareMixin, GatewayTurnHygieneMixin, Gateway
             else spawn(self._run_agent_notify_long_running(disp, turn_ctx, _executor_task_holder))
         )
 
+        # [owner] C13 progress_explainer: silent-period narration (patch.yaml explainers.progress)
+        # agent_holder is still [None] here — pass the list for lazy resolve (scheme ①).
+        _pe_explainer = None  # [owner]
+        try:  # [owner]
+            from owner.explainers.progress.dispatcher import install_progress_explainer  # [owner]
+            _pe_explainer = install_progress_explainer(  # [owner]
+                runner=self, source=source,
+                session_key=session_key, turn_ctx=turn_ctx,
+                executor_ref=lambda: _executor_task_holder,
+                agent_holder=turn_ctx.agent_holder,
+            )
+        except Exception:  # [owner]
+            logger.debug("progress_explainer install failed", exc_info=True)
+
         try:
             # run_sync is TurnRunner.run_sync (bound method; executor call unchanged).
             worker = self._run_agent_start_turn_worker(turn_ctx, turn_runner.run_sync)
@@ -2449,6 +2471,7 @@ class GatewayTurnMixin(GatewayTurnPrepareMixin, GatewayTurnHygieneMixin, Gateway
             await self._run_agent_cleanup_turn_tasks(
                 turn_ctx, progress_task=progress_task, log_task=log_task, interrupt_monitor=interrupt_monitor,
                 _notify_task=_notify_task, tracking_task=tracking_task, stream_task=stream_task,
+                _pe_explainer=_pe_explainer,
             )
 
         await self._run_agent_mark_streamed_delivery(response, turn_ctx)

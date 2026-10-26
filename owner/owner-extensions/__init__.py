@@ -34,3 +34,17 @@ def register(ctx) -> None:
         _register_stream_guard(ctx)
     except Exception:
         logger.warning("owner: stream_guard registration failed", exc_info=True)
+
+    # [owner] C13: progress + english explainers
+    try:
+        from owner.explainers.progress import register_hooks as _register_progress_explainer
+
+        _register_progress_explainer(ctx)
+    except Exception:
+        logger.warning("owner: progress_explainer registration failed", exc_info=True)
+    try:
+        from owner.explainers.english import register_hooks as _register_english_explainer
+
+        _register_english_explainer(ctx)
+    except Exception:
+        logger.warning("owner: english_explainer registration failed", exc_info=True)

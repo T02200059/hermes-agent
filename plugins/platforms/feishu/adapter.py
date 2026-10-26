@@ -1806,12 +1806,30 @@ class FeishuAdapter(BasePlatformAdapter):
                 pre_warm_sender_from_metadata(self, prompt.metadata)
             except Exception:
                 logger.debug("[Feishu] approval name pre-warm skipped", exc_info=True)
+            # [owner] C13 approval_explainer: append command explanation under prompt body
+            _approval_text = prompt.text
+            try:  # [owner]
+                from owner.explainers.approval import explain_command, format_card_appendix  # [owner]
+                from owner.explainers.common import display_language  # [owner]
+                _expl = await explain_command(  # [owner]
+                    prompt.command or "",
+                    platform="feishu",
+                    chat_id=str(prompt.chat_id or ""),
+                    reason=str(prompt.description or ""),
+                    tool_name="terminal",
+                )
+                if _expl:
+                    _approval_text = (_approval_text or "") + format_card_appendix(
+                        _expl, language=display_language(),
+                    )
+            except Exception:  # [owner]
+                logger.debug("[Feishu] approval_explainer failed", exc_info=True)
             approval_id = next(self._approval_counter)
             actions = [
                 _card_button(label, style or "default",
                              {"hermes_action": self._EA_CARD_ACTIONS[choice], "approval_id": approval_id})
                 for label, choice, style in prompt.actions]
-            card = _card(f"⚠️ {t('gateway.exec_approval.header')}", "orange", prompt.text, actions=actions)
+            card = _card(f"⚠️ {t('gateway.exec_approval.header')}", "orange", _approval_text, actions=actions)
             return await self._send_interactive_card(
                 prompt.chat_id, card, prompt.metadata, "send_exec_approval failed",
                 state_map=self._approval_state, state_id=approval_id, session_key=prompt.session_key,

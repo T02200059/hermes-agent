@@ -58,27 +58,27 @@
   - 官方 `plugins/platforms/feishu/adapter.py` 事件环（落地时薄委托，逻辑进 `owner/`）
 - **配置**：待 C11 余下设计定键；预计挂 `config.owner.*`（经 patch），不要塞进官方 gateway 配置。
 
-### 4. C13 Explainers 统一配置与 auxiliary · **C13 · 约定已敲定 / 代码待做**
+### 4. C13 Explainers 统一配置与 auxiliary · **C13 · 已落地**
 
 旧树三套顶层段（`progress_explainer` / `approval_explainer` / `english_explainer`）各自 `load_config` + 各自解析 provider/model。**v2 禁止再分叉**：配置与取模入口收成一套，三 kind 共用 helper。
 
 #### 4.1 选定 schema（`owner/config/patch.yaml` → `config.owner.explainers`）
 
 ```yaml
-# 推荐骨架（落地 C13 时启用；当前现网不写活键，见 patch.yaml 注释预留）
+# 现网活键（见 owner/config/patch.yaml；说明 owner/docs/c13-explainers.md）
 explainers:
   # 共用默认；各 kind 可覆盖同名键
   provider: auto          # 空或 auto → 交给 call_llm auxiliary 链
   model: auto
   timeout_ms: 30000       # 统一毫秒；取代旧 explainer_timeout_ms / 混用 timeout_ms
   progress:
-    enabled: false
+    enabled: true         # 代码默认 false；本机活键 true
     # kind 专有：silence_seconds / min_interval_seconds / max_per_turn / platforms 等
   approval:
-    enabled: false
+    enabled: true
     # kind 专有：cache_ttl_seconds / platforms 等
   english:
-    enabled: false
+    enabled: true
     # kind 专有：platforms 等
 ```
 
@@ -90,7 +90,7 @@ explainers:
 
 #### 4.2 模型解析优先级（对齐旧约定，收口到一个 helper）
 
-落地后只许走共享入口（建议名）：`owner/explainers/llm.py` → `resolve_explainer_call(kind)` / `call_explainer_llm(kind, messages, **kw)`；包布局倾向 `owner/explainers/{progress,approval,english}/`，**禁止**三套各写 provider/model 解析。
+已走共享入口：`owner/explainers/llm.py` → `resolve_explainer_call(kind)` / `call_explainer_llm(kind, messages, **kw)`；包布局倾向 `owner/explainers/{progress,approval,english}/`，**禁止**三套各写 provider/model 解析。
 
 优先级（高 → 低）：
 
@@ -381,8 +381,9 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - 依赖：C04 已落地；卡发送复用官方 `_feishu_send_with_retry` / `_finalize_send_result`
 - [ ] **C11 余下** · 源 §4.4–4.6 · diff·clarify 卡 / bot 菜单 · **优先级：P1**（阶段三）
 - [ ] **C12** · 源 §4.10–4.15 · memory write-approval 卡 / feishu-guide / 上传守卫 / doc_read 图 OCR / @所有人 / merge_forward · **优先级：P1**
-- [ ] **C13** · 源 §7.24–7.26 · progress / approval / english explainer · **优先级：P1** · 飞书底座（C04/C10/C11）已齐，可开
-  - **统一约定（已敲定，代码未做）**：单一 `owner.explainers` 块 + 共享 `owner/explainers/` 取模 helper；禁止三套各写 provider/model 解析。详见上方「§ 二次开发可复用基建 §4」。
+- [x] **C13** · 源 §7.24–7.26 · progress / approval / english explainer · **已落地** · 飞书底座（C04/C10/C11）已齐
+  - **统一基建**：单一 `owner.explainers` 块 + `owner/explainers/`（config/llm/registry）；`register_kind` 可扩第四种。详见「§ 二次开发可复用基建 §4」与 `owner/docs/c13-explainers.md`
+  - **统一约定（已敲定，代码已做）**：单一 `owner.explainers` 块 + 共享 `owner/explainers/` 取模 helper；禁止三套各写 provider/model 解析。详见上方「§ 二次开发可复用基建 §4」。
   - 旧顶层 `progress_explainer` / `approval_explainer` / `english_explainer` → 迁入 `explainers.{progress,approval,english}`；`call_llm(task=…_explainer)` 长 task 名保留，对接 `auxiliary.<task>`
 - [x] **C14** · 源 §14 · output_guard + stream_guard · **优先级：P1**（阶段一 · 完整版）
   - helper：`owner/output_guard/`（`transform_llm_output`）+ `owner/stream_guard/`（`on_stream_delta`；S1/S2/S3，S3=`is_repetition_dominated`）
