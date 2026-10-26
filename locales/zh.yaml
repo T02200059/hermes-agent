@@ -30,6 +30,20 @@ approval:
     cancelled: "审批提示已撤回或未送达给你——{noun}未执行。"
     blocked: "无人值守会话中不允许此{noun}——它未执行。"
     default: "此{noun}未执行。"
+  # [owner] C10 · 写入护栏模板 / why 片段
+  protected_file_blocked: "已拦截：写入受保护的 agent 指令文件（{targets}）{why}用户未同意此写入。不要重试，也不要换其他途径（terminal、execute_code 等）尝试同样的编辑。"
+  protected_file_request: "写入受保护的 agent 指令文件：{targets}。这些文件会引导 agent 未来的行为，因此始终需要审批（不会被 auto-approve 绕过）。"
+  ssh_config_blocked: "已拦截：写入 SSH 配置文件（{targets}）{why}未经用户明确同意，不要换其他途径（terminal、execute_code）重试。"
+  ssh_config_request: "写入 SSH 客户端配置文件：{targets}。SSH 配置可包含会执行命令的 ProxyCommand / Match exec 指令，因此写入需要你的审批。"
+  gate_why_approval_unavailable: "需要审批，但审批子系统不可用。"
+  gate_why_not_delivered: "需要审批，但审批请求无法送达。"
+  gate_why_timed_out: "审批提示在用户响应前超时。沉默不等于同意。"
+  gate_why_denied_by_user: "已被用户拒绝。"
+  gate_why_no_human: "需要审批，但没有交互式用户或网关在场批准。"
+  gate_why_cron_denied: "需要审批，但本定时任务会话拒绝该操作。"
+  gate_why_single_query_denied: "需要审批，但单查询（-q）模式运行时没有用户在场批准。如需在单查询模式中允许被标记的操作，请在 config.yaml 中设置 approvals.single_query_mode: approve。"
+  gate_why_denied: "已被拒绝。"
+
   noun:
     command: "命令"
     code: "代码"

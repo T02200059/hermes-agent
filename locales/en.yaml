@@ -31,6 +31,20 @@ approval:
     cancelled: "The approval prompt was withdrawn or never reached you — the {noun} did not run."
     blocked: "This {noun} is not allowed in an unattended session — it did not run."
     default: "This {noun} did not run."
+  # [owner] C10 · write-guard templates / why fragments (EN must match code constants)
+  protected_file_blocked: "BLOCKED: write to protected agent-instruction file(s) ({targets}) {why} The user has NOT consented to this write. Do NOT retry it or attempt the same edit via another path (terminal, execute_code, etc.)."
+  protected_file_request: "Write to protected agent-instruction file(s): {targets}. These files steer future agent behavior; approval is always required (not bypassed by auto-approve)."
+  ssh_config_blocked: "BLOCKED: write to SSH config file(s) ({targets}) {why} Do NOT retry it via another path (terminal, execute_code) without the user's explicit consent."
+  ssh_config_request: "Write to SSH client config file(s): {targets}. The SSH config can carry ProxyCommand / Match exec directives that run commands, so writes require your approval."
+  gate_why_approval_unavailable: "requires approval but the approval subsystem is unavailable."
+  gate_why_not_delivered: "requires approval but the approval request could not be delivered."
+  gate_why_timed_out: "approval prompt timed out without a user response. Silence is not consent."
+  gate_why_denied_by_user: "was denied by the user."
+  gate_why_no_human: "requires approval but no interactive user or gateway is present to approve it."
+  gate_why_cron_denied: "requires approval but this cron session denies it."
+  gate_why_single_query_denied: "requires approval but single-query (-q) sessions run without a user present to approve it. To allow flagged actions in single-query mode, set approvals.single_query_mode: approve in config.yaml."
+  gate_why_denied: "was denied."
+
   noun:
     command: "command"
     code: "code"

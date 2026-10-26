@@ -253,8 +253,89 @@ def _protected_instruction_reason(filepath: str, task_id: str = "default",
     return None
 
 
-_APPROVAL_UNAVAILABLE = "requires approval but the approval subsystem is unavailable."
-_NO_HUMAN = "requires approval but no interactive user or gateway is present to approve it."
+# [owner] C10 · guard copy i18n — English source stays in code; non-en from locales.
+_PROTECTED_FILE_REQUEST = (
+    "Write to protected agent-instruction file(s): {targets}. "
+    "These files steer future agent behavior; approval is always "
+    "required (not bypassed by auto-approve)."
+)
+_PROTECTED_FILE_BLOCKED = (
+    "BLOCKED: write to protected agent-instruction file(s) ({targets}) "
+    "{why} The user has NOT consented to this write. Do NOT retry it or "
+    "attempt the same edit via another path (terminal, execute_code, "
+    "etc.)."
+)
+_SSH_CONFIG_REQUEST = (
+    "Write to SSH client config file(s): {targets}. "
+    "The SSH config can carry ProxyCommand / Match exec directives that "
+    "run commands, so writes require your approval."
+)
+_SSH_CONFIG_BLOCKED = (
+    "BLOCKED: write to SSH config file(s) ({targets}) "
+    "{why} Do NOT retry it via another path (terminal, execute_code) "
+    "without the user's explicit consent."
+)
+_WHY_APPROVAL_UNAVAILABLE = (
+    "requires approval but the approval subsystem is unavailable."
+)
+_WHY_NOT_DELIVERED = (
+    "requires approval but the approval request could not be delivered."
+)
+_WHY_TIMED_OUT = (
+    "approval prompt timed out without a user response. Silence is not consent."
+)
+_WHY_DENIED_BY_USER = "was denied by the user."
+_WHY_NO_HUMAN = (
+    "requires approval but no interactive user or gateway is present to approve it."
+)
+_WHY_CRON_DENIED = "requires approval but this cron session denies it."
+_WHY_SINGLE_QUERY_DENIED = (
+    "requires approval but single-query (-q) sessions run "
+    "without a user present to approve it. To allow flagged "
+    "actions in single-query mode, set approvals.single_query_mode: "
+    "approve in config.yaml."
+)
+_WHY_DENIED = "was denied."
+
+_GUARD_EN_TEXTS: dict[str, str] = {
+    "approval.protected_file_request": _PROTECTED_FILE_REQUEST,
+    "approval.protected_file_blocked": _PROTECTED_FILE_BLOCKED,
+    "approval.ssh_config_request": _SSH_CONFIG_REQUEST,
+    "approval.ssh_config_blocked": _SSH_CONFIG_BLOCKED,
+    "approval.gate_why_approval_unavailable": _WHY_APPROVAL_UNAVAILABLE,
+    "approval.gate_why_not_delivered": _WHY_NOT_DELIVERED,
+    "approval.gate_why_timed_out": _WHY_TIMED_OUT,
+    "approval.gate_why_denied_by_user": _WHY_DENIED_BY_USER,
+    "approval.gate_why_no_human": _WHY_NO_HUMAN,
+    "approval.gate_why_cron_denied": _WHY_CRON_DENIED,
+    "approval.gate_why_single_query_denied": _WHY_SINGLE_QUERY_DENIED,
+    "approval.gate_why_denied": _WHY_DENIED,
+}
+
+# Back-compat aliases used by older call sites / tests.
+_APPROVAL_UNAVAILABLE = _WHY_APPROVAL_UNAVAILABLE
+_NO_HUMAN = _WHY_NO_HUMAN
+
+
+def _localized(key: str, en_text: str, **kwargs) -> str:
+    """Render guard copy: en from code, other langs from catalog (C10)."""
+    from owner.i18n.localized import localized
+
+    return localized(key, en_text, **kwargs)
+
+
+def _blocked(template_key: str, template_en: str, *, targets: str, why_key: str, why_en: str) -> str:
+    """Compose a blocked message with a localized outer template + why fragment."""
+    why = _localized(why_key, why_en)
+    return _localized(template_key, template_en, targets=targets, why=why)
+
+
+try:
+    from owner.i18n.localized import register_guard_en_texts as _register_guard_en_texts
+
+    _register_guard_en_texts(_GUARD_EN_TEXTS)
+except Exception:  # pragma: no cover — owner package absent
+    pass
 
 
 def _request_protected_instruction_approval(reasons: list[str], task_id: str = "default") -> str | None:
@@ -265,18 +346,27 @@ def _request_protected_instruction_approval(reasons: list[str], task_id: str = "
     scope, fail-closed without a human channel.
     """
     targets = ", ".join(dict.fromkeys(reasons))
-    description = (
-        f"Write to protected agent-instruction file(s): {targets}. "
-        "These files steer future agent behavior; approval is always "
-        "required (not bypassed by auto-approve).")
+    description = _localized(
+        "approval.protected_file_request", _PROTECTED_FILE_REQUEST, targets=targets)
     display = f"<write to {targets}>"
-    blocked = (
-        f"BLOCKED: write to protected agent-instruction file(s) ({targets}) "
-        "{why} The user has NOT consented to this write. Do NOT retry it or "
-        "attempt the same edit via another path (terminal, execute_code, "
-        "etc.).")
-    timed_out = blocked.format(why="approval prompt timed out without a user response. Silence is not consent.")
-    denied = blocked.format(why="was denied by the user.")
+    timed_out = _blocked(
+        "approval.protected_file_blocked", _PROTECTED_FILE_BLOCKED,
+        targets=targets,
+        why_key="approval.gate_why_timed_out", why_en=_WHY_TIMED_OUT)
+    denied = _blocked(
+        "approval.protected_file_blocked", _PROTECTED_FILE_BLOCKED,
+        targets=targets,
+        why_key="approval.gate_why_denied_by_user", why_en=_WHY_DENIED_BY_USER)
+
+    def _pf_blocked(why_key: str, why_en: str, *, raw_why: str | None = None) -> str:
+        if raw_why is not None:
+            # Dynamic why (withdrawn / unanswered) — keep English fragment in {why}.
+            return _localized(
+                "approval.protected_file_blocked", _PROTECTED_FILE_BLOCKED,
+                targets=targets, why=raw_why)
+        return _blocked(
+            "approval.protected_file_blocked", _PROTECTED_FILE_BLOCKED,
+            targets=targets, why_key=why_key, why_en=why_en)
 
     try:
         import tools.approval as _approval
@@ -284,7 +374,8 @@ def _request_protected_instruction_approval(reasons: list[str], task_id: str = "
         from tools.approval_gateway_wait import _await_gateway_decision
         from tools.approval_prompt import prompt_dangerous_approval
     except Exception:
-        return blocked.format(why=_APPROVAL_UNAVAILABLE)
+        return _pf_blocked(
+            "approval.gate_why_approval_unavailable", _WHY_APPROVAL_UNAVAILABLE)
 
     # Gateway surface: block on the button round-trip when a notify callback
     # is registered for this session. One-operation only — no scope buttons.
@@ -305,9 +396,11 @@ def _request_protected_instruction_approval(reasons: list[str], task_id: str = "
             "allow_session": False}
         decision = _await_gateway_decision(session_key, notify_cb, approval_data, surface="gateway")
         if decision.get("notify_failed"):
-            return blocked.format(why="requires approval but the approval request could not be delivered.")
+            return _pf_blocked(
+                "approval.gate_why_not_delivered", _WHY_NOT_DELIVERED)
         if decision.get("cancelled"):
-            return blocked.format(why=f"approval was withdrawn before the user answered ({decision['cancelled']}).")
+            return _pf_blocked(
+                "", "", raw_why=f"approval was withdrawn before the user answered ({decision['cancelled']}).")
         choice, timed = decision.get("choice"), not decision.get("resolved")
     else:
         # CLI surface: per-thread approval callback (prompt_toolkit panel).
@@ -319,12 +412,12 @@ def _request_protected_instruction_approval(reasons: list[str], task_id: str = "
         if callback is None:
             # No human channel (script, cron, background thread): fail closed —
             # auto-approving here would recreate the persistence vector.
-            return blocked.format(why=_NO_HUMAN)
+            return _pf_blocked("approval.gate_why_no_human", _WHY_NO_HUMAN)
         # -q (every kanban worker), cron and unattended platforms can have a callback registered that nobody
         # answers: fail closed now, and never auto-approve, whatever approvals.<context>_mode says.
         from tools.approval_context import _no_user_can_answer
         if _no_user_can_answer():
-            return blocked.format(why=_NO_HUMAN)
+            return _pf_blocked("approval.gate_why_no_human", _WHY_NO_HUMAN)
         # Same observer payload as the gateway branch (#131876), fired like the
         # dangerous-command CLI prompt in tools/approval.py.
         hook_kwargs = dict(command=display, description=description, pattern_key="protected_instruction_file",
@@ -334,13 +427,15 @@ def _request_protected_instruction_approval(reasons: list[str], task_id: str = "
             display, description, allow_permanent=False, allow_session=False, approval_callback=callback)
         _fire_approval_hook("post_approval_response", **hook_kwargs, choice=choice)
         if choice == "cancelled":
-            return blocked.format(why="approval prompt could not be delivered or was not answered "
-                                      f"({getattr(choice, 'cause', 'no answer')}).")
+            cause = getattr(choice, "cause", "no answer")
+            return _pf_blocked(
+                "", "", raw_why=f"approval prompt could not be delivered or was not answered ({cause}).")
         timed = choice == "timeout"
     # Any tapped scope is a one-operation grant; nothing is persisted.
     if not timed and choice in {"once", "session", "always"}:
         return None
     return timed_out if timed else denied
+
 
 
 def _check_protected_instruction_write(paths: list[str], task_id: str = "default") -> str | None:
@@ -372,36 +467,36 @@ def _check_approval_required_write(paths: list[str], task_id: str = "default") -
         return None
 
     display_targets = ", ".join(dict.fromkeys(targets))
-    description = (
-        f"Write to SSH client config file(s): {display_targets}. "
-        "The SSH config can carry ProxyCommand / Match exec directives that "
-        "run commands, so writes require your approval.")
-    blocked = (
-        f"BLOCKED: write to SSH config file(s) ({display_targets}) "
-        "{why} Do NOT retry it via another path (terminal, execute_code) "
-        "without the user's explicit consent.")
+    description = _localized(
+        "approval.ssh_config_request", _SSH_CONFIG_REQUEST, targets=display_targets)
+
+    def _ssh_blocked(why_key: str, why_en: str) -> str:
+        return _blocked(
+            "approval.ssh_config_blocked", _SSH_CONFIG_BLOCKED,
+            targets=display_targets, why_key=why_key, why_en=why_en)
 
     try:
         import tools.approval as _approval
     except Exception:
-        return blocked.format(why=_APPROVAL_UNAVAILABLE)
+        return _ssh_blocked(
+            "approval.gate_why_approval_unavailable", _WHY_APPROVAL_UNAVAILABLE)
 
     result = _approval._run_approval_gate(
         pattern_key="ssh_config_write",
         description=description,
         display_target=f"<write to {display_targets}>",
-        cron_deny_message=blocked.format(why="requires approval but this cron session denies it."),
-        single_query_deny_message=blocked.format(
-            why="requires approval but single-query (-q) sessions run "
-                "without a user present to approve it. To allow flagged "
-                "actions in single-query mode, set approvals.single_query_mode: "
-                "approve in config.yaml."),
+        cron_deny_message=_ssh_blocked(
+            "approval.gate_why_cron_denied", _WHY_CRON_DENIED),
+        single_query_deny_message=_ssh_blocked(
+            "approval.gate_why_single_query_denied", _WHY_SINGLE_QUERY_DENIED),
         autoapprove_log_prefix="ssh_config_write",
         fail_closed_when_no_human=True,
-        no_human_block_message=blocked.format(why=_NO_HUMAN))
+        no_human_block_message=_ssh_blocked(
+            "approval.gate_why_no_human", _WHY_NO_HUMAN))
     if result.get("approved"):
         return None
-    return result.get("message") or blocked.format(why="was denied.")
+    return result.get("message") or _ssh_blocked(
+        "approval.gate_why_denied", _WHY_DENIED)
 
 
 def _get_container_mirror_prefix_for_task(task_id: str = "default") -> str | None:

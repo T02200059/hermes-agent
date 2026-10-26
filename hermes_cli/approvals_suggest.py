@@ -4,8 +4,10 @@ Hermes has no dedicated approval-decision ledger: ``always`` answers land in ``c
 (config.yaml) via :func:`tools.approval.save_permanent_allowlist`, while ``once``/``session``
 approvals are in-memory only. So this module mines *implied approvals*: a command that matches a
 dangerous-command class (the same :func:`tools.approval.detect_dangerous_command` classifier that
-triggers the prompt) AND whose tool result is not a block/denial marker must have been approved by
-the user (once, session, always, smart-approve, or yolo) before it ran.
+triggers the prompt) AND whose tool result is not a block/denial (structured status / catalog
+fragments via owner B11, not English-only substrings) must have been
+approved by the user (once, session, always, smart-approve, or yolo)
+before it ran.
 """
 
 from __future__ import annotations
@@ -54,14 +56,25 @@ _UNSAFE_ROOT_BINARIES = {
 }
 _UNSAFE_ROOT_PREFIXES = ("mkfs",)
 
-# Substrings in a role='tool' result that mean the command did NOT execute with user consent
-# (blocked, denied, timed out, or still pending). Kept in sync with tools/approval.py templates.
+# [owner] B11: English marker table demoted to fail-open fallback when the
+# owner policy module is absent. Real verdict + SQL anchors come from
+# owner/approval/approval_history_policy.py (structure → catalog → bilingual).
 _BLOCK_MARKERS = (
     "BLOCKED (hardline)", "BLOCKED: User denied", "BLOCKED: Action ",
     "BLOCKED: Command flagged as dangerous", "BLOCKED: approval required",
     "BLOCKED: Failed to send approval request", "The user has NOT consented",
     "Asking the user for approval", "approval_required", "BLOCKED by user deny rule",
+    "正在请求用户批准",
 )
+
+try:
+    from owner.approval.approval_history_policy import (
+        result_blocks_execution as _owner_result_blocks_execution,
+        sql_like_anchors as _owner_sql_like_anchors,
+    )
+except Exception:  # pragma: no cover — owner package absent
+    _owner_result_blocks_execution = None
+    _owner_sql_like_anchors = None
 
 
 @dataclass
@@ -130,18 +143,35 @@ def _iter_terminal_calls(con: sqlite3.Connection, since_ts: float) -> Iterator[t
 
 
 def _blocked_tool_call_ids(con: sqlite3.Connection, since_ts: float) -> set:
-    """Collect tool_call_ids whose result shows the command never ran freely."""
+    """Collect tool_call_ids whose result shows the command never ran freely.
+
+    [owner] B11: prefilter and verdict share ``approval_history_policy`` so
+    localised denial text still counts (English-only markers go dark after C10).
+    """
+    if _owner_sql_like_anchors is not None:
+        anchors = tuple(_owner_sql_like_anchors())
+    else:
+        anchors = ("BLOCKED", "approval")
+    if not anchors:
+        anchors = ("BLOCKED", "approval")
+    like_clause = " OR ".join("content LIKE ?" for _ in anchors)
     cur = con.execute(
         "SELECT tool_call_id, content FROM messages "
         "WHERE role='tool' AND tool_call_id IS NOT NULL AND timestamp >= ? "
-        "AND (content LIKE '%BLOCKED%' OR content LIKE '%approval%')",
-        (since_ts,),
+        f"AND ({like_clause})",
+        (since_ts, *(f"%{anchor}%" for anchor in anchors)),
     )
-    return {
-        tool_call_id
-        for tool_call_id, content in _fetch_rows(cur)
-        if content and any(marker in content for marker in _BLOCK_MARKERS)
-    }
+    blocked: set = set()
+    for tool_call_id, content in _fetch_rows(cur):
+        if not content:
+            continue
+        if _owner_result_blocks_execution is not None:
+            is_blocked = _owner_result_blocks_execution(content)
+        else:
+            is_blocked = any(marker in content for marker in _BLOCK_MARKERS)
+        if is_blocked:
+            blocked.add(tool_call_id)
+    return blocked
 
 
 def scan_approval_history(db_path: Optional[Path] = None, days: int = 90) -> list[tuple[str, str]]:

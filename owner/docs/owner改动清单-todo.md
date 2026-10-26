@@ -55,8 +55,10 @@
   - owner：`gateway/platforms/qqbot/adapter.py:1216` 把 `{"c2c","dm"}` 同等处理。v2：`plugins/platforms/qqbot/adapter.py::_is_authorized_interaction_for_session` 同判据，含「approval 键来自 build_source(dm)、update-prompt 来自 scene(c2c)」注释。
 - [x] **B10** · 源 §3.12 · `_mask_quoted_newlines` 命令替换绕过硬黑名单；queue token 未 retire · **验证状态：部分**
   - mask 半边官方已修：v2 `_mask_quoted_newlines_span` 递归进入 `$(...)` / 反引号。queue token retire 属 `owner/patches/queue_cancel_patch.py`，v2 无对应模块。
-- [x] **B11** · 源 §3.13 · 审批历史挖掘依赖英文文案，i18n 后漏检（应改结构标记） · **验证状态：仍存在/需自研**
-  - owner：`owner/approval/approval_history_policy.py` 结构标记三层判定。v2：`hermes_cli/approvals_suggest.py` 仍用英文 `_BLOCK_MARKERS` 子串匹配，且审批文案硬编码英文 —— i18n 一旦落地（C10）即复现漏检。
+- [x] **B11** · 源 §3.13 · 审批历史挖掘依赖英文文案，i18n 后漏检（应改结构标记） · **验证状态：已修（与 C10 同批）**
+  - helper：`owner/approval/approval_history_policy.py`（status/outcome → catalog 片段 → 英+中兜底；`sql_like_anchors` 与判定同源）
+  - 胶水：`hermes_cli/approvals_suggest.py` `_blocked_tool_call_ids`（owner 不可用时回落 `_BLOCK_MARKERS`）
+  - 测：`tests/owner/test_approval_suggest_i18n_blocks.py`
 
 ### TUI / CLI 稳定性
 
@@ -130,7 +132,7 @@
 
 **Bug 段合计：38 条。**
 
-**结论分布**：官方已修 23 · 部分 5 · 仍存在/需自研 2 · 不适用(纯 owner) 8。（O3–O8 后本批：B15 部分→官方已修；B17 仍存在→部分。仍剩硬挂 B11/B12。）
+**结论分布**：官方已修 23 · 部分 5 · 仍存在/需自研 2 · 不适用(纯 owner) 8。（O3–O8 后本批：B15 部分→官方已修；B17 仍存在→部分。B11 已与 C10 同批落地；仍剩硬挂/可选 B12。）
 
 ---
 
@@ -166,7 +168,7 @@
 
 - **B17**（clarify）：**官方半边已落地**（见下表）；飞书 adapter 超时中断 agent 仍属混合，跟 C 段，不当第一步硬开。
 - **B12**（CLI OS 级 SIGINT）：v2 已用 prompt_toolkit `c-c` 覆盖按键层，且 `hermes_cli/cli_terminal_input.py:394` 明确表态「raw mode clears ISIG，内核 INTR 路径从未涉入 CLI」——上游认为无需处理。我们的场景（子 shell PTY 回弹 / 后台线程投递 SIGINT）上游大概率判 invalid，需先备证据再提。
-- **B11**（审批历史按英文文案判定）：官方功能本身的脆弱点，但**只有在我们落地 i18n（C10）后才会暴露**；建议与 C10 同批做，或直接改用结构字段。
+- **B11**（审批历史按英文文案判定）：**已与 C10 同批落地**（结构标记三层判定）。
 
 ---
 
@@ -256,7 +258,13 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - 落地：终局走官方 O8；interim/status 薄补复用 `_strip_deepseek_special_tokens`（`owner/outbound_special_token_scrub.py` + stream_delivery / gateway status 胶水）
   - 测：`tests/owner/test_outbound_special_token_scrub.py`
 - [ ] **C09** · 源 §3.6 / §3.11 · skill 脚本自动审批 + skill_manage 飞书审批门 · **优先级：P0**
-- [ ] **C10** · 源 i18n 层 · 显示层 i18n / `_localized` 与护栏文案（源 §12.2 / §16.9 相关） · **优先级：P0**
+- [x] **C10** · 源 i18n 层 · 显示层 i18n / `_localized` 与护栏文案（源 §12.2 / §16.9 相关） · **优先级：P0**（阶段二 · 与 B11 同批）
+  - helper：`owner/i18n/localized.py`（`localized` / `GUARD_EN_TEXTS`）
+  - 胶水：`tools/file_tools_write_guards.py`（受保护指令 / SSH 配置写入护栏走 `_localized`/`_blocked`）
+  - locales：`approval.protected_file_*` / `ssh_config_*` / `gate_why_*`（en↔代码漂移守卫）
+  - 说明：`owner/docs/c10-b11-i18n-approval-history.md`
+  - 测：`tests/owner/test_file_tools_guard_text_i18n.py`
+  - 范围：护栏文案层（T2-12）；非废弃的 display_filter；官方 `tools/approval.py` agent-facing 大段英文模板未整迁（B11 已用 summary.* + 护栏键 + 兜底覆盖历史挖掘）
 
 ### P1
 
