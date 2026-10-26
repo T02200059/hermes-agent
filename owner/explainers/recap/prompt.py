@@ -18,7 +18,7 @@ Hard constraints:
 - Cover the main ask and what landed (or where things stalled). Do not invent facts.
 - No bullet list, no markdown fences, no title line, no quotes around the whole answer.
 - Keep technical identifiers (paths, commands, APIs) recognizable.
-- Prefer ~2–5 sentences; stay under ~120 Chinese characters when the dialogue is short, longer only when needed."""
+- Prefer a short paragraph (~2–5 sentences); aim around a couple hundred Chinese characters overall—enough for the main ask and what landed, without padding."""
 
 _USER = """请根据下面压平后的对话写一句/一小段回顾（只输出正文）：
 

@@ -13,7 +13,7 @@ from owner.explainers.recap import prompt as prompt_mod
 
 logger = logging.getLogger(__name__)
 
-_MAX_TOKENS = 220
+_MAX_TOKENS = 260
 
 
 def explain_from_messages(
@@ -28,7 +28,7 @@ def explain_from_messages(
         dialogue = flatten_mod.flatten_messages(messages, max_input_chars=budget)
         if not dialogue.strip():
             return None
-        out_cap = int(merged.get("max_output_chars") or 500)
+        out_cap = int(merged.get("max_output_chars") or 350)
         return llm_mod.call_explainer_llm(
             "recap",
             prompt_mod.build_messages(dialogue),
@@ -52,7 +52,7 @@ async def explain_from_messages_async(
         dialogue = flatten_mod.flatten_messages(messages, max_input_chars=budget)
         if not dialogue.strip():
             return None
-        out_cap = int(merged.get("max_output_chars") or 500)
+        out_cap = int(merged.get("max_output_chars") or 350)
         return await llm_mod.call_explainer_llm_async(
             "recap",
             prompt_mod.build_messages(dialogue),

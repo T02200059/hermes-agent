@@ -18,7 +18,7 @@
 - **设计前提**：辅助模型上下文 **≥ 256k**。
 - **输入默认**：共用 `explainers.max_input_chars: 64000`（各 kind 可覆盖）。
 - 截断策略：优先保留**尾部**（近轮对话 / 近证据）；见 `owner.explainers.common.clip_input`。
-- 输出帽仍按 kind 小限（如 recap `max_output_chars`、progress/approval/english 的 `max_output_chars`）。
+- 输出帽（已落地）：progress `max_tokens=400` / `max_output_chars=900`；approval `400` / `800`；english `450` / `1000`；recap `260` / `max_output_chars=350`（约二三百汉字；yaml/registry 可配）。共享 `call_explainer_llm` 默认 `max_tokens=400`、`clean_output` 默认 1000。
 
 ## 配置（`owner/config/patch.yaml` → `~/.hermes/patch.yaml`）
 
@@ -41,7 +41,7 @@ explainers:
     platforms: { feishu: true }
   recap:
     enabled: true
-    max_output_chars: 500
+    max_output_chars: 350
     platforms: { feishu: true }
 ```
 

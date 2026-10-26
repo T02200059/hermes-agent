@@ -10,8 +10,8 @@ from owner.explainers.progress import prompt as prompt_mod
 
 logger = logging.getLogger(__name__)
 
-_MAX_OUTPUT_CHARS = 600
-_MAX_TOKENS = 200
+_MAX_OUTPUT_CHARS = 900
+_MAX_TOKENS = 400
 
 
 async def explain(

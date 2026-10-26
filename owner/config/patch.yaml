@@ -115,7 +115,7 @@ explainers:
       telegram: false
   recap:
     enabled: true
-    max_output_chars: 500
+    max_output_chars: 350
     platforms:
       feishu: true
       telegram: false

@@ -106,7 +106,7 @@ def _ensure_builtins() -> None:
             "recap",
             defaults={
                 "enabled": False,
-                "max_output_chars": 500,
+                "max_output_chars": 350,
                 "platforms": {},
                 "chats": {},
             },

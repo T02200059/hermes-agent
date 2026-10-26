@@ -12,8 +12,8 @@ from owner.explainers.english import prompt as prompt_mod
 
 logger = logging.getLogger(__name__)
 
-_MAX_OUTPUT_CHARS = 700
-_MAX_TOKENS = 280
+_MAX_OUTPUT_CHARS = 1000
+_MAX_TOKENS = 450
 
 
 def explain(english_text: str, *, cfg: Optional[Dict[str, Any]] = None) -> Optional[str]:

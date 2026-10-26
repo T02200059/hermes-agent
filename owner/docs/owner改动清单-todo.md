@@ -83,7 +83,7 @@ explainers:
     # kind 专有：platforms 等
   recap:
     enabled: true         # 第四 kind：/recap 按需回顾（notice；不写主会话）
-    max_output_chars: 500
+    max_output_chars: 350
 ```
 
 - **块名**：`explainers`（对齐清单「yaml 整合方向」）。

@@ -268,3 +268,28 @@ def test_recap_command_disabled():
     with patch("owner.explainers.recap.command.resolve_enabled", return_value=False):
         out = asyncio.run(handle_recap_command("", session_id="s1", platform="feishu"))
     assert "未启用" in out
+
+def test_explainer_output_caps_defaults():
+    """Chinese-friendly output caps; recap stays short (~二三百汉字)."""
+    import importlib
+    import inspect
+
+    from owner.explainers import llm as llm_mod
+    from owner.explainers.registry import get_kind
+
+    progress_explain = importlib.import_module("owner.explainers.progress.explain")
+    approval_explain = importlib.import_module("owner.explainers.approval.explain")
+    english_explain = importlib.import_module("owner.explainers.english.explain")
+    recap_explain = importlib.import_module("owner.explainers.recap.explain")
+
+    assert progress_explain._MAX_TOKENS == 400
+    assert progress_explain._MAX_OUTPUT_CHARS == 900
+    assert approval_explain._MAX_TOKENS == 400
+    assert approval_explain._MAX_OUTPUT_CHARS == 800
+    assert english_explain._MAX_TOKENS == 450
+    assert english_explain._MAX_OUTPUT_CHARS == 1000
+    assert recap_explain._MAX_TOKENS == 260
+    assert get_kind("recap").defaults["max_output_chars"] == 350
+    assert llm_mod._MAX_OUTPUT_CHARS_DEFAULT == 1000
+    sig = inspect.signature(llm_mod.call_explainer_llm)
+    assert sig.parameters["max_tokens"].default == 400

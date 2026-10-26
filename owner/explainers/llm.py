@@ -19,7 +19,7 @@ from owner.explainers.registry import task_name_for
 
 logger = logging.getLogger(__name__)
 
-_MAX_OUTPUT_CHARS_DEFAULT = 700
+_MAX_OUTPUT_CHARS_DEFAULT = 1000
 
 
 def resolve_explainer_call(kind: str, cfg: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -70,7 +70,7 @@ def call_explainer_llm(
     *,
     cfg: Optional[Dict[str, Any]] = None,
     temperature: float = 0,
-    max_tokens: int = 250,
+    max_tokens: int = 400,
     max_output_chars: int = _MAX_OUTPUT_CHARS_DEFAULT,
 ) -> Optional[str]:
     """Sync call; returns cleaned text or None. Never raises."""
@@ -102,7 +102,7 @@ async def call_explainer_llm_async(
     *,
     cfg: Optional[Dict[str, Any]] = None,
     temperature: float = 0,
-    max_tokens: int = 250,
+    max_tokens: int = 400,
     max_output_chars: int = _MAX_OUTPUT_CHARS_DEFAULT,
 ) -> Optional[str]:
     """Async wrapper with hard timeout (to_thread + wait_for). Never raises."""
