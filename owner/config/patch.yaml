@@ -12,6 +12,29 @@ approvals:
   # UI still does not offer Always when allow_permanent is false.
   command_allowlist: []
 
+
+# ── C11 飞书 auto-card 底座 ──────────────────────────────────────────────────
+# auto_card_threshold: 字数阈值；≤0 关闭。streaming=false 时 send() 路径才触发；
+# agent:end 用 force=True 无视 streaming。notice_titles 供告警/旁白卡（C13 前缀对齐）。
+feishu_card:
+  auto_card_threshold: 57
+  split_enabled: true
+  split_max_chars: 24000
+  # 运行时覆盖源码默认表（替换不是追加），须把要用的规则写齐；mtime 变化即时重读。
+  notice_titles:
+    - prefix: "⚠️ [stream-guard]"
+      title: "⚠️ [stream-guard] 生成退化告警"
+      template: orange
+      strip_prefix: true
+    - prefix: "🧭 系统提示："
+      title: "🧭 进度旁白"
+      template: blue
+      strip_prefix: true
+    - prefix: "🔤 系统提示："
+      title: "🔤 英文解说"
+      template: blue
+      strip_prefix: true
+
 # ── Checkpoints (C17 mutation predictor) ─────────────────────────────────────
 # 补全 /rollback 的盲区: terminal 工具执行前预测将改文件, 对其项目根
 # ensure_checkpoint。静态解析优先; 不足时同步调 auxiliary LLM

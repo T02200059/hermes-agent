@@ -1346,6 +1346,10 @@ class FeishuAdapter(BasePlatformAdapter):
         self._update_prompt_counter = itertools.count(1)
         # Reaction deletion needs the opaque reaction_id from create, cached per message_id.
         self._pending_processing_reactions: OrderedDict[str, str] = OrderedDict()
+        # [owner] C11: per-chat lock for multi-chunk auto-card (≠ inbound chat_lock)
+        self._card_send_locks: collections.OrderedDict[str, asyncio.Lock] = collections.OrderedDict()
+        # [owner] C11: early-typing background tasks (prevent GC before completion)
+        self._early_typing_tasks: set[asyncio.Task] = set()
         self._load_seen_message_ids()
 
     @staticmethod
@@ -1664,6 +1668,18 @@ class FeishuAdapter(BasePlatformAdapter):
             return SendResult(success=False, error="Not connected")
 
         formatted = self.format_message(content)
+
+        # [owner] C11: auto-card — wrap long text when streaming is off
+        try:
+            from owner.feishu.auto_card import try_auto_card
+            auto_card_result = await try_auto_card(
+                self, formatted, metadata, chat_id=chat_id,
+            )
+            if auto_card_result is not None:
+                return auto_card_result
+        except Exception:
+            logger.debug("[owner] auto_card failed, falling through to plain text", exc_info=True)
+
         chunks = self.truncate_message(formatted, self.MAX_MESSAGE_LENGTH)
         # Decide markdown-vs-text once for the whole message: a chunk of a long
         # markdown reply may be plain prose that fails the per-chunk regex and would
@@ -2512,12 +2528,57 @@ class FeishuAdapter(BasePlatformAdapter):
         self._chat_locks[chat_id] = lock
         return lock
 
+    # [owner] C11: send_card — thin wrapper used by auto-card / future card helpers
+    async def send_card(
+        self,
+        *,
+        chat_id: str,
+        card: dict[str, Any],
+        metadata: Optional[dict[str, Any]] = None,
+    ) -> SendResult:
+        """Send a Feishu interactive card (delegates to owner.feishu.card_sender)."""
+        from owner.feishu.card_sender import send_card as _owner_send_card
+        return await _owner_send_card(
+            self, chat_id=chat_id, card=card, metadata=metadata,
+        )
+
+    def _get_card_send_lock(self, chat_id: str) -> asyncio.Lock:
+        """Per-chat lock for multi-chunk auto-card (C11); see owner.feishu.card_sender."""
+        from owner.feishu.card_sender import get_card_send_lock
+        return get_card_send_lock(self, chat_id)
+
     async def _handle_message_with_guards(self, event: MessageEvent) -> None:
-        """Run one event through the agent pipeline under the per-chat lock (openclaw createChatQueue)."""
+        """Run one event through the agent pipeline under the per-chat lock (openclaw createChatQueue).
+
+        When the lock is held by a previous message's cleanup, show Typing immediately
+        so the user knows their message was received (C11 early-typing).
+        """
         chat_id = getattr(event.source, "chat_id", "") or "" if event.source else ""
         chat_lock = self._get_chat_lock(chat_id)
+        # [owner] C11 early-typing: fire Typing reaction when chat_lock is held
+        if chat_lock.locked() and self._reactions_enabled():
+            task = asyncio.create_task(self._early_typing_reaction(event))
+            self._early_typing_tasks.add(task)
+            task.add_done_callback(self._early_typing_tasks.discard)
         async with chat_lock:
             await self.handle_message(event)
+
+    async def _early_typing_reaction(self, event: MessageEvent) -> None:
+        """Add Typing before chat_lock is acquired (C11).
+
+        Tracked in ``_pending_processing_reactions`` so on_processing_start skips
+        duplicate and on_processing_complete cleans up as usual.
+        """
+        message_id = event.message_id
+        if not message_id or message_id in self._pending_processing_reactions:
+            return
+        reaction_id = await self._add_reaction(message_id, _FEISHU_REACTION_IN_PROGRESS)
+        if reaction_id:
+            cache = self._pending_processing_reactions
+            cache[message_id] = reaction_id
+            cache.move_to_end(message_id)
+            while len(cache) > _FEISHU_PROCESSING_REACTION_CACHE_SIZE:
+                cache.popitem(last=False)
 
     # --- Processing status reactions ---
     def _reactions_enabled(self) -> bool:

@@ -268,7 +268,14 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 
 ### P1
 
-- [ ] **C11** · 源 §4.2–4.6 · auto-card / early-typing / diff·clarify 卡 / bot 菜单 · **优先级：P1**
+- [x] **C11 底座** · 源 §4.2–4.3 · auto-card / early-typing · **优先级：P1**（阶段二）
+  - helper：`owner/feishu/auto_card.py` / `agent_end.py` / `card_sender.py`
+  - 配置：`owner/config/patch.yaml` → `feishu_card.*`（threshold / split / notice_titles）
+  - 胶水：`plugins/platforms/feishu/adapter.py`（`send` try_auto_card / `send_card` / early-typing）；`gateway/run_turn.py`（`try_auto_card_on_end` + progress bubble 标记）
+  - 说明：`owner/docs/c11-feishu-auto-card-base.md`
+  - 测：`tests/owner/test_c11_auto_card.py`、`tests/owner/test_feishu_agent_end_media.py`
+  - 依赖：C04 已落地；卡发送复用官方 `_feishu_send_with_retry` / `_finalize_send_result`
+- [ ] **C11 余下** · 源 §4.4–4.6 · diff·clarify 卡 / bot 菜单 · **优先级：P1**（阶段三）
 - [ ] **C12** · 源 §4.10–4.15 · memory write-approval 卡 / feishu-guide / 上传守卫 / doc_read 图 OCR / @所有人 / merge_forward · **优先级：P1**
 - [ ] **C13** · 源 §7.24–7.26 · progress / approval / english explainer · **优先级：P1** · **延后**：等飞书相关基础设施（阶段二）后再做
 - [x] **C14** · 源 §14 · output_guard + stream_guard · **优先级：P1**（阶段一 · 完整版）

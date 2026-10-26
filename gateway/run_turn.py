@@ -313,6 +313,23 @@ class GatewayTurnMixin(GatewayTurnPrepareMixin, GatewayTurnHygieneMixin, Gateway
             # Streaming already delivered the body: the footer goes out as a trailing send instead.
             if _footer_line and response and not agent_result.get("already_sent") and not _intentional_silence:
                 response = f"{response}\n\n{_footer_line}"
+
+            # [owner] C11: auto-card at agent:end (media pre-deliver + wrap long reply)
+            try:
+                from owner.feishu.agent_end import try_auto_card_on_end
+                response, _footer_line = await try_auto_card_on_end(
+                    runner=self,
+                    source=source,
+                    event=event,
+                    agent_result=agent_result,
+                    response=response,
+                    footer_line=_footer_line,
+                )
+            except ImportError:
+                pass
+            except Exception:
+                logger.debug("[owner] auto_card_on_end failed", exc_info=True)
+
             await self._hmwa_post_turn_hooks(hook_ctx, agent_result, response)
 
             agent_failed_early, hidden_reasoning_incomplete, is_context_overflow_failure = (
@@ -1236,6 +1253,9 @@ class GatewayTurnMixin(GatewayTurnPrepareMixin, GatewayTurnHygieneMixin, Gateway
             ),
             platform=source.platform,
         )
+        # [owner] C11: tag progress bubble so try_auto_card skips it
+        _progress_metadata = dict(_progress_metadata or {})
+        _progress_metadata["__hermes_progress_bubble"] = True
         if _native_slack_task_cards:
             # chat.startStream in channels requires the recipient team/user pair; harmless elsewhere.
             _progress_metadata = dict(_progress_metadata or {})
