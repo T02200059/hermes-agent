@@ -227,7 +227,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
     3. `feat(owner): C02 sessions/messages token 用量落盘` — §10.1 `sessions.owner_provider_name` + §10.2 messages 四列；`_pending_token_breakdown` → stamp → INSERT
   - **不含**：金钱价格估算、`token_cost_estimate.py`、一切 owner 侧 ¥/$ / pricing 挂靠 / 费用脚本；飞书 model_picker（不进阶段一）；§2.3 pool base_url **并 C03 或可选**
   - **边界**：官方 `estimated_cost_usd` / `billing_*` **不动不扩展**；C02 只补「用量数量 + 自定义 provider 名」
-- [ ] **C03** · 源 §2.7–2.8 · damodel prompt cache / NewAPI proxy / MiMo thinking wire · **优先级：P0**
+- [ ] **C03** · 源 §2.7–2.8 · damodel provider/proxy（细节对话中）· **优先级：P0**
 - [ ] **C04** · 源 §3.1–3.4 · 飞书审批卡片 + sender_name 缓存 + inbound 身份 + 多平台审批签名 · **优先级：P0**
 - [ ] **C05** · 源 §4.1 · **飞书多 profile 舰队路由**（`profile_endpoints` HTTP 转发；**不吃**官方 `profile_routes`） · **优先级：P0**
 - [ ] **C06** · 源 §15.1–15.6 · API Server LDAP 身份准入 + identity_routes + 头剥离/SSE · **优先级：P0**
