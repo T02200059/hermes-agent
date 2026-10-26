@@ -757,6 +757,12 @@ def _skill_view_with_bump(args, **kw):
                 # Viewing is actively loading the skill to act on it — that counts as use
                 # (the curator's stale timer keys off last_used_at).
                 bump_use(str(resolved), task_id=kw.get("task_id"), session_id=kw.get("session_id"))
+                # [owner] C09: track viewed skill for skill-script auto-approval
+                try:
+                    from owner.approval.skill_script_approval import track_session_skill_view
+                    track_session_skill_view(str(resolved))
+                except Exception:
+                    pass
     return result
 
 

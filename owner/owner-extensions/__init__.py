@@ -60,3 +60,13 @@ def register(ctx) -> None:
         _register_english_explainer(ctx)
     except Exception:
         logger.warning("owner: english_explainer registration failed", exc_info=True)
+
+    # [owner] C09: skill_manage Feishu write-approval gate
+    try:
+        from .skill_manage_bridge import register_hooks as _register_skill_manage_hooks
+
+        _register_skill_manage_hooks(ctx)
+        logger.debug("owner: skill_manage-bridge hooks registered via owner-extensions")
+    except Exception:
+        logger.warning("owner: skill_manage-bridge hooks registration failed", exc_info=True)
+

@@ -1,8 +1,10 @@
 name: owner-extensions
 version: 0.1.0
 description: >-
-  Owner runtime extensions (/providers; C14 output_guard + stream_guard).
+  Owner runtime extensions (/providers; C14 guards; C13 explainers; C09 skill_manage gate).
 author: "owner"
 hooks:
   - transform_llm_output   # output_guard: fold/warn degenerate final replies
   - on_stream_delta        # stream_guard: mid-generation degenerate watchdog
+  - pre_tool_call          # C09 skill_manage Feishu write gate
+  - pre_gateway_dispatch   # C09 cache gateway for skill approval keepalive

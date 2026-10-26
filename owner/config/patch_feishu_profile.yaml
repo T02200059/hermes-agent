@@ -1,0 +1,28 @@
+# Feishu profile / fleet routing + skill approval (C09).
+#
+# Runtime: ~/.hermes/patch_feishu_profile.yaml → 常软链到本文件。
+# 现网若软链仍指向旧树，以旧树为准；本文件是 v2 仓内自包含模板（无真实密钥）。
+# C05 bots 路由 / C06 LDAP 段后续阶段补全；此处只钉 C09 skill_approval。
+#
+# 加载：owner.patch_config.load_patch_feishu_profile_config()
+
+feishu:
+  # ── C09 skill_manage 飞书写审批门 ──────────────────────────────────────────
+  # enabled=true 且当前 profile ∈ profiles 时：
+  #   - 飞书会话上 skill_manage 写操作（create/edit/patch/delete/write_file/remove_file）
+  #     阻塞等人批；skills_list / skill_view / 普通文件工具 / terminal 不进门
+  #   - allow_skills 白名单（精确名或 fnmatch）；空列表 = 全部不审
+  #   - YOLO / approvals.mode=off 不绕过本门
+  #   - 审批卡发到 approval_home_chat_id；原点会话发「等待审批」提示
+  #   - 等待默认 24h；拒绝/超时 hard-stop 本轮
+  #   - 门开启时压制 background_review 的 skill 进化（memory 审查不受影响）
+  skill_approval:
+    enabled: false
+    profiles:
+      - "*"
+    allow_skills:
+      - xy-*
+    # 审批卡固定群；留空则回落到会话网关 notify（通常不够用）
+    approval_home_chat_id: ""
+    timeout_seconds: 86400
+    disable_background_skill_review: true

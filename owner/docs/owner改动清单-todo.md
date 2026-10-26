@@ -48,7 +48,19 @@
 - **配置**：无独立 patch 段；路径随 adapter 缓存文件。需要显示名时走 store，**不要**再造进程内短 TTL dict。
 - **与 bot 菜单关系**：`p2p_chat_id` 映射 + debounce/`atexit` flush 是菜单点击路由的前置；缺映射会表现为「菜单键未配置」。
 
-### 3. Bot menu 按钮响应 · **C11 余下 · 待阶段三**
+### 3. skill 脚本自动审批 + skill_manage 飞书门 · **C09 · 已落地**
+
+- **是什么**：本会话已 `skill_view` 的白名单 skill 脚本可跳过危险命令提示；飞书上 `skill_manage` 写操作走自建审批卡（YOLO 不绕过）。
+- **入口**：
+  - `owner/approval/skill_script_approval.py` — `track_session_skill_view` / `is_skill_script_allowed` / `reset_session_skills_viewed`
+  - `owner/approval/skill_manage_gate.py` — `run_gate` / `should_escalate` / `apply_all_patches`
+  - `owner/feishu/skill_approval_card.py` — `send_skill_approval_card` / `handle_card_click`
+  - Hook 桥：`owner/owner-extensions/skill_manage_bridge/`（`pre_tool_call` + `pre_gateway_dispatch`）
+- **配置**：`config.owner.approvals.skill_script_allowlist`（patch.yaml）；`feishu.skill_approval`（`patch_feishu_profile.yaml`，经 `load_patch_feishu_profile_config()`）
+- **下游接线**：复用 C04 name cache / `send_card`；卡片 `hermes_action=skill_approval_gate`；永久按钮不展示（门内 `allow_permanent=False` + C01 策略）
+
+### 4. Bot menu 按钮响应 · **C11 余下 · 待阶段三**
+
 
 - **是什么**：飞书 bot 菜单点击 → 按 key 路由到会话/命令（旧树能力；v2 未迁）。
 - **状态**：**未落地**（阶段三与 diff/clarify 卡同批）。本树**无** `owner/.../bot_menu*` 处理器。
@@ -58,7 +70,7 @@
   - 官方 `plugins/platforms/feishu/adapter.py` 事件环（落地时薄委托，逻辑进 `owner/`）
 - **配置**：待 C11 余下设计定键；预计挂 `config.owner.*`（经 patch），不要塞进官方 gateway 配置。
 
-### 4. C13 Explainers 统一配置与 auxiliary · **C13 · 已落地**
+### 5. C13 Explainers 统一配置与 auxiliary · **C13 · 已落地**
 
 旧树三套顶层段（`progress_explainer` / `approval_explainer` / `english_explainer`）各自 `load_config` + 各自解析 provider/model。**v2 禁止再分叉**：配置与取模入口收成一套，三 kind 共用 helper。
 
@@ -366,7 +378,13 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 - [x] **C08** · 源 §7.27 · outbound BOS/EOS scrub · **优先级：P0**
   - 落地：终局走官方 O8；interim/status 薄补复用 `_strip_deepseek_special_tokens`（`owner/outbound_special_token_scrub.py` + stream_delivery / gateway status 胶水）
   - 测：`tests/owner/test_outbound_special_token_scrub.py`
-- [ ] **C09** · 源 §3.6 / §3.11 · skill 脚本自动审批 + skill_manage 飞书审批门 · **优先级：P0**
+- [x] **C09** · 源 §3.6 / §3.11 · skill 脚本自动审批 + skill_manage 飞书审批门 · **优先级：P0**（阶段三）
+  - skill 脚本：`owner/approval/skill_script_approval.py`；`approvals.skill_script_allowlist`；胶水 `tools/approval.py` + `tools/skills_tool.py`
+  - skill_manage 门：`owner/approval/skill_manage_gate.py` + `owner/owner-extensions/skill_manage_bridge/`；卡 `owner/feishu/skill_approval_card.py`
+  - 配置：`feishu.skill_approval`（`owner/config/patch_feishu_profile.yaml`，默认 enabled:false）
+  - 适配：超时补丁挂 `tools.approval_context._get_approval_timeout`；发卡走 `send_card`；adapter `_on_card_action_trigger` 薄分支
+  - 设计：`owner/docs/design/skill-approval/README.md`
+  - 测：`tests/owner/test_skill_script_approval.py` / `test_skill_manage_gate.py`
 - [x] **C10** · 源 i18n 层 · 显示层 i18n / `_localized` 与护栏文案（源 §12.2 / §16.9 相关） · **优先级：P0**（阶段二 · 与 B11 同批）
   - helper：`owner/i18n/localized.py`（`localized` / `GUARD_EN_TEXTS`）
   - 胶水：`tools/file_tools_write_guards.py`（受保护指令 / SSH 配置写入护栏走 `_localized`/`_blocked`）

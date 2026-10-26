@@ -46,4 +46,4 @@
 
 ## 范围外（后续）
 
-C10 显示 i18n、C11 auto-card/early-typing、C13 explainer、C09 skill 门、C05 多 profile。
+C10 显示 i18n、C11 auto-card/early-typing、C13 explainer、C05 多 profile。（C09 skill 门已另见 `design/skill-approval/`）

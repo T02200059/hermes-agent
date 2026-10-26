@@ -2245,6 +2245,12 @@ class FeishuAdapter(BasePlatformAdapter):
         action = getattr(event, "action", None)
         action_value = getattr(action, "value", {}) or {}
         if isinstance(action_value, dict):
+            # [owner] C09: skill_manage Feishu approval card clicks
+            if action_value.get("hermes_action") == "skill_approval_gate":
+                from owner.feishu.skill_approval_card import handle_card_click
+                return handle_card_click(
+                    adapter=self, event=event, action_value=action_value, loop=loop,
+                )
             if action_value.get("hermes_action"):
                 return self._handle_approval_card_action(event=event, action_value=action_value, loop=loop)
             if action_value.get("hermes_update_prompt_action"):

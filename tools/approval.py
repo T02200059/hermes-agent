@@ -301,6 +301,12 @@ def clear_session(session_key: str) -> None:
             entry.cancelled = "the session ended before the prompt was answered"
             entry.event.set()
     _release_permission_mode_dependents(session_key)
+    # [owner] C09: skill-script auto-approval viewed set must not survive session boundary
+    try:
+        from owner.approval.skill_script_approval import reset_session_skills_viewed
+        reset_session_skills_viewed(session_key)
+    except Exception:
+        pass
     # Session-persistent code kernels (local and remote) share this owner key and die at the same boundary so a
     # finished conversation cannot leak a live interpreter.
     for module, shutdown in (("tools.code_kernel", "shutdown_kernels_for_owner"),
@@ -1122,6 +1128,15 @@ def check_dangerous_command(command: str, env_type: str,
     blocked = _floor_block(command)
     if blocked is not None:
         return blocked
+    # [owner] C09: skill script auto-approval (after floors, before yolo)
+    try:
+        from owner.approval.skill_script_approval import is_skill_script_allowed
+        _allow = is_skill_script_allowed(command)
+        if _allow:
+            logger.info("Skill script auto-approved (%s): %s", _allow, command[:200])
+            return _approved()
+    except Exception:
+        pass
     if _yolo_active():
         return _approved()
     if _command_matches_permanent_allowlist(command):
@@ -1184,6 +1199,16 @@ def check_all_command_guards(command: str, env_type: str,
     prepared = consume_prepared_guard(command, env_type, has_host_access)
     if prepared is not None:
         return prepared
+
+    # [owner] C09: skill script auto-approval (after floors, before yolo / mode=off)
+    try:
+        from owner.approval.skill_script_approval import is_skill_script_allowed
+        _allow = is_skill_script_allowed(command)
+        if _allow:
+            logger.info("Skill script auto-approved (%s): %s", _allow, command[:200])
+            return _approved()
+    except Exception:
+        pass
 
     approval_mode = approval_context._get_approval_mode()
     if _yolo_active() or approval_mode == "off":
