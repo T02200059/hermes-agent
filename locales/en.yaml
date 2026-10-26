@@ -817,6 +817,7 @@ gateway:
   moa:
     prepare_failed: "Failed to prepare MoA turn."
 
+  chained_commands_executed: "Commands executed."
   quick_command:
     no_output: "Command returned no output."
     timed_out: "Quick command timed out (30s)."

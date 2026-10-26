@@ -141,6 +141,7 @@ export {
 } from './skin'
 export {
   type AliasCommandDispatchResponse,
+  type ChainCommandDispatchResponse,
   type CommandDispatchResponse,
   type ExecCommandDispatchResponse,
   looksLikeSlashCommand,

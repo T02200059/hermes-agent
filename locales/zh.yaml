@@ -796,6 +796,7 @@ gateway:
     ack_generate: "正在根据项目扫描生成 AGENTS.md…"
   moa:
     prepare_failed: "准备 MoA 回合失败。"
+  chained_commands_executed: "命令已执行。"
   quick_command:
     no_output: "命令没有返回任何输出。"
     timed_out: "快捷命令超时（30 秒）。"

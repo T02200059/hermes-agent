@@ -38,6 +38,12 @@ describe('parseCommandDispatch', () => {
     expect(parseCommandDispatch({ type: 'exec', output: 'hi' })).toEqual({ type: 'exec', output: 'hi' })
     expect(parseCommandDispatch({ type: 'plugin' })).toEqual({ type: 'plugin', output: undefined })
     expect(parseCommandDispatch({ type: 'alias', target: 'help' })).toEqual({ type: 'alias', target: 'help' })
+    // [owner] C19
+    expect(parseCommandDispatch({ type: 'chain', commands: ['help', 'status'] })).toEqual({
+      type: 'chain',
+      commands: ['help', 'status'],
+    })
+    expect(parseCommandDispatch({ type: 'chain', commands: [1] })).toBeNull()
     expect(parseCommandDispatch({ type: 'skill', name: 'x', message: 'do', display: '/x' })).toEqual({
       type: 'skill',
       name: 'x',

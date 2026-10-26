@@ -487,7 +487,24 @@ def _dispatch_quick(rid, params, session, name, arg):
         if r.returncode != 0:
             return _err(rid, 4018, output or f"quick command failed with exit code {r.returncode}")
         return _exec_out(rid, output)
-    return _ok(rid, {"type": "alias", "target": qc.get("target", "")}) if qc.get("type") == "alias" else None
+    if qc.get("type") != "alias":
+        return None
+    target = (qc.get("target") or "").strip()
+    # [owner] C19 chained quick commands — owner/commands/chained_quick.py
+    from owner.commands.chained_quick import (
+        expand_chained_quick_alias,
+        strip_leading_slash,
+    )
+    chain = expand_chained_quick_alias(target, (arg or "").strip())
+    if len(chain) > 1:
+        return _ok(
+            rid,
+            {
+                "type": "chain",
+                "commands": [strip_leading_slash(c) for c in chain],
+            },
+        )
+    return _ok(rid, {"type": "alias", "target": qc.get("target", "")})
 
 
 def _plugin_command_handler(name: str):

@@ -179,6 +179,14 @@ export function createSlashHandler(ctx: SlashHandlerContext): SlashHandler {
         return void handler(`/${d.target}${argTail}`, submission, false)
       }
 
+      // [owner] C19 chained quick commands
+      if (d.type === 'chain') {
+        for (const cmd of d.commands) {
+          void handler(`/${cmd}`, submission, false)
+        }
+        return
+      }
+
       // A skill/bundle dispatch's `message` is the expanded skill body —
       // model-facing scaffolding. `display` is the invocation the gateway
       // projected; the transcript shows that instead. An ordinary send has no

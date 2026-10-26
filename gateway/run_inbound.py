@@ -820,6 +820,28 @@ class GatewayInboundMixin(GatewayInboundHooksMixin, GatewayInboundTranscriptionM
         if command and _cmd_def is None:
             qcmd = self._hm_quick_commands().get(command)
             if qcmd is not None and qcmd.get("type") == "alias":
+                # [owner] C19 chained quick commands — owner/commands/chained_quick.py
+                from owner.commands.chained_quick import (
+                    ensure_leading_slash,
+                    expand_chained_quick_alias,
+                )
+                _target = (qcmd.get("target") or "").strip()
+                _chain = (
+                    expand_chained_quick_alias(_target, event.get_command_args().strip())
+                    if _target else []
+                )
+                if len(_chain) > 1:
+                    results = []
+                    for cmd_text in _chain:
+                        _fragment = await self._handle_message(
+                            dataclasses.replace(event, text=ensure_leading_slash(cmd_text))
+                        )
+                        if _fragment:
+                            results.append(str(_fragment))
+                    return True, (
+                        "\n".join(results) if results
+                        else t("gateway.chained_commands_executed")
+                    ), command, canonical
                 new_command = self._hm_expand_alias_quick_command(event, qcmd)
                 if new_command is not None:
                     command = new_command

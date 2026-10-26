@@ -223,6 +223,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 | **C03** | damodel provider/proxy | `owner/providers/damodel.py` + model-providers 插件 |
 | **C26** | providers 白名单 / 缓存 TTL / `/providers` | 白名单沿用官方；TTL 24h + 无变更不写盘；斜杠命令 |
 | **C16** | Cron env 隔离 | **官方已修**：ContextVar + `_CronRunScope`；审批 ContextVar 感知 |
+| **C19** | 链式快捷命令 `;;` + Quick Alias | `owner/commands/chained_quick.py`；CLI/gateway/TUI 薄胶水 |
 | **H01** | 官方 test 污染梳理 | 优先项已修（#1/#2/#5/#6/#7 R1/#10 等） |
 | **H02** | CLI `input()` 僵尸 reader | 延后 |
 
@@ -262,7 +263,11 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - 薄缺口（未扩 scope）：进程启动 scrub 继承的 `HERMES_CRON_SESSION`/`SESSION_KEY`/`SESSION_ID`；restart watcher env 未特判 pop（子进程 builder 仍可能拷贝 `os.environ`）。
 - [ ] **C17** · 源 §8.1 · Checkpoint Mutation Predictor · **优先级：P1**
 - [ ] **C18** · 源 §9.1 · per-chat display overrides · **优先级：P1**
-- [ ] **C19** · 源 §5 · 链式快捷命令 `;;` + Quick Alias · **优先级：P1**
+- [x] **C19** · 源 §5 · 链式快捷命令 `;;` + Quick Alias · **优先级：P1**（阶段一）
+  - helper：`owner/commands/chained_quick.py`（`parse_chained_commands` / `expand_chained_quick_alias`）
+  - 胶水：`cli.py` `_run_quick_command`；`gateway/run_inbound.py` `_hm_resolve_command`；`tui_gateway/methods_tools.py` `_dispatch_quick`（`type: chain`）
+  - TS：`apps/shared/src/slash.ts` + `ui-tui/src/app/createSlashHandler.ts`；i18n `gateway.chained_commands_executed`
+  - 测：`tests/owner/test_chained_quick.py`
 - [ ] **C20** · 源 §3.9 · Semantic Audit Gate · **优先级：P1**（可后移若负担大）
 - [x] **C26** · 源 §2.10–2.11 + §4.9 · providers 白名单 / 缓存 TTL / `/providers` · **优先级：P1**（阶段一）
   - 白名单：官方 `has_explicit_models` / `_models_config_is_allowlist` 已覆盖，沿用

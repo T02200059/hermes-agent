@@ -48,6 +48,12 @@ export interface AliasCommandDispatchResponse {
   type: 'alias'
 }
 
+/** [owner] C19 — chained quick-command alias (``;;``). */
+export interface ChainCommandDispatchResponse {
+  commands: string[]
+  type: 'chain'
+}
+
 export interface SkillCommandDispatchResponse {
   /** The invocation the UI renders (`/work fix the leak`). `message` is the
    *  expanded skill body — model-facing scaffolding no surface may show. */
@@ -73,6 +79,7 @@ export interface PrefillCommandDispatchResponse {
 
 export type CommandDispatchResponse =
   | AliasCommandDispatchResponse
+  | ChainCommandDispatchResponse
   | ExecCommandDispatchResponse
   | PrefillCommandDispatchResponse
   | SendCommandDispatchResponse
@@ -92,6 +99,15 @@ export function parseCommandDispatch(raw: unknown): CommandDispatchResponse | nu
   switch (row.type) {
     case 'alias':
       return typeof row.target === 'string' ? { target: row.target, type: 'alias' } : null
+
+    case 'chain': {
+      // [owner] C19
+      const commands = row.commands
+      if (!Array.isArray(commands) || !commands.every((c) => typeof c === 'string')) {
+        return null
+      }
+      return { commands: commands as string[], type: 'chain' }
+    }
 
     case 'exec':
 

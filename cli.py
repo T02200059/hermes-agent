@@ -1243,8 +1243,18 @@ class HermesCLI(CLIInitMixin, CLITuiRuntimeMixin, CLIProcessNotificationsMixin, 
         if qtype == "alias":
             target = qcmd.get("target", "").strip()
             if target:
-                target = target if target.startswith("/") else f"/{target}"
-                return self.process_command(f"{target} {user_args}".strip(), redispatch=True)
+                # [owner] C19 chained quick commands — owner/commands/chained_quick.py
+                from owner.commands.chained_quick import (
+                    ensure_leading_slash,
+                    expand_chained_quick_alias,
+                )
+                chain = expand_chained_quick_alias(target, user_args)
+                handled = True
+                for cmd_text in chain:
+                    handled = self.process_command(
+                        ensure_leading_slash(cmd_text), redispatch=True
+                    )
+                return handled
             self._console_print(f"[bold red]{_t('cli.quick.no_target', command=base_cmd)}[/]")
             return True
         if qtype != "exec":
