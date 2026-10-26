@@ -22,6 +22,110 @@
 
 勾选约定：`- [ ]` 未处理；`- [x]` 已结论（状态字段已填）。
 
+## § 二次开发可复用基建（后续 AI 优先看）
+
+> **开新能力前先扫本表。** 已落地的接现成入口；未落地的按「约定」接线，勿另起一套。  
+> 细则仍以各 C 条目 / 设计稿为准；本节只钉**接哪、怎么调、挂哪配置**。
+
+### 1. `patch.yaml` 加载器 · **C01 · 已落地**
+
+- **是什么**：owner 层统一配置入口；文件第一层键即能力段（**无**顶层 `owner:` / `patch:` shell），运行时 fuse 进 `config.owner.*`。
+- **入口**：`owner/patch_config.py`
+  - `load_patch_config()` / `load_owner_config()` → 读 `~/.hermes/patch.yaml`（本仓常软链到 `owner/config/patch.yaml`）
+  - `apply_owner_overlay(config)` → 官方 `load_config` 薄挂点后的叠层
+  - `invalidate_owner_config_cache()` → 强制重读
+  - 舰队/LDAP 另文件：`load_patch_feishu_profile_config()` → `patch_feishu_profile.yaml`（C05/C06）
+- **配置**：读写一律 `config.owner.<section>.*` 或直接 `load_patch_config().get("<section>")`；新开关进对应 section，不要散落 `config.yaml`。
+- **规范**：[`二次开发规范.md`](./二次开发规范.md) §2.2.1；[`v2背景说明.md`](./v2背景说明.md)「定制化 yaml」。
+
+### 2. 飞书 name cache / user_store · **C04 · 已落地**
+
+- **是什么**：`open_id` → 中文显示名 + p2p `chat_id`；24h soft TTL（过期不毁落盘名，避免卡面漏 `ou_xxx`）。
+- **入口**：
+  - `owner/feishu/user_store.py` — `FeishuUserStore`：`resolve_name` / `operator_display_name` / `pre_warm_name` / `get_p2p_chat_id` / `cache_p2p_chat_id`；工厂 `get_user_store(adapter)`
+  - `owner/feishu/user_cache.py` — 落盘结构与 TTL 原语：`get_cached_display_name` / `set_cached_display_name` / `cache_p2p_chat_id` / `load_user_cache` / `save_user_cache`
+  - 审批卡预热：`owner/feishu/approval.py` + `sender_name_helpers.py`（发卡前 `pre_warm`）
+- **配置**：无独立 patch 段；路径随 adapter 缓存文件。需要显示名时走 store，**不要**再造进程内短 TTL dict。
+- **与 bot 菜单关系**：`p2p_chat_id` 映射 + debounce/`atexit` flush 是菜单点击路由的前置；缺映射会表现为「菜单键未配置」。
+
+### 3. Bot menu 按钮响应 · **C11 余下 · 待阶段三**
+
+- **是什么**：飞书 bot 菜单点击 → 按 key 路由到会话/命令（旧树能力；v2 未迁）。
+- **状态**：**未落地**（阶段三与 diff/clarify 卡同批）。本树**无** `owner/.../bot_menu*` 处理器。
+- **已有半成品（勿重复造）**：
+  - C04 `FeishuUserStore` 的 `open_id → p2p_chat_id` 落盘与重启 flush（菜单路由依赖）
+  - C11 `send_card` / auto-card / notice 卡基建（若菜单结果要发卡）
+  - 官方 `plugins/platforms/feishu/adapter.py` 事件环（落地时薄委托，逻辑进 `owner/`）
+- **配置**：待 C11 余下设计定键；预计挂 `config.owner.*`（经 patch），不要塞进官方 gateway 配置。
+
+### 4. C13 Explainers 统一配置与 auxiliary · **C13 · 约定已敲定 / 代码待做**
+
+旧树三套顶层段（`progress_explainer` / `approval_explainer` / `english_explainer`）各自 `load_config` + 各自解析 provider/model。**v2 禁止再分叉**：配置与取模入口收成一套，三 kind 共用 helper。
+
+#### 4.1 选定 schema（`owner/config/patch.yaml` → `config.owner.explainers`）
+
+```yaml
+# 推荐骨架（落地 C13 时启用；当前现网不写活键，见 patch.yaml 注释预留）
+explainers:
+  # 共用默认；各 kind 可覆盖同名键
+  provider: auto          # 空或 auto → 交给 call_llm auxiliary 链
+  model: auto
+  timeout_ms: 30000       # 统一毫秒；取代旧 explainer_timeout_ms / 混用 timeout_ms
+  progress:
+    enabled: false
+    # kind 专有：silence_seconds / min_interval_seconds / max_per_turn / platforms 等
+  approval:
+    enabled: false
+    # kind 专有：cache_ttl_seconds / platforms 等
+  english:
+    enabled: false
+    # kind 专有：platforms 等
+```
+
+- **块名**：`explainers`（对齐清单「yaml 整合方向」）。
+- **kind 子键**：`progress` / `approval` / `english`（短、可扫；勿写成 `explainers.progress_explainer`）。
+- **旧键迁移目标**：顶层 `progress_explainer` 等 → 本块；超时键统一 `timeout_ms`（共用或 kind 覆盖）。
+- **`call_llm` 的 `task=`**（与 config.yaml `auxiliary.*` 对齐，**保持长名**）：
+  - `task="progress_explainer"` / `"approval_explainer"` / `"english_explainer"`
+
+#### 4.2 模型解析优先级（对齐旧约定，收口到一个 helper）
+
+落地后只许走共享入口（建议名）：`owner/explainers/llm.py` → `resolve_explainer_call(kind)` / `call_explainer_llm(kind, messages, **kw)`；包布局倾向 `owner/explainers/{progress,approval,english}/`，**禁止**三套各写 provider/model 解析。
+
+优先级（高 → 低）：
+
+1. **patch** `explainers.<kind>.provider|model`（显式非空且非 `auto`）  
+2. **patch** 共用 `explainers.provider|model`（显式非空且非 `auto`）  
+3. 传给 `call_llm(task="<kind>_explainer", provider=None, model=None)` → 官方 **`config.yaml` `auxiliary.<task>.*`**  
+4. auxiliary 未配 → **主聊天模型**（`call_llm` auto 链）
+
+`timeout_ms`：kind 覆盖 > 共用 `explainers.timeout_ms` > 代码默认 30000；显式传入 `call_llm(timeout=...)`。
+
+#### 4.3 与已落地基建的衔接（实现时复用，勿旁路）
+
+| 依赖 | 用途 |
+|------|------|
+| **C14** `owner.stream_guard.snapshot(session_id, turn_id)` | progress：guard 已 `tripped` 则让位不发旁白 |
+| **C11** `feishu_card.notice_titles` | 已预留 `🧭 系统提示：` / `🔤 系统提示：` 前缀 → notice 卡 |
+| **C11** `owner/feishu/card_sender.send_card` / `auto_card.make_notice_card` | 旁白投递 |
+| **C04** 审批卡发送点 | approval 解说嵌卡（fail-open，超时无解说段照发） |
+| **C01** `load_patch_config` | 只读 `explainers` 段 |
+
+官方 auxiliary 链本身已存在（`agent.auxiliary_client.call_llm`）；C13 只约定 **task 名 + patch 块 + 共享 helper**，不另起 HTTP 客户端。参考已落地旁路：C17 `owner/checkpoint_predictor/llm_predict.py`（`task="approval"`）。
+
+### 5. 同级已落地、开飞书/旁白时常接
+
+| 基建 | 编号 | 入口（要点） | 配置 |
+|------|------|--------------|------|
+| 永久审批门 | C01 | `owner/approval/permanent_policy.py` → `gate_allow_permanent` / `get_allow_permanent` | `owner.approvals.allow_permanent`（默认 false） |
+| 飞书 auto-card / notice / early-typing | C11 底座 | `owner/feishu/auto_card.py`（`try_auto_card` / `match_notice_rule` / `make_notice_card`）；`card_sender.send_card`；`agent_end.try_auto_card_on_end`；adapter early-typing | `owner.feishu_card.*` |
+| stream / output guard | C14 | `owner/stream_guard.snapshot`；`owner/output_guard`（`transform_llm_output`） | `owner.stream_guard.*` / `owner.output_guard.enabled` |
+| Checkpoint 预测 | C17 | `owner/checkpoint_predictor`（`predict_and_checkpoint`） | `owner.checkpoints.*` |
+| 护栏 i18n | C10 | `owner/i18n/localized.py` → `localized` | locales + 调用方 `_localized` |
+| 审批历史结构判定 | B11 | 与 C10 同批；历史挖掘勿再靠英文文案子串 | （见 `c10-b11-*.md`） |
+
+---
+
 ---
 
 ## § Bug / 修复类（优先对照官方）
@@ -277,7 +381,9 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - 依赖：C04 已落地；卡发送复用官方 `_feishu_send_with_retry` / `_finalize_send_result`
 - [ ] **C11 余下** · 源 §4.4–4.6 · diff·clarify 卡 / bot 菜单 · **优先级：P1**（阶段三）
 - [ ] **C12** · 源 §4.10–4.15 · memory write-approval 卡 / feishu-guide / 上传守卫 / doc_read 图 OCR / @所有人 / merge_forward · **优先级：P1**
-- [ ] **C13** · 源 §7.24–7.26 · progress / approval / english explainer · **优先级：P1** · **延后**：等飞书相关基础设施（阶段二）后再做
+- [ ] **C13** · 源 §7.24–7.26 · progress / approval / english explainer · **优先级：P1** · 飞书底座（C04/C10/C11）已齐，可开
+  - **统一约定（已敲定，代码未做）**：单一 `owner.explainers` 块 + 共享 `owner/explainers/` 取模 helper；禁止三套各写 provider/model 解析。详见上方「§ 二次开发可复用基建 §4」。
+  - 旧顶层 `progress_explainer` / `approval_explainer` / `english_explainer` → 迁入 `explainers.{progress,approval,english}`；`call_llm(task=…_explainer)` 长 task 名保留，对接 `auxiliary.<task>`
 - [x] **C14** · 源 §14 · output_guard + stream_guard · **优先级：P1**（阶段一 · 完整版）
   - helper：`owner/output_guard/`（`transform_llm_output`）+ `owner/stream_guard/`（`on_stream_delta`；S1/S2/S3，S3=`is_repetition_dominated`）
   - 注册：`owner/owner-extensions` `register()` + `plugin.yaml` hooks
@@ -365,7 +471,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
    - 保留独立「舰队路由」文件亦可，但结构对齐：`feishu.bots.*.user_routing` / `profile_endpoints` 与 `ldap` / `identity_*` 分节清晰；避免 LDAP 埋在飞书文件里却无索引。  
    - **不**为对齐官方而改成 `gateway.profile_routes`（语义不覆盖跨进程）。
 2. **`patch.yaml` 合并同类开关**  
-   - `progress_explainer` / `approval_explainer` / `english_explainer` → 单一 `explainers:` 块。  
+   - `progress_explainer` / `approval_explainer` / `english_explainer` → 单一 `explainers:` 块（**已敲定** schema：共用 `provider`/`model`/`timeout_ms` + `progress`/`approval`/`english` 子段；见「§ 二次开发可复用基建 §4」）。  
    - `openviking_sync_recall` + `openviking_recall_card` → `openviking:`。  
    - `feishu_card` notice_titles 与 auto_card 阈值保留一张表，删注释噪声。  
    - 长期 `enabled: false` 且无现网依赖的（如部分 `diff_card`）可迁「默认关 + 文档」，不占主文件行。

@@ -75,3 +75,21 @@ stream_guard:
 output_guard:
   enabled: true
 
+
+# ── C13 explainers（预留 · 未启用）──────────────────────────────────────────
+# 统一块约定已敲定（见 owner/docs/owner改动清单-todo.md「二次开发可复用基建 §4」）。
+# 以下为推荐骨架注释，**不要**在 C13 落地前取消注释写成活键（避免半套配置）。
+# 旧树顶层 progress_explainer / approval_explainer / english_explainer 迁入本块；
+# call_llm task 仍用长名 progress_explainer|approval_explainer|english_explainer，
+# 对接 config.yaml auxiliary.<task>；timeout 键统一 timeout_ms。
+#
+# explainers:
+#   provider: auto
+#   model: auto
+#   timeout_ms: 30000
+#   progress:
+#     enabled: false
+#   approval:
+#     enabled: false
+#   english:
+#     enabled: false
