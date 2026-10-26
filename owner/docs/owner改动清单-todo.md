@@ -270,7 +270,9 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 
 > 不进四阶段必做；有空再开。与「明确不做」不同：这里是**以后要做、现在不排**。
 
-- [ ] **H01** · **官方 test 全面梳理** · 对齐当前 v2 官方树：排查 test 污染（未 mock 干净、写真实 `~/.hermes` / 全局单例 / 环境变量、实打网络等，甚至可能干扰正常运行程序），给出修复优先级清单。**不做**「官方套件全绿」战役（见下方明确不做 / C24）。
+- [x] **H01** · **官方 test 全面梳理** · 对齐当前 v2 官方树：排查 test 污染（未 mock 干净、写真实 `~/.hermes` / 全局单例 / 环境变量、实打网络等，甚至可能干扰正常运行程序），给出修复优先级清单。**不做**「官方套件全绿」战役（见下方明确不做 / C24）。
+  - **现状（小模型已处理，基本收口）**：审计见 `/Users/yangtb/WorkBuddy/hermes/deliverables/tests-pollution-audit-2026-10-23.md`；优先项已修本地未 push：`73fa8f53e3`（#1 子进程 env 沙箱）…`de3dc9ecff`（env 快照还原）含 #2/#5/#6/#7 R1/#10 等。#7 仅守卫登记第一步；网络守卫等后置项未开。**非**「官方套件全绿」。
+- [ ] **H02** · CLI approval `input()` 超时僵尸 reader · 仅无 callback 且非 PT 路径；超时后线程仍堵 `read(0)`，可能吞后续输入/连锁 deny；gateway/飞书/QQ/微信与正常 TUI **无感**；fail-closed 非安全问题。**暂时不做**。
 - **限流（暂不做）**：本清单 **无独立限流定制项**（C 段无 RPM/TPM/throttle/客户端主动限流条目）。最接近已消化项：
   - **B18**（已勾）/ 源 §7.9 — 429 配额耗尽当 transient 静默重试 → 本树用 **O5** 天/周配额墙单向降为 billing
   - 官方自带：`agent/rate_limit_tracker.py`、pairing `_rate_limits`、渠道 flood 等（非 owner 待做）
