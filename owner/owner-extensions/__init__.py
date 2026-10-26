@@ -21,6 +21,18 @@ def register(ctx) -> None:
     except Exception:
         logger.warning("owner: /providers registration failed", exc_info=True)
 
+    try:
+        from owner.explainers.recap import handle_recap_command
+
+        ctx.register_command(
+            "recap",
+            handle_recap_command,
+            description="Summarize this chat (notice card; not written to agent history)",
+        )
+        logger.debug("owner: /recap registered via plugin command")
+    except Exception:
+        logger.warning("owner: /recap registration failed", exc_info=True)
+
     # [owner] C14: output_guard + stream_guard
     try:
         from owner.output_guard import register_hooks as _register_output_guard
@@ -35,7 +47,7 @@ def register(ctx) -> None:
     except Exception:
         logger.warning("owner: stream_guard registration failed", exc_info=True)
 
-    # [owner] C13: progress + english explainers
+    # [owner] C13: progress + english + recap explainers
     try:
         from owner.explainers.progress import register_hooks as _register_progress_explainer
 

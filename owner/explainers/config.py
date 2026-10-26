@@ -6,11 +6,13 @@ Schema::
       provider: auto
       model: auto
       timeout_ms: 30000
+      max_input_chars: 64000   # shared; designed for ≥256k-context models
       progress: { enabled: false, ... }
       approval: { enabled: false, ... }
       english:  { enabled: false, ... }
+      recap:    { enabled: false, ... }
 
-Shared provider/model/timeout_ms apply to every kind unless the kind overrides.
+Shared provider/model/timeout_ms/max_input_chars apply to every kind unless the kind overrides.
 """
 
 from __future__ import annotations
@@ -18,6 +20,7 @@ from __future__ import annotations
 from typing import Any, Dict, Optional, Tuple
 
 from owner.explainers.common import (
+    DEFAULT_MAX_INPUT_CHARS,
     coerce_bool,
     coerce_int,
     norm_model_field,
@@ -29,6 +32,7 @@ _SHARED_DEFAULTS: Dict[str, Any] = {
     "provider": "",
     "model": "",
     "timeout_ms": 30000,
+    "max_input_chars": DEFAULT_MAX_INPUT_CHARS,
 }
 
 _INT_SHARED = ("timeout_ms",)
@@ -83,6 +87,7 @@ def _raw_explainers() -> Dict[str, Any]:
             "provider": "",
             "model": "",
             "timeout_ms": 30000,
+            "max_input_chars": DEFAULT_MAX_INPUT_CHARS,
         }
         found = False
         for kind in ("progress", "approval", "english"):
@@ -118,6 +123,11 @@ def load_shared() -> Dict[str, Any]:
             raw.get("timeout_ms", _SHARED_DEFAULTS["timeout_ms"]),
             _SHARED_DEFAULTS["timeout_ms"],
             minimum=1,
+        ),
+        "max_input_chars": coerce_int(
+            raw.get("max_input_chars", _SHARED_DEFAULTS["max_input_chars"]),
+            _SHARED_DEFAULTS["max_input_chars"],
+            minimum=0,
         ),
     }
     return cfg
@@ -179,6 +189,15 @@ def load_kind_config(kind: str) -> Dict[str, Any]:
 
     # keep legacy alias for progress explain path that still checks explainer_timeout_ms
     cfg["explainer_timeout_ms"] = cfg["timeout_ms"]
+
+    # max_input_chars: kind > shared > 64000 (designed for ≥256k-context models)
+    if "max_input_chars" in raw_kind:
+        cfg["max_input_chars"] = coerce_int(
+            raw_kind.get("max_input_chars"), shared["max_input_chars"], minimum=0
+        )
+    else:
+        cfg["max_input_chars"] = shared["max_input_chars"]
+
     cfg["_kind"] = kind
     return cfg
 
@@ -228,6 +247,6 @@ def list_configured_kinds() -> tuple[str, ...]:
     extras = [
         k
         for k, v in raw.items()
-        if k not in {"provider", "model", "timeout_ms"} and isinstance(v, dict)
+        if k not in {"provider", "model", "timeout_ms", "max_input_chars"} and isinstance(v, dict)
     ]
     return tuple(sorted(set(known_kinds()) | set(extras)))

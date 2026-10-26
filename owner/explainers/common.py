@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
+# Designed for auxiliary models with ≥256k context; input budget defaults to 64k chars.
+# Kinds may override via explainers.<kind>.max_input_chars or shared explainers.max_input_chars.
+DEFAULT_MAX_INPUT_CHARS = 64000
+
 
 def coerce_bool(val: Any, default: bool) -> bool:
     if isinstance(val, bool):
@@ -71,3 +75,31 @@ def display_language() -> str:
 
 def display_language_is_chinese() -> bool:
     return display_language().startswith("zh")
+
+
+def clip_input(text: Any, limit: int = DEFAULT_MAX_INPUT_CHARS) -> str:
+    """Clip prompt *input* to ``limit`` characters (default shared 64k).
+
+    Prefer keeping the **tail** when truncating long transcripts so recent turns survive.
+    ``limit <= 0`` means no clip (return full string). When truncating, the omission
+    marker is counted inside the budget so the returned string stays ≤ ``limit``.
+    """
+    if text is None:
+        return ""
+    s = str(text)
+    if limit is None:
+        return s
+    try:
+        n = int(limit)
+    except (TypeError, ValueError):
+        n = DEFAULT_MAX_INPUT_CHARS
+    if n <= 0:
+        return s
+    if len(s) <= n:
+        return s
+    omitted = len(s) - n
+    marker = f"…（已省略开头约 {omitted} 字）\n"
+    if len(marker) >= n:
+        return s[-n:]
+    body_budget = n - len(marker)
+    return marker + s[-body_budget:]

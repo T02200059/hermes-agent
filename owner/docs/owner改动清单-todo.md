@@ -71,6 +71,7 @@ explainers:
   provider: auto          # 空或 auto → 交给 call_llm auxiliary 链
   model: auto
   timeout_ms: 30000       # 统一毫秒；取代旧 explainer_timeout_ms / 混用 timeout_ms
+  max_input_chars: 64000  # 设计前提：辅助模型 ≥256k 上下文；输入默认 64k
   progress:
     enabled: true         # 代码默认 false；本机活键 true
     # kind 专有：silence_seconds / min_interval_seconds / max_per_turn / platforms 等
@@ -80,17 +81,21 @@ explainers:
   english:
     enabled: true
     # kind 专有：platforms 等
+  recap:
+    enabled: true         # 第四 kind：/recap 按需回顾（notice；不写主会话）
+    max_output_chars: 500
 ```
 
 - **块名**：`explainers`（对齐清单「yaml 整合方向」）。
-- **kind 子键**：`progress` / `approval` / `english`（短、可扫；勿写成 `explainers.progress_explainer`）。
+- **kind 子键**：`progress` / `approval` / `english` / `recap`（短、可扫；勿写成 `explainers.progress_explainer`）。
+- **输入预算**：共用 `max_input_chars` 默认 **64000**（`owner.explainers.common.DEFAULT_MAX_INPUT_CHARS` / `clip_input`）；kind 可覆盖。按 **≥256k** 上下文模型设计。
 - **旧键迁移目标**：顶层 `progress_explainer` 等 → 本块；超时键统一 `timeout_ms`（共用或 kind 覆盖）。
 - **`call_llm` 的 `task=`**（与 config.yaml `auxiliary.*` 对齐，**保持长名**）：
-  - `task="progress_explainer"` / `"approval_explainer"` / `"english_explainer"`
+  - `task="progress_explainer"` / `"approval_explainer"` / `"english_explainer"` / `"recap_explainer"`
 
 #### 4.2 模型解析优先级（对齐旧约定，收口到一个 helper）
 
-已走共享入口：`owner/explainers/llm.py` → `resolve_explainer_call(kind)` / `call_explainer_llm(kind, messages, **kw)`；包布局倾向 `owner/explainers/{progress,approval,english}/`，**禁止**三套各写 provider/model 解析。
+已走共享入口：`owner/explainers/llm.py` → `resolve_explainer_call(kind)` / `call_explainer_llm(kind, messages, **kw)`；包布局 `owner/explainers/{progress,approval,english,recap}/`，**禁止**各 kind 各写 provider/model 解析。
 
 优先级（高 → 低）：
 
@@ -106,7 +111,7 @@ explainers:
 | 依赖 | 用途 |
 |------|------|
 | **C14** `owner.stream_guard.snapshot(session_id, turn_id)` | progress：guard 已 `tripped` 则让位不发旁白 |
-| **C11** `feishu_card.notice_titles` | 已预留 `🧭 系统提示：` / `🔤 系统提示：` 前缀 → notice 卡 |
+| **C11** `feishu_card.notice_titles` | 已预留 `🧭` / `🔤` / `📋 系统提示：` 前缀 → notice 卡 |
 | **C11** `owner/feishu/card_sender.send_card` / `auto_card.make_notice_card` | 旁白投递 |
 | **C04** 审批卡发送点 | approval 解说嵌卡（fail-open，超时无解说段照发） |
 | **C01** `load_patch_config` | 只读 `explainers` 段 |
@@ -381,10 +386,12 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - 依赖：C04 已落地；卡发送复用官方 `_feishu_send_with_retry` / `_finalize_send_result`
 - [ ] **C11 余下** · 源 §4.4–4.6 · diff·clarify 卡 / bot 菜单 · **优先级：P1**（阶段三）
 - [ ] **C12** · 源 §4.10–4.15 · memory write-approval 卡 / feishu-guide / 上传守卫 / doc_read 图 OCR / @所有人 / merge_forward · **优先级：P1**
-- [x] **C13** · 源 §7.24–7.26 · progress / approval / english explainer · **已落地** · 飞书底座（C04/C10/C11）已齐
-  - **统一基建**：单一 `owner.explainers` 块 + `owner/explainers/`（config/llm/registry）；`register_kind` 可扩第四种。详见「§ 二次开发可复用基建 §4」与 `owner/docs/c13-explainers.md`
-  - **统一约定（已敲定，代码已做）**：单一 `owner.explainers` 块 + 共享 `owner/explainers/` 取模 helper；禁止三套各写 provider/model 解析。详见上方「§ 二次开发可复用基建 §4」。
-  - 旧顶层 `progress_explainer` / `approval_explainer` / `english_explainer` → 迁入 `explainers.{progress,approval,english}`；`call_llm(task=…_explainer)` 长 task 名保留，对接 `auxiliary.<task>`
+- [x] **C13** · 源 §7.24–7.26 · progress / approval / english / **recap** explainer · **已落地** · 飞书底座（C04/C10/C11）已齐
+  - **统一基建**：单一 `owner.explainers` 块 + `owner/explainers/`（config/llm/registry）；`register_kind` 可扩。详见「§ 二次开发可复用基建 §4」与 `owner/docs/c13-explainers.md`
+  - **输入默认 64k**（`max_input_chars`）；按辅助模型 **≥256k** 上下文设计；`clip_input` 保尾截断
+  - **recap**：第四 kind；`/recap` 按需；notice `📋 系统提示：`；不写主会话
+  - **统一约定（已敲定，代码已做）**：单一 `owner.explainers` 块 + 共享取模 helper；禁止各 kind 各写 provider/model。详见上方「§ 二次开发可复用基建 §4」。
+  - 旧顶层 `progress_explainer` / `approval_explainer` / `english_explainer` → 迁入 `explainers.{progress,approval,english,recap}`；`call_llm(task=…_explainer)` 长 task 名保留
 - [x] **C14** · 源 §14 · output_guard + stream_guard · **优先级：P1**（阶段一 · 完整版）
   - helper：`owner/output_guard/`（`transform_llm_output`）+ `owner/stream_guard/`（`on_stream_delta`；S1/S2/S3，S3=`is_repetition_dominated`）
   - 注册：`owner/owner-extensions` `register()` + `plugin.yaml` hooks
@@ -472,7 +479,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
    - 保留独立「舰队路由」文件亦可，但结构对齐：`feishu.bots.*.user_routing` / `profile_endpoints` 与 `ldap` / `identity_*` 分节清晰；避免 LDAP 埋在飞书文件里却无索引。  
    - **不**为对齐官方而改成 `gateway.profile_routes`（语义不覆盖跨进程）。
 2. **`patch.yaml` 合并同类开关**  
-   - `progress_explainer` / `approval_explainer` / `english_explainer` → 单一 `explainers:` 块（**已敲定** schema：共用 `provider`/`model`/`timeout_ms` + `progress`/`approval`/`english` 子段；见「§ 二次开发可复用基建 §4」）。  
+   - `progress_explainer` / `approval_explainer` / `english_explainer`（+ `recap`）→ 单一 `explainers:` 块（共用 `provider`/`model`/`timeout_ms`/`max_input_chars=64000` + kind 子段；见「§ 二次开发可复用基建 §4」）。  
    - `openviking_sync_recall` + `openviking_recall_card` → `openviking:`。  
    - `feishu_card` notice_titles 与 auto_card 阈值保留一张表，删注释噪声。  
    - 长期 `enabled: false` 且无现网依赖的（如部分 `diff_card`）可迁「默认关 + 文档」，不占主文件行。

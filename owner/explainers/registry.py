@@ -61,44 +61,56 @@ def task_name_for(kind: str) -> str:
 
 
 def _ensure_builtins() -> None:
-    if _KINDS:
-        return
-    register_kind(
-        "progress",
-        defaults={
-            "enabled": False,
-            "silence_seconds": 60,
-            "stall_seconds": 120,
-            "min_interval_seconds": 120,
-            "max_per_turn": 5,
-            "tick_seconds": 5,
-            "events_in_digest": 8,
-            "chars_per_event": 200,
-            "reasoning_tail_chars": 1500,
-            "cleanup_progress": False,
-            "platforms": {},
-            "chats": {},
-        },
-    )
-    register_kind(
-        "approval",
-        defaults={
-            "enabled": False,
-            "description_max_chars": 500,
-            "cache_ttl_seconds": 600,
-            "cache_max_entries": 128,
-            "platforms": {},
-            "chats": {},
-        },
-    )
-    register_kind(
-        "english",
-        defaults={
-            "enabled": False,
-            "platforms": {},
-            "chats": {},
-        },
-    )
+    """Register built-in kinds; skip ones already present (hot-reload safe)."""
+    if "progress" not in _KINDS:
+        register_kind(
+            "progress",
+            defaults={
+                "enabled": False,
+                "silence_seconds": 60,
+                "stall_seconds": 120,
+                "min_interval_seconds": 120,
+                "max_per_turn": 5,
+                "tick_seconds": 5,
+                "events_in_digest": 8,
+                "chars_per_event": 200,
+                "reasoning_tail_chars": 1500,
+                "cleanup_progress": False,
+                "platforms": {},
+                "chats": {},
+            },
+        )
+    if "approval" not in _KINDS:
+        register_kind(
+            "approval",
+            defaults={
+                "enabled": False,
+                "description_max_chars": 500,
+                "cache_ttl_seconds": 600,
+                "cache_max_entries": 128,
+                "platforms": {},
+                "chats": {},
+            },
+        )
+    if "english" not in _KINDS:
+        register_kind(
+            "english",
+            defaults={
+                "enabled": False,
+                "platforms": {},
+                "chats": {},
+            },
+        )
+    if "recap" not in _KINDS:
+        register_kind(
+            "recap",
+            defaults={
+                "enabled": False,
+                "max_output_chars": 500,
+                "platforms": {},
+                "chats": {},
+            },
+        )
 
 
 _ensure_builtins()

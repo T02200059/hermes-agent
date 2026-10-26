@@ -16,6 +16,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
+from owner.explainers.common import DEFAULT_MAX_INPUT_CHARS, clip_input
+
 # 与设计稿 §7 默认值一致；cfg 缺 key / 非法值时回落到这里。
 _DEFAULT_EVENTS_IN_DIGEST = 8
 _DEFAULT_CHARS_PER_EVENT = 200
@@ -168,4 +170,10 @@ def build_digest(tracker_state: dict, cfg: dict) -> str:
 
     if not sections:
         return "（暂无可读证据：尚无工具事件、流输出或思考摘录。）"
-    return "\n\n".join(sections)
+    digest = "\n\n".join(sections)
+    # Overall input budget (shared 64k default; kind/shared override via cfg).
+    try:
+        budget = int(cfg.get("max_input_chars", DEFAULT_MAX_INPUT_CHARS))
+    except (TypeError, ValueError):
+        budget = DEFAULT_MAX_INPUT_CHARS
+    return clip_input(digest, budget)

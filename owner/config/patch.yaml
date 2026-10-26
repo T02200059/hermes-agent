@@ -34,6 +34,10 @@ feishu_card:
       title: "🔤 英文解说"
       template: blue
       strip_prefix: true
+    - prefix: "📋 系统提示："
+      title: "📋 会话回顾"
+      template: blue
+      strip_prefix: true
 
 # ── Checkpoints (C17 mutation predictor) ─────────────────────────────────────
 # 补全 /rollback 的盲区: terminal 工具执行前预测将改文件, 对其项目根
@@ -76,16 +80,18 @@ output_guard:
   enabled: true
 
 
-# ── C13 explainers：统一旁白（progress / approval / english）────────────────
+# ── C13 explainers：统一旁白（progress / approval / english / recap）─────────
 # 见 owner/docs/c13-explainers.md 与清单「二次开发可复用基建 §4」。
+# 设计前提：辅助模型 ≥256k 上下文；输入默认 max_input_chars=64000（共用，可被 kind 覆盖）。
 # 取模：kind provider/model → 本块共用 → config.yaml auxiliary.<task> → 主模型；
-# call_llm task 长名：progress_explainer | approval_explainer | english_explainer。
+# call_llm task 长名：*_explainer（含 recap_explainer）。
 # 代码默认 enabled=false；本机对齐旧树实配 true。失败一律 fail-open。
 # 扩展：register_kind("name") + 本块 explainers.<name>: {enabled: true, ...}
 explainers:
   provider: auto
   model: auto
   timeout_ms: 30000
+  max_input_chars: 64000
   progress:
     enabled: true
     silence_seconds: 60
@@ -104,6 +110,12 @@ explainers:
       feishu: true
   english:
     enabled: true
+    platforms:
+      feishu: true
+      telegram: false
+  recap:
+    enabled: true
+    max_output_chars: 500
     platforms:
       feishu: true
       telegram: false

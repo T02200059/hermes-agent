@@ -1,6 +1,6 @@
 """[owner] C13 — unified explainers (shared config / LLM / registry).
 
-Kinds: progress | approval | english
+Kinds: progress | approval | english | recap
 Extend: ``register_kind("name", task="name_explainer")`` then
 ``explainers.<name>: {enabled: true, ...}`` in patch.yaml.
 """
