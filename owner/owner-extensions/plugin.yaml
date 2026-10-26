@@ -1,0 +1,5 @@
+name: owner-extensions
+version: 0.1.0
+description: >-
+  Owner runtime extensions (/providers slash command).
+author: "owner"

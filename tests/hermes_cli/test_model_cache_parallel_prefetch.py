@@ -1,6 +1,6 @@
 """Tests for parallel model-catalog prefetch and thread-safe cache writes.
 
-Regression tests for the serial /v1/models bottleneck: when the 1h disk cache
+Regression tests for the serial /v1/models bottleneck: when the provider-models disk cache
 lapses, ``list_authenticated_providers()`` previously fetched each authed
 provider's model list serially. With 10+ providers this stacked to 15-30s of
 blocking HTTP round-trips. The parallel prefetch warms stale cache entries

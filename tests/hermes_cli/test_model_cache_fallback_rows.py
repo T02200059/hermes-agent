@@ -1,6 +1,6 @@
 """A curated fallback served because the live catalog fetch failed must never be pinned in the
 disk cache as if it were the account's real catalog (#107391): a transient Copilot outage wrote
-the 17-model static list over the account's 10 live models with a fresh 1h TTL, and every picker
+the 17-model static list over the account's 10 live models with a fresh TTL, and every picker
 surface served the wrong list until the TTL lapsed.
 """
 
@@ -32,7 +32,7 @@ STATIC = ["gpt-5.4", "gpt-4o", "claude-sonnet-4.6"]
 
 
 def test_fallback_does_not_overwrite_the_same_credentials_live_row():
-    # 2h-old live row (past the 1h TTL, inside the SWR window) + a live fetch that degrades to the
+    # Aged live row (past TTL when applicable; this case uses force_refresh) + a live fetch that degrades to the
     # curated list: the account's real catalog must survive, in the cache AND in the return value.
     cache = {"copilot": _row(LIVE, age_seconds=7200)}
     with patch.object(mod, "_load_provider_models_cache", return_value=cache), \

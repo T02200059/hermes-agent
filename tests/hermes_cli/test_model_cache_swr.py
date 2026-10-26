@@ -1,7 +1,7 @@
 """Stale-while-revalidate behavior for the model-id disk cache and the
 remote model-catalog manifest.
 
-Regression tests for the /model picker stall: when the 1h provider-models
+Regression tests for the /model picker stall: when the provider-models
 cache TTL (or the catalog manifest TTL) lapsed mid-session, the picker
 blocked on 8-9 serial /v1/models round-trips (~2-3s) before rendering.
 With SWR, an expired-but-credential-matching entry is served immediately
@@ -49,8 +49,9 @@ class TestProviderModelsSWR:
     def test_stale_entry_served_immediately_with_background_refresh(self):
         import hermes_cli.models as mod
 
-        # 2h old — beyond the 1h TTL, within the 7d stale-serve window.
-        cache = {"openrouter": self._cache_entry(["m1", "m2"], age_seconds=7200)}
+        # Past TTL, within the 7d stale-serve window.
+        age = mod._PROVIDER_MODELS_CACHE_TTL + 60
+        cache = {"openrouter": self._cache_entry(["m1", "m2"], age_seconds=age)}
         with patch.object(mod, "_load_provider_models_cache", return_value=cache), \
              patch.object(mod, "_credential_fingerprint", return_value="fp"), \
              patch.object(mod, "_spawn_swr_refresh") as spawn, \

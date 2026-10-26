@@ -1865,7 +1865,7 @@ def provider_model_ids(provider: Optional[str], *, force_refresh: bool = False) 
 # degrades silently to a live fetch.
 # ---------------------------------------------------------------------------
 
-_PROVIDER_MODELS_CACHE_TTL = 3600  # 1h
+_PROVIDER_MODELS_CACHE_TTL = 86400  # 24h  # [owner] §2.11 was 3600
 # Stale-while-revalidate window: an expired same-credentials entry is served IMMEDIATELY while a
 # daemon thread refreshes the disk cache; beyond this bound the caller blocks on a live fetch.
 # Catalogs change on release timescales, so hour-old data beats stalling every picker surface.
@@ -2072,6 +2072,18 @@ def _store_cache_entry(cache_key: str, entry: dict) -> None:
 
     def write_row() -> None:
         cache = _load_provider_models_cache()
+        existing = cache.get(cache_key)
+        new_models = entry.get("models")
+        # [owner] §2.11 — skip disk write when catalog+fp unchanged (save I/O).
+        if (
+            isinstance(existing, dict)
+            and existing.get("fp") == entry.get("fp")
+            and isinstance(existing.get("models"), list)
+            and isinstance(new_models, list)
+            and set(existing["models"]) == set(new_models)
+            and bool(existing.get("fallback")) == bool(entry.get("fallback"))
+        ):
+            return
         cache[cache_key] = entry
         _save_provider_models_cache(cache)
 

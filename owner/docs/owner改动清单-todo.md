@@ -198,9 +198,9 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 
 | 阶段 | 主题 | 条目（保留原 C 编号） |
 |------|------|----------------------|
-| **一** | 非渠道 / 终端 / 加载器 | **C01**（最先）→ C02 → C08（确认/回归）→ C03 → C21 → C16 → C17 → C19 → C18 → C14 → C13 → C22（可选）；旁注 B12 不强制 |
+| **一** | 非渠道 / 终端 / 加载器 | **C01**（最先）→ C02 → C08 → C03 → **C26** → C21（未展开）→ C16 → C17 → C19 → C18 → C14 → C13 → C22（可选）；旁注 B12 不强制 |
 | **二** | 飞书**核心**底座 | **C04**（审批卡 + 中文名/sender 缓存 + inbound + 签名）→ **C10**（+B11 同批）→ **C11 底座**（auto-card / early-typing）；diff/clarify/bot 菜单可延阶段三 |
-| **三** | 飞书定制 + 杂项 | **C09**（依赖 C04）→ C11 余下 → **C12** → C15 → C25 → **C06** LDAP / **C07** API media（现网必保·杂项）→ C20（可后移）→ C23（按需）→ **B17 飞书半边**；**C24** 明确不做全量 |
+| **三** | 飞书定制 + 杂项 | **C09**（依赖 C04）→ C11 余下 → **C12** → C15 → C25（`/providers` 已归 C26）→ **C06** LDAP / **C07** API media → C20 → C23 → **B17 飞书半边**；**C24** 全量战役不排 |
 | **四** | 飞书多 profile | **仅 C05**（`profile_endpoints` / bots 路由；不吃 multiplex）。勿提前；与阶段三 LDAP **文件边界**分开 |
 
 **依赖速记**：C01 万物前置 → 阶段二 C04 先于一切飞书体验/skill 门 → C09/C12 依赖 C04 → **C05 最后**。yaml 随 C01 / 阶段三 LDAP / 阶段四路由穿插缩文件，不大爆炸。
@@ -212,36 +212,40 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 > **落地节奏见上方「落地顺序（四阶段）」**，勿按本组标题当执行顺序。  
 > 本组仍按 P0 必保 / P1 可后移 / P2 暂缓标优先级，便于对照源清单。路由：**维持自研**跨进程转发，不对齐吃官方 multiplex；**C05 仅第四阶段**。
 
+
+### 已落地功能点（目录）
+
+| 编号 | 功能点 | 要点 |
+|------|--------|------|
+| **C01** | patch + 审批 + 归因骨架 | `patch_config` / 永久审批禁用 / `attribution` |
+| **C02** | 归因整链 + credential + token 用量 | 透传与剥离；credential 合并；sessions/messages 四列 token |
+| **C08** | 出站 BOS/EOS | 终局 O8 + interim/status 薄补 |
+| **C03** | damodel provider/proxy | `owner/providers/damodel.py` + model-providers 插件 |
+| **C26** | providers 白名单 / 缓存 TTL / `/providers` | 白名单沿用官方；TTL 24h + 无变更不写盘；斜杠命令 |
+| **H01** | 官方 test 污染梳理 | 优先项已修（#1/#2/#5/#6/#7 R1/#10 等） |
+| **H02** | CLI `input()` 僵尸 reader | 延后 |
+
 ### P0 必保
 
 - [x] **C01** · 源 §1.1–1.4 · `patch.yaml` 统一加载器 + 审批白名单合并 + 归因骨架 · **优先级：P0**
-  - 落地（三笔 commit，本地未 push）：
-    1. `feat(owner): C01 patch 加载器挂 config.owner` — `owner/patch_config.py` + `config.owner` 叠层；官方 `hermes_cli/config.py` 仅薄 overlay
-    2. `feat(owner): C01 禁用永久审批（飞书/QQ）` — `owner/approval/permanent_policy.py`；官方 `tools/approval.py` 仅 gate/sanitize/merge 委托
-    3. `feat(owner): C01 归因骨架` — `owner/attribution.py`；官方 `agent_init` / `chat_completion_helpers` / `run_agent` / messages DDL·INSERT 仅 `# [owner]` 委托
-  - 风格：逻辑在 `owner/`，官方极薄胶水（P0/P1）；无 C02 用量落盘 / credential / 出站剥离
-- [x] **C02** · 源 §2.1–2.2（credential）+ §10 用量**数量**落盘 · per-turn 归因整链 + credential 合并 + sessions/messages token 用量明细 · **优先级：P0**
-  - 落地（三笔 commit，本地未 push；瘦身版：要用量数量、不要金钱估价）：
-    1. `feat(owner): C02 归因整链透传 + api_messages 剥离` — runtime/oneshot/cli/tui/gateway/cron/delegate/mid-switch；`PERSISTENCE_ONLY_MESSAGE_FIELDS` 剥离 owner + 四列 token
-    2. `feat(owner): C02 credential 合并` — `owner/providers/credential_helpers.py`；`model_switch_providers` 薄委托
-    3. `feat(owner): C02 sessions/messages token 用量落盘` — §10.1 `sessions.owner_provider_name` + §10.2 messages 四列；`_pending_token_breakdown` → stamp → INSERT
-  - **不含**：金钱价格估算、`token_cost_estimate.py`、一切 owner 侧 ¥/$ / pricing 挂靠 / 费用脚本；飞书 model_picker（不进阶段一）；§2.3 pool base_url **并 C03 或可选**
-  - **边界**：官方 `estimated_cost_usd` / `billing_*` **不动不扩展**；C02 只补「用量数量 + 自定义 provider 名」
+  - 落地：
+    1. `owner/patch_config.py` + `config.owner` 叠层（官方 config 薄 overlay）
+    2. `owner/approval/permanent_policy.py`（飞书/QQ 永久审批禁用；官方 approval 薄委托）
+    3. `owner/attribution.py`（官方 agent_init / chat_completion_helpers / run_agent / messages 薄委托）
+- [x] **C02** · 源 §2.1–2.2（credential）+ §10 token 用量数量落盘 · **优先级：P0**
+  - 落地：
+    1. 归因整链透传 + `api_messages` 剥离（runtime/oneshot/cli/tui/gateway/cron/delegate/mid-switch）
+    2. `owner/providers/credential_helpers.py`；`model_switch_providers` 薄委托
+    3. `sessions.owner_provider_name` + messages 四列 token 用量落盘
 - [x] **C03** · 源 §2.7–2.8 · damodel provider/proxy · **优先级：P0**
-  - 落地（本地未 push）：
-    1. `owner/providers/damodel.py` — `ProviderProfile(name=damodel, base_url=https://genai.damodel.com/v1, env=DAMODEL_API_KEY)`
-    2. `plugins/model-providers/damodel/` — 薄胶水 `register_provider`；官方 model-provider 发现路径可识别
-  - 测：`tests/owner/test_damodel_provider.py`
+  - 落地：`owner/providers/damodel.py` + `plugins/model-providers/damodel/`；测 `tests/owner/test_damodel_provider.py`
 - [ ] **C04** · 源 §3.1–3.4 · 飞书审批卡片 + sender_name 缓存 + inbound 身份 + 多平台审批签名 · **优先级：P0**
 - [ ] **C05** · 源 §4.1 · **飞书多 profile 舰队路由**（`profile_endpoints` HTTP 转发；**不吃**官方 `profile_routes`） · **优先级：P0**
 - [ ] **C06** · 源 §15.1–15.6 · API Server LDAP 身份准入 + identity_routes + 头剥离/SSE · **优先级：P0**
 - [ ] **C07** · 源 §16.1–16.6 · API 产物媒体 / `hermes.files` / tool.progress 脱敏与归属 · **优先级：P0**
-- [x] **C08** · 源 §7.27 / design · outbound BOS/EOS scrub · **优先级：P0**
-  - **终局 O8 + interim 薄补**（本地未 push）：官方 `_strip_deepseek_special_tokens` 已覆盖 `_sanitize_gateway_final_response`；本轮补 interim/status 缺口
-    1. `owner/outbound_special_token_scrub.py` — 薄包装，委托官方 O8（不迁整份源 scrub 实现）
-    2. `agent/stream_delivery.py` — `# [owner]` 在 `_fire_streamed_codex_commentary` / `_emit_interim_assistant_message` 出站前剥（stream_consumer 直送 chat，绕过 status prepare）
-    3. `gateway/run.py` `_prepare_gateway_status_message` — `# [owner]` 复用 O8；`local` 仍 passthrough；纯特殊符 → `None`
-  - 测：`tests/owner/test_outbound_special_token_scrub.py` + gateway noise filter 增补 status 例
+- [x] **C08** · 源 §7.27 · outbound BOS/EOS scrub · **优先级：P0**
+  - 落地：终局走官方 O8；interim/status 薄补复用 `_strip_deepseek_special_tokens`（`owner/outbound_special_token_scrub.py` + stream_delivery / gateway status 胶水）
+  - 测：`tests/owner/test_outbound_special_token_scrub.py`
 - [ ] **C09** · 源 §3.6 / §3.11 · skill 脚本自动审批 + skill_manage 飞书审批门 · **优先级：P0**
 - [ ] **C10** · 源 i18n 层 · 显示层 i18n / `_localized` 与护栏文案（源 §12.2 / §16.9 相关） · **优先级：P0**
 
@@ -257,16 +261,21 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 - [ ] **C18** · 源 §9.1 · per-chat display overrides · **优先级：P1**
 - [ ] **C19** · 源 §5 · 链式快捷命令 `;;` + Quick Alias · **优先级：P1**
 - [ ] **C20** · 源 §3.9 · Semantic Audit Gate · **优先级：P1**（可后移若负担大）
-- [ ] **C21** · 源 §2.4–2.6 / §2.9–2.11 · reasoning 转义 / MiniMax / Qwen debris / kimi-coding / model-switch 白名单 / cache TTL · **优先级：P1**
+- [x] **C26** · 源 §2.10–2.11 + §4.9 · providers 白名单 / 缓存 TTL / `/providers` · **优先级：P1**（阶段一）
+  - 白名单：官方 `has_explicit_models` / `_models_config_is_allowlist` 已覆盖，沿用
+  - 缓存：`_PROVIDER_MODELS_CACHE_TTL` 24h；`_store_cache_entry` 目录无变更不写盘
+  - `/providers`：`owner/commands/providers.py` + `owner/owner-extensions`（`plugins/owner-extensions` 符号链接）；文本列表；飞书卡待 adapter 具备 `send_model_picker_card`
+  - 测：`tests/owner/test_providers_command.py`、`tests/owner/test_provider_models_cache_ttl.py`
+- [ ] **C21** · 源 §2.4–2.6 / §2.9 · 模型杂项 · **优先级：P1** · **未展开**（白名单·TTL 已归 C26）
 
 ### P2 暂缓
 
 - [ ] **C22** · 源 §6.1–6.2 · TUI skin / ruolin · **优先级：P2**
 - [ ] **C23** · 源 §11 · 运维脚本 / HN Daily / Skill 同步 / Viking 治理 / 备份 / 周会脚本 · **优先级：P2**（按需拣）
 - [ ] **C24** · 源 §12 / §16.8–16.16 · 治理标记、T2-11~20 换码债、全量 `[owner]` 铺开 · **优先级：P2**（v2 **不做**「官方测全绿」与全量标记战役）
-- [ ] **C25** · 源 §4.7–4.9 · 编辑上限轮转 / 中文摘要 / `/providers` 等体验项 · **优先级：P2**（可拣进 P1）
+- [ ] **C25** · 源 §4.7–4.8 · 编辑上限轮转 / 中文摘要等体验项 · **优先级：P2**（`/providers` 已归 **C26**）
 
-**定制段合计：25 条（P0×10 / P1×11 / P2×4）。执行顺序：四阶段（见上），非本 P0→P1→P2 标题顺序。**
+**定制段：原 C01–C25 + C26（providers）。执行顺序：四阶段（见上）。**
 
 ---
 
@@ -274,8 +283,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 
 > 不进四阶段必做；有空再开。与「明确不做」不同：这里是**以后要做、现在不排**。
 
-- [x] **H01** · **官方 test 全面梳理** · 对齐当前 v2 官方树：排查 test 污染（未 mock 干净、写真实 `~/.hermes` / 全局单例 / 环境变量、实打网络等，甚至可能干扰正常运行程序），给出修复优先级清单。**不做**「官方套件全绿」战役（见下方明确不做 / C24）。
-  - **现状（小模型已处理，基本收口）**：审计见 `/Users/yangtb/WorkBuddy/hermes/deliverables/tests-pollution-audit-2026-10-23.md`；优先项已修本地未 push：`73fa8f53e3`（#1 子进程 env 沙箱）…`de3dc9ecff`（env 快照还原）含 #2/#5/#6/#7 R1/#10 等。#7 仅守卫登记第一步；网络守卫等后置项未开。**非**「官方套件全绿」。
+- [x] **H01** · **官方 test 污染梳理** · 审计见 WorkBuddy `tests-pollution-audit-2026-10-23.md`；优先项已修：`73fa8f53e3`…`de3dc9ecff`（#1/#2/#5/#6/#7 R1/#10 等）。#7 仅守卫登记第一步；网络守卫等后置。
 - [ ] **H02** · CLI approval `input()` 超时僵尸 reader · 仅无 callback 且非 PT 路径；超时后线程仍堵 `read(0)`，可能吞后续输入/连锁 deny；gateway/飞书/QQ/微信与正常 TUI **无感**；fail-closed 非安全问题。**暂时不做**。
 - **限流（暂不做）**：本清单 **无独立限流定制项**（C 段无 RPM/TPM/throttle/客户端主动限流条目）。最接近已消化项：
   - **B18**（已勾）/ 源 §7.9 — 429 配额耗尽当 transient 静默重试 → 本树用 **O5** 天/周配额墙单向降为 billing
