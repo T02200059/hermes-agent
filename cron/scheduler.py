@@ -2597,6 +2597,8 @@ def run_job(
 
     _cron_session_id = (owner_execution[1] if owner_execution is not None else
                         f"cron_{job_id}_{_hermes_now().strftime('%Y%m%d_%H%M%S')}")
+    # [owner] C04: append [Cron context] session_id on the user prompt (not system prompt)
+    prompt = f"{prompt}\n\n---\n[Cron context]\nsession_id: {_cron_session_id}\n---"
     logger.info("Running job '%s' (ID: %s)", job_name, job_id)
     logger.info("Prompt: %s", prompt[:100])
 

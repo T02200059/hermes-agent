@@ -704,10 +704,20 @@ class TurnRunner(GatewayTurnProgressMixin, GatewaySessionAgentMixin):
         # Check the *class*, not the instance — MagicMock auto-creates attributes in tests.
         if _renders_exec_approval_buttons(type(adapter)):
             try:
+                # [owner] C04: pack sender identity into metadata (Feishu name pre-warm / audit)
+                _approval_meta = dict(ctx._status_thread_metadata or {})
+                _src = ctx.source
+                if _src is not None:
+                    _approval_meta.setdefault(
+                        "sender_open_id", str(getattr(_src, "user_id", "") or ""),
+                    )
+                    _approval_meta.setdefault(
+                        "sender_is_bot", bool(getattr(_src, "is_bot", False)),
+                    )
                 fut = self._schedule(
                     adapter.send_exec_approval(
                         chat_id=ctx._status_chat_id, command=cmd, session_key=ctx.session_key or "",
-                        description=desc, metadata=ctx._status_thread_metadata, **flags,
+                        description=desc, metadata=_approval_meta, **flags,
                     ),
                     "send_exec_approval scheduling error",
                 )

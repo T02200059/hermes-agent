@@ -156,7 +156,7 @@ _DEFAULT_WEBHOOK_PORT = 8765
 _DEFAULT_WEBHOOK_PATH = "/feishu/webhook"
 # --- TTL, rate-limit and webhook security constants ---
 _FEISHU_DEDUP_TTL_SECONDS = 24 * 60 * 60          # 24 hours — matches openclaw
-_FEISHU_SENDER_NAME_TTL_SECONDS = 10 * 60          # 10 minutes sender-name cache
+_FEISHU_SENDER_NAME_TTL_SECONDS = 24 * 60 * 60     # [owner] C04: 24h name TTL (see owner/feishu/user_store.py)
 _FEISHU_WEBHOOK_MAX_BODY_BYTES = 1 * 1024 * 1024   # 1 MB body limit
 _FEISHU_WEBHOOK_RATE_WINDOW_SECONDS = 60            # sliding window for rate limiter
 _FEISHU_WEBHOOK_RATE_LIMIT_MAX = 120               # max requests per window per IP — matches openclaw
@@ -1536,6 +1536,11 @@ class FeishuAdapter(BasePlatformAdapter):
             logger.info("[Feishu] Connected in %s mode (%s)", self._connection_mode, self._domain_name)
             # Plugin-registered native handlers (lark_oapi client).
             self._wire_plugin_handlers(self._client)
+            # [owner] C04: bind FeishuUserStore to the live lark client
+            try:
+                self._user_store.bind_client(self._client)
+            except Exception:
+                logger.debug("[Feishu] user_store bind_client failed", exc_info=True)
             return True
         except Exception as exc:
             await self._release_app_lock()
@@ -1779,6 +1784,12 @@ class FeishuAdapter(BasePlatformAdapter):
         if not self._client:
             return SendResult(success=False, error="Not connected")
         try:
+            # [owner] C04: pre-warm open_id → 中文名 before card send (metadata from turn_runner)
+            try:
+                from owner.feishu.approval import pre_warm_sender_from_metadata
+                pre_warm_sender_from_metadata(self, prompt.metadata)
+            except Exception:
+                logger.debug("[Feishu] approval name pre-warm skipped", exc_info=True)
             approval_id = next(self._approval_counter)
             actions = [
                 _card_button(label, style or "default",
@@ -1843,11 +1854,9 @@ class FeishuAdapter(BasePlatformAdapter):
     @staticmethod
     def _build_resolved_approval_card(*, choice: str, user_name: str) -> dict[str, Any]:
         """Raw card JSON shown in place of the buttons once an approval is resolved."""
-        icon = "❌" if choice == "deny" else "✅"
-        key = _APPROVAL_LABEL_KEYS.get(choice, "platform.feishu.approval.resolved_fallback")
-        label = t(key)
-        return _card(f"{icon} {label}", "red" if choice == "deny" else "green",
-                     t("platform.feishu.approval.resolved_by_user", icon=icon, label=label, user=user_name))
+        # [owner] C04: resolved card body lives in owner/feishu/approval.py
+        from owner.feishu.approval import build_resolved_card
+        return build_resolved_card(decision=choice, user_name=user_name)
 
     @staticmethod
     def _build_resolved_update_prompt_card(*, answer: str, user_name: str) -> dict[str, Any]:
@@ -2269,29 +2278,21 @@ class FeishuAdapter(BasePlatformAdapter):
                 label.capitalize(), ident, expected_chat_id, callback_chat_id,
             )
             return None
-        return open_id, callback_chat_id, self._get_cached_sender_name(open_id) or open_id
+        # [owner] C04: never leak raw ou_xxx into resolved cards
+        try:
+            from owner.feishu.sender_name_helpers import operator_display_name
+            user_name = operator_display_name(self, open_id)
+        except Exception:
+            user_name = self._get_cached_sender_name(open_id) or ""
+        return open_id, callback_chat_id, user_name
 
     def _handle_approval_card_action(self, *, event: Any, action_value: dict[str, Any], loop: Any) -> Any:
         """Schedule approval resolution and build the synchronous callback response."""
-        approval_id = action_value.get("approval_id")
-        if approval_id is None:
-            logger.debug("[Feishu] Card action missing approval_id, ignoring")
-            return self._card_response()
-        state = self._approval_state.get(approval_id)
-        if not state:
-            logger.debug("[Feishu] Approval %s already resolved or unknown", approval_id)
-            return self._card_response()
-        choice = _APPROVAL_CHOICE_MAP.get(action_value.get("hermes_action"), "deny")
-        checked = self._validate_card_action(event=event, state=state, label="approval", ident=approval_id)
-        if checked is None:
-            return self._card_response()
-        open_id, chat_id, user_name = checked
-        coro = self._resolve_approval(
-            approval_id=approval_id, choice=choice, user_name=user_name, open_id=open_id, chat_id=chat_id,
+        # [owner] C04: frozen fail/resolved CallBack cards — owner/feishu/approval.py
+        from owner.feishu.approval import handle_approval_card_action
+        return handle_approval_card_action(
+            adapter=self, event=event, action_value=action_value, loop=loop,
         )
-        if not self._submit_on_loop(loop, coro):
-            return self._card_response()
-        return self._card_response(self._build_resolved_approval_card(choice=choice, user_name=user_name))
 
     def _handle_update_prompt_card_action(self, *, event: Any, action_value: dict[str, Any], loop: Any) -> Any:
         """Schedule update prompt resolution and build the synchronous callback response."""
@@ -3255,19 +3256,59 @@ class FeishuAdapter(BasePlatformAdapter):
         display_name = await self._resolve_sender_name_from_api(name_lookup_id, is_bot=is_bot)
         return {"user_id": primary_id, "user_name": display_name, "user_id_alt": union_id}
 
+    # [owner] C04 user_store: open_id → 中文名 (24h soft TTL; see owner/feishu/user_store.py)
+    @property
+    def _user_store(self):
+        store = self.__dict__.get("_owner_user_store")
+        if store is None:
+            from hermes_constants import get_hermes_home
+            from owner.feishu.user_store import FeishuUserStore
+            store = FeishuUserStore(cache_path=get_hermes_home() / "feishu_chat_id_cache.json")
+            self.__dict__["_owner_user_store"] = store
+            # Migrate any pre-seeded legacy dict entries (tests / early writes)
+            # before rebinding ``_sender_name_cache`` to the store hot map.
+            legacy = self.__dict__.get("_sender_name_cache")
+            if isinstance(legacy, dict):
+                for sid, entry in list(legacy.items()):
+                    if isinstance(entry, (tuple, list)) and len(entry) >= 2:
+                        store.seed_cached_name(str(sid), str(entry[0] or ""), float(entry[1]))
+                    elif isinstance(entry, str) and entry:
+                        store.seed_cached_name(
+                            str(sid), entry, time.time() + _FEISHU_SENDER_NAME_TTL_SECONDS,
+                        )
+            # Mirror hot TTL map onto the legacy dict attr for older readers/tests.
+            self._sender_name_cache = store.name_ttl_cache
+            if self._client is not None:
+                store.bind_client(self._client)
+        return store
+
     def _get_cached_sender_name(self, sender_id: Optional[str]) -> Optional[str]:
-        """Return a cached sender name only while its TTL is still valid."""
-        cached = self._sender_name_cache.get(sender_id) if sender_id else None
-        if cached is None:
-            return None
-        name, expire_at = cached
-        if time.time() < expire_at:
-            return name
-        self._sender_name_cache.pop(sender_id, None)
-        return None
+        """Return a cached sender name; soft-TTL keeps stale display_name as fallback."""
+        # [owner] C04: prefer user_store (non-destructive TTL)
+        try:
+            from owner.feishu.sender_name_helpers import get_cached_sender_name
+            return get_cached_sender_name(self, sender_id)
+        except Exception:
+            cached = self._sender_name_cache.get(sender_id) if sender_id else None
+            if cached is None:
+                return None
+            name, expire_at = cached
+            if time.time() < expire_at:
+                return name
+            return name or None  # soft: do not pop
 
     async def _resolve_sender_name_from_api(self, sender_id: Optional[str], *, is_bot: bool = False) -> Optional[str]:
         """Bots go via bot/basic_batch (contact API has no bot names). Failures are silent — never block the pipeline."""
+        # [owner] C04: resolve through user_store when bound (24h TTL + disk-backed display_name)
+        try:
+            # Touch property so store exists + client is bound.
+            _ = self._user_store
+            from owner.feishu.sender_name_helpers import resolve_sender_name
+            name = await resolve_sender_name(self, sender_id, is_bot=is_bot)
+            if name is not None:
+                return name
+        except Exception:
+            logger.debug("[Feishu] user_store resolve_name failed; falling back", exc_info=True)
         trimmed = sender_id.strip() if sender_id and self._client else ""
         if not trimmed:
             return None

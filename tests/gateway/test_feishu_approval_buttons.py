@@ -332,6 +332,8 @@ class TestCardActionCallbackResponse:
 
 
     def test_ignores_expired_cached_name(self, _patch_callback_card_types):
+        """[owner] C04 soft-TTL: expired hot entry still surfaces the stale display name
+        instead of leaking raw ou_xxx into the resolved card."""
         adapter = _make_adapter()
         adapter._loop = MagicMock()
         adapter._loop.is_closed = MagicMock(return_value=False)
@@ -351,8 +353,8 @@ class TestCardActionCallbackResponse:
             response = adapter._on_card_action_trigger(data)
 
         card = response.card.data
-        assert "Old Name" not in card["elements"][0]["content"]
-        assert "ou_expired" in card["elements"][0]["content"]
+        assert "Old Name" in card["elements"][0]["content"]
+        assert "ou_expired" not in card["elements"][0]["content"]
 
     def test_rejects_approval_click_from_unauthorized_user(self, _patch_callback_card_types):
         adapter = _make_adapter()
@@ -372,9 +374,12 @@ class TestCardActionCallbackResponse:
         with patch("asyncio.run_coroutine_threadsafe") as mock_submit:
             response = adapter._on_card_action_trigger(data)
 
+        # [owner] C04: unauthorized clicks get a frozen error card (not card=None)
         assert response is not None
-        assert response.card is None
+        assert response.card is not None
+        assert response.card.data is not None
         mock_submit.assert_not_called()
+        assert 5 in adapter._approval_state
 
     def test_rejects_approval_click_when_group_policy_open(self, _patch_callback_card_types):
         adapter = _make_adapter()
@@ -396,8 +401,10 @@ class TestCardActionCallbackResponse:
         with patch("asyncio.run_coroutine_threadsafe") as mock_submit:
             response = adapter._on_card_action_trigger(data)
 
+        # [owner] C04: unauthorized → frozen fail card (not card=None)
         assert response is not None
-        assert response.card is None
+        assert response.card is not None
+        assert response.card.data is not None
         mock_submit.assert_not_called()
 
 
@@ -548,8 +555,10 @@ class TestCardActionCallbackResponse:
         with patch("asyncio.run_coroutine_threadsafe") as mock_submit:
             response = adapter._on_card_action_trigger(data)
 
+        # [owner] C04: empty open_id → frozen fail card
         assert response is not None
-        assert response.card is None
+        assert response.card is not None
+        assert response.card.data is not None
         mock_submit.assert_not_called()
         assert 24 in adapter._approval_state
 
@@ -600,8 +609,10 @@ class TestCardActionCallbackResponse:
         with patch("asyncio.run_coroutine_threadsafe") as mock_submit:
             response = adapter._on_card_action_trigger(data)
 
+        # [owner] C04: chat mismatch → frozen fail card
         assert response is not None
-        assert response.card is None
+        assert response.card is not None
+        assert response.card.data is not None
         mock_submit.assert_not_called()
         assert 26 in adapter._approval_state
 

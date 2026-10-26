@@ -1700,6 +1700,17 @@ class GatewayInboundMixin(GatewayInboundHooksMixin, GatewayInboundTranscriptionM
         message_text = await turn_references(self, event, source, session_key, message_text)
         if message_text is None:
             return None
+        # [owner] C04 inbound identity: append [Inbound context] for Feishu (open_id/chat_id/user_name/session)
+        try:
+            from owner.gateway.inbound_context import append_inbound_context
+            message_text = append_inbound_context(
+                message_text, source, session_key=session_key,
+            )
+        except Exception:
+            import logging as _logging
+            _logging.getLogger(__name__).debug(
+                "Inbound context append failed (non-fatal)", exc_info=True,
+            )
         # After expansion: the quoted reply is someone else's text and stays literal — an
         # ``@file:`` inside it must never read a local file on the replier's behalf.
         return self._prepend_inbound_reply_context(event, source, message_text)

@@ -242,7 +242,13 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
     3. `sessions.owner_provider_name` + messages 四列 token 用量落盘
 - [x] **C03** · 源 §2.7–2.8 · damodel provider/proxy · **优先级：P0**
   - 落地：`owner/providers/damodel.py` + `plugins/model-providers/damodel/`；测 `tests/owner/test_damodel_provider.py`
-- [ ] **C04** · 源 §3.1–3.4 · 飞书审批卡片 + sender_name 缓存 + inbound 身份 + 多平台审批签名 · **优先级：P0**
+- [x] **C04** · 源 §3.1–3.4 · 飞书审批卡片 + sender_name 缓存 + inbound 身份 + 多平台审批签名 · **优先级：P0**（阶段二首项）
+  - helper：`owner/feishu/{approval,user_store,user_cache,sender_name_helpers,inbound_context}.py` + `owner/gateway/inbound_context.py`
+  - 胶水：`plugins/platforms/feishu/adapter.py`（委托 + 24h soft TTL + store migrate）；`gateway/run_inbound.py`；`gateway/run_turn_runner.py`（metadata sender）；`cron/scheduler.py`（Cron context）
+  - locales：`platform.feishu.approval.fail_*` / `operator_fallback`
+  - 发送仍官方 ExecApprovalPrompt；C01 `gate_allow_permanent` 继续管 Always 按钮
+  - 设计：`owner/docs/design/feishu-approval-base/README.md`
+  - 测：`tests/owner/test_c04_feishu_base.py`；官方 `test_feishu_approval_buttons.py` 对齐冻结卡 / soft TTL
 - [ ] **C05** · 源 §4.1 · **飞书多 profile 舰队路由**（`profile_endpoints` HTTP 转发；**不吃**官方 `profile_routes`） · **优先级：P0**
 - [ ] **C06** · 源 §15.1–15.6 · API Server LDAP 身份准入 + identity_routes + 头剥离/SSE · **优先级：P0**
 - [ ] **C07** · 源 §16.1–16.6 · API 产物媒体 / `hermes.files` / tool.progress 脱敏与归属 · **优先级：P0**
