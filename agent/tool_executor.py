@@ -46,7 +46,6 @@ from agent.inline_tool_executors import (
 from agent.message_metadata import stamp_data_use
 from agent.tool_dispatch_helpers import (
     _NEVER_PARALLEL_TOOLS,
-    _is_destructive_command,
     _is_multimodal_tool_result,
     _multimodal_text_summary,
     _append_subdir_hint_to_multimodal,
@@ -1044,13 +1043,15 @@ def _begin_tool_execution(agent, ref: _ToolCallRef, display_index: int | None) -
         if function_name in {"write_file", "patch"}:
             _ensure_file_checkpoint(agent, function_name, function_args, effective_task_id)
         elif function_name == "terminal":
-            command = function_args.get("command", "")
-            if _is_destructive_command(command):
-                from tools.file_tools_paths import container_backend_for_task
-                if container_backend_for_task(effective_task_id or "default") is None:
-                    from agent.runtime_cwd import scope_terminal_cwd
-                    cwd = function_args.get("workdir") or scope_terminal_cwd() or os.getcwd()
-                    agent._checkpoint_mgr.ensure_checkpoint(cwd, f"before terminal: {command[:60]}")
+            # [owner] checkpoint: terminal 预测式快照 (委托 owner/checkpoint_predictor)
+            # 替换官方 _is_destructive_command + ensure_checkpoint(cwd) 无差别快照
+            from tools.file_tools_paths import container_backend_for_task
+            if container_backend_for_task(effective_task_id or "default") is None:
+                from agent.runtime_cwd import scope_terminal_cwd
+                from owner.checkpoint_predictor import predict_and_checkpoint
+                command = function_args.get("command", "")
+                cwd = function_args.get("workdir") or scope_terminal_cwd() or os.getcwd()
+                predict_and_checkpoint(command, cwd, agent)
 
 
 def _emit_tool_complete_and_risk(agent, ref: _ToolCallRef, result, risk_metadata, blocked: bool) -> None:

@@ -11,3 +11,17 @@ approvals:
   # Merged (union) into in-memory permanent allowlist with config.yaml command_allowlist.
   # UI still does not offer Always when allow_permanent is false.
   command_allowlist: []
+
+# ── Checkpoints (C17 mutation predictor) ─────────────────────────────────────
+# 补全 /rollback 的盲区: terminal 工具执行前预测将改文件, 对其项目根
+# ensure_checkpoint。静态解析优先; 不足时同步调 auxiliary LLM
+# (task="approval")。超时/失败/空时【不降级拍 cwd】。
+# 存储/回滚语义仍用 config.yaml 的 checkpoints 段; 这里只管预测触发源。
+checkpoints:
+  predict_enabled: true
+  # LLM 兜底超时 (ms); 显式传入 call_llm(timeout=...), 覆盖 auxiliary.approval 默认
+  predict_llm_timeout_ms: 20000
+  # 会话内 LLM 预测 LRU 缓存大小 (command+cwd); 0 = 禁用
+  predict_cache_size: 32
+  # 静态解析候选数 >= 此阈值则跳过 LLM
+  predict_static_threshold: 1
