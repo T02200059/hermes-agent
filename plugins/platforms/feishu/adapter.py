@@ -1757,6 +1757,12 @@ class FeishuAdapter(BasePlatformAdapter):
                 result = await _update(
                     "text", json.dumps({"text": _strip_markdown_to_plain_text(content)}, ensure_ascii=False),
                 )
+            # [owner] C25: Feishu ~20-edit cap (230072 / 230075) is permanent per message_id;
+            # signal rotate so gateway opens a fresh bubble instead of disabling can_edit.
+            if not result.success and any(
+                f"[{c}]" in (result.error or "") for c in ("230072", "230075")
+            ):
+                result.rotate = True
             if result.success:
                 result.message_id = message_id
             return result

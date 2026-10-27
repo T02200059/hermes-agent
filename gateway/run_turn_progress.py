@@ -643,9 +643,19 @@ class GatewayTurnProgressMixin:
         if st.progress_msg_id is not None:
             result = await self._edit_progress_message(st, st.progress_msg_id, self._progress_text(groups[0]))
             if not result.success:
-                if getattr(result, "retryable", False):
+                # [owner] C25: classify edit failure (rotate on Feishu edit-cap)
+                try:
+                    from owner.gateway.turn_helpers import classify_edit_failure
+                    _action = classify_edit_failure(result)
+                except Exception:
+                    _action = "retryable" if getattr(result, "retryable", False) else "disable"
+                if _action == "retryable":
                     logger.debug("[%s] Transient overflow edit failure — keeping can_edit=True", st.adapter.name)
                     return True
+                if _action == "rotate":
+                    # [owner] abandon this bubble; keep can_edit so caller opens a fresh one
+                    st.progress_msg_id = None
+                    return False
                 st.can_edit = False
                 # Fall back to the existing non-edit behavior.
                 return False
@@ -684,6 +694,11 @@ class GatewayTurnProgressMixin:
         if st.can_edit and st.progress_lines and st.progress_msg_id:
             with suppress(Exception):
                 await self._edit_progress_message(st, st.progress_msg_id, self._progress_text(st.progress_lines))
+        elif st.can_edit and st.progress_lines:
+            # [owner] C25: rotate/reset left no bubble id — deliver buffered lines
+            # as a fresh message instead of dropping them.
+            with suppress(Exception):
+                await self._send_progress_text(st, self._progress_text(st.progress_lines))
 
     async def _drain_progress_on_cancel(self, st) -> None:
         ctx = self._ctx
@@ -720,10 +735,28 @@ class GatewayTurnProgressMixin:
             result = await self._edit_progress_message(st, st.progress_msg_id, "\n".join(st.progress_lines))
             if result.success:
                 return True
-            if getattr(result, "retryable", False):
+            # [owner] C25: classify edit failure (rotate on Feishu edit-cap)
+            try:
+                from owner.gateway.turn_helpers import classify_edit_failure
+                _action = classify_edit_failure(result)
+            except Exception:
+                _err = (getattr(result, "error", "") or "").lower()
+                if getattr(result, "retryable", False):
+                    _action = "retryable"
+                elif "flood" in _err or "retry after" in _err:
+                    _action = "flood"
+                else:
+                    _action = "disable"
+            if _action == "retryable":
                 logger.debug("[%s] Transient edit failure — keeping can_edit=True", st.adapter.name)
                 return False
-            if any(w in (getattr(result, "error", "") or "").lower() for w in ("flood", "retry after")):
+            if _action == "rotate":
+                # [owner] Bubble exhausted — abandon it and keep can_edit=True so
+                # the next tool starts a fresh editable bubble below the content.
+                st.progress_msg_id = None
+                st.progress_lines = [msg]
+                return True
+            if _action == "flood":
                 logger.info("[%s] Progress edit flood control, backing off", st.adapter.name)
             else:
                 st.can_edit = False

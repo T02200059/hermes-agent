@@ -1671,6 +1671,11 @@ class SendResult:
     # raw_response["partial_overflow"] so the stream consumer sends the missing tail.
     raw_response: Any = None
     retryable: bool = False  # transient connection error — base retries automatically
+    # [owner] C25: adapter signaled "this bubble is no longer editable (platform edit
+    # cap, e.g. Feishu 230072/230075), but a fresh bubble may continue editing".
+    # Gateway should open a new message and keep can_edit=True.
+    # Independent from retryable: retryable = same op may succeed later; rotate = abandon this bubble.
+    rotate: bool = False
     retry_after: Optional[float] = None  # server-requested delay (Telegram FloodWait) beats our backoff
     # Extra ids (send order) when a payload was split; ``message_id`` is then the LAST id so
     # later edits target the newest chunk.
