@@ -330,9 +330,9 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 
 | 阶段 | 主题 | 条目（保留原 C 编号） |
 |------|------|----------------------|
-| **一** | 非渠道 / 终端 / 加载器 | **C01**（最先）→ C02 → C08 → C03 → **C26** → C21（未展开）→ C16 → C17 → C19 → C18（忽略）→ C14 → C13 → C22（可选）；旁注 B12 不强制 |
+| **一** | 非渠道 / 终端 / 加载器 | **C01**（最先）→ C02 → C08 → C03 → **C26** → C21（未展开）→ C16 → C17 → C19 → C18（忽略）→ C14 → C13 → C22（忽略）；旁注 B12 不强制 |
 | **二** | 飞书**核心**底座 | **C04**（审批卡 + 中文名/sender 缓存 + inbound + 签名）→ **C10**（+B11 同批）→ **C11 底座**（auto-card / early-typing）；diff/clarify/bot 菜单可延阶段三 |
-| **三** | 飞书定制 + 杂项 | **C09**（依赖 C04）→ C11 余下 → **C12** → C15 → C25（`/providers` 已归 C26）→ **C06** LDAP / **C07** API media → C20 → C23 → **B17 飞书半边** ✅；**C24** 全量战役不排 |
+| **三** | 飞书定制 + 杂项 | **C09**（依赖 C04）→ C11 余下 → **C12** → C15 → C25（`/providers` 已归 C26）→ **C06** LDAP / **C07** API media（延后） → C20（忽略）→ C23 → **B17 飞书半边** ✅；**C24** 全量战役不排 |
 | **四** | 飞书多 profile | **仅 C05**（`profile_endpoints` / bots 路由；不吃 multiplex）。勿提前；与阶段三 LDAP **文件边界**分开 |
 
 **依赖速记**：C01 万物前置 → 阶段二 C04 先于一切飞书体验/skill 门 → C09/C12 依赖 C04 → **C05 最后**。yaml 随 C01 / 阶段三 LDAP / 阶段四路由穿插缩文件，不大爆炸。
@@ -392,7 +392,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - 测：`tests/owner/test_c04_feishu_base.py`；官方 `test_feishu_approval_buttons.py` 对齐冻结卡 / soft TTL
 - [ ] **C05** · 源 §4.1 · **飞书多 profile 舰队路由**（`profile_endpoints` HTTP 转发；**不吃**官方 `profile_routes`） · **优先级：P0**
 - [ ] **C06** · 源 §15.1–15.6 · API Server LDAP 身份准入 + identity_routes + 头剥离/SSE · **优先级：P0**
-- [ ] **C07** · 源 §16.1–16.6 · API 产物媒体 / `hermes.files` / tool.progress 脱敏与归属 · **优先级：P0**
+- [ ] **C07** · 源 §16.1–16.6 · API 产物媒体 / `hermes.files` / tool.progress 脱敏与归属 · **优先级：P0** · **延后**（2026-10-27 用户拍板；与 C05/C06 一并靠后，非当前主线）
 - [x] **C08** · 源 §7.27 · outbound BOS/EOS scrub · **优先级：P0**
   - 落地：终局走官方 O8；interim/status 薄补复用 `_strip_deepseek_special_tokens`（`owner/outbound_special_token_scrub.py` + stream_delivery / gateway status 胶水）
   - 测：`tests/owner/test_outbound_special_token_scrub.py`
@@ -536,7 +536,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - 胶水：`cli.py` `_run_quick_command`；`gateway/run_inbound.py` `_hm_resolve_command`；`tui_gateway/methods_tools.py` `_dispatch_quick`（`type: chain`）
   - TS：`apps/shared/src/slash.ts` + `ui-tui/src/app/createSlashHandler.ts`；i18n `gateway.chained_commands_executed`
   - 测：`tests/owner/test_chained_quick.py`
-- [ ] **C20** · 源 §3.9 · Semantic Audit Gate · **优先级：P1**（可后移若负担大）
+- [x] **C20** · 源 §3.9 · Semantic Audit Gate · **优先级：P1** · **忽略（不做）**（2026-10-27 用户拍板：飞书人在环审批已够用，非刚需；成本/误拦不划算）
 - [x] **C26** · 源 §2.10–2.11 + §4.9 · providers 白名单 / 缓存 TTL / `/providers` · **优先级：P1**（阶段一）
   - 白名单：官方 `has_explicit_models` / `_models_config_is_allowlist` 已覆盖，沿用
   - 缓存：`_PROVIDER_MODELS_CACHE_TTL` 24h；`_store_cache_entry` 目录无变更不写盘
@@ -549,7 +549,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 
 ### P2 暂缓
 
-- [ ] **C22** · 源 §6.1–6.2 · TUI skin / ruolin · **优先级：P2**
+- [x] **C22** · 源 §6.1–6.2 · TUI skin / ruolin · **优先级：P2** · **忽略（不做）**（2026-10-27 用户拍板：仅皮肤/ruolin，不迁）
 - [ ] **C23** · 源 §11 · 运维脚本 / HN Daily / Skill 同步 / Viking 治理 / 备份 / 周会脚本 · **优先级：P2**（按需拣）
 - [ ] **C24** · 源 §12 / §16.8–16.16 · 治理标记、T2-11~20 换码债、全量 `[owner]` 铺开 · **优先级：P2**（v2 **不做**「官方测全绿」与全量标记战役）
 - [x] **C25** · 源 §4.7–4.8 · 编辑上限轮转 / progress dedup / 中文摘要等体验项 · **优先级：P2**（`/providers` 已归 **C26**）
@@ -598,6 +598,8 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 - [x] 推倒 `owner/` 换魔法 patch 框架 — **明确不做**（减负靠能力包 + 短名单）
 - [x] owner 金钱估价 / `token_cost_estimate.py` / 依赖 estimated_cost 的 owner 定制 — **明确不做**（C02 瘦身：保留 token **数量**落盘，废弃算钱）
 - [x] **C12-memory-approval** · memory 写入飞书审批卡 / 打开 `memory.write_approval` — **明确不做**（用户拍板；现网保持 `memory.write_approval=false`）
+- [x] **C22** · TUI skin / ruolin（源 §6.1–6.2）— **明确不做**（用户拍板；仅皮肤引擎与 ruolin 系列，不迁）
+- [x] **C20** · Semantic Audit Gate（源 §3.9）— **明确不做**（用户拍板；人在环审批已覆盖主线，不迁语义审计门）
 
 ---
 
