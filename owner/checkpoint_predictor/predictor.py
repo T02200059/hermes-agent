@@ -1,7 +1,8 @@
 """编排器 —— terminal 工具执行前的预测式 checkpoint 触发。
 
-数据流: 配置检查 → 静态解析 → (阈值不足时) LLM 兜底 → 安全过滤 →
-有合法 root 则 ensure_checkpoint, 否则报错 (绝不降级拍 cwd)。
+数据流: 配置检查 → 静态解析 → (候选不足时) LLM 兜底 → 安全过滤 →
+有合法 root 则 ensure_checkpoint；静态为空且官方判定破坏性时窄兜底拍 cwd；
+其余失败只 warn（不盲目拍 cwd）。
 
 永不抛异常 (与 CheckpointManager.ensure_checkpoint 的 "never raises" 一致)。
 """
@@ -45,22 +46,55 @@ def _safe_roots(paths: List[str], cwd: str, agent) -> List[str]:
     return roots
 
 
-def _warn_uncheckpointed(command: str, cwd: str, reason: str, agent) -> None:
-    """预测失败时通过 agent 回调报错。绝不降级拍 cwd。"""
-    msg = (
-        f"⚠️ checkpoint 预测失败,未创建快照\n"
-        f"   命令: {command[:200]}\n"
-        f"   cwd: {cwd}\n"
-        f"   原因: {reason}\n"
-        f"   该命令造成的文件改动将无法通过 /rollback 回滚"
-    )
-    logger.warning("checkpoint predict failed: %s (cmd=%r)", reason, command[:80])
+def _emit_owner_warn(agent, msg: str) -> None:
+    """Prefer ``_owner_warn_callback``, else ``_emit_warning`` (C17 hang point)."""
     cb = getattr(agent, "_owner_warn_callback", None)
+    if cb is None:
+        cb = getattr(agent, "_emit_warning", None)
     if cb is not None:
         try:
             cb(msg)
         except Exception:
             pass
+
+
+def _warn_uncheckpointed(command: str, cwd: str, reason: str, agent) -> None:
+    """预测失败时通过 agent 回调报错。优先 _owner_warn_callback，回落 _emit_warning。"""
+    msg = (
+        "⚠️ checkpoint 预测失败,未创建快照\n"
+        f"   命令: {command[:200]}\n"
+        f"   cwd: {cwd}\n"
+        f"   原因: {reason}\n"
+        "   该命令造成的文件改动将无法通过 /rollback 回滚"
+    )
+    logger.warning("checkpoint predict failed: %s (cmd=%r)", reason, command[:80])
+    _emit_owner_warn(agent, msg)
+
+
+def _destructive_cwd_fallback(command: str, cwd: str, agent, mgr) -> bool:
+    """静态为空且官方 _is_destructive_command 为真 → 仍快照 cwd。返回是否已兜底。"""
+    try:
+        from agent.tool_dispatch_helpers import _is_destructive_command
+
+        if not _is_destructive_command(command):
+            return False
+    except Exception:
+        return False
+    reason_str = f"before terminal (destructive cwd fallback): {command[:60]}"
+    try:
+        mgr.ensure_checkpoint(cwd, reason_str)
+    except Exception as exc:
+        logger.debug("destructive cwd ensure_checkpoint failed: %s", exc)
+        return False
+    msg = (
+        "⚠️ checkpoint 静态预测为空，已按破坏性命令兜底快照 cwd\n"
+        f"   命令: {command[:200]}\n"
+        f"   cwd: {cwd}\n"
+        "   回滚粒度可能偏粗（整个工作目录）"
+    )
+    logger.warning("checkpoint destructive cwd fallback (cmd=%r cwd=%r)", command[:80], cwd)
+    _emit_owner_warn(agent, msg)
+    return True
 
 
 def predict_and_checkpoint(command: str, cwd: str, agent) -> None:
@@ -75,7 +109,8 @@ def predict_and_checkpoint(command: str, cwd: str, agent) -> None:
             return
 
         # 1. 静态解析
-        candidates = static_parser.static_parse(command, cwd)
+        static_candidates = static_parser.static_parse(command, cwd)
+        candidates = list(static_candidates)
 
         # 2. 静态不足时 LLM 兜底
         if len(candidates) < cfg["predict_static_threshold"]:
@@ -95,6 +130,9 @@ def predict_and_checkpoint(command: str, cwd: str, agent) -> None:
         roots = _safe_roots(candidates, cwd, agent)
 
         if not roots:
+            # 窄兜底：静态为空 + 官方破坏性判定 → 仍快照 cwd（恢复旧树覆盖面）
+            if not static_candidates and _destructive_cwd_fallback(command, cwd, agent, mgr):
+                return
             if candidates:
                 reason = "预测路径均被安全过滤 (项目根为 / 或 home)"
             else:

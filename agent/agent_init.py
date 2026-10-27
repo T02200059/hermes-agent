@@ -2395,6 +2395,9 @@ def init_agent(
     except Exception:
         if not getattr(agent, "owner_provider_name", None):
             agent.owner_provider_name = getattr(agent, "provider", None) or None
+    # [owner] C17 — surface checkpoint-predict failures via user-visible warn channel
+    if getattr(agent, "_owner_warn_callback", None) is None:
+        agent._owner_warn_callback = getattr(agent, "_emit_warning", None)
     _snapshot_primary_runtime(agent)
 
 

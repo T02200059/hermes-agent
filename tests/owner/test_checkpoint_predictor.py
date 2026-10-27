@@ -198,3 +198,41 @@ def test_llm_predict_failure_returns_empty(monkeypatch):
 
     monkeypatch.setattr(llm_predict, "_call_llm_sync", boom)
     assert llm_predict.llm_predict("x", "/p", 100, cache_size=4) == []
+
+
+def test_destructive_empty_static_falls_back_to_cwd(monkeypatch):
+    """静态为空 + 官方破坏性判定 → 仍 ensure_checkpoint(cwd) 并 warn。"""
+    monkeypatch.setattr(cp_config, "get_checkpoints_cfg", lambda: dict(cp_config._DEFAULTS))
+    monkeypatch.setattr(static_parser, "static_parse", lambda *_: [])
+    monkeypatch.setattr(llm_predict, "llm_predict", lambda *a, **k: [])
+    monkeypatch.setattr(
+        "agent.tool_dispatch_helpers._is_destructive_command",
+        lambda cmd: True,
+    )
+    agent = _agent()
+    predict_and_checkpoint("bash deploy.sh", "/proj", agent)
+    agent._checkpoint_mgr.ensure_checkpoint.assert_called_once()
+    args, _kwargs = agent._checkpoint_mgr.ensure_checkpoint.call_args
+    assert args[0] == "/proj"
+    assert "destructive cwd fallback" in args[1]
+    agent._owner_warn_callback.assert_called_once()
+
+
+def test_warn_falls_back_to_emit_warning_when_callback_missing(monkeypatch):
+    """无 _owner_warn_callback 时回落 _emit_warning，避免静默丢失。"""
+    monkeypatch.setattr(cp_config, "get_checkpoints_cfg", lambda: dict(cp_config._DEFAULTS))
+    monkeypatch.setattr(static_parser, "static_parse", lambda *_: [])
+    monkeypatch.setattr(llm_predict, "llm_predict", lambda *a, **k: [])
+    monkeypatch.setattr(
+        "agent.tool_dispatch_helpers._is_destructive_command",
+        lambda cmd: False,
+    )
+    mgr = MagicMock()
+    mgr.enabled = True
+    mgr.get_working_dir_for_path.side_effect = lambda p: "/proj"
+    emit = MagicMock()
+    agent = SimpleNamespace(_checkpoint_mgr=mgr, _emit_warning=emit)
+    # deliberately no _owner_warn_callback
+    predict_and_checkpoint("mystery-cmd", "/proj", agent)
+    mgr.ensure_checkpoint.assert_not_called()
+    emit.assert_called_once()
