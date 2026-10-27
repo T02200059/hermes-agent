@@ -366,6 +366,7 @@ gateway:
     list_preview_suffix: " — _{preview}_"
     list_footer: "\nUsage: `/resume <session name>`"
     list_footer_numbered: "\nUsage: `/resume <session name>` or `/resume <number>` (e.g. `/resume 1` for the most recent)"
+    card_title: "Resume recent session"
     list_failed: "Could not list sessions: {error}"
     out_of_range: "Resume index {index} is out of range.\nUse `/resume` with no arguments to see available sessions."
     not_found: "No session found matching '**{name}**'.\nUse `/resume` with no arguments to see available sessions."

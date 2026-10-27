@@ -2334,6 +2334,11 @@ class FeishuAdapter(BasePlatformAdapter):
                 return handle_card_click(
                     adapter=self, event=event, action_value=action_value, loop=loop,
                 )
+            # [owner] C27-resume-card: must precede generic hermes_action→approval
+            if action_value.get("hermes_action") == "resume_select":
+                return self._handle_resume_card_action(
+                    event=event, action_value=action_value, loop=loop,
+                )
             if action_value.get("hermes_action"):
                 return self._handle_approval_card_action(event=event, action_value=action_value, loop=loop)
             if action_value.get("hermes_update_prompt_action"):
@@ -2745,6 +2750,44 @@ class FeishuAdapter(BasePlatformAdapter):
         from owner.feishu.model_picker import dispatch_model_picker_action
 
         return dispatch_model_picker_action(
+            self, event=event, action_value=action_value, loop=loop,
+        )
+
+    # ── [owner] C27-resume-card ───────────────────────────────────────────
+
+    async def send_resume_card(
+        self,
+        chat_id: str,
+        header_text: str,
+        sessions: list,
+        session_key: str,
+        source_dict: Optional[dict[str, Any]] = None,
+        metadata: Optional[dict[str, Any]] = None,
+    ) -> Any:
+        """[owner] Send interactive /resume list card (C27-resume-card).
+
+        Thin glue — build/send/fallback live in
+        ``owner/feishu/resume_card.py::send_resume_card``.
+        """
+        from owner.feishu.resume_card import send_resume_card as _owner_send
+
+        return await _owner_send(
+            adapter=self,
+            chat_id=chat_id,
+            header_text=header_text,
+            sessions=sessions,
+            session_key=session_key,
+            source_dict=source_dict,
+            metadata=metadata,
+        )
+
+    def _handle_resume_card_action(
+        self, *, event: Any, action_value: dict[str, Any], loop: Any,
+    ) -> Any:
+        """[owner] Resume number-button callback — thin glue to owner.feishu.resume_card."""
+        from owner.feishu.resume_card import dispatch_resume_card_action
+
+        return dispatch_resume_card_action(
             self, event=event, action_value=action_value, loop=loop,
         )
 

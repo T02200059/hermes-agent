@@ -1084,6 +1084,26 @@ class GatewaySessionCommandsMixin:
         if not name:
             try:
                 titled = await self._list_titled_sessions(source, session_key, allow_all)
+                # [owner] C27-resume-card: Feishu interactive number card
+                # (see owner/feishu/resume_card.py)
+                if titled and source.platform == Platform.FEISHU:
+                    adapter = self.adapters.get(Platform.FEISHU) if getattr(self, "adapters", None) else None
+                    if adapter is not None and hasattr(adapter, "send_resume_card"):
+                        try:
+                            from owner.feishu.resume_card import try_send_resume_card_list
+                            return await try_send_resume_card_list(
+                                adapter,
+                                source=source,
+                                event=event,
+                                titled_sessions=titled,
+                                session_key=session_key,
+                                header_text=t("gateway.resume.list_header"),
+                            )
+                        except Exception as card_exc:
+                            logger.warning(
+                                "Feishu /resume card send failed, falling back to plain text: %s",
+                                card_exc,
+                            )
                 return self._resume_listing_reply(source, titled, allow_all)
             except Exception as e:
                 logger.debug("Failed to list titled sessions: %s", e)
