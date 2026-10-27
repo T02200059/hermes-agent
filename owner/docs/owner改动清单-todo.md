@@ -333,7 +333,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 |------|------|----------------------|
 | **一** | 非渠道 / 终端 / 加载器 | **C01**（最先）→ C02 → C08 → C03 → **C26** → C21（忽略）→ C16 → C17 → C19 → C18（忽略）→ C14 → C13 → C22（忽略）；旁注 B12 不强制 |
 | **二** | 飞书**核心**底座 | **C04**（审批卡 + 中文名/sender 缓存 + inbound + 签名）→ **C10**（+B11 同批）→ **C11 底座**（auto-card / early-typing）；diff/clarify/bot 菜单可延阶段三 |
-| **三** | 飞书定制 + 杂项 | **C09**（依赖 C04）→ C11 余下 → **C12** → C15 → C25（`/providers` 已归 C26）→ **C06** LDAP / **C07** API media（延后） → C20（忽略）→ C23 → **B17 飞书半边** ✅；**C24** 全量战役不排 |
+| **三** | 飞书定制 + 杂项 | **C09**（依赖 C04）→ C11 余下 → **C12** → C15 → C25（`/providers` 已归 C26）→ **C06** LDAP / **C07** API media（延后） → C20（忽略）→ C23（运行时脱钩，整包迁仓不做）→ **B17 飞书半边** ✅；**C24** 全量战役不排 |
 | **四** | 飞书多 profile | **仅 C05**（`profile_endpoints` / bots 路由；不吃 multiplex）。勿提前；与阶段三 LDAP **文件边界**分开 |
 
 **依赖速记**：C01 万物前置 → 阶段二 C04 先于一切飞书体验/skill 门 → C09/C12 依赖 C04 → **C05 最后**。yaml 随 C01 / 阶段三 LDAP / 阶段四路由穿插缩文件，不大爆炸。
@@ -552,7 +552,11 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 ### P2 暂缓
 
 - [x] **C22** · 源 §6.1–6.2 · TUI skin / ruolin · **优先级：P2** · **忽略（不做）**（2026-10-27 用户拍板：仅皮肤/ruolin，不迁）
-- [ ] **C23** · 源 §11 · 运维脚本 / HN Daily / Skill 同步 / Viking 治理 / 备份 / 周会脚本 · **优先级：P2**（按需拣）
+- [x] **C23** · 源 §11 · 运维脚本包 · **优先级：P2** · **运行时已与仓库软链脱钩**（2026-10-27 用户拍板方案 B）
+  - **现况**：`~/.hermes/scripts` 为独立真目录（不再 → `hermes-agent/owner/scripts`）；备份在 `~/.hermes/scripts.bak-20261027-1831`。worktree `owner/scripts/` 仍可留作源拷贝（未入库 `??`），**整包迁仓不再主线**。
+  - **仍在跑（运行时目录已有，不必迁仓）**：日备三件套、`cron-health-check`、`todo-scan`、Viking quality kanban、周报 `feishu_weekly_ops`、`swagger-kanban`。
+  - **可忽略（现网 paused/不用）**：HN Daily、Skill 同步、Upstream Sync、汇率、mac backup-configs、swagger-collector。
+  - **可选后续（脱钩不解决）**：§11.2 cron **job args** 映射仍是 gateway/cron **代码缺口**（jobs 里 `BACKUP_QUIET` / `mode=pref-card` 等）；要修另开，勿当已修。§11.1 目录豁免视官方/软链现状可再议。
 - [ ] **C24** · 源 §12 / §16.8–16.16 · 治理标记、T2-11~20 换码债、全量 `[owner]` 铺开 · **优先级：P2**（v2 **不做**「官方测全绿」与全量标记战役）
 - [x] **C25** · 源 §4.7–4.8 · 编辑上限轮转 / progress dedup / 中文摘要等体验项 · **优先级：P2**（`/providers` 已归 **C26**）
   - 编辑上限轮转：`SendResult.rotate` + Feishu 230072/230075；`classify_edit_failure`；`run_turn_progress` rotate/drain
