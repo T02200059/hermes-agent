@@ -2,7 +2,7 @@
 
 数据流: 配置检查 → 静态解析 → (候选不足时) LLM 兜底 → 安全过滤 →
 有合法 root 则 ensure_checkpoint；静态为空且官方判定破坏性时窄兜底拍 cwd；
-其余失败只 warn（不盲目拍 cwd）。
+其余失败：破坏性/过滤失败才用户可见 warn；只读降 debug（不盲目拍 cwd）。
 
 永不抛异常 (与 CheckpointManager.ensure_checkpoint 的 "never raises" 一致)。
 """
@@ -58,8 +58,25 @@ def _emit_owner_warn(agent, msg: str) -> None:
             pass
 
 
-def _warn_uncheckpointed(command: str, cwd: str, reason: str, agent) -> None:
-    """预测失败时通过 agent 回调报错。优先 _owner_warn_callback，回落 _emit_warning。"""
+def _command_looks_destructive(command: str) -> bool:
+    """Reuse official destructive heuristic; fail-open False on import errors."""
+    try:
+        from agent.tool_dispatch_helpers import _is_destructive_command
+
+        return bool(_is_destructive_command(command))
+    except Exception:
+        return False
+
+
+def _warn_uncheckpointed(command: str, cwd: str, reason: str, agent, *, surface: bool) -> None:
+    """预测失败时记录；仅可能改文件的命令才走用户可见 warn。"""
+    detail = (
+        f"checkpoint predict failed: {reason} "
+        f"(cmd={command[:80]!r} cwd={cwd})"
+    )
+    if not surface:
+        logger.debug("%s", detail)
+        return
     msg = (
         "⚠️ checkpoint 预测失败,未创建快照\n"
         f"   命令: {command[:200]}\n"
@@ -135,9 +152,13 @@ def predict_and_checkpoint(command: str, cwd: str, agent) -> None:
                 return
             if candidates:
                 reason = "预测路径均被安全过滤 (项目根为 / 或 home)"
+                # Had write-path predictions but all roots were unsafe — always surface.
+                surface = True
             else:
                 reason = "静态解析与 LLM 均未能预测目标文件"
-            _warn_uncheckpointed(command, cwd, reason, agent)
+                # Empty prediction: only surface for destructive cmds (avoid ls/git noise).
+                surface = _command_looks_destructive(command)
+            _warn_uncheckpointed(command, cwd, reason, agent, surface=surface)
             return
 
         # 4. 对每个合法项目根拍快照
@@ -150,4 +171,6 @@ def predict_and_checkpoint(command: str, cwd: str, agent) -> None:
 
     except Exception as exc:
         logger.debug("predict_and_checkpoint error: %s", exc)
-        _warn_uncheckpointed(command, cwd, f"编排异常: {exc}", agent)
+        _warn_uncheckpointed(
+            command, cwd, f"编排异常: {exc}", agent, surface=True
+        )

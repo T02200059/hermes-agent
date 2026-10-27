@@ -121,13 +121,34 @@ def test_predict_static_rm_checkpoints_project_root(monkeypatch):
     agent._owner_warn_callback.assert_not_called()
 
 
-def test_predict_empty_does_not_fallback_to_cwd(monkeypatch):
+def test_predict_empty_readonly_does_not_surface_warn(monkeypatch):
+    """静态+LLM 皆空的只读命令：不拍 cwd，也不向用户弹 warn。"""
     monkeypatch.setattr(cp_config, "get_checkpoints_cfg", lambda: dict(cp_config._DEFAULTS))
     monkeypatch.setattr(static_parser, "static_parse", lambda *_: [])
     monkeypatch.setattr(llm_predict, "llm_predict", lambda *a, **k: [])
+    monkeypatch.setattr(
+        "agent.tool_dispatch_helpers._is_destructive_command",
+        lambda cmd: False,
+    )
     agent = _agent()
-    predict_and_checkpoint("mystery-cmd", "/proj", agent)
+    predict_and_checkpoint("ls -la", "/proj", agent)
     agent._checkpoint_mgr.ensure_checkpoint.assert_not_called()
+    agent._owner_warn_callback.assert_not_called()
+
+
+def test_predict_empty_destructive_surfaces_warn(monkeypatch):
+    """静态+LLM 皆空但官方判定破坏性、且兜底未拍到 → 仍用户可见 warn。"""
+    monkeypatch.setattr(cp_config, "get_checkpoints_cfg", lambda: dict(cp_config._DEFAULTS))
+    monkeypatch.setattr(static_parser, "static_parse", lambda *_: [])
+    monkeypatch.setattr(llm_predict, "llm_predict", lambda *a, **k: [])
+    # Force destructive=True but make fallback's ensure fail so we hit warn path.
+    monkeypatch.setattr(
+        "agent.tool_dispatch_helpers._is_destructive_command",
+        lambda cmd: True,
+    )
+    agent = _agent()
+    agent._checkpoint_mgr.ensure_checkpoint.side_effect = RuntimeError("snap fail")
+    predict_and_checkpoint(r"find . -exec rm {} \;", "/proj", agent)
     agent._owner_warn_callback.assert_called_once()
 
 
@@ -221,18 +242,15 @@ def test_destructive_empty_static_falls_back_to_cwd(monkeypatch):
 def test_warn_falls_back_to_emit_warning_when_callback_missing(monkeypatch):
     """无 _owner_warn_callback 时回落 _emit_warning，避免静默丢失。"""
     monkeypatch.setattr(cp_config, "get_checkpoints_cfg", lambda: dict(cp_config._DEFAULTS))
-    monkeypatch.setattr(static_parser, "static_parse", lambda *_: [])
+    # Predicted paths all map to unsafe root → surface warn regardless of destructive.
+    monkeypatch.setattr(static_parser, "static_parse", lambda *_: ["/etc/passwd"])
     monkeypatch.setattr(llm_predict, "llm_predict", lambda *a, **k: [])
-    monkeypatch.setattr(
-        "agent.tool_dispatch_helpers._is_destructive_command",
-        lambda cmd: False,
-    )
     mgr = MagicMock()
     mgr.enabled = True
-    mgr.get_working_dir_for_path.side_effect = lambda p: "/proj"
+    mgr.get_working_dir_for_path.side_effect = lambda p: "/"
     emit = MagicMock()
     agent = SimpleNamespace(_checkpoint_mgr=mgr, _emit_warning=emit)
     # deliberately no _owner_warn_callback
-    predict_and_checkpoint("mystery-cmd", "/proj", agent)
+    predict_and_checkpoint("rm /etc/passwd", "/proj", agent)
     mgr.ensure_checkpoint.assert_not_called()
     emit.assert_called_once()
