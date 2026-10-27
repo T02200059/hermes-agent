@@ -2086,7 +2086,7 @@ def atomic_config_replace(
 
 
 def _apply_owner_config_overlay(config: dict[str, Any]) -> dict[str, Any]:
-    """[owner] Hang patch.yaml under config['owner'] (see owner/patch_config.py)."""
+    """[owner] Hang overlay.yaml under config['owner'] (see owner/patch_config.py)."""
     try:
         from owner.patch_config import apply_owner_overlay
         apply_owner_overlay(config)
@@ -2100,7 +2100,7 @@ def load_config() -> dict[str, Any]:
     """Load the merged configuration (DEFAULT_CONFIG + config.yaml + managed scope, env-expanded).
     Cached on the file signature; returns a deepcopy since most call sites mutate the result.
     Read-only hot paths should use ``load_config_readonly()`` to skip the deepcopy."""
-    # [owner] overlay patch.yaml → config.owner
+    # [owner] apply overlay.yaml → config.owner
     return _apply_owner_config_overlay(_load_config_impl(want_deepcopy=True))
 
 
@@ -2108,7 +2108,7 @@ def load_config_readonly() -> dict[str, Any]:
     """``load_config()`` without the defensive deepcopy (~half of the 265us cache-hit cost).
     **Mutating the returned dict (or any nested structure) corrupts the in-process cache for
     every subsequent caller** — only for code paths that never write to the result."""
-    # [owner] overlay patch.yaml → config.owner (mutates shared cache entry's owner key only)
+    # [owner] apply overlay.yaml → config.owner (mutates shared cache entry's owner key only)
     return _apply_owner_config_overlay(_load_config_impl(want_deepcopy=False))
 
 

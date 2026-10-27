@@ -11,7 +11,7 @@
 
 注册入口：`owner/owner-extensions`（`register()` + `plugin.yaml` hooks）。
 
-## 配置（`owner/config/patch.yaml`）
+## 配置（`owner/config/overlay.yaml`）
 
 - `owner.stream_guard.*`：完整版默认 `action: interrupt`；可改 `warn_only`。
 - `owner.output_guard.enabled`：秒关终局折叠。
@@ -32,7 +32,7 @@ S3 直接复用 `agent.repetition_guard.is_repetition_dominated`，不另写复�
 - 复用官方 repetition_guard（S3），避免双轨。
 - interrupt 路径与正常路径共用 `apply_llm_output_transform`，并缓存折叠结果（`_llm_output_transform_text`），幂等调用不再把 caller 的 stale 原文交回去。
 - stream stop latch 在 content/reasoning 双通道生效，减少中止后的无谓 delta 评估。
-- 配置进 `patch.yaml`；代码 DEFAULTS 仍为 `warn_only`（fail-open），生产行为由 yaml `interrupt` 决定。
+- 配置进 `overlay.yaml`；代码 DEFAULTS 仍为 `warn_only`（fail-open），生产行为由 yaml `interrupt` 决定。
 - 自检与测样改用合成样本，不入库真实用户事故正文。
 
 ## 自检 / 测试

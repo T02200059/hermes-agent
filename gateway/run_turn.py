@@ -2435,7 +2435,7 @@ class GatewayTurnMixin(GatewayTurnPrepareMixin, GatewayTurnHygieneMixin, Gateway
             else spawn(self._run_agent_notify_long_running(disp, turn_ctx, _executor_task_holder))
         )
 
-        # [owner] C13 progress_explainer: silent-period narration (patch.yaml explainers.progress)
+        # [owner] C13 progress_explainer: silent-period narration (overlay.yaml explainers.progress)
         # agent_holder is still [None] here — pass the list for lazy resolve (scheme ①).
         _pe_explainer = None  # [owner]
         try:  # [owner]

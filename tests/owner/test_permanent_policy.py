@@ -30,7 +30,7 @@ def _write_patch(home: Path, allow_permanent: bool, allowlist=None):
     else:
         for item in allowlist:
             lines.append(f"    - {item}")
-    (home / "patch.yaml").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    (home / "overlay.yaml").write_text("\n".join(lines) + "\n", encoding="utf-8")
     (home / "config.yaml").write_text("model:\n  default: test\n", encoding="utf-8")
 
 

@@ -1,8 +1,9 @@
-# Owner customization layer (runtime: ~/.hermes/patch.yaml → this file via symlink).
+# Owner customization layer (runtime: ~/.hermes/overlay.yaml → this file via symlink).
 #
-# v2 shape: NO outer shell (no top-level "owner:" / "patch:"). First-level keys ARE
+# v2 shape: NO outer shell (no top-level "owner:" / "patch:" / "overlay:"). First-level keys ARE
 # the sections. Code hangs them under config.owner.xxx after fuse with official config.
 # See owner/docs/v2背景说明.md「全局性 / 规范性备忘」and owner/docs/二次开发规范.md §2.2.1.
+# Filename is overlay.yaml (not patch.yaml) so v2 stays isolated from the legacy owner-branch patch.yaml.
 
 # ── Approval ─────────────────────────────────────────────────────────────────
 approvals:

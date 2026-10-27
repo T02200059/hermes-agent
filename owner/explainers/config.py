@@ -1,4 +1,4 @@
-"""[owner] C13 — unified ``owner.explainers`` config (patch.yaml).
+"""[owner] C13 — unified ``owner.explainers`` config (overlay.yaml).
 
 Schema::
 

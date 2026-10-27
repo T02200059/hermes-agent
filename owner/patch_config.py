@@ -1,4 +1,4 @@
-"""Unified fail-open loader for ``~/.hermes/patch.yaml`` (owner customization layer).
+"""Unified fail-open loader for ``~/.hermes/overlay.yaml`` (owner customization layer).
 
 v2 shape (hard constraint):
 - The YAML file has **no outer shell** (no top-level ``owner:`` / ``patch:`` wrapper).
@@ -78,11 +78,11 @@ def _load_yaml_file(
 
 
 def load_owner_config(force: bool = False) -> Dict[str, Any]:
-    """Load ``~/.hermes/patch.yaml`` as the owner-layer dict (file first level = sections).
+    """Load ``~/.hermes/overlay.yaml`` as the owner-layer dict (file first level = sections).
 
     Fail-open: missing/unreadable → ``{}``.
     """
-    return _load_yaml_file(_cache, "patch.yaml", force=force)
+    return _load_yaml_file(_cache, "overlay.yaml", force=force)
 
 
 def load_patch_config(force: bool = False) -> Dict[str, Any]:
@@ -91,7 +91,7 @@ def load_patch_config(force: bool = False) -> Dict[str, Any]:
 
 
 def invalidate_owner_config_cache() -> None:
-    """Force the next loader call to re-read patch.yaml from disk."""
+    """Force the next loader call to re-read overlay.yaml from disk."""
     _cache["mtime"] = None
     _cache["data"] = None
     _cache["last_load"] = 0
@@ -123,8 +123,8 @@ def apply_owner_overlay(config: Dict[str, Any]) -> Dict[str, Any]:
 
     Deep-merge strategy:
     - Start from any existing ``config['owner']`` dict (e.g. accidental key in
-      ``config.yaml``), then overlay ``patch.yaml`` on top (patch wins per key).
-    - ``patch.yaml`` is the source of truth for owner customization; missing file
+      ``config.yaml``), then overlay ``overlay.yaml`` on top (overlay wins per key).
+    - ``overlay.yaml`` is the source of truth for owner customization; missing file
       leaves ``config['owner']`` as ``{}`` (or the shallow leftover from config.yaml).
 
     Official ``load_config`` / ``load_config_readonly`` call this via thin glue so
@@ -137,8 +137,8 @@ def apply_owner_overlay(config: Dict[str, Any]) -> Dict[str, Any]:
         base_dict: Dict[str, Any] = dict(base) if isinstance(base, dict) else {}
         overlay = load_owner_config()
         if overlay:
-            # Shallow section merge: each first-level key from patch replaces the same
-            # key from config.yaml's owner (sections are owned by patch.yaml).
+            # Shallow section merge: each first-level key from overlay replaces the same
+            # key from config.yaml's owner (sections are owned by overlay.yaml).
             merged = dict(base_dict)
             merged.update(overlay)
             config["owner"] = merged

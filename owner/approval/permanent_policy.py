@@ -1,9 +1,9 @@
-"""Permanent ("Always") approval policy + patch.yaml allowlist merge (C01).
+"""Permanent ("Always") approval policy + overlay.yaml allowlist merge (C01).
 
 Hard constraint for Feishu / QQ (and policy-wide when configured):
 - ``config.owner.approvals.allow_permanent`` defaults to **False**
 - UI must not offer Always / 始终允许 when the gate is off
-- ``command_allowlist`` from patch.yaml is still **unioned into memory** so
+- ``command_allowlist`` from overlay.yaml is still **unioned into memory** so
   operator-curated patterns keep working; the UI just cannot mint new permanent
   grants via the Always button
 
@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 def get_allow_permanent() -> bool:
     """Return whether permanent ("Always") approval may be offered.
 
-    Reads ``config.owner.approvals.allow_permanent`` (from patch.yaml via overlay).
+    Reads ``config.owner.approvals.allow_permanent`` (from overlay.yaml via apply_owner_overlay).
     Fail-open default: **False** (safer — must opt in explicitly).
     """
     try:

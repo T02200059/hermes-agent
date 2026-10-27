@@ -31,7 +31,7 @@
 
 | 文件 | 段 |
 |------|----|
-| `owner/config/patch.yaml` | `approvals.skill_script_allowlist` |
+| `owner/config/overlay.yaml` | `approvals.skill_script_allowlist` |
 | `owner/config/patch_feishu_profile.yaml` | `feishu.skill_approval`（`enabled` 默认 false） |
 
 运行时 `~/.hermes/patch_feishu_profile.yaml` 若仍软链旧树，以旧树活配置为准；仓内文件为 v2 自包含模板。

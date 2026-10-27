@@ -2,7 +2,7 @@
 
 Kinds: progress | approval | english | recap
 Extend: ``register_kind("name", task="name_explainer")`` then
-``explainers.<name>: {enabled: true, ...}`` in patch.yaml.
+``explainers.<name>: {enabled: true, ...}`` in overlay.yaml.
 """
 
 from owner.explainers.config import (

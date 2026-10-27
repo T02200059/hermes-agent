@@ -78,10 +78,10 @@ class _FeishuCardPlan:
 # ---------------------------------------------------------------------------
 
 def get_auto_card_threshold() -> int:
-    """Read auto-card threshold from patch.yaml.
+    """Read auto-card threshold from overlay.yaml.
 
     Reads ``owner.feishu_card.auto_card_threshold``.
-    Falls back to 20 if patch.yaml is missing or the key is absent.
+    Falls back to 20 if overlay.yaml is missing or the key is absent.
     Returns 0 if ``auto_card_threshold`` is explicitly set ≤ 0 (disabled).
     """
     try:
@@ -95,7 +95,7 @@ def get_auto_card_threshold() -> int:
 
 
 def get_auto_card_split_enabled() -> bool:
-    """Read auto-card splitting master switch from patch.yaml.
+    """Read auto-card splitting master switch from overlay.yaml.
 
     Reads ``owner.feishu_card.split_enabled``.
     Defaults to True. When False, the pre-flight check still runs (so we
@@ -110,7 +110,7 @@ def get_auto_card_split_enabled() -> bool:
 
 
 def get_auto_card_split_max_chars() -> int:
-    """Read per-card text-content budget from patch.yaml.
+    """Read per-card text-content budget from overlay.yaml.
 
     Reads ``owner.feishu_card.split_max_chars``.
     Clamped to [_AUTO_CARD_SPLIT_MIN_MAX_CHARS, _AUTO_CARD_SPLIT_MAX_MAX_CHARS].
@@ -206,7 +206,7 @@ def estimate_auto_card_json_bytes(markdown_text: str, footer: str = "") -> int:
 #   header.template = orange（告警色；飞书模板色 blue/green/red/orange/...）
 #   strip_prefix  = 是否把前缀从正文里摘掉（避免标题与正文首行重复）
 #
-# 规则表可用 patch.yaml 覆盖：owner.feishu_card.notice_titles
+# 规则表可用 overlay.yaml 覆盖：owner.feishu_card.notice_titles
 #   notice_titles:
 #     - prefix: "⚠️ [stream-guard]"
 #       title: "⚠️ [stream-guard] 生成退化告警"
@@ -243,7 +243,7 @@ _DEFAULT_NOTICE_RULES: Tuple[Dict[str, Any], ...] = (
 
 
 def get_notice_rules() -> List[Dict[str, Any]]:
-    """告警卡规则表：patch.yaml 的 ``owner.feishu_card.notice_titles`` 覆盖内置。
+    """告警卡规则表：overlay.yaml 的 ``owner.feishu_card.notice_titles`` 覆盖内置。
 
     缺省 / 非法 / 读取失败 → 内置默认规则（fail-open，绝不阻断发送）。
     """

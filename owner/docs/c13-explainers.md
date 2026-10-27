@@ -20,7 +20,7 @@
 - 截断策略：优先保留**尾部**（近轮对话 / 近证据）；见 `owner.explainers.common.clip_input`。
 - 输出帽（已落地）：progress `max_tokens=400` / `max_output_chars=900`；approval `400` / `800`；english `450` / `1000`；recap `260` / `max_output_chars=350`（约二三百汉字；yaml/registry 可配）。共享 `call_explainer_llm` 默认 `max_tokens=400`、`clean_output` 默认 1000。
 
-## 配置（`owner/config/patch.yaml` → `~/.hermes/patch.yaml`）
+## 配置（`owner/config/overlay.yaml` → `~/.hermes/overlay.yaml`）
 
 ```yaml
 explainers:
@@ -65,7 +65,7 @@ register_kind("summary", defaults={"enabled": False, "platforms": {}})
 # call_explainer_llm("summary", messages)
 ```
 
-并在 `patch.yaml` 加 `explainers.summary: { enabled: true, ... }`，包放 `owner/explainers/summary/`。新 kind 自动继承共用 `max_input_chars`（默认 64k）。
+并在 `overlay.yaml` 加 `explainers.summary: { enabled: true, ... }`，包放 `owner/explainers/summary/`。新 kind 自动继承共用 `max_input_chars`（默认 64k）。
 
 ## 模块
 
@@ -76,7 +76,7 @@ register_kind("summary", defaults={"enabled": False, "platforms": {}})
 ## 兼容
 
 - 仍指向旧树、顶层 `progress_explainer:` 等活键时，加载器会合成统一块（过渡期）。
-- 规范约定软链应指向本 worktree 的 `owner/config/patch.yaml`（v2 扁平、无 `owner:` 外壳）。
+- 规范约定软链应指向本 worktree 的 `owner/config/overlay.yaml`（v2 扁平、无 `owner:` 外壳）。
 
 ## 验证
 

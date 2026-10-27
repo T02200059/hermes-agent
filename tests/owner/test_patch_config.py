@@ -1,4 +1,4 @@
-"""C01: owner patch.yaml loader + config.owner overlay."""
+"""C01: owner overlay.yaml loader + config.owner overlay."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ def hermes_home(tmp_path, monkeypatch):
 
 def test_load_owner_config_no_shell(hermes_home: Path):
     """File first-level keys ARE the sections — no owner:/patch: wrapper."""
-    (hermes_home / "patch.yaml").write_text(
+    (hermes_home / "overlay.yaml").write_text(
         "approvals:\n  allow_permanent: false\n  command_allowlist: []\n"
         "feishu_card:\n  auto_card_threshold: 57\n",
         encoding="utf-8",
@@ -39,7 +39,7 @@ def test_load_owner_config_no_shell(hermes_home: Path):
 
 
 def test_apply_owner_overlay_hangs_under_config_owner(hermes_home: Path):
-    (hermes_home / "patch.yaml").write_text(
+    (hermes_home / "overlay.yaml").write_text(
         "approvals:\n  allow_permanent: false\n",
         encoding="utf-8",
     )
@@ -49,12 +49,12 @@ def test_apply_owner_overlay_hangs_under_config_owner(hermes_home: Path):
     config = {"model": {"default": "x"}, "owner": {"legacy": 1}}
     apply_owner_overlay(config)
     assert config["owner"]["approvals"]["allow_permanent"] is False
-    # patch section keys replace; unrelated leftover keys from config.yaml owner kept if not in patch
+    # overlay section keys replace; unrelated leftover keys from config.yaml owner kept if not in overlay
     assert config["owner"]["legacy"] == 1
 
 
 def test_load_config_exposes_config_owner(hermes_home: Path, monkeypatch):
-    (hermes_home / "patch.yaml").write_text(
+    (hermes_home / "overlay.yaml").write_text(
         "approvals:\n  allow_permanent: false\n  command_allowlist: []\n",
         encoding="utf-8",
     )
@@ -81,7 +81,7 @@ def test_missing_patch_yaml_fail_open(hermes_home: Path):
 
 
 def test_mtime_cache_refresh(hermes_home: Path):
-    path = hermes_home / "patch.yaml"
+    path = hermes_home / "overlay.yaml"
     path.write_text("approvals:\n  allow_permanent: false\n", encoding="utf-8")
     from owner.patch_config import load_owner_config, invalidate_owner_config_cache
 

@@ -40,7 +40,7 @@
 | C3 | `agent/turn_finalizer.py` + `output_guard/__init__.py` | 载荷补 `reasoning_text`；思考通道单独扫描，只告警、不替换正文 |
 | P1-a | `run_agent.py` | `_stream_hook_base_payload()` 加 `request_stop`；新增 `_request_stream_stop()`（轮次围栏 + 每轮一次 latch） |
 | P1-b | `owner/owner-extensions/stream_guard/`（新） | 滑窗 + 三信号投票 + 告警 / 中止 |
-| P1-c | `owner/config/patch.yaml`、`owner-extensions/plugin.yaml`、`owner-extensions/__init__.py` | 配置面、钩子声明与注册 |
+| P1-c | `owner/config/overlay.yaml`、`owner-extensions/plugin.yaml`、`owner-extensions/__init__.py` | 配置面、钩子声明与注册 |
 
 ### 阈值标定（真实数据，非估算）
 
@@ -229,7 +229,7 @@ agent._emit_warning()
 
 ### 4.5 配置面（已实现）
 
-实际位置是 **`owner/config/patch.yaml` → `owner.stream_guard`**（软链接到 `~/.hermes/patch.yaml`），
+实际位置是 **`owner/config/overlay.yaml` → `owner.stream_guard`**（软链接到 `~/.hermes/overlay.yaml`），
 经 `owner/patch_config.py:load_patch_config()` 读取（mtime + 60s TTL 缓存，插件内再叠 5s 缓存）：
 
 ```yaml

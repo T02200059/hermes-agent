@@ -5,7 +5,7 @@ Register a new kind::
     from owner.explainers.registry import register_kind
     register_kind("summary", task_name="summary_explainer", defaults={"enabled": False})
 
-Then add ``explainers.summary:`` in patch.yaml and a package under
+Then add ``explainers.summary:`` in overlay.yaml and a package under
 ``owner/explainers/summary/`` that calls ``call_explainer_llm("summary", ...)``.
 """
 

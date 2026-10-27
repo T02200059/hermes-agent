@@ -41,7 +41,7 @@
 - `max_actions_per_turn`：每轮最多动作一次（思考窗口与正文窗口共用 latch）；
 - `action: warn_only` 灰度：只告警不中断，用来收集真实误伤率。
 
-完整版默认（patch.yaml）：`action: interrupt`。灰度时可改 `warn_only` 只告警。
+完整版默认（overlay.yaml）：`action: interrupt`。灰度时可改 `warn_only` 只告警。
 
 契约
 ----
@@ -54,7 +54,7 @@
 - 用户通知复用 `agent._emit_warning()`，agent 句柄经
   `request_stop.__self__` 取回（观察钩子载荷不含 agent，这是 route B 的唯一回溯）。
 
-配置：`owner/config/patch.yaml` → `owner.stream_guard`（经 C01 `load_patch_config`）
+配置：`owner/config/overlay.yaml` → `owner.stream_guard`（经 C01 `load_patch_config`）
 设计文档：owner/docs/design/stream-guard/degenerate-stream-guard.md
 自检：`python -m owner.stream_guard.selfcheck`
 """
@@ -70,7 +70,7 @@ from dataclasses import dataclass, field
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# 默认配置 —— owner/patch.yaml 的 owner.stream_guard 段可逐项覆盖
+# 默认配置 —— overlay.yaml 的 owner.stream_guard 段可逐项覆盖
 # ---------------------------------------------------------------------------
 DEFAULTS: dict = {
     "enabled": True,
@@ -127,7 +127,7 @@ _MARKER_RE = re.compile(
 # 窗口/动作表的存活与容量上限（长驻进程防累积）
 _WINDOW_TTL_SECONDS = 900.0
 _MAX_WINDOWS = 64
-# 配置读取的本地缓存（patch.yaml 本身另有 mtime + 60s TTL 缓存）
+# 配置读取的本地缓存（overlay.yaml 本身另有 mtime + 60s TTL 缓存）
 _CFG_TTL_SECONDS = 5.0
 
 
@@ -169,7 +169,7 @@ def _load_config() -> dict:
                 if key in cfg:
                     cfg[key] = value
     except Exception:
-        logger.debug("stream_guard: patch.yaml load failed", exc_info=True)
+        logger.debug("stream_guard: overlay.yaml load failed", exc_info=True)
     tokens = cfg.get("signature_tokens")
     if isinstance(tokens, str):
         tokens = [tokens]

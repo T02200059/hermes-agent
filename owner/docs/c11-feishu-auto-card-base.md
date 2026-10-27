@@ -17,7 +17,7 @@
 | `owner/feishu/card_sender.py` | `send_card`（官方 `_feishu_send_with_retry`）+ 卡发送锁 |
 | `plugins/platforms/feishu/adapter.py` | 薄胶水：`send`/`send_card`/`_get_card_send_lock`/`early-typing` |
 | `gateway/run_turn.py` | 薄胶水：footer 后 `try_auto_card_on_end`；进度气泡 `__hermes_progress_bubble` |
-| `owner/config/patch.yaml` | `feishu_card.*` |
+| `owner/config/overlay.yaml` | `feishu_card.*` |
 
 ## 配置（`owner.feishu_card`）
 

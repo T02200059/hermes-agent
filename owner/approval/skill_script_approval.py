@@ -3,7 +3,7 @@
 Extracts script filenames from shell commands and auto-approves them when
 all extracted scripts belong to a skill that was viewed (loaded) in the
 current session.  Configuration is in ``owner.approvals.skill_script_allowlist``
-in ``~/.hermes/patch.yaml``.
+in ``~/.hermes/overlay.yaml``.
 
 C09 · Integration points (thin glue only):
 - tools/approval.py: check_all_command_guards() and check_dangerous_command()
@@ -103,7 +103,7 @@ def extract_script_filenames(command: str) -> List[str]:
 
 
 def load_skill_scripts() -> Dict[str, Set[str]]:
-    """Load the script allowlist from patch.yaml, with filesystem scan.
+    """Load the script allowlist from overlay.yaml, with filesystem scan.
 
     Returns ``{filename: {skill_name, ...}}`` mapping.
     Results cached for ``_SKILL_SCRIPTS_CACHE_TTL`` seconds.

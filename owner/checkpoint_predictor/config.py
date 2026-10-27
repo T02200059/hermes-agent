@@ -1,4 +1,4 @@
-"""读 owner.checkpoints (patch.yaml), fail-open 返回默认值。
+"""读 owner.checkpoints (overlay.yaml), fail-open 返回默认值。
 
 完全复用 owner.patch_config.load_patch_config() (60s TTL + mtime 缓存),
 零新加载器。
@@ -17,7 +17,7 @@ _DEFAULTS: Dict[str, Any] = {
 
 
 def _load_owner_checkpoints_cfg() -> Dict[str, Any]:
-    """从 patch.yaml 读 owner.checkpoints, fail-open 返回空 dict。"""
+    """从 overlay.yaml 读 owner.checkpoints, fail-open 返回空 dict。"""
     try:
         from owner.patch_config import load_patch_config
 

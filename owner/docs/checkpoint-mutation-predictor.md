@@ -36,7 +36,7 @@ main 的 `_is_destructive_command` 是正则启发式 —— 匹配到就对 **c
 
 ## 配置
 
-`owner/config/patch.yaml` 的 `owner.checkpoints` 段：
+`owner/config/overlay.yaml` 的 `owner.checkpoints` 段：
 
 ```yaml
 owner:
@@ -52,7 +52,7 @@ owner:
 ```
 owner/checkpoint_predictor/
 ├── __init__.py        # 导出 predict_and_checkpoint
-├── config.py          # 读 patch.yaml checkpoints 配置, fail-open
+├── config.py          # 读 overlay.yaml checkpoints 配置, fail-open
 ├── static_parser.py   # shlex + 正则提取文件路径
 ├── llm_predict.py     # LLM 兜底 (auxiliary 侧路)
 └── predictor.py       # 编排器

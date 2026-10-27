@@ -449,7 +449,7 @@ def _read_permanent_allowlist() -> set:
     if legacy:
         logger.warning("Recovered legacy string command_allowlist; re-save it as a list of strings.")
     patterns = set(raw)
-    # [owner] C01: union patch.yaml approvals.command_allowlist into memory
+    # [owner] C01: union overlay.yaml approvals.command_allowlist into memory
     try:
         from owner.approval.permanent_policy import merge_owner_command_allowlist
         patterns = merge_owner_command_allowlist(patterns)

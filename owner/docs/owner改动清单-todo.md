@@ -27,15 +27,16 @@
 > **开新能力前先扫本表。** 已落地的接现成入口；未落地的按「约定」接线，勿另起一套。  
 > 细则仍以各 C 条目 / 设计稿为准；本节只钉**接哪、怎么调、挂哪配置**。
 
-### 1. `patch.yaml` 加载器 · **C01 · 已落地**
+### 1. `overlay.yaml` 加载器 · **C01 · 已落地**
 
-- **是什么**：owner 层统一配置入口；文件第一层键即能力段（**无**顶层 `owner:` / `patch:` shell），运行时 fuse 进 `config.owner.*`。
+- **是什么**：owner 层统一配置入口；文件第一层键即能力段（**无**顶层 `owner:` / `patch:` / `overlay:` shell），运行时 fuse 进 `config.owner.*`。
 - **入口**：`owner/patch_config.py`
-  - `load_patch_config()` / `load_owner_config()` → 读 `~/.hermes/patch.yaml`（本仓常软链到 `owner/config/patch.yaml`）
+  - `load_patch_config()` / `load_owner_config()` → 读 `~/.hermes/overlay.yaml`（本仓常软链到 `owner/config/overlay.yaml`）
   - `apply_owner_overlay(config)` → 官方 `load_config` 薄挂点后的叠层
   - `invalidate_owner_config_cache()` → 强制重读
   - 舰队/LDAP 另文件：`load_patch_feishu_profile_config()` → `patch_feishu_profile.yaml`（C05/C06）
 - **配置**：读写一律 `config.owner.<section>.*` 或直接 `load_patch_config().get("<section>")`；新开关进对应 section，不要散落 `config.yaml`。
+- **文件名**：运行时定制文件为 **`overlay.yaml`**（不再用 `patch.yaml`），与老版 owner 分支的 `patch.yaml`（含顶层 `owner:` 外壳）隔离；加载器**禁止**回退读 `patch.yaml`。
 - **规范**：[`二次开发规范.md`](./二次开发规范.md) §2.2.1；[`v2背景说明.md`](./v2背景说明.md)「定制化 yaml」。
 
 ### 2. 飞书 name cache / user_store · **C04 · 已落地**
@@ -56,7 +57,7 @@
   - `owner/approval/skill_manage_gate.py` — `run_gate` / `should_escalate` / `apply_all_patches`
   - `owner/feishu/skill_approval_card.py` — `send_skill_approval_card` / `handle_card_click`
   - Hook 桥：`owner/owner-extensions/skill_manage_bridge/`（`pre_tool_call` + `pre_gateway_dispatch`）
-- **配置**：`config.owner.approvals.skill_script_allowlist`（patch.yaml）；`feishu.skill_approval`（`patch_feishu_profile.yaml`，经 `load_patch_feishu_profile_config()`）
+- **配置**：`config.owner.approvals.skill_script_allowlist`（overlay.yaml）；`feishu.skill_approval`（`patch_feishu_profile.yaml`，经 `load_patch_feishu_profile_config()`）
 - **下游接线**：复用 C04 name cache / `send_card`；卡片 `hermes_action=skill_approval_gate`；永久按钮不展示（门内 `allow_permanent=False` + C01 策略）
 
 ### 4. Bot menu 按钮响应 · **C11 余下 · 待阶段三**
@@ -68,16 +69,16 @@
   - C04 `FeishuUserStore` 的 `open_id → p2p_chat_id` 落盘与重启 flush（菜单路由依赖）
   - C11 `send_card` / auto-card / notice 卡基建（若菜单结果要发卡）
   - 官方 `plugins/platforms/feishu/adapter.py` 事件环（落地时薄委托，逻辑进 `owner/`）
-- **配置**：待 C11 余下设计定键；预计挂 `config.owner.*`（经 patch），不要塞进官方 gateway 配置。
+- **配置**：待 C11 余下设计定键；预计挂 `config.owner.*`（经 overlay），不要塞进官方 gateway 配置。
 
 ### 5. C13 Explainers 统一配置与 auxiliary · **C13 · 已落地**
 
 旧树三套顶层段（`progress_explainer` / `approval_explainer` / `english_explainer`）各自 `load_config` + 各自解析 provider/model。**v2 禁止再分叉**：配置与取模入口收成一套，三 kind 共用 helper。
 
-#### 4.1 选定 schema（`owner/config/patch.yaml` → `config.owner.explainers`）
+#### 4.1 选定 schema（`owner/config/overlay.yaml` → `config.owner.explainers`）
 
 ```yaml
-# 现网活键（见 owner/config/patch.yaml；说明 owner/docs/c13-explainers.md）
+# 现网活键（见 owner/config/overlay.yaml；说明 owner/docs/c13-explainers.md）
 explainers:
   # 共用默认；各 kind 可覆盖同名键
   provider: auto          # 空或 auto → 交给 call_llm auxiliary 链
@@ -353,7 +354,8 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 
 ### P0 必保
 
-- [x] **C01** · 源 §1.1–1.4 · `patch.yaml` 统一加载器 + 审批白名单合并 + 归因骨架 · **优先级：P0**
+- [x] **C01** · 源 §1.1–1.4 · `overlay.yaml` 统一加载器 + 审批白名单合并 + 归因骨架 · **优先级：P0**
+  - 记：运行时文件已改名为 **`overlay.yaml`**，与老版 `patch.yaml` 隔离（加载器不回退读旧名）。
   - 落地：
     1. `owner/patch_config.py` + `config.owner` 叠层（官方 config 薄 overlay）
     2. `owner/approval/permanent_policy.py`（飞书/QQ 永久审批禁用；官方 approval 薄委托）
@@ -397,7 +399,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 
 - [x] **C11 底座** · 源 §4.2–4.3 · auto-card / early-typing · **优先级：P1**（阶段二）
   - helper：`owner/feishu/auto_card.py` / `agent_end.py` / `card_sender.py`
-  - 配置：`owner/config/patch.yaml` → `feishu_card.*`（threshold / split / notice_titles）
+  - 配置：`owner/config/overlay.yaml` → `feishu_card.*`（threshold / split / notice_titles）
   - 胶水：`plugins/platforms/feishu/adapter.py`（`send` try_auto_card / `send_card` / early-typing）；`gateway/run_turn.py`（`try_auto_card_on_end` + progress bubble 标记）
   - 说明：`owner/docs/c11-feishu-auto-card-base.md`
   - 测：`tests/owner/test_c11_auto_card.py`、`tests/owner/test_feishu_agent_end_media.py`
@@ -413,7 +415,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 - [x] **C14** · 源 §14 · output_guard + stream_guard · **优先级：P1**（阶段一 · 完整版）
   - helper：`owner/output_guard/`（`transform_llm_output`）+ `owner/stream_guard/`（`on_stream_delta`；S1/S2/S3，S3=`is_repetition_dominated`）
   - 注册：`owner/owner-extensions` `register()` + `plugin.yaml` hooks
-  - 配置：`owner/config/patch.yaml` → `stream_guard.*`（默认 `action: interrupt`）+ `output_guard.enabled`
+  - 配置：`owner/config/overlay.yaml` → `stream_guard.*`（默认 `action: interrupt`）+ `output_guard.enabled`
   - 胶水：`agent/stream_delivery.py`（`request_stop` + latch）；`turn_finalizer.apply_llm_output_transform`（C1 interrupted + reasoning）；`turn_final_response`（C1）；`turn_api_call.handle_api_interrupt`（C2 early-persist 前 transform）
   - 落地说明：`owner/docs/c14-output-stream-guard.md`
   - 测：`tests/owner/test_c14_guards.py`；自检 `python -m owner.{output,stream}_guard.selfcheck`
@@ -424,7 +426,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - 薄缺口（未扩 scope）：进程启动 scrub 继承的 `HERMES_CRON_SESSION`/`SESSION_KEY`/`SESSION_ID`；restart watcher env 未特判 pop（子进程 builder 仍可能拷贝 `os.environ`）。
 - [x] **C17** · 源 §8.1 · Checkpoint Mutation Predictor · **优先级：P1**（阶段一）
   - helper：`owner/checkpoint_predictor/`（`predict_and_checkpoint` / static_parser / llm_predict）
-  - 配置：`owner/config/patch.yaml` → `checkpoints.*`（predict_enabled / llm timeout / cache / static threshold）
+  - 配置：`owner/config/overlay.yaml` → `checkpoints.*`（predict_enabled / llm timeout / cache / static threshold）
   - 胶水：`agent/tool_executor.py` `_begin_tool_execution` terminal 分支（替换 destructive+cwd；保留 container skip）
   - 设计：`owner/docs/checkpoint-mutation-predictor.md`
   - 测：`tests/owner/test_checkpoint_predictor.py`
@@ -487,7 +489,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 
 ## § yaml 整合方向（只写方向，不改现网）
 
-现状（源仓）：`owner/config/patch.yaml`（~436 行）+ `patch_feishu_profile.yaml`（~156 行，含 bots 路由与 LDAP）+ `upstream_sync.yaml`。
+现状（源仓）：`owner/config/overlay.yaml`（v2 扁平）+ `patch_feishu_profile.yaml`（含 bots 路由与 LDAP）+ `upstream_sync.yaml`。老版 owner 分支仍用独立的 `patch.yaml`（含 `owner:` 外壳）。
 
 **目标**：定制 yaml **更小、更好读**；密钥仍可内网提交，对外另做 template。
 
@@ -496,7 +498,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 1. **拆「路由/身份」与「行为开关」**  
    - 保留独立「舰队路由」文件亦可，但结构对齐：`feishu.bots.*.user_routing` / `profile_endpoints` 与 `ldap` / `identity_*` 分节清晰；避免 LDAP 埋在飞书文件里却无索引。  
    - **不**为对齐官方而改成 `gateway.profile_routes`（语义不覆盖跨进程）。
-2. **`patch.yaml` 合并同类开关**  
+2. **`overlay.yaml` 合并同类开关**  
    - `progress_explainer` / `approval_explainer` / `english_explainer`（+ `recap`）→ 单一 `explainers:` 块（共用 `provider`/`model`/`timeout_ms`/`max_input_chars=64000` + kind 子段；见「§ 二次开发可复用基建 §4」）。  
    - `openviking_sync_recall` + `openviking_recall_card` → `openviking:`。  
    - `feishu_card` notice_titles 与 auto_card 阈值保留一张表，删注释噪声。  
@@ -504,7 +506,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 3. **行为默认进代码，yaml 只留差异**  
    - 与源规范一致：缺省 section = 合理默认；yaml 只写覆盖项。
 4. **上游 sync 配置独立**  
-   - `upstream_sync.yaml` 保持单独，不并进 patch。
+   - `upstream_sync.yaml` 保持单独，不并进 overlay。
 5. **v2 落地顺序**  
    - 先按 C01 重接加载器 → 再迁键名（一次改加载器+文档+软链说明）→ 最后缩行数。
 
