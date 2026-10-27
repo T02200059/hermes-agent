@@ -1970,6 +1970,16 @@ class FeishuAdapter(BasePlatformAdapter):
             return SendResult(success=False, error="Not connected")
         if not os.path.exists(image_path):
             return SendResult(success=False, error=f"Image file not found: {image_path}")
+        # [owner] C12-upload-guard: 飞书 image.create 上限 10MB，超限时不调 API 直接返回提示。
+        try:
+            from owner.feishu.media_guard import check_image_size as _check_image_size
+        except ImportError:
+            _check_image_size = None
+        if _check_image_size is not None:
+            _oversize_img = _check_image_size(image_path)
+            if _oversize_img is not None:
+                await self._send_media_guard_hint(chat_id, _oversize_img.error, reply_to, metadata)
+                return _oversize_img
         try:
             import io as _io
             image_file = _io.BytesIO(await asyncio.to_thread(Path(image_path).read_bytes))  # lark's MultipartEncoder needs .name and .tell()
@@ -1991,6 +2001,15 @@ class FeishuAdapter(BasePlatformAdapter):
             return self._finalize_send_result(message_response, "image send failed")
         except Exception as exc:
             logger.error("[Feishu] Failed to send image %s: %s", image_path, exc, exc_info=True)
+            # [owner] C12-upload-guard: 图片上传异常翻译成用户可见提示并发到 DM。
+            try:
+                from owner.feishu.media_guard import check_image_upload_exception as _check_img_exc
+            except ImportError:
+                _check_img_exc = None
+            if _check_img_exc is not None:
+                _warn_img_result = _check_img_exc(exc, image_path=image_path)
+                await self._send_media_guard_hint(chat_id, _warn_img_result.error, reply_to, metadata)
+                return _warn_img_result
             return SendResult(success=False, error=str(exc))
 
     async def send_typing(self, chat_id: str, metadata=None) -> None:
@@ -3938,6 +3957,17 @@ class FeishuAdapter(BasePlatformAdapter):
         upload_file_type, resolved_message_type = self._resolve_outbound_file_routing(
             file_path=display_name, requested_message_type=outbound_message_type,
         )
+        # [owner] C12-upload-guard: 飞书 file.create 上限 30MB，超限时不调 API 直接返回提示；
+        # SDK 空响应体崩溃翻译成用户可见中文提示。逻辑在 owner.feishu.media_guard。
+        try:
+            from owner.feishu.media_guard import check_file_size as _check_file_size
+        except ImportError:
+            _check_file_size = None
+        if _check_file_size is not None:
+            _oversize = _check_file_size(file_path, display_name=display_name)
+            if _oversize is not None:
+                await self._send_media_guard_hint(chat_id, _oversize.error, reply_to, metadata)
+                return _oversize
         try:
             duration_ms = self._get_audio_duration_ms(file_path) if upload_file_type == "opus" else 0
             with open(file_path, "rb") as file_obj:  # noqa: ASYNC230 -- file handle is streamed to the upload; a local open() is non-blocking in practice
@@ -3983,7 +4013,34 @@ class FeishuAdapter(BasePlatformAdapter):
             return self._finalize_send_result(message_response, "file send failed")
         except Exception as exc:
             logger.error("[Feishu] Failed to send file %s: %s", file_path, exc, exc_info=True)
+            # [owner] C12-upload-guard: SDK 崩溃翻译成用户可见中文提示并发到 DM。
+            try:
+                from owner.feishu.media_guard import check_upload_exception as _check_upload_exc
+            except ImportError:
+                _check_upload_exc = None
+            if _check_upload_exc is not None:
+                _warn_result = _check_upload_exc(exc, file_path=file_path, display_name=display_name)
+                await self._send_media_guard_hint(chat_id, _warn_result.error, reply_to, metadata)
+                return _warn_result
             return SendResult(success=False, error=str(exc))
+
+    async def _send_media_guard_hint(
+        self,
+        chat_id: str,
+        hint_text: Optional[str],
+        reply_to: Optional[str],
+        metadata: Optional[dict[str, Any]],
+    ) -> None:
+        """[owner] C12-upload-guard: surface oversize/upload-failure hint to the user.
+
+        Body in ``owner/feishu/media_guard.py::send_media_guard_hint`` — best-effort
+        so a hint-send failure never masks the original upload result.
+        """
+        try:
+            from owner.feishu.media_guard import send_media_guard_hint
+        except ImportError:
+            return
+        await send_media_guard_hint(self, chat_id, hint_text, reply_to, metadata)
 
     async def _send_uploaded_key(
         self, *, chat_id: str, reply_to: Optional[str], metadata: Optional[dict[str, Any]], caption: Optional[str],
