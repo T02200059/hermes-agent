@@ -33,12 +33,17 @@ logger = logging.getLogger("gateway.run")
 def _append_progress_repeat_count(message: str, occurrences: int) -> str:
     """Put a repeat counter after a closing code fence on its own line: ```` ``` (×N) ```` is not a
     valid closing fence, so Telegram/Markdown renderers would leave the block open."""
-    suffix = f"(×{occurrences})"
-    body = message.rstrip("\r\n")
-    if re.search(r"(?:^|\n)[ \t]*```[ \t]*\r?\Z", body):
-        line_end = "\r\n" if message.endswith("\r\n") else "\n"
-        return f"{body}{line_end}{suffix}"
-    return f"{message} {suffix}"
+    # [owner] C25 progress dedup — fence-safe (×N); owner owns the rule.
+    try:
+        from owner.gateway.turn_helpers import append_dedup_counter
+        return append_dedup_counter(message, occurrences - 1)
+    except Exception:
+        suffix = f"(×{occurrences})"
+        body = message.rstrip("\r\n")
+        if re.search(r"(?:^|\n)[ \t]*```[ \t]*\r?\Z", body):
+            line_end = "\r\n" if message.endswith("\r\n") else "\n"
+            return f"{body}{line_end}{suffix}"
+        return f"{message} {suffix}"
 
 
 def _tool_lifecycle_payload(call_id, tool_name, args) -> dict:

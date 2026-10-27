@@ -7,7 +7,34 @@ Side-effect-free helpers on the turn / progress path. Upstream's split
 
 from __future__ import annotations
 
+import re
 from typing import Any
+
+# Closing fence at end of string (optional trailing whitespace / CR), possibly
+# after a newline — mirrors official ``_append_progress_repeat_count``.
+_CLOSING_FENCE_RE = re.compile(r"(?:^|\n)[ \t]*```[ \t]*\r?\Z")
+
+
+def append_dedup_counter(base_msg: str, count: int) -> str:
+    """Append a ``(×N)`` repeat counter to a deduplicated progress line.
+
+    When ``base_msg`` ends with a closed fence (```` ``` ````) the counter MUST
+    be placed on a new line: appending it inline (``"``` (×N)"``) strips the line
+    of its CommonMark closed-fence status, so the code block never closes and
+    subsequent terminal progress lines get swallowed into it. Only matters on
+    ``supports_code_blocks`` platforms (Feishu/Slack), but the newline is
+    harmless elsewhere.
+
+    ``count`` is 0-based (first repeat → ``count=0`` → ``(×1)``); callers that
+    already hold an occurrence total should pass ``occurrences - 1``.
+    """
+    occurrences = count + 1
+    suffix = f"(×{occurrences})"
+    body = base_msg.rstrip("\r\n")
+    if _CLOSING_FENCE_RE.search(body):
+        line_end = "\r\n" if base_msg.endswith("\r\n") else "\n"
+        return f"{body}{line_end}{suffix}"
+    return f"{base_msg} {suffix}"
 
 
 def classify_edit_failure(result: Any) -> str:
@@ -36,4 +63,4 @@ def classify_edit_failure(result: Any) -> str:
     return "disable"
 
 
-__all__ = ["classify_edit_failure"]
+__all__ = ["append_dedup_counter", "classify_edit_failure"]
