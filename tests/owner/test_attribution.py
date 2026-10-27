@@ -86,6 +86,8 @@ def test_persistence_only_strips_owner_and_token_cols():
 
     for key in (
         "owner_provider_name",
+        "model",
+        "provider",
         "input_tokens",
         "output_tokens",
         "cache_read_tokens",
@@ -102,14 +104,18 @@ def test_persistence_only_strips_owner_and_token_cols():
         "cache_read_tokens": 1,
         "cache_write_tokens": 0,
         "model": "x",
+        "provider": "damodel",
     }
     cleaned = without_persistence_fields(msg)
     assert "owner_provider_name" not in cleaned
     assert "input_tokens" not in cleaned
+    assert "model" not in cleaned
+    assert "provider" not in cleaned
     assert cleaned["content"] == "hi"
-    assert cleaned["model"] == "x"
     # original untouched
     assert msg["owner_provider_name"] == "damodel"
+    assert msg["model"] == "x"
+    assert msg["provider"] == "damodel"
 
 
 def test_schema_sql_declares_sessions_owner_and_message_token_cols():

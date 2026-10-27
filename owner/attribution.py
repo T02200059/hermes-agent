@@ -1,8 +1,14 @@
 """Per-turn attribution helpers (C01 skeleton + C02 chain).
 
 Stamps ``model`` / ``provider`` / ``owner_provider_name`` onto assistant message
-dicts for persistence. C02 wires the name through runtime → agent construction →
-mid-switch / restore snapshots, and strips it from outbound ``api_messages``.
+dicts. ``model`` / ``provider`` are **in-memory / session-state** markers only —
+they are stripped from outbound ``api_messages`` via
+``PERSISTENCE_ONLY_MESSAGE_FIELDS`` (strict backends 400 on unknown keys) and are
+**not** written to the messages table. The durable attribution column is
+``owner_provider_name`` (plus the four token-quantity columns).
+
+C02 wires ``owner_provider_name`` through runtime → agent construction →
+mid-switch / restore snapshots.
 
 Official glue sites (thin only):
 - ``agent.agent_init.init_agent`` → :func:`bind_agent_attribution`

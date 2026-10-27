@@ -47,8 +47,11 @@ PERSISTENCE_ONLY_MESSAGE_FIELDS = frozenset(
      MERGED_TURN_PREFIX, MESSAGE_UID, ABSORBED_MESSAGE_UIDS, TOOL_CALL_UIDS, TOOL_CALL_UID,
      # The alternation repair's row counts: an in-place compaction reads them off the live dict.
      MERGED_DURABLE_ROWS, UNNAMED_DURABLE_ROWS, RETIRED_DURABLE_ROWS,
-     # [owner] C02 — per-turn attribution + token quantity are persistence-only
-     "owner_provider_name",
+     # [owner] C02 — per-turn attribution + token quantity are persistence-only.
+     # model/provider are memory stamps from inject_attribution_into_message;
+     # strip them from outbound api_messages (strict backends 400 on unknown keys).
+     # Durable attribution column is owner_provider_name (not messages.model/provider).
+     "owner_provider_name", "model", "provider",
      "input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens"}
 ) | REPAIR_BOOKKEEPING_FIELDS
 
