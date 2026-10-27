@@ -501,13 +501,13 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - **recap 自动**（对齐 Grok Build `session_recap.rs`）：`min_user_turns=3` + `idle_seconds=180`；回合结束后闲置触发；watermark 防刷；短会话不发；`explainers.recap.auto`；**已落地**
   - **统一约定（已敲定，代码已做）**：单一 `owner.explainers` 块 + 共享取模 helper；禁止各 kind 各写 provider/model。详见上方「§ 二次开发可复用基建 §4」。
   - 旧顶层 `progress_explainer` / `approval_explainer` / `english_explainer` → 迁入 `explainers.{progress,approval,english,recap}`；`call_llm(task=…_explainer)` 长 task 名保留
-  - **暂缓**：三 kind 输出帽仍各文件硬编码 `_MAX_OUTPUT_CHARS`（progress/approval/english）；recap 已读 overlay。统一进 `explainers.*.max_output_chars` 另排
+  - **已落地（H03 #3）**：progress/approval/english 输出帽读 `merged.get("max_output_chars")`（模块默认 900/800/1000 仍保留）；overlay `explainers.{progress,approval,english}.max_output_chars` 已补同值；recap 仍 350
 - [x] **C14** · 源 §14 · output_guard + stream_guard · **优先级：P1**（阶段一 · 完整版）
   - helper：`owner/output_guard/`（`transform_llm_output`）+ `owner/stream_guard/`（`on_stream_delta`；S1/S2/S3，S3=`is_repetition_dominated`）
   - 注册：`owner/owner-extensions` `register()` + `plugin.yaml` hooks
   - 配置：`owner/config/overlay.yaml` → `stream_guard.*`（默认 `action: interrupt`）+ `output_guard.enabled`
   - **暂缓**：代码 `DEFAULTS["action"]` 仍 `warn_only`（overlay 缺段时的 fail-open 灰度默认）；现网靠 overlay `interrupt`。是否把 DEFAULTS 改成 interrupt 另议
-  - **暂缓**：`owner/output_guard/__init__.py` 注释拼写仍 `[owner-patch P2-3]`（owner 内注释，非官方 hunk 标记）
+  - **已落地（H03 #2）**：`owner/output_guard/__init__.py` 注释已归一为 `# [owner] P2-3: …`（唯一拼写）
   - 胶水：`agent/stream_delivery.py`（`request_stop` + latch）；`turn_finalizer.apply_llm_output_transform`（C1 interrupted + reasoning）；`turn_final_response`（C1）；`turn_api_call.handle_api_interrupt`（C2 early-persist 前 transform）
   - 落地说明：`owner/docs/c14-output-stream-guard.md`
   - 测：`tests/owner/test_c14_guards.py`；自检 `python -m owner.{output,stream}_guard.selfcheck`
@@ -568,7 +568,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - **仍在跑（运行时目录已有，不必迁仓）**：日备三件套、`cron-health-check`、`todo-scan`、Viking quality kanban、周报 `feishu_weekly_ops`、`swagger-kanban`。
   - **可忽略（现网 paused/不用）**：HN Daily、Skill 同步、Upstream Sync、汇率、mac backup-configs、swagger-collector。
   - **§11.2 job args→CLI**：✅ 已落地（2026-10-27）。逻辑 `owner/cron/job_args.py`；薄胶水 `cron/scheduler_script.py` / `cron/scheduler_prompt.py`（`# [owner] §11.2`）；调度跑 script 时把 `job["args"]` 映射为 `--key value`（`True`→裸 flag；`False`/`None`/空串跳过）。现网样例：`viking`→`--mode pref-card`，backup→`--BACKUP_QUIET 1` 等。测：`tests/owner/test_cron_job_args.py`。**整包迁仓仍不做**。§11.1 目录豁免视官方/软链现状可再议。
-- [ ] **C24** · 源 §12 / §16.8–16.16 · 治理标记、T2-11~20 换码债、全量 `[owner]` 铺开 · **优先级：P2**（v2 **不做**「官方测全绿」与全量标记战役）
+- [ ] **C24** · 源 §12 / §16.8–16.16 · 治理标记、T2-11~20 换码债、全量 `[owner]` 铺开 · **优先级：P2**（v2 **不做**「官方测全绿」与全量标记战役；H03 #4 仅轻量补了本轮相对上游官方运行时 hunk 标记，不算 C24 收口）
 - [x] **C25** · 源 §4.7–4.8 · 编辑上限轮转 / progress dedup / 中文摘要等体验项 · **优先级：P2**（`/providers` 已归 **C26**）
   - 编辑上限轮转：`SendResult.rotate` + Feishu 230072/230075；`classify_edit_failure`；`run_turn_progress` rotate/drain
   - progress dedup：`append_dedup_counter` 防 ``` 污染；薄胶水 `_append_progress_repeat_count`
@@ -586,12 +586,12 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 - [x] **H01** · **官方 test 污染梳理** · 审计见 WorkBuddy `tests-pollution-audit-2026-10-23.md`；优先项已修：`73fa8f53e3`…`de3dc9ecff`（#1/#2/#5/#6/#7 R1/#10 等）。#7 仅守卫登记第一步；网络守卫等后置。
 - [ ] **H02** · CLI approval `input()` 超时僵尸 reader · 仅无 callback 且非 PT 路径；超时后线程仍堵 `read(0)`，可能吞后续输入/连锁 deny；gateway/飞书/QQ/微信与正常 TUI **无感**；fail-closed 非安全问题。**暂时不做**。
 - [ ] **H03** · **审核遗留暂缓（2026-10-27 复审）** · 勿再当「漏做」：
-  1. C14 `stream_guard.DEFAULTS["action"]=warn_only`（overlay 已 interrupt）
-  2. `[owner-patch P2-3]` 旧拼写（`owner/output_guard/__init__.py` 注释）
-  3. C13 三 kind 输出帽硬编码（见 C13 条）
-  4. **标记纪律**：相对上游改过的官方文件按 hunk 补 `# [owner]`（归 C24；本轮未批量扫漏标）
-  5. `owner/validation/` 空目录（Check 7/8 inventory 工具未迁）
-  6. C02 `/model` → wire `custom` 归因（见 C02「待确认」）
+  1. C14 `stream_guard.DEFAULTS["action"]=warn_only`（overlay 已 interrupt）— **仍旁置**
+  2. ~~`[owner-patch P2-3]` 旧拼写~~ → **已落地**：`# [owner] P2-3: …`
+  3. ~~C13 三 kind 输出帽硬编码~~ → **已落地**：读 overlay `max_output_chars`（见 C13 条）
+  4. **标记纪律**：~~本轮未批量扫~~ → **轻量已补**（相对 `upstream/main...HEAD` 官方运行时缺标 12 文件补 `# [owner]`；**未**做 `owner/validation/` 迁入、**未**开 C24 全量 inventory / 官方测全绿；`tests/owner/*` 整文件属 owner 域跳过；其余官方 test 改动本轮不铺标）
+  5. `owner/validation/` 空目录（Check 7/8 inventory 工具未迁）— **仍旁置**
+  6. C02 `/model` → wire `custom` 归因（见 C02「待确认」）— **仍旁置**
 - **限流（暂不做）**：本清单 **无独立限流定制项**（C 段无 RPM/TPM/throttle/客户端主动限流条目）。最接近已消化项：
   - **B18**（已勾）/ 源 §7.9 — 429 配额耗尽当 transient 静默重试 → 本树用 **O5** 天/周配额墙单向降为 billing
   - 官方自带：`agent/rate_limit_tracker.py`、pairing `_rate_limits`、渠道 flood 等（非 owner 待做）
