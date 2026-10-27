@@ -432,6 +432,7 @@ def _script_argv(
 def _run_job_script(
     script_path: str, workdir: Optional[str] = None,
     cancel_event: Optional[_CancelEventLike] = None, interpreter: Optional[str] = None,
+    args: Optional[dict] = None,
 ) -> tuple[bool, str]:
     """Execute a cron job's script and return ``(success, output)``; on failure *output* is the
     error message for the LLM to report. Env goes through ``build_subprocess_env`` (SECURITY.md
@@ -443,6 +444,7 @@ def _run_job_script(
     Optional absolute path to use as the script's cwd. When set, the subprocess runs in this directory
     instead of the scripts-dir parent. See #69396. interpreter: the job's optional Python for
     ``.py`` scripts (#8714).
+    args: Optional dict of stored job args mapped to CLI ``--key value`` flags (owner §11.2 / C23).
     """
     path, err = _resolve_script_path(script_path)
     if path is None:
@@ -452,6 +454,10 @@ def _run_job_script(
         argv, env_overlay, err = _script_argv(path, interpreter)
         if argv is None:
             return False, err
+        # [owner] §11.2 / C23: map stored job args → CLI --key value (logic in owner/cron/job_args.py)
+        if args:
+            from owner.cron.job_args import extend_argv_with_job_args
+            extend_argv_with_job_args(argv, args)
         from tools.environments.local import build_subprocess_env
         # Lossy decode only: keep the platform-default (locale) encoding — gating ``encoding=``
         # to win32 was deliberate (#66566: unconditional UTF-8 leaked into POSIX) — but
@@ -559,8 +565,11 @@ def _run_job_script_with_claim_heartbeat(
     Recurring/unclaimed runs have no durable claim → no thread. The owner is captured from the
     dispatched job, never re-read, so a stale runner cannot extend a replacement owner's claim."""
     def run() -> tuple[bool, str]:
-        return _run_job_script(script_path, workdir=workdir, cancel_event=cancel_event,
-                               interpreter=job.get("interpreter"))
+        # [owner] §11.2 / C23: pass job["args"] through to CLI mapping in _run_job_script
+        return _run_job_script(
+            script_path, workdir=workdir, cancel_event=cancel_event,
+            interpreter=job.get("interpreter"), args=job.get("args"),
+        )
 
     schedule = job.get("schedule")
     claim = job.get("run_claim")
