@@ -228,3 +228,10 @@ explainers:
     platforms:
       feishu: true
       telegram: false
+
+# ── C15 OpenViking owner extensions（无召回卡）──────────────────────────────
+# 官方插件已提供同步 prefetch；这里只开 advisory 语气 + peer-mirror URI 去重。
+# 召回卡（飞书交互卡 / QQ 文本）本波不做（用户拍板）；勿再加 recall_card 段。
+openviking:
+  advisory: true
+  dedup: true

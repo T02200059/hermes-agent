@@ -93,4 +93,14 @@ def register(ctx) -> None:
     except Exception:
         logger.warning("owner: memory_synthetic_guard_patch failed", exc_info=True)
 
+    # [owner] C15: OpenViking advisory + peer-mirror dedup (no recall card)
+    # See owner/patches/openviking_owner_recall_patch.py
+    try:
+        from owner.patches.openviking_owner_recall_patch import apply_patch as _apply_ov_recall
+
+        _apply_ov_recall()
+        logger.debug("owner: openviking_owner_recall_patch applied via plugin register")
+    except Exception:
+        logger.warning("owner: openviking_owner_recall_patch failed", exc_info=True)
+
 

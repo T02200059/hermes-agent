@@ -479,7 +479,20 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - 落地说明：`owner/docs/c14-output-stream-guard.md`
   - 测：`tests/owner/test_c14_guards.py`；自检 `python -m owner.{output,stream}_guard.selfcheck`
   - 依赖：无硬依赖未做定制；C13 只读 stream_guard.snapshot（方向 C13→C14）
-- [ ] **C15** · 源 §7.2–7.3 · Memory synthetic guard + OpenViking sync recall/card · **优先级：P1**
+- [x] **C15** · 源 §7.2–7.3 · Memory synthetic guard + OpenViking sync recall（**无召回卡**） · **优先级：P1** · **本机落地**
+  - **用户拍板**：Viking **不做召回卡**（飞书交互卡 / QQ 文本卡均不迁）；清单原「sync recall/card」收窄为 sync recall + advisory + dedup。
+  - **§7.2 Memory 合成护栏**：
+    1. `owner/patches/memory_synthetic_guard_patch.py` — 合成前缀 / 多数 slash 控制命令跳过 prefetch+sync；`/queue` `/steer` `/goal` `/subgoal` `/background` 例外
+    2. 设计：`owner/docs/memory-synthetic-recall-guard.md`
+    3. 测：`tests/owner/patches/test_memory_synthetic_guard_patch.py`
+  - **§7.3 OpenViking（无卡）**：
+    1. 同步召回本身已在用户插件 `hermes_plugins.openviking`（官方 bundled `plugins/memory/openviking` 已移除）
+    2. `owner/patches/openviking_owner_recall_patch.py` — advisory 语气（`agent.memory_context.build_memory_context_block`）+ peer-mirror URI 去重；**无发卡路径**
+    3. `owner/patches/openviking_recall_config.py` — `openviking:`（兼读 legacy `openviking_sync_recall`）
+    4. 配置：`owner/config/overlay.yaml` → `openviking.{advisory,dedup}`（**无 `recall_card` 段**）
+    5. 测：`tests/owner/patches/test_openviking_owner_recall_patch.py`
+  - 胶水：`owner/owner-extensions/__init__.py` `register()` fail-open apply（护栏 + OV）
+  - **未迁（明确不做）**：旧树 `openviking_owner_recall_patch` 召回卡发送/防抖/执行器；ChatLog 截断（仍仅旧树 bundled 插件侧）；`recall_card` overlay 段
 - [x] **C16** · 源 §7.4 · Cron env 隔离（ContextVar + restart scrub） · **优先级：P1** · **验证状态：官方已修**
   - v2：`gateway/session_context._VAR_MAP["HERMES_CRON_SESSION"]` + `cron/scheduler._CronRunScope` set/reset；gateway/ACP/TUI bind `cron_session=""`；`tools/approval_context` ContextVar 感知；外部 worker 剥离 presence vars。无进程级 `os.environ["HERMES_CRON_SESSION"]=1` 写入。
   - 薄缺口（未扩 scope）：进程启动 scrub 继承的 `HERMES_CRON_SESSION`/`SESSION_KEY`/`SESSION_ID`；restart watcher env 未特判 pop（子进程 builder 仍可能拷贝 `os.environ`）。
