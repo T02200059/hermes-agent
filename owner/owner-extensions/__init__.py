@@ -83,3 +83,14 @@ def register(ctx) -> None:
     except Exception:
         logger.warning("owner: skill_manage-bridge hooks registration failed", exc_info=True)
 
+    # [owner] C15: Memory synthetic guard — skip recall/sync for system re-injects
+    # and most slash control commands. See owner/patches/memory_synthetic_guard_patch.py
+    try:
+        from owner.patches.memory_synthetic_guard_patch import apply_patch as _apply_memory_guard
+
+        _apply_memory_guard()
+        logger.debug("owner: memory_synthetic_guard_patch applied via plugin register")
+    except Exception:
+        logger.warning("owner: memory_synthetic_guard_patch failed", exc_info=True)
+
+
