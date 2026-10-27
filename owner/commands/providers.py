@@ -1,7 +1,8 @@
 """/providers — list configured providers (text; Feishu card when adapter supports it).
 
-Registered via ``owner/owner-extensions`` plugin. Gateway dispatch passes
-``source=`` (and related session kwargs); adapters are optional.
+Registered via ``owner/owner-extensions`` plugin. Gateway plugin dispatch only
+passes ``source`` / session kwargs — not ``adapters`` — so we resolve the live
+Feishu adapter via ``gateway.run._gateway_runner_ref`` when needed.
 """
 
 from __future__ import annotations
@@ -11,6 +12,21 @@ import logging
 from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_adapters(adapters: Any) -> Any:
+    """Use an explicit adapters map, else the in-process GatewayRunner's."""
+    if adapters:
+        return adapters
+    try:
+        from gateway.run import _gateway_runner_ref
+
+        runner = _gateway_runner_ref()
+    except Exception:
+        return None
+    if runner is None:
+        return None
+    return getattr(runner, "adapters", None) or None
 
 
 async def handle_providers_command(
@@ -42,6 +58,7 @@ async def handle_providers_command(
 
         platform = getattr(source, "platform", None)
         chat_id = getattr(source, "chat_id", "") or ""
+        adapters = _resolve_adapters(adapters)
         if (
             platform == Platform.FEISHU
             and adapters
