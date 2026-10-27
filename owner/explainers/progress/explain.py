@@ -28,12 +28,13 @@ async def explain(
         raw_hard = state.get("hard_facts")
         hard_facts = raw_hard if isinstance(raw_hard, dict) else {}
         messages = prompt_mod.build_messages(user_message, digest, hard_facts, language)
+        out_cap = int(cfg.get("max_output_chars") or _MAX_OUTPUT_CHARS)
         return await llm_mod.call_explainer_llm_async(
             "progress",
             messages,
             cfg=cfg,
             max_tokens=_MAX_TOKENS,
-            max_output_chars=_MAX_OUTPUT_CHARS,
+            max_output_chars=max(80, out_cap),
         )
     except Exception as exc:
         logger.debug("progress explain failed: %s", exc)

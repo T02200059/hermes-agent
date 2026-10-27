@@ -208,6 +208,7 @@ explainers:
   max_input_chars: 64000
   progress:
     enabled: true
+    max_output_chars: 900
     silence_seconds: 60
     stall_seconds: 120
     min_interval_seconds: 120
@@ -218,12 +219,14 @@ explainers:
       telegram: false
   approval:
     enabled: true
+    max_output_chars: 800
     cache_ttl_seconds: 600
     cache_max_entries: 128
     platforms:
       feishu: true
   english:
     enabled: true
+    max_output_chars: 1000
     platforms:
       feishu: true
       telegram: false

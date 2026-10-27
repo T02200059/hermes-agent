@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 from owner.explainers import llm as llm_mod
 from owner.explainers.approval import prompt as prompt_mod
@@ -17,7 +17,7 @@ _MAX_TOKENS = 400
 def explain(
     command: str,
     *,
-    cfg: Optional[Dict[str, Any]] = None,
+    cfg: Optional[dict[str, Any]] = None,
     language: str = "zh",
     reason: str = "",
     tool_name: str = "terminal",
@@ -28,23 +28,24 @@ def explain(
         if not cmd:
             return None
         desc_max = 500
-        if isinstance(cfg, dict):
-            try:
-                desc_max = int(cfg.get("description_max_chars") or 500)
-            except (TypeError, ValueError):
-                desc_max = 500
+        merged = cfg if isinstance(cfg, dict) else {}
+        try:
+            desc_max = int(merged.get("description_max_chars") or 500)
+        except (TypeError, ValueError):
+            desc_max = 500
         messages = prompt_mod.build_messages(
             cmd,
             reason or "",
             language,
             description_max_chars=desc_max,
         )
+        out_cap = int(merged.get("max_output_chars") or _MAX_OUTPUT_CHARS)
         return llm_mod.call_explainer_llm(
             "approval",
             messages,
             cfg=cfg,
             max_tokens=_MAX_TOKENS,
-            max_output_chars=_MAX_OUTPUT_CHARS,
+            max_output_chars=max(80, out_cap),
         )
     except Exception as exc:
         logger.debug("approval explain failed: %s", exc)
@@ -54,7 +55,7 @@ def explain(
 async def explain_async(
     command: str,
     *,
-    cfg: Optional[Dict[str, Any]] = None,
+    cfg: Optional[dict[str, Any]] = None,
     language: str = "zh",
     reason: str = "",
     tool_name: str = "terminal",
@@ -64,23 +65,24 @@ async def explain_async(
         if not cmd:
             return None
         desc_max = 500
-        if isinstance(cfg, dict):
-            try:
-                desc_max = int(cfg.get("description_max_chars") or 500)
-            except (TypeError, ValueError):
-                desc_max = 500
+        merged = cfg if isinstance(cfg, dict) else {}
+        try:
+            desc_max = int(merged.get("description_max_chars") or 500)
+        except (TypeError, ValueError):
+            desc_max = 500
         messages = prompt_mod.build_messages(
             cmd,
             reason or "",
             language,
             description_max_chars=desc_max,
         )
+        out_cap = int(merged.get("max_output_chars") or _MAX_OUTPUT_CHARS)
         return await llm_mod.call_explainer_llm_async(
             "approval",
             messages,
             cfg=cfg,
             max_tokens=_MAX_TOKENS,
-            max_output_chars=_MAX_OUTPUT_CHARS,
+            max_output_chars=max(80, out_cap),
         )
     except Exception as exc:
         logger.debug("approval explain_async failed: %s", exc)

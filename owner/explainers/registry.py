@@ -67,6 +67,7 @@ def _ensure_builtins() -> None:
             "progress",
             defaults={
                 "enabled": False,
+                "max_output_chars": 900,
                 "silence_seconds": 60,
                 "stall_seconds": 120,
                 "min_interval_seconds": 120,
@@ -85,6 +86,7 @@ def _ensure_builtins() -> None:
             "approval",
             defaults={
                 "enabled": False,
+                "max_output_chars": 800,
                 "description_max_chars": 500,
                 "cache_ttl_seconds": 600,
                 "cache_max_entries": 128,
@@ -97,6 +99,7 @@ def _ensure_builtins() -> None:
             "english",
             defaults={
                 "enabled": False,
+                "max_output_chars": 1000,
                 "platforms": {},
                 "chats": {},
             },
