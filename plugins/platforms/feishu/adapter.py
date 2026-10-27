@@ -2348,6 +2348,11 @@ class FeishuAdapter(BasePlatformAdapter):
                 return self._handle_guide_card_action(
                     event=event, action_value=action_value, loop=loop,
                 )
+            # [owner] C12-queue-card
+            if action_value.get("hermes_queue_card"):
+                return self._handle_queue_card_action(
+                    event=event, action_value=action_value, loop=loop,
+                )
             # [owner] C11-clarify
             if action_value.get("clarify_id") or (
                 isinstance(action_value.get("form_value"), dict)
@@ -2769,6 +2774,51 @@ class FeishuAdapter(BasePlatformAdapter):
         from owner.feishu.steer_card import dispatch_guide_card_action
 
         return dispatch_guide_card_action(
+            self, event=event, action_value=action_value, loop=loop,
+        )
+
+    # ── [owner] C12-queue-card: Feishu queue status card ─────────────────
+
+    async def send_queue_status_card(
+        self,
+        *,
+        chat_id: str,
+        user_input: str,
+        user_name: str,
+        queue_token: str,
+        depth: int = 0,
+        source: Any = None,
+        metadata: Optional[dict[str, Any]] = None,
+    ) -> Any:
+        """[owner] Send Feishu-only queue status card (queued + 3 action buttons).
+
+        Thin glue — card building, send and trace logging all live in
+        ``owner/feishu/queue_card.py::send_queue_status_card``.
+        """
+        from owner.feishu.queue_card import send_queue_status_card as _owner_send
+
+        return await _owner_send(
+            self,
+            chat_id=chat_id,
+            user_input=user_input,
+            user_name=user_name,
+            queue_token=queue_token,
+            depth=depth,
+            source=source,
+            metadata=metadata,
+        )
+
+    def _handle_queue_card_action(
+        self, *, event: Any, action_value: dict[str, Any], loop: Any,
+    ) -> Any:
+        """[owner] Queue status card callback.
+
+        Thin glue — the trace + dispatch live in
+        ``owner/feishu/queue_card.py::dispatch_queue_card_action``.
+        """
+        from owner.feishu.queue_card import dispatch_queue_card_action
+
+        return dispatch_queue_card_action(
             self, event=event, action_value=action_value, loop=loop,
         )
 

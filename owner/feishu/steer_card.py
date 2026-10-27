@@ -4,7 +4,7 @@
 Step 1: 选择操作类型（5 按钮）-> Step 2: 输入框 + 提交/返回
 
 queue 提交后：本批（C12-feishu-guide）走 done 确认卡 + 合成 ``/queue`` 注入；
-queue 状态卡变身（``owner/feishu/queue_card.py``）属后续子点，此处不依赖。
+queue 提交会变身状态卡（``owner/feishu/queue_card.py`` + ``queue_cancel_patch``）。
 
 参考:
 - owner/feishu/model_picker.py  (多步卡片 + 合成命令)
@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 # ── 5 种对话引导操作 ──────────────────────────────────────────────────────────
 
-_GUIDE_ACTIONS: List[Dict[str, str]] = [
+_GUIDE_ACTIONS: list[dict[str, str]] = [
     {
         "key": "queue",
         "label": "📥 排队执行",
@@ -66,9 +66,9 @@ _GUIDE_ACTIONS: List[Dict[str, str]] = [
 
 # ── 卡片构建器 ─────────────────────────────────────────────────────────────────
 
-def build_guide_card(guide_id: str) -> Dict[str, Any]:
+def build_guide_card(guide_id: str) -> dict[str, Any]:
     """Step 1: 操作选择卡片 - 5 个按钮。"""
-    elements: List[Dict[str, Any]] = [
+    elements: list[dict[str, Any]] = [
         {"tag": "markdown", "content": "选择对话引导操作："},
     ]
     for action in _GUIDE_ACTIONS:
@@ -93,7 +93,7 @@ def build_guide_card(guide_id: str) -> Dict[str, Any]:
     }
 
 
-def build_input_card(guide_id: str, action_key: str) -> Dict[str, Any]:
+def build_input_card(guide_id: str, action_key: str) -> dict[str, Any]:
     """Step 2: 输入框卡片 - form + input + 提交/返回。"""
     action = next((a for a in _GUIDE_ACTIONS if a["key"] == action_key), None)
     if not action:
@@ -170,10 +170,12 @@ def build_done_card(
     *,
     guide_id: str = "",
     queue_token: Optional[str] = None,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """提交后的静态确认卡片（无按钮）。
 
-    ``guide_id`` / ``queue_token`` 保留兼容旧调用方，忽略。
+    queue 的生命周期 UI 已迁到 ``owner/feishu/queue_card.py``；
+    引导卡 submit(queue) 直接返回状态卡，本函数仅服务 steer/goal/…
+    （``queue_token`` 保留兼容旧调用方，忽略）。
     """
     del guide_id, queue_token  # unused; kept for call-site compat
     action = next((a for a in _GUIDE_ACTIONS if a["key"] == action_key), None)
@@ -186,7 +188,7 @@ def build_done_card(
         }
 
     preview = _preview_text(user_input)
-    elements: List[Dict[str, Any]] = [
+    elements: list[dict[str, Any]] = [
         {
             "tag": "markdown",
             "content": (
@@ -208,12 +210,28 @@ def build_done_card(
     }
 
 
+# Backward-compat re-exports — queue lifecycle cards live in queue_card.py
+def build_queue_cancelled_card(user_input: str, user_name: str) -> dict[str, Any]:
+    from owner.feishu.queue_card import build_queue_cancelled_card as _build
+    return _build(user_input, user_name)
+
+
+def build_queue_cancel_failed_card(user_input: str, user_name: str) -> dict[str, Any]:
+    from owner.feishu.queue_card import build_queue_cancel_failed_card as _build
+    return _build(user_input, user_name)
+
+
+def build_queue_executed_card(user_input: str, user_name: str) -> dict[str, Any]:
+    from owner.feishu.queue_card import build_queue_executed_card as _build
+    return _build(user_input, user_name)
+
+
 # ── 回调处理 ───────────────────────────────────────────────────────────────────
 
 def handle_guide_card_action(
     *,
     adapter: Any,
-    action_value: Dict[str, Any],
+    action_value: dict[str, Any],
     event: Any,
 ) -> Any:
     """Process a guide card callback.
@@ -222,6 +240,8 @@ def handle_guide_card_action(
     - ``select`` -> build input form card
     - ``back`` -> rebuild selection card
     - ``submit`` -> route slash command + done card
+      (queue submit morphs into queue status card)
+    - ``cancel_queue`` -> legacy cancel (compat with old cards still in chat)
     """
     try:
         from lark_oapi.event.callback.model.p2_card_action_trigger import (
@@ -279,6 +299,44 @@ def handle_guide_card_action(
         open_id = str(getattr(operator, "open_id", "") or "")
         user_name = operator_display_name(adapter, open_id)
 
+        # queue: mint token + morph this message into queue status card.
+        queue_token: Optional[str] = None
+        if action_key == "queue":
+            from owner.feishu.queue_card import build_queue_status_card
+            from owner.patches.queue_cancel_patch import register_scheduled_token
+
+            queue_token = str(_uuid.uuid4())
+            context = getattr(event, "context", None)
+            card_message_id = str(getattr(context, "open_message_id", "") or "")
+            chat_id = str(getattr(context, "open_chat_id", "") or "")
+            stored_source = state.get("source") if isinstance(state, dict) else None
+            if not chat_id and stored_source is not None:
+                chat_id = str(getattr(stored_source, "chat_id", "") or "")
+            register_scheduled_token(
+                queue_token,
+                text=user_input,
+                card_message_id=card_message_id,
+                chat_id=chat_id,
+                user_input=user_input,
+                user_name=user_name,
+                app_id=str(getattr(adapter, "_app_id", "") or ""),
+                app_secret=str(getattr(adapter, "_app_secret", "") or ""),
+                source=stored_source,
+            )
+
+            command = f"{action['cmd']} {user_input}"
+            _route_guide_command(
+                adapter, command, open_id, state, queue_token=queue_token,
+            )
+            return _card_response(
+                P2CardActionTriggerResponse, CallBackCard,
+                build_queue_status_card(
+                    user_input,
+                    user_name or "用户",
+                    queue_token=queue_token,
+                ),
+            )
+
         command = f"{action['cmd']} {user_input}"
         _route_guide_command(
             adapter, command, open_id, state, queue_token=None,
@@ -294,7 +352,52 @@ def handle_guide_card_action(
             ),
         )
 
+    if step == "cancel_queue":
+        return _handle_cancel_queue(
+            adapter=adapter,
+            action_value=action_value,
+            event=event,
+            resp_cls=P2CardActionTriggerResponse,
+            card_cls=CallBackCard,
+        )
+
     return _empty_response(P2CardActionTriggerResponse)
+
+
+def _handle_cancel_queue(
+    *,
+    adapter: Any,
+    action_value: dict[str, Any],
+    event: Any,
+    resp_cls: Any,
+    card_cls: Any,
+) -> Any:
+    """Legacy「撤销队列」on old guide done cards — same cancel pipeline."""
+    from owner.patches.queue_cancel_patch import cancel_queued_by_token
+
+    token = str(action_value.get("queue_token") or "").strip()
+    user_input = str(action_value.get("user_input") or "")
+    operator = getattr(event, "operator", None)
+    open_id = str(getattr(operator, "open_id", "") or "")
+    user_name = (
+        str(action_value.get("user_name") or "").strip()
+        or operator_display_name(adapter, open_id)
+        or "用户"
+    )
+
+    _alog = logging.getLogger(adapter.__class__.__module__)
+    status = cancel_queued_by_token(adapter, token) if token else "invalid"
+    _alog.info(
+        "[Feishu Guide] cancel_queue(legacy): status=%s token=%s",
+        status,
+        (token or "")[:8],
+    )
+
+    if status == "ok":
+        card = build_queue_cancelled_card(user_input, user_name)
+    else:
+        card = build_queue_cancel_failed_card(user_input, user_name)
+    return _card_response(resp_cls, card_cls, card)
 
 
 def _route_guide_command(
@@ -342,6 +445,15 @@ def _route_guide_command(
         try:
             from owner.feishu.sender_name_helpers import pre_warm_sender_name
             from gateway.platforms.base import MessageEvent, MessageType
+            from owner.patches.queue_cancel_patch import should_skip_dispatch
+
+            # Cancel won the race before this coroutine ran — drop silently.
+            if should_skip_dispatch(queue_token):
+                _alog.info(
+                    "[Feishu Guide] _dispatch: skip cancelled queue token=%s",
+                    (queue_token or "")[:8],
+                )
+                return
 
             pre_warm_sender_name(adapter, open_id)
             sender_id = SimpleNamespace(open_id=open_id, user_id=None, union_id=None)
@@ -369,14 +481,31 @@ def _route_guide_command(
             )
             _alog.info(
                 "[Feishu Guide] _dispatch: calling _handle_message_with_guards "
-                "for command=%s chat_type=%s chat_id=%s",
-                command, source.chat_type, chat_id,
+                "for command=%s chat_type=%s chat_id=%s token=%s",
+                command, source.chat_type, chat_id, (queue_token or "")[:8] or "-",
             )
             await adapter._handle_message_with_guards(synthetic_event)
             _alog.info(
                 "[Feishu Guide] _dispatch: _handle_message_with_guards returned for command=%s",
                 command,
             )
+            # Idle /queue path never hits FIFO enqueue — freeze status card so
+            # it does not stay "queued" with live cancel after already starting.
+            if queue_token:
+                try:
+                    from owner.patches.queue_cancel_patch import (
+                        get_token_meta,
+                        notify_queue_started,
+                    )
+
+                    meta = get_token_meta(queue_token)
+                    if meta.get("status") == "scheduled":
+                        notify_queue_started(queue_token)
+                except Exception:
+                    _alog.debug(
+                        "[Feishu Guide] idle queue freeze notify failed",
+                        exc_info=True,
+                    )
         except Exception as exc:
             _alog.warning("[Feishu Guide] guide card route failed: %s", exc, exc_info=True)
 
@@ -413,7 +542,7 @@ async def send_guide_card(
     *,
     chat_id: str,
     source: Any,
-    metadata: Optional[Dict[str, Any]] = None,
+    metadata: Optional[dict[str, Any]] = None,
 ) -> None:
     """Send an interactive guide card for queue/steer/goal/subgoal/background.
 
@@ -437,7 +566,7 @@ async def send_guide_card(
 
 
 def dispatch_guide_card_action(
-    adapter: Any, *, event: Any, action_value: Dict[str, Any], loop: Any
+    adapter: Any, *, event: Any, action_value: dict[str, Any], loop: Any
 ) -> Any:
     """Trace then delegate a guide-card callback to ``handle_guide_card_action``.
 

@@ -111,4 +111,16 @@ def register(ctx) -> None:
     except Exception:
         logger.warning("owner: openviking_owner_recall_patch failed", exc_info=True)
 
+    # [owner] C12-queue-card: Feishu /queue lifecycle card (cancel / process_now / freeze)
+    # + guide-card morph to status card. Feishu-only; other platforms keep text ack.
+    # See owner/patches/queue_cancel_patch.py + owner/feishu/queue_card.py.
+    try:
+        from owner.patches.queue_cancel_patch import apply_patch as _apply_queue_cancel
+
+        _apply_queue_cancel()
+        logger.debug("owner: queue_cancel_patch applied via plugin register")
+    except Exception:
+        logger.warning("owner: queue_cancel_patch failed", exc_info=True)
+
+
 

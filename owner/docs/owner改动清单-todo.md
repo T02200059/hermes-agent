@@ -361,6 +361,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 | **H02** | CLI `input()` 僵尸 reader | 延后 |
 | **C12-at-all** | 群 `@_all` 不再当提到自己 | `_mentions_self` 极小 P2；官方测已改 |
 | **C12-upload-guard** | 出站图/文件超限中文提示 | `owner/feishu/media_guard.py` + adapter 薄胶水 |
+| **C12-queue-card** | 飞书 queue 状态卡（cancel/now/steer/freeze） | `owner/feishu/queue_card.py` + `queue_cancel_patch` + adapter 薄胶水 |
 
 ### P0 必保
 
@@ -431,7 +432,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - `owner/feishu/model_picker.py`；adapter `send_model_picker_card` / `_handle_model_picker_action` / `_model_picker_state`
   - 测：`tests/owner/test_c26_model_picker.py`；说明：`owner/docs/c26-model-picker.md`
 - [ ] **C11-diff** · 源 §4.4 · Feishu diff 卡 · **忽略（不做）**
-- [ ] **C12** · 源 §4.10–4.15 · memory write-approval 卡 / feishu-guide / 上传守卫 / doc_read 图 OCR / @所有人 / merge_forward · **优先级：P1**（子点分批；本轮 C12-at-all + C12-upload-guard + C12-feishu-guide + C12-merge-forward-recv + C12-doc-ocr（含完整文档增强）；**C12-memory-approval 忽略（不做）**；queue-card 不做）
+- [x] **C12** · 源 §4.10–4.15 · memory write-approval 卡 / feishu-guide / 上传守卫 / doc_read 图 OCR / @所有人 / merge_forward / **queue 状态卡** · **优先级：P1**（子点分批；已落地 C12-at-all + C12-upload-guard + C12-feishu-guide + C12-merge-forward-recv + C12-doc-ocr + **C12-queue-card**；**C12-memory-approval 忽略（不做）**）
   - [x] **C12-at-all** · 源 §4.14 · 群 `@_all`（@所有人）不再当提到自己 · **优先级：P2** · **已落地**
     - 意图：群里发 `@所有人` 只是通知大家，不应自动开一轮；须明确 @机器人（或其它策略）才触发
     - 胶水：`plugins/platforms/feishu/adapter.py` `_mentions_self`（极小 P2：去掉 `@_all → True`；`# [owner] C12-at-all`）
@@ -452,7 +453,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
     - 胶水：`plugins/platforms/feishu/adapter.py` `_guide_card_state` / `send_guide_card` / `_handle_guide_card_action` + `hermes_feishu_guide` 分支（`# [owner] C12-feishu-guide`）；`owner/owner-extensions` 注册；`hermes_cli/commands.py` `should_bypass_active_session` 复用 `is_gateway_known_command`（plugin busy bypass）
     - 测：`tests/owner/test_c12_feishu_guide.py`
     - 验证：`python -m pytest tests/owner/test_c12_feishu_guide.py -q`
-    - 影响面：飞书引导卡路径；queue 提交本批仅 done 卡 + `/queue` 注入（状态卡变身属后续子点）；不改其它卡片
+    - 影响面：飞书引导卡路径；queue 提交经 C12-queue-card 变身状态卡；不改其它卡片
   - [x] **C12-merge-forward-recv** · 源 §4.15 · 合并转发二次拉取成可读记录 · **优先级：P1** · **已落地**
     - 意图：用户发「合并转发」时，bot 看到可读聊天记录（二次 `GET /im/v1/messages/{id}`），而非占位/浅层最多 8 行；失败静默回退占位
     - helper：`owner/feishu/merge_forward.py`（`render_merge_forward_entries`；adapter + 后续 doc 工具共用）
@@ -472,8 +473,17 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
     - 胶水：`tools/feishu_doc_tool.py`（schema + handler 委托；`# [owner] C12-doc-ocr`）；`tools/feishu_drive_tool.py`（`resolve_client` 薄接）
     - 测：`tests/owner/test_c12_feishu_doc_enhancements.py`
     - 验证：`python -m pytest tests/owner/test_c12_feishu_doc_enhancements.py -q`
-    - 影响面：`feishu_doc_read` 全能力；drive 仅 client fallback；不含 queue 状态卡 / memory-approval
+    - 影响面：`feishu_doc_read` 全能力；drive 仅 client fallback；不含 memory-approval（queue 状态卡见 **C12-queue-card**）
     - 原可后移的 **C12-doc-types** / **C12-merge-forward-tool（om_）** 随本波一并落地，不另开子点
+  - [x] **C12-queue-card** · 源 §4.11 / design queue-steer-lifecycle · 飞书 queue 状态卡（cancel / process_now / steer / freeze）· **优先级：P1** · **已落地**
+    - 意图：busy 排队不再只有纯文本 ack；飞书发可操作状态卡（取消 / 立即执行 / 转向），引导卡 queue 提交变身同卡；空闲提交走 freeze + 跳过二次 dispatch
+    - helper：`owner/feishu/queue_card.py`（建卡 / 回调 / send）；`owner/patches/queue_cancel_patch.py`（runtime patch `_enqueue_fifo` / `_dequeue_pending_event` / `_busy_queue_command`；token=`_owner_queue_token`）；`owner/feishu/steer_card.py`（guide morph + should_skip / notify）；`owner/feishu/card_sender.py`（`send_card_via_rest`）
+    - 胶水：`plugins/platforms/feishu/adapter.py` `send_queue_status_card` / `_handle_queue_card_action` + `hermes_queue_card` 分支（`# [owner] C12-queue-card`）；`owner/owner-extensions` `apply_patch`
+    - 设计：`owner/docs/design/queue-steer-lifecycle/queue-steer-lifecycle.md`
+    - 测：`tests/owner/test_c12_queue_card.py`
+    - 验证：`python -m pytest tests/owner/test_c12_queue_card.py -q`
+    - 影响面：飞书 busy/queue 体验；其它平台仍文本 ack。v2 相对旧树：跳过 MemoryManager prefetch patch（官方已有 `_PREFETCH_GATE`）；i18n 键用 `gateway.queue.usage`；token 无绑定时允许按文案匹配以便 guide morph 复用卡
+    - 用户指示覆盖原「queue-card 不做」备注（2026-10-27）
 - [x] **C13** · 源 §7.24–7.26 · progress / approval / english / **recap** explainer · **已落地** · 飞书底座（C04/C10/C11）已齐
   - **统一基建**：单一 `owner.explainers` 块 + `owner/explainers/`（config/llm/registry）；`register_kind` 可扩。详见「§ 二次开发可复用基建 §4」与 `owner/docs/c13-explainers.md`
   - **输入默认 64k**（`max_input_chars`）；按辅助模型 **≥256k** 上下文设计；`clip_input` 保尾截断
