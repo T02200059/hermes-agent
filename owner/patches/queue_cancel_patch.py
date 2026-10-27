@@ -17,6 +17,12 @@ MemoryManager prefetch wait from the old tree is intentionally skipped on v2
 Also patches ``GatewayRunner._busy_queue_command`` so Feishu busy ``/queue``
 sends the interactive queue status card (non-Feishu keeps text ack).
 
+Hardening (2026-10-27):
+  - ``_enqueue_fifo`` wrap is fail-open: any exception logs and still calls the
+    stock enqueue so official FIFO is never aborted by owner stamp/meta logic.
+  - ``feishu.queue_card.enabled`` (overlay, default true): when false, wrappers
+    bypass straight to originals (no card / no token stamping).
+
 Removable via ``revert_patch()``.
 """
 
@@ -955,64 +961,92 @@ def _remaining_queue_previews(adapter: Any, session_key: str) -> list[str]:
 
 
 def _enqueue_fifo(self, session_key: str, queued_event: Any, adapter: Any) -> None:
-    """Wrap original enqueue: runner back-ref + stamp/drop owner queue tokens."""
-    if adapter is not None:
-        try:
-            adapter._owner_gateway_runner = self
-        except Exception:
-            pass
+    """Wrap original enqueue: runner back-ref + stamp/drop owner queue tokens.
 
-    text = getattr(queued_event, "text", None) or ""
-    # Prefer pre-stamped token (attr or metadata) over text match.
-    token = getattr(queued_event, _EVENT_TOKEN_ATTR, None)
-    if not token:
-        md = getattr(queued_event, "metadata", None)
-        if isinstance(md, dict):
-            token = md.get(_META_TOKEN_KEY)
-    if not token:
-        token = _match_token_for_text(text, session_key=session_key)
-    if not token:
-        # Guide morph registers unbound; bind it to this session on first enqueue.
-        token = _match_token_for_text(text, session_key=None)
-    if token:
-        with _token_lock:
-            meta = _token_state.get(token) or {}
-            if meta.get("status") in ("cancelled", "steered"):
-                # [owner] A cancelled/steered token has already served
-                # its purpose (blocking the pre-enqueue dispatch). Re-sending
-                # the same text is a NEW queue request: retire the stale
-                # token instead of silently dropping the message (P1-1), so
-                # the event queues normally below.
-                logger.info(
-                    "[owner queue-cancel] retire %s token=%s session=%s; "
-                    "treat re-send as a fresh queue request",
-                    meta.get("status"),
-                    token[:8],
-                    session_key,
-                )
-                _token_state.pop(token, None)
-                token = None
-            elif token:
-                _stamp_event(queued_event, token)
-                meta["status"] = "enqueued"
-                meta["session_key"] = session_key
-                meta["updated_at"] = time.time()
-                # Prefer credentials from the live adapter when available.
-                if adapter is not None:
-                    app_id = getattr(adapter, "_app_id", None) or ""
-                    app_secret = getattr(adapter, "_app_secret", None) or ""
-                    if app_id:
-                        meta["app_id"] = app_id
-                    if app_secret:
-                        meta["app_secret"] = app_secret
-                _token_state[token] = meta
-        _prune_stale_tokens()
+    Fail-open: owner stamp/meta errors never abort the stock FIFO enqueue.
+    When ``feishu.queue_card.enabled`` is false, bypass owner logic entirely.
+    """
+    try:
+        from owner.feishu.queue_card import is_queue_card_enabled
+
+        if not is_queue_card_enabled():
+            return _originals["_enqueue_fifo"](self, session_key, queued_event, adapter)
+    except Exception:
+        # Config probe failed — keep going with owner path (fail-open to feature on).
+        pass
+
+    try:
+        if adapter is not None:
+            try:
+                adapter._owner_gateway_runner = self
+            except Exception:
+                pass
+
+        text = getattr(queued_event, "text", None) or ""
+        # Prefer pre-stamped token (attr or metadata) over text match.
+        token = getattr(queued_event, _EVENT_TOKEN_ATTR, None)
+        if not token:
+            md = getattr(queued_event, "metadata", None)
+            if isinstance(md, dict):
+                token = md.get(_META_TOKEN_KEY)
+        if not token:
+            token = _match_token_for_text(text, session_key=session_key)
+        if not token:
+            # Guide morph registers unbound; bind it to this session on first enqueue.
+            token = _match_token_for_text(text, session_key=None)
+        if token:
+            with _token_lock:
+                meta = _token_state.get(token) or {}
+                if meta.get("status") in ("cancelled", "steered"):
+                    # [owner] A cancelled/steered token has already served
+                    # its purpose (blocking the pre-enqueue dispatch). Re-sending
+                    # the same text is a NEW queue request: retire the stale
+                    # token instead of silently dropping the message (P1-1), so
+                    # the event queues normally below.
+                    logger.info(
+                        "[owner queue-cancel] retire %s token=%s session=%s; "
+                        "treat re-send as a fresh queue request",
+                        meta.get("status"),
+                        token[:8],
+                        session_key,
+                    )
+                    _token_state.pop(token, None)
+                    token = None
+                elif token:
+                    _stamp_event(queued_event, token)
+                    meta["status"] = "enqueued"
+                    meta["session_key"] = session_key
+                    meta["updated_at"] = time.time()
+                    # Prefer credentials from the live adapter when available.
+                    if adapter is not None:
+                        app_id = getattr(adapter, "_app_id", None) or ""
+                        app_secret = getattr(adapter, "_app_secret", None) or ""
+                        if app_id:
+                            meta["app_id"] = app_id
+                        if app_secret:
+                            meta["app_secret"] = app_secret
+                    _token_state[token] = meta
+            _prune_stale_tokens()
+    except Exception:
+        logger.exception(
+            "[owner queue] _enqueue_fifo wrap failed; falling back to stock enqueue "
+            "session=%s",
+            session_key,
+        )
 
     return _originals["_enqueue_fifo"](self, session_key, queued_event, adapter)
 
 
 async def _busy_queue_command(self, event: Any, quick_key: str, source: Any) -> Any:
     """Feishu: mint token + send queue status card; other platforms unchanged."""
+    try:
+        from owner.feishu.queue_card import is_queue_card_enabled
+
+        if not is_queue_card_enabled():
+            return await _originals["_busy_queue_command"](self, event, quick_key, source)
+    except Exception:
+        pass
+
     is_feishu = False
     try:
         from gateway.config import Platform
@@ -1179,6 +1213,11 @@ def _dequeue_pending_event(adapter: Any, session_key: str) -> Any:
 
 def _prefetch_provider(self, provider: Any, query: str, *, session_id: str = "") -> str:
     """Wait for in-flight end-of-turn prefetch before skipping a rapid follow-up.
+
+    **Unwired on v2** — ``apply_patch`` intentionally does NOT install this
+    (official ``_PREFETCH_GATE`` already covers rapid FIFO follow-ups). Kept as
+    reference / possible future re-wire; ``revert_patch`` still cleans the key
+    if somehow present in ``_originals``.
 
     Queue FIFO drains the next turn immediately after the previous turn ends.
     The previous turn's ``queue_prefetch_all`` often still holds the external

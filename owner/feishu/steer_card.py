@@ -299,43 +299,65 @@ def handle_guide_card_action(
         open_id = str(getattr(operator, "open_id", "") or "")
         user_name = operator_display_name(adapter, open_id)
 
-        # queue: mint token + morph this message into queue status card.
+        # queue: mint token + morph this message into queue status card
+        # (skipped when feishu.queue_card.enabled is false → done card path).
         queue_token: Optional[str] = None
         if action_key == "queue":
-            from owner.feishu.queue_card import build_queue_status_card
-            from owner.patches.queue_cancel_patch import register_scheduled_token
-
-            queue_token = str(_uuid.uuid4())
-            context = getattr(event, "context", None)
-            card_message_id = str(getattr(context, "open_message_id", "") or "")
-            chat_id = str(getattr(context, "open_chat_id", "") or "")
-            stored_source = state.get("source") if isinstance(state, dict) else None
-            if not chat_id and stored_source is not None:
-                chat_id = str(getattr(stored_source, "chat_id", "") or "")
-            register_scheduled_token(
-                queue_token,
-                text=user_input,
-                card_message_id=card_message_id,
-                chat_id=chat_id,
-                user_input=user_input,
-                user_name=user_name,
-                app_id=str(getattr(adapter, "_app_id", "") or ""),
-                app_secret=str(getattr(adapter, "_app_secret", "") or ""),
-                source=stored_source,
+            from owner.feishu.queue_card import (
+                build_queue_status_card,
+                build_queue_submit_failed_card,
+                is_queue_card_enabled,
             )
 
-            command = f"{action['cmd']} {user_input}"
-            _route_guide_command(
-                adapter, command, open_id, state, queue_token=queue_token,
-            )
-            return _card_response(
-                P2CardActionTriggerResponse, CallBackCard,
-                build_queue_status_card(
-                    user_input,
-                    user_name or "用户",
-                    queue_token=queue_token,
-                ),
-            )
+            if is_queue_card_enabled():
+                from owner.patches.queue_cancel_patch import register_scheduled_token
+
+                queue_token = str(_uuid.uuid4())
+                context = getattr(event, "context", None)
+                card_message_id = str(getattr(context, "open_message_id", "") or "")
+                chat_id = str(getattr(context, "open_chat_id", "") or "")
+                stored_source = state.get("source") if isinstance(state, dict) else None
+                if not chat_id and stored_source is not None:
+                    chat_id = str(getattr(stored_source, "chat_id", "") or "")
+                register_scheduled_token(
+                    queue_token,
+                    text=user_input,
+                    card_message_id=card_message_id,
+                    chat_id=chat_id,
+                    user_input=user_input,
+                    user_name=user_name,
+                    app_id=str(getattr(adapter, "_app_id", "") or ""),
+                    app_secret=str(getattr(adapter, "_app_secret", "") or ""),
+                    source=stored_source,
+                )
+
+                command = f"{action['cmd']} {user_input}"
+                submitted = _route_guide_command(
+                    adapter, command, open_id, state, queue_token=queue_token,
+                )
+                if not submitted:
+                    # Retire token so a stale「已排队」cancel target cannot linger.
+                    try:
+                        from owner.patches.queue_cancel_patch import _token_lock, _token_state
+
+                        with _token_lock:
+                            _token_state.pop(queue_token, None)
+                    except Exception:
+                        pass
+                    return _card_response(
+                        P2CardActionTriggerResponse, CallBackCard,
+                        build_queue_submit_failed_card(
+                            user_input, user_name or "用户",
+                        ),
+                    )
+                return _card_response(
+                    P2CardActionTriggerResponse, CallBackCard,
+                    build_queue_status_card(
+                        user_input,
+                        user_name or "用户",
+                        queue_token=queue_token,
+                    ),
+                )
 
         command = f"{action['cmd']} {user_input}"
         _route_guide_command(
@@ -407,12 +429,16 @@ def _route_guide_command(
     state: dict,
     *,
     queue_token: Optional[str] = None,
-) -> None:
+) -> bool:
     """Route a guide card submission as a synthetic slash command.
 
     Rebuilds a real inbound ``MessageSource`` and routes the command through
     the adapter's standard inbound pipeline (``_handle_message_with_guards``)
     so it lands in the gateway runner's running-agent fast path.
+
+    Returns True when ``_submit_on_loop`` accepted the coroutine; False when
+    scheduling failed (caller must NOT show a success /「已排队」card — close
+    the unused coro first).
 
     The source stored on the guide card (bot_menu shortcut) may carry
     ``chat_type="p2p"`` and a bare ``open_id``, which produces a *different*
@@ -429,12 +455,12 @@ def _route_guide_command(
     chat_id = getattr(stored_source, "chat_id", "") or ""
     if not chat_id:
         _alog.warning("[Feishu Guide] _route_guide_command: chat_id empty — state was lost or never stored")
-        return
+        return False
 
     loop = getattr(adapter, "_loop", None)
     if loop is None:
         _alog.warning("[Feishu Guide] _route_guide_command: adapter._loop is None")
-        return
+        return False
 
     _alog.info(
         "[Feishu Guide] _route_guide_command: scheduling dispatch command=%s chat_id=%s token=%s",
@@ -509,9 +535,16 @@ def _route_guide_command(
         except Exception as exc:
             _alog.warning("[Feishu Guide] guide card route failed: %s", exc, exc_info=True)
 
-    submitted = adapter._submit_on_loop(loop, _dispatch())
+    coro = _dispatch()
+    submitted = adapter._submit_on_loop(loop, coro)
     if not submitted:
         _alog.warning("[Feishu Guide] _route_guide_command: _submit_on_loop returned False")
+        try:
+            coro.close()
+        except Exception:
+            pass
+        return False
+    return True
 
 
 # ── helpers ────────────────────────────────────────────────────────────────────

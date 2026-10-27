@@ -62,6 +62,11 @@ feishu:
   #   - 飞书会话上 skill_manage 写操作阻塞等人批；YOLO 不绕过
   #   - 审批卡发到 approval_home_chat_id；原点会话发「等待审批」提示
   #   - 默认关；chat_id 来自旧树 patch_feishu_profile 真值迁移
+  # ── C12-queue-card：飞书 /queue 状态卡 ─────────────────────────────────────
+  # enabled=false 时整条 queue 卡路径旁路回官方纯文本 ack（enqueue wrap fail-open
+  # 仍调用原函数；busy/guide morph 不发状态卡）。默认 true 与现网一致。
+  queue_card:
+    enabled: true
   skill_approval:
     enabled: false
     profiles:

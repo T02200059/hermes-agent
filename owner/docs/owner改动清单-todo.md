@@ -208,6 +208,7 @@ explainers:
 - [x] **B17** · 源 §7.6 · Clarify 清理路径缺 stop sentinel / 飞书 clarify 超时未中断 · **验证状态：已修（官方半边 + 飞书半边）**
   - **官方半边已修**：`CLARIFY_STOP_SENTINEL`（= `clarify_gateway.CANCELLED`）+ `wait_for_response` 在 entry 消失 / event 空应答时返回 CANCELLED（不再伪造成用户超时）。见 §「v2 已落地官方 fix」。
   - **飞书半边已落地（2026-10-27）**：`owner/clarify/feishu_timeout_stop.py` + `gateway/run_turn_runner.py` `_ask_clarify_question` 薄钩；飞书真超时（`[user did not respond…]`）补发提示并返回 CANCELLED → outcome=`cancelled` 停转。测：`tests/owner/test_b17_feishu_clarify_timeout_stop.py`。
+  - **i18n harden（2026-10-27）**：`locales/{zh,en}.yaml` 补 `gateway.clarify_timeout_notice`；`timeout_notice_text` 经 `display_language()` 取语言，不再默认死 zh。
 - [x] **B18** · 源 §7.9 · 429 配额耗尽被当 transient 静默重试；长等待无即时状态 · **验证状态：官方已修**
   - owner：`error_classifier.py` `_has_long_reset_window` 单向降级 + `conversation_loop.py` `wait_time >= 60` 立即出状态。v2 本树已用 **O5**：天/周配额墙单向降为 billing，不再白等。即时状态（≥60s 立即出）未单独追平，主痛点（长墙当 transient）已消化。
 - [x] **B19** · 源 §7.10 · 运行中 agent 时 plugin 斜杠命令被当普通文本注入 · **验证状态：官方已修**
@@ -316,7 +317,7 @@ explainers:
 | | O8 | 出站 DeepSeek BOS/EOS scrub | `gateway/platforms/base.py` 等 | 见 O 段表 |
 | B15 残留 | B15 | `_rebuild_http_client`：重连前关旧 httpx、`platform_http_client()` 新建、清 token | `plugins/platforms/qqbot/adapter.py` | `tests/gateway/test_qqbot_ws_liveness.py` +2 |
 | B17 官方半边 | B17 | `CLARIFY_STOP_SENTINEL`（= `CANCELLED`）；entry 消失 / 空 event → CANCELLED，真超时仍 `None` | `tools/clarify_tool.py`、`tools/clarify_gateway.py` | `tests/tools/test_clarify_gateway.py`（StopSentinel 组） |
-| B17 飞书半边 | B17 | 飞书真超时补发提示 + 返回 CANCELLED 停转 | `owner/clarify/feishu_timeout_stop.py`；`gateway/run_turn_runner.py` | `tests/owner/test_b17_feishu_clarify_timeout_stop.py` |
+| B17 飞书半边 | B17 | 飞书真超时补发提示 + 返回 CANCELLED 停转；文案走 `gateway.clarify_timeout_notice` + `display_language()`（2026-10-27 i18n harden） | `owner/clarify/feishu_timeout_stop.py`；`gateway/run_turn_runner.py`；`locales/{zh,en}.yaml` | `tests/owner/test_b17_feishu_clarify_timeout_stop.py` |
 
 O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 
@@ -484,6 +485,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
     - 验证：`python -m pytest tests/owner/test_c12_queue_card.py -q`
     - 影响面：飞书 busy/queue 体验；其它平台仍文本 ack。v2 相对旧树：跳过 MemoryManager prefetch patch（官方已有 `_PREFETCH_GATE`）；i18n 键用 `gateway.queue.usage`；token 无绑定时允许按文案匹配以便 guide morph 复用卡
     - 用户指示覆盖原「queue-card 不做」备注（2026-10-27）
+    - **harden（2026-10-27）**：`_enqueue_fifo` 整体 fail-open；overlay `feishu.queue_card.enabled`（默认 true）；guide submit `_submit_on_loop` 失败 → `coro.close()` + 失败卡（禁假「已排队」）。**操作者鉴权暂不做**（注释说明；靠「由 xx …」显示名，同审批卡思路）
 - [x] **C13** · 源 §7.24–7.26 · progress / approval / english / **recap** explainer · **已落地** · 飞书底座（C04/C10/C11）已齐
   - **统一基建**：单一 `owner.explainers` 块 + `owner/explainers/`（config/llm/registry）；`register_kind` 可扩。详见「§ 二次开发可复用基建 §4」与 `owner/docs/c13-explainers.md`
   - **输入默认 64k**（`max_input_chars`）；按辅助模型 **≥256k** 上下文设计；`clip_input` 保尾截断

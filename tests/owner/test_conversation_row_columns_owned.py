@@ -16,43 +16,19 @@ def _parse_conversation_columns() -> set[str]:
     text = (ROOT / "hermes_state.py").read_text(encoding="utf-8")
     m = re.search(r"_CONVERSATION_ROW_COLUMNS = \(\n(.*?)\n    \)", text, re.DOTALL)
     assert m, "_CONVERSATION_ROW_COLUMNS not found"
-    return {c.strip() for c in "".join(re.findall(r'"([^"]+)"', m.group(1))).split(",") if c.strip()}
-
-
-def _parse_owned_columns() -> list[str]:
-    # Mirror agent.transcript_repair without importing the heavy agent stack.
-    msg = (ROOT / "hermes_state_messages.py").read_text(encoding="utf-8")
-    m = re.search(
-        r'_INSERT_MESSAGE_SQL = """INSERT INTO messages \((.*?)\)\s*VALUES',
-        msg,
-        re.DOTALL,
-    )
-    assert m, "INSERT SQL not found"
-    write_cols = tuple(re.findall(r"\w+", m.group(1)))
-    non_payload = {
-        "session_id",
-        "role",
-        "timestamp",
-        "active",
-        "display_identity",
-        "message_uid",
-        "tool_call_uid",
+    return {
+        c.strip()
+        for c in "".join(re.findall(r'"([^"]+)"', m.group(1))).split(",")
+        if c.strip()
     }
-    metadata = {
-        "display_kind",
-        "display_metadata",
-        "api_content",
-        "codex_reasoning_items",
-        "platform_message_id",
-    }
-    repair = [c for c in write_cols if c not in non_payload]
-    return [c for c in repair if c not in metadata]
 
 
 def test_conversation_row_columns_cover_owned_snapshot_columns():
+    # Import the real symbol — do not mirror derivation (drifted and went green falsely).
+    from agent.transcript_repair import _OWNED_COLUMNS
+
     conv = _parse_conversation_columns()
-    owned = _parse_owned_columns()
-    missing = [c for c in owned if c not in conv]
+    missing = [c for c in _OWNED_COLUMNS if c not in conv]
     assert missing == [], f"_CONVERSATION_ROW_COLUMNS missing OWNED cols: {missing}"
     # Explicit C02 columns that previously broke second-turn Feishu history loads.
     for col in (

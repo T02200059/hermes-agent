@@ -10,6 +10,14 @@
 与对话引导卡兼容：引导卡选 queue 提交后，**同一消息变身**为本状态卡
 （不再在引导 done 卡上放撤销按钮）。
 
+操作者鉴权（有意延后）：本卡 **不** 校验点击者身份（不做
+``_is_interactive_operator_authorized``）。与审批卡同一思路——终态文案展示
+「由 xx 取消 / 立即处理 / 引导」操作者名称，靠显示名审计而非硬拦。群聊下
+他人可见可点的越权风险已知，暂不落地鉴权。
+
+开关：``feishu.queue_card.enabled``（overlay，默认 true）；关闭则旁路回官方
+纯文本 ack，不发本状态卡。
+
 可移除性：删除本文件后，adapter 路由 no-op，/queue 回退纯文本。
 """
 
@@ -23,6 +31,22 @@ from owner.feishu.sender_name_helpers import operator_display_name
 logger = logging.getLogger(__name__)
 
 _PREVIEW_LIMIT = 500
+
+
+def is_queue_card_enabled() -> bool:
+    """``feishu.queue_card.enabled`` from overlay.yaml; default True (fail-open)."""
+    try:
+        from owner.patch_config import load_patch_config
+
+        section = (load_patch_config() or {}).get("feishu", {}).get("queue_card") or {}
+        if not isinstance(section, dict):
+            return True
+        if "enabled" not in section:
+            return True
+        return bool(section.get("enabled"))
+    except Exception:
+        return True
+
 
 
 def _preview_text(user_input: str, limit: int = _PREVIEW_LIMIT) -> str:
@@ -171,6 +195,35 @@ def build_queue_cancel_failed_card(user_input: str, user_name: str) -> dict[str,
                         "如需中断当前运行，请使用 `/stop`。\n\n"
                         f"**原文：**\n{preview}\n\n"
                         f"由 {user_name or '用户'} 尝试取消。"
+                    ),
+                },
+            ],
+        },
+    }
+
+
+def build_queue_submit_failed_card(user_input: str, user_name: str) -> dict[str, Any]:
+    """引导卡/状态卡提交调度失败终态卡（对齐 C04 submit_failed）。
+
+    ``_submit_on_loop`` 返回 False 时必须回此卡，禁止仍显示「已排队」。
+    """
+    preview = _preview_text(user_input)
+    return {
+        "schema": "2.0",
+        "config": {"wide_screen_mode": True},
+        "header": {
+            "title": {"content": "⚠️ 排队提交失败", "tag": "plain_text"},
+            "template": "orange",
+        },
+        "body": {
+            "elements": [
+                {
+                    "tag": "markdown",
+                    "content": (
+                        "未能把该条排入处理队列（事件循环不可用或调度失败）。\n"
+                        "请重试，或直接发送 `/queue …`。\n\n"
+                        f"**原文：**\n{preview}\n\n"
+                        f"由 {user_name or '用户'} 尝试提交。"
                     ),
                 },
             ],
@@ -412,7 +465,11 @@ def handle_queue_card_action(
     action_value: dict[str, Any],
     event: Any,
 ) -> Any:
-    """Process queue status card button clicks (Feishu only)."""
+    """Process queue status card button clicks (Feishu only).
+
+    鉴权有意延后：不调用 ``_is_interactive_operator_authorized``。点击者 open_id
+    仅用于 ``operator_display_name``，终态卡写「由 xx …」。群聊越权已知，暂不拦。
+    """
     P2CardActionTriggerResponse, CallBackCard = _lark_card_types()
 
     step = str(action_value.get("hermes_queue_card") or "").strip()
@@ -607,7 +664,14 @@ async def send_queue_status_card(
 
     Returns the ``SendResult`` from the send so callers (e.g.
     ``owner/patches/queue_cancel_patch.py``) can react to a failed post.
+    When ``feishu.queue_card.enabled`` is false, returns a stub with
+    ``success=False`` so callers keep the stock text ack.
     """
+    if not is_queue_card_enabled():
+        logger.info("[Feishu card] queue status skipped (queue_card.enabled=false)")
+        from types import SimpleNamespace
+
+        return SimpleNamespace(success=False, message_id=None)
     card = build_queue_status_card(
         user_input,
         user_name,

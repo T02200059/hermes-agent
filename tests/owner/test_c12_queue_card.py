@@ -210,7 +210,16 @@ def test_guide_queue_submit_morphs_to_status_card():
         "gid": {"source": SimpleNamespace(chat_id="oc_chat")}
     }
     adapter._loop = MagicMock()
-    adapter._submit_on_loop = MagicMock(return_value=True)
+
+    def _accept_and_close(_loop, coro):
+        # Mock schedule: consume coro so pytest does not see never-awaited.
+        try:
+            coro.close()
+        except Exception:
+            pass
+        return True
+
+    adapter._submit_on_loop = MagicMock(side_effect=_accept_and_close)
 
     event = SimpleNamespace(
         operator=SimpleNamespace(open_id="ou_1"),
@@ -246,3 +255,107 @@ def test_guide_queue_submit_morphs_to_status_card():
 def test_steer_reexports_queue_cards():
     assert sc.build_queue_cancelled_card("a", "b")["schema"] == "2.0"
     assert sc.build_queue_executed_card("a", "b")["schema"] == "2.0"
+
+
+# ── harden: fail-open / enabled / submit-failed ────────────────────────────
+
+
+def test_enqueue_wrap_fail_open_still_calls_original(monkeypatch):
+    """Owner stamp/meta exception must not abort stock FIFO enqueue."""
+    calls = []
+
+    class Runner:
+        def _enqueue_fifo(self, session_key, queued_event, adapter):
+            calls.append((session_key, queued_event, adapter))
+
+    qcp._originals["_enqueue_fifo"] = Runner._enqueue_fifo
+    Runner._enqueue_fifo = qcp._enqueue_fifo
+    try:
+        r = Runner()
+        ev = SimpleNamespace(text="boom", metadata={})
+        adapter = MagicMock()
+
+        def _boom(*_a, **_k):
+            raise RuntimeError("stamp boom")
+
+        monkeypatch.setattr(qcp, "_match_token_for_text", _boom)
+        qcp._enqueue_fifo(r, "sess-x", ev, adapter)
+        assert len(calls) == 1
+        assert calls[0][0] == "sess-x"
+        assert calls[0][1] is ev
+    finally:
+        Runner._enqueue_fifo = qcp._originals.pop("_enqueue_fifo")
+
+
+def test_enqueue_wrap_bypasses_when_disabled(monkeypatch):
+    qcp.register_scheduled_token("t-off", text="should not stamp")
+    calls = []
+
+    class Runner:
+        def _enqueue_fifo(self, session_key, queued_event, adapter):
+            calls.append(queued_event)
+
+    qcp._originals["_enqueue_fifo"] = Runner._enqueue_fifo
+    Runner._enqueue_fifo = qcp._enqueue_fifo
+    try:
+        monkeypatch.setattr(qc, "is_queue_card_enabled", lambda: False)
+        r = Runner()
+        ev = SimpleNamespace(text="should not stamp", metadata={})
+        qcp._enqueue_fifo(r, "sess-off", ev, MagicMock())
+        assert len(calls) == 1
+        assert getattr(ev, qcp._EVENT_TOKEN_ATTR, None) is None
+        assert qcp.get_token_meta("t-off").get("status") == "scheduled"
+    finally:
+        Runner._enqueue_fifo = qcp._originals.pop("_enqueue_fifo")
+
+
+def test_guide_queue_submit_failed_returns_failure_card_not_queued():
+    adapter = MagicMock()
+    adapter._app_id = "cli_x"
+    adapter._app_secret = "sec"
+    adapter._guide_card_state = {
+        "gid": {"source": SimpleNamespace(chat_id="oc_chat")}
+    }
+    adapter._loop = MagicMock()
+    adapter._submit_on_loop = MagicMock(return_value=False)
+
+    event = SimpleNamespace(
+        operator=SimpleNamespace(open_id="ou_1"),
+        context=SimpleNamespace(open_message_id="om_card", open_chat_id="oc_chat"),
+    )
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(sc, "operator_display_name", lambda *_a, **_k: "shu")
+        mp.setattr(qc, "is_queue_card_enabled", lambda: True)
+        resp = sc.handle_guide_card_action(
+            adapter=adapter,
+            action_value={
+                "hermes_feishu_guide": "submit",
+                "guide_id": "gid",
+                "action_key": "queue",
+                "form_value": {"guide_input": "不该显示已排队"},
+            },
+            event=event,
+        )
+    assert resp is not None
+    card = getattr(resp, "card", None)
+    assert card is not None and getattr(card, "data", None)
+    title = card.data["header"]["title"]["content"]
+    assert "失败" in title
+    assert not any(v.get("hermes_queue_card") for v in _action_buttons(card.data))
+    assert qcp._token_state == {}
+    adapter._submit_on_loop.assert_called_once()
+
+
+def test_is_queue_card_enabled_reads_overlay(monkeypatch):
+    monkeypatch.setattr(
+        "owner.patch_config.load_patch_config",
+        lambda: {"feishu": {"queue_card": {"enabled": False}}},
+    )
+    assert qc.is_queue_card_enabled() is False
+    monkeypatch.setattr(
+        "owner.patch_config.load_patch_config",
+        lambda: {"feishu": {"queue_card": {"enabled": True}}},
+    )
+    assert qc.is_queue_card_enabled() is True
+    monkeypatch.setattr("owner.patch_config.load_patch_config", dict)
+    assert qc.is_queue_card_enabled() is True
