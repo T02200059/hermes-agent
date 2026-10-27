@@ -57,7 +57,7 @@
   - `owner/approval/skill_manage_gate.py` — `run_gate` / `should_escalate` / `apply_all_patches`
   - `owner/feishu/skill_approval_card.py` — `send_skill_approval_card` / `handle_card_click`
   - Hook 桥：`owner/owner-extensions/skill_manage_bridge/`（`pre_tool_call` + `pre_gateway_dispatch`）
-- **配置**：`config.owner.approvals.skill_script_allowlist`（overlay.yaml）；`feishu.skill_approval`（`patch_feishu_profile.yaml`，经 `load_patch_feishu_profile_config()`）
+- **配置**：`config.owner.approvals.skill_script_allowlist`（overlay.yaml）；`feishu.skill_approval`（**主读 overlay.yaml**；`patch_feishu_profile.yaml` 仅回落）
 - **下游接线**：复用 C04 name cache / `send_card`；卡片 `hermes_action=skill_approval_gate`；永久按钮不展示（门内 `allow_permanent=False` + C01 策略）
 
 ### 4. Bot menu 按钮响应 · **C11-bot-menu · 已落地**
@@ -368,8 +368,10 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
     1. 归因整链透传 + `api_messages` 剥离（runtime/oneshot/cli/tui/gateway/cron/delegate/mid-switch）
     2. `owner/providers/credential_helpers.py`；`model_switch_providers` 薄委托
     3. `sessions.owner_provider_name` + messages 四列 token 用量落盘
+  - **2026-10-27 补丁**：`PERSISTENCE_ONLY_MESSAGE_FIELDS` 增 `model`/`provider`（出站剥离；不落盘 DDL）；attribution docstring 改为「仅内存」
 - [x] **C03** · 源 §2.7–2.8 · damodel provider/proxy · **优先级：P0**
   - 落地：`owner/providers/damodel.py` + `plugins/model-providers/damodel/`；测 `tests/owner/test_damodel_provider.py`
+  - **C03+ 2026-10-27**：`is_damodel_route` + `anthropic_prompt_cache_policy` 3 行 `# [owner]` 委托，恢复 damodel cache_control（成本回归）；thinking/extra_body 仍延后
 - [x] **C04** · 源 §3.1–3.4 · 飞书审批卡片 + sender_name 缓存 + inbound 身份 + 多平台审批签名 · **优先级：P0**（阶段二首项）
   - helper：`owner/feishu/{approval,user_store,user_cache,sender_name_helpers,inbound_context}.py` + `owner/gateway/inbound_context.py`
   - 胶水：`plugins/platforms/feishu/adapter.py`（委托 + 24h soft TTL + store migrate）；`gateway/run_inbound.py`；`gateway/run_turn_runner.py`（metadata sender）；`cron/scheduler.py`（Cron context）
@@ -386,10 +388,11 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 - [x] **C09** · 源 §3.6 / §3.11 · skill 脚本自动审批 + skill_manage 飞书审批门 · **优先级：P0**（阶段三）
   - skill 脚本：`owner/approval/skill_script_approval.py`；`approvals.skill_script_allowlist`；胶水 `tools/approval.py` + `tools/skills_tool.py`
   - skill_manage 门：`owner/approval/skill_manage_gate.py` + `owner/owner-extensions/skill_manage_bridge/`；卡 `owner/feishu/skill_approval_card.py`
-  - 配置：`feishu.skill_approval`（`owner/config/patch_feishu_profile.yaml`，默认 enabled:false）
+  - 配置：`feishu.skill_approval`（**主读** `overlay.yaml`；`patch_feishu_profile.yaml` 仅回落；默认 enabled:false）
   - 适配：超时补丁挂 `tools.approval_context._get_approval_timeout`；发卡走 `send_card`；adapter `_on_card_action_trigger` 薄分支
   - 设计：`owner/docs/design/skill-approval/README.md`
   - 测：`tests/owner/test_skill_script_approval.py` / `test_skill_manage_gate.py`
+  - **2026-10-27 补丁**：skill_approval 迁入 overlay（含旧树 `approval_home_chat_id` 真值）；脚本白名单增加「绝对/相对路径须落在 skill 目录内」
 - [x] **C10** · 源 i18n 层 · 显示层 i18n / `_localized` 与护栏文案（源 §12.2 / §16.9 相关） · **优先级：P0**（阶段二 · 与 B11 同批）
   - helper：`owner/i18n/localized.py`（`localized` / `GUARD_EN_TEXTS`）
   - 胶水：`tools/file_tools_write_guards.py`（受保护指令 / SSH 配置写入护栏走 `_localized`/`_blocked`）
@@ -443,6 +446,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - 设计：`owner/docs/checkpoint-mutation-predictor.md`
   - 测：`tests/owner/test_checkpoint_predictor.py`
   - 依赖核验：无硬依赖未做定制；硬依赖 = 官方 CheckpointManager + 已落地 C01 `patch_config`；LLM（auxiliary `task=approval`）与 `_owner_warn_callback` 为软依赖 fail-open
+  - **2026-10-27 补丁**：`agent_init` 挂 `_owner_warn_callback=_emit_warning`；预测失败回落 `_emit_warning`；静态为空且 `_is_destructive_command` → cwd 窄兜底快照
 - [ ] **C18** · 源 §9.1 · per-chat display overrides · **优先级：P1**
 - [x] **C19** · 源 §5 · 链式快捷命令 `;;` + Quick Alias · **优先级：P1**（阶段一）
   - helper：`owner/commands/chained_quick.py`（`parse_chained_commands` / `expand_chained_quick_alias`）
