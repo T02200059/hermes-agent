@@ -1,7 +1,7 @@
 """Feishu skill approval gate - owner customization.
 
 Strict skill approval for gateway Feishu sessions when the active profile is
-on the ``feishu.skill_approval.profiles`` whitelist in patch_feishu_profile.yaml.
+on the ``feishu.skill_approval.profiles`` whitelist in overlay.yaml (legacy patch_feishu_profile.yaml as fallback).
 
 Behavior (v2):
 - Only ``skill_manage`` write actions are gated (not skills_list / skill_view).
@@ -22,8 +22,9 @@ Behavior (v2):
   retry or jailbreak in the same turn.
 - YOLO does not bypass this gate.
 
-Config source: ``~/.hermes/patch_feishu_profile.yaml`` under
-``feishu.skill_approval`` (profile-level, not global).
+Config source (prefer overlay): ``~/.hermes/overlay.yaml`` →
+``feishu.skill_approval``; fall back to ``~/.hermes/patch_feishu_profile.yaml``
+for pre-migration installs (profile-level, not global).
 
 Integration:
 - pre_tool_call hook in owner-extensions (runs the gate, returns block or None)
@@ -76,11 +77,23 @@ _timeout_patched = False
 
 
 # ---------------------------------------------------------------------------
-# Config (reads from patch_feishu_profile.yaml, not patch.yaml)
+# Config (overlay.yaml feishu.skill_approval first; legacy file as fallback)
 # ---------------------------------------------------------------------------
 
 def _load_skill_approval_cfg() -> Dict[str, Any]:
-    """Load ``feishu.skill_approval`` from patch_feishu_profile.yaml."""
+    """Load ``feishu.skill_approval`` — overlay.yaml first, then legacy file."""
+    # 1) Prefer overlay / load_patch_config (same file as bot_menu etc.)
+    try:
+        from owner.patch_config import load_patch_config
+
+        data = load_patch_config() or {}
+        feishu = data.get("feishu", {})
+        if isinstance(feishu, dict) and "skill_approval" in feishu:
+            cfg = feishu.get("skill_approval")
+            return cfg if isinstance(cfg, dict) else {}
+    except Exception:
+        pass
+    # 2) Legacy fallback: patch_feishu_profile.yaml
     try:
         from owner.patch_config import load_patch_feishu_profile_config
 

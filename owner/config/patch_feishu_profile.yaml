@@ -1,10 +1,12 @@
-# Feishu profile / fleet routing + skill approval (C09).
+# Feishu profile / fleet routing + skill approval (C09) — LEGACY FALLBACK.
 #
-# Runtime: ~/.hermes/patch_feishu_profile.yaml → 常软链到本文件。
-# 现网若软链仍指向旧树，以旧树为准；本文件是 v2 仓内自包含模板（无真实密钥）。
-# C05 bots 路由 / C06 LDAP 段后续阶段补全；此处只钉 C09 skill_approval。
+# Runtime primary: ``~/.hermes/overlay.yaml`` → ``feishu.skill_approval``
+# (loader: owner.approval.skill_manage_gate._load_skill_approval_cfg).
+# This file remains only as a fall-back for pre-migration installs and for
+# future C05 bots / C06 LDAP sections. Do not put new skill_approval truth here.
 #
-# 加载：owner.patch_config.load_patch_feishu_profile_config()
+# Runtime soft-link: ~/.hermes/patch_feishu_profile.yaml → 常软链到本文件。
+# 加载回落：owner.patch_config.load_patch_feishu_profile_config()
 
 feishu:
   # ── C09 skill_manage 飞书写审批门 ──────────────────────────────────────────

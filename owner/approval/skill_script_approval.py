@@ -59,16 +59,16 @@ _SKILL_SCRIPTS_CACHE: dict = {}
 _SKILL_SCRIPTS_CACHE_TTL = 300
 
 
-def extract_script_filenames(command: str) -> List[str]:
-    """Extract script filenames from a shell command string.
+def extract_script_path_tokens(command: str) -> List[str]:
+    """Extract script path tokens (as written) from a shell command.
 
-    Handles ``bash -c "python3 script.py"`` nesting,
-    ``&&`` chaining, and trailing shell operators.
-    Only returns names with a file extension (``.py``, ``.sh``, etc.).
+    Same unwrap/operator rules as :func:`extract_script_filenames`, but keeps
+    the original token (may be absolute/relative) instead of reducing to
+    basename. Basename-only APIs call this and take ``Path(t).name``.
     """
     if not command or not command.strip():
         return []
-    filenames: List[str] = []
+    tokens: List[str] = []
     segments = [command]
     processed: Set[str] = set()
 
@@ -93,12 +93,26 @@ def extract_script_filenames(command: str) -> List[str]:
             token = token.strip()
             if not token or token in _INTERPRETERS:
                 continue
-            # Check if it looks like a path ending with a script extension
             if _SCRIPT_EXT_RE.match(token) or '.' in token:
                 name = Path(token).name
-                if _SCRIPT_EXT_RE.match(name) and name not in filenames:
-                    filenames.append(name)
+                if _SCRIPT_EXT_RE.match(name) and token not in tokens:
+                    tokens.append(token)
 
+    return tokens
+
+
+def extract_script_filenames(command: str) -> List[str]:
+    """Extract script basenames from a shell command string.
+
+    Handles ``bash -c "python3 script.py"`` nesting,
+    ``&&`` chaining, and trailing shell operators.
+    Only returns names with a file extension (``.py``, ``.sh``, etc.).
+    """
+    filenames: List[str] = []
+    for token in extract_script_path_tokens(command):
+        name = Path(token).name
+        if name not in filenames:
+            filenames.append(name)
     return filenames
 
 
@@ -126,6 +140,7 @@ def load_skill_scripts() -> Dict[str, Set[str]]:
         allowlist = []
 
     result: Dict[str, Set[str]] = {}
+    skill_dirs: Dict[str, Set[str]] = {}
 
     for entry in allowlist:
         if not isinstance(entry, dict):
@@ -141,22 +156,27 @@ def load_skill_scripts() -> Dict[str, Set[str]]:
         resolved_paths: List[Path] = []
         if not paths:
             # Empty paths → auto-scan the entire skill directory
-            _scan_skill_dir(skill_name, extensions, result)
+            _scan_skill_dir(skill_name, extensions, result, skill_dirs)
             continue
         for p in paths:
             expanded = Path(p).expanduser()
             if expanded.is_dir():
                 resolved_paths.append(expanded)
         for dir_path in resolved_paths:
-            _scan_directory(dir_path, extensions, skill_name, result)
+            _scan_directory(dir_path, extensions, skill_name, result, skill_dirs)
 
     _SKILL_SCRIPTS_CACHE["data"] = result
+    _SKILL_SCRIPTS_CACHE["dirs"] = skill_dirs
     _SKILL_SCRIPTS_CACHE["mtime"] = now
     return result
 
 
-def _scan_skill_dir(skill_name: str, extensions: List[str],
-                    result: Dict[str, Set[str]]) -> None:
+def _scan_skill_dir(
+    skill_name: str,
+    extensions: List[str],
+    result: Dict[str, Set[str]],
+    skill_dirs: Dict[str, Set[str]],
+) -> None:
     """Scan ``<HERMES_HOME>/skills/**/<skill_name>/**`` for matching scripts."""
     from hermes_constants import get_hermes_home
 
@@ -168,15 +188,22 @@ def _scan_skill_dir(skill_name: str, extensions: List[str],
             continue
         skill_dir = cat_dir / skill_name
         if skill_dir.is_dir():
-            _scan_directory(skill_dir, extensions, skill_name, result)
+            _scan_directory(skill_dir, extensions, skill_name, result, skill_dirs)
 
 
-def _scan_directory(dir_path: Path, extensions: List[str],
-                    skill_name: str, result: Dict[str, Set[str]]) -> None:
-    """Recursively scan a directory, adding matching scripts to result."""
+def _scan_directory(
+    dir_path: Path,
+    extensions: List[str],
+    skill_name: str,
+    result: Dict[str, Set[str]],
+    skill_dirs: Dict[str, Set[str]],
+) -> None:
+    """Recursively scan a directory, adding matching scripts + skill root."""
     if not dir_path.is_dir():
         return
     try:
+        root = str(dir_path.resolve())
+        skill_dirs.setdefault(skill_name, set()).add(root)
         for f in dir_path.rglob("*"):
             if not f.is_file():
                 continue
@@ -189,6 +216,53 @@ def _scan_directory(dir_path: Path, extensions: List[str],
             result[name].add(skill_name)
     except PermissionError:
         pass
+
+
+def load_skill_script_dirs() -> Dict[str, Set[str]]:
+    """Return ``{skill_name: {realpath skill root, ...}}`` (refreshes script cache)."""
+    load_skill_scripts()
+    dirs = _SKILL_SCRIPTS_CACHE.get("dirs")
+    return dirs if isinstance(dirs, dict) else {}
+
+
+def _path_has_dir_component(token: str) -> bool:
+    """True when the token names a path (absolute or with a directory part)."""
+    if not token:
+        return False
+    p = Path(token)
+    return p.is_absolute() or (len(p.parts) > 1)
+
+
+def _path_is_under(path: Path, root: Path) -> bool:
+    """True when *path* resolves inside *root* (``..`` / symlink-safe via resolve)."""
+    try:
+        path_r = path.resolve()
+        root_r = root.resolve()
+        path_r.relative_to(root_r)
+        return True
+    except (ValueError, OSError):
+        return False
+
+
+def _token_under_viewed_skill(
+    token: str,
+    viewed_skills: Set[str],
+    skill_dirs: Dict[str, Set[str]],
+) -> bool:
+    """Basename-only tokens skip the dir check; path tokens must sit under a skill root."""
+    if not _path_has_dir_component(token):
+        return True
+    try:
+        abs_path = Path(token).expanduser()
+        if not abs_path.is_absolute():
+            abs_path = Path.cwd() / abs_path
+    except Exception:
+        return False
+    for skill in viewed_skills:
+        for root in skill_dirs.get(skill) or ():
+            if _path_is_under(abs_path, Path(root)):
+                return True
+    return False
 
 
 def track_session_skill_view(skill_name: str) -> None:
@@ -326,18 +400,24 @@ def is_skill_script_allowed(command: str) -> Optional[str]:
     if _has_shell_metachar_in_quoted_args(command):
         return None
 
-    filenames = extract_script_filenames(command)
-    if not filenames:
+    path_tokens = extract_script_path_tokens(command)
+    if not path_tokens:
         return None
 
     scripts = load_skill_scripts()
+    skill_dirs = load_skill_script_dirs()
     matched_viewed: Set[str] = set()
-    for fn in filenames:
+    for token in path_tokens:
+        fn = Path(token).name
         skills = scripts.get(fn)
         if not skills:
             return None
         viewed = skills.intersection(viewed_set)
         if not viewed:
+            return None
+        # Basename hit is necessary but not sufficient for path tokens:
+        # resolved abs path must fall inside a viewed skill's scanned root.
+        if not _token_under_viewed_skill(token, viewed, skill_dirs):
             return None
         matched_viewed |= viewed
 

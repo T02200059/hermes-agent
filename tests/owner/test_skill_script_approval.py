@@ -356,6 +356,50 @@ class TestExtractScriptFilenames:
         assert ssa.extract_script_filenames("") == []
         assert ssa.extract_script_filenames("   ") == []
 
-    def test_path_prefix_is_reduced_to_basename(self):
+    def test_path_token_basename_still_extracted(self):
+        """extract_script_filenames still returns basename; path check lives in allow."""
         got = ssa.extract_script_filenames("python3 /opt/skills/my-skill/report.py")
         assert got == ["report.py"]
+        tokens = ssa.extract_script_path_tokens("python3 /opt/skills/my-skill/report.py")
+        assert tokens == ["/opt/skills/my-skill/report.py"]
+
+
+def test_same_basename_outside_skill_dir_is_rejected(tmp_path, monkeypatch):
+    """Absolute path with a matching basename but outside the skill root → deny."""
+    skill_root = tmp_path / "skills" / "demo" / SKILL
+    skill_root.mkdir(parents=True)
+    (skill_root / SCRIPT).write_text("x", encoding="utf-8")
+    outside = tmp_path / "evil"
+    outside.mkdir()
+    evil_script = outside / SCRIPT
+    evil_script.write_text("x", encoding="utf-8")
+
+    monkeypatch.setattr(
+        ssa,
+        "load_skill_scripts",
+        lambda: {SCRIPT: {SKILL}},
+    )
+    monkeypatch.setattr(
+        ssa,
+        "load_skill_script_dirs",
+        lambda: {SKILL: {str(skill_root.resolve())}},
+    )
+    _view()
+    assert ssa.is_skill_script_allowed(f"python3 {evil_script}") is None
+
+
+def test_path_inside_skill_dir_is_approved(tmp_path, monkeypatch):
+    """Absolute path under the viewed skill root with matching basename → approve."""
+    skill_root = tmp_path / "skills" / "demo" / SKILL
+    skill_root.mkdir(parents=True)
+    script = skill_root / SCRIPT
+    script.write_text("x", encoding="utf-8")
+
+    monkeypatch.setattr(ssa, "load_skill_scripts", lambda: {SCRIPT: {SKILL}})
+    monkeypatch.setattr(
+        ssa,
+        "load_skill_script_dirs",
+        lambda: {SKILL: {str(skill_root.resolve())}},
+    )
+    _view()
+    assert ssa.is_skill_script_allowed(f"python3 {script}") == SKILL

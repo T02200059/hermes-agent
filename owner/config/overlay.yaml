@@ -57,6 +57,20 @@ feishu_card:
 # 点击 menu_v6 → owner/feishu/bot_menu.py 解析；缺 key 时回退 BUILTIN_BOT_MENU。
 # bot_menu_dedup：点击即时 ack（慢命令反馈）；ack: null 表示该 key 不发 ack。
 feishu:
+  # ── C09 skill_manage 飞书写审批门 ──────────────────────────────────────────
+  # enabled=true 且当前 profile ∈ profiles 时：
+  #   - 飞书会话上 skill_manage 写操作阻塞等人批；YOLO 不绕过
+  #   - 审批卡发到 approval_home_chat_id；原点会话发「等待审批」提示
+  #   - 默认关；chat_id 来自旧树 patch_feishu_profile 真值迁移
+  skill_approval:
+    enabled: false
+    profiles:
+      - "*"
+    allow_skills:
+      - xy-*
+    approval_home_chat_id: oc_f206b3d2a547a12f430593ea44076031
+    timeout_seconds: 86400
+    disable_background_skill_review: true
   bot_menu:
     new: "/new"
     status: "/status"
