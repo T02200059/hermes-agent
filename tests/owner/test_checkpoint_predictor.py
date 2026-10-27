@@ -239,6 +239,42 @@ def test_destructive_empty_static_falls_back_to_cwd(monkeypatch):
     agent._owner_warn_callback.assert_called_once()
 
 
+
+def test_destructive_fallback_skips_home_cwd(monkeypatch):
+    """cwd 为 home 时不拍巨型快照，也不谎称已兜底。"""
+    monkeypatch.setattr(cp_config, "get_checkpoints_cfg", lambda: dict(cp_config._DEFAULTS))
+    monkeypatch.setattr(static_parser, "static_parse", lambda *_: [])
+    monkeypatch.setattr(llm_predict, "llm_predict", lambda *a, **k: [])
+    monkeypatch.setattr(
+        "agent.tool_dispatch_helpers._is_destructive_command",
+        lambda cmd: True,
+    )
+    home = str(__import__("pathlib").Path.home())
+    agent = _agent()
+    predict_and_checkpoint(r"find . -exec rm {} \;", home, agent)
+    agent._checkpoint_mgr.ensure_checkpoint.assert_not_called()
+    # Falls through to surface warn (destructive + empty prediction)
+    agent._owner_warn_callback.assert_called_once()
+
+
+def test_destructive_fallback_respects_false_return(monkeypatch):
+    """ensure_checkpoint 返回 False 时不算兜底成功。"""
+    monkeypatch.setattr(cp_config, "get_checkpoints_cfg", lambda: dict(cp_config._DEFAULTS))
+    monkeypatch.setattr(static_parser, "static_parse", lambda *_: [])
+    monkeypatch.setattr(llm_predict, "llm_predict", lambda *a, **k: [])
+    monkeypatch.setattr(
+        "agent.tool_dispatch_helpers._is_destructive_command",
+        lambda cmd: True,
+    )
+    agent = _agent()
+    agent._checkpoint_mgr.ensure_checkpoint.return_value = False
+    predict_and_checkpoint(r"find . -exec rm {} \;", "/proj", agent)
+    agent._checkpoint_mgr.ensure_checkpoint.assert_called_once()
+    # fallback returns False → surface uncheckpointed warn
+    agent._owner_warn_callback.assert_called_once()
+    assert "预测失败" in agent._owner_warn_callback.call_args[0][0]
+
+
 def test_warn_falls_back_to_emit_warning_when_callback_missing(monkeypatch):
     """无 _owner_warn_callback 时回落 _emit_warning，避免静默丢失。"""
     monkeypatch.setattr(cp_config, "get_checkpoints_cfg", lambda: dict(cp_config._DEFAULTS))

@@ -88,6 +88,16 @@ def _warn_uncheckpointed(command: str, cwd: str, reason: str, agent, *, surface:
     _emit_owner_warn(agent, msg)
 
 
+def _cwd_is_unsafe_snapshot_root(cwd: str) -> bool:
+    """True when cwd resolves to ``/`` or home (same filter as ``_safe_roots``)."""
+    try:
+        resolved = str(Path(cwd).expanduser().resolve())
+    except Exception:
+        resolved = str(cwd)
+    home = str(Path.home())
+    return resolved in {"/", home} or str(cwd) in {"/", home}
+
+
 def _destructive_cwd_fallback(command: str, cwd: str, agent, mgr) -> bool:
     """静态为空且官方 _is_destructive_command 为真 → 仍快照 cwd。返回是否已兜底。"""
     try:
@@ -97,11 +107,20 @@ def _destructive_cwd_fallback(command: str, cwd: str, agent, mgr) -> bool:
             return False
     except Exception:
         return False
+    if _cwd_is_unsafe_snapshot_root(cwd):
+        logger.debug(
+            "destructive cwd fallback skipped unsafe cwd=%r (home or /)", cwd
+        )
+        return False
     reason_str = f"before terminal (destructive cwd fallback): {command[:60]}"
     try:
-        mgr.ensure_checkpoint(cwd, reason_str)
+        snapped = mgr.ensure_checkpoint(cwd, reason_str)
     except Exception as exc:
         logger.debug("destructive cwd ensure_checkpoint failed: %s", exc)
+        return False
+    if snapped is False:
+        # Official manager also refuses home/root; do not claim a snapshot.
+        logger.debug("destructive cwd ensure_checkpoint returned False (cwd=%r)", cwd)
         return False
     msg = (
         "⚠️ checkpoint 静态预测为空，已按破坏性命令兜底快照 cwd\n"
