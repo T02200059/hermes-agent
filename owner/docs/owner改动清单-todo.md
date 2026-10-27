@@ -60,16 +60,16 @@
 - **配置**：`config.owner.approvals.skill_script_allowlist`（overlay.yaml）；`feishu.skill_approval`（`patch_feishu_profile.yaml`，经 `load_patch_feishu_profile_config()`）
 - **下游接线**：复用 C04 name cache / `send_card`；卡片 `hermes_action=skill_approval_gate`；永久按钮不展示（门内 `allow_permanent=False` + C01 策略）
 
-### 4. Bot menu 按钮响应 · **C11 余下 · 待阶段三**
+### 4. Bot menu 按钮响应 · **C11-bot-menu · 已落地**
 
-
-- **是什么**：飞书 bot 菜单点击 → 按 key 路由到会话/命令（旧树能力；v2 未迁）。
-- **状态**：**未落地**（阶段三与 diff/clarify 卡同批）。本树**无** `owner/.../bot_menu*` 处理器。
-- **已有半成品（勿重复造）**：
-  - C04 `FeishuUserStore` 的 `open_id → p2p_chat_id` 落盘与重启 flush（菜单路由依赖）
-  - C11 `send_card` / auto-card / notice 卡基建（若菜单结果要发卡）
-  - 官方 `plugins/platforms/feishu/adapter.py` 事件环（落地时薄委托，逻辑进 `owner/`）
-- **配置**：待 C11 余下设计定键；预计挂 `config.owner.*`（经 overlay），不要塞进官方 gateway 配置。
+- **是什么**：飞书 `application.bot.menu_v6` 点击 → 三层去重 → overlay `feishu.bot_menu` 映射 → 合成 COMMAND/TEXT 入会话；缺 p2p 缓存时明确提示（不误报「未配置」）。
+- **状态**：**已落地**。
+- **入口**：
+  - `owner/feishu/bot_menu.py` — `handle_bot_menu_event` / `resolve_bot_menu_command` / `admit_bot_menu_event`
+  - adapter 薄胶水：`register_p2_application_bot_menu_v6`、`_on_bot_menu_event`、p2p/inbound `cache_p2p_chat_id` 暖缓存
+- **配置**：`owner.feishu.bot_menu` / `owner.feishu.bot_menu_dedup`（`overlay.yaml`）
+- **测**：`tests/owner/test_owner_feishu_bot_menu_cold_cache.py`
+- **说明**：`owner/docs/c11-bot-menu.md`
 
 ### 5. C13 Explainers 统一配置与 auxiliary · **C13 · 已落地**
 
@@ -137,6 +137,7 @@ explainers:
 |------|------|--------------|------|
 | 永久审批门 | C01 | `owner/approval/permanent_policy.py` → `gate_allow_permanent` / `get_allow_permanent` | `owner.approvals.allow_permanent`（默认 false） |
 | 飞书 auto-card / notice / early-typing | C11 底座 | `owner/feishu/auto_card.py`（`try_auto_card` / `match_notice_rule` / `make_notice_card`）；`card_sender.send_card`；`agent_end.try_auto_card_on_end`；adapter early-typing | `owner.feishu_card.*` |
+| 飞书 bot 菜单 menu_v6 | C11-bot-menu | `owner/feishu/bot_menu.py`（`handle_bot_menu_event`）；adapter 注册 + p2p/inbound 暖缓存 | `owner.feishu.bot_menu*` |
 | stream / output guard | C14 | `owner/stream_guard.snapshot`；`owner/output_guard`（`transform_llm_output`） | `owner.stream_guard.*` / `owner.output_guard.enabled` |
 | Checkpoint 预测 | C17 | `owner/checkpoint_predictor`（`predict_and_checkpoint`） | `owner.checkpoints.*` |
 | 护栏 i18n | C10 | `owner/i18n/localized.py` → `localized` | locales + 调用方 `_localized` |
@@ -404,7 +405,11 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - 说明：`owner/docs/c11-feishu-auto-card-base.md`
   - 测：`tests/owner/test_c11_auto_card.py`、`tests/owner/test_feishu_agent_end_media.py`
   - 依赖：C04 已落地；卡发送复用官方 `_feishu_send_with_retry` / `_finalize_send_result`
-- [ ] **C11 余下** · 源 §4.4–4.6 · diff·clarify 卡 / bot 菜单 · **优先级：P1**（阶段三）
+- [x] **C11-bot-menu** · 源 §4.6 · bot 菜单 menu_v6 + p2p 暖缓存 · **优先级：P1**（阶段三）· **已落地**
+  - `owner/feishu/bot_menu.py`；adapter 注册/委托 + p2p/inbound cache warm；`overlay.yaml` → `feishu.bot_menu*`
+  - 测：`tests/owner/test_owner_feishu_bot_menu_cold_cache.py`；说明：`owner/docs/c11-bot-menu.md`
+- [ ] **C11-clarify** · 源 §4.5 · Feishu clarify 交互卡 · **优先级：P1**（阶段三）
+- [ ] **C11-diff** · 源 §4.4 · Feishu diff 卡 · **暂缓，待讨论**
 - [ ] **C12** · 源 §4.10–4.15 · memory write-approval 卡 / feishu-guide / 上传守卫 / doc_read 图 OCR / @所有人 / merge_forward · **优先级：P1**
 - [x] **C13** · 源 §7.24–7.26 · progress / approval / english / **recap** explainer · **已落地** · 飞书底座（C04/C10/C11）已齐
   - **统一基建**：单一 `owner.explainers` 块 + `owner/explainers/`（config/llm/registry）；`register_kind` 可扩。详见「§ 二次开发可复用基建 §4」与 `owner/docs/c13-explainers.md`

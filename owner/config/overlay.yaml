@@ -53,6 +53,92 @@ feishu_card:
 # ensure_checkpoint。静态解析优先; 不足时同步调 auxiliary LLM
 # (task="approval")。超时/失败/空时【不降级拍 cwd】。
 # 存储/回滚语义仍用 config.yaml 的 checkpoints 段; 这里只管预测触发源。
+# ── C11-bot-menu：飞书 bot 菜单 key → 命令/提示词 ────────────────────────────
+# 点击 menu_v6 → owner/feishu/bot_menu.py 解析；缺 key 时回退 BUILTIN_BOT_MENU。
+# bot_menu_dedup：点击即时 ack（慢命令反馈）；ack: null 表示该 key 不发 ack。
+feishu:
+  bot_menu:
+    new: "/new"
+    status: "/status"
+    usage: "/usage"
+    insights: "/insights"
+    stop: "/stop"
+    reasoning_off: "/reasoning off --global"
+    reasoning_medium: "/reasoning medium --global"
+    reasoning_high: "/reasoning high --global"
+    model_max: "/model qwen3.7-max --provider damodel"
+    model_pro: "/model deepseek-v4-pro --provider damodel"
+    model_flash: "/model deepseek-v4-flash --provider damodel"
+    model_xy_damodel_session: "/model xy-damodel --provider damodel --session"
+    model_xy_flash_session: "/model xy-flash --provider damodel --session"
+    model_xy_max_session: "/model xy-max --provider damodel --session"
+    model_xy_pro_session: "/model xy-pro --provider damodel --session"
+    model_xy_damodel_global: "/model xy-damodel --provider damodel --global"
+    model_xy_flash_global: "/model xy-flash --provider damodel --global"
+    model_xy_max_global: "/model xy-max --provider damodel --global"
+    model_xy_pro_global: "/model xy-pro --provider damodel --global"
+    list_models: "/providers"
+    feishu_guide: "/feishu-guide"
+    yolo_on: "/yolo on"
+    yolo_off: "/yolo off"
+    resume: "/resume"
+    agents: "/agents"
+  bot_menu_dedup:
+    enabled: true
+    default_ack: "⏳ 已收到…"
+    per_key:
+      new:
+        ack: "🆕 重置会话中…"
+      stop:
+        ack: null
+      status:
+        ack: null
+      usage:
+        ack: "📊 统计用量中…"
+      insights:
+        ack: "💡 生成洞察中…"
+      reasoning_off:
+        ack: "⚙️ 切换推理模式…"
+      reasoning_medium:
+        ack: "⚙️ 切换推理模式…"
+      reasoning_high:
+        ack: "⚙️ 切换推理模式…"
+      model_flash:
+        ack: "🤖 切换模型…"
+      model_pro:
+        ack: "🤖 切换模型…"
+      model_max:
+        ack: "🤖 切换模型…"
+      model_xy_damodel_session:
+        ack: "🤖 切换 xy-damodel（当前会话）…"
+      model_xy_flash_session:
+        ack: "🤖 切换 xy-flash（当前会话）…"
+      model_xy_max_session:
+        ack: "🤖 切换 xy-max（当前会话）…"
+      model_xy_pro_session:
+        ack: "🤖 切换 xy-pro（当前会话）…"
+      model_xy_damodel_global:
+        ack: "🤖 切换 xy-damodel（全局）…"
+      model_xy_flash_global:
+        ack: "🤖 切换 xy-flash（全局）…"
+      model_xy_max_global:
+        ack: "🤖 切换 xy-max（全局）…"
+      model_xy_pro_global:
+        ack: "🤖 切换 xy-pro（全局）…"
+      resume:
+        ack: "📋 恢复会话中…"
+      agents:
+        ack: "👥 查询运行中 agents 和任务…"
+      list_models:
+        ack: "📋 读取模型列表…"
+      feishu_guide:
+        ack: "🎛 弹出对话引导卡片…"
+      yolo_on:
+        ack: "🔓 开启 YOLO 模式…"
+      yolo_off:
+        ack: "🔒 关闭 YOLO 模式…"
+
+
 checkpoints:
   predict_enabled: true
   # LLM 兜底超时 (ms); 显式传入 call_llm(timeout=...), 覆盖 auxiliary.approval 默认

@@ -40,7 +40,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Dict, List, Literal, Optional, Sequence
+from typing import Any, Dict, List, Literal, Optional, Sequence, Tuple
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -1350,6 +1350,10 @@ class FeishuAdapter(BasePlatformAdapter):
         self._card_send_locks: collections.OrderedDict[str, asyncio.Lock] = collections.OrderedDict()
         # [owner] C11: early-typing background tasks (prevent GC before completion)
         self._early_typing_tasks: set[asyncio.Task] = set()
+        # [owner] C11-bot-menu: 三层去重状态（see owner/feishu/bot_menu.py）
+        self._bot_menu_dedup: dict[tuple[str, str], Any] = {}
+        self._bot_menu_event_ids: dict[str, float] = {}
+        self._bot_menu_dedup_lock = threading.Lock()
         self._load_seen_message_ids()
 
     @staticmethod
@@ -1444,6 +1448,8 @@ class FeishuAdapter(BasePlatformAdapter):
             .register_p2_card_action_trigger(self._on_card_action_trigger)
             .register_p2_im_chat_member_bot_added_v1(self._on_bot_added_to_chat)
             .register_p2_im_chat_member_bot_deleted_v1(self._on_bot_removed_from_chat)
+            # [owner] C11-bot-menu: register bot menu event handler (see owner/feishu/bot_menu.py)
+            .register_p2_application_bot_menu_v6(self._on_bot_menu_event)
             .register_p2_im_chat_access_event_bot_p2p_chat_entered_v1(self._on_p2p_chat_entered)
             .register_p2_im_message_recalled_v1(self._on_message_recalled)
             .register_p2_customized_event("drive.notice.comment_add_v1", self._on_drive_comment_event)
@@ -2186,7 +2192,31 @@ class FeishuAdapter(BasePlatformAdapter):
     def _on_bot_removed_from_chat(self, data: Any) -> None:
         self._on_bot_membership_change(data, "removed from")
 
+    # [owner] C11-bot-menu: synchronous entry for menu_v6 (see owner/feishu/bot_menu.py)
+    def _on_bot_menu_event(self, data: Any) -> None:
+        from owner.feishu.bot_menu import handle_bot_menu_event
+        loop = getattr(self, "_loop", None)
+        if loop is None:
+            logger.warning("[Feishu] bot menu event but no event loop")
+            return
+        self._submit_on_loop(loop, handle_bot_menu_event(self, data))
+
+    # [owner] C11-bot-menu: warm open_id → p2p_chat_id (see owner/feishu/user_store.py)
     def _on_p2p_chat_entered(self, data: Any) -> None:
+        event = getattr(data, "event", None)
+        chat_id = str(getattr(event, "chat_id", "") or "")
+        operator_id = getattr(event, "operator_id", None)
+        open_id = str(getattr(operator_id, "open_id", "") or "")
+        if open_id and chat_id:
+            if self._user_store.cache_p2p_chat_id(open_id, chat_id):
+                logger.debug("[Feishu] Cached p2p_chat_id for %s", open_id)
+            if not self._user_store.get_cached_name(open_id):
+                loop = self._loop
+                if self._loop_accepts_callbacks(loop):
+                    self._submit_on_loop(
+                        loop,
+                        self._resolve_sender_name_from_api(open_id),
+                    )
         logger.debug("[Feishu] User entered P2P chat with bot")
 
     def _on_message_recalled(self, data: Any) -> None:
@@ -2734,6 +2764,15 @@ class FeishuAdapter(BasePlatformAdapter):
             "dm" if chat_type == "p2p" else "group", message_id, inbound_type.value, chat_id,
             "bot" if is_bot else "user", sender_primary, text[:120], len(media_urls),
         )
+
+        # [owner] C11-bot-menu: p2p inbound warms open_id → p2p_chat_id
+        if chat_type == "p2p" and chat_id:
+            open_id = str(getattr(sender_id, "open_id", "") or "").strip()
+            if open_id and self._user_store.cache_p2p_chat_id(open_id, chat_id):
+                logger.debug(
+                    "[Feishu] Cached p2p_chat_id for %s from inbound message",
+                    open_id,
+                )
 
         chat_info = await self.get_chat_info(chat_id)
         sender_profile = await self._resolve_sender_profile(sender_id, is_bot=is_bot)
