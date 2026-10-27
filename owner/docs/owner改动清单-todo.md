@@ -412,7 +412,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 - [x] **C11-clarify** · 源 §4.5 · Feishu clarify 交互卡 · **优先级：P1**（阶段三）· **已落地**
   - `owner/feishu/clarify_card.py` + `owner/clarify/gateway_helpers.py`；adapter `send_clarify` / `retire_clarify_card` / card-action `clarify_id` 分支
   - 测：`tests/owner/test_c11_clarify_card.py`；说明：`owner/docs/c11-clarify.md`
-- [ ] **C11-diff** · 源 §4.4 · Feishu diff 卡 · **暂缓，待讨论**
+- [ ] **C11-diff** · 源 §4.4 · Feishu diff 卡 · **忽略（不做）**
 - [ ] **C12** · 源 §4.10–4.15 · memory write-approval 卡 / feishu-guide / 上传守卫 / doc_read 图 OCR / @所有人 / merge_forward · **优先级：P1**
 - [x] **C13** · 源 §7.24–7.26 · progress / approval / english / **recap** explainer · **已落地** · 飞书底座（C04/C10/C11）已齐
   - **统一基建**：单一 `owner.explainers` 块 + `owner/explainers/`（config/llm/registry）；`register_kind` 可扩。详见「§ 二次开发可复用基建 §4」与 `owner/docs/c13-explainers.md`
