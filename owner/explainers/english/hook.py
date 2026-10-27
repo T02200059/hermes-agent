@@ -4,7 +4,7 @@
 - 不改写原文（始终 return None，避免抢走 output_guard 的 first-wins）。
 - 判定为英文回复后，后台线程调辅助模型翻译，再经网关 adapter 另发一条
   「🔤 系统提示：…」消息（飞书命中 notice 卡）。
-- 顶级约束：display.language 须为中文；patch.yaml enabled 三级查找。
+- 顶级约束：display.language 须为中文；overlay.yaml enabled 三级查找。
 """
 
 from __future__ import annotations

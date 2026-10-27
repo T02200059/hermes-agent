@@ -19,7 +19,7 @@ from owner.explainers.recap.prompt import format_delivery
 logger = logging.getLogger("hermes.owner.explainers.recap")
 
 _EMPTY = "📋 系统提示：当前会话还没有可回顾的对话。"
-_DISABLED = "📋 系统提示：recap 未启用（见 patch.yaml explainers.recap）。"
+_DISABLED = "📋 系统提示：recap 未启用（见 overlay.yaml explainers.recap）。"
 _NO_SESSION = "📋 系统提示：找不到当前会话，无法生成回顾。"
 _FAILED = "📋 系统提示：回顾生成失败，请稍后再试。"
 

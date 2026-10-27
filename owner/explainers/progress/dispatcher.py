@@ -11,7 +11,7 @@
   3. 可见内容 → 包装 ``agent.interim_assistant_callback``（重置静默计时）。
   4. tick 任务 → 网关侧安装（见 gateway/run.py 心跳任务创建点旁的 [owner] 行）。
 
-性能纪律（设计稿 §4）：配置只在安装时读一次（patch.yaml 60s TTL 由
+性能纪律（设计稿 §4）：配置只在安装时读一次（overlay.yaml 60s TTL 由
 load_patch_config 内部保证）；delta 路径只做计数与切片，不读文件。
 """
 

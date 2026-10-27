@@ -2,7 +2,7 @@
 
 纯函数模块：不碰网络、不读配置、不持锁、不读 agent.messages。
 输入 tracker_state（由 tracker.py 在锁保护下产出的浅快照 dict）+ cfg
-（patch.yaml owner.progress_explainer 段，含默认值回填），输出一段
+（overlay.yaml explainers.progress 段，含默认值回填），输出一段
 可直接拼进辅助模型 prompt 的文本。
 
 截断策略（全部集中在本模块）：

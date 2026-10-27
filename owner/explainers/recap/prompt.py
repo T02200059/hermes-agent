@@ -1,6 +1,6 @@
 """[owner] C13 recap — prompts + notice delivery prefix.
 
-PREFIX 须与飞书 notice 卡规则、patch.yaml notice_titles 字面一致。
+PREFIX 须与飞书 notice 卡规则、overlay.yaml notice_titles 字面一致。
 """
 
 from __future__ import annotations
