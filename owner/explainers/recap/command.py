@@ -24,7 +24,7 @@ _NO_SESSION = "📋 系统提示：找不到当前会话，无法生成回顾。
 _FAILED = "📋 系统提示：回顾生成失败，请稍后再试。"
 
 
-def _load_messages(session_id: str) -> List[dict]:
+def _load_messages(session_id: str) -> list[dict]:
     if not session_id:
         return []
     from hermes_state import SessionDB
@@ -100,4 +100,11 @@ async def handle_recap_command(
     body = format_delivery(text or "")
     if not body:
         return _FAILED
+    # Manual success bumps watermark so idle auto won't re-fire until a new user turn.
+    try:
+        from owner.explainers.recap.auto import note_manual_recap
+
+        note_manual_recap(sid, messages)
+    except Exception:
+        logger.debug("/recap watermark note failed", exc_info=True)
     return body

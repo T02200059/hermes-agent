@@ -98,6 +98,10 @@ explainers:
   recap:
     enabled: true         # 第四 kind：/recap 按需回顾（notice；不写主会话）
     max_output_chars: 350
+    auto:                 # 长对话闲置自动（Grok：3 回合 / 180s）
+      enabled: true
+      min_user_turns: 3
+      idle_seconds: 180
 ```
 
 - **块名**：`explainers`（对齐清单「yaml 整合方向」）。
@@ -474,6 +478,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - **统一基建**：单一 `owner.explainers` 块 + `owner/explainers/`（config/llm/registry）；`register_kind` 可扩。详见「§ 二次开发可复用基建 §4」与 `owner/docs/c13-explainers.md`
   - **输入默认 64k**（`max_input_chars`）；按辅助模型 **≥256k** 上下文设计；`clip_input` 保尾截断
   - **recap**：第四 kind；`/recap` 按需；notice `📋 系统提示：`；不写主会话
+  - **recap 自动**（对齐 Grok Build `session_recap.rs`）：`min_user_turns=3` + `idle_seconds=180`；回合结束后闲置触发；watermark 防刷；短会话不发；`explainers.recap.auto`；**已落地**
   - **统一约定（已敲定，代码已做）**：单一 `owner.explainers` 块 + 共享取模 helper；禁止各 kind 各写 provider/model。详见上方「§ 二次开发可复用基建 §4」。
   - 旧顶层 `progress_explainer` / `approval_explainer` / `english_explainer` → 迁入 `explainers.{progress,approval,english,recap}`；`call_llm(task=…_explainer)` 长 task 名保留
   - **暂缓**：三 kind 输出帽仍各文件硬编码 `_MAX_OUTPUT_CHARS`（progress/approval/english）；recap 已读 overlay。统一进 `explainers.*.max_output_chars` 另排

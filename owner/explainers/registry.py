@@ -19,17 +19,17 @@ from typing import Any, Dict, Optional
 class KindSpec:
     name: str
     task_name: str
-    defaults: Dict[str, Any] = field(default_factory=dict)
+    defaults: dict[str, Any] = field(default_factory=dict)
 
 
-_KINDS: Dict[str, KindSpec] = {}
+_KINDS: dict[str, KindSpec] = {}
 
 
 def register_kind(
     name: str,
     *,
     task_name: Optional[str] = None,
-    defaults: Optional[Dict[str, Any]] = None,
+    defaults: Optional[dict[str, Any]] = None,
 ) -> KindSpec:
     """Register or replace a kind. ``task_name`` defaults to ``{name}_explainer``."""
     key = str(name or "").strip()
@@ -107,6 +107,12 @@ def _ensure_builtins() -> None:
             defaults={
                 "enabled": False,
                 "max_output_chars": 350,
+                # auto: Grok Build aligned (session_recap.rs MIN_TURNS=3, IDLE=180s)
+                "auto": {
+                    "enabled": True,
+                    "min_user_turns": 3,
+                    "idle_seconds": 180,
+                },
                 "platforms": {},
                 "chats": {},
             },

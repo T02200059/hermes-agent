@@ -225,6 +225,12 @@ explainers:
   recap:
     enabled: true
     max_output_chars: 350
+    # 长对话结束后自动回顾（对齐 Grok Build session_recap.rs）：
+    # min_user_turns=3 / idle_seconds=180；同一会话 watermark 防刷；短会话不触发。
+    auto:
+      enabled: true
+      min_user_turns: 3
+      idle_seconds: 180
     platforms:
       feishu: true
       telegram: false

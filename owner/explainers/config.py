@@ -28,7 +28,7 @@ from owner.explainers.common import (
 )
 from owner.explainers.registry import get_kind, known_kinds
 
-_SHARED_DEFAULTS: Dict[str, Any] = {
+_SHARED_DEFAULTS: dict[str, Any] = {
     "provider": "",
     "model": "",
     "timeout_ms": 30000,
@@ -38,7 +38,7 @@ _SHARED_DEFAULTS: Dict[str, Any] = {
 _INT_SHARED = ("timeout_ms",)
 
 
-def _patch_root() -> Dict[str, Any]:
+def _patch_root() -> dict[str, Any]:
     """Return the owner-layer dict (flat v2, or peel legacy ``owner:`` wrapper)."""
     try:
         from owner.patch_config import load_patch_config
@@ -58,7 +58,7 @@ def _patch_root() -> Dict[str, Any]:
         return {}
 
 
-def _legacy_kind_block(root: Dict[str, Any], kind: str) -> Dict[str, Any]:
+def _legacy_kind_block(root: dict[str, Any], kind: str) -> dict[str, Any]:
     """Map old top-level ``{kind}_explainer`` into a kind sub-dict."""
     legacy = root.get(f"{kind}_explainer")
     if not isinstance(legacy, dict):
@@ -70,7 +70,7 @@ def _legacy_kind_block(root: Dict[str, Any], kind: str) -> Dict[str, Any]:
     return out
 
 
-def _raw_explainers() -> Dict[str, Any]:
+def _raw_explainers() -> dict[str, Any]:
     """Unified ``explainers:`` block, with legacy flat-key synthesis.
 
     Prefer ``explainers:`` when present. Otherwise synthesize from old
@@ -83,7 +83,7 @@ def _raw_explainers() -> Dict[str, Any]:
         if isinstance(block, dict) and block:
             return block
         # Synthesize so a still-old symlink keeps working until retargeted.
-        synthesized: Dict[str, Any] = {
+        synthesized: dict[str, Any] = {
             "provider": "",
             "model": "",
             "timeout_ms": 30000,
@@ -114,7 +114,7 @@ def _raw_explainers() -> Dict[str, Any]:
         return {}
 
 
-def load_shared() -> Dict[str, Any]:
+def load_shared() -> dict[str, Any]:
     raw = _raw_explainers()
     cfg = {
         "provider": norm_model_field(raw.get("provider", _SHARED_DEFAULTS["provider"])),
@@ -133,7 +133,7 @@ def load_shared() -> Dict[str, Any]:
     return cfg
 
 
-def load_kind_config(kind: str) -> Dict[str, Any]:
+def load_kind_config(kind: str) -> dict[str, Any]:
     """Merged config for one kind: kind defaults ← shared ← kind overrides.
 
     Always includes ``provider`` / ``model`` / ``timeout_ms`` (resolved).
@@ -147,7 +147,7 @@ def load_kind_config(kind: str) -> Dict[str, Any]:
     if not isinstance(raw_kind, dict):
         raw_kind = {}
 
-    cfg: Dict[str, Any] = dict(defaults)
+    cfg: dict[str, Any] = dict(defaults)
     cfg["enabled"] = coerce_bool(raw_kind.get("enabled", defaults.get("enabled", False)), False)
 
     # kind-specific ints
@@ -161,6 +161,13 @@ def load_kind_config(kind: str) -> Dict[str, Any]:
             cfg[key] = coerce_int(raw_kind.get(key, default), default, minimum=minimum)
         elif isinstance(default, str):
             cfg[key] = str(raw_kind.get(key, default) or default)
+        elif isinstance(default, dict):
+            # Nested blocks (e.g. recap.auto): defaults ← overlay shallow-merge
+            merged = dict(default)
+            raw_block = raw_kind.get(key)
+            if isinstance(raw_block, dict):
+                merged.update(raw_block)
+            cfg[key] = merged
         elif key not in raw_kind:
             pass
         else:
@@ -221,7 +228,7 @@ def resolve_enabled(kind: str, platform: str = "", chat_id: Any = None) -> bool:
     return fallback
 
 
-def resolve_model(cfg: Dict[str, Any]) -> Tuple[Optional[str], Optional[str]]:
+def resolve_model(cfg: dict[str, Any]) -> tuple[Optional[str], Optional[str]]:
     provider = str((cfg or {}).get("provider", "") or "").strip() or None
     model = str((cfg or {}).get("model", "") or "").strip() or None
     if model and model.lower() == "auto":
@@ -231,7 +238,7 @@ def resolve_model(cfg: Dict[str, Any]) -> Tuple[Optional[str], Optional[str]]:
     return provider, model
 
 
-def resolve_timeout_s(cfg: Dict[str, Any], default_ms: int = 30000) -> float:
+def resolve_timeout_s(cfg: dict[str, Any], default_ms: int = 30000) -> float:
     try:
         ms = int(cfg.get("timeout_ms") or cfg.get("explainer_timeout_ms") or default_ms)
     except (TypeError, ValueError):

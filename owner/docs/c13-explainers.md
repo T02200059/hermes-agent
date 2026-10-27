@@ -11,7 +11,7 @@
 | `progress` | 沉默期进度旁白；`stream_guard.snapshot.tripped` 时让位 | `🧭 系统提示：` → notice 卡 |
 | `approval` | 审批卡发出前 2–3 句事实解说；**绝不建议批/拒**；fail-open | 嵌进飞书审批卡正文 |
 | `english` | `display.language=zh` 且终局整段英文 → 侧路中文解说；**不改原文** | `🔤 系统提示：` → notice 卡 |
-| `recap` | 按需 `/recap`：压平 User/Agent 对话 → 一句/小段回顾（主体语气） | `📋 系统提示：` → notice 卡；**不写主会话模型历史** |
+| `recap` | 按需 `/recap` + **长对话闲置自动**：压平 User/Agent → 一句/小段回顾 | `📋 系统提示：` → notice 卡；**不写主会话模型历史** |
 
 ## 上下文与输入预算
 
@@ -55,6 +55,40 @@ explainers:
 - 注册：`owner/owner-extensions` → `register_command("recap", …)`
 - 路径：`SessionDB` 读当前 `session_id` transcript → `flatten_messages` → `call_explainer_llm("recap", …)` → `📋 系统提示：…`
 - 飞书：`feishu_card.notice_titles` 已含该前缀 → auto-card notice。
+- 成功后写入 watermark（`~/.hermes/owner/recap_watermarks/<session_id>`），避免紧接着再自动发一次。
+
+## 长对话结束自动 recap（对齐 Grok Build）
+
+权威来源：本机 Grok Build 1.0.62 二进制 + 上游
+`crates/codegen/xai-grok-shell/src/session/helpers/session_recap.rs`：
+
+| 常量 | 值 | 含义 |
+|---|---|---|
+| `MIN_TURNS_FOR_AUTO_RECAP` | **3** | 至少 3 个真实用户主回合才自动 |
+| `RECAP_MIN_IDLE` | **180s**（`3 * 60`） | 闲置阈值；shell 从上次模型请求计，daemon 从回合结束计 |
+| watermark 文件 | `last_recap_main_turn` | 成功（或超长抑制展示）后写入；无新主回合不重复自动 |
+
+门控失败原因（与上游字符串一致）：`no main turns yet` / `fewer than min turns for auto recap` / `idle threshold not met` / `no new main turn since last recap`。
+
+**Hermes 适配（飞书无 TUI 焦点）**：把「从闲置回来」映射为「一轮正常结束后安静 `idle_seconds`」——
+
+1. hook `on_session_end`（每轮完成）→ 调度 Timer；
+2. `pre_gateway_dispatch` / `agent_loop_stopped` → 取消（用户又开口或打断）；
+3. Timer 到期 → 同 `/recap` 生成 + notice 发送 → 写 watermark。
+
+配置（`overlay.yaml`）::
+
+```yaml
+explainers:
+  recap:
+    enabled: true
+    auto:
+      enabled: true
+      min_user_turns: 3   # = Grok MIN_TURNS_FOR_AUTO_RECAP
+      idle_seconds: 180   # = Grok RECAP_MIN_IDLE
+```
+
+短会话（<3 用户回合）不触发；同一段落内不重复自动。手动 `/recap` 仍即时可用且会抬高 watermark。
 - 失败 fail-open（返回短状态文案，不抛）。
 
 ## 扩展更多 kind
