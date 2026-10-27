@@ -331,7 +331,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 
 | 阶段 | 主题 | 条目（保留原 C 编号） |
 |------|------|----------------------|
-| **一** | 非渠道 / 终端 / 加载器 | **C01**（最先）→ C02 → C08 → C03 → **C26** → C21（未展开）→ C16 → C17 → C19 → C18（忽略）→ C14 → C13 → C22（忽略）；旁注 B12 不强制 |
+| **一** | 非渠道 / 终端 / 加载器 | **C01**（最先）→ C02 → C08 → C03 → **C26** → C21（忽略）→ C16 → C17 → C19 → C18（忽略）→ C14 → C13 → C22（忽略）；旁注 B12 不强制 |
 | **二** | 飞书**核心**底座 | **C04**（审批卡 + 中文名/sender 缓存 + inbound + 签名）→ **C10**（+B11 同批）→ **C11 底座**（auto-card / early-typing）；diff/clarify/bot 菜单可延阶段三 |
 | **三** | 飞书定制 + 杂项 | **C09**（依赖 C04）→ C11 余下 → **C12** → C15 → C25（`/providers` 已归 C26）→ **C06** LDAP / **C07** API media（延后） → C20（忽略）→ C23 → **B17 飞书半边** ✅；**C24** 全量战役不排 |
 | **四** | 飞书多 profile | **仅 C05**（`profile_endpoints` / bots 路由；不吃 multiplex）。勿提前；与阶段三 LDAP **文件边界**分开 |
@@ -547,7 +547,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 - [x] **C26-feishu-picker** · 源 §4.9 飞书半边 · `/providers` 交互卡（provider→model→确认）· **优先级：P1**（阶段三）· **已落地**
   - `owner/feishu/model_picker.py`；adapter `_model_picker_state` / `send_model_picker_card` / card-action `hermes_model_picker`
   - 测：`tests/owner/test_c26_model_picker.py`；说明：`owner/docs/c26-model-picker.md`
-- [ ] **C21** · 源 §2.4–2.6 / §2.9 · 模型杂项 · **优先级：P1** · **未展开**（白名单·TTL 已归 C26）
+- [x] **C21** · 源 §2.4–2.6 / §2.9 · 模型杂项 · **优先级：P1** · **忽略（不做）**（2026-10-27 用户拍板：MiniMax/Kimi 不要；其余官方/C10/C26 已覆盖或现网无感；§2.6 Qwen debris 若飞书再出现截断 thinking 再单开）
 
 ### P2 暂缓
 
@@ -602,6 +602,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 - [x] **C12-memory-approval** · memory 写入飞书审批卡 / 打开 `memory.write_approval` — **明确不做**（用户拍板；现网保持 `memory.write_approval=false`）
 - [x] **C22** · TUI skin / ruolin（源 §6.1–6.2）— **明确不做**（用户拍板；仅皮肤引擎与 ruolin 系列，不迁）
 - [x] **C20** · Semantic Audit Gate（源 §3.9）— **明确不做**（用户拍板；人在环审批已覆盖主线，不迁语义审计门）
+- [x] **C21** · 模型杂项（源 §2.4–2.6 / §2.9）— **明确不做**（用户拍板；MiniMax/Kimi 不迁；其余已覆盖/现网无感）
 
 ---
 
