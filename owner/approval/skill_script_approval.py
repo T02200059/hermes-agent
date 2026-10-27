@@ -226,9 +226,17 @@ def load_skill_script_dirs() -> Dict[str, Set[str]]:
 
 
 def _path_has_dir_component(token: str) -> bool:
-    """True when the token names a path (absolute or with a directory part)."""
+    """True when the token names a path (absolute, ``./``/``../``, or with a dir part).
+
+    ``Path("./run.py").parts == ("run.py",)`` — the ``./`` is normalized away —
+    so explicit relative prefixes must be checked on the raw token before Path.
+    Pure basenames (``run.py``) still skip the directory containment check.
+    """
     if not token:
         return False
+    # Raw prefixes: Path("./x") collapses to ("x",) and would otherwise bypass.
+    if token in (".", "..") or token.startswith(("./", ".\\", "../", "..\\")):
+        return True
     p = Path(token)
     return p.is_absolute() or (len(p.parts) > 1)
 
@@ -249,7 +257,7 @@ def _token_under_viewed_skill(
     viewed_skills: Set[str],
     skill_dirs: Dict[str, Set[str]],
 ) -> bool:
-    """Basename-only tokens skip the dir check; path tokens must sit under a skill root."""
+    """Pure basenames skip the dir check; ``./``/``../``/abs/nested must sit under a skill root."""
     if not _path_has_dir_component(token):
         return True
     try:
@@ -415,8 +423,9 @@ def is_skill_script_allowed(command: str) -> Optional[str]:
         viewed = skills.intersection(viewed_set)
         if not viewed:
             return None
-        # Basename hit is necessary but not sufficient for path tokens:
-        # resolved abs path must fall inside a viewed skill's scanned root.
+        # Basename hit is necessary but not sufficient for path-like tokens
+        # (./ ../ abs nested): resolved path must fall inside a viewed skill root.
+        # Pure basenames keep the dir-check exemption (no tool workdir available).
         if not _token_under_viewed_skill(token, viewed, skill_dirs):
             return None
         matched_viewed |= viewed

@@ -403,3 +403,66 @@ def test_path_inside_skill_dir_is_approved(tmp_path, monkeypatch):
     )
     _view()
     assert ssa.is_skill_script_allowed(f"python3 {script}") == SKILL
+
+
+def test_dot_slash_outside_skill_dir_is_rejected(tmp_path, monkeypatch):
+    """``./script`` must not inherit basename exemption (Path normalizes ``./`` away)."""
+    skill_root = tmp_path / "skills" / "demo" / SKILL
+    skill_root.mkdir(parents=True)
+    (skill_root / SCRIPT).write_text("x", encoding="utf-8")
+    evil = tmp_path / "evil"
+    evil.mkdir()
+    (evil / SCRIPT).write_text("x", encoding="utf-8")
+
+    monkeypatch.setattr(ssa, "load_skill_scripts", lambda: {SCRIPT: {SKILL}})
+    monkeypatch.setattr(
+        ssa,
+        "load_skill_script_dirs",
+        lambda: {SKILL: {str(skill_root.resolve())}},
+    )
+    _view()
+    monkeypatch.chdir(evil)
+    assert ssa.is_skill_script_allowed(f"python3 ./{SCRIPT}") is None
+
+
+def test_dot_slash_inside_skill_dir_is_approved(tmp_path, monkeypatch):
+    """``./script`` under the viewed skill root (cwd=skill root) → approve."""
+    skill_root = tmp_path / "skills" / "demo" / SKILL
+    skill_root.mkdir(parents=True)
+    (skill_root / SCRIPT).write_text("x", encoding="utf-8")
+
+    monkeypatch.setattr(ssa, "load_skill_scripts", lambda: {SCRIPT: {SKILL}})
+    monkeypatch.setattr(
+        ssa,
+        "load_skill_script_dirs",
+        lambda: {SKILL: {str(skill_root.resolve())}},
+    )
+    _view()
+    monkeypatch.chdir(skill_root)
+    assert ssa.is_skill_script_allowed(f"python3 ./{SCRIPT}") == SKILL
+
+
+def test_pure_basename_still_exempt(tmp_path, monkeypatch):
+    """Pure basename keeps dir-check exemption (no tool workdir threaded yet)."""
+    skill_root = tmp_path / "skills" / "demo" / SKILL
+    skill_root.mkdir(parents=True)
+    (skill_root / SCRIPT).write_text("x", encoding="utf-8")
+
+    monkeypatch.setattr(ssa, "load_skill_scripts", lambda: {SCRIPT: {SKILL}})
+    monkeypatch.setattr(
+        ssa,
+        "load_skill_script_dirs",
+        lambda: {SKILL: {str(skill_root.resolve())}},
+    )
+    _view()
+    # cwd elsewhere — basename-only still auto-approves by design
+    monkeypatch.chdir(tmp_path)
+    assert ssa.is_skill_script_allowed(f"python3 {SCRIPT}") == SKILL
+
+
+def test_path_has_dir_component_dot_slash():
+    assert ssa._path_has_dir_component("./run.py") is True
+    assert ssa._path_has_dir_component("../run.py") is True
+    assert ssa._path_has_dir_component("run.py") is False
+    assert ssa._path_has_dir_component("/abs/run.py") is True
+    assert ssa._path_has_dir_component("foo/bar.py") is True
