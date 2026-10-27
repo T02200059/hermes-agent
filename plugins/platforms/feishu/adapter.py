@@ -1358,6 +1358,8 @@ class FeishuAdapter(BasePlatformAdapter):
         self._clarify_state: dict[str, dict[str, Any]] = {}
         # [owner] C26-feishu-picker: picker_id -> {providers, source}
         self._model_picker_state: dict[str, dict[str, Any]] = {}
+        # [owner] C12-feishu-guide: guide_id -> {source}
+        self._guide_card_state: dict[str, dict[str, Any]] = {}
         self._load_seen_message_ids()
 
     @staticmethod
@@ -2335,6 +2337,11 @@ class FeishuAdapter(BasePlatformAdapter):
                 return self._handle_model_picker_action(
                     event=event, action_value=action_value, loop=loop,
                 )
+            # [owner] C12-feishu-guide
+            if action_value.get("hermes_feishu_guide"):
+                return self._handle_guide_card_action(
+                    event=event, action_value=action_value, loop=loop,
+                )
             # [owner] C11-clarify
             if action_value.get("clarify_id") or (
                 isinstance(action_value.get("form_value"), dict)
@@ -2727,6 +2734,35 @@ class FeishuAdapter(BasePlatformAdapter):
         from owner.feishu.model_picker import dispatch_model_picker_action
 
         return dispatch_model_picker_action(
+            self, event=event, action_value=action_value, loop=loop,
+        )
+
+    # ── [owner] C12-feishu-guide ──────────────────────────────────────────
+
+    async def send_guide_card(
+        self,
+        chat_id: str,
+        source: Any,
+        metadata: Optional[dict[str, Any]] = None,
+    ) -> None:
+        """[owner] Send interactive guide card (C12-feishu-guide).
+
+        Thin glue — state write + card build live in
+        ``owner/feishu/steer_card.py::send_guide_card``.
+        """
+        from owner.feishu.steer_card import send_guide_card as _owner_send
+
+        return await _owner_send(
+            self, chat_id=chat_id, source=source, metadata=metadata,
+        )
+
+    def _handle_guide_card_action(
+        self, *, event: Any, action_value: dict[str, Any], loop: Any,
+    ) -> Any:
+        """[owner] Guide card callback — thin glue to owner.feishu.steer_card."""
+        from owner.feishu.steer_card import dispatch_guide_card_action
+
+        return dispatch_guide_card_action(
             self, event=event, action_value=action_value, loop=loop,
         )
 

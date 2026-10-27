@@ -21,6 +21,19 @@ def register(ctx) -> None:
     except Exception:
         logger.warning("owner: /providers registration failed", exc_info=True)
 
+    # [owner] C12-feishu-guide: interactive guide card for queue/steer/goal/subgoal/background
+    try:
+        from owner.commands.feishu_guide import handle_feishu_guide_command
+
+        ctx.register_command(
+            "feishu-guide",
+            handle_feishu_guide_command,
+            description="Feishu interactive guide card (queue/steer/goal/subgoal/background)",
+        )
+        logger.debug("owner: /feishu-guide registered via plugin command")
+    except Exception:
+        logger.warning("owner: /feishu-guide registration failed", exc_info=True)
+
     try:
         from owner.explainers.recap import handle_recap_command
 

@@ -399,7 +399,7 @@ async def _process_bot_menu_click(
     # processing, and routing through _handle_message_with_guards would block
     # behind the per-chat lock until the current turn finishes, causing a
     # multi-second delay between the ack and the card appearing.
-    # C12 feishu-guide 直发：本批仅 fail-open；无 send_guide_card 时走下方命令映射。
+    # [owner] C12-feishu-guide: 有 send_guide_card 则直发卡（绕过 per-chat lock）；无则走下方命令映射。
     if event_key == "feishu_guide" and callable(getattr(adapter, "send_guide_card", None)):
         try:
             _source = adapter.build_source(

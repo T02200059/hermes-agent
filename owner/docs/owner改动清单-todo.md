@@ -422,7 +422,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - `owner/feishu/model_picker.py`；adapter `send_model_picker_card` / `_handle_model_picker_action` / `_model_picker_state`
   - 测：`tests/owner/test_c26_model_picker.py`；说明：`owner/docs/c26-model-picker.md`
 - [ ] **C11-diff** · 源 §4.4 · Feishu diff 卡 · **忽略（不做）**
-- [ ] **C12** · 源 §4.10–4.15 · memory write-approval 卡 / feishu-guide / 上传守卫 / doc_read 图 OCR / @所有人 / merge_forward · **优先级：P1**（子点分批；本轮 C12-at-all + C12-upload-guard；**C12-memory-approval 忽略（不做）**）
+- [ ] **C12** · 源 §4.10–4.15 · memory write-approval 卡 / feishu-guide / 上传守卫 / doc_read 图 OCR / @所有人 / merge_forward · **优先级：P1**（子点分批；本轮 C12-at-all + C12-upload-guard + C12-feishu-guide；**C12-memory-approval 忽略（不做）**）
   - [x] **C12-at-all** · 源 §4.14 · 群 `@_all`（@所有人）不再当提到自己 · **优先级：P2** · **已落地**
     - 意图：群里发 `@所有人` 只是通知大家，不应自动开一轮；须明确 @机器人（或其它策略）才触发
     - 胶水：`plugins/platforms/feishu/adapter.py` `_mentions_self`（极小 P2：去掉 `@_all → True`；`# [owner] C12-at-all`）
@@ -437,7 +437,13 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
     - 验证：`python -m pytest tests/owner/test_c12_upload_guard.py -q`
     - 影响面：仅出站图/文件上传失败可见性；不改上传 API 成功路径、不改入站媒体、不改限值以外策略
   - [ ] **C12-memory-approval** · 源 §4.10 · memory 写入飞书审批卡（依赖 C04）· **忽略（不做）** · 用户拍板不做；现网保持 `memory.write_approval=false`，不打开
-  - [ ] **C12-feishu-guide** · 源 §4.12 · 菜单点了真出引导卡（依赖 bot-menu 桩）· **未做**
+  - [x] **C12-feishu-guide** · 源 §4.12 · 菜单点了真出引导卡（依赖 bot-menu 桩）· **优先级：P1** · **已落地**
+    - 意图：bot 菜单 / `/feishu-guide` 弹出两步引导卡（选 queue/steer/goal/subgoal/background → 填表单），合成斜杠命令注入会话；菜单有卡则直发，勿只走 fail-open
+    - helper：`owner/feishu/steer_card.py`（建卡 / 回调 / `_route_guide_command` 重建 dm source 防 p2p 键失配）+ `owner/commands/feishu_guide.py`
+    - 胶水：`plugins/platforms/feishu/adapter.py` `_guide_card_state` / `send_guide_card` / `_handle_guide_card_action` + `hermes_feishu_guide` 分支（`# [owner] C12-feishu-guide`）；`owner/owner-extensions` 注册；`hermes_cli/commands.py` `should_bypass_active_session` 复用 `is_gateway_known_command`（plugin busy bypass）
+    - 测：`tests/owner/test_c12_feishu_guide.py`
+    - 验证：`python -m pytest tests/owner/test_c12_feishu_guide.py -q`
+    - 影响面：飞书引导卡路径；queue 提交本批仅 done 卡 + `/queue` 注入（状态卡变身属后续子点）；不改其它卡片
   - [ ] **C12-merge-forward-recv** · 源 §4.15 · 合并转发二次拉取成可读记录 · **未做**
   - [ ] **C12-doc-ocr** · 源 §4.13 · docx 内嵌图物化 + 可选 OCR · **未做**
 - [x] **C13** · 源 §7.24–7.26 · progress / approval / english / **recap** explainer · **已落地** · 飞书底座（C04/C10/C11）已齐

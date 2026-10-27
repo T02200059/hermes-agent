@@ -495,9 +495,21 @@ def should_bypass_active_session(command_name: str | None) -> bool:
     #5057 / PRs #6252, #10370, #4665. ACTIVE_SESSION_BYPASS_COMMANDS remains the subset with
     explicit Level-2 handlers; the rest fall through to the catch-all.
 
+    Plugin-registered slash commands (e.g. /feishu-guide, /providers) are not in
+    ``_COMMAND_LOOKUP``, so ``resolve_command()`` returns None for them. Without also
+    checking ``is_gateway_known_command()`` they fall through to the busy-input path and
+    get injected as user text into the running agent turn — the same class of bug as
+    #5057, but for plugin commands. ``is_gateway_known_command()`` already covers plugin
+    commands via ``_iter_plugin_command_entries()``, so we reuse it.
+
     See #10370, #4665, #5057, #6252.
     """
-    return resolve_command(command_name) is not None if command_name else False
+    # [owner] C12-feishu-guide: also bypass for plugin slash commands
+    if not command_name:
+        return False
+    if resolve_command(command_name) is not None:
+        return True
+    return is_gateway_known_command(command_name)
 
 
 def _resolve_config_gates() -> set[str]:
