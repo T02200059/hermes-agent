@@ -106,3 +106,36 @@ def test_run_turn_runner_hook_wired():
     src = Path("gateway/run_turn_runner.py").read_text(encoding="utf-8")
     assert "apply_feishu_timeout_stop" in src
     assert "[owner] B17" in src
+
+
+def test_timeout_notice_english_via_lang_and_display_language(monkeypatch):
+    en = timeout_notice_text(600, lang="en")
+    assert "10" in en
+    assert "stopped" in en.lower() or "No response" in en
+    assert "停止" not in en
+
+    monkeypatch.setattr(
+        "owner.explainers.common.display_language",
+        lambda: "en",
+    )
+    import agent.i18n as i18n_mod
+
+    def _fake_t(key, lang=None, **kw):
+        return key  # miss → contains clarify_timeout_notice → fallback
+
+    monkeypatch.setattr(i18n_mod, "t", _fake_t)
+    text = timeout_notice_text(120)  # no lang → display_language()
+    assert "2" in text
+    assert "stopped" in text.lower() or "No response" in text
+    assert "停止" not in text
+
+
+def test_timeout_notice_locale_catalog_has_zh_and_en():
+    from agent.i18n import t
+
+    zh = t("gateway.clarify_timeout_notice", lang="zh", minutes=5)
+    en = t("gateway.clarify_timeout_notice", lang="en", minutes=5)
+    assert "clarify_timeout_notice" not in zh
+    assert "clarify_timeout_notice" not in en
+    assert "5" in zh and "停止" in zh
+    assert "5" in en and ("stopped" in en.lower() or "No response" in en)

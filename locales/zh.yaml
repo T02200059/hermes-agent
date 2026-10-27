@@ -679,6 +679,7 @@ gateway:
     expired: "⏳ 此提示已过期——请发送新的请求。"
     native_stream_placeholder: "💬 等待你的选择..."
     skip_hint: '回复“skip”即可跳过此问题。'
+  clarify_timeout_notice: "⏳ 未在 {minutes} 分钟内收到回复，已停止当前操作。需要的话再发消息给我。"
   errors:
     rate_limited: "⏱️ AI 模型服务正在限流。请稍等片刻，然后使用 /retry。"
     auth_failed: "⚠️ 登录 AI 模型服务失败。请使用 /login 重新登录，或请运行此机器人的人在主机上执行 `hermes doctor`。"

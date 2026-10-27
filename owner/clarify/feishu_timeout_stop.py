@@ -41,20 +41,36 @@ def is_feishu_inactivity_timeout(
     return isinstance(response, str) and response.startswith(_TIMEOUT_PREFIX)
 
 
-def timeout_notice_text(timeout_seconds: float, *, lang: str = "zh") -> str:
+def timeout_notice_text(timeout_seconds: float, *, lang: str | None = None) -> str:
     try:
         minutes = max(0, int(float(timeout_seconds) / 60))
     except (TypeError, ValueError):
         minutes = 0
+    if not lang:
+        try:
+            from owner.explainers.common import display_language
+
+            lang = display_language()
+        except Exception:
+            lang = "zh"
+    lang = str(lang or "zh").strip().lower() or "zh"
     try:
         from agent.i18n import t
 
-        text = t("gateway.clarify_timeout_notice", minutes=minutes)
+        text = t("gateway.clarify_timeout_notice", lang=lang, minutes=minutes)
         if text and "clarify_timeout_notice" not in text:
             return text
     except Exception:
         pass
-    template = _NOTICE.get(lang) or _NOTICE["zh"]
+    # Prefer exact / prefix match (en / zh-*), else zh fallback.
+    template = _NOTICE.get(lang)
+    if template is None:
+        if lang.startswith("zh"):
+            template = _NOTICE["zh"]
+        elif lang.startswith("en"):
+            template = _NOTICE["en"]
+        else:
+            template = _NOTICE["zh"]
     return template.format(minutes=minutes)
 
 
@@ -80,7 +96,7 @@ def apply_feishu_timeout_stop(
     except Exception:
         timeout = 3600.0
 
-    notice = timeout_notice_text(timeout)
+    notice = timeout_notice_text(timeout)  # lang via display_language()
     adapter = getattr(ctx, "_status_adapter", None)
     chat_id = getattr(ctx, "_status_chat_id", None)
     schedule = getattr(runner, "_schedule", None)

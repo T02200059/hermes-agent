@@ -687,6 +687,7 @@ gateway:
     native_stream_placeholder: "💬 Waiting for your choice..."
     skip_hint: 'Reply "skip" to skip this question.'
 
+  clarify_timeout_notice: "⏳ No response received within {minutes} minutes; the current operation has stopped. Send me a message if you need anything."
   errors:
     rate_limited: "⏱️ The AI model service is rate-limiting requests. Wait a moment, then use /retry."
     auth_failed: "⚠️ Sign-in to the AI model service failed. Use /login to sign in again, or ask whoever runs this bot to run `hermes doctor` on the host."
