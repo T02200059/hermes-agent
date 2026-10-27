@@ -1354,6 +1354,8 @@ class FeishuAdapter(BasePlatformAdapter):
         self._bot_menu_dedup: dict[tuple[str, str], Any] = {}
         self._bot_menu_event_ids: dict[str, float] = {}
         self._bot_menu_dedup_lock = threading.Lock()
+        # [owner] C11-clarify: clarify_id -> {session_key, choices, question, message_id}
+        self._clarify_state: dict[str, dict[str, Any]] = {}
         self._load_seen_message_ids()
 
     @staticmethod
@@ -2263,7 +2265,7 @@ class FeishuAdapter(BasePlatformAdapter):
     def _on_card_action_trigger(self, data: Any) -> Any:
         """Synchronous SDK card-action callback.
 
-        Approval/update-prompt buttons return the resolved card inline (the only reliable way
+        Approval/update-prompt/clarify buttons return the resolved card inline (the only reliable way
         to sync all clients) and schedule the async resolution; other clicks are routed as
         synthetic commands via ``_handle_card_action_event``.
         """
@@ -2273,7 +2275,29 @@ class FeishuAdapter(BasePlatformAdapter):
             return self._card_response()
         event = getattr(data, "event", None)
         action = getattr(event, "action", None)
-        action_value = getattr(action, "value", {}) or {}
+        action_value_raw = getattr(action, "value", {}) or {}
+        # [owner] SDK 可能返回 JSON 字符串；表单提交的 form_value 在 action 上
+        action_value = action_value_raw
+        if isinstance(action_value_raw, str) and action_value_raw.strip():
+            try:
+                import json as _json
+                _parsed = _json.loads(action_value_raw)
+                if isinstance(_parsed, dict):
+                    action_value = _parsed
+            except Exception:
+                pass
+        form_value = getattr(action, "form_value", None)
+        if isinstance(form_value, str) and form_value.strip():
+            try:
+                import json as _json
+                _parsed_fv = _json.loads(form_value)
+                if isinstance(_parsed_fv, dict):
+                    form_value = _parsed_fv
+            except Exception:
+                pass
+        if form_value and isinstance(action_value, dict):
+            action_value = dict(action_value)
+            action_value["form_value"] = form_value
         if isinstance(action_value, dict):
             # [owner] C09: skill_manage Feishu approval card clicks
             if action_value.get("hermes_action") == "skill_approval_gate":
@@ -2285,6 +2309,14 @@ class FeishuAdapter(BasePlatformAdapter):
                 return self._handle_approval_card_action(event=event, action_value=action_value, loop=loop)
             if action_value.get("hermes_update_prompt_action"):
                 return self._handle_update_prompt_card_action(event=event, action_value=action_value, loop=loop)
+            # [owner] C11-clarify
+            if action_value.get("clarify_id") or (
+                isinstance(action_value.get("form_value"), dict)
+                and action_value["form_value"].get("clarify_id")
+            ):
+                return self._handle_clarify_card_action(
+                    event=event, action_value=action_value, loop=loop,
+                )
         self._submit_on_loop(loop, self._handle_card_action_event(data))
         return self._card_response()
 
@@ -2600,6 +2632,43 @@ class FeishuAdapter(BasePlatformAdapter):
         """Per-chat lock for multi-chunk auto-card (C11); see owner.feishu.card_sender."""
         from owner.feishu.card_sender import get_card_send_lock
         return get_card_send_lock(self, chat_id)
+
+    # ── [owner] C11-clarify ───────────────────────────────────────────────
+
+    async def send_clarify(
+        self,
+        chat_id: str,
+        question: str,
+        choices: Optional[list],
+        clarify_id: str,
+        session_key: str,
+        metadata: Optional[dict[str, Any]] = None,
+    ) -> SendResult:
+        """Send a clarify prompt as a Feishu interactive card (C11-clarify)."""
+        from owner.feishu.clarify_card import send_clarify as _owner_send_clarify
+        return await _owner_send_clarify(
+            adapter=self,
+            chat_id=chat_id,
+            question=question,
+            choices=choices,
+            clarify_id=clarify_id,
+            session_key=session_key,
+            metadata=metadata,
+        )
+
+    async def retire_clarify_card(self, clarify_id: str, notice: str) -> None:
+        """Grey-out a still-live clarify card (gateway timeout / cancel / prose)."""
+        from owner.feishu.clarify_card import retire_clarify_card as _owner_retire
+        await _owner_retire(adapter=self, clarify_id=clarify_id, notice=notice)
+
+    def _handle_clarify_card_action(
+        self, *, event: Any, action_value: dict[str, Any], loop: Any,
+    ) -> Any:
+        """Clarify button / form submit — thin glue to owner.feishu.clarify_card."""
+        from owner.feishu.clarify_card import handle_clarify_card_action
+        return handle_clarify_card_action(
+            adapter=self, event=event, action_value=action_value, loop=loop,
+        )
 
     async def _handle_message_with_guards(self, event: MessageEvent) -> None:
         """Run one event through the agent pipeline under the per-chat lock (openclaw createChatQueue).

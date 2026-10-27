@@ -138,6 +138,7 @@ explainers:
 | 永久审批门 | C01 | `owner/approval/permanent_policy.py` → `gate_allow_permanent` / `get_allow_permanent` | `owner.approvals.allow_permanent`（默认 false） |
 | 飞书 auto-card / notice / early-typing | C11 底座 | `owner/feishu/auto_card.py`（`try_auto_card` / `match_notice_rule` / `make_notice_card`）；`card_sender.send_card`；`agent_end.try_auto_card_on_end`；adapter early-typing | `owner.feishu_card.*` |
 | 飞书 bot 菜单 menu_v6 | C11-bot-menu | `owner/feishu/bot_menu.py`（`handle_bot_menu_event`）；adapter 注册 + p2p/inbound 暖缓存 | `owner.feishu.bot_menu*` |
+| 飞书 clarify 交互卡 | C11-clarify | `owner/feishu/clarify_card.py`（`send_clarify` / `retire_clarify_card` / `handle_clarify_card_action`）；`owner/clarify/gateway_helpers.py` | — |
 | stream / output guard | C14 | `owner/stream_guard.snapshot`；`owner/output_guard`（`transform_llm_output`） | `owner.stream_guard.*` / `owner.output_guard.enabled` |
 | Checkpoint 预测 | C17 | `owner/checkpoint_predictor`（`predict_and_checkpoint`） | `owner.checkpoints.*` |
 | 护栏 i18n | C10 | `owner/i18n/localized.py` → `localized` | locales + 调用方 `_localized` |
@@ -408,7 +409,9 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 - [x] **C11-bot-menu** · 源 §4.6 · bot 菜单 menu_v6 + p2p 暖缓存 · **优先级：P1**（阶段三）· **已落地**
   - `owner/feishu/bot_menu.py`；adapter 注册/委托 + p2p/inbound cache warm；`overlay.yaml` → `feishu.bot_menu*`
   - 测：`tests/owner/test_owner_feishu_bot_menu_cold_cache.py`；说明：`owner/docs/c11-bot-menu.md`
-- [ ] **C11-clarify** · 源 §4.5 · Feishu clarify 交互卡 · **优先级：P1**（阶段三）
+- [x] **C11-clarify** · 源 §4.5 · Feishu clarify 交互卡 · **优先级：P1**（阶段三）· **已落地**
+  - `owner/feishu/clarify_card.py` + `owner/clarify/gateway_helpers.py`；adapter `send_clarify` / `retire_clarify_card` / card-action `clarify_id` 分支
+  - 测：`tests/owner/test_c11_clarify_card.py`；说明：`owner/docs/c11-clarify.md`
 - [ ] **C11-diff** · 源 §4.4 · Feishu diff 卡 · **暂缓，待讨论**
 - [ ] **C12** · 源 §4.10–4.15 · memory write-approval 卡 / feishu-guide / 上传守卫 / doc_read 图 OCR / @所有人 / merge_forward · **优先级：P1**
 - [x] **C13** · 源 §7.24–7.26 · progress / approval / english / **recap** explainer · **已落地** · 飞书底座（C04/C10/C11）已齐
