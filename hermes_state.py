@@ -1631,11 +1631,15 @@ class SessionDB(
     # can split compaction-archived rows without a second query. Contract: must include every
     # ``agent.transcript_repair._OWNED_COLUMNS`` column, because replay stamps
     # ``transcript_row_snapshot(row)`` from these rows (token_count is hashed there, not decoded).
+    # [owner] C02 follow-up: include owner_provider_name + token qty cols so
+    # transcript_row_snapshot(_OWNED_COLUMNS) never IndexError on conversation loads.
     _CONVERSATION_ROW_COLUMNS = (
         "id, role, content, tool_call_id, tool_calls, tool_name, effect_disposition, "
-        "finish_reason, reasoning, reasoning_content, reasoning_details, "
+        "finish_reason, owner_provider_name, reasoning, reasoning_content, reasoning_details, "
         "codex_reasoning_items, codex_message_items, platform_message_id, observed, "
-        "_compressed_summary, timestamp, token_count, active, api_content, display_kind, display_metadata, message_uid, "
+        "_compressed_summary, timestamp, token_count, active, "
+        "input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, "
+        "api_content, display_kind, display_metadata, message_uid, "
         "absorbed_message_uids, tool_call_uids, tool_call_uid"
     )
 

@@ -367,6 +367,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
     2. `owner/approval/permanent_policy.py`（飞书/QQ 永久审批禁用；官方 approval 薄委托）
     3. `owner/attribution.py`（官方 agent_init / chat_completion_helpers / run_agent / messages 薄委托）
 - [x] **C02** · 源 §2.1–2.2（credential）+ §10 token 用量数量落盘 · **优先级：P0**
+  - [x] **C02 follow-up（2026-10-27）**：`_CONVERSATION_ROW_COLUMNS` 补 `owner_provider_name` + 四列 token，避免第二轮飞书 `history_unavailable`（`transcript_row_snapshot` IndexError）
   - 落地：
     1. 归因整链透传 + `api_messages` 剥离（runtime/oneshot/cli/tui/gateway/cron/delegate/mid-switch）
     2. `owner/providers/credential_helpers.py`；`model_switch_providers` 薄委托
