@@ -21,7 +21,8 @@
 2. **无 choices**：纯文本 + `mark_awaiting_text`（网关文本拦截）。
 3. **点击**：选项 → resolve + 冻结绿卡；`__other__` → 输入表单；表单提交 → resolve + 冻结；返回 → 恢复选项卡。
 4. **retire**：gateway 调用 `retire_clarify_card`，REST PATCH 灰卡（避开 WS token 刷新）。
-5. **本批范围**：不做 B17 超时中断 agent、不做 multi_select 专用 UI。
+5. **B17 飞书半边** ✅（另见 `owner/clarify/feishu_timeout_stop.py`）：真超时补发提示并 CANCELLED 停转。
+6. **仍不做**：multi_select 专用 UI。
 
 ## 测
 

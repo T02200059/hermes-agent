@@ -672,6 +672,16 @@ class TurnRunner(GatewayTurnProgressMixin, GatewaySessionAgentMixin):
                 ctx._status_adapter.resume_typing_for_chat(ctx._status_chat_id)
             except Exception:
                 logger.debug("resume_typing_for_chat after clarify answer failed", exc_info=True)
+        # [owner] B17 飞书半边：真超时打断 agent + 补发提示（其它平台保持 timed_out 文案）
+        try:
+            from owner.clarify.feishu_timeout_stop import apply_feishu_timeout_stop
+            stopped = apply_feishu_timeout_stop(
+                self, response=response, answered=answered, clarify_mod=clarify_mod,
+            )
+            if stopped is not None:
+                return stopped
+        except Exception:
+            logger.debug("B17 feishu clarify timeout stop failed", exc_info=True)
         return response, answered
 
     def _approval_notify_sync(self, approval_data: dict) -> None:

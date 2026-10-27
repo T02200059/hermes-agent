@@ -205,9 +205,9 @@ explainers:
   - owner：`_stop_retry` + `receive_timeout=120` + `_rebuild_http_client`。v2：重连链已重写（backoff、close-code 分类、`is_reconnect` kwarg、`disconnect()` 置 `_running=False` 停止重试）；**O4** 已补读路径 `wait_for` 90s + 心跳静默关 socket；本批补 **`_rebuild_http_client`**（重连前关旧 httpx + `platform_http_client()` 新建 + 清 OAuth 缓存）。见 §「v2 已落地官方 fix」。
 - [x] **B16** · 源 §7.5 · executor-shutdown 不友好提示 · **验证状态：官方已修**
   - owner：`owner/gateway/turn_helpers.py::is_executor_shutdown_error` → 友好重启提示。v2：`agent/turn_loop_errors.py` 识别 interpreter/executor shutdown 后走 `site_copy("interpreter_shutdown", resume=…)`，不再抛裸 RuntimeError。
-- [x] **B17** · 源 §7.6 · Clarify 清理路径缺 stop sentinel / 飞书 clarify 超时未中断 · **验证状态：部分**
+- [x] **B17** · 源 §7.6 · Clarify 清理路径缺 stop sentinel / 飞书 clarify 超时未中断 · **验证状态：已修（官方半边 + 飞书半边）**
   - **官方半边已修**：`CLARIFY_STOP_SENTINEL`（= `clarify_gateway.CANCELLED`）+ `wait_for_response` 在 entry 消失 / event 空应答时返回 CANCELLED（不再伪造成用户超时）。见 §「v2 已落地官方 fix」。
-  - **飞书半边仍待 C 段/混合**：adapter 超时中断 agent loop + 超时补发提示属 owner 胶水，本批**不做**。
+  - **飞书半边已落地（2026-10-27）**：`owner/clarify/feishu_timeout_stop.py` + `gateway/run_turn_runner.py` `_ask_clarify_question` 薄钩；飞书真超时（`[user did not respond…]`）补发提示并返回 CANCELLED → outcome=`cancelled` 停转。测：`tests/owner/test_b17_feishu_clarify_timeout_stop.py`。
 - [x] **B18** · 源 §7.9 · 429 配额耗尽被当 transient 静默重试；长等待无即时状态 · **验证状态：官方已修**
   - owner：`error_classifier.py` `_has_long_reset_window` 单向降级 + `conversation_loop.py` `wait_time >= 60` 立即出状态。v2 本树已用 **O5**：天/周配额墙单向降为 billing，不再白等。即时状态（≥60s 立即出）未单独追平，主痛点（长墙当 transient）已消化。
 - [x] **B19** · 源 §7.10 · 运行中 agent 时 plugin 斜杠命令被当普通文本注入 · **验证状态：官方已修**
@@ -296,7 +296,7 @@ explainers:
 
 ### 次级（需先解决口径，暂不实施）
 
-- **B17**（clarify）：**官方半边已落地**（见下表）；飞书 adapter 超时中断 agent 仍属混合，跟 C 段，不当第一步硬开。
+- **B17**（clarify）：**官方半边 + 飞书半边均已落地**（见下表）。
 - **B12**（CLI OS 级 SIGINT）：v2 已用 prompt_toolkit `c-c` 覆盖按键层，且 `hermes_cli/cli_terminal_input.py:394` 明确表态「raw mode clears ISIG，内核 INTR 路径从未涉入 CLI」——上游认为无需处理。我们的场景（子 shell PTY 回弹 / 后台线程投递 SIGINT）上游大概率判 invalid，需先备证据再提。
 - **B11**（审批历史按英文文案判定）：**已与 C10 同批落地**（结构标记三层判定）。
 
@@ -316,7 +316,7 @@ explainers:
 | | O8 | 出站 DeepSeek BOS/EOS scrub | `gateway/platforms/base.py` 等 | 见 O 段表 |
 | B15 残留 | B15 | `_rebuild_http_client`：重连前关旧 httpx、`platform_http_client()` 新建、清 token | `plugins/platforms/qqbot/adapter.py` | `tests/gateway/test_qqbot_ws_liveness.py` +2 |
 | B17 官方半边 | B17 | `CLARIFY_STOP_SENTINEL`（= `CANCELLED`）；entry 消失 / 空 event → CANCELLED，真超时仍 `None` | `tools/clarify_tool.py`、`tools/clarify_gateway.py` | `tests/tools/test_clarify_gateway.py`（StopSentinel 组） |
-| （不做） | B17 飞书半边 | adapter 超时中断 agent + 超时补发提示 | — | 待 C 段/混合 |
+| B17 飞书半边 | B17 | 飞书真超时补发提示 + 返回 CANCELLED 停转 | `owner/clarify/feishu_timeout_stop.py`；`gateway/run_turn_runner.py` | `tests/owner/test_b17_feishu_clarify_timeout_stop.py` |
 
 O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 
@@ -330,9 +330,9 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 
 | 阶段 | 主题 | 条目（保留原 C 编号） |
 |------|------|----------------------|
-| **一** | 非渠道 / 终端 / 加载器 | **C01**（最先）→ C02 → C08 → C03 → **C26** → C21（未展开）→ C16 → C17 → C19 → C18 → C14 → C13 → C22（可选）；旁注 B12 不强制 |
+| **一** | 非渠道 / 终端 / 加载器 | **C01**（最先）→ C02 → C08 → C03 → **C26** → C21（未展开）→ C16 → C17 → C19 → C18（忽略）→ C14 → C13 → C22（可选）；旁注 B12 不强制 |
 | **二** | 飞书**核心**底座 | **C04**（审批卡 + 中文名/sender 缓存 + inbound + 签名）→ **C10**（+B11 同批）→ **C11 底座**（auto-card / early-typing）；diff/clarify/bot 菜单可延阶段三 |
-| **三** | 飞书定制 + 杂项 | **C09**（依赖 C04）→ C11 余下 → **C12** → C15 → C25（`/providers` 已归 C26）→ **C06** LDAP / **C07** API media → C20 → C23 → **B17 飞书半边**；**C24** 全量战役不排 |
+| **三** | 飞书定制 + 杂项 | **C09**（依赖 C04）→ C11 余下 → **C12** → C15 → C25（`/providers` 已归 C26）→ **C06** LDAP / **C07** API media → C20 → C23 → **B17 飞书半边** ✅；**C24** 全量战役不排 |
 | **四** | 飞书多 profile | **仅 C05**（`profile_endpoints` / bots 路由；不吃 multiplex）。勿提前；与阶段三 LDAP **文件边界**分开 |
 
 **依赖速记**：C01 万物前置 → 阶段二 C04 先于一切飞书体验/skill 门 → C09/C12 依赖 C04 → **C05 最后**。yaml 随 C01 / 阶段三 LDAP / 阶段四路由穿插缩文件，不大爆炸。
@@ -519,7 +519,8 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - 依赖核验：无硬依赖未做定制；硬依赖 = 官方 CheckpointManager + 已落地 C01 `patch_config`；LLM（auxiliary `task=approval`）与 `_owner_warn_callback` 为软依赖 fail-open
   - **2026-10-27 补丁**：`agent_init` 挂 `_owner_warn_callback=_emit_warning`；预测失败回落 `_emit_warning`；静态为空且 `_is_destructive_command` → cwd 窄兜底快照
   - **2026-10-27 复审修**：① 静态+LLM 皆空时只读命令降 `logger.debug`，破坏性才用户可见 warn；② 破坏性 cwd 兜底跳过 home/`/`，且 `ensure_checkpoint` 返回 False 不算成功
-- [ ] **C18** · 源 §9.1 · per-chat display overrides · **优先级：P1**
+- [x] **C18** · 源 §9.1 · per-chat display overrides · **优先级：P1** · **忽略（不做）**（2026-10-27 用户拍板）
+  - 范围（未落地，仅记）：`owner/display_overrides.py` 机制 — `owner.display.per_chat.<platform>.<chat_id>.*` 覆盖显示族（示例 yaml：`tool_progress` / `streaming` / `interim_assistant_messages` / `tool_preview_length`；解析器还可覆盖 `show_reasoning`、`long_running_notifications`、`tool_progress_grouping` 等经 `resolve_display_setting_for_source` 的键）+ 多处 `source=` 透传胶水。**不是**只有 tool_progress/streaming 两项。
 - [x] **C19** · 源 §5 · 链式快捷命令 `;;` + Quick Alias · **优先级：P1**（阶段一）
   - helper：`owner/commands/chained_quick.py`（`parse_chained_commands` / `expand_chained_quick_alias`）
   - 胶水：`cli.py` `_run_quick_command`；`gateway/run_inbound.py` `_hm_resolve_command`；`tui_gateway/methods_tools.py` `_dispatch_quick`（`type: chain`）
