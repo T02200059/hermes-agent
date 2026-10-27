@@ -526,7 +526,11 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 - [ ] **C22** · 源 §6.1–6.2 · TUI skin / ruolin · **优先级：P2**
 - [ ] **C23** · 源 §11 · 运维脚本 / HN Daily / Skill 同步 / Viking 治理 / 备份 / 周会脚本 · **优先级：P2**（按需拣）
 - [ ] **C24** · 源 §12 / §16.8–16.16 · 治理标记、T2-11~20 换码债、全量 `[owner]` 铺开 · **优先级：P2**（v2 **不做**「官方测全绿」与全量标记战役）
-- [ ] **C25** · 源 §4.7–4.8 · 编辑上限轮转 / 中文摘要等体验项 · **优先级：P2**（`/providers` 已归 **C26**）
+- [x] **C25** · 源 §4.7–4.8 · 编辑上限轮转 / progress dedup / 中文摘要等体验项 · **优先级：P2**（`/providers` 已归 **C26**）
+  - 编辑上限轮转：`SendResult.rotate` + Feishu 230072/230075；`classify_edit_failure`；`run_turn_progress` rotate/drain
+  - progress dedup：`append_dedup_counter` 防 ``` 污染；薄胶水 `_append_progress_repeat_count`
+  - 压缩中文摘要：`owner/feishu/compression_summary.py` + `hygiene_compression_notice.py`；auto/manual/hygiene 薄胶水
+  - 测：`tests/owner/test_c25_*.py`
 
 **定制段：原 C01–C25 + C26（providers）。执行顺序：四阶段（见上）。**
 

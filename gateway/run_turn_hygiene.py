@@ -611,6 +611,29 @@ class GatewayTurnHygieneMixin:
             new_tokens=_new_tokens,
         ):
             await asyncio.to_thread(_reset_hygiene_failure_streak, self, session_key)
+            # [owner] C25: hygiene compression Chinese notice (footer % drop is otherwise silent)
+            try:
+                from owner.gateway.hygiene_compression_notice import send_hygiene_compression_notice
+                _hyg_adapter = self._delivery_adapter_for(source)
+                _ctx_len = (
+                    getattr(getattr(attempt.agent, "context_compressor", None), "context_length", None)
+                    or hs.config_context_length
+                    or 128000
+                )
+                await send_hygiene_compression_notice(
+                    _hyg_adapter,
+                    source,
+                    msg_count=plan.msg_count,
+                    new_count=_new_count,
+                    approx_tokens=plan.approx_tokens,
+                    new_tokens=_new_tokens,
+                    hard_msg_limit=hs.hard_msg_limit,
+                    hyg_threshold_pct=hs.threshold_pct,
+                    hyg_context_length=int(_ctx_len),
+                    metadata=attempt.meta,
+                )
+            except Exception:
+                pass
         if _hyg_aborted:
             await self._hmwa_hygiene_record_failure_cooldown(
                 hs, session_key, session_entry.session_id,

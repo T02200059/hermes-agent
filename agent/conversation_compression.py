@@ -4220,6 +4220,21 @@ def compress_context(
             compression_made_progress=commit.made_progress, compression_used_fallback=_compression_used_fallback,
             compression_feasibility_skip=_compression_feasibility_skip, task_id=task_id,
         )
+        # [owner] C25: Feishu compression Chinese summary — after _compressed_est is known.
+        # Owner module gates on platform and fails open so this never interrupts compression.
+        try:
+            from owner.feishu.compression_summary import emit_compression_summary
+            emit_compression_summary(
+                agent,
+                compressed,
+                before_count=_pre_msg_count,
+                after_count=len(compressed),
+                compression_count=agent.context_compressor.compression_count,
+                before_tokens=approx_tokens,
+                after_tokens=_compressed_est,
+            )
+        except Exception:
+            pass
         logger.info(
             "context compression done: session=%s messages=%d->%d rough_tokens=~%s awaiting_real_usage=true",
             agent.session_id or "none", _pre_msg_count, len(compressed), f"{_compressed_est:,}",

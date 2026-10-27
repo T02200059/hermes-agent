@@ -751,12 +751,30 @@ class GatewaySessionCommandsMixin:
             finalize_context_engine_compression_notification(tmp_agent, committed=True)
             compressor = tmp_agent.context_compressor
             summary = result.summary
+            compressed = result.after_messages
+            msgs_before = len(msgs)
         finally:
             finalize_context_engine_compression_notification(tmp_agent, committed=False)
             self._evict_cached_agent(session_key)  # next turn rebuilds the prompt from current files
             # Off-loop + bounded: teardown can block on subprocess/network/SQLite.
             await self._cleanup_agent_resources_off_loop(tmp_agent, context="manual compression")
-        return "\n".join(_manual_compression_reply_lines(summary, compressor, request.focus_topic))
+        lines = _manual_compression_reply_lines(summary, compressor, request.focus_topic)
+        # [owner] C25: Feishu manual /compress — tmp_agent has no status_callback to the user,
+        # so append the Chinese content summary to the command response for Feishu only.
+        try:
+            if source.platform == Platform.FEISHU:
+                from owner.feishu.compression_summary import build_compression_summary_text
+                _feishu_summary_text = build_compression_summary_text(
+                    compressed,
+                    before_count=msgs_before,
+                    after_count=len(compressed),
+                    compression_count=getattr(compressor, "compression_count", 1),
+                )
+                if _feishu_summary_text:
+                    lines.append(_feishu_summary_text)
+        except Exception:
+            logger.debug("[owner] Feishu manual /compress summary failed", exc_info=True)
+        return "\n".join(lines)
 
     async def _build_manual_compression_agent(self, session_id: str, model, runtime_kwargs: dict):
         """Build the throwaway AIAgent that performs a manual /compress rewrite of *session_id*."""
