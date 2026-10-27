@@ -58,6 +58,7 @@
   - `owner/feishu/skill_approval_card.py` — `send_skill_approval_card` / `handle_card_click`
   - Hook 桥：`owner/owner-extensions/skill_manage_bridge/`（`pre_tool_call` + `pre_gateway_dispatch`）
 - **配置**：`config.owner.approvals.skill_script_allowlist`（overlay.yaml）；`feishu.skill_approval`（**主读 overlay.yaml**；`patch_feishu_profile.yaml` 仅回落）
+- **路径口径**：绝对/`./`/`../`/嵌套路径须落在已 view skill 根内；**纯 basename** 仍免目录校验（approval 未传 workdir）
 - **下游接线**：复用 C04 name cache / `send_card`；卡片 `hermes_action=skill_approval_gate`；永久按钮不展示（门内 `allow_permanent=False` + C01 策略）
 
 ### 4. Bot menu 按钮响应 · **C11-bot-menu · 已落地**
@@ -371,9 +372,11 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
     2. `owner/providers/credential_helpers.py`；`model_switch_providers` 薄委托
     3. `sessions.owner_provider_name` + messages 四列 token 用量落盘
   - **2026-10-27 补丁**：`PERSISTENCE_ONLY_MESSAGE_FIELDS` 增 `model`/`provider`（出站剥离；不落盘 DDL）；attribution docstring 改为「仅内存」
+  - **待确认（不阻塞）**：`/model` 切换时 `switch_model` → `bind_agent_attribution(agent, new_provider)`；若 `new_provider` 落到 wire 名 `custom`，`owner_provider_name` 可能记成 `custom`。出站剥离已闭环；此点需实机切一次 custom 端点确认，暂不改代码。
 - [x] **C03** · 源 §2.7–2.8 · damodel provider/proxy · **优先级：P0**
   - 落地：`owner/providers/damodel.py` + `plugins/model-providers/damodel/`；测 `tests/owner/test_damodel_provider.py`
   - **C03+ 2026-10-27**：`is_damodel_route` + `anthropic_prompt_cache_policy` 3 行 `# [owner]` 委托，恢复 damodel cache_control（成本回归）；thinking/extra_body 仍延后
+  - **手工验证（可选）**：本机对 damodel（含非 qwen 如 deepseek-v4-flash）发一枪，确认无 400 且 `cache_read_tokens > 0`；若某 upstream 拒 envelope，再按模型家族收窄
 - [x] **C04** · 源 §3.1–3.4 · 飞书审批卡片 + sender_name 缓存 + inbound 身份 + 多平台审批签名 · **优先级：P0**（阶段二首项）
   - helper：`owner/feishu/{approval,user_store,user_cache,sender_name_helpers,inbound_context}.py` + `owner/gateway/inbound_context.py`
   - 胶水：`plugins/platforms/feishu/adapter.py`（委托 + 24h soft TTL + store migrate）；`gateway/run_inbound.py`；`gateway/run_turn_runner.py`（metadata sender）；`cron/scheduler.py`（Cron context）
@@ -395,6 +398,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - 设计：`owner/docs/design/skill-approval/README.md`
   - 测：`tests/owner/test_skill_script_approval.py` / `test_skill_manage_gate.py`
   - **2026-10-27 补丁**：skill_approval 迁入 overlay（含旧树 `approval_home_chat_id` 真值）；脚本白名单增加「绝对/相对路径须落在 skill 目录内」
+  - **2026-10-27 复审修**：`./`/`../` 前缀不再被 Path 规范化成纯 basename 免审；纯 basename 仍豁免（approval 未传 tool workdir，暂不接 ②）
 - [x] **C10** · 源 i18n 层 · 显示层 i18n / `_localized` 与护栏文案（源 §12.2 / §16.9 相关） · **优先级：P0**（阶段二 · 与 B11 同批）
   - helper：`owner/i18n/localized.py`（`localized` / `GUARD_EN_TEXTS`）
   - 胶水：`tools/file_tools_write_guards.py`（受保护指令 / SSH 配置写入护栏走 `_localized`/`_blocked`）
@@ -471,10 +475,13 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - **recap**：第四 kind；`/recap` 按需；notice `📋 系统提示：`；不写主会话
   - **统一约定（已敲定，代码已做）**：单一 `owner.explainers` 块 + 共享取模 helper；禁止各 kind 各写 provider/model。详见上方「§ 二次开发可复用基建 §4」。
   - 旧顶层 `progress_explainer` / `approval_explainer` / `english_explainer` → 迁入 `explainers.{progress,approval,english,recap}`；`call_llm(task=…_explainer)` 长 task 名保留
+  - **暂缓**：三 kind 输出帽仍各文件硬编码 `_MAX_OUTPUT_CHARS`（progress/approval/english）；recap 已读 overlay。统一进 `explainers.*.max_output_chars` 另排
 - [x] **C14** · 源 §14 · output_guard + stream_guard · **优先级：P1**（阶段一 · 完整版）
   - helper：`owner/output_guard/`（`transform_llm_output`）+ `owner/stream_guard/`（`on_stream_delta`；S1/S2/S3，S3=`is_repetition_dominated`）
   - 注册：`owner/owner-extensions` `register()` + `plugin.yaml` hooks
   - 配置：`owner/config/overlay.yaml` → `stream_guard.*`（默认 `action: interrupt`）+ `output_guard.enabled`
+  - **暂缓**：代码 `DEFAULTS["action"]` 仍 `warn_only`（overlay 缺段时的 fail-open 灰度默认）；现网靠 overlay `interrupt`。是否把 DEFAULTS 改成 interrupt 另议
+  - **暂缓**：`owner/output_guard/__init__.py` 注释拼写仍 `[owner-patch P2-3]`（owner 内注释，非官方 hunk 标记）
   - 胶水：`agent/stream_delivery.py`（`request_stop` + latch）；`turn_finalizer.apply_llm_output_transform`（C1 interrupted + reasoning）；`turn_final_response`（C1）；`turn_api_call.handle_api_interrupt`（C2 early-persist 前 transform）
   - 落地说明：`owner/docs/c14-output-stream-guard.md`
   - 测：`tests/owner/test_c14_guards.py`；自检 `python -m owner.{output,stream}_guard.selfcheck`
@@ -504,6 +511,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - 测：`tests/owner/test_checkpoint_predictor.py`
   - 依赖核验：无硬依赖未做定制；硬依赖 = 官方 CheckpointManager + 已落地 C01 `patch_config`；LLM（auxiliary `task=approval`）与 `_owner_warn_callback` 为软依赖 fail-open
   - **2026-10-27 补丁**：`agent_init` 挂 `_owner_warn_callback=_emit_warning`；预测失败回落 `_emit_warning`；静态为空且 `_is_destructive_command` → cwd 窄兜底快照
+  - **2026-10-27 复审修**：① 静态+LLM 皆空时只读命令降 `logger.debug`，破坏性才用户可见 warn；② 破坏性 cwd 兜底跳过 home/`/`，且 `ensure_checkpoint` 返回 False 不算成功
 - [ ] **C18** · 源 §9.1 · per-chat display overrides · **优先级：P1**
 - [x] **C19** · 源 §5 · 链式快捷命令 `;;` + Quick Alias · **优先级：P1**（阶段一）
   - helper：`owner/commands/chained_quick.py`（`parse_chained_commands` / `expand_chained_quick_alias`）
@@ -542,6 +550,13 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 
 - [x] **H01** · **官方 test 污染梳理** · 审计见 WorkBuddy `tests-pollution-audit-2026-10-23.md`；优先项已修：`73fa8f53e3`…`de3dc9ecff`（#1/#2/#5/#6/#7 R1/#10 等）。#7 仅守卫登记第一步；网络守卫等后置。
 - [ ] **H02** · CLI approval `input()` 超时僵尸 reader · 仅无 callback 且非 PT 路径；超时后线程仍堵 `read(0)`，可能吞后续输入/连锁 deny；gateway/飞书/QQ/微信与正常 TUI **无感**；fail-closed 非安全问题。**暂时不做**。
+- [ ] **H03** · **审核遗留暂缓（2026-10-27 复审）** · 勿再当「漏做」：
+  1. C14 `stream_guard.DEFAULTS["action"]=warn_only`（overlay 已 interrupt）
+  2. `[owner-patch P2-3]` 旧拼写（`owner/output_guard/__init__.py` 注释）
+  3. C13 三 kind 输出帽硬编码（见 C13 条）
+  4. **标记纪律**：相对上游改过的官方文件按 hunk 补 `# [owner]`（归 C24；本轮未批量扫漏标）
+  5. `owner/validation/` 空目录（Check 7/8 inventory 工具未迁）
+  6. C02 `/model` → wire `custom` 归因（见 C02「待确认」）
 - **限流（暂不做）**：本清单 **无独立限流定制项**（C 段无 RPM/TPM/throttle/客户端主动限流条目）。最接近已消化项：
   - **B18**（已勾）/ 源 §7.9 — 429 配额耗尽当 transient 静默重试 → 本树用 **O5** 天/周配额墙单向降为 billing
   - 官方自带：`agent/rate_limit_tracker.py`、pairing `_rate_limits`、渠道 flood 等（非 owner 待做）
