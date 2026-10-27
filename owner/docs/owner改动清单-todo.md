@@ -414,6 +414,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - 说明：`owner/docs/c10-b11-i18n-approval-history.md`
   - 测：`tests/owner/test_file_tools_guard_text_i18n.py`
   - 范围：护栏文案层（T2-12）；非废弃的 display_filter；官方 `tools/approval.py` agent-facing 大段英文模板未整迁（B11 已用 summary.* + 护栏键 + 兜底覆盖历史挖掘）
+  - **2026-10-27 文案**：`gateway.shutdown.{notice_restart,notice_shutdown,cron_interrupted}` 开头 ⚠️→♻（与 `startup.restarted` 一致）；zh/en 语气收紧，其它 locale 仅换 emoji
 
 ### P1
 
