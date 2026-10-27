@@ -199,7 +199,7 @@ def _degenerate_scan(text: str) -> dict:
     first_dirty = None
     for idx, s in enumerate(scores):
         run = run + 1 if s > 0 else 0
-        best = best if best >= run else run
+        best = max(best, run)
         if s > 0 and first_dirty is None:
             first_dirty = idx * _BLOCK_SIZE
     rep_at = _find_word_repeat(text)
@@ -445,7 +445,7 @@ def _on_transform_llm_output(
                 folded = folded[: min(_MAX_CHARS, 2000)]
         else:
             folded = _fold_paragraphs(response_text)
-            # [owner-patch P2-3] Paragraph folding only splits on blank lines;
+            # [owner] P2-3: Paragraph folding only splits on blank lines;
             # single-\n-separated repeat loops (the 265k-char incident shape)
             # collapse to one giant paragraph and folding changes nothing.
             # Second-stage guard: hard-truncate anything still over budget so
