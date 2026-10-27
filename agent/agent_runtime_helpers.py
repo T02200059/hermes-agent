@@ -1889,6 +1889,11 @@ def anthropic_prompt_cache_policy(
     from agent.prompt_caching import ALIBABA_FAMILY_PROVIDERS, is_qwen_model
     if provider_lower in ALIBABA_FAMILY_PROVIDERS and is_qwen_model(model_lower):
         return True, False
+    # [owner] damodel cache_control — OpenAI-wire accepts Anthropic-style markers;
+    # without this branch damodel reports 0% cached tokens (see owner/providers/damodel.py).
+    from owner.providers.damodel import is_damodel_route
+    if is_damodel_route(provider_lower, eff_base_url):
+        return True, False
     return False, False
 
 

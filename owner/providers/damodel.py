@@ -23,3 +23,23 @@ damodel = ProviderProfile(
     # Some upstreams behind the proxy reject list-type tool content.
     supports_vision_tool_messages=False,
 )
+
+
+def is_damodel_route(provider: str | None, base_url: str | None = None) -> bool:
+    """True when the active route is damodel (by provider name or genai host).
+
+    Used by the thin ``# [owner]`` branch in
+    ``agent.agent_runtime_helpers.anthropic_prompt_cache_policy`` so OpenAI-wire
+    Anthropic-style ``cache_control`` markers are injected; without them
+    damodel reports 0% cached tokens and re-bills the full prompt every turn.
+    """
+    provider_lower = (provider or "").strip().lower()
+    if provider_lower == "damodel":
+        return True
+    try:
+        from utils import base_url_host_matches
+
+        return base_url_host_matches(base_url or "", "genai.damodel.com")
+    except Exception:
+        return "genai.damodel.com" in (base_url or "").lower()
+
