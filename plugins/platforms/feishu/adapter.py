@@ -36,7 +36,7 @@ import threading
 import time
 import uuid
 from collections import OrderedDict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -3302,6 +3302,13 @@ class FeishuAdapter(BasePlatformAdapter):
         message_id = str(getattr(message, "message_id", "") or "")
         logger.info("[Feishu] Received raw message type=%s message_id=%s", raw_type, message_id)
         normalized = self._normalize(raw_type, raw_content, getattr(message, "mentions", None))
+        # [owner] C12-merge-forward-recv: push-event content is a fixed placeholder
+        # ("Merged and Forwarded Message"); re-fetch via GET /im/v1/messages/{id}
+        # which returns parent + N children, then render a readable transcript.
+        if normalized.raw_type == "merge_forward":
+            expanded = await self._expand_merge_forward_text(message_id)
+            if expanded:
+                normalized = replace(normalized, text_content=expanded)
         media_urls, media_types = await self._download_feishu_message_resources(
             message_id=message_id, normalized=normalized,
         )
@@ -3652,6 +3659,36 @@ class FeishuAdapter(BasePlatformAdapter):
             return {oid: str(info.get("name") or "").strip() for oid, info in bots.items() if oid}
         except Exception:
             logger.debug("[Feishu] Failed to fetch bot names for %s", bot_ids, exc_info=True)
+            return None
+
+    # [owner] C12-merge-forward-recv: fetch children via GET /im/v1/messages/{id}
+    # (returns parent + N children with upper_message_id) and render a transcript.
+    async def _expand_merge_forward_text(self, message_id: str) -> Optional[str]:
+        if not self._client or not message_id:
+            return None
+        try:
+            request = self._build_get_message_request(message_id)
+            response = await self._run_blocking(self._client.im.v1.message.get, request)
+            if not response or getattr(response, "success", lambda: False)() is False:
+                code = getattr(response, "code", "unknown")
+                msg = getattr(response, "msg", "message lookup failed")
+                logger.warning(
+                    "[Feishu] Failed to expand merge_forward %s: [%s] %s", message_id, code, msg
+                )
+                return None
+            data = getattr(response, "data", None)
+            items = getattr(data, "items", None) or []
+            children = []
+            for item in items:
+                upper = str(getattr(item, "upper_message_id", "") or "")
+                if upper == message_id:
+                    children.append(item)
+            if not children:
+                return None
+            from owner.feishu.merge_forward import render_merge_forward_entries
+            return render_merge_forward_entries(message_id, children)
+        except Exception:
+            logger.warning("[Feishu] Failed to expand merge_forward %s", message_id, exc_info=True)
             return None
 
     async def _fetch_message_text(self, message_id: str) -> Optional[str]:

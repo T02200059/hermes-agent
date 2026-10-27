@@ -422,7 +422,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - `owner/feishu/model_picker.py`；adapter `send_model_picker_card` / `_handle_model_picker_action` / `_model_picker_state`
   - 测：`tests/owner/test_c26_model_picker.py`；说明：`owner/docs/c26-model-picker.md`
 - [ ] **C11-diff** · 源 §4.4 · Feishu diff 卡 · **忽略（不做）**
-- [ ] **C12** · 源 §4.10–4.15 · memory write-approval 卡 / feishu-guide / 上传守卫 / doc_read 图 OCR / @所有人 / merge_forward · **优先级：P1**（子点分批；本轮 C12-at-all + C12-upload-guard + C12-feishu-guide；**C12-memory-approval 忽略（不做）**）
+- [ ] **C12** · 源 §4.10–4.15 · memory write-approval 卡 / feishu-guide / 上传守卫 / doc_read 图 OCR / @所有人 / merge_forward · **优先级：P1**（子点分批；本轮 C12-at-all + C12-upload-guard + C12-feishu-guide + C12-merge-forward-recv；**C12-memory-approval 忽略（不做）**）
   - [x] **C12-at-all** · 源 §4.14 · 群 `@_all`（@所有人）不再当提到自己 · **优先级：P2** · **已落地**
     - 意图：群里发 `@所有人` 只是通知大家，不应自动开一轮；须明确 @机器人（或其它策略）才触发
     - 胶水：`plugins/platforms/feishu/adapter.py` `_mentions_self`（极小 P2：去掉 `@_all → True`；`# [owner] C12-at-all`）
@@ -444,7 +444,13 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
     - 测：`tests/owner/test_c12_feishu_guide.py`
     - 验证：`python -m pytest tests/owner/test_c12_feishu_guide.py -q`
     - 影响面：飞书引导卡路径；queue 提交本批仅 done 卡 + `/queue` 注入（状态卡变身属后续子点）；不改其它卡片
-  - [ ] **C12-merge-forward-recv** · 源 §4.15 · 合并转发二次拉取成可读记录 · **未做**
+  - [x] **C12-merge-forward-recv** · 源 §4.15 · 合并转发二次拉取成可读记录 · **优先级：P1** · **已落地**
+    - 意图：用户发「合并转发」时，bot 看到可读聊天记录（二次 `GET /im/v1/messages/{id}`），而非占位/浅层最多 8 行；失败静默回退占位
+    - helper：`owner/feishu/merge_forward.py`（`render_merge_forward_entries`；adapter + 后续 doc 工具共用）
+    - 胶水：`plugins/platforms/feishu/adapter.py` `_extract_message_content` 展开 + `_expand_merge_forward_text`（`# [owner] C12-merge-forward-recv`）
+    - 测：`tests/owner/test_c12_merge_forward_recv.py`
+    - 验证：`python -m pytest tests/owner/test_c12_merge_forward_recv.py -q`
+    - 影响面：仅入站 merge_forward 接收路径；工具侧 `om_` 再读属文档增强 commit
   - [ ] **C12-doc-ocr** · 源 §4.13 · docx 内嵌图物化 + 可选 OCR · **未做**
 - [x] **C13** · 源 §7.24–7.26 · progress / approval / english / **recap** explainer · **已落地** · 飞书底座（C04/C10/C11）已齐
   - **统一基建**：单一 `owner.explainers` 块 + `owner/explainers/`（config/llm/registry）；`register_kind` 可扩。详见「§ 二次开发可复用基建 §4」与 `owner/docs/c13-explainers.md`
