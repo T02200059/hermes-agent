@@ -63,8 +63,9 @@ _DESTRUCTIVE_PATTERNS = re.compile(
     )""",
     re.VERBOSE,
 )
-# Output redirects that overwrite files (> but not >>)
-_REDIRECT_OVERWRITE = re.compile(r'[^>]>[^>]|^>[^>]')
+# Output redirects that overwrite files (> but not >>).
+# [owner] Exclude fd dup redirects (2>&1, >&2, &>): the old `[^>]>[^>]` matched `2>&`.
+_REDIRECT_OVERWRITE = re.compile(r'(?<![>&])>(?!>)(?!&)')
 
 def _context_pruned_argument_paths(tool_name: str, args: Any) -> list[str]:
     """Paths whose values contain model-visible context-compression artifacts.

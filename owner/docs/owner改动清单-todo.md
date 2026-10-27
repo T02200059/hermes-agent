@@ -505,6 +505,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - v2：`gateway/session_context._VAR_MAP["HERMES_CRON_SESSION"]` + `cron/scheduler._CronRunScope` set/reset；gateway/ACP/TUI bind `cron_session=""`；`tools/approval_context` ContextVar 感知；外部 worker 剥离 presence vars。无进程级 `os.environ["HERMES_CRON_SESSION"]=1` 写入。
   - 薄缺口（未扩 scope）：进程启动 scrub 继承的 `HERMES_CRON_SESSION`/`SESSION_KEY`/`SESSION_ID`；restart watcher env 未特判 pop（子进程 builder 仍可能拷贝 `os.environ`）。
 - [x] **C17** · 源 §8.1 · Checkpoint Mutation Predictor · **优先级：P1**（阶段一）
+  - [x] **C17 follow-up（2026-10-27）**：官方 `_REDIRECT_OVERWRITE` 不再把 `2>&1`/`>&2` 当成破坏性覆盖（消 checkpoint 误报）
   - helper：`owner/checkpoint_predictor/`（`predict_and_checkpoint` / static_parser / llm_predict）
   - 配置：`owner/config/overlay.yaml` → `checkpoints.*`（predict_enabled / llm timeout / cache / static threshold）
   - 胶水：`agent/tool_executor.py` `_begin_tool_execution` terminal 分支（替换 destructive+cwd；保留 container skip）

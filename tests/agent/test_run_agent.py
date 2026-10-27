@@ -6975,3 +6975,14 @@ class TestMemoryContextSanitization:
         assert "memory-context" not in result.lower()
         assert "stale observation" not in result
         assert "how is the honcho working" in result
+
+
+def test_is_destructive_command_ignores_fd_dup_redirects():
+    """[owner] 2>&1 / >&2 must not trip overwrite detection (C17 noise)."""
+    from agent.tool_dispatch_helpers import _is_destructive_command
+
+    assert _is_destructive_command("git fetch origin 2>&1 | tail -3") is False
+    assert _is_destructive_command("echo hi 2>&1") is False
+    assert _is_destructive_command("cmd >&2") is False
+    assert _is_destructive_command("echo hi > file.txt") is True
+    assert _is_destructive_command("2>file") is True
