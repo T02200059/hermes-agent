@@ -199,6 +199,7 @@ WORKER_LIFECYCLE_HANDLERS = {
 }
 
 
+# [owner] C02: persist owner_provider_name on session insert
 def insert_session_row_in_transaction(
         self, conn, session_id, source, model=None, model_config=None,
         system_prompt=None, user_id=None, session_key=None, chat_id=None,

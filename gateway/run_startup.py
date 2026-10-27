@@ -475,6 +475,7 @@ class GatewayStartupMixin:
                 result = None
             with _log_suppressed(logging.DEBUG, "delivery ledger update failed", exc_info=True):
                 if result is not None and getattr(result, "success", False):
+                    # [owner] O3-O8: pass platform message_id into delivery ledger
                     await asyncio.to_thread(
                         mark_delivered, row["obligation_id"], getattr(result, "message_id", None))
                     redelivered += 1

@@ -166,6 +166,7 @@ def load_and_go_live(name: str) -> Optional[dict[str, Any]]:
 def _go_live(name: str) -> Optional[dict[str, Any]]:
     from hermes_cli.plugins_activation_live import connect_plugin_mcp, live_notice, plugin_skills
     try:
+        # [owner] O3-O8: use TimedLock so stuck discovery cannot hang go-live
         from hermes_cli.plugins import _TimedLock, _join_background_discovery, get_plugin_manager
         _join_background_discovery()
         manager = get_plugin_manager()

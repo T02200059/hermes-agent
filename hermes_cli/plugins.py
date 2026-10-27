@@ -80,6 +80,7 @@ class PluginToolOverrideError(PermissionError):
 
 logger = logging.getLogger(__name__)
 
+# [owner] O3-O8: timed discovery lock — stuck plugin import must not hang process start
 # How long a caller may wait for the discovery sweep's lock before giving up. A stuck plugin import
 # (network filesystem, a dependency that blocks on stdin) holds it for the whole sweep, so an
 # unbounded ``with lock`` turns "discovery is slow" into "the process never starts" — the blank
@@ -90,6 +91,7 @@ _DISCOVERY_LOCK_TIMEOUT_S = 15.0
 _DISCOVERY_JOIN_TIMEOUT_S = 30.0
 
 
+# [owner] O3-O8: context manager with acquire deadline
 class _TimedLock:
     """``with lock`` with a deadline, as a context manager.
 

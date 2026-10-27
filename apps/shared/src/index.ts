@@ -141,7 +141,7 @@ export {
 } from './skin'
 export {
   type AliasCommandDispatchResponse,
-  type ChainCommandDispatchResponse,
+  type ChainCommandDispatchResponse, // [owner] C19 chained ;;
   type CommandDispatchResponse,
   type ExecCommandDispatchResponse,
   looksLikeSlashCommand,

@@ -12,6 +12,7 @@ MAX_QUESTIONS = 5  # independent questions per call
 MAX_CHOICE_CHARS = 8000
 # Applied to the first choice here (not per-surface) so every adapter renders it identically.
 RECOMMENDED_LABEL = "(Recommended)"
+# [owner] B17: cleanup-path stop marker (= clarify_gateway.CANCELLED)
 # Cleanup-path stop marker. Must stay equal to ``tools.clarify_gateway.CANCELLED`` so existing
 # runners already map it to outcome="cancelled" (no second sentinel). Gateway ``wait_for_response``
 # returns this when the entry vanished or was cleared without an answer — distinct from a genuine

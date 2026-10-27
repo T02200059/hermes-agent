@@ -96,6 +96,7 @@ _STT_PROVIDER_BASE_URLS = {
     "glm": "https://open.bigmodel.cn/api/coding/paas/v4"}
 _AUDIO_URL_EXTENSIONS = {".silk", ".amr", ".mp3", ".wav", ".ogg", ".m4a", ".aac", ".flac"}
 
+# [owner] O3-O8/B15: WS read timeout + heartbeat grace (half-open link repair)
 # Liveness bounds for the WebSocket read path. The server answers every op-1 heartbeat with op 11,
 # so silence is measurable; both numbers are generous multiples of the ~30 s Hello interval because
 # a quiet chat is normal and only an unanswered heartbeat means the peer is gone.
@@ -419,6 +420,7 @@ class QQAdapter(OwnAccessPolicyMixin, BasePlatformAdapter):
                     return
                 await reconnect()
 
+    # [owner] B15: rebuild httpx after sleep/wake / network reset
     async def _rebuild_http_client(self) -> None:
         """Close the REST client and open a fresh one; clear the cached OAuth token.
 
@@ -472,7 +474,7 @@ class QQAdapter(OwnAccessPolicyMixin, BasePlatformAdapter):
             # the only thing that can repair it.
             try:
                 msg = await asyncio.wait_for(self._ws.receive(), timeout=_READ_TIMEOUT_S)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 raise RuntimeError(
                     f"No WebSocket frame in {_READ_TIMEOUT_S:.0f}s — treating the link as half-open")
             if msg.type == aiohttp.WSMsgType.TEXT:

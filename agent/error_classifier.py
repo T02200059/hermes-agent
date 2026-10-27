@@ -1118,7 +1118,7 @@ def _status_429(c: _Ctx) -> Verdict:
     explicit_rate_limit = any(p in c.msg for p in _RATE_LIMIT_PATTERNS)
     if quota_wall and not explicit_rate_limit and (
         not _has_usage_limit_transient_signal(c.msg, c.body, c.headers)
-        # A day/week window is a wall, not a wait: the loop's 600 s Retry-After cap never reaches it.
+        # [owner] O5: day/week window is a wall, not a wait (600s Retry-After cap never reaches it)
         or _quota_window_exceeds_retry_horizon(c.msg, c.body, c.headers)
     ):
         return _V_BILLING
@@ -1346,6 +1346,7 @@ def _rate_limit_reset_seconds(error_msg: str, body: dict, response_headers) -> O
     return reset_delay_from_message(error_msg)
 
 
+# [owner] O5: demote day+/week usage-limit 429 to billing (retry loop caps at 600s)
 # A quota wall measured in days or weeks cannot be waited out: the retry loop caps its own sleep at
 # ``retry_utils.RETRY_AFTER_CAP_S`` (600 s), so three retries burn ~30 minutes and then report the
 # same wall with nothing learned. Only day-and-longer windows are demoted — minute/hour windows do

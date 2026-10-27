@@ -364,6 +364,7 @@ class SessionSessionsMixin:
         conn.execute(_INHERIT_PARENT_META_SQL, (session_id,))
         conn.execute(_INHERIT_PARENT_ROUTING_SQL, (session_id,))
 
+    # [owner] C02: owner_provider_name on sessions upsert
     def _insert_session_row(
         self, session_id: str, source: str, model: str | None = None, model_config: dict[str, Any] | None = None,
         system_prompt: str | None = None, user_id: str | None = None, session_key: Optional[str] = None,

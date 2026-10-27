@@ -208,6 +208,7 @@ def _initialize_schema(conn: sqlite3.Connection) -> None:
     _columns = {row[1] for row in conn.execute("PRAGMA table_info(delivery_obligations)")}
     if "adapter_profile" not in _columns:
         add_column_if_missing(conn, "delivery_obligations", "adapter_profile", "adapter_profile TEXT")
+    # [owner] O3-O8: platform_message_id column + ALTER for live DBs (change is in SQL above/below)
     # The platform's own id for the message we sent. ``CREATE TABLE IF NOT EXISTS`` is a no-op on an
     # existing state.db, so the ALTER below is the only thing that adds it to a live database; both
     # places must name it or upgraded installs silently keep the old schema.
@@ -318,6 +319,7 @@ def mark_attempting(obligation_id: str) -> None:
     _update_state(obligation_id, "attempting")
 
 
+# [owner] O3-O8: optional platform message_id (two UPDATEs, not COALESCE)
 def mark_delivered(obligation_id: str, message_id: Optional[str] = None) -> None:
     """Mark a row delivered, recording the platform's id for the message when the send returned one.
 
@@ -343,6 +345,7 @@ def mark_delivered(obligation_id: str, message_id: Optional[str] = None) -> None
                 (time.time(), obligation_id))
 
 
+# [owner] O3-O8: read back platform_message_id
 def platform_message_id_for(obligation_id: str) -> Optional[str]:
     """The platform's own id for a delivered obligation, or None when it was never recorded.
 

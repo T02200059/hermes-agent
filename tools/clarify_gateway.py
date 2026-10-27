@@ -70,6 +70,7 @@ def wait_for_response(clarify_id: str, timeout: float) -> Optional[str]:
     with _lock:
         entry = _entries.get(clarify_id)
     if entry is None:
+        # [owner] B17: vanished entry → CANCELLED (not inactivity None)
         # Session-boundary cleanup (or an unknown id) won before the wait started. Returning
         # None here used to look like user inactivity; CANCELLED maps to outcome="cancelled".
         return CANCELLED
@@ -108,6 +109,7 @@ def wait_for_response(clarify_id: str, timeout: float) -> Optional[str]:
             ids.remove(clarify_id)
             if not ids:
                 _session_index.pop(entry.session_key, None)
+    # [owner] B17: event with no answer = cleanup → CANCELLED
     # Event set with no answer = cleanup (clear_session / late undeliverable), not inactivity.
     if resolved_by_event and not entry.response:
         return CANCELLED
