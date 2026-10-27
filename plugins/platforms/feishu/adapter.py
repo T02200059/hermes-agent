@@ -1356,6 +1356,8 @@ class FeishuAdapter(BasePlatformAdapter):
         self._bot_menu_dedup_lock = threading.Lock()
         # [owner] C11-clarify: clarify_id -> {session_key, choices, question, message_id}
         self._clarify_state: dict[str, dict[str, Any]] = {}
+        # [owner] C26-feishu-picker: picker_id -> {providers, source}
+        self._model_picker_state: dict[str, dict[str, Any]] = {}
         self._load_seen_message_ids()
 
     @staticmethod
@@ -2265,7 +2267,7 @@ class FeishuAdapter(BasePlatformAdapter):
     def _on_card_action_trigger(self, data: Any) -> Any:
         """Synchronous SDK card-action callback.
 
-        Approval/update-prompt/clarify buttons return the resolved card inline (the only reliable way
+        Approval/update-prompt/model-picker/clarify buttons return the resolved card inline (the only reliable way
         to sync all clients) and schedule the async resolution; other clicks are routed as
         synthetic commands via ``_handle_card_action_event``.
         """
@@ -2309,6 +2311,11 @@ class FeishuAdapter(BasePlatformAdapter):
                 return self._handle_approval_card_action(event=event, action_value=action_value, loop=loop)
             if action_value.get("hermes_update_prompt_action"):
                 return self._handle_update_prompt_card_action(event=event, action_value=action_value, loop=loop)
+            # [owner] C26-feishu-picker
+            if action_value.get("hermes_model_picker"):
+                return self._handle_model_picker_action(
+                    event=event, action_value=action_value, loop=loop,
+                )
             # [owner] C11-clarify
             if action_value.get("clarify_id") or (
                 isinstance(action_value.get("form_value"), dict)
@@ -2668,6 +2675,40 @@ class FeishuAdapter(BasePlatformAdapter):
         from owner.feishu.clarify_card import handle_clarify_card_action
         return handle_clarify_card_action(
             adapter=self, event=event, action_value=action_value, loop=loop,
+        )
+
+    # ── [owner] C26-feishu-picker ─────────────────────────────────────────
+
+    async def send_model_picker_card(
+        self,
+        chat_id: str,
+        providers: list,
+        source: Any,
+        metadata: Optional[dict[str, Any]] = None,
+    ) -> None:
+        """[owner] Send interactive /providers model picker card (C26-feishu-picker).
+
+        Thin glue — state write + card build live in
+        ``owner/feishu/model_picker.py::send_model_picker_card``.
+        """
+        from owner.feishu.model_picker import send_model_picker_card as _owner_send
+
+        return await _owner_send(
+            self,
+            chat_id=chat_id,
+            providers=providers,
+            source=source,
+            metadata=metadata,
+        )
+
+    def _handle_model_picker_action(
+        self, *, event: Any, action_value: dict[str, Any], loop: Any,
+    ) -> Any:
+        """[owner] Model picker card callback — thin glue to owner.feishu.model_picker."""
+        from owner.feishu.model_picker import dispatch_model_picker_action
+
+        return dispatch_model_picker_action(
+            self, event=event, action_value=action_value, loop=loop,
         )
 
     async def _handle_message_with_guards(self, event: MessageEvent) -> None:

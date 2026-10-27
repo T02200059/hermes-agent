@@ -35,8 +35,8 @@ async def handle_providers_command(
         logger.warning("[/providers] Failed to load provider inventory: %s", exc)
         return _TEXT["load_failed"]
 
-    # Feishu interactive card — only when an adapter exposes the card API
-    # (owner Feishu model_picker lands later; text is the always-on path).
+    # Feishu interactive card — when adapter exposes send_model_picker_card
+    # (C26-feishu-picker). Text path remains the always-on fallback.
     try:
         from gateway.config import Platform
 

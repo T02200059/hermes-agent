@@ -139,6 +139,7 @@ explainers:
 | 飞书 auto-card / notice / early-typing | C11 底座 | `owner/feishu/auto_card.py`（`try_auto_card` / `match_notice_rule` / `make_notice_card`）；`card_sender.send_card`；`agent_end.try_auto_card_on_end`；adapter early-typing | `owner.feishu_card.*` |
 | 飞书 bot 菜单 menu_v6 | C11-bot-menu | `owner/feishu/bot_menu.py`（`handle_bot_menu_event`）；adapter 注册 + p2p/inbound 暖缓存 | `owner.feishu.bot_menu*` |
 | 飞书 clarify 交互卡 | C11-clarify | `owner/feishu/clarify_card.py`（`send_clarify` / `retire_clarify_card` / `handle_clarify_card_action`）；`owner/clarify/gateway_helpers.py` | — |
+| 飞书 /providers model picker | C26-feishu-picker | `owner/feishu/model_picker.py`（`send_model_picker_card` / `handle_picker_action`）；adapter `_model_picker_state` + card-action `hermes_model_picker` | — |
 | stream / output guard | C14 | `owner/stream_guard.snapshot`；`owner/output_guard`（`transform_llm_output`） | `owner.stream_guard.*` / `owner.output_guard.enabled` |
 | Checkpoint 预测 | C17 | `owner/checkpoint_predictor`（`predict_and_checkpoint`） | `owner.checkpoints.*` |
 | 护栏 i18n | C10 | `owner/i18n/localized.py` → `localized` | locales + 调用方 `_localized` |
@@ -162,8 +163,8 @@ explainers:
   - owner：`hermes_cli/model_switch.py` 注释掉 `_cred_signal_slugs.add("anthropic")` + `get_label` 先查原 slug 。v2：discovery 重写为 `model_switch_providers.py`，无强制 anthropic 信号，catalog 走磁盘缓存/SWR+并行 prefetch（`non_blocking`），显示名统一 `get_label` + `_lossy_alias_registry_pdef`（`kimi-coding` / `-cn` 不再塌成同一名）。
 - [x] **B03** · 源 §2.2.3 · env-only providers 未进 `/providers` 显示列表 · **验证状态：官方已修**
   - owner：`model_switch.py` 合并 env-only 行。v2：`_lap_canonical_rows`（section 2b）按 `api_key_env_vars` 存在即出行，env-only provider 可见。
-- [x] **B04** · 源 §2.2.4 · 飞书 model_picker stale session 卡 loading / action_value 形态 · **验证状态：不适用(纯 owner)**
-  - owner：`owner/feishu/model_picker.py`（405 行）+ adapter 薄胶水。v2 无 `model_picker` 模块，官方飞书 adapter 只有审批卡 / update_prompt 卡（`model_picker_expired` 文案仅 Slack 用）。
+- [x] **B04** · 源 §2.2.4 · 飞书 model_picker stale session 卡 loading / action_value 形态 · **验证状态：不适用(纯 owner)** · **依赖模块已迁（C26-feishu-picker）**
+  - owner：`owner/feishu/model_picker.py` + adapter 薄胶水；过期走 toast（不空响应）。v2 已迁同模块（见 **C26-feishu-picker**）；官方飞书 adapter 本身仍无 picker，`model_picker_expired` 文案仅 Slack 用。
 - [x] **B05** · 源 §2.8.1 · damodel `/model` 校验时 `${ENV}` 未展开导致 crash · **验证状态：官方已修**
   - owner：`hermes_cli/models.py::probe_api_models` 入口展开 `${VAR}` + 残留即返回 `models=None`。v2 不做模板展开，但每个候选 URL 都在 `try/except` 内，`unknown url type` 的 ValueError 被吞 → `models=None` → 静态 catalog 兜底，不 crash（净效果等价）。
 - [x] **B06** · 源 §7.16 · merge 后 exhausted credential pool 语义被冲掉 · **验证状态：官方已修**
@@ -347,7 +348,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 | **C02** | 归因整链 + credential + token 用量 | 透传与剥离；credential 合并；sessions/messages 四列 token |
 | **C08** | 出站 BOS/EOS | 终局 O8 + interim/status 薄补 |
 | **C03** | damodel provider/proxy | `owner/providers/damodel.py` + model-providers 插件 |
-| **C26** | providers 白名单 / 缓存 TTL / `/providers` | 白名单沿用官方；TTL 24h + 无变更不写盘；斜杠命令 |
+| **C26** | providers 白名单 / 缓存 TTL / `/providers` | 白名单沿用官方；TTL 24h + 无变更不写盘；斜杠命令；飞书卡见 **C26-feishu-picker** |
 | **C16** | Cron env 隔离 | **官方已修**：ContextVar + `_CronRunScope`；审批 ContextVar 感知 |
 | **C17** | Checkpoint Mutation Predictor | `owner/checkpoint_predictor/`；tool_executor terminal 薄胶水 |
 | **C19** | 链式快捷命令 `;;` + Quick Alias | `owner/commands/chained_quick.py`；CLI/gateway/TUI 薄胶水 |
@@ -412,6 +413,9 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 - [x] **C11-clarify** · 源 §4.5 · Feishu clarify 交互卡 · **优先级：P1**（阶段三）· **已落地**
   - `owner/feishu/clarify_card.py` + `owner/clarify/gateway_helpers.py`；adapter `send_clarify` / `retire_clarify_card` / card-action `clarify_id` 分支
   - 测：`tests/owner/test_c11_clarify_card.py`；说明：`owner/docs/c11-clarify.md`
+- [x] **C26-feishu-picker** · 源 §4.9 · Feishu `/providers` 模型切换交互卡 · **优先级：P1**（阶段三）· **已落地**
+  - `owner/feishu/model_picker.py`；adapter `send_model_picker_card` / `_handle_model_picker_action` / `_model_picker_state`
+  - 测：`tests/owner/test_c26_model_picker.py`；说明：`owner/docs/c26-model-picker.md`
 - [ ] **C11-diff** · 源 §4.4 · Feishu diff 卡 · **忽略（不做）**
 - [ ] **C12** · 源 §4.10–4.15 · memory write-approval 卡 / feishu-guide / 上传守卫 / doc_read 图 OCR / @所有人 / merge_forward · **优先级：P1**
 - [x] **C13** · 源 §7.24–7.26 · progress / approval / english / **recap** explainer · **已落地** · 飞书底座（C04/C10/C11）已齐
@@ -449,8 +453,11 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 - [x] **C26** · 源 §2.10–2.11 + §4.9 · providers 白名单 / 缓存 TTL / `/providers` · **优先级：P1**（阶段一）
   - 白名单：官方 `has_explicit_models` / `_models_config_is_allowlist` 已覆盖，沿用
   - 缓存：`_PROVIDER_MODELS_CACHE_TTL` 24h；`_store_cache_entry` 目录无变更不写盘
-  - `/providers`：`owner/commands/providers.py` + `owner/owner-extensions`（`plugins/owner-extensions` 符号链接）；文本列表；飞书卡待 adapter 具备 `send_model_picker_card`
+  - `/providers`：`owner/commands/providers.py` + `owner/owner-extensions`（`plugins/owner-extensions` 符号链接）；文本列表；飞书交互卡见 **C26-feishu-picker**
   - 测：`tests/owner/test_providers_command.py`、`tests/owner/test_provider_models_cache_ttl.py`
+- [x] **C26-feishu-picker** · 源 §4.9 飞书半边 · `/providers` 交互卡（provider→model→确认）· **优先级：P1**（阶段三）· **已落地**
+  - `owner/feishu/model_picker.py`；adapter `_model_picker_state` / `send_model_picker_card` / card-action `hermes_model_picker`
+  - 测：`tests/owner/test_c26_model_picker.py`；说明：`owner/docs/c26-model-picker.md`
 - [ ] **C21** · 源 §2.4–2.6 / §2.9 · 模型杂项 · **优先级：P1** · **未展开**（白名单·TTL 已归 C26）
 
 ### P2 暂缓
