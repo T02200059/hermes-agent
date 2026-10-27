@@ -422,7 +422,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - `owner/feishu/model_picker.py`；adapter `send_model_picker_card` / `_handle_model_picker_action` / `_model_picker_state`
   - 测：`tests/owner/test_c26_model_picker.py`；说明：`owner/docs/c26-model-picker.md`
 - [ ] **C11-diff** · 源 §4.4 · Feishu diff 卡 · **忽略（不做）**
-- [ ] **C12** · 源 §4.10–4.15 · memory write-approval 卡 / feishu-guide / 上传守卫 / doc_read 图 OCR / @所有人 / merge_forward · **优先级：P1**（子点分批；本轮 C12-at-all + C12-upload-guard + C12-feishu-guide + C12-merge-forward-recv；**C12-memory-approval 忽略（不做）**）
+- [ ] **C12** · 源 §4.10–4.15 · memory write-approval 卡 / feishu-guide / 上传守卫 / doc_read 图 OCR / @所有人 / merge_forward · **优先级：P1**（子点分批；本轮 C12-at-all + C12-upload-guard + C12-feishu-guide + C12-merge-forward-recv + C12-doc-ocr（含完整文档增强）；**C12-memory-approval 忽略（不做）**；queue-card 不做）
   - [x] **C12-at-all** · 源 §4.14 · 群 `@_all`（@所有人）不再当提到自己 · **优先级：P2** · **已落地**
     - 意图：群里发 `@所有人` 只是通知大家，不应自动开一轮；须明确 @机器人（或其它策略）才触发
     - 胶水：`plugins/platforms/feishu/adapter.py` `_mentions_self`（极小 P2：去掉 `@_all → True`；`# [owner] C12-at-all`）
@@ -451,7 +451,20 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
     - 测：`tests/owner/test_c12_merge_forward_recv.py`
     - 验证：`python -m pytest tests/owner/test_c12_merge_forward_recv.py -q`
     - 影响面：仅入站 merge_forward 接收路径；工具侧 `om_` 再读属文档增强 commit
-  - [ ] **C12-doc-ocr** · 源 §4.13 · docx 内嵌图物化 + 可选 OCR · **未做**
+  - [x] **C12-doc-ocr** · 源 §4.13 · 飞书文档完整增强（图 OCR + 类型读取 + om_ 工具侧）· **优先级：P1** · **已落地**
+    - 核对范围（旧树 §4.13 + §4.15 P2，本 commit 一次落地）：
+      1. docx 内嵌图物化下载 + 可选 `vision_analyze` OCR（图 cap 100 / 429 退避 / 缓存预算）
+      2. sheet / bitable / wiki 类型推断与读取；wiki 一层子节点；docx 内嵌 bitable
+      3. bitable `mode=structure` / `table_index` / `limit` / `filter`
+      4. `extract_token` 3-tuple（token, is_wiki, inferred_type）
+      5. DM/群聊 env-fallback client（`resolve_client`；drive 薄接）
+      6. 工具侧 `om_` 合并转发再读（`read_merge_forward_as_text` + `offset`/`mf_limit`；renderer 复用 C12-merge-forward-recv）
+    - helper：`owner/feishu/client_utils.py`（原 `tools/feishu_client_utils` 迁入 owner）
+    - 胶水：`tools/feishu_doc_tool.py`（schema + handler 委托；`# [owner] C12-doc-ocr`）；`tools/feishu_drive_tool.py`（`resolve_client` 薄接）
+    - 测：`tests/owner/test_c12_feishu_doc_enhancements.py`
+    - 验证：`python -m pytest tests/owner/test_c12_feishu_doc_enhancements.py -q`
+    - 影响面：`feishu_doc_read` 全能力；drive 仅 client fallback；不含 queue 状态卡 / memory-approval
+    - 原可后移的 **C12-doc-types** / **C12-merge-forward-tool（om_）** 随本波一并落地，不另开子点
 - [x] **C13** · 源 §7.24–7.26 · progress / approval / english / **recap** explainer · **已落地** · 飞书底座（C04/C10/C11）已齐
   - **统一基建**：单一 `owner.explainers` 块 + `owner/explainers/`（config/llm/registry）；`register_kind` 可扩。详见「§ 二次开发可复用基建 §4」与 `owner/docs/c13-explainers.md`
   - **输入默认 64k**（`max_input_chars`）；按辅助模型 **≥256k** 上下文设计；`clip_input` 保尾截断
