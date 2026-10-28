@@ -10,6 +10,8 @@
 
 **不**用官方同进程 `gateway.multiplex_profiles` / `gateway.profile_routes` 替代舰队；二者正交（见下）。
 
+**相关**：[舰队开户链路（fleet add）](./fleet-add.md) — 加人自动化设计；**未实现**。
+
 ## 已拍板（本讨论收敛）
 
 | 项 | 决定 |
@@ -262,7 +264,7 @@ v2：逻辑放 `owner/feishu/profile_routing.py`；官方 adapter / api_server *
 | **C05a** | v2 迁 `profile_routing` + overlay `fleet_profiles`/`user_routing` + 单测；endpoints 从人卡推导；**不**接 LDAP/`hub_only.api` |
 | **C05b** | node010 配置切 overlay；退役 patch 作主路径 |
 | **C06** | 顶层 `ldap` 认证 + 人卡 `hub_only.api`；旧 `api_identity`/`identity_*` 只读别名；api_server 身份反代 |
-| **Ops** | 数据 rsync → `profiles/<uid>`；compose 读 `docker.*` 双挂；补 passwd；清遗迹 |
+| **Ops** | 数据 rsync → `profiles/<uid>`；compose 读 `docker.*` 双挂；补 passwd；清遗迹；**开户自动化**见 [fleet-add.md](./fleet-add.md)（未实现） |
 
 ## 已收开放项
 
@@ -285,6 +287,7 @@ v2：逻辑放 `owner/feishu/profile_routing.py`；官方 adapter / api_server *
 |---|------|----------|
 | R1 | 飞书 `whitelist`（ou 列表）是否完全废弃，只认 `hub_only.feishu`？ | 迁移期两者兼容：ou whitelist ∪ 人卡 hub_only；稳定后文档建议只维护人卡 |
 | R2 | compose 是否直接读 overlay `fleet_profiles`，还是生成中间 env？ | Ops 另议；设计上人卡是真相源 |
+| R3 | 开户自动化（fleet add）CLI 落点 / 是否双写旧 patch | 见 [fleet-add.md](./fleet-add.md) §6；**未实现** |
 
 ## 清单（实现 / 评审用）
 
@@ -293,7 +296,7 @@ v2：逻辑放 `owner/feishu/profile_routing.py`；官方 adapter / api_server *
 - [ ] C05a：单测夹具用假 `fleet_profiles`（无真 key / ou）  
 - [ ] C05b：node010 从 patch 迁到 overlay 人卡；旧 `profile_endpoints` / `identity_*` 标回落  
 - [ ] C06：`ldap:` + `hub_only.api`；`api_identity` 只读别名后废弃  
-- [ ] Ops：`docker.hermes_dir`/`home_dir` → compose 双挂；passwd 与 uid 对齐  
+- [ ] Ops：`docker.hermes_dir`/`home_dir` → compose 双挂；passwd 与 uid 对齐；开户见 [fleet-add.md](./fleet-add.md)（未实现）  
 - [x] **配置形状**：按人 `fleet_profiles`（ldap/docker/api_server/hub_only）已写入本稿  
 
 ## 非目标（本设计稿）
@@ -309,4 +312,4 @@ v2：逻辑放 `owner/feishu/profile_routing.py`；官方 adapter / api_server *
   - `owner/feishu/card_action.py`：卡片分派表（含 try_route_card_action）
   - adapter / api_server 薄胶水：`try_route_inbound`、`inject_inbound`、`/v1/feishu/inbound|card-actions`
   - 单测：`tests/owner/test_c05_*.py`
-- **未做（后续）**：C05b 生产切 overlay；Ops 挂载迁 `profiles/`；C06 LDAP / `hub_only.api` 门
+- **未做（后续）**：C05b 生产切 overlay；Ops 挂载迁 `profiles/`；C06 LDAP / `hub_only.api` 门；**开户自动化**见 [fleet-add.md](./fleet-add.md)（设计 only）
