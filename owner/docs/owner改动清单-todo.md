@@ -48,6 +48,18 @@
   - 审批卡预热：`owner/feishu/approval.py` + `sender_name_helpers.py`（发卡前 `pre_warm`）
 - **配置**：无独立 patch 段；路径随 adapter 缓存文件。需要显示名时走 store，**不要**再造进程内短 TTL dict。
 - **与 bot 菜单关系**：`p2p_chat_id` 映射 + debounce/`atexit` flush 是菜单点击路由的前置；缺映射会表现为「菜单键未配置」。
+- **配套目录**：平台中文名的 **sqlite 持久目录**见下方 §2b（`platform_users`）；JSON cache 仍是热路径，二者双写、互不替代。
+
+### 2b. 平台用户名 sqlite 目录 · **C28 · 已落地**
+
+- **是什么**：`state.db` 旁路表 `platform_users(platform, user_id, display_name, updated_at)`，持久保存飞书等平台侧显示名（中文名），可 SQL 查询；**不**改 `sessions.display_name` 语义。
+- **入口**：
+  - `owner/platform_users/store.py` — `ensure_table` / `upsert_display_name` / `get_display_name` / `backfill_from_feishu_user_entries` / `dual_write_feishu_name`
+  - 双写挂点：`owner/feishu/user_store.py` `_store_resolved_name`（C04 JSON 照旧）+ 启动时从已加载 cache 回填
+- **规范**：运行时 `CREATE TABLE IF NOT EXISTS`（仿 delivery_ledger）；**禁止**改官方 SCHEMA 字面
+- **设计**：`owner/docs/design/platform-users/README.md`
+- **测**：`tests/owner/test_platform_users.py`
+- **非目标**：不替代 C04 TTL/审批预热；本轮仅飞书接通
 
 ### 3. skill 脚本自动审批 + skill_manage 飞书门 · **C09 · 已落地**
 
@@ -361,6 +373,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 | **C19** | 链式快捷命令 `;;` + Quick Alias | `owner/commands/chained_quick.py`；CLI/gateway/TUI 薄胶水 |
 | **H01** | 官方 test 污染梳理 | 优先项已修（#1/#2/#5/#6/#7 R1/#10 等） |
 | **H02** | CLI `input()` 僵尸 reader | 已落地 |
+| **C28** | 平台用户名 sqlite 目录（`platform_users`） | C04 JSON 双写；state.db 旁路表 |
 | **C12-at-all** | 群 `@_all` 不再当提到自己 | `_mentions_self` 极小 P2；官方测已改 |
 | **C12-upload-guard** | 出站图/文件超限中文提示 | `owner/feishu/media_guard.py` + adapter 薄胶水 |
 | **C12-queue-card** | 飞书 queue 状态卡（cancel/now/steer/freeze） | `owner/feishu/queue_card.py` + `queue_cancel_patch` + adapter 薄胶水 |
@@ -392,6 +405,13 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - 发送仍官方 ExecApprovalPrompt；C01 `gate_allow_permanent` 继续管 Always 按钮
   - 设计：`owner/docs/design/feishu-approval-base/README.md`
   - 测：`tests/owner/test_c04_feishu_base.py`；官方 `test_feishu_approval_buttons.py` 对齐冻结卡 / soft TTL
+  - **配套 C28**：平台显示名 sqlite 目录（`platform_users`）已落地；与本条 JSON cache **双写**，见「§ 二次开发可复用基建 §2b」
+- [x] **C28** · **平台用户名 sqlite 目录**（`platform_users` 旁路表）· **优先级：P1**（C04 配套 / C05 可复用基建）
+  - 表：`platform_users(platform TEXT, user_id TEXT, display_name TEXT, updated_at REAL)` PK `(platform, user_id)`；库=`state.db`
+  - helper：`owner/platform_users/`；飞书双写：`FeishuUserStore._store_resolved_name` + 启动 backfill
+  - 设计：`owner/docs/design/platform-users/README.md`
+  - 测：`tests/owner/test_platform_users.py`
+  - **不改**官方 SCHEMA；不改写 `sessions.display_name`
 - [ ] **C05** · 源 §4.1 · **飞书多 profile 舰队路由**（`profile_endpoints` HTTP 转发；**不吃**官方 `profile_routes`） · **优先级：P0**
 - [ ] **C06** · 源 §15.1–15.6 · API Server LDAP 身份准入 + identity_routes + 头剥离/SSE · **优先级：P0**
 - [ ] **C07** · 源 §16.1–16.6 · API 产物媒体 / `hermes.files` / tool.progress 脱敏与归属 · **优先级：P0** · **延后**（2026-10-27 用户拍板；与 C05/C06 一并靠后，非当前主线）
