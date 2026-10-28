@@ -2297,6 +2297,9 @@ class FeishuAdapter(BasePlatformAdapter):
         Approval/update-prompt/model-picker/clarify buttons return the resolved card inline (the only reliable way
         to sync all clients) and schedule the async resolution; other clicks are routed as
         synthetic commands via ``_handle_card_action_event``.
+
+        [owner] C05: branch table lives in ``owner/feishu/card_action.py``; this
+        method only normalises action_value and delegates to ``_dispatch_card_action``.
         """
         loop = self._loop
         if not self._loop_accepts_callbacks(loop):
@@ -2306,15 +2309,11 @@ class FeishuAdapter(BasePlatformAdapter):
         action = getattr(event, "action", None)
         action_value_raw = getattr(action, "value", {}) or {}
         # [owner] SDK 可能返回 JSON 字符串；表单提交的 form_value 在 action 上
-        action_value = action_value_raw
-        if isinstance(action_value_raw, str) and action_value_raw.strip():
-            try:
-                import json as _json
-                _parsed = _json.loads(action_value_raw)
-                if isinstance(_parsed, dict):
-                    action_value = _parsed
-            except Exception:
-                pass
+        try:
+            from owner.feishu.card_action import normalise_card_action_value
+            action_value = normalise_card_action_value(action_value_raw)
+        except Exception:
+            action_value = action_value_raw if isinstance(action_value_raw, dict) else {}
         form_value = getattr(action, "form_value", None)
         if isinstance(form_value, str) and form_value.strip():
             try:
@@ -2328,44 +2327,43 @@ class FeishuAdapter(BasePlatformAdapter):
             action_value = dict(action_value)
             action_value["form_value"] = form_value
         if isinstance(action_value, dict):
-            # [owner] C09: skill_manage Feishu approval card clicks
-            if action_value.get("hermes_action") == "skill_approval_gate":
-                from owner.feishu.skill_approval_card import handle_card_click
-                return handle_card_click(
-                    adapter=self, event=event, action_value=action_value, loop=loop,
-                )
-            # [owner] C27-resume-card: must precede generic hermes_action→approval
-            if action_value.get("hermes_action") == "resume_select":
-                return self._handle_resume_card_action(
-                    event=event, action_value=action_value, loop=loop,
-                )
-            if action_value.get("hermes_action"):
-                return self._handle_approval_card_action(event=event, action_value=action_value, loop=loop)
-            if action_value.get("hermes_update_prompt_action"):
-                return self._handle_update_prompt_card_action(event=event, action_value=action_value, loop=loop)
-            # [owner] C26-feishu-picker
-            if action_value.get("hermes_model_picker"):
-                return self._handle_model_picker_action(
-                    event=event, action_value=action_value, loop=loop,
-                )
-            # [owner] C12-feishu-guide
-            if action_value.get("hermes_feishu_guide"):
-                return self._handle_guide_card_action(
-                    event=event, action_value=action_value, loop=loop,
-                )
-            # [owner] C12-queue-card
-            if action_value.get("hermes_queue_card"):
-                return self._handle_queue_card_action(
-                    event=event, action_value=action_value, loop=loop,
-                )
-            # [owner] C11-clarify
-            if action_value.get("clarify_id") or (
-                isinstance(action_value.get("form_value"), dict)
-                and action_value["form_value"].get("clarify_id")
-            ):
-                return self._handle_clarify_card_action(
-                    event=event, action_value=action_value, loop=loop,
-                )
+            return self._dispatch_card_action(
+                event, action_value, loop, data=data, allow_profile_routing=True,
+            )
+        self._submit_on_loop(loop, self._handle_card_action_event(data))
+        return self._card_response()
+
+    def _dispatch_card_action(
+        self,
+        event: Any,
+        action_value: dict[str, Any],
+        loop: Any,
+        *,
+        data: Any = None,
+        allow_profile_routing: bool = True,
+    ) -> Any:
+        """[owner] C05: thin glue → ``owner.feishu.card_action.dispatch_card_action``.
+
+        Fallback tail stays here so gateway tests can monkeypatch
+        ``P2CardActionTriggerResponse`` on this module.
+        """
+        try:
+            from owner.feishu.card_action import UNHANDLED, dispatch_card_action
+        except Exception:  # pragma: no cover
+            self._submit_on_loop(loop, self._handle_card_action_event(data))
+            return self._card_response()
+
+        _result = dispatch_card_action(
+            self,
+            event=event,
+            action_value=action_value,
+            loop=loop,
+            data=data,
+            allow_profile_routing=allow_profile_routing,
+        )
+        if _result is not UNHANDLED:
+            return _result
+
         self._submit_on_loop(loop, self._handle_card_action_event(data))
         return self._card_response()
 
@@ -2579,6 +2577,30 @@ class FeishuAdapter(BasePlatformAdapter):
         action = "added" if "created" in event_type else "removed"
         synthetic_text = f"reaction:{action}:{emoji_type}"
         logger.info("[Feishu] Routing reaction %s:%s on bot message %s as synthetic event", action, emoji_type, message_id)
+        # [owner] C05: reactions follow the same profile route as messages
+        try:
+            from owner.feishu.profile_routing import try_route_inbound_message as _try_msg_route
+        except Exception:
+            _try_msg_route = None
+        if _try_msg_route is not None:
+            _reactor_open_id = str(getattr(user_id_obj, "open_id", "") or "").strip()
+            _routed = await _try_msg_route(
+                self,
+                chat_id=chat_id,
+                open_id=_reactor_open_id,
+                chat_type=chat_type_raw,
+                text=synthetic_text,
+                message_id=message_id,
+                message_type="text",
+                user_id=str(getattr(user_id_obj, "user_id", "") or "").strip(),
+                union_id=str(getattr(user_id_obj, "union_id", "") or "").strip(),
+                is_bot=False,
+                thread_id=None,
+                reply_to_message_id=None,
+                reply_to_text=None,
+            )
+            if _routed:
+                return
         await self._dispatch_synthetic_event(
             text=synthetic_text, message_type=MessageType.TEXT, chat_id=chat_id, sender_id=user_id_obj,
             event_chat_type=chat_type_raw, raw_message=data, message_id=message_id,
@@ -3037,6 +3059,34 @@ class FeishuAdapter(BasePlatformAdapter):
                     "[Feishu] Cached p2p_chat_id for %s from inbound message",
                     open_id,
                 )
+
+        # [owner] C05: multi-profile HTTP fleet routing (Hub → sub-container)
+        try:
+            from owner.feishu.profile_routing import try_route_inbound_message
+        except Exception:  # pragma: no cover - fail-open when owner/ absent
+            try_route_inbound_message = None
+        if try_route_inbound_message is not None:
+            _open_id = str(getattr(sender_id, "open_id", "") or "").strip()
+            _routed = await try_route_inbound_message(
+                self,
+                chat_id=chat_id,
+                open_id=_open_id,
+                chat_type=chat_type,
+                text=text,
+                message_id=message_id,
+                message_type=inbound_type.value if hasattr(inbound_type, "value") else str(inbound_type),
+                user_id=str(getattr(sender_id, "user_id", "") or "").strip(),
+                union_id=str(getattr(sender_id, "union_id", "") or "").strip(),
+                is_bot=is_bot,
+                thread_id=thread_id,
+                reply_to_message_id=reply_to_message_id,
+                reply_to_text=reply_to_text,
+                raw_message_type=str(getattr(message, "message_type", "") or ""),
+                raw_content=str(getattr(message, "content", "") or ""),
+                media_expected=bool(media_urls),
+            )
+            if _routed:
+                return
 
         chat_info = await self.get_chat_info(chat_id)
         sender_profile = await self._resolve_sender_profile(sender_id, is_bot=is_bot)
@@ -3632,6 +3682,175 @@ class FeishuAdapter(BasePlatformAdapter):
         if any(marker in normalized for marker in ("topic", "thread", "forum")):
             return "forum"
         return "group" if normalized == "group" else "dm"
+
+    # ── [owner] C05: forwarded inbound (sub-profile container doorway) ─────────
+
+    async def inject_inbound(
+        self,
+        *,
+        text: str,
+        open_id: str,
+        chat_id: str = "",
+        chat_type: str = "p2p",
+        message_id: Optional[str] = None,
+        message_type: str = "text",
+        user_id: str = "",
+        union_id: str = "",
+        is_bot: bool = False,
+        thread_id: Optional[str] = None,
+        reply_to_message_id: Optional[str] = None,
+        reply_to_text: Optional[str] = None,
+        raw_message_type: str = "",
+        raw_content: str = "",
+        media_expected: bool = False,
+    ) -> None:
+        """[owner] C05: run a Hub-forwarded message through the native inbound path."""
+        event = await self.build_forwarded_inbound_event(
+            text=text,
+            open_id=open_id,
+            chat_id=chat_id,
+            chat_type=chat_type,
+            message_id=message_id,
+            message_type=message_type,
+            user_id=user_id,
+            union_id=union_id,
+            is_bot=is_bot,
+            thread_id=thread_id,
+            reply_to_message_id=reply_to_message_id,
+            reply_to_text=reply_to_text,
+            raw_message_type=raw_message_type,
+            raw_content=raw_content,
+            media_expected=media_expected,
+        )
+        if event is not None:
+            await self._dispatch_inbound_event(event)
+
+    async def build_forwarded_inbound_event(
+        self,
+        *,
+        text: str,
+        open_id: str,
+        chat_id: str = "",
+        chat_type: str = "p2p",
+        message_id: Optional[str] = None,
+        message_type: str = "text",
+        user_id: str = "",
+        union_id: str = "",
+        is_bot: bool = False,
+        thread_id: Optional[str] = None,
+        reply_to_message_id: Optional[str] = None,
+        reply_to_text: Optional[str] = None,
+        raw_message_type: str = "",
+        raw_content: str = "",
+        media_expected: bool = False,
+        defer_media: bool = False,
+    ) -> Optional[MessageEvent]:
+        """[owner] C05: rebuild a MessageEvent admitted by the profile RPC transport.
+
+        ``defer_media=True`` validates the envelope without downloading media so
+        the HTTP ack can return before Feishu media API work.
+        """
+        if (not text or not text.strip()) and not media_expected:
+            return None
+
+        is_dm = (chat_type or "").strip().lower() in ("p2p", "dm")
+        src_chat_type = "dm" if is_dm else "group"
+        src_chat_id = chat_id or (open_id if is_dm else "")
+        if not src_chat_id:
+            logger.warning(
+                "[Feishu] inject_inbound: no chat_id/open_id available; dropping"
+            )
+            return None
+
+        chat_name = "Feishu DM" if is_dm else src_chat_id
+        if not is_dm:
+            try:
+                info = await self.get_chat_info(src_chat_id)
+                chat_name = info.get("name") or src_chat_id
+            except Exception:
+                pass
+
+        sender_profile = await self._resolve_sender_profile(
+            SimpleNamespace(
+                open_id=open_id or None,
+                user_id=user_id or None,
+                union_id=union_id or None,
+            ),
+            is_bot=is_bot,
+        )
+        source = self.build_source(
+            chat_id=src_chat_id,
+            chat_name=chat_name,
+            chat_type=src_chat_type,
+            user_id=sender_profile["user_id"],
+            user_name=sender_profile["user_name"],
+            thread_id=thread_id,
+            user_id_alt=sender_profile["user_id_alt"],
+            is_bot=is_bot,
+            message_id=message_id,
+        )
+
+        if is_dm:
+            _channel_prompt = self._resolve_channel_prompt(open_id, src_chat_id)
+        else:
+            _channel_prompt = self._resolve_channel_prompt(src_chat_id, thread_id or None)
+
+        try:
+            resolved_message_type = MessageType(str(message_type or "text"))
+        except ValueError:
+            resolved_message_type = MessageType.TEXT
+
+        media_urls: list[str] = []
+        media_types: list[str] = []
+        media_text_inlined: list[bool] = []
+        if media_expected:
+            if not message_id or not raw_message_type or not raw_content:
+                raise ValueError(
+                    "forwarded Feishu media requires message_id, "
+                    "raw_message_type, and raw_content"
+                )
+            if not defer_media:
+                media_message = SimpleNamespace(
+                    message_id=message_id,
+                    message_type=raw_message_type,
+                    content=raw_content,
+                    mentions=None,
+                )
+                (
+                    extracted_text,
+                    extracted_type,
+                    media_urls,
+                    media_types,
+                    media_text_inlined,
+                    _mentions,
+                ) = await self._extract_message_content(media_message)
+                if not media_urls:
+                    raise RuntimeError(
+                        f"failed to rehydrate forwarded Feishu media for {message_id}"
+                    )
+                resolved_message_type = extracted_type
+                if not text or not text.strip():
+                    text = extracted_text
+
+        event = MessageEvent(
+            text=text,
+            message_type=resolved_message_type,
+            source=source,
+            message_id=message_id,
+            media_urls=media_urls,
+            media_types=media_types,
+            media_text_inlined=media_text_inlined,
+            reply_to_message_id=reply_to_message_id,
+            reply_to_text=reply_to_text,
+            channel_prompt=_channel_prompt,
+            timestamp=datetime.now(),
+        )
+        logger.info(
+            "[Feishu] inject_inbound: dispatching routed message (chat_type=%s, "
+            "chat_id=%s, open_id=%s, has_msg_id=%s)",
+            src_chat_type, src_chat_id, open_id, bool(message_id),
+        )
+        return event
 
     @staticmethod
     def _resolve_source_chat_type(*, chat_info: dict[str, Any], event_chat_type: str) -> str:

@@ -809,6 +809,46 @@ def _openai_error(message: str, err_type: str = "invalid_request_error", param: 
         "message": _redact_api_error_text(message), "type": err_type, "param": param, "code": code}}
 
 
+
+# [owner] C05: lazy owner imports — api_server stays importable without owner/
+_owner_lazy: dict[str, Any] = {}
+
+
+def _owner_import(module: str, name: str) -> Any:
+    key = f"{module}.{name}"
+    if key not in _owner_lazy:
+        import importlib
+
+        try:
+            _owner_lazy[key] = getattr(importlib.import_module(module), name)
+        except (ImportError, AttributeError):
+            _owner_lazy[key] = None
+    return _owner_lazy[key]
+
+
+def _owner_inbound_profile_rejection(body: Any) -> Optional[str]:
+    """[owner] T2-9 / C05: reject a cross-profile RPC addressed to another profile."""
+    verifier = _owner_import(
+        "owner.feishu.profile_routing", "verify_inbound_target_profile"
+    )
+    if verifier is None:
+        return None
+    try:
+        return verifier(body)
+    except Exception as exc:
+        logging.getLogger(__name__).warning(
+            "[API] target-profile verification failed (%s); accepting", exc
+        )
+        return None
+
+
+def _profile_mismatch_response(reason: str) -> "web.Response":
+    """[owner] T2-9: the 409 sent when an RPC is addressed to another profile."""
+    return web.json_response(
+        _openai_error(reason, code="profile_mismatch"), status=409
+    )
+
+
 def _error_response(
     message: str, status: int, *, err_type: str = "invalid_request_error",
     param: str | None = None, code: str | None = None, headers: Optional[dict[str, str]] = None,
@@ -1685,7 +1725,11 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
             ("DELETE", "/api/jobs/{job_id}", self._handle_delete_job),
             ("POST", "/api/jobs/{job_id}/pause", self._handle_pause_job),
             ("POST", "/api/jobs/{job_id}/resume", self._handle_resume_job),
-            ("POST", "/api/jobs/{job_id}/run", self._handle_run_job)]
+            ("POST", "/api/jobs/{job_id}/run", self._handle_run_job),
+            # [owner] C05: Feishu multi-profile fleet transport (Hub → this container)
+            ("POST", "/v1/feishu/inbound", self._handle_feishu_inbound),
+            ("POST", "/v1/feishu/card-actions", self._handle_feishu_card_action),
+        ]
         routes.extend(_room_grants._http_routes(self))
         routes.extend(_api_runs._http_routes(self))
         if _CRON_AVAILABLE:
@@ -4605,6 +4649,203 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
                            metadata: Optional[dict[str, Any]] = None) -> SendResult:
         from gateway.platforms.api_server_authority_runs import send_clarify
         return await send_clarify(self, chat_id=chat_id, clarify_id=clarify_id)
+
+
+    # ── [owner] C05: Feishu inbound / card-action doorways ─────────────────────
+
+    async def _handle_feishu_inbound(self, request: "web.Request") -> "web.Response":
+        """POST /v1/feishu/inbound — [owner] C05 multi-profile routing transport."""
+        auth_err = self._check_auth(request)
+        if auth_err:
+            return auth_err
+        body, err = await self._read_json_body(request)
+        if err:
+            return err
+
+        _mismatch = _owner_inbound_profile_rejection(body)
+        if _mismatch:
+            return _profile_mismatch_response(_mismatch)
+
+        schema_version = body.get("schema_version", 0)
+        if schema_version not in (0, 1):
+            return web.json_response(
+                _openai_error(
+                    f"Unsupported Feishu inbound schema_version: {schema_version}",
+                    code="unsupported_schema_version",
+                ),
+                status=400,
+            )
+
+        text_body = body.get("text") or body.get("input") or ""
+        open_id = str(body.get("open_id") or "").strip()
+        chat_id = str(body.get("chat_id") or "").strip()
+        chat_type = str(body.get("chat_type") or "p2p").strip()
+        message_id = body.get("message_id") or None
+        media_expected = bool(body.get("media_expected", False))
+
+        if (not text_body or not str(text_body).strip()) and not media_expected:
+            return web.json_response(
+                _openai_error("text is required", code="invalid_request"), status=400
+            )
+        if not open_id and not chat_id:
+            return web.json_response(
+                _openai_error("open_id or chat_id is required", code="invalid_request"),
+                status=400,
+            )
+
+        _get_adapter = _owner_import(
+            "owner.feishu.profile_routing", "_get_inprocess_feishu_adapter"
+        )
+        adapter = _get_adapter() if _get_adapter is not None else None
+        if adapter is None or not hasattr(adapter, "build_forwarded_inbound_event"):
+            logger.warning(
+                "[api_server] /v1/feishu/inbound: no Feishu adapter in this container"
+            )
+            return web.json_response(
+                _openai_error("Feishu adapter unavailable", code="feishu_unavailable"),
+                status=503,
+            )
+
+        forwarded_kwargs = {
+            "text": str(text_body),
+            "open_id": open_id,
+            "chat_id": chat_id,
+            "chat_type": chat_type,
+            "message_id": str(message_id) if message_id else None,
+            "message_type": str(body.get("message_type") or "text"),
+            "user_id": str(body.get("user_id") or "").strip(),
+            "union_id": str(body.get("union_id") or "").strip(),
+            "is_bot": bool(body.get("is_bot", False)),
+            "thread_id": str(body.get("thread_id") or "").strip() or None,
+            "reply_to_message_id": (
+                str(body.get("reply_to_message_id") or "").strip() or None
+            ),
+            "reply_to_text": body.get("reply_to_text"),
+            "raw_message_type": str(body.get("raw_message_type") or ""),
+            "raw_content": str(body.get("raw_content") or ""),
+            "media_expected": media_expected,
+        }
+
+        _ADMISSION_BUDGET = 12.0
+        try:
+            event = await asyncio.wait_for(
+                adapter.build_forwarded_inbound_event(
+                    **forwarded_kwargs, defer_media=True
+                ),
+                timeout=_ADMISSION_BUDGET,
+            )
+        except TimeoutError:
+            logger.warning(
+                "[api_server] feishu inbound admission exceeded %.0fs budget "
+                "(message_id=%s)",
+                _ADMISSION_BUDGET,
+                message_id,
+            )
+            event = None
+        except Exception as exc:
+            logger.warning(
+                "[api_server] /v1/feishu/inbound admission failed: %s",
+                exc,
+                exc_info=True,
+            )
+            event = None
+
+        if event is None:
+            return web.json_response(
+                _openai_error(
+                    "Feishu inbound admission failed",
+                    code="feishu_inbound_admission_failed",
+                ),
+                status=503,
+            )
+
+        async def _dispatch_admitted() -> None:
+            dispatch_event = event
+            if media_expected:
+                try:
+                    hydrated = await asyncio.wait_for(
+                        adapter.build_forwarded_inbound_event(**forwarded_kwargs),
+                        timeout=90.0,
+                    )
+                    if hydrated is not None:
+                        dispatch_event = hydrated
+                except Exception:
+                    logger.warning(
+                        "[api_server] feishu inbound media rehydration failed "
+                        "after ack (message_id=%s)",
+                        message_id,
+                        exc_info=True,
+                    )
+                    if not str(text_body).strip():
+                        return
+            await adapter._dispatch_inbound_event(dispatch_event)
+
+        task = asyncio.create_task(_dispatch_admitted())
+        self._track_background_task(task)
+
+        def _finish_forwarded_inbound(done_task: "asyncio.Task") -> None:
+            if done_task.cancelled():
+                return
+            try:
+                exc = done_task.exception()
+            except asyncio.CancelledError:
+                return
+            if exc is not None:
+                logger.error(
+                    "[api_server] forwarded Feishu inbound task failed "
+                    "after admission (message_id=%s): %s",
+                    message_id or "unknown",
+                    exc,
+                    exc_info=(type(exc), exc, exc.__traceback__),
+                )
+
+        task.add_done_callback(_finish_forwarded_inbound)
+        return web.json_response(
+            {
+                "accepted": True,
+                "schema_version": schema_version or 1,
+                "message_id": str(message_id) if message_id else None,
+            },
+            status=202,
+        )
+
+    async def _handle_feishu_card_action(self, request: "web.Request") -> "web.Response":
+        """POST /v1/feishu/card-actions — [owner] C05 card-action transport."""
+        auth_err = self._check_auth(request)
+        if auth_err:
+            return auth_err
+        body, err = await self._read_json_body(request)
+        if err:
+            return err
+
+        _mismatch = _owner_inbound_profile_rejection(body)
+        if _mismatch:
+            return _profile_mismatch_response(_mismatch)
+
+        _get_adapter = _owner_import(
+            "owner.feishu.profile_routing", "_get_inprocess_feishu_adapter"
+        )
+        adapter = _get_adapter() if _get_adapter is not None else None
+        if adapter is None or not hasattr(adapter, "_dispatch_card_action"):
+            logger.warning(
+                "[api_server] /v1/feishu/card-actions: no Feishu adapter in this container"
+            )
+            return web.json_response(
+                _openai_error("Feishu adapter unavailable", code="feishu_unavailable"),
+                status=503,
+            )
+
+        _handle = _owner_import(
+            "owner.feishu.profile_routing", "handle_card_action_request"
+        )
+        try:
+            card = _handle(adapter, body) if _handle is not None else None
+        except Exception:
+            logger.warning(
+                "[api_server] /v1/feishu/card-actions dispatch failed", exc_info=True
+            )
+            return web.json_response({"card": None}, status=200)
+        return web.json_response({"card": card}, status=200)
 
     async def get_chat_info(self, chat_id: str) -> dict[str, Any]:
         """Return basic info about the API server."""
