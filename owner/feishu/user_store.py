@@ -14,7 +14,7 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Optional
 
 from owner.feishu.user_cache import (
     ChatIdCacheDebouncer,
@@ -44,15 +44,17 @@ class FeishuUserStore:
         cache_path: Any,
     ) -> None:
         self._client: Any = None
-        self._users: Dict[str, FeishuUserEntry] = {}
+        self._users: dict[str, FeishuUserEntry] = {}
         # lookup_id → (name, expire_at); "" name = known nameless
-        self._name_ttl: Dict[str, Tuple[str, float]] = {}
+        self._name_ttl: dict[str, tuple[str, float]] = {}
         self._cache_path = Path(cache_path)
         self._debouncer = ChatIdCacheDebouncer(
             save_fn=lambda: save_user_cache(self._cache_path, self._users)
         )
         load_user_cache(self._cache_path, self._users)
         self._seed_name_ttl_from_users()
+        # [owner] platform_users: seed sqlite directory from already-cached Feishu names
+        self._backfill_platform_users()
         # Persist pending debounced writes when the process exits. Without this a
         # restart within the 5s debounce window silently dropped the latest
         # open_id → p2p_chat_id mapping, and the next boot's menu clicks then had
@@ -66,11 +68,11 @@ class FeishuUserStore:
             pass
 
     @property
-    def users(self) -> Dict[str, FeishuUserEntry]:
+    def users(self) -> dict[str, FeishuUserEntry]:
         return self._users
 
     @property
-    def name_ttl_cache(self) -> Dict[str, Tuple[str, float]]:
+    def name_ttl_cache(self) -> dict[str, tuple[str, float]]:
         """TTL name map keyed by lookup id (test introspection)."""
         return self._name_ttl
 
@@ -89,6 +91,23 @@ class FeishuUserStore:
                     entry.display_name,
                     entry.display_name_expire_at,
                 )
+
+    def _backfill_platform_users(self) -> None:
+        """One-shot best-effort seed of ``platform_users`` from the JSON cache."""
+        try:
+            from owner.platform_users.store import backfill_from_feishu_user_entries
+
+            n = backfill_from_feishu_user_entries(self._users)
+            if n:
+                logger.debug(
+                    "[Feishu] platform_users backfilled %d name(s) from user cache",
+                    n,
+                )
+        except Exception:
+            logger.debug(
+                "[Feishu] platform_users backfill skipped",
+                exc_info=True,
+            )
 
     def _read_ttl_name(self, sender_id: Optional[str]) -> Optional[str]:
         """Read a cached name for *sender_id*.
@@ -125,6 +144,18 @@ class FeishuUserStore:
         if lookup_id.startswith("ou_"):
             set_cached_display_name(self._users, lookup_id, name, expire_at)
             self._debouncer.mark_dirty()
+        # [owner] platform_users: dual-write durable directory (C04 JSON cache stays primary)
+        if name and str(name).strip():
+            try:
+                from owner.platform_users.store import dual_write_feishu_name
+
+                dual_write_feishu_name(lookup_id, name)
+            except Exception:
+                logger.debug(
+                    "[Feishu] platform_users dual-write failed for %s",
+                    lookup_id,
+                    exc_info=True,
+                )
 
     def seed_cached_name(
         self, sender_id: str, name: str, expire_at: float
@@ -237,7 +268,7 @@ class FeishuUserStore:
             return
         cached = self._name_ttl.get(sender_id)
         if cached is not None:
-            name, expire_at = cached
+            _name, expire_at = cached
             remaining = expire_at - time.time()
             if remaining > _PRE_WARM_REFRESH_THRESHOLD:
                 return  # plenty of life left, no need to re-warm
@@ -249,7 +280,7 @@ class FeishuUserStore:
         except RuntimeError:
             pass
 
-    async def _fetch_bot_names(self, bot_ids: List[str]) -> Optional[Dict[str, str]]:
+    async def _fetch_bot_names(self, bot_ids: list[str]) -> Optional[dict[str, str]]:
         if not self._client or not bot_ids:
             return None
         try:
