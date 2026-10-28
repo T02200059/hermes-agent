@@ -50,7 +50,7 @@
 |------|------|
 | **`ldap_uid`** | 主键（如 `yangtb`）；默认 = 逻辑 profile = passwd 名 = `fleet_profiles` 键 |
 | **`display_name`** | 中文名（人卡 / 运维展示） |
-| **飞书 `ou_*`** | 写入 `feishu.bots.<app_id>.user_routing.user_profile_routes`；冷用户可先建号、后补 ou（或「已私聊 Bot，从日志解析」半自动） |
+| **飞书 `ou_*`** | 写入 `feishu.bots.<app_id>.user_routing.user_profile_routes`；**同时**在 apply 前/中写入目标 profile `FEISHU_ALLOWED_USERS`（见下）；冷用户可先建号、后补 ou（或「已私聊 Bot，从日志解析」半自动） |
 
 选填：`hub_only.feishu` / `hub_only.api`、历史 `docker.hermes_dir` / `home_dir`、skill 套餐、是否开 OV。
 
@@ -60,6 +60,7 @@
 |------|----------|
 | 分配 API 端口 | 扫描现网 `2602x`，取 `max+1`（避开已知空缺策略可配置） |
 | 写 overlay | 增 `fleet_profiles.<uid>`；增 `user_profile_routes[ou]=uid`；`api_server.url/api_key` |
+| **写 `FEISHU_ALLOWED_USERS`** | **必做，与收集 ou 同步**：在 dry-run 确认后、**首条用户消息到达之前**，把对话收集到的 `ou_*`（及已知的飞书 tenant `user_id`，若有）写入目标 `profiles/<uid>/.env` 的 `FEISHU_ALLOWED_USERS`（或等价 config）。**禁止**等用户首条私聊被丢弃后再补。说明：子网关 authz 比对的是 `SessionSource.user_id`，Feishu 侧常为 **tenant `user_id` 优先于 `open_id`**；Hub 转发若带齐二者，仅写 `ou_*` 仍可能拦首条——能拿到 tenant id 时一并写入；仅有 `ou_*` 时至少先写入 ou，并在首次私聊/日志解析到 tenant id 后立刻补写并重启子网关（或热加载若已支持） |
 | `api_key` | **舰队共用一把**（与现网一致），自动写入人卡，不每人新钥 |
 | `useradd` + home | 建 passwd + `/home/<uid>`（缺则补；已存在则校验对齐） |
 | 种子 Hermes 家 | `/data/hermes/profiles/<uid>`（config/sqlite 骨架；可从模板或 hub 拷贝最小集） |
@@ -100,6 +101,7 @@
 | **共用 `api_key`** | 从现网/overlay 已有密钥读取后写入新人卡，不轮转每人一把 |
 | **passwd** | 保留、与 uid 对齐；不为隔离，为好找 |
 | **C05 路由** | 开户只写配置；路由代码已读人卡（C05a）。新 ou 生效需 Hub 热读或重启策略另定 |
+| **子 profile 飞书白名单** | 与路由 ou **同次收集、同次 apply**：目标 `FEISHU_ALLOWED_USERS` 必须在容器/子网关接流量前就绪；见 §2 自动步骤 |
 | **C06 LDAP** | 开户**不**建 LDAP 目录账号；人卡 `ldap.uid` 默认同键即可。认证门仍属 C06 |
 
 ## 5. 明确未实现 · 建议切片
@@ -111,7 +113,7 @@
 | 切片 | 内容 | 验收 |
 |------|------|------|
 | **O1** | dry-run 内核：读 overlay + 端口扫描 → 打印将写入的人卡 / ou 路由 / compose 草稿 / 系统命令 | 不落盘；可供对话回显 |
-| **O2** | 写 overlay（`fleet_profiles` + `user_profile_routes`）；可选备份 | diff 可审；Mac 用假数据夹具 |
+| **O2** | 写 overlay（`fleet_profiles` + `user_profile_routes`）；**同步写目标 profile `FEISHU_ALLOWED_USERS`（ou_* ± tenant user_id）**；可选备份 | diff 可审；Mac 用假数据夹具；开户后首条私聊不被 allowlist 丢弃 |
 | **O3** | 宿主机：`useradd`、种子 `profiles/<uid>`、生成 compose 双挂载 | 路径符合主稿；不碰已有容器 |
 | **O4** | `compose up` + health；失败可回滚说明 | 探活通过；文档记录回滚步骤 |
 | **O5** | **对话 UX**：onboarding skill / 工具声明，让 Hermes 收集字段 → 调 O1–O4；可选薄 `hermes fleet add` 仅作 tool 面 | 飞书会话可走完开户；人手敲 CLI **非**验收项 |
@@ -126,7 +128,7 @@
 | 项 | 口径 |
 |----|------|
 | **触发 / 执行** | 对话触发；**Hermes 执行**（非人手敲 CLI） |
-| **职责拆分** | skill **只编排**（鉴权、收 `ldap_uid` / ou、dry-run 确认、回报）；**mutating**（写人卡、种子 profile、生成 compose、`up`）进 **`fleet_add` 内核** |
+| **职责拆分** | skill **只编排**（鉴权、收 `ldap_uid` / ou、dry-run 确认、回报）；**mutating**（写人卡、**写 `FEISHU_ALLOWED_USERS`**、种子 profile、生成 compose、`up`）进 **`fleet_add` 内核**；收集到 ou 的当次 apply 就必须落 allowlist，不另开「等首条消息」步骤 |
 | **须对齐 C05** | 三层挂载；`fleet_profiles.<ldap_uid>`；逻辑名 = LDAP uid；**去掉**旧整挂 `/home`、平行 `profile_endpoints`、heredoc / terminal invent 拼命令 |
 | **现网路径** | `~/.hermes/skills/westcloud/xy-user-onboarding`（`SKILL.md`）；仓内若有副本一并指到同一目标态 |
 | **相对切片** | 属 **O5** 收口；**延后于 O1–O4**；当前 skill「会开户」≠「会建 C05 目标态」 |
