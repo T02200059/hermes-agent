@@ -413,8 +413,8 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - 测：`tests/owner/test_platform_users.py`
   - **不改**官方 SCHEMA；不改写 `sessions.display_name`
 - [ ] **C05** · 源 §4.1 · **飞书多 profile 舰队路由**（`profile_endpoints` HTTP 转发；**不吃**官方 `profile_routes`） · **优先级：P0**
-  - 设计稿：`owner/docs/design/c05-feishu-user-routing/README.md`（2026-10-28；**方案②**照迁 owner HTTP；overlay 节 **`feishu.bots.<app_id>.user_routing`**；挂载三层已定；未实现代码）
-- [ ] **C06** · 源 §15.1–15.6 · API Server LDAP 身份准入 + identity_routes + 头剥离/SSE · **优先级：P0**
+  - 设计稿：`owner/docs/design/c05-feishu-user-routing/README.md`（2026-10-28；**方案②** HTTP；overlay **`feishu.bots.<app_id>.user_routing`**；挂载三层；**方案 A** 顶层 `api_identity`+`ldap`（C05 忽略 identity）；逻辑名默认 **LDAP uid** + 目录显式 map；未实现代码）
+- [ ] **C06** · 源 §15.1–15.6 · API Server LDAP 身份准入 + 顶层 **`api_identity`**（旧 `identity_*` 只读别名）+ 头剥离/SSE · **优先级：P0**
 - [ ] **C07** · 源 §16.1–16.6 · API 产物媒体 / `hermes.files` / tool.progress 脱敏与归属 · **优先级：P0** · **延后**（2026-10-27 用户拍板；与 C05/C06 一并靠后，非当前主线）
 - [x] **C08** · 源 §7.27 · outbound BOS/EOS scrub · **优先级：P0**
   - 落地：终局走官方 O8；interim/status 薄补复用 `_strip_deepseek_special_tokens`（`owner/outbound_special_token_scrub.py` + stream_delivery / gateway status 胶水）
@@ -656,7 +656,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 建议（落地时穿插，非一次性大爆炸）：
 
 1. **拆「路由/身份」与「行为开关」**  
-   - 保留独立「舰队路由」文件亦可，但结构对齐：`feishu.bots.*.user_routing` / `profile_endpoints` 与 `ldap` / `identity_*` 分节清晰；避免 LDAP 埋在飞书文件里却无索引。  
+   - 结构对齐：`feishu.bots.*.user_routing` / `profile_endpoints`；顶层 **`api_identity`** + **`ldap`**（方案 A）；旧 `identity_*` 仅 C06 只读别名；逻辑 profile 默认 LDAP uid。避免 LDAP/身份埋在飞书 bot 节。  
    - **不**为对齐官方而改成 `gateway.profile_routes`（语义不覆盖跨进程）。
 2. **`overlay.yaml` 合并同类开关**  
    - `progress_explainer` / `approval_explainer` / `english_explainer`（+ `recap`）→ 单一 `explainers:` 块（共用 `provider`/`model`/`timeout_ms`/`max_input_chars=64000` + kind 子段；见「§ 二次开发可复用基建 §4」）。  
