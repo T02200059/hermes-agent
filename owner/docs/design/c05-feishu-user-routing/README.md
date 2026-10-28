@@ -1,12 +1,12 @@
 # C05 · 飞书多 profile 舰队路由（初步设计稿）
 
 > 状态：**设计口径已拍板**（2026-10-28）；**未实现**路由代码。  
-> 依据：node010 现网拓扑 + 挂载规范 + overlay 节名拍板 + `api_identity`/`ldap` 分节（方案 A）+ 逻辑名默认 LDAP uid + `二次开发规范.md` v2 基线。
+> 依据：node010 现网拓扑 + 挂载三层 + overlay + 方案② HTTP 舰队 + **按人 `fleet_profiles`** + 二次开发规范 v2 基线。
 
 ## 意图
 
 同一飞书 bot 的 WebSocket 只由 **Hub gateway** 持有；按飞书 `open_id` / `chat_id` 把入站消息 **HTTP 转发**到各人独立的 Hermes 进程（Docker profile 容器）。  
-配置进 **`overlay.yaml`**。本轮 **不做 LDAP / `api_identity` 加载**（C06）。
+配置进 **`overlay.yaml`**。本轮 **不做 LDAP 认证门 / API 身份反代**（C06）。
 
 **不**用官方同进程 `gateway.multiplex_profiles` / `gateway.profile_routes` 替代舰队；二者正交（见下）。
 
@@ -16,16 +16,19 @@
 |----|------|
 | 路由实现策略 | **方案②**：照迁旧 owner HTTP 舰队路由（`resolve` → `POST …/v1/feishu/inbound`）；**不接**官方同进程 multiplex 送达 |
 | 配置主源 | **`overlay.yaml`**（C01 `load_owner_config` / `load_patch_config`）；与 C09 一样可短暂回落 `patch_feishu_profile.yaml` |
-| 配置节名（飞书） | **`feishu.bots.<app_id>.user_routing`**（含 `profile_endpoints`；贴近现网活文件键树） |
-| Identity / LDAP 配置形状 | **方案 A**（见下）：顶层 **`api_identity`**（`routes` / `whitelist`）+ 顶层 **`ldap`**（认证）；endpoints **仍**在 `user_routing` |
-| C05 vs C06 | **C05 仍忽略 identity**：不实现 `api_identity` 加载/匹配；旧 `identity_*` 仅作 **C06 迁移期只读别名来源**（设计约定，本轮不写代码） |
+| **配置主结构** | **按人顶层 `fleet_profiles.<逻辑名>`**（逻辑名 = LDAP uid）；每人下挂 `ldap` / `docker` / `api_server` / 可选 `feishu` |
+| 飞书 ou→人 | 仍在 **`feishu.bots.<app_id>.user_routing`**（`user_profile_routes` / `chat_profile_routes` / `default_profile`）；**值 = `fleet_profiles` 的 key** |
+| `profile_endpoints` | **优先从 `fleet_profiles.*.api_server` 推导**；避免与按人表双维护。旧 `user_routing.profile_endpoints` 仅迁移回落 |
+| 全局 LDAP 认证 | 顶层 **`ldap:`**（host / bind / enabled…）；**人维度 uid 在 `fleet_profiles.<id>.ldap`** |
+| `api_identity` 平行表 | **收敛进按人表**（见下）；不再以顶层 `api_identity.routes` 为主路径 |
+| Hub 白名单（测试/留 Hub） | **按人字段**：`feishu.hub_only` / `api_server.hub_only`（两套可分开）；短名单仅作可选全局 override，**不推荐主路径** |
+| C05 vs C06 | **C05 仍不实现 LDAP 门 / API 身份反代**；可读 `fleet_profiles` 推导飞书 endpoints；Docker 映射字段写进设计供 Ops |
 | 进程模型 | Docker；容器内 **uid0 自认 root**；一 profile 一容器 |
-| 数据 / 家目录 | 三层挂载（见下）；passwd 用户 **保留**（好认、好找），**不**当隔离机制 |
-| patch 回落 | **与 C09 同模式**：主 overlay、缺段再读 patch；C05b 稳定后文档标 deprecated，不设硬删除日 |
-| ssh / 共享卷 | **先维持现网共享卷**；home 层先占位好认，内容清单 Ops 再收紧 |
-| cron | 迁 `profiles/` 前 **先保持现网行为**（迁目录不改 cron 语义）；另开 Ops 条再收敛 |
-| Mac overlay | **不写真舰队路由**；实现时用假数据单测夹具；生产键只上 Hub |
-| 命名 / 逻辑 profile | **默认 LDAP uid**（passwd、profile、路由表值/endpoints key 对齐）；目录可用显式 map 兼容旧 basename |
+| 数据 / 家目录 | 三层挂载（见下）；passwd 用户名 **默认 = 逻辑名**（好认），**不**当隔离机制 |
+| patch 回落 | **与 C09 同模式**：主 overlay、缺段再读 patch；C05b 稳定后文档标 deprecated |
+| ssh / 共享卷 | **先维持现网共享卷** |
+| cron | 迁 `profiles/` 前 **先保持现网行为** |
+| Mac overlay | **不写真舰队路由**；实现时用假数据单测夹具 |
 
 ## 目标态拓扑
 
@@ -36,10 +39,10 @@
 Hub gateway（宿主机 systemd，root，HERMES_HOME=/data/hermes）
     │ HTTP localhost:2602x  + Bearer per-profile key
     ▼
-Docker hermes-<name> ×N（容器内 uid0，自认 root）
+Docker hermes-<逻辑名> ×N（容器内 uid0，自认 root）
     ├─ 代码/venv：RO 共用
-    ├─ /root        ← passwd 用户 /home/<name>
-    └─ /root/.hermes ← /data/hermes/profiles/<name>   （叠挂在 home 之上）
+    ├─ /root        ← passwd /home/<逻辑名>（或 docker.home_dir 覆盖）
+    └─ /root/.hermes ← /data/hermes/profiles/<逻辑名>（或 docker.hermes_dir）
 ```
 
 ## 已定挂载规范
@@ -47,180 +50,206 @@ Docker hermes-<name> ×N（容器内 uid0，自认 root）
 | # | 宿主机 | 容器 | 说明 |
 |---|--------|------|------|
 | 1 | `/data/hermes/hermes-agent`（+ venv） | 代码/venv 路径 | **一份**，只读共用 |
-| 2 | `/data/hermes/profiles/<name>` | `/root/.hermes` | 官方一等 `HERMES_HOME`（config / sqlite / skills…） |
-| 3 | `/home/<name>`（passwd 用户家） | `/root` | 容器自认 root 的家；**passwd 非隔离必需**，为好认、好找 |
-| 4 | — | — | **`.hermes` 必须叠挂在 home 之上**（先 `/root`，再 `/root/.hermes`） |
-| 5 | — | uid 0 | Docker 内自认 root；**不做**裸机 `systemd User=`；**不用** `user:` 非 root |
-| 6 | Hub：`/data/hermes` | — | systemd；**唯一**飞书 WS；HTTP 转发 `127.0.0.1:2602x` |
+| 2 | `/data/hermes/profiles/<逻辑名>`（或 `docker.hermes_dir`） | `/root/.hermes` | 官方一等 `HERMES_HOME` |
+| 3 | `/home/<逻辑名>`（或 `docker.home_dir`；passwd 默认 = 逻辑名） | `/root` | 容器自认 root 的家 |
+| 4 | — | — | **`.hermes` 必须叠挂在 home 之上** |
+| 5 | — | uid 0 | Docker 内自认 root；**不做**裸机 `User=`；**不用** `user:` 非 root |
+| 6 | Hub：`/data/hermes` | — | systemd；**唯一**飞书 WS |
 
-补充：
+## 配置主结构：按人 `fleet_profiles`
 
-- **进程/目录隔离**靠「一 profile 一容器 + `profiles/<name>`」；passwd 只是命名与路径约定。
-- 缺 passwd 用户的 profile（现网如部分账号）在 Ops 切片补齐，不挡路由代码迁 overlay。
-- 共享运维卷（scripts、inventory、常挂 ssh 等）仍可挂；不算第四类「一人一份」。
-- 官方 `get_profile_dir(name)` → `<hermes_root>/profiles/<name>`，与目标态目录布局对齐（相对现网 `/home/<name>/.hermes` 更干净）。
+### 为何按人分
 
-## 命名与目录映射（LDAP uid 对齐 · 已拍板方向）
+- 一人一节：LDAP uid、Docker 路径、api_server 地址、Hub 白名单同屏，**少维护两张平行表**（旧 `profile_endpoints` ↔ `identity_routes`）。
+- 给某人「不路由、留 Hub」做测试时，只改此人下的 `hub_only`，不必去翻全局 whitelist 短名单（优于旧 `patch_feishu_profile.yaml` 平行表）。
+- 飞书侧与 API 侧白名单 **可分开**：例如只测飞书留 Hub、API 仍反代（或反过来）。
 
-目标：**逻辑身份统一用 LDAP uid**（例：杨天宝 → `yangtb`），不再以旧 Hermes profile 全名（如 `yangtianbao`）为默认主键。
+### 逻辑名约定
 
-| 层 | 默认名 | 说明 |
-|----|--------|------|
-| 配置逻辑 profile 名 | **LDAP uid**（`yangtb`） | `user_profile_routes` 的**值**、`api_identity.routes` 的**值**、`profile_endpoints` 的 **key** 同一套 |
-| Linux passwd / `/home/<name>` | **同 LDAP uid** | 好认；与逻辑名默认一致 |
-| Hermes profile / `HERMES_HOME` 逻辑名 | **对齐 LDAP uid** | 官方 `-p` / 路由表用的名字 |
-| 飞书侧 | `ou_*` → 逻辑 profile | 仍是飞书 open_id 表；值用 LDAP uid |
-| 身份侧（C06） | LDAP uid → 逻辑 profile | 对齐后**多为恒等**；**保留** `api_identity.routes` 表以兼容别名/过渡 |
+| 层 | 默认 | 说明 |
+|----|------|------|
+| `fleet_profiles` 的 **key** | **LDAP uid**（例 `yangtb`） | 全系统逻辑名 |
+| `user_profile_routes` 的 **值** | 同 key | 飞书 ou → 人 |
+| passwd / 默认 `home_dir` | 同 key | `/home/yangtb` |
+| 默认 `hermes_dir` | 同 key | `/data/hermes/profiles/yangtb` |
+| `api_server` 反代目标 | 同 key | C06；恒等，无需另表 |
 
-**灵活例外（历史目录）**：Docker 挂载时允许逻辑名 ≠ 宿主机路径 basename。例如逻辑 `yangtb`，数据目录仍可能是 `/data/hermes/profiles/yangtianbao`，home 仍可能是 `/home/yangtianbao`。用**显式 map**（实现时再定键名；候选见下「仍开放」）声明，例如：
+历史 basename（如旧 `yangtianbao`）只写在此人 `docker.hermes_dir` / `home_dir`，**不**改逻辑 key。
+
+### 完整示意 yaml（假数据；真值留部署机）
 
 ```yaml
-# 示意（键名未拍板；见开放项）
-profile_dirs:                    # 候选形状之一
-  yangtb:
-    data_dir: /data/hermes/profiles/yangtianbao   # → 容器 /root/.hermes
-    home_dir: /home/yangtianbao                   # → 容器 /root
-# 未列出的 profile：约定 data_dir=/data/hermes/profiles/<逻辑名>
-#                   home_dir=/home/<逻辑名>
+# ~/.hermes/overlay.yaml  （Hub HERMES_HOME）
+
+# ── 按人舰队表（主键 = LDAP uid）────────────────────────────
+fleet_profiles:
+  yangtb:                              # 杨天宝；逻辑名 = LDAP uid
+    display_name: 杨天宝               # 可选，仅文档/运维
+    ldap:
+      uid: yangtb                      # 可省略（默认同 key）
+    docker:
+      # 省略则：hermes_dir=/data/hermes/profiles/yangtb
+      #         home_dir=/home/yangtb；passwd 用户名默认 = yangtb
+      hermes_dir: /data/hermes/profiles/yangtianbao   # 历史目录例外
+      home_dir: /home/yangtianbao
+    api_server:
+      url: http://127.0.0.1:26027
+      api_key: "example-key-not-real"
+      # hub_only: true                 # C06：此 LDAP 身份留 Hub，不反代
+    feishu:
+      # hub_only: true                 # C05：此人对应的飞书 ou 若命中路由仍可…
+      # 注意：飞书「谁对应此人」在 user_profile_routes；hub_only 见下节语义
+      hub_only: false
+
+  liruiyang:
+    display_name: 李瑞阳
+    # ldap / docker 全默认即可
+    api_server:
+      url: http://127.0.0.1:26028
+      api_key: "example-key-not-real"
+    feishu:
+      hub_only: false
+
+  hubops:                              # 例：运维号，飞书与 API 都留 Hub 做测试
+    display_name: Hub Operator
+    api_server:
+      url: http://127.0.0.1:26026      # 可仍登记；hub_only 时不反代
+      api_key: "example-key-not-real"
+      hub_only: true                   # ↔ 旧 identity_whitelist
+    feishu:
+      hub_only: true                   # ↔ 旧 user_routing.whitelist（按人）
+
+  fleet_default:                       # 可选默认落地容器（非真人 LDAP 亦可）
+    api_server:
+      url: http://127.0.0.1:26026
+      api_key: "example-key-not-real"
+
+# ── 飞书入站：ou / chat → 逻辑名（C05）─────────────────────
+feishu:
+  # … bot_menu / skill_approval / queue_card 等已有段 …
+  bots:
+    cli_example_app_id:
+      user_routing:
+        # 群 → 逻辑名（可选；现网常空）
+        chat_profile_routes: {}
+
+        # 人 → 逻辑名（值必须是 fleet_profiles 的 key）
+        user_profile_routes:
+          ou_alice_open_id: yangtb
+          ou_bob_open_id: liruiyang
+          ou_ops_open_id: hubops
+
+        default_profile: fleet_default   # 可选
+
+        # 可选全局短名单（不推荐主路径；见「Hub 白名单」）
+        # whitelist:
+        #   - ou_ops_open_id
+
+        # 旧式 profile_endpoints：迁移期可留；运行时优先 fleet_profiles.*.api_server
+        # profile_endpoints: { … }
+
+# ── 全局 LDAP 认证（C06；与「人」分节）─────────────────────
+ldap:
+  enabled: false
+  # host / bind_dn / bind_password / base_dn / …  真值留部署机
 ```
 
-原则：
+### 节职责一览
 
-- **路由表只认逻辑名**（LDAP uid）；目录例外不进 `ou_*` / identity 路由值。  
-- 迁移期可暂时 `api_identity.routes: { yangtb: yangtianbao }`；目录迁完、逻辑名统一后改为恒等或删别名。  
-- C05 实现路由时先按逻辑名查 `profile_endpoints`；**目录 map 属 Ops/compose**，可与 C05a 代码解耦，但配置形状要在设计里预留。
+| 节 | 职责 | 谁实现 |
+|----|------|--------|
+| **`fleet_profiles.<id>`** | 人：ldap uid、docker 路径、api_server url/key、两侧 hub_only | **C05** 读 api_server 推导飞书转发；**Ops** 读 docker；**C06** 读 hub_only / ldap.uid |
+| **`feishu.bots.<app_id>.user_routing`** | 飞书 `ou_*` / chat → 逻辑名；可选 `default_profile`；可选短 `whitelist` | **C05** |
+| **`ldap`**（顶层） | 全局认证（host/bind…） | **C06** |
+| ~~顶层 `api_identity`~~ | **不再作主路径**；迁移见下 | — |
+| ~~`user_routing.profile_endpoints`~~ | **不再作主路径**；由 `fleet_profiles.*.api_server` 取代 | 迁移回落 |
+
+### Hub 白名单（按人 · 推荐主路径）
+
+旧 patch 用两条**平行短名单**：
+
+- `user_routing.whitelist`：飞书 DM 命中则留 Hub  
+- `identity_whitelist`：API `X-Hermes-Identity` 命中则留 Hub  
+
+按人后改为每人可选字段（**默认同 false / 省略 = 正常转发**）：
+
+| 字段 | 语义 | 对应旧键 |
+|------|------|----------|
+| `fleet_profiles.<id>.feishu.hub_only: true` | 飞书侧：解析到该逻辑名后 **不 HTTP 转发**，留 Hub 本地处理 | `user_routing.whitelist`（按 open_id；见解析） |
+| `fleet_profiles.<id>.api_server.hub_only: true` | API 侧（C06）：该 LDAP 身份 **不反代**，留 Hub | `identity_whitelist` |
+
+**两套可分开**：例如 `feishu.hub_only: true` 且 `api_server.hub_only: false` → 只测飞书留 Hub，API 仍进容器。
+
+**飞书解析与 `hub_only` 的关系（推荐语义）**：
+
+1. 仍用 `user_profile_routes[open_id]`（或 chat / default）得到逻辑名 `id`。  
+2. 若 `fleet_profiles[id].feishu.hub_only` → **留 Hub**（等同旧 whitelist 命中）。  
+3. 否则查 `fleet_profiles[id].api_server.{url,api_key}` 转发；缺 endpoint → 告警且不回落乱发。
+
+> 也可保留「DM + open_id ∈ 短 `whitelist`」作 **全局 override**（迁移期 / 临时），但 **不推荐主路径**：测试「某人留 Hub」应改此人 `feishu.hub_only`，避免 ou 与逻辑名两处维护。
+
+**API（C06）**：`X-Hermes-Identity` → 匹配 `fleet_profiles.*.ldap.uid`（默认 = key）→ 若 `api_server.hub_only` 留 Hub，否则反代到 `api_server.url`。
+
+### 解析优先级（飞书入站 / C05）
+
+1. （可选全局 override）DM 且 `open_id ∈ user_routing.whitelist` → Hub  
+2. `chat_profile_routes[chat_id]` → 逻辑名  
+3. `user_profile_routes[open_id]` → 逻辑名  
+4. `default_profile` → 逻辑名  
+5. 仍无 → Hub 本地  
+6. 得到逻辑名后：若 `fleet_profiles[id].feishu.hub_only` → Hub；否则转发 `api_server`
+
+群聊跳过步骤 1 的短名单直觉可与现网一致（现网群聊跳过 whitelist）；`hub_only` 在步骤 6 对群/人统一生效——**实现时与现网行为对齐**：若现网 whitelist 仅 DM，则 `hub_only` 亦可约定仅 DM，或文档写清「hub_only 对所有解析到该人的会话生效」。**推荐**：`hub_only` **对解析到该逻辑名的一切入站生效**（比旧「仅 DM whitelist」更好测）；若需兼容旧「仅 DM」，另加 `feishu.hub_only_dm_only: true`（默认 false）。实现前可再钉一句。
+
+### endpoints 推导（避免双表）
+
+```text
+forward(profile_id):
+  person = fleet_profiles[profile_id]
+  url/key = person.api_server.url / api_key
+  # 若无 fleet_profiles 或缺 api_server：回落旧 user_routing.profile_endpoints[profile_id]
+```
+
+C06 反代共用同一 `api_server` 块。
+
+## 从旧配置迁移
+
+| 旧（patch / 现网） | 新（按人） |
+|--------------------|------------|
+| `user_routing.user_profile_routes: { ou_x: yangtianbao }` | 值改为逻辑名 **`yangtb`**；目录例外写 `yangtb.docker.*` |
+| `user_routing.profile_endpoints.yangtianbao` | → `fleet_profiles.yangtb.api_server.{url,api_key}` |
+| `user_routing.whitelist: [ou_ops]` | → 先保证 `user_profile_routes` 有 `ou_ops → hubops`，再设 `fleet_profiles.hubops.feishu.hub_only: true`；短 `whitelist` 可暂留 |
+| `user_routing.identity_routes: { yangtb: yangtianbao }` | **删除主路径**：逻辑 key 已是 uid；过渡期若 API 仍报旧名，用 `ldap.uid` 别名或临时 routes 回落（C06） |
+| `user_routing.identity_whitelist: [hubops]` | → `fleet_profiles.hubops.api_server.hub_only: true` |
+| 顶层 `ldap:`（host/bind） | **保留不动**（全局认证） |
+| 顶层 `api_identity`（若曾写入设计） | **不采用为主**；routes 恒等可删；whitelist → 各人 `api_server.hub_only` |
+
+迁移脚本（以后 Ops，本回合不写）：按旧 endpoints 的 key 建 `fleet_profiles` 骨架 → 改名为 LDAP uid → 填 `docker.*` 指旧路径 → 改 `user_profile_routes` 值 → 删平行 `identity_*` / `profile_endpoints`。
 
 ## 现状 vs 目标
 
 | | 现网（node010 历史） | 目标 |
 |--|--|--|
-| 数据面 | `/home/<name>/.hermes` 整挂到容器 `/root` | `profiles/<name>` → `/root/.hermes`；home 另挂 `/root` |
-| 路由配置主源 | `patch_feishu_profile.yaml`（活文件） | **`overlay.yaml`** → `feishu.bots.*.user_routing` |
-| Identity 配置 | 埋在 `feishu.bots.*.user_routing.identity_*` | 顶层 **`api_identity`**（方案 A）；旧键 = C06 只读别名 |
-| LDAP | 顶层 `ldap:`（认证） | **保持顶层 `ldap:`**；与 `api_identity` 分节 |
-| 路由代码 | 旧树 `owner/feishu/profile_routing.py`（Hub HTTP 转发） | v2 **照迁同语义**（方案②）；加载主认 overlay |
+| 数据面 | `/home/<name>/.hermes` 整挂 `/root` | `hermes_dir` → `/root/.hermes`；`home_dir` → `/root` 叠挂 |
+| 人/端点表 | `profile_endpoints` + `identity_*` 平行 | **`fleet_profiles` 按人一节** |
+| 飞书 ou 表 | `user_profile_routes`（值=旧 profile 全名） | 同节；**值 = LDAP uid = fleet key** |
+| Hub 白名单 | 全局 `whitelist` / `identity_whitelist` | **按人 `feishu.hub_only` / `api_server.hub_only`** |
+| LDAP 认证 | 顶层 `ldap:` | **保持** |
+| 路由代码 | 旧 `owner/feishu/profile_routing.py` | v2 照迁语义；endpoints 改读 `fleet_profiles` |
 | 官方 multiplex | 未用作舰队 | **继续不用** |
-| Linux passwd | 有的有、有的无 | **保留**（好认）；非隔离机制 |
-| 逻辑名 | 旧 profile 全名（如 `yangtianbao`）混用 | **默认 LDAP uid**；目录 basename 例外用显式 map |
-| `/data/hermes/profiles/` | 多是 compose 壳/旧副本，活数据不在 | **活 HERMES_HOME** |
-
-## 路由配置（overlay 节名 · 主推荐）
-
-### 为何用这个级别
-
-- **主推荐**：`feishu.bots.<app_id>.user_routing`（含 `profile_endpoints`）  
-  - 与 node010 活 `patch_feishu_profile.yaml` **同构**，迁配置几乎只是剪切。  
-  - 落在已有 overlay 第一层段 `feishu:` 下（与 `bot_menu` / `skill_approval` / `queue_card` 同族）；C01 约定「文件第一层 = 能力段」，**不要**再套 `owner:` / `fleet:` 外壳。  
-  - 按 **飞书 app_id** 分 bot：一 Hub 可挂多 bot 时路由表不搅在一起。
-- **不放顶层 `fleet:`**：另起第一层段会与现网键树分叉、和 `feishu.*` 体验配置割裂；「舰队」本质仍是飞书入站路由，不是横切能力。
-- **不放官方 `gateway.profile_routes`**：那是同进程 multiplex 切 `HERMES_HOME` 的表；打开它不会帮你 HTTP 打到 Docker，还会和「每容器单 profile」假设打架。
-
-### 推荐 yaml 树（假数据；真值留部署机）
-
-```yaml
-# ~/.hermes/overlay.yaml  （Hub HERMES_HOME；与其它 feishu.* 段并列）
-feishu:
-  # … bot_menu / skill_approval / queue_card 等已有段 …
-
-  bots:
-    cli_example_app_id:          # 飞书 app_id
-      user_routing:
-        # DM 内这些 open_id 留 Hub（不转发）
-        whitelist:
-          - ou_hub_operator_aaa
-          - ou_hub_operator_bbb
-
-        # 群 → profile（可选；现网常为空）
-        chat_profile_routes: {}
-
-        # 人 → 逻辑 profile（值 = LDAP uid）
-        user_profile_routes:
-          ou_alice: yangtb                 # 例：杨天宝 LDAP=yangtb
-          ou_bob: liruiyang
-
-        default_profile: fleet_default   # 可选；未命中时用
-
-        # endpoints key = 逻辑 profile 名（LDAP uid）；共用给飞书转发与 C06 identity 反代
-        profile_endpoints:
-          fleet_default:
-            url: http://127.0.0.1:26026
-            api_key: "example-key-not-real"
-          yangtb:
-            url: http://127.0.0.1:26027
-            api_key: "example-key-not-real"
-          liruiyang:
-            url: http://127.0.0.1:26028
-            api_key: "example-key-not-real"
-
-# ── C06 配置形状（方案 A；C05 不读、不实现）────────────────
-# API Server 身份路由：按 LDAP uid / X-Hermes-Identity 选逻辑 profile 或留 Hub
-# 对齐后 routes 多为恒等；保留表以兼容别名 / 过渡（旧 profile 全名）
-api_identity:
-  whitelist:                     # 原 identity_whitelist：留 Hub，不反代
-    - hubops
-  routes:                        # ldap_uid → 逻辑 profile（通常恒等）
-    yangtb: yangtb
-    liruiyang: liruiyang
-    # 过渡别名例：yangtb: yangtianbao   # 仅当逻辑名尚未切到 uid 时
-
-# LDAP 认证（现网已是顶层；保持分节，勿塞进 feishu）
-ldap:
-  enabled: false
-  # host / bind / …   # 真值留部署机；C05 不实现
-```
-
-运行时读取路径（与 C09 对齐）：`config.owner.feishu.bots.<app_id>.user_routing`（经 `apply_owner_overlay`），或直接 `load_patch_config()["feishu"]["bots"][…]`。  
-C06 目标路径：`config.owner.api_identity` + `config.owner.ldap`（经同一 overlay 加载器）。
-
-### 解析优先级（沿用现网 `resolve_profile_route`）— **仅飞书入站 / C05**
-
-1. DM 且 `open_id ∈ whitelist` → Hub 本地（返回无路由）  
-2. `chat_profile_routes[chat_id]`  
-3. `user_profile_routes[open_id]`  
-4. `default_profile`  
-5. 仍无 → Hub 本地  
-
-群聊跳过 whitelist，直接走 2→4。  
-**C05 不走** `api_identity` / 旧 `identity_*` / LDAP。
-
-### 可选备选（不推荐作主路径）
-
-| 备选 | 形状 | 为何不选作主 |
-|------|------|----------------|
-| A | 顶层 `fleet.bots.<app_id>…` | 与现网/overlay `feishu` 族分裂；多一个第一层段 |
-| B | `feishu.user_routing`（无 bots/app_id） | 单 bot 时更短，但丢多 bot 扩展，且与活文件不一致 |
-| C | 继续只活在 `patch_feishu_profile.yaml` | 违背「配置收进 overlay」；仅作迁移回落 |
-
-## Identity / LDAP 配置（方案 A · 已拍板）
-
-现网把 `identity_routes` / `identity_whitelist` 塞在 `feishu.bots.<app_id>.user_routing` 里，与飞书 bot 绑死；但它们走的是 **api_server + LDAP uid**（`X-Hermes-Identity`），不是飞书 `ou_*`。顶层已有独立 `ldap:`（认证），身份路由却埋在飞书节——无 `FEISHU_APP_ID` 时整段可能读不到，C06 别扭。
-
-| 节 | 职责 | 谁实现 |
-|----|------|--------|
-| `feishu.bots.<app_id>.user_routing` | 飞书 `ou_*` / chat 路由 + **`profile_endpoints`**（共用） | **C05** |
-| **`api_identity`**（顶层） | `whitelist` + `routes`（LDAP uid → profile） | **C06** |
-| **`ldap`**（顶层） | 认证（enabled / host / bind…） | **C06** |
-
-**迁移期（C06，写在设计约定即可；C05 不写加载逻辑）**：
-
-1. **主读** overlay 顶层 `api_identity.{routes,whitelist}`。  
-2. **缺段时只读别名**：回落旧 `feishu.bots.<app_id>.user_routing.identity_routes` / `identity_whitelist`（及 patch 同树）。  
-3. **不**再把「C05 静默忽略旧键就完事」当作终态表述——旧键的角色变为 **C06 别名来源**；C05 代码路径仍完全不读 identity。
-
-曾考虑未采用：顶层 `fleet`（要挪 endpoints，改已拍板）；塞进 `ldap.identity`（认证与路由耦太紧）。
 
 ## 与官方 `profile_routes` / multiplex 的关系
 
 | | 官方 | 本舰队（C05） |
 |--|--|--|
 | 开关 | `gateway.multiplex_profiles` | **不依赖** |
-| 路由表 | `gateway.profile_routes[]` | **`feishu.bots.*.user_routing` + `profile_endpoints`** |
-| 匹配 | `gateway/profile_routing.py` | owner：`resolve_profile_route` → HTTP |
-| 送达 | **同进程**切 `HERMES_HOME` | **跨容器** `POST {endpoint}/v1/feishu/inbound` |
+| 人/端点 | 同进程切 `HERMES_HOME` | **`fleet_profiles` + HTTP** |
+| 飞书匹配表 | `gateway.profile_routes[]` | **`feishu.bots.*.user_routing`（ou→逻辑名）** |
+| 送达 | 同进程 ContextVar | **跨容器** `POST {api_server.url}/v1/feishu/inbound` |
 
 **正交**：官方 = 同机多 profile 家目录切换；我们 = 一 bot 多容器。  
-**可借鉴**：profile 名校验、`user_id` 匹配直觉、目标未配置则拒绝（我们侧 = endpoints 缺失告警）。  
-**不可直接吃**：官方送达路径。
+**可借鉴**：profile 名校验、目标未配置则拒绝。  
+**不可直接吃**：官方送达路径。→ **方案②**。
 
 ## 代码落点（实现时，本回合不写）
 
@@ -229,66 +258,50 @@ C06 目标路径：`config.owner.api_identity` + `config.owner.ldap`（经同一
 | 入口 | 作用 |
 |------|------|
 | `try_route_inbound_message` | Hub 入站：有路由则转发；失败只通知、**不**回落 Hub 本地 |
-| `try_route_card_action` / `handle_card_action_request` | 卡按钮按 `hermes_profile` 标签跨容器 |
-| `try_route_bot_menu_command` | 菜单命令随用户路由 |
+| `try_route_card_action` / 菜单 | 按 profile 标签 / 用户路由跨容器 |
 | `_forward_to_profile_container` | `POST …/v1/feishu/inbound` |
-| 子容器 | `inject_inbound` + api_server doorway |
+| 配置 | 读 `fleet_profiles` + `user_routing`；推导 url/key；尊重 `feishu.hub_only` |
 
-v2：逻辑放 `owner/feishu/profile_routing.py`；官方 adapter / api_server **薄胶水**（`# [owner] C05`）。配置加载：**主读 overlay**；回落 `load_patch_feishu_profile_config`（与 C09 同模式）。  
-**C05 不**实现 `api_identity` / LDAP 加载；api_server identity 反代留给 C06。
-
-## 复用官方的策略（已锁定）
-
-1. ~~薄封装官方匹配、只换送达为 HTTP~~ — 不采用（匹配模型不同构）。  
-2. **照迁旧 `profile_routing`，配置改读 overlay** — **已拍板**。  
-3. ~~仅 Hook 送达层~~ — 不采用（无干净扩展点）。
+v2：`owner/feishu/profile_routing.py` + 官方 adapter **薄胶水**（`# [owner] C05`）。  
+**C05 不**实现 LDAP bind / `api_server.hub_only` 反代（C06）。
 
 ## 明确不做
 
-- LDAP / `api_identity` 匹配与加载（**C06**；C05 忽略）
+- LDAP 认证门 / API 身份反代（**C06**）
 - 官方 multiplex 替换舰队
 - 容器内非 root / 裸机 `User=`
-- 本轮改 Mac 开发 bot 拓扑；Mac overlay **不写真**舰队路由
-- 把 Hub 拆进「多人自认 root 容器」 unless 另议
-- 第三人路径半吊子迁移（有 `profiles/` 名无叠挂 home）
+- 本轮改 Mac 开发 bot；Mac overlay **不写真**舰队
+- 继续以 `api_identity` + `profile_endpoints` 双平行表为主路径
 
 ## 落地切片（以后实现）
 
 | 切片 | 内容 |
 |------|------|
-| **C05a** | v2 迁 `profile_routing` + overlay `user_routing` + 单测；**不**接 `api_identity`；Mac/文档可先；node010 仍旧树直到切 |
-| **C05b** | node010 配置切 overlay；退役 patch 作主路径（保持 Docker 拓扑） |
-| **C06** | 顶层 `api_identity` + `ldap`；旧 `identity_*` 只读别名；api_server 身份反代 / 头剥离 / SSE |
-| **Ops** | 数据 rsync → `profiles/<name>`；compose 双挂；补 passwd 用户；清双轨遗迹；cron/ssh 收紧（与路由解耦） |
+| **C05a** | v2 迁 `profile_routing`；读 `fleet_profiles` + `user_routing`；`feishu.hub_only`；单测夹具 |
+| **C05b** | node010 配置切 overlay 按人表；退役 patch 主路径 |
+| **C06** | 顶层 `ldap` 认证 + `api_server.hub_only` 反代；旧 `identity_*` 只读别名 |
+| **Ops** | rsync → `hermes_dir`；compose 读 `docker.*`；补 passwd；清双轨 |
 
-## 已收开放项（原「仍开放」→ 默认已拍板）
+## 已收开放项
 
 | # | 原问题 | 拍板 |
 |---|--------|------|
-| 1 | patch 回落保留多久？ | **与 C09 同模式**；C05b 后文档 deprecated，无硬删除日 |
-| 2 | ssh/ansible 共享卷 vs 每人 home？ | **先维持现网共享卷** |
-| 3 | 迁 `profiles/` 前 cron？ | **先不动语义**；另开 Ops |
-| 4 | Mac overlay 写空路由壳？ | **不写真路由**；夹具 / 生产只上 Hub |
-| 5 | 旧 `identity_*`：C05 忽略 vs 告警？ | **C05 完全不读**；**方案 A 已取代**「静默忽略旧键就完事」——旧键改为 **C06 只读别名来源**，终态配置在顶层 `api_identity` |
-| 6 | 逻辑 profile 默认名？ | **LDAP uid**（passwd / profile / 路由值 / endpoints key 对齐）；历史目录用显式 map |
+| 1 | patch 回落 | 与 C09 同模式 |
+| 2 | ssh 共享卷 | 先维持 |
+| 3 | cron | 先不动语义 |
+| 4 | Mac overlay | 不写真路由 |
+| 5 | identity 结构 | **并入 `fleet_profiles`**；全局仅留 `ldap:` 认证 |
+| 6 | 逻辑名 | **LDAP uid**；目录用 `docker.*` |
+| 7 | 配置主结构 | **按人 `fleet_profiles`** |
+| 8 | Hub 白名单 | **按人 `feishu.hub_only` / `api_server.hub_only`**；短名单不推荐主路径 |
+| 9 | endpoints | **从 `api_server` 推导** |
 
-已从开放问题划掉：节名、方案②、挂载三层、passwd、Docker root、不做 LDAP（C05）、不接官方 multiplex、**方案 A `api_identity`/`ldap` 分节**、逻辑名默认 LDAP uid。
+## 仍可钉一句（实现前）
 
-## 仍开放（命名映射配置键 · 供后续拍板）
-
-逻辑名与宿主机路径 basename 不一致时，显式 map 放哪、键叫什么——**未拍板**；候选：
-
-| 候选 | 形状（示意） | 利 | 弊 |
-|------|----------------|----|----|
-| **M1** | 顶层 `fleet_dirs.<逻辑名>.{data_dir,home_dir}` | 与 feishu/api_identity 解耦；Ops 一眼找 | 又一个第一层段 |
-| **M2** | `profile_endpoints.<逻辑名>` 旁挂 `data_dir` / `home_dir` | 和 endpoints 同表 | 把 compose/Ops 塞进飞书 bot 节；多 bot 重复 |
-| **M3** | 顶层 `profiles.<逻辑名>.{endpoint,data_dir,home_dir,…}` | 一人一节聚合 | 要挪 endpoints，改已拍板「endpoints 在 user_routing」 |
-| **M4** | 仅 compose/`hermes-fleet.env` 注释 + 约定，**不进 overlay** | 零 schema | 路由/文档看不到例外；易漂 |
-
-**默认倾向（未拍板，仅讨论锚点）**：偏 **M1** 或 **M4**——目录例外是 Ops/compose 事，尽量别污染 `user_routing`；C05a 代码可不读 map，只认逻辑名 → URL。  
-另可保留过渡别名：`api_identity.routes` / 临时 `user_profile_routes` 值仍指向旧逻辑名，直到目录与逻辑名双对齐。
+- `feishu.hub_only`：对「解析到该人的所有会话」生效，还是「仅 DM」（兼容旧 whitelist）？**稿内推荐：全部会话；可选 `hub_only_dm_only`。**
+- `fleet_default` 这类非 LDAP 键：是否要求必须有 `ldap.uid`，或允许无 ldap 块的「纯落地容器」。
 
 ## 非目标（本设计稿）
 
 - 不写路由实现、不改 compose、不重启 gateway、不 push。  
-- 不在本稿提交真实 `api_key` / `open_id` / LDAP 清单（示例脱敏；真值留在部署机配置）。
+- 不在本稿提交真实 `api_key` / `open_id` / LDAP 清单。
