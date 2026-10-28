@@ -10,7 +10,7 @@
 
 **不**用官方同进程 `gateway.multiplex_profiles` / `gateway.profile_routes` 替代舰队；二者正交（见下）。
 
-**相关**：[舰队开户链路（fleet add）](./fleet-add.md) — 对话触发、Hermes 编排的加人设计；**未实现**。
+**相关**：[舰队开户链路（fleet add）](./fleet-add.md) — 对话触发、Hermes 编排的加人设计；**未实现**；**延后**：完全更新 `xy-user-onboarding`（先内核/模板，见该稿 §5 / D1）。
 
 ## 已拍板（本讨论收敛）
 
@@ -264,7 +264,7 @@ v2：逻辑放 `owner/feishu/profile_routing.py`；官方 adapter / api_server *
 | **C05a** | v2 迁 `profile_routing` + overlay `fleet_profiles`/`user_routing` + 单测；endpoints 从人卡推导；**不**接 LDAP/`hub_only.api` |
 | **C05b** | node010 配置切 overlay；退役 patch 作主路径 |
 | **C06** | 顶层 `ldap` 认证 + 人卡 `hub_only.api`；旧 `api_identity`/`identity_*` 只读别名；api_server 身份反代 |
-| **Ops** | 数据 rsync → `profiles/<uid>`；compose 读 `docker.*` 双挂；补 passwd；清遗迹；**开户**（对话触发、Hermes 执行）见 [fleet-add.md](./fleet-add.md)（未实现） |
+| **Ops** | 数据 rsync → `profiles/<uid>`；compose 读 `docker.*` 双挂；补 passwd；清遗迹；**开户**（对话触发、Hermes 执行）见 [fleet-add.md](./fleet-add.md)（未实现；**延后**完全更新 `xy-user-onboarding`） |
 
 ## 已收开放项
 
@@ -287,7 +287,7 @@ v2：逻辑放 `owner/feishu/profile_routing.py`；官方 adapter / api_server *
 |---|------|----------|
 | R1 | 飞书 `whitelist`（ou 列表）是否完全废弃，只认 `hub_only.feishu`？ | 迁移期两者兼容：ou whitelist ∪ 人卡 hub_only；稳定后文档建议只维护人卡 |
 | R2 | compose 是否直接读 overlay `fleet_profiles`，还是生成中间 env？ | Ops 另议；设计上人卡是真相源 |
-| R3 | 开户自动化（fleet add）对话/tool 落点 / 是否双写旧 patch | 见 [fleet-add.md](./fleet-add.md) §6；默认对话触发；**未实现** |
+| R3 | 开户自动化（fleet add）对话/tool 落点 / 是否双写旧 patch；**延后完全更新 user-onboarding** | 见 [fleet-add.md](./fleet-add.md) §5 D1 / §6；默认对话触发；**未实现** |
 
 ## 清单（实现 / 评审用）
 
