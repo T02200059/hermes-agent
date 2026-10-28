@@ -34,7 +34,7 @@
   - `load_patch_config()` / `load_owner_config()` → 读 `~/.hermes/overlay.yaml`（本仓常软链到 `owner/config/overlay.yaml`）
   - `apply_owner_overlay(config)` → 官方 `load_config` 薄挂点后的叠层
   - `invalidate_owner_config_cache()` → 强制重读
-  - 舰队/LDAP 另文件：`load_patch_feishu_profile_config()` → `patch_feishu_profile.yaml`（C05/C06）
+  - 舰队路由主读 overlay `feishu.bots.*.user_routing`（C05）；`load_patch_feishu_profile_config()` → `patch_feishu_profile.yaml` 仅回落 / LDAP（C06）仍可暂留该文件
 - **配置**：读写一律 `config.owner.<section>.*` 或直接 `load_patch_config().get("<section>")`；新开关进对应 section，不要散落 `config.yaml`。
 - **文件名**：运行时定制文件为 **`overlay.yaml`**（不再用 `patch.yaml`），与老版 owner 分支的 `patch.yaml`（含顶层 `owner:` 外壳）隔离；加载器**禁止**回退读 `patch.yaml`。
 - **规范**：[`二次开发规范.md`](./二次开发规范.md) §2.2.1；[`v2背景说明.md`](./v2背景说明.md)「定制化 yaml」。
@@ -413,7 +413,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - 测：`tests/owner/test_platform_users.py`
   - **不改**官方 SCHEMA；不改写 `sessions.display_name`
 - [ ] **C05** · 源 §4.1 · **飞书多 profile 舰队路由**（`profile_endpoints` HTTP 转发；**不吃**官方 `profile_routes`） · **优先级：P0**
-  - 设计稿已立：`owner/docs/design/c05-feishu-user-routing/README.md`（2026-10-28；挂载规范 + overlay 路由；未实现代码）
+  - 设计稿：`owner/docs/design/c05-feishu-user-routing/README.md`（2026-10-28；**方案②**照迁 owner HTTP；overlay 节 **`feishu.bots.<app_id>.user_routing`**；挂载三层已定；未实现代码）
 - [ ] **C06** · 源 §15.1–15.6 · API Server LDAP 身份准入 + identity_routes + 头剥离/SSE · **优先级：P0**
 - [ ] **C07** · 源 §16.1–16.6 · API 产物媒体 / `hermes.files` / tool.progress 脱敏与归属 · **优先级：P0** · **延后**（2026-10-27 用户拍板；与 C05/C06 一并靠后，非当前主线）
 - [x] **C08** · 源 §7.27 · outbound BOS/EOS scrub · **优先级：P0**
