@@ -4,7 +4,11 @@
 
 1. 飞书侧发无参 `/resume`（且有已命名会话）→ 发 v2 schema 数字按钮卡（1–10，每行 3 个），正文为会话列表 markdown。
 2. 点数字按钮 → 校验点击者 open_id == 发卡时 source.user_id → 合成 `/resume N` COMMAND → 走 `_handle_message_with_guards`（与 model_picker confirm 同流水线）。
-3. 发卡失败 → 纯文本列表兜底（`adapter.send`）。
+3. **点选后冻卡**：成功调度后立刻回 `build_done_card`（无按钮，仿 model_picker confirm），防连点多次 `/resume N`；按钮 value 顺带 stash `session_title`（回调时没有列表）。
+4. **提交失败反馈**：`_submit_on_loop` 返回 False（或 loop 不可用 / 缺 source / 非卡主）→ `build_failed_card`（💡，仿 C12 queue / C04 approval），禁止空 ack 留下可点按钮。
+5. 发卡失败 → 纯文本列表兜底（`adapter.send`）。
+
+双击竞态：冻卡与现网其它卡同级，极端连点仍可能盖不全，可接受。
 
 ## 入口
 
@@ -20,6 +24,7 @@
 - `hermes_action`: `"resume_select"`
 - `resume_index`: 1-based
 - `session_key`: 相关会话键（调试）
+- `session_title`: 对应条目标题（冻卡正文用；点击时无列表）
 - `source_dict`: 发卡时 `SessionSource.to_dict()`，回调还原 source
 
 ## 操作者鉴权

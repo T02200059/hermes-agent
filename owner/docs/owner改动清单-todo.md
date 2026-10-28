@@ -461,6 +461,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - i18n：`gateway.resume.card_title`（en/zh）
   - 测：`tests/owner/test_c27_resume_card.py`；说明：`owner/docs/c27-resume-card.md`
   - 操作者鉴权：保留 clicker==owner（切会话 IDOR；与审批卡「由 xx 批准」展示不同）
+  - **UX harden（2026-10-28）**：`_submit_on_loop` 失败 → 失败卡（仿 C12）；成功点选后回冻卡 `build_done_card`（仿 model_picker confirm，防连点）；按钮 value 顺带 stash `session_title`
 - [ ] **C11-diff** · 源 §4.4 · Feishu diff 卡 · **忽略（不做）**
 - [x] **C12** · 源 §4.10–4.15 · memory write-approval 卡 / feishu-guide / 上传守卫 / doc_read 图 OCR / @所有人 / merge_forward / **queue 状态卡** · **优先级：P1**（子点分批；已落地 C12-at-all + C12-upload-guard + C12-feishu-guide + C12-merge-forward-recv + C12-doc-ocr + **C12-queue-card**；**C12-memory-approval 忽略（不做）**）
   - [x] **C12-at-all** · 源 §4.14 · 群 `@_all`（@所有人）不再当提到自己 · **优先级：P2** · **已落地**
@@ -580,6 +581,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 - [x] **C27-resume-card** · 源漏记 · Feishu `/resume` 数字按钮交互卡 · **优先级：P1**（阶段三余量）· **已落地**
   - `owner/feishu/resume_card.py`；adapter `send_resume_card` / card-action `resume_select`；slash 列表薄胶水；说明：`owner/docs/c27-resume-card.md`
   - 测：`tests/owner/test_c27_resume_card.py`
+  - **UX harden（2026-10-28）**：`_submit_on_loop` 失败 → 失败卡（仿 C12）；成功点选后回冻卡 `build_done_card`（仿 model_picker confirm，防连点）；按钮 value 顺带 stash `session_title`
 - [x] **C21** · 源 §2.4–2.6 / §2.9 · 模型杂项 · **优先级：P1** · **忽略（不做）**（2026-10-27 用户拍板：MiniMax/Kimi 不要；其余官方/C10/C26 已覆盖或现网无感；§2.6 Qwen debris 若飞书再出现截断 thinking 再单开）
 
 ### P2 暂缓
