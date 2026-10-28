@@ -48,6 +48,7 @@ def test_build_resume_card_schema_and_buttons():
     assert buttons[1]["type"] == "default"
     assert buttons[0]["value"]["hermes_action"] == "resume_select"
     assert buttons[0]["value"]["resume_index"] == 1
+    assert buttons[0]["value"]["session_title"] == "Session 1"
     assert buttons[0]["value"]["source_dict"]["chat_id"] == "oc_1"
 
 
@@ -142,11 +143,43 @@ async def test_try_send_resume_card_list_injects_metadata():
     assert kwargs["source_dict"]["user_id"] == "ou_owner"
 
 
-def test_handle_resume_rejects_foreign_operator():
+def _mock_card_adapter():
     adapter = MagicMock()
+    adapter._card_response.side_effect = (
+        lambda card_data=None, **kw: SimpleNamespace(card=card_data)
+    )
+    return adapter
+
+
+def test_build_done_card_has_no_buttons():
+    card = rc.build_done_card(2, "Project A", "张三")
+    assert card["schema"] == "2.0"
+    assert card["header"]["template"] == "green"
+    assert "Project A" in card["header"]["title"]["content"]
+    body = card["body"]["elements"][0]["content"]
+    assert "张三" in body
+    assert "2" in body
+    assert not any(
+        e.get("tag") == "column_set" or e.get("tag") == "button"
+        for e in card["body"]["elements"]
+    )
+
+
+def test_build_failed_card_submit_failed():
+    card = rc.build_failed_card(
+        reason="submit_failed", resume_index=1, session_title="S1"
+    )
+    assert card["header"]["template"] == "orange"
+    assert "💡" in card["header"]["title"]["content"]
+    assert "失败" in card["header"]["title"]["content"]
+    assert "S1" in card["body"]["elements"][0]["content"]
+
+
+def test_handle_resume_rejects_foreign_operator():
+    adapter = _mock_card_adapter()
     adapter._loop_accepts_callbacks = MagicMock(return_value=True)
     submitted = []
-    adapter._submit_on_loop = lambda loop, coro: (submitted.append(coro), coro.close())
+    adapter._submit_on_loop = lambda loop, coro: (submitted.append(coro), True)[1]
     event = SimpleNamespace(operator=SimpleNamespace(open_id="ou_other"))
     source_dict = {"platform": "feishu", "chat_id": "oc_1", "user_id": "ou_owner", "chat_type": "dm"}
     with patch("gateway.session.SessionSource") as SS:
@@ -154,21 +187,27 @@ def test_handle_resume_rejects_foreign_operator():
         resp = rc.handle_resume_card_action(
             adapter=adapter,
             event=event,
-            action_value={"resume_index": 1, "source_dict": source_dict},
+            action_value={
+                "resume_index": 1,
+                "session_title": "Session 1",
+                "source_dict": source_dict,
+            },
             loop=object(),
         )
     assert submitted == []  # rejected before dispatch
-    assert resp is None or resp is not False
+    assert resp.card is not None
+    assert "💡" in resp.card["header"]["title"]["content"]
 
 
-def test_handle_resume_dispatches_synthetic_command():
-    adapter = MagicMock()
+def test_handle_resume_dispatches_and_freezes_card():
+    adapter = _mock_card_adapter()
     adapter._loop_accepts_callbacks = MagicMock(return_value=True)
     submitted = []
 
     def _submit(_loop, coro):
         submitted.append(coro)
         coro.close()
+        return True
 
     adapter._submit_on_loop = _submit
     event = SimpleNamespace(operator=SimpleNamespace(open_id="ou_owner"))
@@ -176,14 +215,63 @@ def test_handle_resume_dispatches_synthetic_command():
     fake_source = SimpleNamespace(user_id="ou_owner", chat_id="oc_1")
     with patch("gateway.session.SessionSource") as SS:
         SS.from_dict.return_value = fake_source
-        resp = rc.handle_resume_card_action(
-            adapter=adapter,
-            event=event,
-            action_value={"resume_index": 2, "source_dict": source_dict},
-            loop=object(),
-        )
+        with patch(
+            "owner.feishu.sender_name_helpers.operator_display_name",
+            return_value="小明",
+        ):
+            resp = rc.handle_resume_card_action(
+                adapter=adapter,
+                event=event,
+                action_value={
+                    "resume_index": 2,
+                    "session_title": "Session 2",
+                    "source_dict": source_dict,
+                },
+                loop=object(),
+            )
     assert len(submitted) == 1
-    assert resp is None or resp is not False
+    assert resp.card["header"]["template"] == "green"
+    assert "Session 2" in resp.card["header"]["title"]["content"]
+    assert "小明" in resp.card["body"]["elements"][0]["content"]
+    assert not any(
+        e.get("tag") == "column_set" or e.get("tag") == "button"
+        for e in resp.card["body"]["elements"]
+    )
+
+
+def test_handle_resume_submit_failed_returns_failure_card():
+    adapter = _mock_card_adapter()
+    adapter._loop_accepts_callbacks = MagicMock(return_value=True)
+    closed = []
+
+    def _submit(_loop, coro):
+        closed.append(coro)
+        coro.close()
+        return False
+
+    adapter._submit_on_loop = _submit
+    event = SimpleNamespace(operator=SimpleNamespace(open_id="ou_owner"))
+    source_dict = {"platform": "feishu", "chat_id": "oc_1", "user_id": "ou_owner", "chat_type": "dm"}
+    with patch("gateway.session.SessionSource") as SS:
+        SS.from_dict.return_value = SimpleNamespace(user_id="ou_owner", chat_id="oc_1")
+        with patch(
+            "owner.feishu.sender_name_helpers.operator_display_name",
+            return_value="小明",
+        ):
+            resp = rc.handle_resume_card_action(
+                adapter=adapter,
+                event=event,
+                action_value={
+                    "resume_index": 3,
+                    "session_title": "Session 3",
+                    "source_dict": source_dict,
+                },
+                loop=object(),
+            )
+    assert len(closed) == 1
+    assert resp.card["header"]["template"] == "orange"
+    assert "💡" in resp.card["header"]["title"]["content"]
+    assert "失败" in resp.card["header"]["title"]["content"]
 
 
 def test_dispatch_resume_card_action_delegates():

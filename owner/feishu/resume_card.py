@@ -8,10 +8,11 @@ Design:
 - List: gateway Feishu branch calls ``adapter.send_resume_card`` → here
   builds a v2-schema card (same family as model_picker), number buttons 1–10
   three per row
-- Click: read ``source_dict`` from button.value, rebuild SessionSource,
-  synthesize ``MessageType.COMMAND`` ``/resume N``, submit via
+- Click: read ``source_dict`` / ``session_title`` from button.value, rebuild
+  SessionSource, synthesize ``MessageType.COMMAND`` ``/resume N``, submit via
   ``adapter._submit_on_loop`` + ``_handle_message_with_guards``
-  (same pipeline as model_picker confirm)
+  (same pipeline as model_picker confirm). Success -> frozen done card;
+  submit failure -> failed card (no empty ack that leaves buttons clickable)
 
 Operator auth: keep clicker == card owner. Unlike approval cards (where the
 frozen card already shows "approved by X"), a resume click switches session
@@ -79,6 +80,10 @@ def build_resume_card(
     # this capability". `column_set` is the supported way to lay out multiple
     # buttons in one row in v2.
     def _btn(idx: int) -> dict[str, Any]:
+        # Click callback has no session list — stash title for the frozen card.
+        title = ""
+        if 1 <= idx <= len(sessions):
+            title = str(sessions[idx - 1].get("title") or "")
         return {
             "tag": "button",
             "text": {"tag": "plain_text", "content": str(idx)},
@@ -87,6 +92,7 @@ def build_resume_card(
                 "hermes_action": "resume_select",
                 "resume_index": idx,
                 "session_key": session_key,
+                "session_title": title,
                 # Stash source_dict so button callback can reconstruct
                 # SessionSource without guessing chat_type / user_id.
                 "source_dict": source_dict or {},
@@ -270,6 +276,106 @@ def _build_plain_text(header_text: str, sessions: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def build_done_card(
+    resume_index: int,
+    session_title: str,
+    user_name: str,
+) -> dict[str, Any]:
+    """Frozen confirmation card after a resume number button is clicked.
+
+    No buttons — mirrors model_picker ``build_done_card`` so a second click
+    cannot re-dispatch ``/resume N``. Actual resume reply still arrives via
+    the synthetic command path.
+    """
+    title = (session_title or "").strip() or f"#{resume_index}"
+    display = (user_name or "").strip() or "用户"
+    return {
+        "schema": "2.0",
+        "config": {"wide_screen_mode": True},
+        "header": {
+            "title": {
+                "content": f"🔄 已选择恢复 {title}",
+                "tag": "plain_text",
+            },
+            "template": "green",
+        },
+        "body": {
+            "elements": [
+                {
+                    "tag": "markdown",
+                    "content": (
+                        f"编号: **{resume_index}**\n"
+                        f"会话: **{title}**\n\n"
+                        f"由 {display} 发起恢复。正在切换会话…"
+                    ),
+                },
+            ],
+        },
+    }
+
+
+def build_failed_card(
+    *,
+    reason: str = "submit_failed",
+    resume_index: int | None = None,
+    session_title: str = "",
+    detail: str = "",
+) -> dict[str, Any]:
+    """Frozen error card when resume click cannot be scheduled.
+
+    Aligns with C12 queue / C04 approval ``submit_failed``: never leave the
+    interactive number buttons clickable after a failed schedule.
+    """
+    title_map = {
+        "submit_failed": "💡 恢复提交失败",
+        "loop_closed": "💡 恢复提交失败",
+        "missing_source": "💡 恢复失败",
+        "unauthorized": "💡 无权重启该会话",
+    }
+    body_map = {
+        "submit_failed": (
+            "未能把恢复请求排入处理队列（事件循环不可用或调度失败）。\n"
+            "请重试，或直接发送 `/resume <编号>`。"
+        ),
+        "loop_closed": (
+            "当前事件循环已关闭，无法调度恢复。\n"
+            "请稍后重试，或直接发送 `/resume <编号>`。"
+        ),
+        "missing_source": (
+            "卡片回调缺少会话来源信息，已忽略本次点击。\n"
+            "请重新发送 `/resume` 获取新列表。"
+        ),
+        "unauthorized": (
+            "只有发起该恢复列表的用户可以点选编号。\n"
+            "如需恢复，请自己发送 `/resume`。"
+        ),
+    }
+    header = title_map.get(reason, "💡 恢复失败")
+    body = detail.strip() if detail and detail.strip() else body_map.get(
+        reason,
+        "操作失败，请重试或直接发送 `/resume <编号>`。",
+    )
+    bits: list[str] = [body]
+    if resume_index is not None:
+        bits.append(f"\n\n编号: **{resume_index}**")
+        title = (session_title or "").strip()
+        if title:
+            bits.append(f"\n会话: **{title}**")
+    return {
+        "schema": "2.0",
+        "config": {"wide_screen_mode": True},
+        "header": {
+            "title": {"content": header, "tag": "plain_text"},
+            "template": "orange",
+        },
+        "body": {
+            "elements": [
+                {"tag": "markdown", "content": "".join(bits)},
+            ],
+        },
+    }
+
+
 def handle_resume_card_action(
     *,
     adapter: Any,
@@ -285,25 +391,20 @@ def handle_resume_card_action(
     confirm uses (see ``owner/feishu/model_picker.py:_route_picker_command``).
 
     Returns:
-        P2CardActionTriggerResponse (empty) so the click is acknowledged
-        without rewriting the card. The actual /resume reply comes through
+        Frozen CallBack card (done / failed). Success freezes buttons so a
+        double-click cannot re-dispatch; submit failure surfaces a notice card
+        instead of an empty ack. The actual /resume reply still arrives via
         the normal message handling path.
     """
-    # Lazy import: keep removability — deleting owner/feishu/ shouldn't
-    # crash the adapter at import time even if SDK is missing.
-    try:
-        from lark_oapi.event.callback.model.p2_card_action_trigger import (
-            P2CardActionTriggerResponse,
-        )
-    except ImportError:
-        P2CardActionTriggerResponse = None  # type: ignore[assignment]
-
-    def _empty_response() -> Any:
-        return P2CardActionTriggerResponse() if P2CardActionTriggerResponse else None
-
     resume_index = action_value.get("resume_index")
+    session_title = str(action_value.get("session_title") or "")
     if resume_index is None:
-        return _empty_response()
+        return adapter._card_response()
+
+    try:
+        idx_int = int(resume_index)
+    except (TypeError, ValueError):
+        idx_int = None
 
     source_dict = action_value.get("source_dict") or {}
     if not isinstance(source_dict, dict) or not source_dict.get("chat_id"):
@@ -311,7 +412,13 @@ def handle_resume_card_action(
             "[Feishu] /resume card callback missing source_dict, dropping (value=%r)",
             action_value,
         )
-        return _empty_response()
+        return adapter._card_response(
+            build_failed_card(
+                reason="missing_source",
+                resume_index=idx_int,
+                session_title=session_title,
+            )
+        )
 
     # Reconstruct SessionSource from the stashed dict — this is exactly the
     # source we used at card-build time, so chat_type / user_id are correct.
@@ -320,10 +427,17 @@ def handle_resume_card_action(
         source = SessionSource.from_dict(source_dict)
     except Exception as exc:
         logger.warning("[Feishu] /resume failed to rebuild SessionSource: %s", exc)
-        return _empty_response()
+        return adapter._card_response(
+            build_failed_card(
+                reason="missing_source",
+                resume_index=idx_int,
+                session_title=session_title,
+                detail=f"无法还原会话来源：{exc}",
+            )
+        )
 
     # [owner] Clicker must be the card owner. Resume switches session state
-    # (unlike approval cards, where the frozen body already shows who approved).
+    # (unlike approval cards, where the frozen card already shows who approved).
     operator = getattr(event, "operator", None)
     operator_id = str(getattr(operator, "open_id", "") or "")
     if operator_id and operator_id != source.user_id:
@@ -331,12 +445,30 @@ def handle_resume_card_action(
             "[owner] resume card action rejected: operator %s != source user %s",
             operator_id, source.user_id,
         )
-        return _empty_response()
+        return adapter._card_response(
+            build_failed_card(
+                reason="unauthorized",
+                resume_index=idx_int,
+                session_title=session_title,
+            )
+        )
 
     # Schedule the synthetic /resume N command on the adapter loop.
     if not adapter._loop_accepts_callbacks(loop):
         logger.warning("[Feishu] /resume card callback: loop not accepting work")
-        return _empty_response()
+        return adapter._card_response(
+            build_failed_card(
+                reason="loop_closed",
+                resume_index=idx_int,
+                session_title=session_title,
+            )
+        )
+
+    try:
+        from owner.feishu.sender_name_helpers import operator_display_name
+        user_name = operator_display_name(adapter, operator_id)
+    except Exception:
+        user_name = operator_id or "用户"
 
     async def _dispatch() -> None:
         try:
@@ -355,9 +487,28 @@ def handle_resume_card_action(
         except Exception as exc:
             logger.warning("[Feishu] /resume card synthetic dispatch failed: %s", exc)
 
-    adapter._submit_on_loop(loop, _dispatch())
-    return _empty_response()
+    coro = _dispatch()
+    if not adapter._submit_on_loop(loop, coro):
+        logger.warning("[Feishu] /resume card callback: _submit_on_loop failed")
+        try:
+            coro.close()
+        except Exception:
+            pass
+        return adapter._card_response(
+            build_failed_card(
+                reason="submit_failed",
+                resume_index=idx_int,
+                session_title=session_title,
+            )
+        )
 
+    return adapter._card_response(
+        build_done_card(
+            idx_int if idx_int is not None else resume_index,
+            session_title,
+            user_name,
+        )
+    )
 
 def dispatch_resume_card_action(
     adapter: Any,
