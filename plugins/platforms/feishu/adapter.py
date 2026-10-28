@@ -1514,9 +1514,9 @@ class FeishuAdapter(BasePlatformAdapter):
         if not self._app_id or not self._app_secret:
             logger.error("[Feishu] FEISHU_APP_ID or FEISHU_APP_SECRET not set")
             return False
-        if self._connection_mode not in {"websocket", "webhook"}:
+        if self._connection_mode not in {"websocket", "webhook", "send_only"}:
             logger.error(
-                "[Feishu] Unsupported FEISHU_CONNECTION_MODE=%s. Supported modes: websocket, webhook.",
+                "[Feishu] Unsupported FEISHU_CONNECTION_MODE=%s. Supported modes: websocket, webhook, send_only.",
                 self._connection_mode,
             )
             return False
@@ -1528,6 +1528,22 @@ class FeishuAdapter(BasePlatformAdapter):
             return False
 
         try:
+            # [owner] C05: send_only — create lark client for outbound only, no websocket.
+            # Must return before acquire_scoped_lock: child shares Hub's app_id and must not
+            # steal the WebSocket lock (fleet HTTP inject_inbound path).
+            if self._connection_mode == "send_only":
+                self._loop = asyncio.get_running_loop()
+                domain = LARK_DOMAIN if self._domain_name == "lark" else FEISHU_DOMAIN
+                self._client = self._build_lark_client(domain)
+                try:
+                    self._user_store.bind_client(self._client)
+                except Exception:
+                    logger.debug("[Feishu] user_store bind_client failed", exc_info=True)
+                await self._hydrate_bot_identity()
+                self._mark_connected()
+                logger.info("[Feishu] Connected in send_only mode (no websocket, send-only)")
+                return True
+
             self._app_lock_identity = self._app_id
             acquired, existing = acquire_scoped_lock(
                 _FEISHU_APP_LOCK_SCOPE, self._app_lock_identity, metadata={"platform": self.platform.value},

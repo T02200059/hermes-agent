@@ -61,6 +61,7 @@ Docker hermes-<ldap_uid> ×N（容器内 uid0，自认 root）
 
 补充：
 
+- **子网关 connection_mode**：`FEISHU_CONNECTION_MODE=send_only`（只出站、不连 WS、不抢 Hub app_id lock；入站靠 Hub HTTP `inject_inbound`）。
 - **进程/目录隔离**靠「一 profile 一容器 + `profiles/<name>`」；passwd 只是命名与路径约定。
 - 缺 passwd 用户的 profile 在 Ops 切片补齐，不挡路由代码迁 overlay。
 - 共享运维卷（scripts、inventory、常挂 ssh 等）仍可挂。

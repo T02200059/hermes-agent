@@ -418,6 +418,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - 开户步骤提醒：对话收集到 `ou_*` 时，**apply 前/中**同批写入目标 profile `FEISHU_ALLOWED_USERS`（ou ± 已知 tenant user_id）与 **`FEISHU_HOME_CHANNEL`**（优先 DM `oc_*`；兼写 `platforms.feishu.home_channel`）；勿等首条私聊被丢弃或事后 `/sethome`（见 fleet-add.md §2 / O2）
   - **延后待做**：完全更新 `xy-user-onboarding`（现网 `~/.hermes/skills/westcloud/xy-user-onboarding`；仓内副本若有一并）；skill 只编排，mutating → `fleet_add`（含 allowlist + home channel）；对齐 C05 三层挂载 / `fleet_profiles` / LDAP uid；去掉旧整挂与平行 endpoints / heredoc invent；**先内核/模板，再改 skill**（见 fleet-add.md §5 / D1）
   - **C05a（Mac v2）已落地** 2026-10-28：`owner/feishu/profile_routing.py` + card_action + adapter/api_server 薄胶水 + 单测；**未** push / **未**部署 node010（C05b）
+  - **C05a 补丁**：子网关 `FEISHU_CONNECTION_MODE=send_only`（`plugins/platforms/feishu/adapter.py` connect 早退、不抢 Hub app_id WS lock）；测 `tests/owner/test_c05_feishu_send_only.py`；**勿**把实地测 `overlay.yaml` / profile `.env` 入库
 - [ ] **C06** · 源 §15.1–15.6 · API Server LDAP 身份准入 + 顶层 **`api_identity`**（旧 `identity_*` 只读别名）+ 头剥离/SSE · **优先级：P0**
 - [ ] **C07** · 源 §16.1–16.6 · API 产物媒体 / `hermes.files` / tool.progress 脱敏与归属 · **优先级：P0** · **延后**（2026-10-27 用户拍板；与 C05/C06 一并靠后，非当前主线）
 - [x] **C08** · 源 §7.27 · outbound BOS/EOS scrub · **优先级：P0**
