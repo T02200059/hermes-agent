@@ -106,7 +106,7 @@ class UnauthorizedOwnerNotifier:
             from gateway.warning_notifications import present_notification
             await present_notification(
                 lambda: runner._send_home_channel_message(
-                    platform, home, transport, f"⚠️ {hint}", "unauthorized-sender notice failed for %s:%s: %s",
+                    platform, home, transport, f"💡 {hint}", "unauthorized-sender notice failed for %s:%s: %s",  # [owner]
                 ),
                 platform=platform,
             )

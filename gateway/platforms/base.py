@@ -2778,7 +2778,7 @@ class BasePlatformAdapter(ABC):
 
     @property
     def _EA_HEADER(self) -> str:
-        return f"⚠️ {ea_header_text()}\n\n"
+        return f"💡 {ea_header_text()}\n\n"  # [owner] alert prefix
 
     @property
     def _EA_REASON_LABEL(self) -> str:

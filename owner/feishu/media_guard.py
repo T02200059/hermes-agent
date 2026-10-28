@@ -18,7 +18,7 @@ ERROR 日志，返回 ``SendResult(success=False, error=...)``；上层媒体投
 --------------
 1. **调用 API 前做大小预检查**：超限时**不调** API，直接返回带中文提示的
    ``SendResult``，由上层投递链把提示发出去（参考 ``base.py`` 的
-   ``⚠️ Couldn't deliver the ... attachment.`` 模式）。
+   ``💡 Couldn't deliver the ... attachment.`` 模式）。
 2. **SDK 崩溃时提供用户可见的提示**：当 ``file.create`` / ``image.create``
    抛异常（``JSONDecodeError`` 等）时，``check_upload_exception`` 把异常翻译
    成对用户友好的中文 ``SendResult``，而不是 ``str(exc)`` 这种原始 traceback
@@ -27,7 +27,7 @@ ERROR 日志，返回 ``SendResult(success=False, error=...)``；上层媒体投
 注意：本模块**只产提示文本和 SendResult**，不直接向飞书发消息。提示的投递
 交给调用方（adapter 的 ``_send_uploaded_file_message`` / ``send_image_file``
 返回 ``SendResult``，由上层媒体投递链决定如何降级显示），与现有
-``⚠️ Couldn't deliver the ...`` 降级路径保持一致。
+``💡 Couldn't deliver the ...`` 降级路径保持一致。
 
 所有逻辑放在 owner/；adapter 只做 1 行 ``_owner_import`` 薄胶水委托。
 """
@@ -70,7 +70,7 @@ def _try_get_size(file_path: str) -> Optional[int]:
         return None
 
 
-def check_file_size(file_path: str, *, display_name: Optional[str] = None) -> Optional["SendResult"]:  # type: ignore[name-defined]
+def check_file_size(file_path: str, *, display_name: Optional[str] = None) -> Optional[SendResult]:  # type: ignore[name-defined]
     """预检查待上传文件的体积是否超过飞书 ``file.create`` 的 30 MB 上限。
 
     返回值语义
@@ -92,7 +92,7 @@ def check_file_size(file_path: str, *, display_name: Optional[str] = None) -> Op
 
     name = display_name or os.path.basename(file_path)
     text = (
-        f"⚠️ 文件过大，飞书消息文件上限为 30 MB（当前 {_format_size(size)}），"
+        f"💡 文件过大，飞书消息文件上限为 30 MB（当前 {_format_size(size)}），"
         f"已跳过上传：{name}"
     )
     logger.warning(
@@ -102,7 +102,7 @@ def check_file_size(file_path: str, *, display_name: Optional[str] = None) -> Op
     return _build_warn_result(text)
 
 
-def check_image_size(image_path: str) -> Optional["SendResult"]:  # type: ignore[name-defined]
+def check_image_size(image_path: str) -> Optional[SendResult]:  # type: ignore[name-defined]
     """预检查待上传图片的体积是否超过飞书 ``image.create`` 的 10 MB 上限。
 
     语义同 :func:`check_file_size`：``None`` 表示放行，``SendResult`` 表示
@@ -116,7 +116,7 @@ def check_image_size(image_path: str) -> Optional["SendResult"]:  # type: ignore
 
     name = os.path.basename(image_path)
     text = (
-        f"⚠️ 图片过大，飞书消息图片上限为 10 MB（当前 {_format_size(size)}），"
+        f"💡 图片过大，飞书消息图片上限为 10 MB（当前 {_format_size(size)}），"
         f"已跳过上传：{name}"
     )
     logger.warning(
@@ -126,7 +126,7 @@ def check_image_size(image_path: str) -> Optional["SendResult"]:  # type: ignore
     return _build_warn_result(text)
 
 
-def check_upload_exception(exc: BaseException, *, file_path: str, display_name: Optional[str] = None) -> "SendResult":  # type: ignore[name-defined]
+def check_upload_exception(exc: BaseException, *, file_path: str, display_name: Optional[str] = None) -> SendResult:  # type: ignore[name-defined]
     """把上传 API 抛出的异常翻译成用户可见的中文 ``SendResult``。
 
     覆盖的核心场景：飞书服务端对接近/超过上限的文件返回**空响应体**，
@@ -142,7 +142,7 @@ def check_upload_exception(exc: BaseException, *, file_path: str, display_name: 
     is_decode_error = _is_empty_body_decode_error(exc)
     if is_decode_error:
         text = (
-            f"⚠️ 文件上传失败，可能超过飞书 30 MB 上限或服务端返回异常：{name}"
+            f"💡 文件上传失败，可能超过飞书 30 MB 上限或服务端返回异常：{name}"
         )
         logger.error(
             "[Feishu] media_guard: file.create raised %s for %s (likely empty "
@@ -150,7 +150,7 @@ def check_upload_exception(exc: BaseException, *, file_path: str, display_name: 
             type(exc).__name__, file_path, exc_info=True,
         )
     else:
-        text = f"⚠️ 文件上传失败：{name}"
+        text = f"💡 文件上传失败：{name}"
         logger.error(
             "[Feishu] media_guard: file.create raised %s for %s: %s",
             type(exc).__name__, file_path, exc, exc_info=True,
@@ -158,16 +158,16 @@ def check_upload_exception(exc: BaseException, *, file_path: str, display_name: 
     return _build_warn_result(text, raw_exc=exc)
 
 
-def check_image_upload_exception(exc: BaseException, *, image_path: str) -> "SendResult":  # type: ignore[name-defined]
+def check_image_upload_exception(exc: BaseException, *, image_path: str) -> SendResult:  # type: ignore[name-defined]
     """图片上传异常的友好翻译。语义同 :func:`check_upload_exception`。"""
     name = os.path.basename(image_path)
     is_decode_error = _is_empty_body_decode_error(exc)
     if is_decode_error:
         text = (
-            f"⚠️ 图片上传失败，可能超过飞书 10 MB 上限或服务端返回异常：{name}"
+            f"💡 图片上传失败，可能超过飞书 10 MB 上限或服务端返回异常：{name}"
         )
     else:
-        text = f"⚠️ 图片上传失败：{name}"
+        text = f"💡 图片上传失败：{name}"
     logger.error(
         "[Feishu] media_guard: image.create raised %s for %s: %s",
         type(exc).__name__, image_path, exc, exc_info=True,
@@ -195,7 +195,7 @@ def _is_empty_body_decode_error(exc: BaseException) -> bool:
     return type(exc).__name__ == "JSONDecodeError"
 
 
-def _build_warn_result(text: str, *, raw_exc: Any = None) -> "SendResult":  # type: ignore[name-defined]
+def _build_warn_result(text: str, *, raw_exc: Any = None) -> SendResult:  # type: ignore[name-defined]
     """构造一个携带用户可见提示文本的失败 SendResult。
 
     延迟导入 ``SendResult``：owner/ 模块在 plugin 体系之外可能被静态分析
@@ -221,13 +221,13 @@ async def send_media_guard_hint(
     chat_id: str,
     hint_text: Optional[str],
     reply_to: Optional[str],
-    metadata: Optional[Dict[str, Any]],
+    metadata: Optional[dict[str, Any]],
 ) -> None:
     """[owner] media guard: 把超限/上传失败的中文提示发到飞书 DM。
 
     之前超限或 SDK 崩溃时只记日志、返回 ``SendResult(success=False)``，
     上层投递链不会再发任何消息 → 用户侧静默失败。这里补一道用户可见的
-    提示投递，与 ``base.py`` 的 ``⚠️ Couldn't deliver the ...`` 降级
+    提示投递，与 ``base.py`` 的 ``💡 Couldn't deliver the ...`` 降级
     语义一致（不泄漏 host 路径，只发提示文本）。
 
     best-effort：发送本身的异常不再向上抛，避免遮蔽原始上传失败结果。

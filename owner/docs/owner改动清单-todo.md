@@ -436,6 +436,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - 范围：护栏文案层（T2-12）；非废弃的 display_filter；官方 `tools/approval.py` agent-facing 大段英文模板未整迁（B11 已用 summary.* + 护栏键 + 兜底覆盖历史挖掘）
   - **2026-10-27 文案**：`gateway.shutdown.{notice_restart,notice_shutdown,cron_interrupted}` 开头 ⚠️→♻（与 `startup.restarted` 一致）；zh/en 语气收紧，其它 locale 仅换 emoji
   - **2026-10-27 文案**：故障/告警类用户可见串开头 `⚠️`/`⚠`→`❕`（更柔和）；`locales/*.yaml` + `.tui.yaml` 同前缀；lifecycle 三键保持 ♻；正文未改
+  - **2026-10-28 文案**：代码硬编码审批/告警前缀 ⚠️→💡（飞书卡 `_card`、多平台 `_EA_HEADER`、C13 stream-guard notice 键与 overlay 同步）；locales 保持 💡/🔄，不回滚
 
 ### P1
 
@@ -604,6 +605,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 > 不进四阶段必做；有空再开。与「明确不做」不同：这里是**以后要做、现在不排**。
 
 - [x] **H01** · **官方 test 污染梳理** · 审计见 WorkBuddy `tests-pollution-audit-2026-10-23.md`；优先项已修：`73fa8f53e3`…`de3dc9ecff`（#1/#2/#5/#6/#7 R1/#10 等）。#7 仅守卫登记第一步；网络守卫等后置。
+- [x] **文案硬编码 ⚠️→💡（审批门等）** · 2026-10-28 · 飞书/多平台 `_EA_HEADER`、`gateway/run` 审批回落、`tools/approval` 模型侧、owner 飞书告警/queue/media/skill、C13 `stream-guard` notice 匹配键与 overlay 同步为 💡；cron 失败告警同改。刻意未动：agent 轮次诊断刷屏、CI/doctor/Slack emoji map、setup allowlist print。
 - [x] **H02** · CLI approval `input()` 超时僵尸 reader · 仅无 callback 且非 PT 路径。落地：`owner/approval/cli_read_choice.py`（POSIX TTY + 原装 `input` → `select`+`os.read`；否则回落官方 daemon `input()`）；`tools/approval_prompt.py` `_read_choice` 薄委托。gateway/飞书/QQ/微信与正常 TUI **无感**。测：`tests/owner/test_h02_cli_read_choice.py`。
 - [ ] **H03** · **审核遗留暂缓（2026-10-27 复审）** · 勿再当「漏做」：
   1. C14 `stream_guard.DEFAULTS["action"]=warn_only`（overlay 已 interrupt）— **仍旁置**

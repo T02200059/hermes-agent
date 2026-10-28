@@ -252,7 +252,7 @@ def _load_cron_skill_parts(job: dict, skill_names: list[str]) -> list[str]:
             f"[IMPORTANT: The following skill(s) were listed for this job but could not be found "
             f"and were skipped: {', '.join(skipped)}. "
             f"Start your response with a brief notice so the user is aware, e.g.: "
-            f"'⚠️ Skill(s) not found and skipped: {', '.join(skipped)}']"
+            f"'💡 Skill(s) not found and skipped: {', '.join(skipped)}']"  # [owner]
         ))
     return parts
 
@@ -440,7 +440,7 @@ def _block_and_pause_job(
         f"**Status:** blocked (unrunnable job) — auto-paused\n\n"
         f"{reason}\n"
     )
-    alert = f"⚠ Cron job '{job_name}' was auto-paused\n\n{reason}"
+    alert = f"💡 Cron job '{job_name}' was auto-paused\n\n{reason}"  # [owner]
     return False, doc, alert, reason
 
 

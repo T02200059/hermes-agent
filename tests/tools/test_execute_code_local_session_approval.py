@@ -145,7 +145,7 @@ _DENIED_SCRIPT = ("BLOCKED: execute_code script denied by user. The user has NOT
 
 def _unanswered_script(code: str) -> str:
     """No notifier: the script parks as a pending approval nobody can answer, and never starts."""
-    return (f"⚠️ {A._EXECUTE_CODE_DESCRIPTION}. Asking the user for approval.\n\n**Code:**\n```python\n{code}\n```\n\n"
+    return (f"💡 {A._EXECUTE_CODE_DESCRIPTION}. Asking the user for approval.\n\n**Code:**\n```python\n{code}\n```\n\n"
             "STOP: do NOT re-run, rephrase, or re-issue this code — each variant sends the user ANOTHER approval "
             "card. Wait for the user's decision; if this turn must end, report that approval is pending.")
 

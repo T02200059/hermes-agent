@@ -183,7 +183,7 @@ def build_queue_cancel_failed_card(user_input: str, user_name: str) -> dict[str,
         "schema": "2.0",
         "config": {"wide_screen_mode": True},
         "header": {
-            "title": {"content": "⚠️ 无法取消", "tag": "plain_text"},
+            "title": {"content": "💡 无法取消", "tag": "plain_text"},
             "template": "grey",
         },
         "body": {
@@ -212,7 +212,7 @@ def build_queue_submit_failed_card(user_input: str, user_name: str) -> dict[str,
         "schema": "2.0",
         "config": {"wide_screen_mode": True},
         "header": {
-            "title": {"content": "⚠️ 排队提交失败", "tag": "plain_text"},
+            "title": {"content": "💡 排队提交失败", "tag": "plain_text"},
             "template": "orange",
         },
         "body": {
@@ -341,7 +341,7 @@ def build_queue_process_now_failed_card(user_input: str, user_name: str) -> dict
         "schema": "2.0",
         "config": {"wide_screen_mode": True},
         "header": {
-            "title": {"content": "⚠️ 无法立即处理", "tag": "plain_text"},
+            "title": {"content": "💡 无法立即处理", "tag": "plain_text"},
             "template": "grey",
         },
         "body": {
@@ -399,7 +399,7 @@ def build_queue_steer_failed_card(
         "schema": "2.0",
         "config": {"wide_screen_mode": True},
         "header": {
-            "title": {"content": "⚠️ 无法引导注入", "tag": "plain_text"},
+            "title": {"content": "💡 无法引导注入", "tag": "plain_text"},
             "template": "grey",
         },
         "body": {

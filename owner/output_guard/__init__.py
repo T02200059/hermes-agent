@@ -343,7 +343,7 @@ def _build_note(verdict: str, sig: dict, model: str, folded_len: int) -> str:
         )
     return (
         "\n\n---\n"
-        f"⚠️ [output-guard] 检测到输出异常已修正：{detail}\n"
+        f"💡 [output-guard] 检测到输出异常已修正：{detail}\n"
         "如非预期，请重试或换模型。"
     )
 
@@ -352,7 +352,7 @@ def _reasoning_note(sig: dict) -> str:
     """C3：思考通道退化时的告警后缀（正文始终保留）。"""
     return (
         "\n\n---\n"
-        f"⚠️ [output-guard] 思考通道检测到退化（{sig.get('verdict')}，"
+        f"💡 [output-guard] 思考通道检测到退化（{sig.get('verdict')}，"
         f"{sig.get('chars')} 字符，压缩率 {sig.get('comp_ratio', 1.0):.2f}）："
         "正文已保留，但本轮推理过程不可信，建议重新提问或换模型。"
     )

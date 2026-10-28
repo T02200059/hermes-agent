@@ -109,24 +109,24 @@ def build_failed_card(*, reason: str, detail: str = "") -> dict:
             "grey",
         ),
         "chat_mismatch": (
-            "⚠️",
+            "💡",
             t("platform.feishu.approval.fail_chat_mismatch_title"),
             "orange",
         ),
         "missing_id": (
-            "⚠️",
+            "💡",
             t("platform.feishu.approval.fail_missing_id_title"),
             "orange",
         ),
         "submit_failed": (
-            "⚠️",
+            "💡",
             t("platform.feishu.approval.fail_submit_failed_title"),
             "orange",
         ),
     }
     icon, title, template = titles.get(
         reason,
-        ("⚠️", t("platform.feishu.approval.fail_generic_title"), "orange"),
+        ("💡", t("platform.feishu.approval.fail_generic_title"), "orange"),
     )
     bodies = {
         "unauthorized": t("platform.feishu.approval.fail_unauthorized_body"),

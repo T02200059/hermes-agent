@@ -41,8 +41,8 @@ def test_notice_rule_match_stream_guard(monkeypatch):
             "feishu_card": {
                 "notice_titles": [
                     {
-                        "prefix": "⚠️ [stream-guard]",
-                        "title": "⚠️ [stream-guard] 生成退化告警",
+                        "prefix": "💡 [stream-guard]",
+                        "title": "💡 [stream-guard] 生成退化告警",
                         "template": "orange",
                         "strip_prefix": True,
                     }
@@ -50,7 +50,7 @@ def test_notice_rule_match_stream_guard(monkeypatch):
             }
         },
     )
-    rule = auto_card.match_notice_rule("⚠️ [stream-guard] hello")
+    rule = auto_card.match_notice_rule("💡 [stream-guard] hello")
     assert rule is not None
     assert "stream-guard" in rule["title"]
 
@@ -84,7 +84,7 @@ def test_get_card_send_lock_lru():
     adapter.CHAT_LOCK_MAX_SIZE = 2
     adapter._card_send_locks = OrderedDict()
     lock_a = card_sender.get_card_send_lock(adapter, "a")
-    lock_b = card_sender.get_card_send_lock(adapter, "b")
+    _lock_b = card_sender.get_card_send_lock(adapter, "b")
     assert lock_a is card_sender.get_card_send_lock(adapter, "a")
     # third chat evicts unlocked victim
     lock_c = card_sender.get_card_send_lock(adapter, "c")

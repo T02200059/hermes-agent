@@ -79,7 +79,7 @@ def test_check_upload_exception_empty_body():
 def test_check_upload_exception_generic():
     result = check_upload_exception(RuntimeError("boom"), file_path="/tmp/b.bin", display_name="b.bin")
     assert result.success is False
-    assert result.error == "⚠️ 文件上传失败：b.bin"
+    assert result.error == "💡 文件上传失败：b.bin"
 
 
 def test_check_image_upload_exception_empty_body():
@@ -94,18 +94,18 @@ def test_check_image_upload_exception_empty_body():
 async def test_send_media_guard_hint_best_effort():
     adapter = MagicMock()
     adapter.send = AsyncMock(return_value=None)
-    await send_media_guard_hint(adapter, "oc_1", "⚠️ 提示", None, None)
+    await send_media_guard_hint(adapter, "oc_1", "💡 提示", None, None)
     adapter.send.assert_awaited_once()
     kwargs = adapter.send.await_args.kwargs
     assert kwargs["chat_id"] == "oc_1"
-    assert kwargs["content"] == "⚠️ 提示"
+    assert kwargs["content"] == "💡 提示"
 
 
 @pytest.mark.asyncio
 async def test_send_media_guard_hint_swallows_send_error():
     adapter = MagicMock()
     adapter.send = AsyncMock(side_effect=RuntimeError("offline"))
-    await send_media_guard_hint(adapter, "oc_1", "⚠️ 提示", None, None)  # must not raise
+    await send_media_guard_hint(adapter, "oc_1", "💡 提示", None, None)  # must not raise
 
 
 @pytest.mark.asyncio

@@ -367,13 +367,13 @@ async def _process_bot_menu_click(
         resolved = resolve_bot_menu_command(event_key)
         if resolved:
             fallback_text = (
-                f'⚠️ 会话缓存尚未建立，无法执行菜单 "{event_key}"。\n'
+                f'💡 会话缓存尚未建立，无法执行菜单 "{event_key}"。\n'
                 f"该菜单已映射为 `{resolved}`，只是还没有你的私聊会话 ID。\n"
                 f"请先在私聊里发一条消息（任意内容），然后再点一次菜单。"
             )
         else:
             fallback_text = (
-                f'⚠️ 未配置的菜单事件: event_key="{event_key}"\n'
+                f'💡 未配置的菜单事件: event_key="{event_key}"\n'
                 f"请在 overlay.yaml → feishu.bot_menu 中添加映射，\n"
                 f'例如: {event_key}: "/help"'
             )
@@ -437,7 +437,7 @@ async def _process_bot_menu_click(
         )
     else:
         synthetic_text = (
-            f'⚠️ 未配置的菜单事件: event_key="{event_key}"\n'
+            f'💡 未配置的菜单事件: event_key="{event_key}"\n'
             f"请在 overlay.yaml → feishu.bot_menu 中添加映射，\n"
             f'例如: {event_key}: "/help"'
         )

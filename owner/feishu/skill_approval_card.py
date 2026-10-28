@@ -57,7 +57,7 @@ _DENY_VALUE = "deny"
 # Button ``choice`` values (UI) → tools.approval / skill_manage_gate tokens.
 # Gate only treats once/session/always as approved; pass "approve" through
 # unmapped and the waiting turn hard-stops as a deny (false green card).
-_GATEWAY_CHOICE_MAP: Dict[str, str] = {
+_GATEWAY_CHOICE_MAP: dict[str, str] = {
     _APPROVE_VALUE: "once",
     _DENY_VALUE: "deny",
     # Accept legacy / alternate labels if ever stamped on old cards.
@@ -86,7 +86,7 @@ def _truncate(text: str, limit: int) -> str:
     return text[:limit] + "…[truncated]"
 
 
-def _resolve_skill_path(args: Dict[str, Any]) -> str:
+def _resolve_skill_path(args: dict[str, Any]) -> str:
     """Best-effort resolve the on-disk skill path from skill_manage args."""
     name = str(args.get("name") or "").strip()
     if not name:
@@ -101,7 +101,7 @@ def _resolve_skill_path(args: Dict[str, Any]) -> str:
     return f"~/.hermes/skills/{name}/SKILL.md"
 
 
-def _extract_content(args: Dict[str, Any]) -> str:
+def _extract_content(args: dict[str, Any]) -> str:
     """Extract skill content from args based on action type."""
     action = str(args.get("action") or "").strip()
     if action in ("create", "edit"):
@@ -125,7 +125,7 @@ def _build_summary_section(
     *,
     action: str,
     name: str,
-    args: Dict[str, Any],
+    args: dict[str, Any],
     profile: str,
     origin_chat_id: str,
 ) -> str:
@@ -149,7 +149,7 @@ def _build_assessment_section(
     *,
     action: str,
     name: str,
-    args: Dict[str, Any],
+    args: dict[str, Any],
 ) -> str:
     """Build the 🔍 初步评估 markdown section (template-based, no LLM)."""
     content = _extract_content(args)
@@ -158,19 +158,19 @@ def _build_assessment_section(
     # Detect risk patterns
     risk_flags = []
     dangerous_patterns = [
-        ("rm -rf", "⚠️ 包含 `rm -rf` 模式"),
-        ("sudo ", "⚠️ 包含 `sudo` 调用"),
-        ("chmod 777", "⚠️ 包含 `chmod 777`"),
-        ("> /dev/sd", "⚠️ 可能直接写磁盘设备"),
-        ("mkfs", "⚠️ 包含格式化命令"),
-        (":(){:|:&};:", "⚠️ 包含 fork bomb"),
-        ("DROP TABLE", "⚠️ 包含 DROP TABLE"),
-        ("DELETE FROM", "⚠️ 包含 DELETE FROM"),
-        ("TRUNCATE", "⚠️ 包含 TRUNCATE"),
-        ("eval(", "⚠️ 包含 eval() 调用"),
-        ("exec(", "⚠️ 包含 exec() 调用"),
-        ("os.system", "⚠️ 包含 os.system 调用"),
-        ("subprocess.call", "⚠️ 包含 subprocess 调用"),
+        ("rm -rf", "💡 包含 `rm -rf` 模式"),
+        ("sudo ", "💡 包含 `sudo` 调用"),
+        ("chmod 777", "💡 包含 `chmod 777`"),
+        ("> /dev/sd", "💡 可能直接写磁盘设备"),
+        ("mkfs", "💡 包含格式化命令"),
+        (":(){:|:&};:", "💡 包含 fork bomb"),
+        ("DROP TABLE", "💡 包含 DROP TABLE"),
+        ("DELETE FROM", "💡 包含 DELETE FROM"),
+        ("TRUNCATE", "💡 包含 TRUNCATE"),
+        ("eval(", "💡 包含 eval() 调用"),
+        ("exec(", "💡 包含 exec() 调用"),
+        ("os.system", "💡 包含 os.system 调用"),
+        ("subprocess.call", "💡 包含 subprocess 调用"),
     ]
     content_lower = content.lower() if content else ""
     for pattern, flag in dangerous_patterns:
@@ -214,11 +214,11 @@ def _build_assessment_section(
     elif action == "patch":
         lines.append("- **类型**: 补丁修改")
     elif action == "delete":
-        lines.append("- **类型**: ⚠️ 删除技能")
+        lines.append("- **类型**: 💡 删除技能")
     elif action == "write_file":
         lines.append("- **类型**: 写入文件")
     elif action == "remove_file":
-        lines.append("- **类型**: ⚠️ 删除文件")
+        lines.append("- **类型**: 💡 删除文件")
 
     return "\n".join(lines)
 
@@ -227,7 +227,7 @@ def _build_review_prompt(
     *,
     action: str,
     name: str,
-    args: Dict[str, Any],
+    args: dict[str, Any],
     profile: str,
     origin_chat_id: str,
 ) -> str:
@@ -267,12 +267,12 @@ def build_skill_approval_card(
     *,
     action: str,
     name: str,
-    args: Dict[str, Any],
+    args: dict[str, Any],
     profile: str,
     origin_chat_id: str = "",
     session_key: str = "",
     chat_id: str = "",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Build the interactive skill approval card JSON.
 
     Each button ``value`` carries ``session_key`` and ``chat_id`` so the
@@ -298,13 +298,13 @@ def build_skill_approval_card(
         "```\n" + review_prompt + "\n```"
     )
 
-    def _btn(label: str, choice: str, btn_type: str) -> Dict[str, Any]:
+    def _btn(label: str, choice: str, btn_type: str) -> dict[str, Any]:
         # Stamp hermes_profile on buttons when the triggering profile is a
         # routable sub-profile (not default/custom).  send_card also
         # tags in send_only mode; building it here is belt-and-suspenders so
         # main-gateway card.action routing still reaches the waiter process
         # even if the send-path tag is skipped.
-        value: Dict[str, Any] = {
+        value: dict[str, Any] = {
             "hermes_action": ACTION_KEY,
             "choice": choice,
             "session_key": session_key,
@@ -355,7 +355,7 @@ def build_resolved_card(
     action: str = "",
     skill_name: str = "",
     review_prompt: str = "",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Build the raw card data for CallBackCard inline-update after click.
 
     Switches header to green (approve) or red (deny), changes title,
@@ -397,11 +397,11 @@ async def send_skill_approval_card(
     chat_id: str,
     action: str,
     name: str,
-    args: Dict[str, Any],
+    args: dict[str, Any],
     profile: str,
     origin_chat_id: str = "",
     session_key: str = "",
-    metadata: Optional[Dict[str, Any]] = None,
+    metadata: Optional[dict[str, Any]] = None,
 ) -> Any:
     """Send a Feishu skill approval card via owner card_sender.
 
@@ -458,7 +458,7 @@ def handle_card_click(
     *,
     adapter: Any,
     event: Any,
-    action_value: Dict[str, Any],
+    action_value: dict[str, Any],
     loop: Any,
 ) -> Any:
     """Resolve a skill_approval button click and inline-update the card.
@@ -479,7 +479,7 @@ def handle_card_click(
 
     raw_choice = str(action_value.get("choice", "") or "")
     session_key = str(action_value.get("session_key", "") or "")
-    chat_id = str(action_value.get("chat_id", "") or "")
+    _chat_id = str(action_value.get("chat_id", "") or "")  # reserved for future routing
     action = str(action_value.get("action", "") or "")
     skill_name = str(action_value.get("skill_name", "") or "")
     review_prompt = str(action_value.get("review_prompt", "") or "")

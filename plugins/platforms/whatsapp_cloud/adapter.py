@@ -492,7 +492,7 @@ class WhatsAppCloudAdapter(WhatsAppBehaviorMixin, BasePlatformAdapter):
 
     @property
     def _EA_HEADER(self) -> str:
-        return f"⚠️ *{ea_header_text()}*\n\n"
+        return f"💡 *{ea_header_text()}*\n\n"  # [owner]
 
     _EA_CODE_CLOSE = "\n```\n\n"
     _EA_CMD_BUDGET = 800  # body caps at 1024; leave room for the framing prose

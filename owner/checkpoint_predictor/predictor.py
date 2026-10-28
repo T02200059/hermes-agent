@@ -18,14 +18,14 @@ from owner.checkpoint_predictor import config, llm_predict, static_parser
 logger = logging.getLogger(__name__)
 
 
-def _safe_roots(paths: List[str], cwd: str, agent) -> List[str]:
+def _safe_roots(paths: list[str], cwd: str, agent) -> list[str]:
     """对每个预测路径映射项目根, 丢弃 == / 或 == home 的根。"""
     mgr = getattr(agent, "_checkpoint_mgr", None)
     if mgr is None:
         return []
 
     home = str(Path.home())
-    roots: List[str] = []
+    roots: list[str] = []
     seen = set()
 
     for p in paths:
@@ -78,7 +78,7 @@ def _warn_uncheckpointed(command: str, cwd: str, reason: str, agent, *, surface:
         logger.debug("%s", detail)
         return
     msg = (
-        "⚠️ checkpoint 预测失败,未创建快照\n"
+        "💡 checkpoint 预测失败,未创建快照\n"
         f"   命令: {command[:200]}\n"
         f"   cwd: {cwd}\n"
         f"   原因: {reason}\n"
@@ -123,7 +123,7 @@ def _destructive_cwd_fallback(command: str, cwd: str, agent, mgr) -> bool:
         logger.debug("destructive cwd ensure_checkpoint returned False (cwd=%r)", cwd)
         return False
     msg = (
-        "⚠️ checkpoint 静态预测为空，已按破坏性命令兜底快照 cwd\n"
+        "💡 checkpoint 静态预测为空，已按破坏性命令兜底快照 cwd\n"
         f"   命令: {command[:200]}\n"
         f"   cwd: {cwd}\n"
         "   回滚粒度可能偏粗（整个工作目录）"

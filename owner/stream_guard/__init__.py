@@ -321,7 +321,7 @@ def _build_message(sig: dict, cfg: dict, *, kind: str, model: str, interrupted: 
     else:
         trigger = f"命中 {sig['votes']} 项信号（阈值 {cfg.get('vote_threshold', 2)}）"
     return (
-        f"⚠️ [stream-guard] 检测到生成退化（思考/输出阶段边界循环），{verdict}\n"
+        f"💡 [stream-guard] 检测到生成退化（思考/输出阶段边界循环），{verdict}\n"
         f"   判定：阶段终止语 {sig['s1_marker_rate']:.1f}/KB、"
         f"风格签名 ×{sig['s2_signature_multiple']:.1f}"
         f"（基线 {cfg.get('signature_baseline_per_kb', 1.0)}/KB）、"

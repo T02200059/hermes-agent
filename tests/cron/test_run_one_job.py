@@ -154,7 +154,10 @@ def test_run_one_job_exception_delivers_failure_alert(monkeypatch):
     from cron.scheduler_failure_copy import _provider_failure_cause, classify_cron_failure_reason
     gloss = _provider_failure_cause(classify_cron_failure_reason("Gemini HTTP 503 (UNAVAILABLE)"))
     assert gloss and gloss in delivered[0][1]
-    assert not delivered[0][1].lstrip("⚠️ ").startswith("Gemini HTTP 503")
+    text = delivered[0][1]
+    if text.startswith(("💡 ", "⚠️ ", "⚠ ")):
+        text = text.split(" ", 1)[-1]
+    assert not text.startswith("Gemini HTTP 503")
     assert "hermes cron run j3" in delivered[0][1]
     assert marked == [
         (("j3", False, "Gemini HTTP 503 (UNAVAILABLE)"), {"delivery_error": None})

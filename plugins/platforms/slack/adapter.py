@@ -4954,7 +4954,7 @@ class SlackAdapter(BasePlatformAdapter):
     # below measures ``len()`` of these resolved strings against the 3000-char section cap.
     @property
     def _EA_HEADER(self) -> str:
-        return f":warning: *{t('gateway.exec_approval.header')}*\n"
+        return f":bulb: *{t('gateway.exec_approval.header')}*\n"  # [owner] 💡
 
     @property
     def _EA_SMART_DENY_LINE(self) -> str:
@@ -5098,7 +5098,7 @@ class SlackAdapter(BasePlatformAdapter):
             if total > len(models)
             else ""
         )
-        plan_line = f"⚠️ {provider['plan_line']}\n" if provider and provider.get("plan_line") else ""
+        plan_line = f"💡 {provider['plan_line']}\n" if provider and provider.get("plan_line") else ""  # [owner]
         section_text = plan_line + t("platform.slack.picker.model_header", provider=pname, extra=extra)
         elements = [
             {

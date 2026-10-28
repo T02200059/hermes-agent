@@ -597,7 +597,7 @@ def _format_exec_approval_fallback(
         approval_timeout_seconds, ea_header_text, ea_reason_label_text, format_approval_deadline_line)
     cmd_preview = command[:200] + "..." if len(command) > 200 else command
     heading = (t("gateway.exec_approval.smart_deny_heading") if smart_denied
-               else f"⚠️ **{ea_header_text()}**")
+               else f"💡 **{ea_header_text()}**")  # [owner]
 
     choices = [t("gateway.exec_approval.text_choice_once", prefix=command_prefix)]
     if not smart_denied and allow_session:
@@ -3161,7 +3161,7 @@ def _normalize_empty_agent_response(
             from agent.turn_failure_copy import SITE_FAILURE_CODES
             if (str(agent_result.get("failure_reason") or "") in SITE_FAILURE_CODES
                     and err.strip() and not _looks_like_gateway_provider_error(err)):
-                return err if err.startswith("⚠️") else f"⚠️ {err}"
+                return err if err.startswith(("💡", "⚠️", "⚠")) else f"💡 {err}"  # [owner]
             if _looks_like_gateway_provider_error(err):
                 logger.warning("Agent turn ended partially; reply sanitized for chat. Detail: %s", err[:500])
                 reason = ""

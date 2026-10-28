@@ -4215,7 +4215,7 @@ class TelegramAdapter(TelegramHeldInboundMixin, TelegramTopicRoutingMixin, BaseP
     # translated text is HTML-escaped BEFORE the <b> wrapper (a stray ``&``/``<`` would break the card).
     @property
     def _EA_HEADER(self) -> str:
-        return f"⚠️ <b>{_html.escape(t('gateway.exec_approval.header'))}</b>\n\n"
+        return f"💡 <b>{_html.escape(t('gateway.exec_approval.header'))}</b>\n\n"  # [owner]
 
     _EA_CODE_OPEN = "<pre>"
     _EA_CODE_CLOSE = "</pre>\n\n"
@@ -4481,7 +4481,7 @@ class TelegramAdapter(TelegramHeldInboundMixin, TelegramTopicRoutingMixin, BaseP
         shown = len(models)
         extra = f"\n_{t('platform.telegram.picker.more_available', count=str(total - shown))}_" if total > shown else ""
         # Window plans: the limit line under the provider (absent for every other account).
-        plan_line = f"\n⚠️ {provider['plan_line']}" if provider and provider.get("plan_line") else ""
+        plan_line = f"\n💡 {provider['plan_line']}" if provider and provider.get("plan_line") else ""  # [owner]
         await self._picker_edit(
             query,
             f"⚙ *{t('platform.telegram.picker.title')}*\n\n"

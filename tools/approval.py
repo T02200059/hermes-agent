@@ -600,7 +600,7 @@ def _pending_result(spec, session_key: str, *, command: str, description: str,
         return {
             "approved": False, "pattern_key": pattern_key, "status": "approval_required",
             "command": command, "description": description,
-            "message": (f"⚠️ This action is potentially dangerous ({description}). "
+            "message": (f"💡 This action is potentially dangerous ({description}). "  # [owner]
                         f"Asking the user for approval.\n\n**Target:**\n```\n{command}\n```"),
         }
     body = body or f"**Command:**\n```\n{command}\n```"
@@ -608,7 +608,7 @@ def _pending_result(spec, session_key: str, *, command: str, description: str,
         "approved": False, "pattern_key": pattern_key, "status": "pending_approval",
         "approval_pending": True, "command": command, "description": description,
         "message": (
-            f"⚠️ {description}. Asking the user for approval.\n\n{body}\n\n"
+            f"💡 {description}. Asking the user for approval.\n\n{body}\n\n"  # [owner]
             f"STOP: do NOT re-run, rephrase, or re-issue this {spec.noun} — each "
             "variant sends the user ANOTHER approval card. Wait for the "
             "user's decision; if this turn must end, report that approval is pending."

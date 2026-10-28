@@ -104,7 +104,7 @@ def provider_failure_notice(
         action = _PROVIDER_FAILURE_ACTION.get(reason, _DEFAULT_FAILURE_ACTION).format(
             job_id=job_id, relogin=relogin_command_hint(provider))
     return (
-        f"⚠️ Cron '{job_name}' failed: {cause}. {action} "
+        f"💡 Cron '{job_name}' failed: {cause}. {action} "  # [owner]
         f"Run log: `hermes cron runs {job_id}`."
     )
 
@@ -112,7 +112,7 @@ def provider_failure_notice(
 def generic_failure_notice(job_name: str, job_id: str, cleaned_error: str) -> str:
     """Unclassified failure: the cleaned error text plus where to look and what to do."""
     return (
-        f"⚠️ Cron '{job_name}' failed: {cleaned_error}. "
+        f"💡 Cron '{job_name}' failed: {cleaned_error}. "  # [owner]
         f"See the full run with `hermes cron runs {job_id}` (output saved under "
         f"{cron_output_dir_display(job_id)}); run it again with `hermes cron run {job_id}`, "
         f"edit it with `hermes cron edit {job_id}`, or pause it with `hermes cron pause {job_id}`."
@@ -121,7 +121,7 @@ def generic_failure_notice(job_name: str, job_id: str, cleaned_error: str) -> st
 
 def script_timeout_notice(job_name: str, job_id: str) -> str:
     return (
-        f"⚠️ Cron '{job_name}' failed: its script timed out. No model was invoked. "
+        f"💡 Cron '{job_name}' failed: its script timed out. No model was invoked. "  # [owner]
         f"Check the script's output under {cron_output_dir_display(job_id)} or `hermes cron runs {job_id}`, "
         f"then run it again with `hermes cron run {job_id}`."
     )
@@ -129,7 +129,7 @@ def script_timeout_notice(job_name: str, job_id: str) -> str:
 
 def inactivity_notice(job_name: str, job_id: str) -> str:
     return (
-        f"⚠️ Cron '{job_name}' failed: the job stalled — it stopped doing anything for too long "
+        f"💡 Cron '{job_name}' failed: the job stalled — it stopped doing anything for too long "  # [owner]
         f"and was cut off. Check what it was doing in the saved output under "
         f"{cron_output_dir_display(job_id)} (`hermes cron runs {job_id}`), then run it again with "
         f"`hermes cron run {job_id}`."

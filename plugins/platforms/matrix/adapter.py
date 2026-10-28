@@ -1644,7 +1644,7 @@ class MatrixAdapter(BasePlatformAdapter):
 
     @property
     def _EA_HEADER(self) -> str:
-        return f"⚠️ **{t('gateway.exec_approval.header')}**\n"
+        return f"💡 **{t('gateway.exec_approval.header')}**\n"  # [owner]
 
     async def _send_reaction_prompt(
         self, chat_id: str, text: str, metadata: Optional[dict], make_prompt, registry: dict, emojis,
@@ -1719,7 +1719,7 @@ class MatrixAdapter(BasePlatformAdapter):
             provider_label = current_provider
         from hermes_cli.model_picker_usage import picker_row_suffix
         rows_by_slug = {str(p.get("slug") or ""): p for p in providers or []}
-        plan_lines = [f"⚠️ {p['plan_line']}" for p in providers or [] if p.get("plan_line")]
+        plan_lines = [f"💡 {p['plan_line']}" for p in providers or [] if p.get("plan_line")]  # [owner]
         unknown = t("platform.shared.unknown")
         lines = [
             t("platform.matrix.picker.title"), t("platform.matrix.picker.current_model", model=current_model or unknown),

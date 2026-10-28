@@ -5666,7 +5666,7 @@ class DiscordAdapter(DiscordAuthorizationMixin, DiscordMediaMixin, DiscordThread
     # class constants: the wording comes from the catalog for the language active at send time.
     @property
     def _EA_HEADER(self) -> str:
-        return (f"⚠️ **{t('gateway.exec_approval.header')}**\n\n"
+        return (f"💡 **{t('gateway.exec_approval.header')}**\n\n"  # [owner]
                 f"{t('platform.discord.approval.question')}\n\n"
                 f"**{t('platform.discord.approval.requested_command_label')}**\n")
 
@@ -5702,7 +5702,7 @@ class DiscordAdapter(DiscordAuthorizationMixin, DiscordMediaMixin, DiscordThread
             if mention_content:
                 content = f"{mention_content}\n{content}"
             embed = discord.Embed(
-                title=_truncate_discord_component_text(f"⚠️ {t('gateway.exec_approval.header')}", _DISCORD_EMBED_TITLE_LIMIT),
+                title=_truncate_discord_component_text(f"💡 {t('gateway.exec_approval.header')}", _DISCORD_EMBED_TITLE_LIMIT),  # [owner]
                 color=discord.Color.orange(),
             )
             require_admin, admin_user_ids = _resolve_exec_approval_admin_gate(getattr(self.config, "extra", None))
@@ -6723,7 +6723,7 @@ def _define_discord_view_classes() -> None:
             shown = min(len(provider.get("models", [])), _DISCORD_MODEL_SELECT_CAPACITY) if provider else 0
             extra = f"\n*{t('platform.discord.picker.more_available', count=str(total - shown))}*" if total > shown else ""
             # Window plans: the limit line leads the message (absent for every other account).
-            plan_line = f"⚠️ {provider['plan_line']}\n" if provider and provider.get("plan_line") else ""
+            plan_line = f"💡 {provider['plan_line']}\n" if provider and provider.get("plan_line") else ""  # [owner]
             await self._edit(interaction, plan_line + t("platform.discord.picker.select_model", provider=pname, extra=extra))
 
         async def _switch_selected_model(self, interaction: discord.Interaction, model_id: str):

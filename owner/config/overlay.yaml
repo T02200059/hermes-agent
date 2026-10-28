@@ -31,8 +31,8 @@ feishu_card:
   split_max_chars: 24000
   # 运行时覆盖源码默认表（替换不是追加），须把要用的规则写齐；mtime 变化即时重读。
   notice_titles:
-    - prefix: "⚠️ [stream-guard]"
-      title: "⚠️ [stream-guard] 生成退化告警"
+    - prefix: "💡 [stream-guard]"
+      title: "💡 [stream-guard] 生成退化告警"
       template: orange
       strip_prefix: true
     - prefix: "🧭 系统提示："

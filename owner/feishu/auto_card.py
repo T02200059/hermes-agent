@@ -69,7 +69,7 @@ class _FeishuCardPlan:
 
     can_use_card: bool
     needs_split: bool
-    risk_reasons: Tuple[str, ...] = ()
+    risk_reasons: tuple[str, ...] = ()
     estimated_json_bytes: int = 0
 
 
@@ -153,9 +153,9 @@ def is_feishu_streaming_disabled() -> bool:
 # Card construction
 # ---------------------------------------------------------------------------
 
-def _build_card_elements(markdown_text: str, footer: str = "") -> List[Dict[str, Any]]:
+def _build_card_elements(markdown_text: str, footer: str = "") -> list[dict[str, Any]]:
     """Build the body elements for an auto-card."""
-    elements: List[Dict[str, Any]] = [{"tag": "markdown", "content": markdown_text}]
+    elements: list[dict[str, Any]] = [{"tag": "markdown", "content": markdown_text}]
     if footer:
         # [owner] auto-card: render footer after a horizontal divider
         elements.append({"tag": "hr"})
@@ -163,7 +163,7 @@ def _build_card_elements(markdown_text: str, footer: str = "") -> List[Dict[str,
     return elements
 
 
-def make_auto_card(markdown_text: str, footer: str = "") -> Dict[str, Any]:
+def make_auto_card(markdown_text: str, footer: str = "") -> dict[str, Any]:
     """Build the auto-card JSON envelope around a single markdown body.
 
     Optional footer is rendered after a horizontal divider.
@@ -208,15 +208,15 @@ def estimate_auto_card_json_bytes(markdown_text: str, footer: str = "") -> int:
 #
 # 规则表可用 overlay.yaml 覆盖：owner.feishu_card.notice_titles
 #   notice_titles:
-#     - prefix: "⚠️ [stream-guard]"
-#       title: "⚠️ [stream-guard] 生成退化告警"
+#     - prefix: "💡 [stream-guard]"
+#       title: "💡 [stream-guard] 生成退化告警"
 #       template: orange
 #       strip_prefix: true
 # 传空列表即可整体关闭（所有消息退回无标题的 make_auto_card）。
-_DEFAULT_NOTICE_RULES: Tuple[Dict[str, Any], ...] = (
+_DEFAULT_NOTICE_RULES: tuple[dict[str, Any], ...] = (
     {
-        "prefix": "⚠️ [stream-guard]",
-        "title": "⚠️ [stream-guard] 生成退化告警",
+        "prefix": "💡 [stream-guard]",
+        "title": "💡 [stream-guard] 生成退化告警",
         "template": "orange",
         "strip_prefix": True,
     },
@@ -242,7 +242,7 @@ _DEFAULT_NOTICE_RULES: Tuple[Dict[str, Any], ...] = (
 )
 
 
-def get_notice_rules() -> List[Dict[str, Any]]:
+def get_notice_rules() -> list[dict[str, Any]]:
     """告警卡规则表：overlay.yaml 的 ``owner.feishu_card.notice_titles`` 覆盖内置。
 
     缺省 / 非法 / 读取失败 → 内置默认规则（fail-open，绝不阻断发送）。
@@ -255,7 +255,7 @@ def get_notice_rules() -> List[Dict[str, Any]]:
     if not isinstance(raw, list):
         return [dict(rule) for rule in _DEFAULT_NOTICE_RULES]
 
-    rules: List[Dict[str, Any]] = []
+    rules: list[dict[str, Any]] = []
     for item in raw:
         if not isinstance(item, dict):
             continue
@@ -273,7 +273,7 @@ def get_notice_rules() -> List[Dict[str, Any]]:
     return rules
 
 
-def match_notice_rule(text: str) -> Optional[Dict[str, Any]]:
+def match_notice_rule(text: str) -> Optional[dict[str, Any]]:
     """正文（lstrip 后）以某条规则的前缀开头 → 返回该规则；否则 None。"""
     head = (text or "").lstrip()
     if not head:
@@ -292,7 +292,7 @@ def _strip_notice_prefix(text: str, prefix: str) -> str:
     return body
 
 
-def make_notice_card(markdown_text: str, rule: Dict[str, Any]) -> Dict[str, Any]:
+def make_notice_card(markdown_text: str, rule: dict[str, Any]) -> dict[str, Any]:
     """带 header 的告警卡：标题取自规则，正文为告警原文。"""
     if rule.get("strip_prefix"):
         body = _strip_notice_prefix(markdown_text, rule["prefix"])
@@ -321,9 +321,9 @@ def _count_markdown_tables(text: str) -> int:
     return sum(1 for _ in _AUTO_CARD_SPLIT_TABLE_HEADER_RE.finditer(text))
 
 
-def _find_md_table_with_too_many_rows(text: str, limit: int) -> List[str]:
+def _find_md_table_with_too_many_rows(text: str, limit: int) -> list[str]:
     """Return human-readable row counts for tables exceeding ``limit`` body rows."""
-    offenders: List[str] = []
+    offenders: list[str] = []
     for match in _AUTO_CARD_SPLIT_TABLE_HEADER_RE.finditer(text):
         body = match.group(2) or ""
         row_lines = [ln for ln in body.splitlines() if ln.strip()]
@@ -332,11 +332,11 @@ def _find_md_table_with_too_many_rows(text: str, limit: int) -> List[str]:
     return offenders
 
 
-def _find_code_block_over(text: str, limit: int) -> List[str]:
+def _find_code_block_over(text: str, limit: int) -> list[str]:
     """Return sizes of fenced code blocks that exceed ``limit`` characters."""
-    offenders: List[str] = []
+    offenders: list[str] = []
     in_fence = False
-    buf: List[str] = []
+    buf: list[str] = []
     for line in text.splitlines():
         if line.lstrip().startswith("```"):
             if in_fence:
@@ -362,7 +362,7 @@ def _evaluate_card_feasibility(text: str, footer: str = "") -> _FeishuCardPlan:
     tables is well under 30 KB but still renders broken in the Feishu client,
     so we must downgrade to plain text.
     """
-    risks: List[str] = []
+    risks: list[str] = []
 
     table_count = _count_markdown_tables(text)
     if table_count > _AUTO_CARD_SPLIT_MD_TABLE_MAX:
@@ -371,12 +371,10 @@ def _evaluate_card_feasibility(text: str, footer: str = "") -> _FeishuCardPlan:
         )
 
     too_many = _find_md_table_with_too_many_rows(text, _AUTO_CARD_SPLIT_MD_TABLE_ROW_MAX)
-    for desc in too_many:
-        risks.append(desc)
+    risks.extend(too_many)
 
     long_code = _find_code_block_over(text, _AUTO_CARD_SPLIT_CODE_BLOCK_MAX)
-    for desc in long_code:
-        risks.append(desc)
+    risks.extend(long_code)
 
     if risks:
         return _FeishuCardPlan(
@@ -456,7 +454,7 @@ def _find_leading_table_end(text: str) -> int:
     return sum(len(lines[i]) + 1 for i in range(end_line))
 
 
-def _split_text_for_card(text: str, max_chars: int) -> List[str]:
+def _split_text_for_card(text: str, max_chars: int) -> list[str]:
     """Paragraph-aware splitter that keeps fenced code blocks and GFM tables intact.
 
     Cut priority (in order): paragraph break ``\\n\\n``, line break ``\\n``,
@@ -474,7 +472,7 @@ def _split_text_for_card(text: str, max_chars: int) -> List[str]:
     FENCE_CLOSE = "\n```"
     INDICATOR_RESERVE = 30
 
-    chunks: List[str] = []
+    chunks: list[str] = []
     remaining = text
     carry_lang: Optional[str] = None
 
@@ -570,7 +568,7 @@ _CARD_SEND_RETRY_DELAY_SECONDS = 1.0
 async def try_auto_card(
     adapter: FeishuAdapter,
     formatted_text: str,
-    metadata: Optional[Dict[str, Any]] = None,
+    metadata: Optional[dict[str, Any]] = None,
     chat_id: str = "",
     force: bool = False,  # [owner] agent:end forces card dispatch regardless of streaming
     footer: str = "",  # [owner] auto-card: optional footer rendered after hr divider

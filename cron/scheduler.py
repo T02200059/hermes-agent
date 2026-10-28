@@ -1556,7 +1556,7 @@ def _run_no_agent_job(
     if not ok:
         # Deliver the error: a silently broken watchdog is the worst-case outcome.
         alert = (
-            f"⚠ Cron watchdog '{job_name}' script failed\n\n"
+            f"💡 Cron watchdog '{job_name}' script failed\n\n"  # [owner]
             f"{output}\n\n"
             f"Time: {now_iso}"
         )
@@ -1594,7 +1594,7 @@ def _apply_monitor_gate(
         # stop watching. Stored hash untouched.
         logger.error("Job '%s': monitor source failed: %s", job_id, _mon.error)
         _mon_alert = (
-            f"⚠ Cron monitor '{job_name}' source failed\n\n"
+            f"💡 Cron monitor '{job_name}' source failed\n\n"  # [owner]
             f"{_mon.error}\n\n"
             f"Time: {_mon_now}"
         )

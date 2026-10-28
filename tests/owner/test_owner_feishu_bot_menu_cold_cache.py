@@ -5,7 +5,7 @@ startup-window behaviour of this fork's Feishu bot menu.
 
 Observed: right after a gateway restart, clicking the ``new`` menu item replied
 
-    ⚠️ 未配置的菜单事件: event_key="new"
+    💡 未配置的菜单事件: event_key="new"
     请在 overlay.yaml → owner.feishu.bot_menu 中添加映射，例如: new: "/help"
 
 while ``new`` had been mapped to ``/new`` in ``BUILTIN_BOT_MENU`` all along, and

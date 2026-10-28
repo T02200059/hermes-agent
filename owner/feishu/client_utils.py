@@ -326,7 +326,7 @@ def list_wiki_children(client, space_id, parent_node_token):
             if not isinstance(node, dict):
                 continue
             if len(lines) >= _WIKI_MAX_CHILD_NODES:
-                lines.append(f"⚠️ 子节点超过上限，仅展示前 {_WIKI_MAX_CHILD_NODES} 个。")
+                lines.append(f"💡 子节点超过上限，仅展示前 {_WIKI_MAX_CHILD_NODES} 个。")
                 return "\n".join(lines)
             title = node.get("title") or "(untitled)"
             ntoken = node.get("node_token") or ""
@@ -598,7 +598,7 @@ def read_bitable_as_text(client, app_token, *, table_index=None, limit=None,
 
     lines = [f"=== 多维表格: {app_token} (共 {header_total} 表) ==="]
     if truncated:
-        lines.append(f"⚠️ 表数超过上限，仅展示前 {_BITABLE_MAX_TABLES} 张。")
+        lines.append(f"💡 表数超过上限，仅展示前 {_BITABLE_MAX_TABLES} 张。")
     for idx, table in enumerate(tables):
         table_id = table.get("table_id", "")
         table_name = table.get("name", table_id)

@@ -1847,7 +1847,7 @@ class FeishuAdapter(BasePlatformAdapter):
                 _card_button(label, style or "default",
                              {"hermes_action": self._EA_CARD_ACTIONS[choice], "approval_id": approval_id})
                 for label, choice, style in prompt.actions]
-            card = _card(f"⚠️ {t('gateway.exec_approval.header')}", "orange", _approval_text, actions=actions)
+            card = _card(f"💡 {t('gateway.exec_approval.header')}", "orange", _approval_text, actions=actions)  # [owner]
             return await self._send_interactive_card(
                 prompt.chat_id, card, prompt.metadata, "send_exec_approval failed",
                 state_map=self._approval_state, state_id=approval_id, session_key=prompt.session_key,

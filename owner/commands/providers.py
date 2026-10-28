@@ -112,6 +112,6 @@ def _load_provider_rows() -> list:
 _TEXT = {
     "header": "已配置 provider（共 {count} 个）：",
     "no_providers": "当前没有已配置的 provider（未设置任何 API Key）",
-    "load_failed": "⚠️ 无法读取 provider 列表",
+    "load_failed": "💡 无法读取 provider 列表",
     "more_models": "共 {total} 个模型",
 }

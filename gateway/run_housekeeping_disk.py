@@ -131,7 +131,7 @@ async def _post(runner, profile, home, advice) -> bool:
             if target_profile != profile:
                 continue
             prefix = getattr(transport.adapter, "typed_command_prefix", "/") if transport.adapter else "/"
-            message = "⚠ " + "\n".join(advice_lines(advice, command_prefix=prefix))
+            message = "💡 " + "\n".join(advice_lines(advice, command_prefix=prefix))  # [owner]
             sent: list[bool] = []
 
             async def _send(platform=platform, home_ch=home_ch, transport=transport, message=message):

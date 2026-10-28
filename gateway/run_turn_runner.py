@@ -145,7 +145,7 @@ def _resolution_failure_reply(exc: Exception, platform: Platform) -> tuple[str, 
         # Session-policy refusals carry a stable reason code (e.g. a CLI launch key revoked by
         # daemon restart): keep it in the reply so clients can act on it, and do not suggest
         # /login — the profile's own credentials were never in play.
-        return (f"⚠️ This session's launch credentials are no longer available ({exc.reason}), so this "
+        return (f"💡 This session's launch credentials are no longer available ({exc.reason}), so this "  # [owner]
                 "message wasn't processed. Start a new session from the CLI to bind them again.", auth_permanent, False)
     if is_rate_limited_auth_error(exc.__cause__):
         # Quota cap with valid credentials: /login cannot help; name the reset window (#89401).
@@ -154,7 +154,7 @@ def _resolution_failure_reply(exc: Exception, platform: Platform) -> tuple[str, 
     if platform == Platform.LOCAL:
         # The local operator reads the terminal: the resolver's own sentence ("provider 'custom'
         # resolved without credentials ...") is the diagnosis; /login is not.
-        return f"⚠️ {exc}", auth_permanent, False
+        return f"💡 {exc}", auth_permanent, False  # [owner]
     seen: set[int] = set()
     host = auth = False
     link: BaseException | None = exc
