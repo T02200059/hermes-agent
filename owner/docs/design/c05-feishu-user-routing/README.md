@@ -1,6 +1,6 @@
 # C05 · 飞书多 profile 舰队路由（初步设计稿）
 
-> 状态：**配置结构已定稿**（2026-10-28），**实现未开始**。  
+> 状态：**配置结构已定稿**（2026-10-28），****C05a 代码已落地（Mac v2，未部署 node010）****。  
 > 依据：node010 现网拓扑 + 挂载规范 + **按人 `fleet_profiles` 主结构** + overlay 节名 + 方案② HTTP 舰队路由 + `二次开发规范.md` v2 基线。
 
 ## 意图
@@ -288,7 +288,7 @@ v2：逻辑放 `owner/feishu/profile_routing.py`；官方 adapter / api_server *
 
 ## 清单（实现 / 评审用）
 
-- [ ] C05a：overlay 加载 `fleet_profiles` + `user_routing`；endpoints 从 `api_server` 推导  
+- [x] C05a：overlay 加载 `fleet_profiles` + `user_routing`；endpoints 从 `api_server` 推导  
 - [ ] C05a：`hub_only.feishu`（及可选 ou whitelist）参与 resolve  
 - [ ] C05a：单测夹具用假 `fleet_profiles`（无真 key / ou）  
 - [ ] C05b：node010 从 patch 迁到 overlay 人卡；旧 `profile_endpoints` / `identity_*` 标回落  
@@ -300,3 +300,13 @@ v2：逻辑放 `owner/feishu/profile_routing.py`；官方 adapter / api_server *
 
 - 不写路由实现、不改 compose、不重启 gateway、不 push。  
 - 不在本稿提交真实 `api_key` / `open_id` / LDAP 清单（示例脱敏）。
+
+
+## 实现状态（C05a）
+
+- **已落地（Mac v2，本地 commit，未 push / 未部署 node010）**
+  - `owner/feishu/profile_routing.py`：fleet_profiles 加载、hub_only.feishu、HTTP 转发、归属校验
+  - `owner/feishu/card_action.py`：卡片分派表（含 try_route_card_action）
+  - adapter / api_server 薄胶水：`try_route_inbound`、`inject_inbound`、`/v1/feishu/inbound|card-actions`
+  - 单测：`tests/owner/test_c05_*.py`
+- **未做（后续）**：C05b 生产切 overlay；Ops 挂载迁 `profiles/`；C06 LDAP / `hub_only.api` 门

@@ -413,7 +413,8 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - 测：`tests/owner/test_platform_users.py`
   - **不改**官方 SCHEMA；不改写 `sessions.display_name`
 - [ ] **C05** · 源 §4.1 · **飞书多 profile 舰队路由**（`profile_endpoints` HTTP 转发；**不吃**官方 `profile_routes`） · **优先级：P0**
-  - 设计稿：`owner/docs/design/c05-feishu-user-routing/README.md`（**配置结构已定稿** 2026-10-28；按人 **`fleet_profiles`** + overlay `feishu.bots.<app_id>.user_routing`；方案② HTTP；挂载三层；**实现未开始**）
+  - 设计稿：`owner/docs/design/c05-feishu-user-routing/README.md`（配置结构已定稿；按人 **`fleet_profiles`**）
+  - **C05a（Mac v2）已落地** 2026-10-28：`owner/feishu/profile_routing.py` + card_action + adapter/api_server 薄胶水 + 单测；**未** push / **未**部署 node010（C05b）
 - [ ] **C06** · 源 §15.1–15.6 · API Server LDAP 身份准入 + 顶层 **`api_identity`**（旧 `identity_*` 只读别名）+ 头剥离/SSE · **优先级：P0**
 - [ ] **C07** · 源 §16.1–16.6 · API 产物媒体 / `hermes.files` / tool.progress 脱敏与归属 · **优先级：P0** · **延后**（2026-10-27 用户拍板；与 C05/C06 一并靠后，非当前主线）
 - [x] **C08** · 源 §7.27 · outbound BOS/EOS scrub · **优先级：P0**
