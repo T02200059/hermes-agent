@@ -523,6 +523,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - **统一约定（已敲定，代码已做）**：单一 `owner.explainers` 块 + 共享取模 helper；禁止各 kind 各写 provider/model。详见上方「§ 二次开发可复用基建 §4」。
   - 旧顶层 `progress_explainer` / `approval_explainer` / `english_explainer` → 迁入 `explainers.{progress,approval,english,recap}`；`call_llm(task=…_explainer)` 长 task 名保留
   - **已落地（H03 #3）**：progress/approval/english 输出帽读 `merged.get("max_output_chars")`（模块默认 900/800/1000 仍保留）；overlay `explainers.{progress,approval,english}.max_output_chars` 已补同值；recap 仍 350
+  - **文档澄清（2026-10-28）**：仅 `max_output_chars` 可配；`max_tokens`/`_MAX_TOKENS` 仍硬编码。告警前缀（默认 `💡 [stream-guard]`）是 notice 匹配键，改前缀须同步 overlay + auto_card；`💡 [output-guard]` 有可见串但不在 `notice_titles`（见 `owner/docs/c13-explainers.md`）
 - [x] **C14** · 源 §14 · output_guard + stream_guard · **优先级：P1**（阶段一 · 完整版）
   - helper：`owner/output_guard/`（`transform_llm_output`）+ `owner/stream_guard/`（`on_stream_delta`；S1/S2/S3，S3=`is_repetition_dominated`）
   - 注册：`owner/owner-extensions` `register()` + `plugin.yaml` hooks
