@@ -360,7 +360,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 | **C17** | Checkpoint Mutation Predictor | `owner/checkpoint_predictor/`；tool_executor terminal 薄胶水 |
 | **C19** | 链式快捷命令 `;;` + Quick Alias | `owner/commands/chained_quick.py`；CLI/gateway/TUI 薄胶水 |
 | **H01** | 官方 test 污染梳理 | 优先项已修（#1/#2/#5/#6/#7 R1/#10 等） |
-| **H02** | CLI `input()` 僵尸 reader | 延后 |
+| **H02** | CLI `input()` 僵尸 reader | 已落地 |
 | **C12-at-all** | 群 `@_all` 不再当提到自己 | `_mentions_self` 极小 P2；官方测已改 |
 | **C12-upload-guard** | 出站图/文件超限中文提示 | `owner/feishu/media_guard.py` + adapter 薄胶水 |
 | **C12-queue-card** | 飞书 queue 状态卡（cancel/now/steer/freeze） | `owner/feishu/queue_card.py` + `queue_cancel_patch` + adapter 薄胶水 |
@@ -584,7 +584,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 > 不进四阶段必做；有空再开。与「明确不做」不同：这里是**以后要做、现在不排**。
 
 - [x] **H01** · **官方 test 污染梳理** · 审计见 WorkBuddy `tests-pollution-audit-2026-10-23.md`；优先项已修：`73fa8f53e3`…`de3dc9ecff`（#1/#2/#5/#6/#7 R1/#10 等）。#7 仅守卫登记第一步；网络守卫等后置。
-- [ ] **H02** · CLI approval `input()` 超时僵尸 reader · 仅无 callback 且非 PT 路径；超时后线程仍堵 `read(0)`，可能吞后续输入/连锁 deny；gateway/飞书/QQ/微信与正常 TUI **无感**；fail-closed 非安全问题。**暂时不做**。
+- [x] **H02** · CLI approval `input()` 超时僵尸 reader · 仅无 callback 且非 PT 路径。落地：`owner/approval/cli_read_choice.py`（POSIX TTY + 原装 `input` → `select`+`os.read`；否则回落官方 daemon `input()`）；`tools/approval_prompt.py` `_read_choice` 薄委托。gateway/飞书/QQ/微信与正常 TUI **无感**。测：`tests/owner/test_h02_cli_read_choice.py`。
 - [ ] **H03** · **审核遗留暂缓（2026-10-27 复审）** · 勿再当「漏做」：
   1. C14 `stream_guard.DEFAULTS["action"]=warn_only`（overlay 已 interrupt）— **仍旁置**
   2. ~~`[owner-patch P2-3]` 旧拼写~~ → **已落地**：`# [owner] P2-3: …`
