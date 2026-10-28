@@ -81,7 +81,13 @@ _CLI_CHOICE_I18N = {
 
 
 def _read_choice(prompt: str, timeout_seconds: int) -> str | None:
-    """Read one answer on a daemon thread; None when the user never answered."""
+    """Read one answer; None when the user never answered."""
+    # [owner] H02: interruptible stdin via owner/approval/cli_read_choice.py
+    try:
+        from owner.approval.cli_read_choice import read_choice as _owner_read_choice
+        return _owner_read_choice(prompt, timeout_seconds)
+    except Exception:
+        pass
     result = {"choice": ""}
 
     def get_input():
