@@ -78,6 +78,8 @@ _STATIC_FEATURE_FLAGS = {
 # feature is advertised only while that "features" flag is truthy on this listener.
 _CAPABILITY_ENDPOINTS = (
     ("health", ("GET", "/health")), ("health_detailed", ("GET", "/health/detailed")),
+    # [owner] C06: LDAP identity access probe
+    ("ldap_identity_access", ("GET", "/v1/ldap/identity/{identity}/access")),
     ("models", ("GET", "/v1/models")), ("model_options", ("GET", "/api/model/options")),
     ("chat_completions", ("POST", "/v1/chat/completions")),
     ("responses", ("POST", "/v1/responses")), ("runs", ("POST", "/v1/runs")),
@@ -847,6 +849,33 @@ def _profile_mismatch_response(reason: str) -> "web.Response":
     return web.json_response(
         _openai_error(reason, code="profile_mismatch"), status=409
     )
+
+
+async def _owner_identity_gate_rejection(
+    identity: str, request: "web.Request"
+) -> Optional["web.Response"]:
+    """[owner] C06: LDAP second-factor gate for X-Hermes-Identity (before routing)."""
+    fn = _owner_import("owner.gateway.identity_routing", "identity_gate_rejection")
+    if fn is None:
+        return None
+    try:
+        return await fn(
+            identity,
+            request,
+            web=web,
+            openai_error=_openai_error,
+        )
+    except Exception as exc:
+        logging.getLogger(__name__).error(
+            "[API] identity gate rejection helper failed (%s); denying closed", exc
+        )
+        return web.json_response(
+            _openai_error(
+                "LDAP backend unavailable; identity could not be verified",
+                code="ldap_backend_unavailable",
+            ),
+            status=503,
+        )
 
 
 def _error_response(
@@ -1729,6 +1758,8 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
             # [owner] C05: Feishu multi-profile fleet transport (Hub → this container)
             ("POST", "/v1/feishu/inbound", self._handle_feishu_inbound),
             ("POST", "/v1/feishu/card-actions", self._handle_feishu_card_action),
+            # [owner] C06: LDAP identity access (read-only)
+            ("GET", "/v1/ldap/identity/{identity}/access", self._handle_ldap_identity_access),
         ]
         routes.extend(_room_grants._http_routes(self))
         routes.extend(_api_runs._http_routes(self))
@@ -4507,7 +4538,9 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
                 retryable=False)
             return False
         try:
+            # [owner] C06: identity gate + reverse-proxy runs first (before profile prefix).
             mws = [mw for mw in (
+                self._make_identity_routing_middleware(),
                 self._make_profile_prefix_middleware(), cors_middleware, body_limit_middleware,
                 security_headers_middleware) if mw is not None]
             self._app = web.Application(middlewares=mws, client_max_size=MAX_REQUEST_BYTES)
@@ -4650,6 +4683,47 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
         from gateway.platforms.api_server_authority_runs import send_clarify
         return await send_clarify(self, chat_id=chat_id, clarify_id=clarify_id)
 
+
+    # ── [owner] C06: LDAP identity gate + reverse-proxy ────────────────────────
+
+    def _make_identity_routing_middleware(self):
+        """[owner] C06: identity auth gate + reverse-proxy — impl in owner/gateway."""
+        factory = _owner_import(
+            "owner.gateway.identity_routing", "make_identity_routing_middleware"
+        )
+        if factory is None:
+            @web.middleware
+            async def _noop(request, handler):
+                return await handler(request)
+
+            return _noop
+        return factory(
+            web=web,
+            owner_import=_owner_import,
+            gate_rejection=_owner_identity_gate_rejection,
+            logger_=logger,
+        )
+
+    async def _handle_ldap_identity_access(self, request: "web.Request") -> "web.Response":
+        """GET /v1/ldap/identity/{identity}/access — [owner] C06 read-only probe."""
+        handler = _owner_import(
+            "owner.gateway.identity_routing", "handle_ldap_identity_access"
+        )
+        if handler is None:
+            return web.json_response(
+                _openai_error(
+                    "Identity routing module unavailable on this gateway",
+                    code="gateway_unavailable",
+                ),
+                status=503,
+            )
+        return await handler(
+            request,
+            web=web,
+            check_auth=self._check_auth,
+            owner_import=_owner_import,
+            logger_=logger,
+        )
 
     # ── [owner] C05: Feishu inbound / card-action doorways ─────────────────────
 

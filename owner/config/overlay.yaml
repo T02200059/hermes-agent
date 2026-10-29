@@ -249,3 +249,19 @@ explainers:
 openviking:
   advisory: true
   dedup: true
+
+# ── C06 LDAP（API Server identity 门；默认关闭）────────────────
+# 形状见 owner/docs/design/c06-ldap-identity-auth/README.md
+# 勿把真实密码写入仓内；现网机密走本机/节点 overlay，勿提交。
+ldap:
+  enabled: false
+  # host: "ldap.example.com"
+  # port: 389
+  # use_ssl: false
+  # timeout_seconds: 5
+  # user_dn_template: "cn={login},cn=people,dc=example,dc=com"
+  # enforce: "always"          # off | always | seen(=always)
+  # cache_ttl_hours: 72
+  # negative_cache_seconds: 10
+  # fail_open_on_error: false
+

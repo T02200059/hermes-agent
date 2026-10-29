@@ -300,7 +300,7 @@ v2：逻辑放 `owner/feishu/profile_routing.py`；官方 adapter / api_server *
 - [x] C05a：单测夹具用假 `fleet_profiles`（无真 key / ou）  
 - [ ] C05b：node010 从 patch 迁到 overlay 人卡；旧 `profile_endpoints` / `identity_*` 标回落
   - 2026-10-29：survey + v2 preview worktree + overlay 草稿已就绪；**未**切流（见 c05b-node010-plan.md）  
-- [ ] C06：`ldap:` + `hub_only.api`；`api_identity` 只读别名后废弃  
+- [x] C06：`ldap:` + `hub_only.api`；`api_identity` 只读别名后废弃（见 c06-ldap-identity-auth；现网接线另开）  
 - [x] Ops：开户内核 O3 三层 compose 模板 + 种子（见 [fleet-add.md](./fleet-add.md)；**O1–O3 已落地** 2026-10-29；现网挂载迁徙 / passwd 对齐仍属另开 Ops；O4+ 未实现）  
 - [x] **配置形状**：按人 `fleet_profiles`（ldap/docker/api_server/hub_only）已写入本稿  
 
