@@ -1,6 +1,6 @@
-"""C05 fleet_add：开户计划（O1）/ overlay 落盘（O2）/ 宿主机种子+compose（O3）。
+"""C05 fleet_add：开户计划（O1）/ overlay（O2）/ 宿主机种子+compose（O3）/ up+health（O4）。
 
-设计见 ``owner/docs/design/c05-feishu-user-routing/fleet-add.md`` §5 O1–O3。
+设计见 ``owner/docs/design/c05-feishu-user-routing/fleet-add.md`` §5 O1–O4。
 
 主键 = LDAP uid（与主稿 ``fleet_profiles.<ldap_uid>`` 对齐）。
 生产 node010 现网路由键仍可能是全名（如 ``yangtianbao``）；切 uid 属另开 Ops。
@@ -12,6 +12,9 @@
 - **O3** ``apply_fleet_add_host``：种子 ``profiles/<uid>`` 目录、写三层挂载 compose 文件；
   ``useradd`` 仅在 Linux + ``run_useradd=True`` 时执行，否则 dry 列出 / Darwin 标
   ``unsupported``。**不** ``docker compose up``（属 O4）。
+- **O4** ``apply_fleet_add_up``：``docker compose up -d`` + 探活 ``api_server.url``；
+  可注入 ``compose_runner`` / ``health_get``（单测 mock，不依赖真 Docker）；
+  失败返回结构化错误 + 回滚（compose stop/down）文案。默认 dry 只列命令。
 - 默认拒绝写 ``/data/hermes`` 生产路径，除非 ``allow_production=True``。
 
 复用 ``owner.feishu.profile_routing`` 的人卡 / endpoint 解析，不重写加载语义。
@@ -26,7 +29,7 @@ import shutil
 import subprocess
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Mapping, MutableMapping, Optional, Sequence
+from typing import Any, Callable, Mapping, MutableMapping, Optional, Sequence
 
 from owner.feishu.profile_routing import (
     _endpoint_from_api_server,
@@ -493,6 +496,221 @@ def build_home_channel_plan(
     }
 
 
+
+# ---------------------------------------------------------------------------
+# O4：compose up + health（可注入 runner；默认 dry 只列）
+# ---------------------------------------------------------------------------
+
+DEFAULT_HEALTH_PATHS: tuple[str, ...] = ("/health", "/")
+DEFAULT_HEALTH_TIMEOUT_S = 2.0
+DEFAULT_HEALTH_RETRIES = 3
+DEFAULT_HEALTH_RETRY_SLEEP_S = 0.4
+
+
+def health_probe_urls(
+    api_base: str,
+    *,
+    paths: Sequence[str] = DEFAULT_HEALTH_PATHS,
+) -> list[str]:
+    """由 ``api_server.url`` 生成探活 URL 列表（去重保序）。"""
+    base = (api_base or "").strip().rstrip("/")
+    if not base:
+        return []
+    out: list[str] = []
+    seen: set[str] = set()
+    for raw in paths:
+        p = str(raw or "").strip() or "/"
+        if not p.startswith("/"):
+            p = "/" + p
+        url = base if p == "/" else f"{base}{p}"
+        if url not in seen:
+            seen.add(url)
+            out.append(url)
+    return out
+
+
+def build_up_plan(
+    *,
+    compose_file: str,
+    service_name: str,
+    api_url: str,
+    port: int,
+    health_paths: Sequence[str] = DEFAULT_HEALTH_PATHS,
+) -> dict[str, Any]:
+    """O4 dry 计划：将执行的 up / health / 失败回滚说明（不执行）。"""
+    compose_path = compose_file or "./docker-compose.fleet-unknown.yml"
+    svc = service_name or "hermes-unknown"
+    base = (api_url or "").rstrip("/") or (
+        f"http://127.0.0.1:{port}" if port else "http://127.0.0.1:<port>"
+    )
+    probes = health_probe_urls(base, paths=health_paths)
+    up_cmd = f"docker compose -f {compose_path} up -d {svc}"
+    stop_cmd = f"docker compose -f {compose_path} stop {svc}"
+    down_cmd = f"docker compose -f {compose_path} down"
+    rollback = [
+        "回滚（O4 容器级；overlay/种子文件见 O2/O3 备份）：",
+        f"  {stop_cmd}",
+        f"  # 若需拆掉网络/匿名卷: {down_cmd}",
+        "  # 然后按 O3/O2 rollback 恢复 compose / overlay / .env（若本次一并 apply）",
+        "  # 本工具不自动 userdel / 不删 profiles 数据",
+    ]
+    return {
+        "phase": "O4",
+        "compose_file": compose_path,
+        "service": svc,
+        "port": port,
+        "api_base": base,
+        "up_cmd": up_cmd,
+        "stop_cmd": stop_cmd,
+        "down_cmd": down_cmd,
+        "health": {
+            "api_base": base,
+            "probe_urls": probes,
+            "timeout_s": DEFAULT_HEALTH_TIMEOUT_S,
+            "retries": DEFAULT_HEALTH_RETRIES,
+            "note": "任一路探活 HTTP 2xx 即通过；超时/非 2xx → 结构化失败 + 回滚文案",
+        },
+        "rollback": rollback,
+        "notes": [
+            "默认 dry-run 只列出；--apply-up 才执行（可注入 compose_runner / health_get）",
+            "单测勿依赖真 Docker daemon；生产 /data/hermes 须 --allow-production",
+        ],
+    }
+
+
+def default_compose_runner(
+    argv: Sequence[str],
+    *,
+    cwd: Optional[str] = None,
+) -> dict[str, Any]:
+    """真实 ``docker compose …`` 子进程（生产路径）；单测应注入 mock。"""
+    try:
+        proc = subprocess.run(
+            list(argv),
+            check=False,
+            capture_output=True,
+            text=True,
+            cwd=cwd,
+        )
+    except FileNotFoundError as exc:
+        return {
+            "returncode": 127,
+            "argv": list(argv),
+            "stdout_tail": "",
+            "stderr_tail": f"docker 不可用: {exc}",
+            "error": "docker_not_found",
+        }
+    except OSError as exc:
+        return {
+            "returncode": 1,
+            "argv": list(argv),
+            "stdout_tail": "",
+            "stderr_tail": str(exc)[-500:],
+            "error": "os_error",
+        }
+    return {
+        "returncode": int(proc.returncode),
+        "argv": list(argv),
+        "stdout_tail": (proc.stdout or "")[-800:],
+        "stderr_tail": (proc.stderr or "")[-800:],
+    }
+
+
+def default_health_get(
+    url: str,
+    *,
+    timeout: float = DEFAULT_HEALTH_TIMEOUT_S,
+) -> dict[str, Any]:
+    """HTTP GET 探活（stdlib urllib）；单测应注入 mock。"""
+    import urllib.error
+    import urllib.request
+
+    try:
+        req = urllib.request.Request(url, method="GET")
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            status = int(getattr(resp, "status", None) or resp.getcode())
+            body = resp.read(256)
+            try:
+                snip = body.decode("utf-8", errors="replace")
+            except Exception:
+                snip = ""
+            return {
+                "ok": 200 <= status < 300,
+                "status": status,
+                "url": url,
+                "body_snip": snip[:200],
+            }
+    except urllib.error.HTTPError as exc:
+        return {
+            "ok": False,
+            "status": int(exc.code),
+            "url": url,
+            "error": "http_error",
+            "body_snip": str(exc)[:200],
+        }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "status": None,
+            "url": url,
+            "error": type(exc).__name__,
+            "body_snip": str(exc)[:200],
+        }
+
+
+def probe_api_health(
+    api_base: str,
+    *,
+    paths: Sequence[str] = DEFAULT_HEALTH_PATHS,
+    timeout: float = DEFAULT_HEALTH_TIMEOUT_S,
+    retries: int = DEFAULT_HEALTH_RETRIES,
+    retry_sleep: float = DEFAULT_HEALTH_RETRY_SLEEP_S,
+    health_get: Optional[Callable[..., dict[str, Any]]] = None,
+) -> dict[str, Any]:
+    """对 ``api_server`` 基址按路径列表探活；可注入 ``health_get(url)`` / ``(url, timeout=)``。"""
+    import time
+
+    urls = health_probe_urls(api_base, paths=paths)
+    attempts: list[dict[str, Any]] = []
+    if not urls:
+        return {
+            "ok": False,
+            "error": "no_probe_urls",
+            "message": "缺少 api_server.url，无法探活",
+            "attempts": attempts,
+        }
+
+    def _call(url: str) -> dict[str, Any]:
+        if health_get is None:
+            return default_health_get(url, timeout=timeout)
+        try:
+            return health_get(url, timeout=timeout)
+        except TypeError:
+            return health_get(url)
+
+    rounds = max(1, int(retries))
+    for i in range(rounds):
+        for url in urls:
+            result = _call(url)
+            entry = {"attempt": i + 1, **dict(result)}
+            attempts.append(entry)
+            if result.get("ok"):
+                return {
+                    "ok": True,
+                    "url": url,
+                    "status": result.get("status"),
+                    "attempts": attempts,
+                }
+        if i + 1 < rounds and retry_sleep > 0:
+            time.sleep(retry_sleep)
+    return {
+        "ok": False,
+        "error": "health_failed",
+        "message": f"探活失败（{rounds} 轮 × {len(urls)} URL）",
+        "attempts": attempts,
+    }
+
+
 def build_planned_commands(
     *,
     ldap_uid: str,
@@ -500,9 +718,14 @@ def build_planned_commands(
     hermes_dir: str,
     service_name: str,
     compose_file: str = "",
+    api_url: str = "",
+    port: int = 0,
 ) -> list[dict[str, str]]:
     """将执行的系统命令清单（O1 只列出，不执行）。"""
     compose_path = compose_file or f"./docker-compose.fleet-{ldap_uid}.yml"
+    base = (api_url or "").rstrip("/") or (
+        f"http://127.0.0.1:{port}" if port else "http://127.0.0.1:<port>"
+    )
     return [
         {
             "step": "useradd",
@@ -533,8 +756,20 @@ def build_planned_commands(
         },
         {
             "step": "health",
-            "cmd": "# 探活 api_server.url / health（localhost 端口见人卡）",
+            "cmd": (
+                f"# 探活 {base}/health 或 {base}/ "
+                f"（api_server.url；O4 --apply-up 执行）"
+            ),
             "phase": "O4",
+        },
+        {
+            "step": "compose_down_on_fail",
+            "cmd": (
+                f"docker compose -f {compose_path} stop {service_name}  "
+                f"# 失败回滚；必要时 down"
+            ),
+            "phase": "O4",
+            "note": "仅健康检查失败或回滚时执行",
         },
     ]
 
@@ -670,12 +905,21 @@ def plan_fleet_add(
         open_ids=oids,
         hermes_dir=resolved_hermes,
     )
+    api_base = f"http://127.0.0.1:{port}"
     commands = build_planned_commands(
         ldap_uid=uid,
         home_dir=resolved_home,
         hermes_dir=resolved_hermes,
         service_name=compose["service"],
         compose_file=resolved_compose_file,
+        api_url=api_base,
+        port=port,
+    )
+    up_plan = build_up_plan(
+        compose_file=resolved_compose_file,
+        service_name=compose["service"],
+        api_url=api_base,
+        port=port,
     )
 
     # 叠加后的路由表预览（不修改入参）
@@ -692,7 +936,7 @@ def plan_fleet_add(
             "逻辑主键 = LDAP uid；生产 node010 现网路由键仍可能是全名——切 uid 另开 Ops",
             "O2 --apply：人卡 + routes + FEISHU_ALLOWED_USERS（ou±tenant）+ home channel",
             "O3 --apply-host：种子 profiles/ + 三层 compose 文件；useradd 默认只列（Mac unsupported）",
-            "O4 才 docker compose up + health（本计划不执行）",
+            "O4 --apply-up：docker compose up -d + 探活 api_server.url（可注入 mock；本计划不执行）",
         ],
         "person_card": card,
         "overlay_writes": {
@@ -715,6 +959,7 @@ def plan_fleet_add(
         "seed": seed,
         "host_useradd": host_useradd_support(),
         "planned_commands": commands,
+        "up": up_plan,
         "hub_only_flags": {
             "feishu": hub_only_feishu,
             "api": hub_only_api,
@@ -772,6 +1017,9 @@ def format_plan_text(plan: Mapping[str, Any]) -> str:
     lines.append("")
     lines.append("## useradd 支持探测")
     lines.append(json.dumps(plan.get("host_useradd"), ensure_ascii=False, indent=2))
+    lines.append("")
+    lines.append("## O4 up + health 计划（本阶段不执行）")
+    lines.append(json.dumps(plan.get("up"), ensure_ascii=False, indent=2))
     lines.append("")
     lines.append("## 将执行的命令（O3/O4；本阶段不执行）")
     for c in plan.get("planned_commands") or []:
@@ -1560,6 +1808,337 @@ def format_host_apply_text(result: Mapping[str, Any]) -> str:
     lines.append("## useradd")
     lines.append(json.dumps(result.get("useradd"), ensure_ascii=False, indent=2))
     lines.append("")
+    lines.append("## 回滚")
+    for step in result.get("rollback") or []:
+        lines.append(
+            step
+            if str(step).startswith(" ") or str(step).startswith("回滚")
+            else f"- {step}"
+        )
+    return "\n".join(lines) + "\n"
+
+
+
+# ---------------------------------------------------------------------------
+# O4 apply：compose up + health（门闩 execute；可注入 mock）
+# ---------------------------------------------------------------------------
+
+
+def apply_fleet_add_up(
+    plan: Mapping[str, Any],
+    *,
+    allow_production: bool = False,
+    execute: bool = False,
+    compose_runner: Optional[Callable[..., dict[str, Any]]] = None,
+    health_get: Optional[Callable[..., dict[str, Any]]] = None,
+    health_timeout: float = DEFAULT_HEALTH_TIMEOUT_S,
+    health_retries: int = DEFAULT_HEALTH_RETRIES,
+    health_retry_sleep: float = DEFAULT_HEALTH_RETRY_SLEEP_S,
+    health_paths: Sequence[str] = DEFAULT_HEALTH_PATHS,
+    stamp: Optional[str] = None,
+    require_compose_file: bool = True,
+) -> dict[str, Any]:
+    """O4：按计划 ``docker compose up -d`` + 探活 ``api_server.url``。
+
+    - ``execute=False``（默认）：只返回将执行的 up/health/回滚说明（零副作用）。
+    - ``execute=True``：经 ``compose_runner`` 起容器，再 ``health_get`` 探活。
+      未注入时用真实 docker / urllib（单测务必注入 mock，勿依赖本机 daemon）。
+    - 拒绝 ``/data/hermes`` 除非 ``allow_production=True``。
+    - 健康失败：``ok=False`` + 结构化 ``error`` + 回滚步骤；并尝试 ``stop`` 服务
+      （同样经 runner）。
+    """
+    uid = str(plan.get("ldap_uid") or "").strip()
+    if not uid:
+        raise FleetAddError("plan 缺少 ldap_uid")
+
+    up = plan.get("up")
+    if not isinstance(up, dict) or not up.get("up_cmd"):
+        # 容错：从 plan 字段重建
+        compose_file = str(plan.get("compose_file") or "")
+        draft = plan.get("compose") or {}
+        service = str((draft.get("service") if isinstance(draft, dict) else None) or f"hermes-{uid}")
+        port_info = plan.get("port") or {}
+        port = int((port_info.get("allocated") if isinstance(port_info, dict) else None) or 0)
+        person = plan.get("person_card") or {}
+        api = person.get("api_server") if isinstance(person, dict) else {}
+        api_url = ""
+        if isinstance(api, dict):
+            api_url = str(api.get("url") or "")
+        if not api_url and isinstance(port_info, dict):
+            api_url = str(port_info.get("url") or "")
+        if not compose_file:
+            raise FleetAddError("plan 缺少 compose_file / up")
+        up = build_up_plan(
+            compose_file=compose_file,
+            service_name=service,
+            api_url=api_url,
+            port=port,
+            health_paths=health_paths,
+        )
+
+    compose_file = str(up.get("compose_file") or plan.get("compose_file") or "")
+    service = str(up.get("service") or f"hermes-{uid}")
+    api_base = str(up.get("api_base") or "")
+    port = int(up.get("port") or 0)
+    up_cmd = str(up.get("up_cmd") or f"docker compose -f {compose_file} up -d {service}")
+    stop_cmd = str(up.get("stop_cmd") or f"docker compose -f {compose_file} stop {service}")
+    down_cmd = str(up.get("down_cmd") or f"docker compose -f {compose_file} down")
+    rollback = list(up.get("rollback") or [])
+    if not rollback:
+        rollback = [
+            "回滚（O4 容器级）：",
+            f"  {stop_cmd}",
+            f"  # 必要时: {down_cmd}",
+        ]
+
+    paths_to_check: list[Path] = []
+    if compose_file:
+        paths_to_check.append(Path(compose_file))
+    person = plan.get("person_card") or {}
+    docker = person.get("docker") if isinstance(person, dict) else {}
+    if isinstance(docker, dict):
+        for k in ("hermes_dir", "home_dir"):
+            if docker.get(k):
+                paths_to_check.append(Path(str(docker[k])))
+
+    if not allow_production:
+        bad = [str(p) for p in paths_to_check if is_production_path(p)]
+        if bad:
+            raise FleetAddError(
+                "拒绝 apply-up 到疑似生产路径（/data/hermes/...）。"
+                "请改用 temp/fixture 路径，或显式 allow_production=True / --allow-production。"
+                f" 命中: {bad}"
+            )
+
+    st = stamp or _ts_stamp()
+    planned = {
+        "up_cmd": up_cmd,
+        "health_probe_urls": list((up.get("health") or {}).get("probe_urls") or health_probe_urls(api_base)),
+        "stop_cmd": stop_cmd,
+        "down_cmd": down_cmd,
+    }
+
+    if not execute:
+        return {
+            "mode": "dry-run-up",
+            "phase": "O4",
+            "ok": True,
+            "executed": False,
+            "ldap_uid": uid,
+            "display_name": plan.get("display_name"),
+            "stamp": st,
+            "compose_file": compose_file,
+            "service": service,
+            "port": port,
+            "api_base": api_base,
+            "planned": planned,
+            "compose": None,
+            "health": None,
+            "rollback": rollback,
+            "notes": [
+                "O4 dry-run：未执行 docker / 未探活；见 planned 与 rollback",
+                "加 --apply-up（execute=True）并注入/使用 runner 才会起容器",
+            ],
+            "error": None,
+        }
+
+    compose_p = Path(compose_file) if compose_file else None
+    if require_compose_file and (compose_p is None or not compose_p.is_file()):
+        err = {
+            "code": "compose_file_missing",
+            "message": f"compose 文件不存在: {compose_file!r}（先 O3 --apply-host）",
+        }
+        return {
+            "mode": "apply-up",
+            "phase": "O4",
+            "ok": False,
+            "executed": False,
+            "ldap_uid": uid,
+            "display_name": plan.get("display_name"),
+            "stamp": st,
+            "compose_file": compose_file,
+            "service": service,
+            "port": port,
+            "api_base": api_base,
+            "planned": planned,
+            "compose": None,
+            "health": None,
+            "rollback": rollback,
+            "notes": ["O4 中止：缺少 compose 文件"],
+            "error": err,
+        }
+
+    runner = compose_runner or default_compose_runner
+    # argv 形态：docker compose -f <file> up -d <service>
+    up_argv = ["docker", "compose", "-f", compose_file, "up", "-d", service]
+    try:
+        compose_result = runner(up_argv)
+    except TypeError:
+        # 允许 mock(argv=...) 或 mock(cmd_str)
+        try:
+            compose_result = runner(up_cmd)
+        except TypeError:
+            compose_result = runner(list(up_argv))
+    if not isinstance(compose_result, dict):
+        compose_result = {"returncode": 1, "error": "invalid_runner_result", "raw": str(compose_result)[:200]}
+
+    # 脱敏：不把可能的环境密钥塞进结果
+    safe_compose = {
+        "returncode": compose_result.get("returncode"),
+        "argv": compose_result.get("argv") or up_argv,
+        "stdout_tail": str(compose_result.get("stdout_tail") or "")[-800:],
+        "stderr_tail": str(compose_result.get("stderr_tail") or "")[-800:],
+    }
+    if compose_result.get("error"):
+        safe_compose["error"] = compose_result.get("error")
+
+    _rc = safe_compose.get("returncode")
+    if _rc is None or int(_rc) != 0:
+        err = {
+            "code": "compose_up_failed",
+            "message": "docker compose up 失败",
+            "returncode": safe_compose.get("returncode"),
+            "stderr_tail": safe_compose.get("stderr_tail"),
+        }
+        return {
+            "mode": "apply-up",
+            "phase": "O4",
+            "ok": False,
+            "executed": True,
+            "ldap_uid": uid,
+            "display_name": plan.get("display_name"),
+            "stamp": st,
+            "compose_file": compose_file,
+            "service": service,
+            "port": port,
+            "api_base": api_base,
+            "planned": planned,
+            "compose": safe_compose,
+            "health": None,
+            "rollback": rollback,
+            "notes": [
+                "O4 compose up 失败；未做健康探活",
+                "按 rollback 停止残留容器（若有）",
+            ],
+            "error": err,
+        }
+
+    health = probe_api_health(
+        api_base,
+        paths=health_paths,
+        timeout=health_timeout,
+        retries=health_retries,
+        retry_sleep=health_retry_sleep,
+        health_get=health_get,
+    )
+
+    if health.get("ok"):
+        return {
+            "mode": "apply-up",
+            "phase": "O4",
+            "ok": True,
+            "executed": True,
+            "ldap_uid": uid,
+            "display_name": plan.get("display_name"),
+            "stamp": st,
+            "compose_file": compose_file,
+            "service": service,
+            "port": port,
+            "api_base": api_base,
+            "planned": planned,
+            "compose": safe_compose,
+            "health": health,
+            "rollback": rollback,
+            "notes": [
+                "O4 已 compose up 且探活通过",
+                "回滚说明见 rollback（正常成功路径无需执行）",
+            ],
+            "error": None,
+        }
+
+    # 健康失败 → 尝试 stop
+    stop_argv = ["docker", "compose", "-f", compose_file, "stop", service]
+    try:
+        stop_result = runner(stop_argv)
+    except TypeError:
+        try:
+            stop_result = runner(stop_cmd)
+        except TypeError:
+            stop_result = {"returncode": 1, "error": "stop_runner_type"}
+    if not isinstance(stop_result, dict):
+        stop_result = {"returncode": 1, "raw": str(stop_result)[:200]}
+    safe_stop = {
+        "returncode": stop_result.get("returncode"),
+        "argv": stop_result.get("argv") or stop_argv,
+        "stderr_tail": str(stop_result.get("stderr_tail") or "")[-400:],
+    }
+
+    err = {
+        "code": "health_failed",
+        "message": health.get("message") or "探活失败",
+        "health_error": health.get("error"),
+        "attempts_tail": (health.get("attempts") or [])[-4:],
+        "auto_stop": safe_stop,
+    }
+    rb = list(rollback)
+    rb.insert(1, f"  # 已尝试自动: {' '.join(stop_argv)} → rc={safe_stop.get('returncode')}")
+    return {
+        "mode": "apply-up",
+        "phase": "O4",
+        "ok": False,
+        "executed": True,
+        "ldap_uid": uid,
+        "display_name": plan.get("display_name"),
+        "stamp": st,
+        "compose_file": compose_file,
+        "service": service,
+        "port": port,
+        "api_base": api_base,
+        "planned": planned,
+        "compose": safe_compose,
+        "health": health,
+        "rollback": rb,
+        "notes": [
+            "O4 探活失败；已尝试 compose stop",
+            "请按 rollback 文案确认容器已停，再查 O2/O3 配置",
+        ],
+        "error": err,
+    }
+
+
+def format_up_apply_text(result: Mapping[str, Any]) -> str:
+    """O4 apply-up / dry-run-up 结果人类可读回显。"""
+    import json
+
+    lines: list[str] = []
+    lines.append(f"# fleet_add {result.get('phase')} · {result.get('mode')}")
+    lines.append(f"ok: {result.get('ok')}")
+    lines.append(f"executed: {result.get('executed')}")
+    lines.append(f"ldap_uid: {result.get('ldap_uid')}")
+    lines.append(f"display_name: {result.get('display_name')}")
+    lines.append(f"stamp: {result.get('stamp')}")
+    lines.append(f"compose_file: {result.get('compose_file')}")
+    lines.append(f"service: {result.get('service')}")
+    lines.append(f"api_base: {result.get('api_base')}")
+    lines.append("")
+    for n in result.get("notes") or []:
+        lines.append(f"- {n}")
+    lines.append("")
+    lines.append("## 计划命令")
+    lines.append(json.dumps(result.get("planned"), ensure_ascii=False, indent=2))
+    lines.append("")
+    if result.get("compose") is not None:
+        lines.append("## compose 执行")
+        lines.append(json.dumps(result.get("compose"), ensure_ascii=False, indent=2))
+        lines.append("")
+    if result.get("health") is not None:
+        lines.append("## health")
+        lines.append(json.dumps(result.get("health"), ensure_ascii=False, indent=2))
+        lines.append("")
+    if result.get("error") is not None:
+        lines.append("## error")
+        lines.append(json.dumps(result.get("error"), ensure_ascii=False, indent=2))
+        lines.append("")
     lines.append("## 回滚")
     for step in result.get("rollback") or []:
         lines.append(

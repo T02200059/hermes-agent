@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""C05 fleet_add：舰队开户 CLI（默认 dry-run；``--apply``=O2；``--apply-host``=O3）。
+"""C05 fleet_add：舰队开户 CLI（默认 dry-run；O2 apply / O3 apply-host / O4 apply-up）。
 
 用法（本机假夹具 dry-run）::
 
@@ -31,8 +31,18 @@
       --fixture tests/owner/fixtures/fleet_add_overlay.yaml \
       --app-id cli_fixture_app --apply-host
 
+用法（O4：对已写 compose 的 temp 做 up+health；单测用 mock，勿对生产）::
+
+    python -m owner.scripts.fleet_add \
+      --ldap-uid alice --display-name 爱丽丝 --open-id ou_alice \
+      --hermes-dir /tmp/fleet-add-demo/profiles/alice \
+      --home-dir /tmp/fleet-add-demo/home/alice \
+      --compose-file /tmp/fleet-add-demo/compose/docker-compose.fleet-alice.yml \
+      --fixture tests/owner/fixtures/fleet_add_overlay.yaml \
+      --app-id cli_fixture_app --apply-host --apply-up
+
 设计：``owner/docs/design/c05-feishu-user-routing/fleet-add.md``。
-O3 写 profiles 种子与三层挂载 compose；**不** docker up（O4）；useradd 默认只列。
+O4 ``--apply-up`` 才 docker compose up + 探活；默认 dry 只列命令。
 默认拒绝 ``/data/hermes`` 生产路径（``--allow-production`` 才放行）。
 """
 
@@ -48,7 +58,7 @@ from pathlib import Path
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
         description=(
-            "Hermes 舰队开户（默认 dry-run；--apply=O2；--apply-host=O3 种子+compose）"
+            "Hermes 舰队开户（默认 dry-run；--apply=O2；--apply-host=O3；--apply-up=O4）"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
@@ -72,6 +82,14 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "    --compose-file /tmp/fa/compose/docker-compose.fleet-alice.yml \\\n"
             "    --fixture tests/owner/fixtures/fleet_add_overlay.yaml \\\n"
             "    --app-id cli_fixture_app --apply-host\n"
+            "\n"
+            "示例 (O4 apply-up dry 计划已含在默认 dry-run；执行须 --apply-up):\n"
+            "  python -m owner.scripts.fleet_add \\\n"
+            "    --ldap-uid alice --display-name 爱丽丝 --open-id ou_alice \\\n"
+            "    --hermes-dir /tmp/fa/profiles/alice --home-dir /tmp/fa/home/alice \\\n"
+            "    --compose-file /tmp/fa/compose/docker-compose.fleet-alice.yml \\\n"
+            "    --fixture tests/owner/fixtures/fleet_add_overlay.yaml \\\n"
+            "    --app-id cli_fixture_app --apply-host --apply-up\n"
         ),
     )
     p.add_argument("--ldap-uid", required=True, help="主键 LDAP uid（= 逻辑 profile）")
@@ -160,9 +178,14 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="O3 配合 --apply-host：在 Linux 上真实执行 useradd（Mac 仍 unsupported）",
     )
     p.add_argument(
+        "--apply-up",
+        action="store_true",
+        help="O4：docker compose up -d + 探活 api_server.url（可先 --apply-host；默认拒生产）",
+    )
+    p.add_argument(
         "--allow-production",
         action="store_true",
-        help="允许 apply/apply-host 写 /data/hermes 生产路径（危险；默认拒绝）",
+        help="允许 apply/apply-host/apply-up 写 /data/hermes 生产路径（危险；默认拒绝）",
     )
     p.add_argument(
         "--json",
@@ -186,9 +209,11 @@ def main(argv: list[str] | None = None) -> int:
         FleetAddError,
         apply_fleet_add,
         apply_fleet_add_host,
+        apply_fleet_add_up,
         format_apply_text,
         format_host_apply_text,
         format_plan_text,
+        format_up_apply_text,
         load_overlay_yaml,
         merge_fixture_overlay,
         plan_fleet_add,
@@ -258,16 +283,34 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         results.append(host_result)
 
+    if args.apply_up:
+        try:
+            up_result = apply_fleet_add_up(
+                plan,
+                allow_production=args.allow_production,
+                execute=True,
+            )
+        except FleetAddError as exc:
+            print(f"错误: {exc}", file=sys.stderr)
+            return 1
+        results.append(up_result)
+
     if results:
         if args.json:
             payload: dict | list = results[0] if len(results) == 1 else {"results": results}
             print(json.dumps(payload, ensure_ascii=False, indent=2))
         else:
             for result in results:
-                if result.get("phase") == "O3":
+                phase = result.get("phase")
+                if phase == "O3":
                     print(format_host_apply_text(result))
+                elif phase == "O4":
+                    print(format_up_apply_text(result))
                 else:
                     print(format_apply_text(result))
+        # O4 执行失败时非 0，便于脚本编排
+        if any(r.get("phase") == "O4" and r.get("ok") is False for r in results):
+            return 2
         return 0
 
     if args.json:
