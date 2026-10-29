@@ -10,7 +10,7 @@
 
 **不**用官方同进程 `gateway.multiplex_profiles` / `gateway.profile_routes` 替代舰队；二者正交（见下）。
 
-**相关**：[舰队开户链路（fleet add）](./fleet-add.md) — 对话触发、Hermes 编排的加人设计；**O1–O3 已落地**（dry-run / overlay apply / 宿主机种子+三层 compose）；O4+ / 对话 UX **未实现**；**延后**：完全更新 `xy-user-onboarding`（先内核/模板，见该稿 §5 / D1）。
+**相关**：[舰队开户链路（fleet add）](./fleet-add.md) — 对话触发、Hermes 编排的加人设计；**O1–O5 已落地**（含对话 UX：现网 `xy-user-onboarding` 只编排 → `fleet_add`；skill 仓外）；**未**生产切流。
 
 ## 已拍板（本讨论收敛）
 
@@ -268,7 +268,7 @@ v2：逻辑放 `owner/feishu/profile_routing.py`；官方 adapter / api_server *
 | **C05a** | v2 迁 `profile_routing` + overlay `fleet_profiles`/`user_routing` + 单测；endpoints 从人卡推导；**不**接 LDAP/`hub_only.api` |
 | **C05b** | node010 配置切 overlay；退役 patch 作主路径 |
 | **C06** | 顶层 `ldap` 认证 + 人卡 `hub_only.api`；旧 `api_identity`/`identity_*` 只读别名；api_server 身份反代 |
-| **Ops** | 数据 rsync → `profiles/<uid>`；compose 读 `docker.*` 双挂；补 passwd；清遗迹；**开户**（对话触发、Hermes 执行）见 [fleet-add.md](./fleet-add.md)（未实现；**延后**完全更新 `xy-user-onboarding`） |
+| **Ops** | 数据 rsync → `profiles/<uid>`；compose 读 `docker.*` 双挂；补 passwd；清遗迹；**开户**（对话触发、Hermes 执行）见 [fleet-add.md](./fleet-add.md)（**O1–O5 已落地**；增量新人走 skill；存量 rsync 仍开） |
 
 ## 已收开放项
 
@@ -291,7 +291,7 @@ v2：逻辑放 `owner/feishu/profile_routing.py`；官方 adapter / api_server *
 |---|------|----------|
 | R1 | 飞书 `whitelist`（ou 列表）是否完全废弃，只认 `hub_only.feishu`？ | 迁移期两者兼容：ou whitelist ∪ 人卡 hub_only；稳定后文档建议只维护人卡 |
 | R2 | compose 是否直接读 overlay `fleet_profiles`，还是生成中间 env？ | Ops 另议；设计上人卡是真相源 |
-| R3 | 开户自动化（fleet add）对话/tool 落点 / 是否双写旧 patch；**延后完全更新 user-onboarding** | 见 [fleet-add.md](./fleet-add.md) §5 D1 / §6；默认对话触发；**未实现** |
+| R3 | 开户自动化（fleet add）对话/tool 落点 / 是否双写旧 patch | 见 [fleet-add.md](./fleet-add.md)；**O5 已落地**（对话 skill 仓外）；C05b 前可双写 patch 路由键仍开放（F2） |
 
 ## 清单（实现 / 评审用）
 
@@ -312,10 +312,10 @@ v2：逻辑放 `owner/feishu/profile_routing.py`；官方 adapter / api_server *
 
 ## 实现状态（C05a）
 
-- **已落地已 push（Mac v2 → origin/gitlab `v2`，2026-10-29；未部署 node010 / C05b；fleet_add / onboarding 仍开）**
+- **已落地已 push（Mac v2 → origin/gitlab `v2`，2026-10-29；未部署 node010 / C05b；fleet_add O1–O5 已收；onboarding skill 仓外已全更）**
   - `owner/feishu/profile_routing.py`：fleet_profiles 加载、hub_only.feishu、HTTP 转发、归属校验
   - `owner/feishu/card_action.py`：卡片分派表（含 try_route_card_action）
   - adapter / api_server 薄胶水：`try_route_inbound`、`inject_inbound`、`/v1/feishu/inbound|card-actions`
   - 单测：`tests/owner/test_c05_*.py`
 - **C05b 进行中（2026-10-29）**：只读 survey + `/data/hermes/hermes-agent-v2-preview` + `/data/hermes/c05b-draft/`；**未**切 `v2`、**未**装 overlay、**未**重启。详见 [c05b-node010-plan.md](./c05b-node010-plan.md)。
-- **仍开**：C05b 生产切流；Ops 挂载迁 `profiles/`；C06；开户 O4+ / onboarding 见 [fleet-add.md](./fleet-add.md)（O1–O3 已落地）
+- **仍开**：C05b 生产切流；Ops 挂载迁 `profiles/`；C06；开户见 [fleet-add.md](./fleet-add.md)（O1–O5 已落地）

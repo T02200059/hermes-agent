@@ -414,15 +414,16 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - **不改**官方 SCHEMA；不改写 `sessions.display_name`
 - [ ] **C05** · 源 §4.1 · **飞书多 profile 舰队路由**（`profile_endpoints` HTTP 转发；**不吃**官方 `profile_routes`） · **优先级：P0**
   - 设计稿：`owner/docs/design/c05-feishu-user-routing/README.md`（配置结构已定稿；按人 **`fleet_profiles`**）
-  - 开户自动化：`owner/docs/design/c05-feishu-user-routing/fleet-add.md`；**O1–O4 已落地**（2026-10-29：`fleet_add*.py` + `test_fleet_add_o1/o2/o3/o4.py`）；O5 / 对话 UX **未实现**
+  - 开户自动化：`owner/docs/design/c05-feishu-user-routing/fleet-add.md`；**O1–O5 已落地**（2026-10-29：`fleet_add*.py` + `test_fleet_add_o1/o2/o3/o4.py`；对话 UX = 现网 skill）
   - 开户步骤提醒：对话收集到 `ou_*` 时，**apply 前/中**同批写入 **目标 profile + Hub** 的 `FEISHU_ALLOWED_USERS`（ou ± 已知 tenant user_id；或钉死 Hub `FEISHU_ALLOW_ALL_USERS`）与目标 **`FEISHU_HOME_CHANNEL`**（优先 DM `oc_*`；兼写 `platforms.feishu.home_channel`）；勿等首条私聊被丢弃或事后 `/sethome`（见 fleet-add.md §2 / O2）。inject 绕过子 adapter `_admit`，但 gateway authz 仍读子白名单；Hub `_admit` 在路由前执行
   - **审查修补（2026-10-29）**：S1 卡打标改 `container_profile_identity`；M1 inbound 仅 send_only；M2 overlay 加载失败 ERROR + last-good；M3 缺 api_server 不回落 Hub；M4/M5 文档钉死 allowlist 口径
-  - **延后待做**：完全更新 `xy-user-onboarding`（现网 `~/.hermes/skills/westcloud/xy-user-onboarding`；仓内副本若有一并）；skill 只编排，mutating → `fleet_add`（含 allowlist + home channel）；对齐 C05 三层挂载 / `fleet_profiles` / LDAP uid；去掉旧整挂与平行 endpoints / heredoc invent；**先内核/模板，再改 skill**（见 fleet-add.md §5 / D1）
+  - **O5 已落地（2026-10-29）**：完全更新现网 `~/.hermes/skills/westcloud/xy-user-onboarding/SKILL.md`（仓外；备份 `SKILL.md.bak-pre-o5-20261029`）；skill 只编排，mutating → `fleet_add`（allowlist + home channel）；对齐三层挂载 / `fleet_profiles` / LDAP uid；去掉旧整挂与平行 endpoints / heredoc invent；仓内仅文档勾选（见 fleet-add.md §5 / D1）
   - **C05a（Mac v2）已落地已 push** 2026-10-29：`owner/feishu/profile_routing.py` + card_action + adapter/api_server 薄胶水 + `send_only` + 审查修补（S1/M1–M5）+ 单测；已 dual-push `origin`/`gitlab` `v2`；**未**部署 node010（**C05b 仍开**）
   - **fleet_add O1（2026-10-29）**：dry-run 内核已落地（默认 dry-run）
   - **fleet_add O2（2026-10-29）**：`--apply` 写 overlay 人卡 + `user_profile_routes`、目标/Hub `FEISHU_ALLOWED_USERS`、目标 `FEISHU_HOME_CHANNEL` + `platforms.feishu.home_channel`；备份与回滚说明；默认拒 `/data/hermes`；**不** docker/useradd；假夹具单测；**未** push 本切片前以本地 commit 为准
   - **fleet_add O3（2026-10-29）**：`--apply-host` 种子 `profiles/<uid>` + 三层挂载 compose（代码/venv RO + home→/root + profiles→/root/.hermes）；`useradd` 默认只列（Mac=`unsupported`，`--run-useradd` 门闩）；默认拒生产路径；**不** compose up（O4）；测 `test_fleet_add_o3.py`；本地 commit、**不** push
-  - **fleet_add O4（2026-10-29）**：`--apply-up` → `docker compose -f … up -d` + 探活 `api_server.url`（`/health` 或 `/`）；可注入 `compose_runner`/`health_get`（单测 mock，不依赖真 Docker）；失败结构化错误 + compose stop/回滚文案；默认 dry；拒 `/data/hermes`；测 `test_fleet_add_o4.py`；本地 commit、**不** push；O5 / onboarding 仍开
+  - **fleet_add O4（2026-10-29）**：`--apply-up` → `docker compose -f … up -d` + 探活 `api_server.url`（`/health` 或 `/`）；可注入 `compose_runner`/`health_get`（单测 mock，不依赖真 Docker）；失败结构化错误 + compose stop/回滚文案；默认 dry；拒 `/data/hermes`；测 `test_fleet_add_o4.py`；已随 O1–O4 双推
+  - **fleet_add O5（2026-10-29）**：对话 UX — 现网 `xy-user-onboarding` 全更（只编排 → dry-run → apply / apply-host / apply-up）；仓外 skill，仓内 docs 勾选并 push
   - **C05b（2026-10-29）**：node010 survey + v2 preview worktree + overlay 草稿（`/data/hermes/c05b-draft/`）；**未**切生产 / 未重启；计划见 `owner/docs/design/c05-feishu-user-routing/c05b-node010-plan.md`
   - **C05a 补丁**：子网关 `FEISHU_CONNECTION_MODE=send_only`（`plugins/platforms/feishu/adapter.py` connect 早退、不抢 Hub app_id WS lock）；测 `tests/owner/test_c05_feishu_send_only.py`；**勿**把实地测 `overlay.yaml` / profile `.env` 入库
 - [ ] **C06** · 源 §15.1–15.6 · API Server LDAP 身份准入 + 顶层 **`api_identity`**（旧 `identity_*` 只读别名）+ 头剥离/SSE · **优先级：P0**
@@ -605,7 +606,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - **可忽略（现网 paused/不用）**：HN Daily、Skill 同步、Upstream Sync、汇率、mac backup-configs、swagger-collector。
   - **§11.2 job args→CLI**：✅ 已落地（2026-10-27）。逻辑 `owner/cron/job_args.py`；薄胶水 `cron/scheduler_script.py` / `cron/scheduler_prompt.py`（`# [owner] §11.2`）；调度跑 script 时把 `job["args"]` 映射为 `--key value`（`True`→裸 flag；`False`/`None`/空串跳过）。现网样例：`viking`→`--mode pref-card`，backup→`--BACKUP_QUIET 1` 等。测：`tests/owner/test_cron_job_args.py`。**整包迁仓仍不做**。§11.1 目录豁免视官方/软链现状可再议。
   - 舰队开户自动化设计（未实现）：见 `owner/docs/design/c05-feishu-user-routing/fleet-add.md`（对话触发 → Hermes 执行；归属 C05/Ops，非整包迁仓；非人手敲 CLI 主路径）
-  - **延后待做（归属 C05/Ops，非 C23 整包迁仓）**：完全更新 westcloud `xy-user-onboarding`；与开户内核/模板对齐后再做（含 allowlist + home channel；同 fleet-add.md §5 / D1）
+  - **已落地（归属 C05 O5，非 C23 整包迁仓）**：westcloud `xy-user-onboarding` 已与开户内核对齐（allowlist + home channel；同 fleet-add.md §5 / D1）；skill 仍在仓外 skills 树
   - 开户 allowlist + home channel：收集 ou 时同步写 **目标 + Hub** `FEISHU_ALLOWED_USERS` 与目标 `FEISHU_HOME_CHANNEL`（同 fleet-add.md §2）
 - [ ] **C24** · 源 §12 / §16.8–16.16 · 治理标记、T2-11~20 换码债、全量 `[owner]` 铺开 · **优先级：P2**（v2 **不做**「官方测全绿」与全量标记战役；H03 #4 仅轻量补了本轮相对上游官方运行时 hunk 标记，不算 C24 收口）
 - [x] **C25** · 源 §4.7–4.8 · 编辑上限轮转 / progress dedup / 中文摘要等体验项 · **优先级：P2**（`/providers` 已归 **C26**）

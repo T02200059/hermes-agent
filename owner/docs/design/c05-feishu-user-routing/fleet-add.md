@@ -1,6 +1,6 @@
 # C05 · 舰队开户链路（fleet add）
 
-> 状态：**O1–O4 已落地**（2026-10-29，`owner/scripts/fleet_add*.py` + `test_fleet_add_o1/o2/o3/o4.py`）；O5 / onboarding skill 全更仍未实现。  
+> 状态：**O1–O5 已落地**（2026-10-29）：内核 `owner/scripts/fleet_add*.py` + `test_fleet_add_o1/o2/o3/o4.py`；对话 UX = 现网 skill `~/.hermes/skills/westcloud/xy-user-onboarding`（**仓外**，只编排 → `fleet_add`）。  
 > 隶属 [`README.md`](./README.md)（C05 飞书多 profile 舰队路由）。挂载三层、`fleet_profiles`、`hub_only` 以该主稿已定稿为准。  
 > 本文件描述「加人」如何**对话触发、由 Hermes 编排执行**；内核脚本已有；**不**改生产、**不**改 compose 现网（O2/O3 默认拒 `/data/hermes`）。
 
@@ -115,9 +115,9 @@
 | **飞书白名单（目标 + Hub）+ home channel** | 与路由 ou **同次收集、同次 apply**：目标 **与 Hub** 的 `FEISHU_ALLOWED_USERS`（或 Hub ALLOW_ALL 口径）与目标 `FEISHU_HOME_CHANNEL`（及规范 `platforms.feishu.home_channel`）必须在接流量前就绪；见 §2。**不要**把 home 留给事后 `/sethome` |
 | **C06 LDAP** | 开户**不**建 LDAP 目录账号；人卡 `ldap.uid` 默认同键即可。认证门仍属 C06 |
 
-## 5. 明确未实现 · 建议切片
+## 5. 实现切片（O1–O5）
 
-**当前：O1–O4 已有（dry-run / overlay apply / 宿主机种子+三层 compose / up+health）；无对话 skill（O5）、无生产改动。**
+**当前：O1–O5 已有（dry-run / overlay apply / 宿主机种子+三层 compose / up+health / 对话 onboarding skill）；无生产改动（未切 node010）。**
 
 建议实现切片（以后开做时）：
 
@@ -126,23 +126,23 @@
 | **O1** | dry-run 内核：读 overlay + 端口扫描 → 打印将写入的人卡 / ou 路由 / compose 草稿 / 系统命令 | **已落地**（2026-10-29）：`owner/scripts/fleet_add.py` + `fleet_add_lib.py`；夹具 `tests/owner/fixtures/fleet_add_overlay.yaml`；测 `tests/owner/test_fleet_add_o1.py`；默认 dry-run |
 | **O2** | 写 overlay（`fleet_profiles` + `user_profile_routes`）；**同步写目标 profile + Hub 的 `FEISHU_ALLOWED_USERS`（ou_* ± tenant user_id；或文档钉死 Hub ALLOW_ALL）与目标 `FEISHU_HOME_CHANNEL`（优先 oc_* DM chat id；兼写 `platforms.feishu.home_channel`）**；可选备份 | **已落地**（2026-10-29）：`apply_fleet_add` + `--apply`；单测 `tests/owner/test_fleet_add_o2.py`；默认拒 `/data/hermes`；仍不 docker/useradd |
 | **O3** | 宿主机：`useradd`（列/门闩）、种子 `profiles/<uid>`、生成**三层** compose | **已落地**（2026-10-29）：`apply_fleet_add_host` + `--apply-host`；测 `tests/owner/test_fleet_add_o3.py`；Mac 上 useradd=`unsupported`；默认拒生产路径；**不** compose up |
-| **O4** | `compose up` + health；失败可回滚说明 | **已落地**（2026-10-29）：`apply_fleet_add_up` + `--apply-up`；可注入 `compose_runner`/`health_get`；测 `test_fleet_add_o4.py`；默认 dry；拒 `/data/hermes`；本地 commit、**不** push |
-| **O5** | **对话 UX**：onboarding skill / 工具声明，让 Hermes 收集字段 → 调 O1–O4；可选薄 `hermes fleet add` 仅作 tool 面 | 飞书会话可走完开户；人手敲 CLI **非**验收项 |
+| **O4** | `compose up` + health；失败可回滚说明 | **已落地**（2026-10-29）：`apply_fleet_add_up` + `--apply-up`；可注入 `compose_runner`/`health_get`；测 `test_fleet_add_o4.py`；默认 dry；拒 `/data/hermes`；已双推 |
+| **O5** | **对话 UX**：onboarding skill / 工具声明，让 Hermes 收集字段 → 调 O1–O4；可选薄 `hermes fleet add` 仅作 tool 面 | **已落地**（2026-10-29）：现网 `~/.hermes/skills/westcloud/xy-user-onboarding/SKILL.md` 全更（只编排；mutating → `fleet_add`；allowlist+home；去旧整挂/patch 手改）；**仓外** skill，仓内仅文档勾选 |
 
 顺序：**O1 → O2 → O3 → O4**（先内核 / 模板）；**O5 是默认产品面**，可与 O1 并行设计 skill 契约，但不挡内核落地。  
 与 **C05b**（生产切 overlay）、**Ops**（存量 rsync 迁 `profiles/`）分开：开户工具服务**增量新人**；存量迁移另单。
 
-### 延后：完全更新 user-onboarding（2026-10-28 拍板）
+### 已落地：完全更新 user-onboarding（O5，2026-10-29）
 
-**不在本轮实现**；先落地 `fleet_add` 内核与 C05 对齐的 compose 模板，再**完全更新**现网 / 仓内 onboarding skill。
+原「延后于 O1–O4」已收口。现网 skill 全更；**不在** `hermes-agent` git 树内（skills 目录仓外），需在各机 skills 树另行同步。
 
 | 项 | 口径 |
 |----|------|
 | **触发 / 执行** | 对话触发；**Hermes 执行**（非人手敲 CLI） |
-| **职责拆分** | skill **只编排**（鉴权、收 `ldap_uid` / ou、dry-run 确认、回报）；**mutating**（写人卡、**写 `FEISHU_ALLOWED_USERS` + `FEISHU_HOME_CHANNEL`**、种子 profile、生成 compose、`up`）进 **`fleet_add` 内核**；收集到 ou 的当次 apply 就必须落 allowlist **与 home channel**，不另开「等首条消息 / 事后 `/sethome`」步骤 |
+| **职责拆分** | skill **只编排**（鉴权、收 `ldap_uid` / ou / tenant / home、dry-run 确认、分段 apply）；**mutating**（写人卡、**写 `FEISHU_ALLOWED_USERS` + `FEISHU_HOME_CHANNEL`**、种子 profile、生成 compose、`up`）进 **`fleet_add` 内核**；收集到 ou 的当次 apply 就必须落 allowlist **与 home channel**，不另开「等首条消息 / 事后 `/sethome`」步骤 |
 | **须对齐 C05** | 三层挂载；`fleet_profiles.<ldap_uid>`；逻辑名 = LDAP uid；**去掉**旧整挂 `/home`、平行 `profile_endpoints`、heredoc / terminal invent 拼命令 |
-| **现网路径** | `~/.hermes/skills/westcloud/xy-user-onboarding`（`SKILL.md`）；仓内若有副本一并指到同一目标态 |
-| **相对切片** | 属 **O5** 收口；**延后于 O1–O4**；当前 skill「会开户」≠「会建 C05 目标态」 |
+| **现网路径** | `~/.hermes/skills/westcloud/xy-user-onboarding`（`SKILL.md`；旧稿备份 `SKILL.md.bak-pre-o5-20261029`）；仓内无 skill 副本 |
+| **相对切片** | **O5 已落地**；增量开户走 skill→`fleet_add`；存量迁 `profiles/` / C05b 切流另单 |
 
 ## 6. 仍开放
 
@@ -153,11 +153,11 @@
 | F3 | Hub 加载新人卡：热更新 vs 重启 gateway？ | 先文档「改完需 reload/重启」；热更新另议 |
 | F4 | 种子 `profiles/<uid>` 从哪来（空骨架 / 模板 profile / 拷 hub 最小集）？ | 最小空骨架 + 必要 config 键；模板可后加 |
 | F5 | 对话鉴权：谁可以在飞书里触发开户？ | 仅运维白名单 / Hub 管理员会话；开户 tool 默认高权限 |
-| **D1** | **延后：完全更新 `xy-user-onboarding`（westcloud user-onboarding）** | 见上「延后」小节；先内核/模板，再改 skill；本轮只记文档 |
+| **D1** | **已落地：完全更新 `xy-user-onboarding`（O5）** | 见上「已落地」小节；现网 skill 仓外路径；仓内文档勾选 |
 
 ## 7. 非目标
 
-- O1–O4 已实现；**不**实现 O5 对话 skill（直到另开任务）；**完全更新 user-onboarding 已记为延后待做**（§5 / D1），本轮不改 skill。
+- O1–O5 已实现（skill 在仓外 skills 树）；本文件只维护设计与勾选。**不**把人手敲 CLI 写成推荐主路径。
 - 不把「人手敲 `hermes fleet add`」写成推荐主路径。
 - 不改 node010 现网 compose / passwd / overlay 真值。
 - 不替代 C05b 配置迁移、不替代存量 home→profiles rsync。
