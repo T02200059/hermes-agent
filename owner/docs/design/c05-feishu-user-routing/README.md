@@ -10,7 +10,7 @@
 
 **不**用官方同进程 `gateway.multiplex_profiles` / `gateway.profile_routes` 替代舰队；二者正交（见下）。
 
-**相关**：[舰队开户链路（fleet add）](./fleet-add.md) — 对话触发、Hermes 编排的加人设计；**O1 dry-run + O2 apply 已落地**；O3+ / 对话 UX **未实现**；**延后**：完全更新 `xy-user-onboarding`（先内核/模板，见该稿 §5 / D1）。
+**相关**：[舰队开户链路（fleet add）](./fleet-add.md) — 对话触发、Hermes 编排的加人设计；**O1–O3 已落地**（dry-run / overlay apply / 宿主机种子+三层 compose）；O4+ / 对话 UX **未实现**；**延后**：完全更新 `xy-user-onboarding`（先内核/模板，见该稿 §5 / D1）。
 
 ## 已拍板（本讨论收敛）
 
@@ -301,7 +301,7 @@ v2：逻辑放 `owner/feishu/profile_routing.py`；官方 adapter / api_server *
 - [ ] C05b：node010 从 patch 迁到 overlay 人卡；旧 `profile_endpoints` / `identity_*` 标回落
   - 2026-10-29：survey + v2 preview worktree + overlay 草稿已就绪；**未**切流（见 c05b-node010-plan.md）  
 - [ ] C06：`ldap:` + `hub_only.api`；`api_identity` 只读别名后废弃  
-- [ ] Ops：`docker.hermes_dir`/`home_dir` → compose 双挂；passwd 与 uid 对齐；开户见 [fleet-add.md](./fleet-add.md)（**O1+O2 已落地** 2026-10-29；O3+ 未实现）  
+- [x] Ops：开户内核 O3 三层 compose 模板 + 种子（见 [fleet-add.md](./fleet-add.md)；**O1–O3 已落地** 2026-10-29；现网挂载迁徙 / passwd 对齐仍属另开 Ops；O4+ 未实现）  
 - [x] **配置形状**：按人 `fleet_profiles`（ldap/docker/api_server/hub_only）已写入本稿  
 
 ## 非目标（本设计稿）
@@ -318,4 +318,4 @@ v2：逻辑放 `owner/feishu/profile_routing.py`；官方 adapter / api_server *
   - adapter / api_server 薄胶水：`try_route_inbound`、`inject_inbound`、`/v1/feishu/inbound|card-actions`
   - 单测：`tests/owner/test_c05_*.py`
 - **C05b 进行中（2026-10-29）**：只读 survey + `/data/hermes/hermes-agent-v2-preview` + `/data/hermes/c05b-draft/`；**未**切 `v2`、**未**装 overlay、**未**重启。详见 [c05b-node010-plan.md](./c05b-node010-plan.md)。
-- **仍开**：C05b 生产切流；Ops 挂载迁 `profiles/`；C06；开户 O3+ / onboarding 见 [fleet-add.md](./fleet-add.md)（O1+O2 已落地）
+- **仍开**：C05b 生产切流；Ops 挂载迁 `profiles/`；C06；开户 O4+ / onboarding 见 [fleet-add.md](./fleet-add.md)（O1–O3 已落地）

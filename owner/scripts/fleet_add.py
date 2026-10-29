@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""C05 fleet_add：舰队开户 CLI（默认 dry-run；``--apply`` = O2 落盘）。
+"""C05 fleet_add：舰队开户 CLI（默认 dry-run；``--apply``=O2；``--apply-host``=O3）。
 
 用法（本机假夹具 dry-run）::
 
@@ -7,7 +7,7 @@
       --ldap-uid alice --display-name 爱丽丝 \
       --open-id ou_alice --fixture /path/to/fixture.yaml
 
-用法（对 temp 副本 apply，O2）::
+用法（对 temp 副本 O2 apply）::
 
     python -m owner.scripts.fleet_add \
       --ldap-uid alice --display-name 爱丽丝 \
@@ -19,8 +19,20 @@
       --fixture tests/owner/fixtures/fleet_add_overlay.yaml \
       --app-id cli_fixture_app --apply
 
+用法（对 temp O3 种子+三层 compose，不上容器）::
+
+    python -m owner.scripts.fleet_add \
+      --ldap-uid alice --display-name 爱丽丝 \
+      --open-id ou_alice \
+      --hermes-dir /tmp/fleet-add-demo/profiles/alice \
+      --home-dir /tmp/fleet-add-demo/home/alice \
+      --compose-file /tmp/fleet-add-demo/compose/docker-compose.fleet-alice.yml \
+      --hermes-root /tmp/fleet-add-demo \
+      --fixture tests/owner/fixtures/fleet_add_overlay.yaml \
+      --app-id cli_fixture_app --apply-host
+
 设计：``owner/docs/design/c05-feishu-user-routing/fleet-add.md``。
-O2 写 overlay / allowlist / home；**不** compose up、**不** useradd。
+O3 写 profiles 种子与三层挂载 compose；**不** docker up（O4）；useradd 默认只列。
 默认拒绝 ``/data/hermes`` 生产路径（``--allow-production`` 才放行）。
 """
 
@@ -35,7 +47,9 @@ from pathlib import Path
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="Hermes 舰队开户（默认 dry-run；--apply = O2 写 overlay/allowlist/home）",
+        description=(
+            "Hermes 舰队开户（默认 dry-run；--apply=O2；--apply-host=O3 种子+compose）"
+        ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "示例 (dry-run):\n"
@@ -43,13 +57,21 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "    --ldap-uid alice --display-name 爱丽丝 \\\n"
             "    --open-id ou_alice --fixture tests/owner/fixtures/fleet_add_overlay.yaml\n"
             "\n"
-            "示例 (apply 到 temp):\n"
+            "示例 (O2 apply 到 temp):\n"
             "  python -m owner.scripts.fleet_add \\\n"
             "    --ldap-uid alice --display-name 爱丽丝 \\\n"
             "    --open-id ou_alice --home-channel oc_dm_alice \\\n"
             "    --overlay /tmp/fa/overlay.yaml --hermes-dir /tmp/fa/profiles/alice \\\n"
             "    --hub-home /tmp/fa/hub --fixture tests/owner/fixtures/fleet_add_overlay.yaml \\\n"
             "    --app-id cli_fixture_app --apply\n"
+            "\n"
+            "示例 (O3 apply-host 到 temp):\n"
+            "  python -m owner.scripts.fleet_add \\\n"
+            "    --ldap-uid alice --display-name 爱丽丝 --open-id ou_alice \\\n"
+            "    --hermes-dir /tmp/fa/profiles/alice --home-dir /tmp/fa/home/alice \\\n"
+            "    --compose-file /tmp/fa/compose/docker-compose.fleet-alice.yml \\\n"
+            "    --fixture tests/owner/fixtures/fleet_add_overlay.yaml \\\n"
+            "    --app-id cli_fixture_app --apply-host\n"
         ),
     )
     p.add_argument("--ldap-uid", required=True, help="主键 LDAP uid（= 逻辑 profile）")
@@ -98,8 +120,14 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     p.add_argument("--app-id", default="", help="feishu.bots.<app_id>（多 bot 时必填）")
     p.add_argument("--code-dir", default="", help="compose 代码 RO 源路径")
+    p.add_argument("--venv-dir", default="", help="compose venv-docker RO 源路径")
     p.add_argument("--hermes-root", default="", help="推导 profiles 根，默认 /data/hermes")
     p.add_argument("--hub-home", default="", help="Hub HERMES_HOME，默认 /data/hermes")
+    p.add_argument(
+        "--compose-file",
+        default="",
+        help="O3 将写的 compose YAML 路径（默认 <hermes-root>/compose/docker-compose.fleet-<uid>.yml）",
+    )
     p.add_argument(
         "--hub-allow-all",
         action="store_true",
@@ -122,9 +150,19 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="O2：写 overlay + allowlist + home（仍不 docker/useradd）",
     )
     p.add_argument(
+        "--apply-host",
+        action="store_true",
+        help="O3：种子 profiles/ + 写三层 compose（不上容器；useradd 默认只列）",
+    )
+    p.add_argument(
+        "--run-useradd",
+        action="store_true",
+        help="O3 配合 --apply-host：在 Linux 上真实执行 useradd（Mac 仍 unsupported）",
+    )
+    p.add_argument(
         "--allow-production",
         action="store_true",
-        help="允许 apply 写 /data/hermes 生产路径（危险；默认拒绝）",
+        help="允许 apply/apply-host 写 /data/hermes 生产路径（危险；默认拒绝）",
     )
     p.add_argument(
         "--json",
@@ -144,9 +182,12 @@ def main(argv: list[str] | None = None) -> int:
         DEFAULT_CODE_DIR,
         DEFAULT_HERMES_ROOT,
         DEFAULT_HUB_HOME,
+        DEFAULT_VENV_DIR,
         FleetAddError,
         apply_fleet_add,
+        apply_fleet_add_host,
         format_apply_text,
+        format_host_apply_text,
         format_plan_text,
         load_overlay_yaml,
         merge_fixture_overlay,
@@ -179,13 +220,17 @@ def main(argv: list[str] | None = None) -> int:
             overlay=overlay,
             app_id=args.app_id or os.environ.get("FEISHU_APP_ID", ""),
             code_dir=args.code_dir or DEFAULT_CODE_DIR,
+            venv_dir=args.venv_dir or DEFAULT_VENV_DIR,
             hermes_root=args.hermes_root or DEFAULT_HERMES_ROOT,
             hub_home=args.hub_home or DEFAULT_HUB_HOME,
             hub_allow_all=args.hub_allow_all,
+            compose_file=args.compose_file or None,
         )
     except FleetAddError as exc:
         print(f"错误: {exc}", file=sys.stderr)
         return 1
+
+    results: list[dict] = []
 
     if args.apply:
         try:
@@ -199,10 +244,30 @@ def main(argv: list[str] | None = None) -> int:
         except FleetAddError as exc:
             print(f"错误: {exc}", file=sys.stderr)
             return 1
+        results.append(result)
+
+    if args.apply_host:
+        try:
+            host_result = apply_fleet_add_host(
+                plan,
+                allow_production=args.allow_production,
+                run_useradd=args.run_useradd,
+            )
+        except FleetAddError as exc:
+            print(f"错误: {exc}", file=sys.stderr)
+            return 1
+        results.append(host_result)
+
+    if results:
         if args.json:
-            print(json.dumps(result, ensure_ascii=False, indent=2))
+            payload: dict | list = results[0] if len(results) == 1 else {"results": results}
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
         else:
-            print(format_apply_text(result))
+            for result in results:
+                if result.get("phase") == "O3":
+                    print(format_host_apply_text(result))
+                else:
+                    print(format_apply_text(result))
         return 0
 
     if args.json:

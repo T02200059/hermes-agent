@@ -1,8 +1,8 @@
 # C05 · 舰队开户链路（fleet add）
 
-> 状态：**O1 dry-run + O2 apply 已落地**（2026-10-29，`owner/scripts/fleet_add*.py`）；O3–O5 / onboarding 仍未实现。  
+> 状态：**O1 dry-run + O2 apply + O3 宿主机种子/三层 compose 已落地**（2026-10-29，`owner/scripts/fleet_add*.py`）；O4–O5 / onboarding 仍未实现。  
 > 隶属 [`README.md`](./README.md)（C05 飞书多 profile 舰队路由）。挂载三层、`fleet_profiles`、`hub_only` 以该主稿已定稿为准。  
-> 本文件描述「加人」如何**对话触发、由 Hermes 编排执行**；内核脚本已有；**不**改生产、**不**改 compose 现网（O2 apply 默认拒 `/data/hermes`）。
+> 本文件描述「加人」如何**对话触发、由 Hermes 编排执行**；内核脚本已有；**不**改生产、**不**改 compose 现网（O2/O3 默认拒 `/data/hermes`）。
 
 ## 1. 目标
 
@@ -117,7 +117,7 @@
 
 ## 5. 明确未实现 · 建议切片
 
-**当前：O1 dry-run + O2 apply（overlay/allowlist/home）已有；无对话 skill、无 O3+ 宿主机/compose、无生产改动。**
+**当前：O1–O3 已有（dry-run / overlay apply / 宿主机种子+三层 compose）；无对话 skill、无 O4 up、无生产改动。**
 
 建议实现切片（以后开做时）：
 
@@ -125,7 +125,7 @@
 |------|------|------|
 | **O1** | dry-run 内核：读 overlay + 端口扫描 → 打印将写入的人卡 / ou 路由 / compose 草稿 / 系统命令 | **已落地**（2026-10-29）：`owner/scripts/fleet_add.py` + `fleet_add_lib.py`；夹具 `tests/owner/fixtures/fleet_add_overlay.yaml`；测 `tests/owner/test_fleet_add_o1.py`；默认 dry-run |
 | **O2** | 写 overlay（`fleet_profiles` + `user_profile_routes`）；**同步写目标 profile + Hub 的 `FEISHU_ALLOWED_USERS`（ou_* ± tenant user_id；或文档钉死 Hub ALLOW_ALL）与目标 `FEISHU_HOME_CHANNEL`（优先 oc_* DM chat id；兼写 `platforms.feishu.home_channel`）**；可选备份 | **已落地**（2026-10-29）：`apply_fleet_add` + `--apply`；单测 `tests/owner/test_fleet_add_o2.py`；默认拒 `/data/hermes`；仍不 docker/useradd |
-| **O3** | 宿主机：`useradd`、种子 `profiles/<uid>`、生成 compose 双挂载 | 路径符合主稿；不碰已有容器 |
+| **O3** | 宿主机：`useradd`（列/门闩）、种子 `profiles/<uid>`、生成**三层** compose | **已落地**（2026-10-29）：`apply_fleet_add_host` + `--apply-host`；测 `tests/owner/test_fleet_add_o3.py`；Mac 上 useradd=`unsupported`；默认拒生产路径；**不** compose up |
 | **O4** | `compose up` + health；失败可回滚说明 | 探活通过；文档记录回滚步骤 |
 | **O5** | **对话 UX**：onboarding skill / 工具声明，让 Hermes 收集字段 → 调 O1–O4；可选薄 `hermes fleet add` 仅作 tool 面 | 飞书会话可走完开户；人手敲 CLI **非**验收项 |
 
@@ -157,7 +157,7 @@
 
 ## 7. 非目标
 
-- O1/O2 已实现 dry-run + apply（overlay/allowlist/home）；**不**实现 O3+ 宿主机/compose 与对话 skill（直到另开任务）；**完全更新 user-onboarding 已记为延后待做**（§5 / D1），本轮不改 skill。
+- O1–O3 已实现；**不**实现 O4 compose up / O5 对话 skill（直到另开任务）；**完全更新 user-onboarding 已记为延后待做**（§5 / D1），本轮不改 skill。
 - 不把「人手敲 `hermes fleet add`」写成推荐主路径。
 - 不改 node010 现网 compose / passwd / overlay 真值。
 - 不替代 C05b 配置迁移、不替代存量 home→profiles rsync。

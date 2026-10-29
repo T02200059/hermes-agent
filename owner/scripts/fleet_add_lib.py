@@ -1,14 +1,17 @@
-"""C05 fleet_add：开户计划（O1 dry-run）与落盘（O2 apply）。
+"""C05 fleet_add：开户计划（O1）/ overlay 落盘（O2）/ 宿主机种子+compose（O3）。
 
-设计见 ``owner/docs/design/c05-feishu-user-routing/fleet-add.md`` §5 O1/O2。
+设计见 ``owner/docs/design/c05-feishu-user-routing/fleet-add.md`` §5 O1–O3。
 
 主键 = LDAP uid（与主稿 ``fleet_profiles.<ldap_uid>`` 对齐）。
 生产 node010 现网路由键仍可能是全名（如 ``yangtianbao``）；切 uid 属另开 Ops。
 
-- **O1** ``plan_fleet_add``：零落盘计划。
+- **O1** ``plan_fleet_add``：零落盘计划（含三层 compose 草稿与宿主机命令清单）。
 - **O2** ``apply_fleet_add``：写 overlay 人卡 + ``user_profile_routes``、目标/Hub
   ``FEISHU_ALLOWED_USERS``、目标 ``FEISHU_HOME_CHANNEL`` / ``platforms.feishu.home_channel``；
   可选备份与回滚说明。**不** compose up、**不** useradd。
+- **O3** ``apply_fleet_add_host``：种子 ``profiles/<uid>`` 目录、写三层挂载 compose 文件；
+  ``useradd`` 仅在 Linux + ``run_useradd=True`` 时执行，否则 dry 列出 / Darwin 标
+  ``unsupported``。**不** ``docker compose up``（属 O4）。
 - 默认拒绝写 ``/data/hermes`` 生产路径，除非 ``allow_production=True``。
 
 复用 ``owner.feishu.profile_routing`` 的人卡 / endpoint 解析，不重写加载语义。
@@ -20,6 +23,7 @@ import copy
 import os
 import re
 import shutil
+import subprocess
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Mapping, MutableMapping, Optional, Sequence
@@ -33,8 +37,13 @@ from owner.feishu.profile_routing import (
 DEFAULT_PORT_BASE = 26026
 DEFAULT_PORT_CEILING = 26099
 DEFAULT_CODE_DIR = "/data/hermes/hermes-agent"
+DEFAULT_VENV_DIR = "/data/hermes/venv-docker"
 DEFAULT_HERMES_ROOT = "/data/hermes"
 DEFAULT_HUB_HOME = "/data/hermes"  # Hub HERMES_HOME；.env 在此下
+DEFAULT_CODE_CONTAINER = "/opt/hermes-agent"
+DEFAULT_VENV_CONTAINER = "/opt/venv"
+DEFAULT_COMPOSE_IMAGE = "hermes-profile:latest"
+DEFAULT_COMPOSE_FILENAME = "docker-compose.fleet-{uid}.yml"
 
 _PORT_IN_URL = re.compile(r":(\d+)(?:/|$)")
 
@@ -194,12 +203,26 @@ def build_compose_service_draft(
     hermes_dir: str,
     home_dir: str,
     code_dir: str = DEFAULT_CODE_DIR,
+    venv_dir: str = DEFAULT_VENV_DIR,
+    image: str = DEFAULT_COMPOSE_IMAGE,
 ) -> dict[str, Any]:
-    """目标态 compose 服务草稿：代码 RO + home→/root + profiles→/root/.hermes。"""
+    """目标态 compose 服务草稿：代码/venv RO + home→/root + profiles→/root/.hermes。
+
+    挂载顺序：先 home 再 ``.hermes``，确保 profile 叠在 home 之上。
+    **禁止**仅 ``/home/<name>:/root`` 单挂。
+    """
     service_name = f"hermes-{ldap_uid}"
+    volumes = [
+        f"{code_dir}:{DEFAULT_CODE_CONTAINER}:ro",
+        f"{venv_dir}:{DEFAULT_VENV_CONTAINER}:ro",
+        f"{home_dir}:/root",
+        f"{hermes_dir}:/root/.hermes",
+    ]
     return {
         "service": service_name,
         "container_name": service_name,
+        "image": image,
+        "network_mode": "host",
         "ports": [f"127.0.0.1:{port}:{port}"],
         "environment": {
             "HERMES_HOME": "/root/.hermes",
@@ -208,15 +231,187 @@ def build_compose_service_draft(
             # 注：生产 node010 现网 HERMES_PROFILE / 路由键仍可能是全名；
             # 切 LDAP uid 另开 Ops，勿在 O1 改生产。
         },
-        "volumes": [
-            f"{code_dir}:/opt/hermes-agent:ro",
-            f"{home_dir}:/root",
-            f"{hermes_dir}:/root/.hermes",
-        ],
+        "volumes": volumes,
         "notes": [
-            "三层挂载：代码 RO + home→/root + profiles→/root/.hermes（.hermes 叠在 home 上）",
+            "三层挂载：代码/venv RO 共用 + home→/root + profiles→/root/.hermes（.hermes 叠在 home 上）",
             "禁止照抄现网「只挂 /home」单挂模板",
+            "O3 只生成草稿/写文件；docker compose up 属 O4",
         ],
+    }
+
+
+def render_compose_yaml(
+    draft: Mapping[str, Any],
+    *,
+    compose_project_comment: str = "",
+) -> str:
+    """把 ``build_compose_service_draft`` 结果渲成可落盘的 compose YAML（单服务）。
+
+    不执行 docker；不含密钥。``network_mode: host`` 时仍保留 ports 注释供对照。
+    """
+    import yaml
+
+    svc_name = str(draft.get("service") or "hermes-unknown")
+    env = draft.get("environment") or {}
+    if not isinstance(env, dict):
+        raise FleetAddError("compose.environment 非法")
+    volumes = list(draft.get("volumes") or [])
+    # 守卫：必须同时有 /root 与 /root/.hermes，且禁止「仅单挂 home」
+    has_root = any(str(v).rstrip().endswith(":/root") for v in volumes)
+    has_hermes = any("/root/.hermes" in str(v) for v in volumes)
+    has_ro_code = any(":ro" in str(v) for v in volumes)
+    if not (has_root and has_hermes and has_ro_code):
+        raise FleetAddError(
+            "compose 必须含三层：代码/venv RO + home→/root + profiles→/root/.hermes"
+        )
+    # 仅 home→/root、无 profiles 叠挂 → 拒绝
+    if has_root and not has_hermes:
+        raise FleetAddError("禁止只挂 /home → /root 的单挂模板")
+
+    service_body: dict[str, Any] = {
+        "image": draft.get("image") or DEFAULT_COMPOSE_IMAGE,
+        "container_name": draft.get("container_name") or svc_name,
+        "network_mode": draft.get("network_mode") or "host",
+        "environment": {str(k): str(v) for k, v in env.items()},
+        "volumes": volumes,
+        "restart": "unless-stopped",
+    }
+    doc: dict[str, Any] = {
+        "services": {
+            svc_name: service_body,
+        }
+    }
+    header_lines = [
+        "# Generated by owner/scripts/fleet_add (O3). 勿手改密钥进仓。",
+        "# 三层挂载：代码/venv RO + home→/root + profiles→/root/.hermes",
+        "# 禁止现网单挂 /home/<name>:/root。docker compose up 属 O4。",
+    ]
+    if compose_project_comment:
+        header_lines.append(f"# {compose_project_comment}")
+    ports = draft.get("ports") or []
+    if ports and service_body.get("network_mode") == "host":
+        header_lines.append(
+            f"# network_mode=host：宿主机直绑端口；对照 ports={ports}"
+        )
+    body = yaml.safe_dump(
+        doc,
+        allow_unicode=True,
+        default_flow_style=False,
+        sort_keys=False,
+    )
+    return "\n".join(header_lines) + "\n" + body
+
+
+def build_seed_plan(
+    *,
+    ldap_uid: str,
+    hermes_dir: str,
+    home_dir: str,
+    compose_file: str,
+    port: int,
+) -> dict[str, Any]:
+    """O3 种子计划：profiles 目录骨架 + 可选最小 config/.env（无真密钥）。"""
+    hermes = hermes_dir.rstrip("/")
+    home = home_dir.rstrip("/")
+    return {
+        "ldap_uid": ldap_uid,
+        "directories": [
+            hermes,
+            f"{hermes}/memories",
+            f"{hermes}/logs",
+            f"{home}",
+        ],
+        "files": [
+            {
+                "path": f"{hermes}/config.yaml",
+                "kind": "minimal_config",
+                "action": "create_if_missing",
+                "note": "最小骨架；无 API/飞书密钥。home_channel 由 O2 写入。",
+            },
+            {
+                "path": f"{hermes}/.env",
+                "kind": "dotenv_stub",
+                "action": "create_if_missing",
+                "note": (
+                    "仅占位注释；FEISHU_* 由 O2 apply 写入。"
+                    "禁止把真实密钥写进仓内模板。"
+                ),
+            },
+            {
+                "path": compose_file,
+                "kind": "compose_yaml",
+                "action": "write",
+                "note": "三层挂载 compose；up 属 O4",
+            },
+        ],
+        "host_commands": [
+            {
+                "step": "useradd",
+                "cmd": (
+                    f"id {ldap_uid} >/dev/null 2>&1 || "
+                    f"useradd -m -d {home} -s /bin/bash {ldap_uid}"
+                ),
+                "phase": "O3",
+                "requires": "linux+run_useradd",
+            },
+            {
+                "step": "mkdir_home",
+                "cmd": f"mkdir -p {home}",
+                "phase": "O3",
+            },
+            {
+                "step": "mkdir_profile",
+                "cmd": f"mkdir -p {hermes}/memories {hermes}/logs",
+                "phase": "O3",
+            },
+        ],
+        "port": port,
+        "notes": [
+            "增量新人种子；存量 /home/.../.hermes → profiles/ rsync 另开 Ops",
+            "Mac 无 useradd：apply-host 标 unsupported，只写目录+compose",
+        ],
+    }
+
+
+def minimal_profile_config_yaml() -> str:
+    """无密钥的最小 config.yaml 种子。"""
+    return (
+        "# fleet_add O3 最小种子（无密钥）\n"
+        "model:\n"
+        "  default: null\n"
+        "platforms: {}\n"
+    )
+
+
+def minimal_profile_dotenv_stub() -> str:
+    """无密钥的 .env 占位；真 FEISHU_* 由 O2 写。"""
+    return (
+        "# fleet_add O3 stub — 无真密钥。FEISHU_ALLOWED_USERS / "
+        "FEISHU_HOME_CHANNEL 由 O2 apply 写入。\n"
+    )
+
+
+def host_useradd_support() -> dict[str, Any]:
+    """探测本机是否可真实执行 useradd（Mac 通常不可）。"""
+    import platform
+    import shutil
+
+    system = platform.system()
+    which = shutil.which("useradd")
+    if system == "Darwin" or which is None:
+        return {
+            "supported": False,
+            "system": system,
+            "useradd_path": which,
+            "status": "unsupported",
+            "note": "本机无 Linux useradd；O3 apply-host 跳过真实 useradd，仅列命令",
+        }
+    return {
+        "supported": True,
+        "system": system,
+        "useradd_path": which,
+        "status": "available",
+        "note": "须显式 run_useradd=True 才会执行；默认只列命令",
     }
 
 
@@ -304,27 +499,36 @@ def build_planned_commands(
     home_dir: str,
     hermes_dir: str,
     service_name: str,
+    compose_file: str = "",
 ) -> list[dict[str, str]]:
     """将执行的系统命令清单（O1 只列出，不执行）。"""
+    compose_path = compose_file or f"./docker-compose.fleet-{ldap_uid}.yml"
     return [
         {
             "step": "useradd",
-            "cmd": f"id {ldap_uid} >/dev/null 2>&1 || useradd -m -d {home_dir} -s /bin/bash {ldap_uid}",
+            "cmd": (
+                f"id {ldap_uid} >/dev/null 2>&1 || "
+                f"useradd -m -d {home_dir} -s /bin/bash {ldap_uid}"
+            ),
             "phase": "O3",
+            "note": "Linux + --apply-host --run-useradd；Darwin/无二进制 → unsupported",
         },
         {
             "step": "seed_profile",
-            "cmd": f"mkdir -p {hermes_dir} && # 种子 config/sqlite 骨架（模板另议）",
+            "cmd": (
+                f"mkdir -p {hermes_dir}/memories {hermes_dir}/logs {home_dir} && "
+                f"# 最小 config.yaml / .env stub（无真密钥）"
+            ),
             "phase": "O3",
         },
         {
             "step": "write_compose",
-            "cmd": f"# 生成/追加 compose 服务 {service_name}（双挂载草稿见 plan.compose）",
+            "cmd": f"# 写三层挂载 compose → {compose_path}（服务 {service_name}）",
             "phase": "O3",
         },
         {
             "step": "compose_up",
-            "cmd": f"docker compose up -d {service_name}",
+            "cmd": f"docker compose -f {compose_path} up -d {service_name}",
             "phase": "O4",
         },
         {
@@ -351,15 +555,18 @@ def plan_fleet_add(
     extra_used_ports: Sequence[int] = (),
     app_id: str = "",
     code_dir: str = DEFAULT_CODE_DIR,
+    venv_dir: str = DEFAULT_VENV_DIR,
     hermes_root: str = DEFAULT_HERMES_ROOT,
     hub_home: str = DEFAULT_HUB_HOME,
     hub_allow_all: bool = False,
+    compose_file: Optional[str] = None,
     port_base: int = DEFAULT_PORT_BASE,
     port_ceiling: int = DEFAULT_PORT_CEILING,
 ) -> dict[str, Any]:
     """生成完整 dry-run 计划（结构化 dict，可供对话回显 / JSON 打印）。
 
     **零落盘**：不写 overlay、不 docker、不 useradd、不碰真实密钥文件。
+    含 O3 种子计划与三层 compose YAML 草稿（仍不落盘）。
     """
     uid = str(ldap_uid or "").strip()
     name = str(display_name or "").strip()
@@ -432,6 +639,22 @@ def plan_fleet_add(
         hermes_dir=resolved_hermes,
         home_dir=resolved_home,
         code_dir=code_dir,
+        venv_dir=venv_dir,
+    )
+    resolved_compose_file = (
+        compose_file
+        or f"{hermes_root.rstrip('/')}/compose/{DEFAULT_COMPOSE_FILENAME.format(uid=uid)}"
+    )
+    compose_yaml = render_compose_yaml(
+        compose,
+        compose_project_comment=f"ldap_uid={uid} port={port}",
+    )
+    seed = build_seed_plan(
+        ldap_uid=uid,
+        hermes_dir=resolved_hermes,
+        home_dir=resolved_home,
+        compose_file=resolved_compose_file,
+        port=port,
     )
     allowlist = build_allowlist_plan(
         ldap_uid=uid,
@@ -452,6 +675,7 @@ def plan_fleet_add(
         home_dir=resolved_home,
         hermes_dir=resolved_hermes,
         service_name=compose["service"],
+        compose_file=resolved_compose_file,
     )
 
     # 叠加后的路由表预览（不修改入参）
@@ -466,7 +690,9 @@ def plan_fleet_add(
         "notes": [
             "默认 dry-run：零落盘（不写 overlay / .env / compose，不 useradd，不 docker up）",
             "逻辑主键 = LDAP uid；生产 node010 现网路由键仍可能是全名——切 uid 另开 Ops",
-            "O2 --apply 才写：人卡 + routes + FEISHU_ALLOWED_USERS（ou±tenant）+ home channel；仍不 docker/useradd",
+            "O2 --apply：人卡 + routes + FEISHU_ALLOWED_USERS（ou±tenant）+ home channel",
+            "O3 --apply-host：种子 profiles/ + 三层 compose 文件；useradd 默认只列（Mac unsupported）",
+            "O4 才 docker compose up + health（本计划不执行）",
         ],
         "person_card": card,
         "overlay_writes": {
@@ -484,6 +710,10 @@ def plan_fleet_add(
         "feishu_allowed_users": allowlist,
         "feishu_home_channel": home_ch,
         "compose": compose,
+        "compose_file": resolved_compose_file,
+        "compose_yaml": compose_yaml,
+        "seed": seed,
+        "host_useradd": host_useradd_support(),
         "planned_commands": commands,
         "hub_only_flags": {
             "feishu": hub_only_feishu,
@@ -530,8 +760,18 @@ def format_plan_text(plan: Mapping[str, Any]) -> str:
         json.dumps(plan.get("feishu_home_channel"), ensure_ascii=False, indent=2)
     )
     lines.append("")
-    lines.append("## compose 双挂草稿")
+    lines.append("## compose 三层挂载草稿")
     lines.append(json.dumps(plan.get("compose"), ensure_ascii=False, indent=2))
+    lines.append("")
+    lines.append(f"## compose 文件路径: {plan.get('compose_file')}")
+    lines.append("## compose YAML 预览")
+    lines.append(str(plan.get("compose_yaml") or ""))
+    lines.append("")
+    lines.append("## O3 种子计划")
+    lines.append(json.dumps(plan.get("seed"), ensure_ascii=False, indent=2))
+    lines.append("")
+    lines.append("## useradd 支持探测")
+    lines.append(json.dumps(plan.get("host_useradd"), ensure_ascii=False, indent=2))
     lines.append("")
     lines.append("## 将执行的命令（O3/O4；本阶段不执行）")
     for c in plan.get("planned_commands") or []:
@@ -1058,4 +1298,273 @@ def format_apply_text(result: Mapping[str, Any]) -> str:
     lines.append(
         json.dumps(result.get("person_card_written"), ensure_ascii=False, indent=2)
     )
+    return "\n".join(lines) + "\n"
+
+
+# ---------------------------------------------------------------------------
+# O3：宿主机种子 + 三层 compose 文件（默认 dry；--apply-host 落盘；不上容器）
+# ---------------------------------------------------------------------------
+
+
+def apply_fleet_add_host(
+    plan: Mapping[str, Any],
+    *,
+    allow_production: bool = False,
+    run_useradd: bool = False,
+    stamp: Optional[str] = None,
+    mock_useradd: bool = False,
+) -> dict[str, Any]:
+    """O3：按计划种子 ``profiles/<uid>``、写三层 compose 文件；可选 useradd。
+
+    - 默认仍应先经 CLI dry-run 看计划；本函数才真正写目录/文件。
+    - 拒绝 ``/data/hermes`` 除非 ``allow_production=True``。
+    - ``useradd``：仅当 ``run_useradd=True`` 且本机支持时执行；Darwin / 无二进制 →
+      ``status=unsupported``；``mock_useradd=True`` 时在结果里记模拟成功（单测用）。
+    - **不** ``docker compose up``（O4）。
+    """
+    uid = str(plan.get("ldap_uid") or "").strip()
+    if not uid:
+        raise FleetAddError("plan 缺少 ldap_uid")
+
+    seed = plan.get("seed") or {}
+    if not isinstance(seed, dict):
+        raise FleetAddError("plan.seed 非法")
+    compose_file = str(plan.get("compose_file") or seed.get("files", [{}])[-1].get("path") or "")
+    if not compose_file:
+        raise FleetAddError("plan 缺少 compose_file")
+    compose_yaml = str(plan.get("compose_yaml") or "")
+    if not compose_yaml.strip():
+        # 容错：从 draft 重渲
+        draft = plan.get("compose") or {}
+        if not isinstance(draft, dict):
+            raise FleetAddError("plan.compose / compose_yaml 皆缺")
+        compose_yaml = render_compose_yaml(draft)
+
+    # 守卫：禁止单挂 home
+    vols = list((plan.get("compose") or {}).get("volumes") or [])
+    if vols:
+        has_hermes = any("/root/.hermes" in str(v) for v in vols)
+        has_root = any(str(v).rstrip().endswith(":/root") for v in vols)
+        if has_root and not has_hermes:
+            raise FleetAddError("拒绝单挂 /home→/root 的 compose（须三层）")
+
+    dirs = [str(d) for d in (seed.get("directories") or [])]
+    paths_to_check = [Path(compose_file), *[Path(d) for d in dirs]]
+    # 也检查 person_card docker paths
+    person = plan.get("person_card") or {}
+    docker = person.get("docker") if isinstance(person, dict) else {}
+    if isinstance(docker, dict):
+        for k in ("hermes_dir", "home_dir"):
+            if docker.get(k):
+                paths_to_check.append(Path(str(docker[k])))
+
+    if not allow_production:
+        bad = [str(p) for p in paths_to_check if is_production_path(p)]
+        if bad:
+            raise FleetAddError(
+                "拒绝 apply-host 到疑似生产路径（/data/hermes/...）。"
+                "请改用 temp/fixture 路径，或显式 allow_production=True / --allow-production。"
+                f" 命中: {bad}"
+            )
+
+    st = stamp or _ts_stamp()
+    created_dirs: list[str] = []
+    written: list[dict[str, Any]] = []
+    backups: dict[str, Optional[str]] = {}
+
+    for d in dirs:
+        p = Path(d)
+        if not p.exists():
+            p.mkdir(parents=True, exist_ok=True)
+            created_dirs.append(str(p))
+        else:
+            p.mkdir(parents=True, exist_ok=True)
+
+    # 最小种子文件（create_if_missing）
+    hermes_dir = ""
+    if isinstance(docker, dict):
+        hermes_dir = str(docker.get("hermes_dir") or "")
+    if not hermes_dir:
+        for d in dirs:
+            if "/profiles/" in d.replace("\\", "/") and not d.rstrip("/").endswith(("memories", "logs")):
+                # 取最短的 profiles 路径当 hermes_dir
+                if not hermes_dir or len(d) < len(hermes_dir):
+                    hermes_dir = d
+
+    config_path = Path(hermes_dir) / "config.yaml" if hermes_dir else None
+    env_path = Path(hermes_dir) / ".env" if hermes_dir else None
+
+    if config_path is not None:
+        if not config_path.is_file():
+            config_path.parent.mkdir(parents=True, exist_ok=True)
+            config_path.write_text(minimal_profile_config_yaml(), encoding="utf-8")
+            written.append(
+                {
+                    "kind": "minimal_config",
+                    "path": str(config_path),
+                    "created": True,
+                }
+            )
+        else:
+            written.append(
+                {
+                    "kind": "minimal_config",
+                    "path": str(config_path),
+                    "created": False,
+                    "skipped": "already_exists",
+                }
+            )
+
+    if env_path is not None:
+        if not env_path.is_file():
+            env_path.parent.mkdir(parents=True, exist_ok=True)
+            env_path.write_text(minimal_profile_dotenv_stub(), encoding="utf-8")
+            written.append(
+                {
+                    "kind": "dotenv_stub",
+                    "path": str(env_path),
+                    "created": True,
+                }
+            )
+        else:
+            written.append(
+                {
+                    "kind": "dotenv_stub",
+                    "path": str(env_path),
+                    "created": False,
+                    "skipped": "already_exists",
+                }
+            )
+
+    # compose 文件
+    compose_p = Path(compose_file)
+    backups["compose"] = backup_file(compose_p, stamp=st)
+    compose_p.parent.mkdir(parents=True, exist_ok=True)
+    compose_p.write_text(compose_yaml, encoding="utf-8")
+    written.append(
+        {
+            "kind": "compose_yaml",
+            "path": str(compose_p),
+            "service": (plan.get("compose") or {}).get("service"),
+            "volumes": list((plan.get("compose") or {}).get("volumes") or []),
+        }
+    )
+
+    # useradd
+    support = host_useradd_support()
+    useradd_result: dict[str, Any] = {
+        "step": "useradd",
+        "cmd": next(
+            (
+                c.get("cmd")
+                for c in (seed.get("host_commands") or [])
+                if c.get("step") == "useradd"
+            ),
+            f"useradd -m -d ... {uid}",
+        ),
+        "run_useradd_requested": bool(run_useradd),
+        "mock": bool(mock_useradd),
+        **support,
+    }
+    if mock_useradd:
+        useradd_result["status"] = "mocked"
+        useradd_result["executed"] = False
+        useradd_result["note"] = "单测/夹具模拟：未调用真实 useradd"
+    elif not run_useradd:
+        useradd_result["status"] = "skipped_flag_off"
+        useradd_result["executed"] = False
+        useradd_result["note"] = "未传 run_useradd；仅列出命令（安全默认）"
+    elif not support.get("supported"):
+        useradd_result["status"] = "unsupported"
+        useradd_result["executed"] = False
+    else:
+        cmd = useradd_result["cmd"]
+        # 仅执行计划中的 useradd 行；shell=True 因含 ||
+        try:
+            proc = subprocess.run(
+                cmd,
+                shell=True,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            useradd_result["executed"] = True
+            useradd_result["returncode"] = proc.returncode
+            useradd_result["status"] = "ok" if proc.returncode == 0 else "failed"
+            # 不回显可能含路径外的噪声过大 stderr 截断
+            err = (proc.stderr or "").strip()
+            if err:
+                useradd_result["stderr_tail"] = err[-500:]
+        except OSError as exc:
+            useradd_result["executed"] = False
+            useradd_result["status"] = "error"
+            useradd_result["error"] = str(exc)
+
+    rollback = [
+        "回滚（O3 宿主机文件级；不 down 容器——本阶段未 up）：",
+    ]
+    if backups.get("compose"):
+        rollback.append(f"  cp {backups['compose']} {compose_p}")
+    else:
+        rollback.append(f"  rm -f {compose_p}")
+    for d in created_dirs:
+        rollback.append(f"  # 本次新建目录（确认无其它数据后）: rm -rf {d}")
+    for w in written:
+        if w.get("kind") in ("minimal_config", "dotenv_stub") and w.get("created"):
+            rollback.append(f"  rm -f {w['path']}")
+    rollback.append(
+        "  # useradd：若曾 --run-useradd 成功，需运维审慎 userdel（本工具不自动删用户）"
+    )
+    rollback.append("  # O3 未 docker compose up；无需 compose down")
+
+    return {
+        "mode": "apply-host",
+        "phase": "O3",
+        "ldap_uid": uid,
+        "display_name": plan.get("display_name"),
+        "stamp": st,
+        "created_directories": created_dirs,
+        "written": written,
+        "backups": backups,
+        "useradd": useradd_result,
+        "compose_file": str(compose_p),
+        "rollback": rollback,
+        "notes": [
+            "O3 已种子目录 + 三层 compose 文件；未 docker up（O4）",
+            "useradd 默认跳过；Linux 需 --run-useradd；Mac 为 unsupported",
+            "禁止把真实密钥写入 compose / 种子模板",
+        ],
+    }
+
+
+def format_host_apply_text(result: Mapping[str, Any]) -> str:
+    """O3 apply-host 结果人类可读回显。"""
+    import json
+
+    lines: list[str] = []
+    lines.append(f"# fleet_add {result.get('phase')} · {result.get('mode')}")
+    lines.append(f"ldap_uid: {result.get('ldap_uid')}")
+    lines.append(f"display_name: {result.get('display_name')}")
+    lines.append(f"stamp: {result.get('stamp')}")
+    lines.append(f"compose_file: {result.get('compose_file')}")
+    lines.append("")
+    for n in result.get("notes") or []:
+        lines.append(f"- {n}")
+    lines.append("")
+    lines.append("## 新建目录")
+    lines.append(json.dumps(result.get("created_directories"), ensure_ascii=False, indent=2))
+    lines.append("")
+    lines.append("## 已写文件")
+    lines.append(json.dumps(result.get("written"), ensure_ascii=False, indent=2))
+    lines.append("")
+    lines.append("## useradd")
+    lines.append(json.dumps(result.get("useradd"), ensure_ascii=False, indent=2))
+    lines.append("")
+    lines.append("## 回滚")
+    for step in result.get("rollback") or []:
+        lines.append(
+            step
+            if str(step).startswith(" ") or str(step).startswith("回滚")
+            else f"- {step}"
+        )
     return "\n".join(lines) + "\n"
