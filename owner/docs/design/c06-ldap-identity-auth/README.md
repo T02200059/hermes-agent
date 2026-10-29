@@ -85,7 +85,7 @@ gateway/platforms/api_server.py     # 极薄：注册中间件 + 路由 + 委托
 |---|---|---|
 | **C06a** | 设计稿 + `ldap_auth` + 单测（mock bind） | ✅ |
 | **C06b** | `identity_routing` 中间件 + api_server 薄胶水 + 准入查询 + 头剥离/SSE | ✅ |
-| **C06c** | 现网 `ldap:` 接线 / E2E 真 LDAP | 另开（需密钥与网络；非本轮） |
+| **C06c** | 现网 `ldap:` 接线 / E2E 真 LDAP | ✅ 本轮（连接字段进 overlay；启用默认关；探针+E2E） |
 | **C05b** | node010 切流 | **最后**（用户拍板） |
 | **C07** | API media | 延后 |
 
@@ -96,4 +96,17 @@ gateway/platforms/api_server.py     # 极薄：注册中间件 + 路由 + 委托
 ## 八、落地状态（2026-10-29）
 
 - **C06a/b 已落地（v2 重做，不照搬 owner）**：`ldap_auth` / `identity_routing` + api_server `_owner_import` 薄胶水 + overlay `ldap.enabled:false` 桩 + `pyproject` optional `ldap`；单测 `test_c06_ldap_auth.py` / `test_c06_identity_routing.py`（20 passed）。
-- **未**：C06c 现网真 LDAP；C05b node010 切流。
+- **C06c 已落地（同日）**：
+  - overlay 写入**非机密**连接字段（`host` / `port` / `user_dn_template=cn={login},cn=people,dc=westhpc,dc=com`）；**`enabled: false`**（本机默认不开门）。
+  - `HERMES_LDAP_*` env 覆盖（`ENABLED`/`HOST`/`PORT`/`USER_DN_TEMPLATE`/…）；**不**经 env 传用户密码；遗留 `admin_*` 键忽略。
+  - 探针 `owner/scripts/c06_ldap_probe.py`；E2E `tests/owner/test_c06_ldap_e2e.py`（`HERMES_LDAP_E2E=1`）；负向 bind 无需真密码。
+  - node010 生产 `patch_feishu_profile.yaml` 的 ldap 段仍可由 loader 回落读取；**本轮不改 node010、不做 C05b 切流**。
+- **未**：C05b node010 切流；本机/生产默认仍 `enabled:false`（或仅节点 patch 自管）。
+
+## 九、C06c 如何启用
+
+1. **只探活（TCP）**：`.venv/bin/python owner/scripts/c06_ldap_probe.py`
+2. **负向 E2E（推荐）**：`HERMES_LDAP_ENABLED=1 HERMES_LDAP_E2E=1 .venv/bin/python -m pytest tests/owner/test_c06_ldap_e2e.py -q`  
+   或探针：`HERMES_LDAP_ENABLED=1 .venv/bin/python owner/scripts/c06_ldap_probe.py --negative-bind`
+3. **正向 bind（可选）**：另设 `HERMES_LDAP_E2E_PASSWORD` + `HERMES_LDAP_E2E_LOGIN`（密码只走 env，勿进 git / 勿进 argv）。
+4. **长期开启**：overlay `ldap.enabled: true`（或节点 patch 同键）；装 optional `ldap` extra（`ldap3`）。依赖缺失且 enabled 时门返回 503（`ldap3_missing`）。

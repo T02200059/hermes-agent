@@ -61,8 +61,91 @@ def _normalize_login(login: str) -> str:
     return (login or "").casefold().strip()
 
 
+def _env_bool(name: str) -> Optional[bool]:
+    raw = os.environ.get(name)
+    if raw is None:
+        return None
+    val = raw.strip().lower()
+    if val in ("1", "true", "yes", "on"):
+        return True
+    if val in ("0", "false", "no", "off"):
+        return False
+    return None
+
+
+def _apply_ldap_env_overrides(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Merge ``HERMES_LDAP_*`` env onto yaml config (ops/E2E; never commit secrets).
+
+    Supported (non-secret connection / policy only):
+      HERMES_LDAP_ENABLED, HERMES_LDAP_HOST, HERMES_LDAP_PORT,
+      HERMES_LDAP_USE_SSL, HERMES_LDAP_TIMEOUT_SECONDS,
+      HERMES_LDAP_USER_DN_TEMPLATE, HERMES_LDAP_ENFORCE,
+      HERMES_LDAP_CACHE_TTL_HOURS, HERMES_LDAP_NEGATIVE_CACHE_SECONDS,
+      HERMES_LDAP_FAIL_OPEN_ON_ERROR
+
+    User bind passwords come from the request header, not env. Legacy
+    ``admin_dn`` / ``admin_password`` keys in yaml are ignored by this gate.
+    """
+    out = dict(cfg)
+    enabled = _env_bool("HERMES_LDAP_ENABLED")
+    if enabled is not None:
+        out["enabled"] = enabled
+    host = os.environ.get("HERMES_LDAP_HOST")
+    if host is not None and host.strip():
+        out["host"] = host.strip()
+    port = os.environ.get("HERMES_LDAP_PORT")
+    if port is not None and port.strip():
+        try:
+            out["port"] = int(port.strip())
+        except ValueError:
+            logger.warning("[LDAP] ignoring invalid HERMES_LDAP_PORT=%r", port)
+    use_ssl = _env_bool("HERMES_LDAP_USE_SSL")
+    if use_ssl is not None:
+        out["use_ssl"] = use_ssl
+    timeout = os.environ.get("HERMES_LDAP_TIMEOUT_SECONDS")
+    if timeout is not None and timeout.strip():
+        try:
+            out["timeout_seconds"] = float(timeout.strip())
+        except ValueError:
+            logger.warning(
+                "[LDAP] ignoring invalid HERMES_LDAP_TIMEOUT_SECONDS=%r", timeout
+            )
+    template = os.environ.get("HERMES_LDAP_USER_DN_TEMPLATE")
+    if template is not None and template.strip():
+        out["user_dn_template"] = template.strip()
+    enforce = os.environ.get("HERMES_LDAP_ENFORCE")
+    if enforce is not None and enforce.strip():
+        out["enforce"] = enforce.strip()
+    ttl = os.environ.get("HERMES_LDAP_CACHE_TTL_HOURS")
+    if ttl is not None and ttl.strip():
+        try:
+            out["cache_ttl_hours"] = float(ttl.strip())
+        except ValueError:
+            logger.warning(
+                "[LDAP] ignoring invalid HERMES_LDAP_CACHE_TTL_HOURS=%r", ttl
+            )
+    neg = os.environ.get("HERMES_LDAP_NEGATIVE_CACHE_SECONDS")
+    if neg is not None and neg.strip():
+        try:
+            out["negative_cache_seconds"] = float(neg.strip())
+        except ValueError:
+            logger.warning(
+                "[LDAP] ignoring invalid HERMES_LDAP_NEGATIVE_CACHE_SECONDS=%r",
+                neg,
+            )
+    fail_open = _env_bool("HERMES_LDAP_FAIL_OPEN_ON_ERROR")
+    if fail_open is not None:
+        out["fail_open_on_error"] = fail_open
+    return out
+
+
 def _load_ldap_config() -> dict[str, Any]:
-    """Load top-level ``ldap:`` — overlay first, then patch fallback. Fail-open → {}."""
+    """Load top-level ``ldap:`` — overlay first, then patch fallback, then env.
+
+    Fail-open on loader errors → ``{}`` (gate treats empty + enabled false as
+    open). Env overrides always win for the keys they set.
+    """
+    section: dict[str, Any] = {}
     try:
         from owner.patch_config import (
             load_owner_config,
@@ -73,15 +156,17 @@ def _load_ldap_config() -> dict[str, Any]:
             raw = loader()
             if not isinstance(raw, dict):
                 continue
-            section = raw.get("ldap")
-            if isinstance(section, dict) and section:
-                return section
+            found = raw.get("ldap")
+            if isinstance(found, dict) and found:
+                section = dict(found)
+                break
             # empty dict section still "configured but empty" — prefer explicit over missing
-            if isinstance(section, dict) and "ldap" in raw:
-                return section
-        return {}
+            if isinstance(found, dict) and "ldap" in raw:
+                section = dict(found)
+                break
     except Exception:
-        return {}
+        section = {}
+    return _apply_ldap_env_overrides(section)
 
 
 def _hermes_yaml_paths() -> list:

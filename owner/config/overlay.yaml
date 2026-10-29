@@ -252,16 +252,19 @@ openviking:
 
 # ── C06 LDAP（API Server identity 门；默认关闭）────────────────
 # 形状见 owner/docs/design/c06-ldap-identity-auth/README.md
-# 勿把真实密码写入仓内；现网机密走本机/节点 overlay，勿提交。
+# 连接字段可进仓（非机密）；勿写 admin_password / 用户密码。
+# 启用：改 enabled:true，或临时 HERMES_LDAP_ENABLED=1（见 C06c）。
+# 现网 node010 仍可能把同段放在 patch_feishu_profile.yaml（loader 回落）。
+# 遗留 admin_dn/admin_password 键会被 v2 门忽略（只用 user_dn_template 简单 bind）。
 ldap:
   enabled: false
-  # host: "ldap.example.com"
-  # port: 389
-  # use_ssl: false
-  # timeout_seconds: 5
-  # user_dn_template: "cn={login},cn=people,dc=example,dc=com"
-  # enforce: "always"          # off | always | seen(=always)
-  # cache_ttl_hours: 72
-  # negative_cache_seconds: 10
-  # fail_open_on_error: false
+  host: "10.10.100.150"
+  port: 389
+  use_ssl: false
+  timeout_seconds: 5
+  user_dn_template: "cn={login},cn=people,dc=westhpc,dc=com"
+  enforce: "always"          # off | always | seen(=always 别名)
+  cache_ttl_hours: 72
+  negative_cache_seconds: 10
+  fail_open_on_error: false
 

@@ -427,7 +427,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - **C05b（2026-10-29）**：node010 survey + v2 preview worktree + overlay 草稿（`/data/hermes/c05b-draft/`）；**未**切生产 / 未重启；计划见 `owner/docs/design/c05-feishu-user-routing/c05b-node010-plan.md`
   - **C05a 补丁**：子网关 `FEISHU_CONNECTION_MODE=send_only`（`plugins/platforms/feishu/adapter.py` connect 早退、不抢 Hub app_id WS lock）；测 `tests/owner/test_c05_feishu_send_only.py`；**勿**把实地测 `overlay.yaml` / profile `.env` 入库
 - [x] **C06** · 源 §15.1–15.6 · API Server LDAP 身份准入 + `fleet_profiles`/`hub_only.api`（旧 `api_identity`/`identity_*` 只读别名）+ 头剥离/SSE · **优先级：P0**
-  - **已落地（2026-10-29，v2 重做，不照搬 owner）**：设计稿 `owner/docs/design/c06-ldap-identity-auth/`；`owner/gateway/ldap_auth.py` + `identity_routing.py`；api_server 薄胶水（中间件/准入查询/capabilities）；overlay `ldap.enabled:false` 桩；单测 `test_c06_ldap_auth.py` / `test_c06_identity_routing.py`（20 passed）；已 dual-push origin/gitlab `v2` @ 64a2d09fa4；**未**接现网真 LDAP / **未**做 C05b
+  - **已落地（2026-10-29，v2 重做，不照搬 owner）**：设计稿 `owner/docs/design/c06-ldap-identity-auth/`；`owner/gateway/ldap_auth.py` + `identity_routing.py`；api_server 薄胶水；overlay 非机密连接字段 + `enabled:false`；`HERMES_LDAP_*` env；探针 `c06_ldap_probe.py`；单测+E2E（负向真 LDAP 已过）；**未**做 C05b / 本机默认仍不开门
 - [ ] **C07** · 源 §16.1–16.6 · API 产物媒体 / `hermes.files` / tool.progress 脱敏与归属 · **优先级：P0** · **延后**（2026-10-27 用户拍板；与 C05/C06 一并靠后，非当前主线）
 - [x] **C08** · 源 §7.27 · outbound BOS/EOS scrub · **优先级：P0**
   - 落地：终局走官方 O8；interim/status 薄补复用 `_strip_deepseek_special_tokens`（`owner/outbound_special_token_scrub.py` + stream_delivery / gateway status 胶水）
