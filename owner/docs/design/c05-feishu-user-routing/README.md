@@ -62,6 +62,9 @@ Docker hermes-<ldap_uid> ×N（容器内 uid0，自认 root）
 补充：
 
 - **子网关 connection_mode**：`FEISHU_CONNECTION_MODE=send_only`（只出站、不连 WS、不抢 Hub app_id lock；入站靠 Hub HTTP `inject_inbound`）。
+- **`/v1/feishu/inbound` doorway**：仅 `send_only` 适配器可接；Hub（websocket）对该路径返回 **403** `inbound_not_send_only`（防共用 api_key 向 Hub 伪造注入）。
+- **子 allowlist（M4）**：inject 路径**绕过** adapter `_admit`；授权仍靠子网关 **gateway authz** 读该 profile 的 `FEISHU_ALLOWED_USERS`（故开户仍必须写子白名单）。Hub 侧 `_admit` 在路由**之前**执行，开户还须把 ou / tenant user_id **同批写入 Hub** allowlist（或 Hub 用 `FEISHU_ALLOW_ALL_USERS`）。
+- **卡按钮 `hermes_profile` 打标**：子侧用 `container_profile_identity()`（`HERMES_PROFILE`），**不要**依赖 `get_active_profile_name()`（目标态 `HERMES_HOME=/root/.hermes` 会误成 `default`）。
 - **进程/目录隔离**靠「一 profile 一容器 + `profiles/<name>`」；passwd 只是命名与路径约定。
 - 缺 passwd 用户的 profile 在 Ops 切片补齐，不挡路由代码迁 overlay。
 - 共享运维卷（scripts、inventory、常挂 ssh 等）仍可挂。
@@ -177,7 +180,7 @@ feishu:
 
 ### 推导规则
 
-- **endpoints**：`fleet_profiles[name].api_server` → `{url, api_key}`；缺 `api_server` 且需要转发 → 告警 / 拒绝（同现网 endpoints 缺失）。  
+- **endpoints**：`fleet_profiles[name].api_server` → `{url, api_key}`；缺 `api_server` 且已命中候选 profile → **ERROR + 拒绝并通知用户，绝不回落 Hub 本地**（与「绑定用户绝不回落」一致；实现返回 `(profile, "", "")`，由 `try_route_*` 停本地并通知）。  
 - **默认路径**：未写 `docker.hermes_dir` → `/data/hermes/profiles/<uid>`；未写 `docker.home_dir` → `/home/<uid>`。  
 - **逻辑名**：路由表值、compose 服务名、passwd 默认均用 uid；目录例外只写在 `docker.*`。
 
@@ -186,7 +189,7 @@ feishu:
 1. 解析候选 profile：`chat_profile_routes` → `user_profile_routes` → `default_profile`  
 2. 若候选 ∈ 飞书 open_id whitelist **或** 对应人卡 `hub_only.feishu`（DM）→ Hub 本地  
 3. 用候选名查 `fleet_profiles[…].api_server` → HTTP 转发  
-4. 仍无候选 / 无 endpoint → Hub 本地或告警（与现网一致处实现时钉死）
+4. **无候选** → Hub 本地；**有候选但无 endpoint** → ERROR + 通知用户、**不**回落 Hub（已钉死，2026-10-29）
 
 群聊跳过「按人 feishu hub_only / open_id whitelist」的 DM 语义，直接走 chat→user→default（与现网一致）。  
 **C05 不走** `hub_only.api` / LDAP / 旧 `identity_*`。
