@@ -414,11 +414,12 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - **不改**官方 SCHEMA；不改写 `sessions.display_name`
 - [ ] **C05** · 源 §4.1 · **飞书多 profile 舰队路由**（`profile_endpoints` HTTP 转发；**不吃**官方 `profile_routes`） · **优先级：P0**
   - 设计稿：`owner/docs/design/c05-feishu-user-routing/README.md`（配置结构已定稿；按人 **`fleet_profiles`**）
-  - 开户自动化（设计 only）：`owner/docs/design/c05-feishu-user-routing/fleet-add.md`（对话触发 → Hermes 编排；**未实现**）
+  - 开户自动化：`owner/docs/design/c05-feishu-user-routing/fleet-add.md`；**O1 dry-run 已落地**（2026-10-29：`owner/scripts/fleet_add.py` + `fleet_add_lib.py` + `tests/owner/test_fleet_add_o1.py`）；O2+ / 对话 UX **未实现**
   - 开户步骤提醒：对话收集到 `ou_*` 时，**apply 前/中**同批写入 **目标 profile + Hub** 的 `FEISHU_ALLOWED_USERS`（ou ± 已知 tenant user_id；或钉死 Hub `FEISHU_ALLOW_ALL_USERS`）与目标 **`FEISHU_HOME_CHANNEL`**（优先 DM `oc_*`；兼写 `platforms.feishu.home_channel`）；勿等首条私聊被丢弃或事后 `/sethome`（见 fleet-add.md §2 / O2）。inject 绕过子 adapter `_admit`，但 gateway authz 仍读子白名单；Hub `_admit` 在路由前执行
   - **审查修补（2026-10-29）**：S1 卡打标改 `container_profile_identity`；M1 inbound 仅 send_only；M2 overlay 加载失败 ERROR + last-good；M3 缺 api_server 不回落 Hub；M4/M5 文档钉死 allowlist 口径
   - **延后待做**：完全更新 `xy-user-onboarding`（现网 `~/.hermes/skills/westcloud/xy-user-onboarding`；仓内副本若有一并）；skill 只编排，mutating → `fleet_add`（含 allowlist + home channel）；对齐 C05 三层挂载 / `fleet_profiles` / LDAP uid；去掉旧整挂与平行 endpoints / heredoc invent；**先内核/模板，再改 skill**（见 fleet-add.md §5 / D1）
-  - **C05a（Mac v2）已落地已 push** 2026-10-29：`owner/feishu/profile_routing.py` + card_action + adapter/api_server 薄胶水 + `send_only` + 审查修补（S1/M1–M5）+ 单测；已 dual-push `origin`/`gitlab` `v2`；**未**部署 node010（**C05b 仍开**）；`fleet_add` 实现与 onboarding 全更仍开
+  - **C05a（Mac v2）已落地已 push** 2026-10-29：`owner/feishu/profile_routing.py` + card_action + adapter/api_server 薄胶水 + `send_only` + 审查修补（S1/M1–M5）+ 单测；已 dual-push `origin`/`gitlab` `v2`；**未**部署 node010（**C05b 仍开**）
+  - **fleet_add O1（2026-10-29）**：dry-run 内核已落地（默认 `--dry-run`，`--apply` 拒绝）；假 `fleet_profiles` 夹具；**未** push 本切片前以本地 commit 为准；O2 写 overlay/allowlist/home、O3–O5 / onboarding 仍开
   - **C05b（2026-10-29）**：node010 survey + v2 preview worktree + overlay 草稿（`/data/hermes/c05b-draft/`）；**未**切生产 / 未重启；计划见 `owner/docs/design/c05-feishu-user-routing/c05b-node010-plan.md`
   - **C05a 补丁**：子网关 `FEISHU_CONNECTION_MODE=send_only`（`plugins/platforms/feishu/adapter.py` connect 早退、不抢 Hub app_id WS lock）；测 `tests/owner/test_c05_feishu_send_only.py`；**勿**把实地测 `overlay.yaml` / profile `.env` 入库
 - [ ] **C06** · 源 §15.1–15.6 · API Server LDAP 身份准入 + 顶层 **`api_identity`**（旧 `identity_*` 只读别名）+ 头剥离/SSE · **优先级：P0**

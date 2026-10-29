@@ -1,0 +1,33 @@
+# 假夹具：无真飞书 key / ou（fleet_add O1 单测与本地 dry-run）
+fleet_profiles:
+  yangtb:
+    display_name: 杨天宝
+    api_server:
+      url: http://127.0.0.1:26027
+      api_key: "fixture-shared-key-not-real"
+    hub_only:
+      feishu: false
+      api: false
+  liruiyang:
+    display_name: 李瑞阳
+    api_server:
+      url: http://127.0.0.1:26028
+      api_key: "fixture-shared-key-not-real"
+    hub_only:
+      feishu: false
+      api: false
+  fleet_default:
+    display_name: 舰队默认兜底
+    api_server:
+      url: http://127.0.0.1:26026
+      api_key: "fixture-shared-key-not-real"
+
+feishu:
+  bots:
+    cli_fixture_app:
+      user_routing:
+        user_profile_routes:
+          ou_yang: yangtb
+          ou_li: liruiyang
+        default_profile: fleet_default
+        whitelist: []
