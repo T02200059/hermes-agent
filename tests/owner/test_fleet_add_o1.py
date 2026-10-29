@@ -132,23 +132,30 @@ def test_cli_dry_run_zero_writes(tmp_path, fixture_overlay, monkeypatch):
     assert overlay_path.read_bytes() == before
 
 
-def test_cli_apply_rejected(fixture_overlay, tmp_path):
+def test_cli_apply_refuses_production_paths(tmp_path, fixture_overlay):
+    """O2：未 --allow-production 时拒绝默认 /data/hermes 路径。"""
     overlay_path = tmp_path / "overlay.yaml"
-    overlay_path.write_text("{}", encoding="utf-8")
+    overlay_path.write_text(
+        __import__("yaml").safe_dump(fixture_overlay, allow_unicode=True),
+        encoding="utf-8",
+    )
+    # 不传 --hermes-dir/--hub-home → 计划落在 /data/hermes → apply 应拒绝
     rc = fleet_add_cli.main(
         [
             "--ldap-uid",
-            "x",
+            "alice",
             "--display-name",
-            "x",
+            "爱丽丝",
             "--open-id",
-            "ou_x",
+            "ou_alice",
             "--overlay",
             str(overlay_path),
+            "--app-id",
+            "cli_fixture_app",
             "--apply",
         ]
     )
-    assert rc == 2
+    assert rc == 1
 
 
 def test_load_and_merge_fixture(tmp_path, fixture_overlay):

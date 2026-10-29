@@ -1,14 +1,27 @@
 #!/usr/bin/env python3
-"""C05 fleet_add：舰队开户 CLI（O1 = 默认 dry-run，零落盘）。
+"""C05 fleet_add：舰队开户 CLI（默认 dry-run；``--apply`` = O2 落盘）。
 
-用法（本机假夹具）::
+用法（本机假夹具 dry-run）::
 
-    python -m owner.scripts.fleet_add \\
-      --ldap-uid alice --display-name 爱丽丝 \\
+    python -m owner.scripts.fleet_add \
+      --ldap-uid alice --display-name 爱丽丝 \
       --open-id ou_alice --fixture /path/to/fixture.yaml
 
+用法（对 temp 副本 apply，O2）::
+
+    python -m owner.scripts.fleet_add \
+      --ldap-uid alice --display-name 爱丽丝 \
+      --open-id ou_alice --tenant-user-id tid_alice \
+      --home-channel oc_dm_alice \
+      --overlay /tmp/fleet-add-demo/overlay.yaml \
+      --hermes-dir /tmp/fleet-add-demo/profiles/alice \
+      --hub-home /tmp/fleet-add-demo/hub \
+      --fixture tests/owner/fixtures/fleet_add_overlay.yaml \
+      --app-id cli_fixture_app --apply
+
 设计：``owner/docs/design/c05-feishu-user-routing/fleet-add.md``。
-O2+（真正写 overlay / allowlist / compose）尚未实现；``--apply`` 会拒绝。
+O2 写 overlay / allowlist / home；**不** compose up、**不** useradd。
+默认拒绝 ``/data/hermes`` 生产路径（``--allow-production`` 才放行）。
 """
 
 from __future__ import annotations
@@ -22,13 +35,21 @@ from pathlib import Path
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="Hermes 舰队开户（O1 dry-run 默认；零落盘）",
+        description="Hermes 舰队开户（默认 dry-run；--apply = O2 写 overlay/allowlist/home）",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
-            "示例:\n"
+            "示例 (dry-run):\n"
             "  python -m owner.scripts.fleet_add \\\n"
             "    --ldap-uid alice --display-name 爱丽丝 \\\n"
             "    --open-id ou_alice --fixture tests/owner/fixtures/fleet_add_overlay.yaml\n"
+            "\n"
+            "示例 (apply 到 temp):\n"
+            "  python -m owner.scripts.fleet_add \\\n"
+            "    --ldap-uid alice --display-name 爱丽丝 \\\n"
+            "    --open-id ou_alice --home-channel oc_dm_alice \\\n"
+            "    --overlay /tmp/fa/overlay.yaml --hermes-dir /tmp/fa/profiles/alice \\\n"
+            "    --hub-home /tmp/fa/hub --fixture tests/owner/fixtures/fleet_add_overlay.yaml \\\n"
+            "    --app-id cli_fixture_app --apply\n"
         ),
     )
     p.add_argument("--ldap-uid", required=True, help="主键 LDAP uid（= 逻辑 profile）")
@@ -38,14 +59,14 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="append",
         default=[],
         dest="open_ids",
-        help="飞书 ou_*（可多次）；写入 user_profile_routes 与 allowlist 计划",
+        help="飞书 ou_*（可多次）；写入 user_profile_routes 与 allowlist",
     )
     p.add_argument(
         "--tenant-user-id",
         action="append",
         default=[],
         dest="tenant_user_ids",
-        help="飞书 tenant user_id（可多次；与 ou 一并进 allowlist 计划）",
+        help="飞书 tenant user_id（可多次；与 ou 一并进 allowlist）",
     )
     p.add_argument(
         "--home-channel",
@@ -54,7 +75,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     p.add_argument("--hub-only-feishu", action="store_true")
     p.add_argument("--hub-only-api", action="store_true")
-    p.add_argument("--hermes-dir", default="", help="覆盖 docker.hermes_dir")
+    p.add_argument("--hermes-dir", default="", help="覆盖 docker.hermes_dir（apply 时目标 profile 根）")
     p.add_argument("--home-dir", default="", help="覆盖 docker.home_dir")
     p.add_argument("--port", type=int, default=None, help="指定端口；默认 max(已用)+1")
     p.add_argument(
@@ -68,7 +89,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument(
         "--overlay",
         default="",
-        help="overlay.yaml 路径（默认 $HERMES_HOME/overlay.yaml）",
+        help="overlay.yaml 路径（默认 $HERMES_HOME/overlay.yaml；apply 写此文件）",
     )
     p.add_argument(
         "--fixture",
@@ -82,23 +103,33 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument(
         "--hub-allow-all",
         action="store_true",
-        help="计划中跳过 Hub FEISHU_ALLOWED_USERS 双写（文档钉死 ALLOW_ALL）",
+        help="跳过 Hub FEISHU_ALLOWED_USERS 双写（文档钉死 ALLOW_ALL）",
+    )
+    p.add_argument(
+        "--api-key",
+        default="",
+        help="apply 时显式舰队共用 api_key（不回显；缺省从 overlay 人卡复用）",
     )
     p.add_argument(
         "--dry-run",
         action="store_true",
         default=True,
-        help="只打印计划（默认；O1 强制）",
+        help="只打印计划（默认）",
     )
     p.add_argument(
         "--apply",
         action="store_true",
-        help="真正落盘（O2+；当前未实现，会拒绝）",
+        help="O2：写 overlay + allowlist + home（仍不 docker/useradd）",
+    )
+    p.add_argument(
+        "--allow-production",
+        action="store_true",
+        help="允许 apply 写 /data/hermes 生产路径（危险；默认拒绝）",
     )
     p.add_argument(
         "--json",
         action="store_true",
-        help="stdout 只打 JSON 计划（便于对话/工具消费）",
+        help="stdout 只打 JSON（计划或 apply 结果；密钥已脱敏）",
     )
     return p.parse_args(argv)
 
@@ -114,6 +145,8 @@ def main(argv: list[str] | None = None) -> int:
         DEFAULT_HERMES_ROOT,
         DEFAULT_HUB_HOME,
         FleetAddError,
+        apply_fleet_add,
+        format_apply_text,
         format_plan_text,
         load_overlay_yaml,
         merge_fixture_overlay,
@@ -121,13 +154,6 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     args = _parse_args(argv)
-
-    if args.apply:
-        print(
-            "错误: --apply 属 O2+，尚未实现。O1 仅支持 dry-run（默认）。",
-            file=sys.stderr,
-        )
-        return 2
 
     overlay_path = args.overlay.strip() or str(
         Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes")) / "overlay.yaml"
@@ -160,6 +186,24 @@ def main(argv: list[str] | None = None) -> int:
     except FleetAddError as exc:
         print(f"错误: {exc}", file=sys.stderr)
         return 1
+
+    if args.apply:
+        try:
+            result = apply_fleet_add(
+                plan,
+                overlay_path=overlay_path,
+                overlay=overlay,
+                shared_api_key=args.api_key or None,
+                allow_production=args.allow_production,
+            )
+        except FleetAddError as exc:
+            print(f"错误: {exc}", file=sys.stderr)
+            return 1
+        if args.json:
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+        else:
+            print(format_apply_text(result))
+        return 0
 
     if args.json:
         print(json.dumps(plan, ensure_ascii=False, indent=2))

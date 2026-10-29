@@ -1,4 +1,4 @@
-# 假夹具：无真飞书 key / ou（fleet_add O1 单测与本地 dry-run）
+# 假夹具：无真飞书 key / ou（fleet_add O1/O2 单测与本地 dry-run/apply）
 fleet_profiles:
   yangtb:
     display_name: 杨天宝

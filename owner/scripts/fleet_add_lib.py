@@ -1,10 +1,15 @@
-"""C05 fleet_add O1：开户 dry-run 计划内核（零落盘）。
+"""C05 fleet_add：开户计划（O1 dry-run）与落盘（O2 apply）。
 
-设计见 ``owner/docs/design/c05-feishu-user-routing/fleet-add.md`` §5 O1。
+设计见 ``owner/docs/design/c05-feishu-user-routing/fleet-add.md`` §5 O1/O2。
 
 主键 = LDAP uid（与主稿 ``fleet_profiles.<ldap_uid>`` 对齐）。
-生产 node010 现网路由键仍可能是全名（如 ``yangtianbao``）；切 uid 属另开 Ops，
-本模块 **不**改生产、**不**写 overlay / compose / passwd。
+生产 node010 现网路由键仍可能是全名（如 ``yangtianbao``）；切 uid 属另开 Ops。
+
+- **O1** ``plan_fleet_add``：零落盘计划。
+- **O2** ``apply_fleet_add``：写 overlay 人卡 + ``user_profile_routes``、目标/Hub
+  ``FEISHU_ALLOWED_USERS``、目标 ``FEISHU_HOME_CHANNEL`` / ``platforms.feishu.home_channel``；
+  可选备份与回滚说明。**不** compose up、**不** useradd。
+- 默认拒绝写 ``/data/hermes`` 生产路径，除非 ``allow_production=True``。
 
 复用 ``owner.feishu.profile_routing`` 的人卡 / endpoint 解析，不重写加载语义。
 """
@@ -12,7 +17,11 @@
 from __future__ import annotations
 
 import copy
+import os
 import re
+import shutil
+from datetime import datetime
+from pathlib import Path
 from typing import Any, Mapping, MutableMapping, Optional, Sequence
 
 from owner.feishu.profile_routing import (
@@ -278,7 +287,11 @@ def build_home_channel_plan(
         "config_yaml": {
             "path": f"{hermes_dir.rstrip('/')}/config.yaml",
             "key_path": "platforms.feishu.home_channel",
-            "value": {"chat_id": channel} if channel else None,
+            "value": (
+                {"platform": "feishu", "chat_id": channel, "name": "Home"}
+                if channel
+                else None
+            ),
             "action": "set" if channel else "defer_until_dm_chat_id",
             "note": "与 /sethome 真相源对齐；禁止默认指望事后手敲 /sethome",
         },
@@ -451,9 +464,9 @@ def plan_fleet_add(
         "ldap_uid": uid,
         "display_name": name,
         "notes": [
-            "O1 仅计划：零落盘（不写 overlay / .env / compose，不 useradd，不 docker up）",
+            "默认 dry-run：零落盘（不写 overlay / .env / compose，不 useradd，不 docker up）",
             "逻辑主键 = LDAP uid；生产 node010 现网路由键仍可能是全名——切 uid 另开 Ops",
-            "开户要点（O2 才真正写）：ou + 已知 tenant user_id → FEISHU_ALLOWED_USERS；一开始设 home channel",
+            "O2 --apply 才写：人卡 + routes + FEISHU_ALLOWED_USERS（ou±tenant）+ home channel；仍不 docker/useradd",
         ],
         "person_card": card,
         "overlay_writes": {
@@ -579,3 +592,470 @@ def _deep_merge_dict(
         else:
             result[k] = copy.deepcopy(v)
     return result
+
+
+
+# ---------------------------------------------------------------------------
+# O2 apply：写 overlay + allowlist + home（仍不 docker / useradd）
+# ---------------------------------------------------------------------------
+
+PathLike = str | Path
+
+_PRODUCTION_ROOT_PREFIXES = (
+    "/data/hermes",
+)
+
+
+def _ts_stamp() -> str:
+    return datetime.now().strftime("%Y%m%d-%H%M%S")
+
+
+def is_production_path(path: PathLike) -> bool:
+    """粗判是否落在现网 ``/data/hermes`` 树（拒绝默认 apply）。"""
+    try:
+        resolved = str(Path(path).expanduser().resolve())
+    except OSError:
+        resolved = str(Path(path).expanduser())
+    for prefix in _PRODUCTION_ROOT_PREFIXES:
+        if resolved == prefix or resolved.startswith(prefix + os.sep):
+            return True
+    # 未存在的路径 resolve 仍可能落在 /data/hermes/...
+    raw = str(path)
+    for prefix in _PRODUCTION_ROOT_PREFIXES:
+        if raw == prefix or raw.startswith(prefix + "/"):
+            return True
+    return False
+
+
+def backup_file(path: Path, *, stamp: Optional[str] = None) -> Optional[str]:
+    """若文件存在则复制为 ``.bak-fleet-add-<stamp>``；返回备份路径或 None。"""
+    if not path.is_file():
+        return None
+    st = stamp or _ts_stamp()
+    bak = path.with_name(path.name + f".bak-fleet-add-{st}")
+    shutil.copy2(path, bak)
+    return str(bak)
+
+
+def read_dotenv_file(path: Path) -> dict[str, str]:
+    """简易 .env 解析（不处理 export / 多行）；缺文件 → {}。"""
+    values: dict[str, str] = {}
+    if not path.is_file():
+        return values
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        val = value.strip()
+        if len(val) >= 2 and val[0] == val[-1] and val[0] in "\"'":
+            val = val[1:-1]
+        values[key.strip()] = val
+    return values
+
+
+def merge_csv_ids(existing: str, additions: Sequence[str]) -> str:
+    """CSV 去重合并，保序（先已有，后新增）。"""
+    seen: set[str] = set()
+    out: list[str] = []
+    for part in str(existing or "").split(","):
+        s = part.strip()
+        if s and s not in seen:
+            seen.add(s)
+            out.append(s)
+    for a in additions:
+        s = str(a or "").strip()
+        if s and s not in seen:
+            seen.add(s)
+            out.append(s)
+    return ",".join(out)
+
+
+def upsert_dotenv_key(path: Path, key: str, value: str) -> dict[str, Any]:
+    """设置或替换 .env 中的 ``key=value``；保留其它行与注释。缺文件则创建。
+
+    返回 ``{path, key, created, changed}``。
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    created = not path.is_file()
+    lines: list[str] = []
+    if not created:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    key_re = re.compile(rf"^\s*{re.escape(key)}\s*=")
+    new_line = f"{key}={value}"
+    found = False
+    changed = created
+    out_lines: list[str] = []
+    for line in lines:
+        if key_re.match(line):
+            if line != new_line:
+                changed = True
+            out_lines.append(new_line)
+            found = True
+        else:
+            out_lines.append(line)
+    if not found:
+        if out_lines and out_lines[-1].strip():
+            out_lines.append("")
+        out_lines.append(new_line)
+        changed = True
+    text = "\n".join(out_lines)
+    if text and not text.endswith("\n"):
+        text += "\n"
+    path.write_text(text, encoding="utf-8")
+    return {"path": str(path), "key": key, "created": created, "changed": changed}
+
+
+def deep_set_yaml(data: MutableMapping[str, Any], dotted: str, value: Any) -> None:
+    """按 ``a.b.c`` 路径写入；中间缺省建 dict。"""
+    parts = [p for p in dotted.split(".") if p]
+    if not parts:
+        raise FleetAddError("空 key_path")
+    cur: MutableMapping[str, Any] = data
+    for p in parts[:-1]:
+        nxt = cur.get(p)
+        if not isinstance(nxt, dict):
+            nxt = {}
+            cur[p] = nxt
+        cur = nxt
+    cur[parts[-1]] = copy.deepcopy(value)
+
+
+def load_yaml_dict(path: Path) -> dict[str, Any]:
+    import yaml
+
+    if not path.is_file():
+        return {}
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    return data if isinstance(data, dict) else {}
+
+
+def dump_yaml_dict(path: Path, data: Mapping[str, Any]) -> None:
+    import yaml
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    text = yaml.safe_dump(
+        dict(data),
+        allow_unicode=True,
+        default_flow_style=False,
+        sort_keys=False,
+    )
+    path.write_text(text, encoding="utf-8")
+
+
+def resolve_shared_api_key(
+    overlay: Mapping[str, Any],
+    *,
+    explicit: Optional[str] = None,
+) -> tuple[str, Optional[str]]:
+    """返回 ``(api_key, source_uid)``；无源且无显式 → 报错。"""
+    if explicit is not None and str(explicit).strip():
+        return str(explicit).strip(), None
+    fleet = pick_fleet_profiles(overlay)
+    src, key = find_shared_api_key_source(fleet)
+    if key:
+        return key, src
+    raise FleetAddError(
+        "apply 需要舰队共用 api_key：overlay 无人卡密钥且未传 shared_api_key"
+    )
+
+
+def _ensure_user_routing_slot(
+    overlay: MutableMapping[str, Any],
+    *,
+    app_id: str = "",
+) -> tuple[dict[str, Any], str]:
+    """确保 ``user_routing`` dict 可写，返回 ``(user_routing, location_desc)``。"""
+    feishu = overlay.setdefault("feishu", {})
+    if not isinstance(feishu, dict):
+        raise FleetAddError("overlay.feishu 不是 mapping，拒绝 apply")
+    bots = feishu.get("bots")
+    if isinstance(bots, dict) and bots:
+        if app_id:
+            bot = bots.setdefault(app_id, {})
+            if not isinstance(bot, dict):
+                raise FleetAddError(f"feishu.bots.{app_id} 不是 mapping")
+            ur = bot.setdefault("user_routing", {})
+            if not isinstance(ur, dict):
+                raise FleetAddError(f"feishu.bots.{app_id}.user_routing 不是 mapping")
+            return ur, f"feishu.bots.{app_id}.user_routing"
+        if len(bots) == 1:
+            only_id, only = next(iter(bots.items()))
+            if not isinstance(only, dict):
+                raise FleetAddError(f"feishu.bots.{only_id} 不是 mapping")
+            ur = only.setdefault("user_routing", {})
+            if not isinstance(ur, dict):
+                raise FleetAddError(
+                    f"feishu.bots.{only_id}.user_routing 不是 mapping"
+                )
+            return ur, f"feishu.bots.{only_id}.user_routing"
+        raise FleetAddError("多 bot overlay 须指定 app_id 才能写 user_profile_routes")
+    ur = feishu.setdefault("user_routing", {})
+    if not isinstance(ur, dict):
+        raise FleetAddError("feishu.user_routing 不是 mapping")
+    return ur, "feishu.user_routing"
+
+
+def apply_fleet_add(
+    plan: Mapping[str, Any],
+    *,
+    overlay_path: PathLike,
+    overlay: Optional[Mapping[str, Any]] = None,
+    shared_api_key: Optional[str] = None,
+    allow_production: bool = False,
+    stamp: Optional[str] = None,
+) -> dict[str, Any]:
+    """按 O1 计划落盘（O2）：overlay + allowlist + home；不 docker、不 useradd。
+
+    ``plan`` 须来自 ``plan_fleet_add``（或等价结构）。
+    写盘前备份已有文件；结果含 ``rollback`` 说明。stdout/返回值中 api_key 脱敏。
+    """
+    uid = str(plan.get("ldap_uid") or "").strip()
+    if not uid:
+        raise FleetAddError("plan 缺少 ldap_uid")
+
+    overlay_p = Path(overlay_path).expanduser()
+    writes_meta = plan.get("overlay_writes") or {}
+    allow = plan.get("feishu_allowed_users") or {}
+    home_ch = plan.get("feishu_home_channel") or {}
+
+    target_env_path = Path(
+        (allow.get("target_profile_env") or {}).get("path")
+        or f"{DEFAULT_HERMES_ROOT}/profiles/{uid}/.env"
+    )
+    hub_env_path = Path(
+        (allow.get("hub_env") or {}).get("path") or f"{DEFAULT_HUB_HOME}/.env"
+    )
+    config_path = Path(
+        (home_ch.get("config_yaml") or {}).get("path")
+        or f"{DEFAULT_HERMES_ROOT}/profiles/{uid}/config.yaml"
+    )
+
+    paths_to_check = [overlay_p, target_env_path, hub_env_path, config_path]
+    if not allow_production:
+        bad = [str(p) for p in paths_to_check if is_production_path(p)]
+        if bad:
+            raise FleetAddError(
+                "拒绝 apply 到疑似生产路径（/data/hermes/...）。"
+                "请改用 temp/fixture 路径，或显式 allow_production=True / --allow-production。"
+                f" 命中: {bad}"
+            )
+
+    base_overlay = (
+        copy.deepcopy(dict(overlay))
+        if overlay is not None
+        else load_yaml_dict(overlay_p)
+    )
+    # 再跑冲突检查：以当前盘面为准
+    replan_routes = pick_user_routing(
+        base_overlay, app_id=str(writes_meta.get("feishu_app_id") or "")
+    )
+    existing_routes = replan_routes.get("user_profile_routes") or {}
+    if not isinstance(existing_routes, dict):
+        existing_routes = {}
+    additions = writes_meta.get("user_profile_routes_additions") or {}
+    if not isinstance(additions, dict):
+        raise FleetAddError("plan.overlay_writes.user_profile_routes_additions 非法")
+    for oid, target in additions.items():
+        if oid in existing_routes and existing_routes[oid] != target:
+            raise FleetAddError(
+                f"apply 时 user_profile_routes 冲突 {oid!r} → "
+                f"已有 {existing_routes[oid]!r}，计划 {target!r}"
+            )
+    fleet_now = pick_fleet_profiles(base_overlay)
+    if uid in fleet_now:
+        raise FleetAddError(f"apply 时 fleet_profiles 已存在键 {uid!r}，拒绝覆盖")
+
+    api_key, key_src = resolve_shared_api_key(
+        base_overlay, explicit=shared_api_key
+    )
+
+    person = copy.deepcopy(plan.get("person_card") or {})
+    if not isinstance(person, dict):
+        raise FleetAddError("plan.person_card 非法")
+    api_server = person.setdefault("api_server", {})
+    if not isinstance(api_server, dict):
+        raise FleetAddError("person_card.api_server 非法")
+    api_server["api_key"] = api_key
+
+    st = stamp or _ts_stamp()
+    backups: dict[str, Optional[str]] = {}
+    written: list[dict[str, Any]] = []
+
+    # --- overlay ---
+    backups["overlay"] = backup_file(overlay_p, stamp=st)
+    mut = copy.deepcopy(base_overlay)
+    fp = mut.setdefault("fleet_profiles", {})
+    if not isinstance(fp, dict):
+        raise FleetAddError("overlay.fleet_profiles 不是 mapping")
+    fp[uid] = person
+    ur, ur_loc = _ensure_user_routing_slot(
+        mut, app_id=str(writes_meta.get("feishu_app_id") or "")
+    )
+    routes = ur.setdefault("user_profile_routes", {})
+    if not isinstance(routes, dict):
+        raise FleetAddError(f"{ur_loc}.user_profile_routes 不是 mapping")
+    routes.update({str(k): str(v) for k, v in additions.items()})
+    dump_yaml_dict(overlay_p, mut)
+    written.append(
+        {
+            "kind": "overlay",
+            "path": str(overlay_p),
+            "fleet_profiles_key": uid,
+            "routes_added": dict(additions),
+            "user_routing_at": ur_loc,
+        }
+    )
+
+    # --- allowlist .env（目标 + Hub）---
+    members = list(allow.get("members") or [])
+    target_action = (allow.get("target_profile_env") or {}).get("action")
+    if members and target_action != "skip":
+        backups["target_env"] = backup_file(target_env_path, stamp=st)
+        existing = read_dotenv_file(target_env_path).get("FEISHU_ALLOWED_USERS", "")
+        merged = merge_csv_ids(existing, members)
+        meta = upsert_dotenv_key(target_env_path, "FEISHU_ALLOWED_USERS", merged)
+        meta["kind"] = "target_allowlist"
+        meta["value_csv"] = merged
+        written.append(meta)
+
+    hub_info = allow.get("hub_env") or {}
+    hub_action = hub_info.get("action")
+    if members and hub_action == "merge_into_existing":
+        backups["hub_env"] = backup_file(hub_env_path, stamp=st)
+        existing = read_dotenv_file(hub_env_path).get("FEISHU_ALLOWED_USERS", "")
+        merged = merge_csv_ids(existing, members)
+        meta = upsert_dotenv_key(hub_env_path, "FEISHU_ALLOWED_USERS", merged)
+        meta["kind"] = "hub_allowlist"
+        meta["value_csv"] = merged
+        written.append(meta)
+    elif hub_action == "skip_hub_allow_all_documented":
+        written.append(
+            {
+                "kind": "hub_allowlist",
+                "path": str(hub_env_path),
+                "skipped": True,
+                "reason": "hub_allow_all",
+            }
+        )
+
+    # --- home channel：.env + config.yaml ---
+    channel = home_ch.get("feishu_home_channel")
+    env_action = (home_ch.get("target_env") or {}).get("action")
+    if channel and env_action == "set":
+        if "target_env" not in backups:
+            backups["target_env"] = backup_file(target_env_path, stamp=st)
+        meta = upsert_dotenv_key(
+            target_env_path, "FEISHU_HOME_CHANNEL", str(channel)
+        )
+        meta["kind"] = "target_home_channel_env"
+        meta["value"] = str(channel)
+        written.append(meta)
+
+    cfg_action = (home_ch.get("config_yaml") or {}).get("action")
+    cfg_value = (home_ch.get("config_yaml") or {}).get("value")
+    if channel and cfg_action == "set" and cfg_value:
+        backups["target_config"] = backup_file(config_path, stamp=st)
+        cfg = load_yaml_dict(config_path)
+        deep_set_yaml(cfg, "platforms.feishu.home_channel", cfg_value)
+        dump_yaml_dict(config_path, cfg)
+        written.append(
+            {
+                "kind": "target_home_channel_config",
+                "path": str(config_path),
+                "key_path": "platforms.feishu.home_channel",
+                "value": copy.deepcopy(cfg_value),
+            }
+        )
+
+    rollback_steps = [
+        "回滚（O2 文件级；不涉及容器）：",
+    ]
+    for label, bak in backups.items():
+        if bak:
+            # 原路径映射
+            orig = {
+                "overlay": str(overlay_p),
+                "target_env": str(target_env_path),
+                "hub_env": str(hub_env_path),
+                "target_config": str(config_path),
+            }.get(label, "?")
+            rollback_steps.append(f"  cp {bak} {orig}")
+        else:
+            # 新文件：删掉本次新增键 / 文件
+            if label == "overlay":
+                rollback_steps.append(
+                    f"  # overlay 原先不存在：可删 {overlay_p} 或手删 fleet_profiles.{uid} 与新增 routes"
+                )
+            elif label == "target_env":
+                rollback_steps.append(
+                    f"  # 目标 .env 原先不存在：可删 {target_env_path} 或手删 FEISHU_* 键"
+                )
+            elif label == "hub_env":
+                rollback_steps.append(
+                    f"  # Hub .env 无备份：从 FEISHU_ALLOWED_USERS 去掉 {members}"
+                )
+            elif label == "target_config":
+                rollback_steps.append(
+                    f"  # config.yaml 原先不存在：可删 {config_path} 或去掉 platforms.feishu.home_channel"
+                )
+    rollback_steps.append(
+        "  # O2 未起容器 / 未 useradd；无需 docker compose down 或 userdel"
+    )
+
+    # 脱敏人卡预览
+    card_preview = copy.deepcopy(person)
+    if isinstance(card_preview.get("api_server"), dict):
+        card_preview["api_server"]["api_key"] = _REDACTED_KEY
+
+    return {
+        "mode": "apply",
+        "phase": "O2",
+        "ldap_uid": uid,
+        "display_name": plan.get("display_name"),
+        "stamp": st,
+        "backups": backups,
+        "written": written,
+        "rollback": rollback_steps,
+        "person_card_written": card_preview,
+        "api_key": {
+            "strategy": "reuse_shared_fleet_key",
+            "source_profile": key_src,
+            "placeholder": _REDACTED_KEY,
+            "note": "真实 key 已写入 overlay 人卡；本结果永不回显",
+        },
+        "notes": [
+            "O2 已写 overlay + allowlist + home；未 compose up、未 useradd",
+            "Hub 改 allowlist 后通常需 reload/重启 gateway 才生效（见设计 F3）",
+        ],
+    }
+
+
+def format_apply_text(result: Mapping[str, Any]) -> str:
+    """apply 结果人类可读回显（密钥已脱敏）。"""
+    import json
+
+    lines: list[str] = []
+    lines.append(f"# fleet_add {result.get('phase')} · {result.get('mode')}")
+    lines.append(f"ldap_uid: {result.get('ldap_uid')}")
+    lines.append(f"display_name: {result.get('display_name')}")
+    lines.append(f"stamp: {result.get('stamp')}")
+    lines.append("")
+    for n in result.get("notes") or []:
+        lines.append(f"- {n}")
+    lines.append("")
+    lines.append("## 已写文件")
+    lines.append(json.dumps(result.get("written"), ensure_ascii=False, indent=2))
+    lines.append("")
+    lines.append("## 备份")
+    lines.append(json.dumps(result.get("backups"), ensure_ascii=False, indent=2))
+    lines.append("")
+    lines.append("## 回滚")
+    for step in result.get("rollback") or []:
+        lines.append(step if str(step).startswith(" ") or str(step).startswith("回滚") else f"- {step}")
+    lines.append("")
+    lines.append("## 人卡（脱敏）")
+    lines.append(
+        json.dumps(result.get("person_card_written"), ensure_ascii=False, indent=2)
+    )
+    return "\n".join(lines) + "\n"
