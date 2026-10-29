@@ -60,19 +60,31 @@ def _inject_profile_tag(node: Any, profile_tag: str) -> None:
 
 
 def _maybe_tag_card_profile(adapter: FeishuAdapter, card: dict[str, Any]) -> None:
-    """Tag buttons with active sub-profile name when connection_mode is send_only.
+    """Tag buttons with this container's profile when connection_mode is send_only.
 
-    Fail-open: any error leaves the card untagged. Main gateway (non-send_only)
-    is a no-op. Full multi-profile routing lands with C05.
+    Source of truth is ``container_profile_identity()`` (same as T2-9 inbound
+    ownership) — ``HERMES_PROFILE`` / ``user_routing.container_profile``.
+    Do **not** use ``get_active_profile_name()``: under the Docker target layout
+    ``HERMES_HOME=/root/.hermes`` that helper returns ``"default"`` and cards
+    would ship untagged, breaking Hub card-action routing.
+
+    Fail-open on unexpected errors (card left untagged). Non-send_only is a
+    no-op. send_only with no resolvable identity logs a WARNING once-ish.
     """
     try:
         if getattr(adapter, "_connection_mode", "") != "send_only":
             return
-        from hermes_cli.profiles import get_active_profile_name
+        from owner.feishu.profile_routing import container_profile_identity
 
-        profile_tag = get_active_profile_name()
+        profile_tag = container_profile_identity()
         if profile_tag and profile_tag not in ("default", "custom"):
             _inject_profile_tag(card, profile_tag)
+            return
+        logger.warning(
+            "[Feishu] send_only card not tagged with hermes_profile "
+            "(set HERMES_PROFILE or user_routing.container_profile); "
+            "Hub card-action routing will treat clicks as local"
+        )
     except Exception:
         logger.debug("[Feishu] hermes_profile tag injection skipped", exc_info=True)
 

@@ -4705,6 +4705,25 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
                 _openai_error("Feishu adapter unavailable", code="feishu_unavailable"),
                 status=503,
             )
+        # [owner] C05 M1: doorway is for send_only sub-profiles only. Hub holds
+        # the Feishu WS (connection_mode=websocket) and must not accept inject
+        # RPCs — a shared fleet api_key would otherwise let anyone forge Hub
+        # conversations as an allowlisted user. Sub-containers set
+        # FEISHU_CONNECTION_MODE=send_only.
+        if getattr(adapter, "_connection_mode", "") != "send_only":
+            logger.warning(
+                "[api_server] /v1/feishu/inbound rejected: adapter mode=%r "
+                "(only send_only sub-profiles accept inject)",
+                getattr(adapter, "_connection_mode", None),
+            )
+            return web.json_response(
+                _openai_error(
+                    "Feishu inbound doorway only available on send_only "
+                    "sub-profile gateways",
+                    code="inbound_not_send_only",
+                ),
+                status=403,
+            )
 
         forwarded_kwargs = {
             "text": str(text_body),

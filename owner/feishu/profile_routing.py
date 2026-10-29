@@ -42,8 +42,14 @@ FEISHU_INBOUND_SCHEMA_VERSION = 1
 
 
 
+# Last successfully synthesized routing config. On a later load failure we
+# keep serving this instead of silently returning {} (which would drop every
+# bound user onto Hub — the opposite of "绑定用户绝不回落").
+_last_good_routing_config: dict[str, Any] = {}
+
+
 def _load_overlay_and_patch() -> tuple[dict[str, Any], dict[str, Any]]:
-    """Return ``(overlay, patch)``; both fail-open to ``{}``."""
+    """Return ``(overlay, patch)``; both empty on hard failure (logged ERROR)."""
     overlay: dict[str, Any] = {}
     patch: dict[str, Any] = {}
     try:
@@ -59,7 +65,12 @@ def _load_overlay_and_patch() -> tuple[dict[str, Any], dict[str, Any]]:
         if isinstance(raw_p, dict):
             patch = raw_p
     except Exception:
-        pass
+        logger.error(
+            "[Feishu] failed to load overlay/patch for profile routing; "
+            "see exc — caller may fall back to last-good config",
+            exc_info=True,
+        )
+        raise
     return overlay, patch
 
 
@@ -90,8 +101,9 @@ def _pick_user_routing_section(
         bots_cfg = feishu_cfg.get("bots", {})
         if isinstance(bots_cfg, dict) and bots_cfg:
             if not app_id:
-                logger.debug(
-                    "[Feishu] FEISHU_APP_ID not set; cannot load bot-specific routing"
+                logger.warning(
+                    "[Feishu] FEISHU_APP_ID not set; cannot load bot-specific routing "
+                    "(bots section present but ignored)"
                 )
                 return {}
             bot_cfg = bots_cfg.get(app_id, {})
@@ -213,7 +225,11 @@ def _hub_only_feishu_set(fleet: dict[str, Any]) -> set:
 
 
 def _load_routing_config() -> dict[str, Any]:
-    """Synthesize the runtime routing dict (fail-open).
+    """Synthesize the runtime routing dict.
+
+    On load failure: ERROR log, then return the last successfully synthesized
+    config if any (fail-closed against "all bound users silently fall back to
+    Hub"). If there was never a good load, return ``{}``.
 
     Returned shape (compat + C05 fields)::
 
@@ -225,6 +241,7 @@ def _load_routing_config() -> dict[str, Any]:
         container_profile,          # optional
         fleet_profiles,             # raw person cards (docker fields etc.)
     """
+    global _last_good_routing_config
     try:
         overlay, patch = _load_overlay_and_patch()
         fleet = _pick_fleet_profiles(overlay, patch)
@@ -256,8 +273,19 @@ def _load_routing_config() -> dict[str, Any]:
         )
         if not has_routes and not synthesized["whitelist"]:
             return {}
+        _last_good_routing_config = synthesized
         return synthesized
     except Exception:
+        logger.error(
+            "[Feishu] routing config synthesis failed",
+            exc_info=True,
+        )
+        if _last_good_routing_config:
+            logger.error(
+                "[Feishu] using last-good routing config after load failure "
+                "(fail-closed: refuse silent Hub fallback for bound users)"
+            )
+            return _last_good_routing_config
         return {}
 
 
@@ -273,7 +301,10 @@ def resolve_profile_route(
         2. ``chat_profile_routes`` / ``user_profile_routes`` / ``default_profile``
         3. candidate ∈ ``hub_only.feishu`` → Hub (None)
         4. ``fleet_profiles[candidate].api_server`` (via derived endpoints)
-        5. missing endpoint → warn + None (Hub; same as现网缺失)
+        5. missing endpoint → ``(profile, "", "")`` — **bound, broken**.
+           Callers (``try_route_inbound_message``) must notify failure and
+           **must not** serve on Hub. ``None`` is reserved for "legitimately
+           Hub-local" (whitelist / hub_only / no candidate).
 
     Group chats skip open_id whitelist and hub_only.feishu (DM semantics only).
     """
@@ -319,19 +350,25 @@ def resolve_profile_route(
 
     endpoints = routing_cfg.get("profile_endpoints")
     if not isinstance(endpoints, dict):
-        logger.warning(
-            "[Feishu] derived profile_endpoints has invalid type %s; expected dict",
+        logger.error(
+            "[Feishu] derived profile_endpoints has invalid type %s; expected dict; "
+            "refusing Hub fallback for bound profile '%s'",
             type(endpoints).__name__,
+            profile,
         )
-        return None
+        return (profile, "", "")
 
     endpoint_cfg = endpoints.get(profile)
     if not endpoint_cfg:
-        logger.warning(
-            "[Feishu] profile '%s' has no api_server/endpoint in fleet_profiles",
+        # Bound user / chat / default resolved to a profile with no api_server.
+        # Return empty URL so try_route_* treats this as forward-failure (notify
+        # + stop local), NOT Hub fallback. Nailed 2026-10-29 (review M3).
+        logger.error(
+            "[Feishu] profile '%s' has no api_server/endpoint in fleet_profiles; "
+            "refusing Hub fallback for bound route",
             profile,
         )
-        return None
+        return (profile, "", "")
 
     if isinstance(endpoint_cfg, dict):
         url = endpoint_cfg.get("url", "")
@@ -341,10 +378,12 @@ def resolve_profile_route(
         api_key = ""
 
     if not url:
-        logger.warning(
-            "[Feishu] profile '%s' endpoint has no 'url' field", profile
+        logger.error(
+            "[Feishu] profile '%s' endpoint has no 'url' field; "
+            "refusing Hub fallback for bound route",
+            profile,
         )
-        return None
+        return (profile, "", "")
 
     return (profile, str(url), str(api_key))
 

@@ -121,6 +121,10 @@ def dispatch_card_action(
         or (isinstance(action_value, dict) and action_value.get("show_full_diff"))
     )
     if diff_action:
+        # TODO(C05/C12): owner.diff_card package does not exist on v2; this
+        # branch is dead and always fall-throughs. Delete or wire when/if
+        # diff cards land; do not let a future module silently change click
+        # behavior without an explicit restore.
         try:
             from owner.diff_card.feishu import handle_feishu_diff_action
         except Exception:

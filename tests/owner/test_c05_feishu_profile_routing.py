@@ -73,7 +73,8 @@ class TestRoutePriority:
         )
         assert pr.resolve_profile_route("c", "ou_x", DM)[0] == "fleet_default"
 
-    def test_missing_endpoint_returns_none(self, routing):
+    def test_missing_endpoint_returns_bound_empty_url(self, routing):
+        """M3: bound profile without api_server must NOT look like Hub-local None."""
         routing(
             {
                 "user_profile_routes": {"ou_a": "ghost"},
@@ -81,7 +82,7 @@ class TestRoutePriority:
                 "hub_only_feishu": set(),
             }
         )
-        assert pr.resolve_profile_route("", "ou_a", DM) is None
+        assert pr.resolve_profile_route("", "ou_a", DM) == ("ghost", "", "")
 
 
 class TestWhitelistAndHubOnly:
@@ -230,3 +231,65 @@ class TestResolveByName:
             "k",
         )
         assert pr.resolve_profile_route_by_name("missing") is None
+
+
+
+class TestMissingEndpointNoHubFallback:
+    """M3: bound-but-broken routes stop local processing (no Hub fallback)."""
+
+    @pytest.mark.asyncio
+    async def test_try_route_notifies_and_returns_true(self, routing, monkeypatch):
+        routing(
+            {
+                "user_profile_routes": {"ou_a": "ghost"},
+                "profile_endpoints": {},
+                "hub_only_feishu": set(),
+            }
+        )
+        notified = []
+
+        async def _notify(adapter, target, profile):
+            notified.append((target, profile))
+
+        monkeypatch.setattr(pr, "_notify_forward_failure", _notify)
+        got = await pr.try_route_inbound_message(
+            object(),
+            chat_id="oc_dm",
+            open_id="ou_a",
+            chat_type="p2p",
+            text="hi",
+            message_id="om_1",
+        )
+        assert got is True
+        assert notified == [("ou_a", "ghost")]
+
+
+class TestLoadFailureLastGood:
+    """M2: synthesis failure keeps last-good instead of empty Hub fallback.
+
+    Deliberately does **not** use the ``routing`` fixture (which stubs
+    ``_load_routing_config``).
+    """
+
+    def test_uses_last_good_when_overlay_raises(self, monkeypatch):
+        good = {
+            "user_profile_routes": {"ou_a": "yangtb"},
+            "profile_endpoints": {
+                "yangtb": {"url": "http://127.0.0.1:26027", "api_key": "k"}
+            },
+            "hub_only_feishu": set(),
+            "whitelist": [],
+            "chat_profile_routes": {},
+            "identity_routes": {},
+            "identity_whitelist": [],
+            "fleet_profiles": {"yangtb": {}},
+        }
+        pr._last_good_routing_config = dict(good)
+
+        def _boom():
+            raise RuntimeError("overlay broken")
+
+        monkeypatch.setattr(pr, "_load_overlay_and_patch", _boom)
+        got = pr._load_routing_config()
+        assert got["user_profile_routes"]["ou_a"] == "yangtb"
+        assert got["profile_endpoints"]["yangtb"]["url"] == "http://127.0.0.1:26027"
