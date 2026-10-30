@@ -151,3 +151,29 @@ def test_token_update_sql_coalesces_owner_provider_name():
     needle = "owner_provider_name = COALESCE(?, owner_provider_name)"
     assert needle in _TOKEN_UPDATE_DELTA_SQL
     assert needle in _TOKEN_UPDATE_ABSOLUTE_SQL
+
+
+def test_bind_strips_custom_colon_slug():
+    """Mid-switch passes wire id custom:<slug>; attribution wants the slug."""
+    from owner.attribution import bind_agent_attribution
+
+    agent = SimpleNamespace(provider="custom", owner_provider_name=None)
+    bind_agent_attribution(agent, "custom:xfyun")
+    assert agent.owner_provider_name == "xfyun"
+
+
+def test_bind_keeps_bare_custom():
+    from owner.attribution import bind_agent_attribution
+
+    agent = SimpleNamespace(provider="custom", owner_provider_name=None)
+    bind_agent_attribution(agent, "custom")
+    assert agent.owner_provider_name == "custom"
+
+
+def test_bind_strips_custom_colon_from_provider_fallback():
+    from owner.attribution import bind_agent_attribution
+
+    agent = SimpleNamespace(provider="custom:Damodel", owner_provider_name=None)
+    bind_agent_attribution(agent, None)
+    assert agent.owner_provider_name == "damodel"
+

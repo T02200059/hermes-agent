@@ -22,7 +22,7 @@ Official glue sites (thin only):
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 
 def get_current_attribution(agent: Any) -> Optional[str]:
@@ -36,18 +36,32 @@ def get_current_attribution(agent: Any) -> Optional[str]:
 
 
 def bind_agent_attribution(agent: Any, owner_provider_name: Optional[str] = None) -> None:
-    """Set ``agent.owner_provider_name`` (explicit arg, else existing attr, else ``agent.provider``)."""
+    """Set ``agent.owner_provider_name`` (explicit arg, else existing attr, else ``agent.provider``).
+
+    Named-custom wire ids look like ``custom:<slug>`` (``resolve_provider_full``);
+    attribution stores the slug so it matches the named-custom runtime stamp
+    (``custom_provider["name"]``). Bare ``custom`` stays ``custom``.
+    """
     raw = owner_provider_name
     if raw is None:
         raw = getattr(agent, "owner_provider_name", None)
     normalized = (str(raw).strip().lower() if raw else "") or None
+    # [owner] C02/H03: strip custom:<slug> → <slug> so /model mid-switch matches init stamp
+    if normalized and normalized.startswith("custom:"):
+        slug = normalized.split(":", 1)[1].strip()
+        if slug:
+            normalized = slug
     if not normalized:
         provider = getattr(agent, "provider", None)
         normalized = (str(provider).strip().lower() if provider else None) or None
+        if normalized and normalized.startswith("custom:"):
+            slug = normalized.split(":", 1)[1].strip()
+            if slug:
+                normalized = slug
     agent.owner_provider_name = normalized
 
 
-def inject_attribution_into_message(agent: Any, msg: Dict[str, Any]) -> None:
+def inject_attribution_into_message(agent: Any, msg: dict[str, Any]) -> None:
     """Stamp per-turn attribution fields onto *msg* (in-place; never raises)."""
     try:
         model = getattr(agent, "model", None)

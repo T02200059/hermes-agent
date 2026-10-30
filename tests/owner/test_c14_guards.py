@@ -237,3 +237,10 @@ def test_request_stop_mixin_latch():
     a._stream_stop_requested = False
     a._interrupt_requested = False
     assert a._request_stream_stop(reason="x", turn_id="t") is False
+
+
+def test_stream_guard_defaults_action_interrupt():
+    """H03: code DEFAULTS must match overlay full default (interrupt), not warn_only."""
+    from owner.stream_guard import DEFAULTS
+    assert DEFAULTS["action"] == "interrupt"
+

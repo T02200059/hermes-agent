@@ -74,8 +74,9 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 DEFAULTS: dict = {
     "enabled": True,
-    # warn_only：只告警不中止（灰度用）；interrupt：真正中止本轮
-    "action": "warn_only",
+    # interrupt：真正中止本轮（与 overlay 完整版一致）；warn_only：灰度只告警
+    # [owner] H03: DEFAULTS 与 overlay 对齐为 interrupt，缺 overlay 时不再 fail-open 到 warn_only
+    "action": "interrupt",
     # 低于此累计字符数不做任何判定
     "min_stream_chars": 1200,
     # 首个 delta 之后这么多秒内不判定（正常长思考的缓冲）
