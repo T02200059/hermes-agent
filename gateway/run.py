@@ -1593,6 +1593,14 @@ from hermes_cli.env_loader import load_hermes_dotenv
 _env_path = _hermes_home / '.env'
 load_hermes_dotenv(hermes_home=_hermes_home, project_env=Path(__file__).resolve().parents[1] / '.env')
 
+# [owner] C16: scrub inherited cron/session env so get_session_env os.environ
+# fallback cannot misclassify live gateway turns as cron (ContextVar is authority).
+try:
+    from owner.cron.restart_scrub import owner_cron_scrub_process_env
+    owner_cron_scrub_process_env()
+except Exception:
+    pass
+
 
 def _reload_runtime_env_preserving_config_authority() -> None:
     """Reload .env per turn for rotated keys while config.yaml stays authoritative for budgets (else a

@@ -1402,6 +1402,12 @@ class GatewayShutdownMixin(GatewaySessionEndMixin):
             )
         watcher_env = drop_bridged_env(watcher_env)
         watcher_env.pop("_HERMES_GATEWAY", None)
+        # [owner] C16: scrub session/cron env (see owner/cron/restart_scrub.py)
+        try:
+            from owner.cron.restart_scrub import owner_cron_scrub_watcher_env
+            owner_cron_scrub_watcher_env(watcher_env)
+        except Exception:
+            pass
         return watcher_env
 
     @staticmethod
