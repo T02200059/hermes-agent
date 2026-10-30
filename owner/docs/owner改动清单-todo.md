@@ -205,8 +205,8 @@ explainers:
 
 ### TUI / CLI 稳定性
 
-- [x] **B12** · 源 §6.3 · Ctrl+C /exit 与 graceful drain（SIGINT 逃出清理链） · **验证状态：仍存在/需自研**
-  - owner：`cli.py` OS SIGINT 路由到 `app.exit()`（26 处中断处理）+ TUI 先 session-end 再 MCP teardown。v2：`cli.py` 仅 2 处提及 KeyboardInterrupt、无 SIGINT handler；`tui_gateway/entry.py` 把 SIGINT 设 `SIG_IGN`、SIGTERM 只 `_log_signal`。
+- [x] **B12** · 源 §6.3 · Ctrl+C /exit 与 graceful drain（SIGINT 逃出清理链） · **验证状态：已核实 · 暂不实施**
+  - **2026-10-30 核实**：不加 OS SIGINT handler。按键 Ctrl+C 已由 prompt_toolkit `c-c` 覆盖；`cli_terminal_input` 注明 raw mode clears ISIG；TUI `SIGINT→SIG_IGN` 有意（SIGTERM/SIGHUP→exit）；单查询路径已有 handler。无「逃出清理链」廉价复现 → 暂不实施（见阶段一旁注）。
 - [x] **B13** · 源 §6.4 · live compression sync 误清 per-model `context_length` · **验证状态：官方已修**
   - owner：`tui_gateway/server.py` 缺顶层时回退 `get_custom_provider_context_length`。v2：`tui_gateway/session_compression.py` + `agent_init.config_context_length_for_runtime`，引脚缺失时强制重新推断，`get_model_context_length` 步骤 0c 精确匹配 `providers.*.models`。
 - [x] **B14** · 源 §7.20 · 后台插件发现超时死锁（启动空白屏） · **验证状态：官方已修**
@@ -311,7 +311,7 @@ explainers:
 ### 次级（需先解决口径，暂不实施）
 
 - **B17**（clarify）：**官方半边 + 飞书半边均已落地**（见下表）。
-- **B12**（CLI OS 级 SIGINT）：v2 已用 prompt_toolkit `c-c` 覆盖按键层，且 `hermes_cli/cli_terminal_input.py:394` 明确表态「raw mode clears ISIG，内核 INTR 路径从未涉入 CLI」——上游认为无需处理。我们的场景（子 shell PTY 回弹 / 后台线程投递 SIGINT）上游大概率判 invalid，需先备证据再提。
+- **B12**（CLI OS 级 SIGINT）：**2026-10-30 核实 · 暂不实施**。证据：① v2 按键层已由 prompt_toolkit `c-c` 覆盖；② `hermes_cli/cli_terminal_input.py` 注明 raw mode clears ISIG，内核 INTR 从未涉入交互 CLI；③ `tui_gateway/entry.py` 对 SIGINT 设 `SIG_IGN` 为有意（用 SIGTERM/SIGHUP → `app.exit`）；④ 单查询路径已有 SIGINT handler。无廉价可复现「OS SIGINT 逃出清理链」证据，故不加 handler（避免与 SIG_IGN / ISIG 假设打架）。若日后有子 shell PTY 回弹 / 后台线程投递 SIGINT 的实机复现，再最小补。
 - **B11**（审批历史按英文文案判定）：**已与 C10 同批落地**（结构标记三层判定）。
 
 ---
@@ -393,7 +393,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
     2. `owner/providers/credential_helpers.py`；`model_switch_providers` 薄委托
     3. `sessions.owner_provider_name` + messages 四列 token 用量落盘
   - **2026-10-27 补丁**：`PERSISTENCE_ONLY_MESSAGE_FIELDS` 增 `model`/`provider`（出站剥离；不落盘 DDL）；attribution docstring 改为「仅内存」
-  - **待确认（不阻塞）**：`/model` 切换时 `switch_model` → `bind_agent_attribution(agent, new_provider)`；若 `new_provider` 落到 wire 名 `custom`，`owner_provider_name` 可能记成 `custom`。出站剥离已闭环；此点需实机切一次 custom 端点确认，暂不改代码。
+  - **已核实并落地（2026-10-30）**：`/model` mid-switch 传入的 `new_provider` 对 named-custom 多为 `custom:<slug>`（`resolve_provider_full`），会把 init 时 runtime 盖成的 slug 名冲掉。`bind_agent_attribution` 现剥离 `custom:` 前缀，与 named-custom runtime stamp（`custom_provider["name"]`）对齐；裸 `custom` 仍记 `custom`。测：`tests/owner/test_attribution.py`。
 - [x] **C03** · 源 §2.7–2.8 · damodel provider/proxy · **优先级：P0**
   - 落地：`owner/providers/damodel.py` + `plugins/model-providers/damodel/`；测 `tests/owner/test_damodel_provider.py`
   - **C03+ 2026-10-27**：`is_damodel_route` + `anthropic_prompt_cache_policy` 3 行 `# [owner]` 委托，恢复 damodel cache_control（成本回归）；thinking/extra_body 仍延后
@@ -563,9 +563,9 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
     5. 测：`tests/owner/patches/test_openviking_owner_recall_patch.py`
   - 胶水：`owner/owner-extensions/__init__.py` `register()` fail-open apply（护栏 + OV）
   - **未迁（明确不做）**：旧树 `openviking_owner_recall_patch` 召回卡发送/防抖/执行器；ChatLog 截断（仍仅旧树 bundled 插件侧）；`recall_card` overlay 段
-- [x] **C16** · 源 §7.4 · Cron env 隔离（ContextVar + restart scrub） · **优先级：P1** · **验证状态：官方已修**
+- [x] **C16** · 源 §7.4 · Cron env 隔离（ContextVar + restart scrub） · **优先级：P1** · **验证状态：官方已修 + 薄缺口已补（2026-10-30）**
   - v2：`gateway/session_context._VAR_MAP["HERMES_CRON_SESSION"]` + `cron/scheduler._CronRunScope` set/reset；gateway/ACP/TUI bind `cron_session=""`；`tools/approval_context` ContextVar 感知；外部 worker 剥离 presence vars。无进程级 `os.environ["HERMES_CRON_SESSION"]=1` 写入。
-  - 薄缺口（未扩 scope）：进程启动 scrub 继承的 `HERMES_CRON_SESSION`/`SESSION_KEY`/`SESSION_ID`；restart watcher env 未特判 pop（子进程 builder 仍可能拷贝 `os.environ`）。
+  - **薄缺口已补**：`owner/cron/restart_scrub.py`（`owner_cron_scrub_process_env` / `owner_cron_scrub_watcher_env`）清 `HERMES_CRON_SESSION`/`HERMES_SESSION_KEY`/`HERMES_SESSION_ID`；胶水：`gateway/run.py`（dotenv 后）+ `gateway/run_shutdown._restart_watcher_env`。测：`tests/owner/test_c16_cron_env_scrub.py`。
 - [x] **C17** · 源 §8.1 · Checkpoint Mutation Predictor · **优先级：P1**（阶段一）
   - [x] **C17 follow-up（2026-10-27）**：官方 `_REDIRECT_OVERWRITE` 不再把 `2>&1`/`>&2` 当成破坏性覆盖（消 checkpoint 误报）
   - helper：`owner/checkpoint_predictor/`（`predict_and_checkpoint` / static_parser / llm_predict）
@@ -627,13 +627,13 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 - [x] **H01** · **官方 test 污染梳理** · 审计见 WorkBuddy `tests-pollution-audit-2026-10-23.md`；优先项已修：`73fa8f53e3`…`de3dc9ecff`（#1/#2/#5/#6/#7 R1/#10 等）。#7 仅守卫登记第一步；网络守卫等后置。
 - [x] **文案硬编码 ⚠️→💡（审批门等）** · 2026-10-28 · 飞书/多平台 `_EA_HEADER`、`gateway/run` 审批回落、`tools/approval` 模型侧、owner 飞书告警/queue/media/skill、C13 `stream-guard` notice 匹配键与 overlay 同步为 💡；cron 失败告警同改。刻意未动：agent 轮次诊断刷屏、CI/doctor/Slack emoji map、setup allowlist print。
 - [x] **H02** · CLI approval `input()` 超时僵尸 reader · 仅无 callback 且非 PT 路径。落地：`owner/approval/cli_read_choice.py`（POSIX TTY + 原装 `input` → `select`+`os.read`；否则回落官方 daemon `input()`）；`tools/approval_prompt.py` `_read_choice` 薄委托。gateway/飞书/QQ/微信与正常 TUI **无感**。测：`tests/owner/test_h02_cli_read_choice.py`。
-- [ ] **H03** · **审核遗留暂缓（2026-10-27 复审）** · 勿再当「漏做」：
-  1. C14 `stream_guard.DEFAULTS["action"]=warn_only`（overlay 已 interrupt）— **仍旁置**
+- [x] **H03** · **审核遗留（2026-10-30 核实收口）** · 勿再当「漏做」：
+  1. ~~C14 `stream_guard.DEFAULTS["action"]=warn_only`~~ → **已改** `interrupt`（与 overlay 完整版对齐；缺 overlay 不再 fail-open）。测：`test_stream_guard_defaults_action_interrupt`；`warn_only` 仍可显式配置。
   2. ~~`[owner-patch P2-3]` 旧拼写~~ → **已落地**：`# [owner] P2-3: …`
   3. ~~C13 三 kind 输出帽硬编码~~ → **已落地**：读 overlay `max_output_chars`（见 C13 条）
   4. **标记纪律**：~~本轮未批量扫~~ → **轻量已补**（相对 `upstream/main...HEAD` 官方运行时缺标 12 文件补 `# [owner]`；**未**做 `owner/validation/` 迁入、**未**开 C24 全量 inventory / 官方测全绿；`tests/owner/*` 整文件属 owner 域跳过；其余官方 test 改动本轮不铺标）
-  5. `owner/validation/` 空目录（Check 7/8 inventory 工具未迁）— **仍旁置**
-  6. C02 `/model` → wire `custom` 归因（见 C02「待确认」）— **仍旁置**
+  5. `owner/validation/` 仅 `samples/`、无 `inventory.yaml`（Check 7/8 工具未迁）— **旁置保留**（绑 C24；本轮不删不发明 inventory）
+  6. ~~C02 `/model` → wire `custom` 归因~~ → **已核实并修**（见 C02「已核实并落地」：`custom:<slug>` 剥前缀）
 - **限流（暂不做）**：本清单 **无独立限流定制项**（C 段无 RPM/TPM/throttle/客户端主动限流条目）。最接近已消化项：
   - **B18**（已勾）/ 源 §7.9 — 429 配额耗尽当 transient 静默重试 → 本树用 **O5** 天/周配额墙单向降为 billing
   - 官方自带：`agent/rate_limit_tracker.py`、pairing `_rate_limits`、渠道 flood 等（非 owner 待做）
