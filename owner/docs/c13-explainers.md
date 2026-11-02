@@ -130,3 +130,9 @@ PYTHONPATH=. python -m pytest tests/owner/test_c13_explainers.py -q
 
 适用范围：`english` / `recap` 默认强制中文旁白；`progress` / `approval` 跟随 `display.language`（可用 kind cfg `require_chinese` 覆盖）。**不**改写 english explainer 的英文源正文。
 
+## progress fact_line（旁白正文下一行）
+
+- 尾缀经官方 `format_iteration_progress`（`display.iteration_progress.*`，随 `display.language`；zh=`第 {n}/{max} 轮迭代`）。
+- 有 `current_tool` 时前缀用 `gateway.busy.running_tool`（zh=`正在运行：{tool}`）；无工具时仍透传英文 `last_activity_desc` 活动戳（暂不做全量映射）。
+- `_hard_facts.iteration` / `max_iterations` 为数值对，供 prompt「迭代 N/M」展示。
+

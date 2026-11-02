@@ -29,11 +29,11 @@ from owner.explainers.progress.tracker import ProgressTracker
 logger = logging.getLogger("hermes.owner.explainers.progress")
 
 # ---- 模块级观察者表：session_id|turn_id → ProgressTracker ----
-_TRACKERS: Dict[str, ProgressTracker] = {}
+_TRACKERS: dict[str, ProgressTracker] = {}
 _TRACKERS_LOCK = threading.Lock()
 
 # 已经在 owner-extensions 聚合器里注册过 on_stream_delta 的标记
-_HOOKS_REGISTERED: Dict[str, bool] = {}
+_HOOKS_REGISTERED: dict[str, bool] = {}
 
 _LAST_DIGEST_HASH_ATTR = "_pe_last_digest_hash"
 
@@ -290,7 +290,7 @@ class ProgressExplainer:
         agent.interim_assistant_callback = _interim_cb
         self._wrapped_agent_id = id(agent)
 
-    def install(self) -> "ProgressExplainer":
+    def install(self) -> ProgressExplainer:
         tracker = self._tracker
         # on_stream_delta 观察者（模块级表，先按占位 identity 注册）
         _register_tracker(self._session_id, self._turn_id, tracker)
@@ -314,14 +314,14 @@ class ProgressExplainer:
             return 5.0
 
     @staticmethod
-    def _event_from_cb(event_type: str, args: tuple, kwargs: dict) -> Dict[str, Any]:
+    def _event_from_cb(event_type: str, args: tuple, kwargs: dict) -> dict[str, Any]:
         """tool_executor 回调签名 → tracker 事件 dict。
 
         started: cb("tool.started", function_name, preview, display_args)
         completed: cb("tool.completed", name, None, None,
                       duration=, is_error=, result=)
         """
-        ev: Dict[str, Any] = {
+        ev: dict[str, Any] = {
             # phase 归一化：tool_executor 回调传 "tool.started"/"tool.completed"，
             # tracker 只认 "started"/"completed"（_STARTED_PHASES）
             "phase": str(event_type or "").split(".")[-1],
@@ -483,7 +483,7 @@ class ProgressExplainer:
         except Exception:
             return None
 
-    def _activity_summary(self) -> Dict[str, Any]:
+    def _activity_summary(self) -> dict[str, Any]:
         try:
             agent = self._resolve_agent() or self._agent
             a = agent.get_activity_summary()
@@ -491,11 +491,12 @@ class ProgressExplainer:
         except Exception:
             return {}
 
-    def _hard_facts(self, state: dict, activity: dict) -> Dict[str, Any]:
-        facts: Dict[str, Any] = {
-            "elapsed_seconds": int(
-                max(0.0, state.get("now", 0) - state.get("turn_started_at", 0))
-            ),
+    def _hard_facts(self, state: dict, activity: dict) -> dict[str, Any]:
+        elapsed = int(max(0.0, state.get("now", 0) - state.get("turn_started_at", 0)))
+        facts: dict[str, Any] = {
+            "elapsed_seconds": elapsed,
+            # prompt._format_hard_facts 读 elapsed_s（与尾缀同源秒数）
+            "elapsed_s": elapsed,
             "branch": state.get("branch", ""),
         }
         if activity.get("current_tool"):
@@ -503,9 +504,16 @@ class ProgressExplainer:
         elif activity.get("last_activity_desc"):
             facts["current_tool"] = str(activity["last_activity_desc"])
         if "api_call_count" in activity:
-            facts["iteration"] = (
-                f"{activity['api_call_count']}/{activity.get('max_iterations', '?')}"
-            )
+            # 数值对供 prompt「迭代 N/M」；勿再写成 "N/M" 字符串
+            try:
+                facts["iteration"] = int(activity["api_call_count"])
+            except (TypeError, ValueError):
+                pass
+            else:
+                try:
+                    facts["max_iterations"] = int(activity.get("max_iterations"))
+                except (TypeError, ValueError):
+                    pass
         try:
             from hermes_cli.config import load_config as _load_user_config
 
@@ -518,14 +526,21 @@ class ProgressExplainer:
         return facts
 
     def _fact_line(self, activity: dict) -> str:
+        # 用户可见尾行：复用官方 i18n（display.language），勿硬编码英文 iteration
+        from agent.i18n import t
+        from agent.session_activity import format_iteration_progress
+
         parts = []
         if activity.get("current_tool"):
-            parts.append(str(activity["current_tool"]))
+            parts.append(t("gateway.busy.running_tool", tool=activity["current_tool"]))
         elif activity.get("last_activity_desc"):
             parts.append(str(activity["last_activity_desc"]))
         if "api_call_count" in activity:
             parts.append(
-                f"iteration {activity['api_call_count']}/{activity.get('max_iterations', '?')}"
+                format_iteration_progress(
+                    activity["api_call_count"],
+                    activity.get("max_iterations"),
+                )
             )
         if not parts:
             return ""

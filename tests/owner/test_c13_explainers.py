@@ -391,3 +391,63 @@ def test_explainer_output_caps_defaults():
     assert llm_mod._MAX_OUTPUT_CHARS_DEFAULT == 1000
     sig = inspect.signature(llm_mod.call_explainer_llm)
     assert sig.parameters["max_tokens"].default == 400
+
+
+def _progress_explainer_stub():
+    """Bypass __init__ (overlay/tracker); only exercise pure helpers."""
+    from owner.explainers.progress.dispatcher import ProgressExplainer
+
+    return ProgressExplainer.__new__(ProgressExplainer)
+
+
+def _set_lang(monkeypatch, lang: str) -> None:
+    from agent import i18n
+
+    monkeypatch.setenv("HERMES_LANGUAGE", lang)
+    i18n.reset_language_cache()
+
+
+def test_progress_fact_line_zh_uses_i18n(monkeypatch):
+    _set_lang(monkeypatch, "zh")
+    pe = _progress_explainer_stub()
+    line = pe._fact_line(
+        {"current_tool": "patch", "api_call_count": 15, "max_iterations": 120}
+    )
+    assert line == "正在运行：patch — 第 15/120 轮迭代"
+    line2 = pe._fact_line(
+        {
+            "last_activity_desc": "receiving stream response",
+            "api_call_count": 12,
+            "max_iterations": 120,
+        }
+    )
+    assert line2 == "receiving stream response — 第 12/120 轮迭代"
+    assert "iteration " not in line and "iteration " not in line2
+
+
+def test_progress_fact_line_en_uses_i18n(monkeypatch):
+    _set_lang(monkeypatch, "en")
+    pe = _progress_explainer_stub()
+    line = pe._fact_line(
+        {"current_tool": "patch", "api_call_count": 15, "max_iterations": 120}
+    )
+    assert line == "running: patch — iteration 15/120"
+
+
+def test_progress_hard_facts_numeric_iteration_for_prompt(monkeypatch):
+    _set_lang(monkeypatch, "zh")
+    pe = _progress_explainer_stub()
+    facts = pe._hard_facts(
+        {"now": 100.0, "turn_started_at": 40.0, "branch": "tool"},
+        {"current_tool": "patch", "api_call_count": 15, "max_iterations": 120},
+    )
+    assert facts["iteration"] == 15
+    assert facts["max_iterations"] == 120
+    assert facts["elapsed_s"] == 60
+    assert facts["elapsed_seconds"] == 60
+    from owner.explainers.progress.prompt import _format_hard_facts
+
+    rendered = _format_hard_facts(facts)
+    assert "迭代 15/120" in rendered
+    assert "已耗时 60s" in rendered
+    assert "当前工具: patch" in rendered
