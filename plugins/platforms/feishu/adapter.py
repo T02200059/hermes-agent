@@ -1127,6 +1127,12 @@ def _run_official_feishu_ws_client(ws_client: Any, adapter: Any) -> None:
             # on the live link ``_auto_reconnect`` is on, so the ladder runs *inside* the receive loop
             # and the thread never dies — without this the supervisor's ``retrying`` is never published.
             ws_client.on_reconnecting = _on_reconnecting
+            # [owner] finite SDK ladder + conn-url timeout — owner/feishu/ws_reconnect_guard.py
+            try:
+                from owner.feishu.ws_reconnect_guard import apply_ws_client_overrides
+                apply_ws_client_overrides(ws_client, adapter)
+            except Exception:
+                logger.debug("[Feishu] owner ws_reconnect_guard apply failed", exc_info=True)
         except Exception:
             logger.debug("[Feishu] Failed to apply websocket runtime overrides", exc_info=True)
 
@@ -1677,6 +1683,12 @@ class FeishuAdapter(BasePlatformAdapter):
             pass
         finally:
             self._ws_client = None
+            # [owner] drop reconnect-guard state for this adapter
+            try:
+                from owner.feishu.ws_reconnect_guard import drop_state
+                drop_state(self)
+            except Exception:
+                pass
 
     async def _stop_webhook_server(self) -> None:
         if self._webhook_runner is None:
@@ -4561,47 +4573,30 @@ class FeishuAdapter(BasePlatformAdapter):
 
         See #73779.
         """
-        backoff = initial_backoff = float(self._ws_restart_backoff)
-        last_dead: Optional[asyncio.Future] = None
-        while self._running:
-            ws_future = self._ws_future
-            if ws_future is None:
-                return
-            try:
-                await asyncio.shield(ws_future)
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                pass
-            # Deliberate disconnects nil ``_ws_client``/``_running`` first; only restart a live link.
-            if not self._running or self._ws_client is None:
-                return
-            if ws_future is not last_dead:
-                logger.error("[Feishu] WebSocket client thread exited unexpectedly; restarting in %.0fs", backoff)
-                last_dead = ws_future
-                # Still running, link unproven: ``connected`` stays wrong until ``_ws_link_up`` re-stamps it.
-                self._write_runtime_status_safe(
-                    "ws_link_lost", platform_state="retrying", error_code=None,
-                    error_message="Feishu websocket link lost; rebuilding",
-                )
-            await asyncio.sleep(backoff)
-            if not self._running:
-                return
-            try:
-                await self._connect_websocket()
-                backoff = initial_backoff
-            except Exception as exc:
-                logger.warning("[Feishu] WebSocket restart failed (retrying): %s", exc)
-                backoff = min(backoff * 2, 60.0)
+        # [owner] hung ladder + ~10min capped rebuild — owner/feishu/ws_reconnect_guard.py
+        from owner.feishu.ws_reconnect_guard import supervise_websocket_thread as _owner_supervise
+        await _owner_supervise(self)
 
     def _ws_link_up(self, ws_client: Any) -> None:
         """WS thread reports its link is up (SDK receive loop scheduled); re-stamp ``connected`` after a rebuild."""
         if self._running and self._ws_client is ws_client:
+            # [owner] clear reconnect-guard failure streak
+            try:
+                from owner.feishu.ws_reconnect_guard import note_link_up
+                note_link_up(self)
+            except Exception:
+                logger.debug("[Feishu] note_link_up failed", exc_info=True)
             self._mark_connected()
 
     def _ws_link_retrying(self, ws_client: Any) -> None:
         """WS thread reports the SDK's own reconnect ladder started; ``_ws_link_up`` re-stamps ``connected``."""
         if self._running and self._ws_client is ws_client:
+            # [owner] arm guard bookkeeping (SDK ladder in flight)
+            try:
+                from owner.feishu.ws_reconnect_guard import note_retrying
+                note_retrying(self)
+            except Exception:
+                logger.debug("[Feishu] note_retrying failed", exc_info=True)
             self._write_runtime_status_safe(
                 "ws_link_lost", platform_state="retrying", error_code=None,
                 error_message="Feishu websocket link lost; reconnecting",

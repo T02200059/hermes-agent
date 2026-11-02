@@ -369,6 +369,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 | **C03** | damodel provider/proxy | `owner/providers/damodel.py` + model-providers 插件 |
 | **C26** | providers 白名单 / 缓存 TTL / `/providers` | 白名单沿用官方；TTL 24h + 无变更不写盘；斜杠命令；飞书卡见 **C26-feishu-picker** |
 | **C16** | Cron env 隔离 | **官方已修**：ContextVar + `_CronRunScope`；审批 ContextVar 感知 |
+| **C29** | 飞书 WS 重连守卫 | hung `_get_conn_url` timeout + 有限 ladder + ~10min 封顶 supervisor（不整进程重启） |
 | **C17** | Checkpoint Mutation Predictor | `owner/checkpoint_predictor/`；tool_executor terminal 薄胶水 |
 | **C19** | 链式快捷命令 `;;` + Quick Alias | `owner/commands/chained_quick.py`；CLI/gateway/TUI 薄胶水 |
 | **H01** | 官方 test 污染梳理 | 优先项已修（#1/#2/#5/#6/#7 R1/#10 等） |
@@ -662,6 +663,16 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 - [x] **C21** · 模型杂项（源 §2.4–2.6 / §2.9）— **明确不做**（用户拍板；MiniMax/Kimi 不迁；其余已覆盖/现网无感）
 
 ---
+
+## § 渠道运行时加固（穿插）
+
+- [x] **C29** · 飞书 WS 重连守卫（2026-11-02）· **优先级：P1**
+  - **根因**：keepalive ping timeout 后 SDK `trying to reconnect for the 1st time` 卡在无 timeout 的 `requests.post`（`_get_conn_url`）；线程仍活 → supervisor 不重建；进程看似健康、入站全哑。
+  - **策略**：不整进程 `gateway restart`；强制有限 SDK ladder；conn-url timeout；supervisor 首次快、其后约 **10 min**；连续失败达上限 → 告警并停止自动重试（`note_link_up` 清零）。
+  - **落地**：`owner/feishu/ws_reconnect_guard.py`；adapter 薄挂（apply / supervise / note_*）；设计 `owner/docs/design/feishu-ws-reconnect/README.md`
+  - **配置**：overlay 可选 `feishu.ws_reconnect_guard`（DEFAULTS：`supervisor_retry_interval_s=600`，`max_failures=18`，`conn_url_timeout_s=30`，`sdk_reconnect_count=2`）
+  - **测**：`tests/owner/test_feishu_ws_reconnect_guard.py`；官方 multiplex supervise 测已接短 interval policy
+  - **生效**：需重启 gateway 后新 WS client 才带 guard
 
 ## § yaml 整合方向（穿插落地；不大爆炸）
 
