@@ -221,21 +221,25 @@ _DEFAULT_NOTICE_RULES: tuple[dict[str, Any], ...] = (
         "strip_prefix": True,
     },
     {
-        # [owner] progress_explainer 沉默期进度旁白（§7.24）：投递文案由
-        # dispatcher 拼上 owner/progress_explainer/prompt.py 的 PREFIX 再走
-        # adapter.send → try_auto_card。此处 prefix 须与 PREFIX 字面一致——
-        # test_progress_explainer_notice_rule_pins_prefix 钉死防漂移。
-        # template=blue：信息性旁白，区别于 orange 的告警色。
+        # [owner] progress explainer 旁白：prefix 须与
+        # owner/explainers/progress 投递 PREFIX 字面一致。
         "prefix": "🧭 系统提示：",
         "title": "🧭 进度旁白",
         "template": "blue",
         "strip_prefix": True,
     },
     {
-        # [owner] english_explainer 英文回复解说（§7.26）：PREFIX 须与
-        # owner/english_explainer/prompt.py 字面一致。
+        # [owner] english explainer：PREFIX 须与 owner/explainers/english 一致。
         "prefix": "🔤 系统提示：",
         "title": "🔤 英文解说",
+        "template": "blue",
+        "strip_prefix": True,
+    },
+    {
+        # [owner] C13 recap：PREFIX 须与 owner/explainers/recap/prompt.py 一致。
+        # 进 DEFAULTS 后 overlay 可不再复写整表 notice_titles（替换语义）。
+        "prefix": "📋 系统提示：",
+        "title": "📋 会话回顾",
         "template": "blue",
         "strip_prefix": True,
     },

@@ -663,28 +663,28 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 
 ---
 
-## § yaml 整合方向（只写方向，不改现网）
+## § yaml 整合方向（穿插落地；不大爆炸）
 
-现状（源仓）：`owner/config/overlay.yaml`（v2 扁平）+ `patch_feishu_profile.yaml`（含 bots 路由与 LDAP）+ `upstream_sync.yaml`。老版 owner 分支仍用独立的 `patch.yaml`（含 `owner:` 外壳）。
+现状（源仓）：`owner/config/overlay.yaml`（v2 扁平）+ `patch_feishu_profile.yaml`（含 bots 路由与 LDAP，回落）+ `upstream_sync.yaml`（独立）。老版 owner 分支仍用独立的 `patch.yaml`（含 `owner:` 外壳）；v2 加载器**不读** `patch.yaml`。
 
 **目标**：定制 yaml **更小、更好读**；密钥仍可内网提交，对外另做 template。
 
-建议（落地时穿插，非一次性大爆炸）：
+**本机现状（2026-11-02）**：
+- ① **缩 DEFAULTS 重复** · **已做**：overlay 去掉与代码 DEFAULTS 相同的段/键（`stream_guard` 整段、`openviking`、`output_guard`、`approvals` 空默认、`queue_card.enabled`、checkpoints 除 `predict_llm_timeout_ms`、explainers 共用默认与 kind 内重复数值、`feishu_card.split_*`）；`notice_titles` 的 recap 规则已进 `auto_card._DEFAULT_NOTICE_RULES`，overlay 不再复写整表。
+- ② **削注释噪声** · **已做**：压缩 feishu_card / bot_menu 旁大段说明。
+- ③ **身份/路由边界** · **文档约定，本机不写舰队段**：本机 overlay **不写** `fleet_profiles` / `user_routing`；留给 **C05b** 在 node010 迁人卡时一次写入。加载仍主读 overlay、回落 `patch_feishu_profile`。`ldap:` 连接字段可留仓内，`enabled` 仓内默认 `false`（节点用 patch/env 开门）。
+- ④ **`~/.hermes/patch.yaml` 软链**：可选卫生；若仍有插件（如 image-hub）直读该路径则**勿删**，见当次收口说明。
+- 回落面大迁（人卡进 overlay）→ **跟 C05b**，此处只点明。
+
+方向备忘（未改语义的中长期）：
 
 1. **拆「路由/身份」与「行为开关」**  
-   - 结构对齐：`feishu.bots.*.user_routing` / `profile_endpoints`；顶层 **`api_identity`** + **`ldap`**（方案 A）；旧 `identity_*` 仅 C06 只读别名；逻辑 profile 默认 LDAP uid。避免 LDAP/身份埋在飞书 bot 节。  
+   - 终态结构：`feishu.bots.*.user_routing` / `profile_endpoints`；顶层 **`api_identity`** + **`ldap`**；避免 LDAP/身份埋在飞书 bot 节。  
    - **不**为对齐官方而改成 `gateway.profile_routes`（语义不覆盖跨进程）。
-2. **`overlay.yaml` 合并同类开关**  
-   - `progress_explainer` / `approval_explainer` / `english_explainer`（+ `recap`）→ 单一 `explainers:` 块（共用 `provider`/`model`/`timeout_ms`/`max_input_chars=64000` + kind 子段；见「§ 二次开发可复用基建 §4」）。  
-   - `openviking_sync_recall` + `openviking_recall_card` → `openviking:`。  
-   - `feishu_card` notice_titles 与 auto_card 阈值保留一张表，删注释噪声。  
-   - 长期 `enabled: false` 且无现网依赖的（如部分 `diff_card`）可迁「默认关 + 文档」，不占主文件行。
-3. **行为默认进代码，yaml 只留差异**  
-   - 与源规范一致：缺省 section = 合理默认；yaml 只写覆盖项。
-4. **上游 sync 配置独立**  
-   - `upstream_sync.yaml` 保持单独，不并进 overlay。
-5. **v2 落地顺序**  
-   - 先按 C01 重接加载器 → 再迁键名（一次改加载器+文档+软链说明）→ 最后缩行数。
+2. **`overlay.yaml` 合并同类开关**（已大部分完成）  
+   - `explainers:` / `openviking:` 已合并；行为默认进代码后 yaml 只留差异。  
+   - 长期 `enabled: false` 且无现网依赖的可继续迁「默认关 + 文档」。
+3. **上游 sync 配置独立** — `upstream_sync.yaml` 不并进 overlay。
 
 ---
 

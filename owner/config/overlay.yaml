@@ -4,69 +4,21 @@
 # the sections. Code hangs them under config.owner.xxx after fuse with official config.
 # See owner/docs/v2背景说明.md「全局性 / 规范性备忘」and owner/docs/二次开发规范.md §2.2.1.
 # Filename is overlay.yaml (not patch.yaml) so v2 stays isolated from the legacy owner-branch patch.yaml.
+#
+# Hygiene: yaml 只留真覆盖；与代码 DEFAULTS 相同的键已删（stream_guard / openviking /
+# output_guard / explainers 共用默认 / checkpoints 除 timeout / queue_card.enabled /
+# feishu_card.split_* / notice_titles 等）。缺省行为见各模块 DEFAULTS。
+# 本机不写 fleet_profiles / user_routing（留给 C05b）。
 
-# ── Approval ─────────────────────────────────────────────────────────────────
-approvals:
-  # Permanent ("Always") approval button: disabled for Feishu / QQ (and policy-wide).
-  allow_permanent: false
-  # Merged (union) into in-memory permanent allowlist with config.yaml command_allowlist.
-  # UI still does not offer Always when allow_permanent is false.
-  command_allowlist: []
-  # C09 · skill 脚本自动审批：本会话已 skill_view 的 skill，其白名单脚本可跳过危险命令提示。
-  # paths 空 = 扫 skills/**/<skill>/ 下 extensions；复合命令 / 危险载荷仍 fail-closed。
-  skill_script_allowlist: []
-  # 示例：
-  # skill_script_allowlist:
-  #   - skill: xy-info
-  #     paths: []
-  #     extensions: [".sh", ".py"]
-
-
-# ── C11 飞书 auto-card 底座 ──────────────────────────────────────────────────
-# auto_card_threshold: 字数阈值；≤0 关闭。streaming=false 时 send() 路径才触发；
-# agent:end 用 force=True 无视 streaming。notice_titles 供告警/旁白卡（C13 前缀对齐）。
+# ── C11 飞书 auto-card ───────────────────────────────────────────────────────
+# notice_titles 默认表在 owner/feishu/auto_card._DEFAULT_NOTICE_RULES（含 recap）；
+# 覆盖为「整表替换」，非追加。
 feishu_card:
   auto_card_threshold: 57
-  split_enabled: true
-  split_max_chars: 24000
-  # 运行时覆盖源码默认表（替换不是追加），须把要用的规则写齐；mtime 变化即时重读。
-  notice_titles:
-    - prefix: "💡 [stream-guard]"
-      title: "💡 [stream-guard] 生成退化告警"
-      template: orange
-      strip_prefix: true
-    - prefix: "🧭 系统提示："
-      title: "🧭 进度旁白"
-      template: blue
-      strip_prefix: true
-    - prefix: "🔤 系统提示："
-      title: "🔤 英文解说"
-      template: blue
-      strip_prefix: true
-    - prefix: "📋 系统提示："
-      title: "📋 会话回顾"
-      template: blue
-      strip_prefix: true
 
-# ── Checkpoints (C17 mutation predictor) ─────────────────────────────────────
-# 补全 /rollback 的盲区: terminal 工具执行前预测将改文件, 对其项目根
-# ensure_checkpoint。静态解析优先; 不足时同步调 auxiliary LLM
-# (task="approval")。超时/失败/空时【不降级拍 cwd】。
-# 存储/回滚语义仍用 config.yaml 的 checkpoints 段; 这里只管预测触发源。
-# ── C11-bot-menu：飞书 bot 菜单 key → 命令/提示词 ────────────────────────────
-# 点击 menu_v6 → owner/feishu/bot_menu.py 解析；缺 key 时回退 BUILTIN_BOT_MENU。
-# bot_menu_dedup：点击即时 ack（慢命令反馈）；ack: null 表示该 key 不发 ack。
+# ── 飞书行为 ────────────────────────────────────────────────────────────────
 feishu:
-  # ── C09 skill_manage 飞书写审批门 ──────────────────────────────────────────
-  # enabled=true 且当前 profile ∈ profiles 时：
-  #   - 飞书会话上 skill_manage 写操作阻塞等人批；YOLO 不绕过
-  #   - 审批卡发到 approval_home_chat_id；原点会话发「等待审批」提示
-  #   - 默认关；chat_id 来自旧树 patch_feishu_profile 真值迁移
-  # ── C12-queue-card：飞书 /queue 状态卡 ─────────────────────────────────────
-  # enabled=false 时整条 queue 卡路径旁路回官方纯文本 ack（enqueue wrap fail-open
-  # 仍调用原函数；busy/guide morph 不发状态卡）。默认 true 与现网一致。
-  queue_card:
-    enabled: true
+  # C09 skill_manage 写审批门（默认关；chat_id 来自旧树迁移）
   skill_approval:
     enabled: false
     profiles:
@@ -76,6 +28,7 @@ feishu:
     approval_home_chat_id: oc_f206b3d2a547a12f430593ea44076031
     timeout_seconds: 86400
     disable_background_skill_review: true
+  # C11-bot-menu：menu_v6 key → 命令；缺 key 回退 BUILTIN_BOT_MENU
   bot_menu:
     new: "/new"
     status: "/status"
@@ -102,6 +55,7 @@ feishu:
     yolo_off: "/yolo off"
     resume: "/resume"
     agents: "/agents"
+  # 点击即时 ack；ack: null = 该 key 不发 ack
   bot_menu_dedup:
     enabled: true
     default_ack: "⏳ 已收到…"
@@ -157,105 +111,38 @@ feishu:
       yolo_off:
         ack: "🔒 关闭 YOLO 模式…"
 
-
+# ── C17 checkpoints：仅保留相对代码默认的真覆盖 ─────────────────────────────
+# 默认 predict_enabled=true / cache_size=32 / static_threshold=1；LLM 超时默认 3000ms。
 checkpoints:
-  predict_enabled: true
-  # LLM 兜底超时 (ms); 显式传入 call_llm(timeout=...), 覆盖 auxiliary.approval 默认
   predict_llm_timeout_ms: 20000
-  # 会话内 LLM 预测 LRU 缓存大小 (command+cwd); 0 = 禁用
-  predict_cache_size: 32
-  # 静态解析候选数 >= 此阈值则跳过 LLM
-  predict_static_threshold: 1
 
-# ── C14 stream_guard：生成中退化闸门 ─────────────────────────────────────────
-# 消费 on_stream_delta；滑窗三信号：S1 阶段终止语 / S2 风格签名 / S3 官方
-# is_repetition_dominated（s3_solo）。命中后 action=interrupt 中止本轮（完整版
-# 默认）| warn_only 只告警。需看纯思考空转时另开 plugins.stream_reasoning_deltas。
-# 标定与设计：owner/docs/design/stream-guard/degenerate-stream-guard.md
-stream_guard:
-  enabled: true
-  action: interrupt
-  min_stream_chars: 1200
-  grace_seconds: 20
-  window_chars: 4096
-  eval_interval_chars: 512
-  vote_threshold: 2
-  s3_solo: true
-  marker_rate_per_kb: 3.0
-  signature_rate_multiple: 8.0
-  signature_baseline_per_kb: 1.0
-  signature_tokens:
-    - "ฅ"
-  max_actions_per_turn: 1
-
-# ── C14 output_guard：终局折叠（无额外开关；钩子常开，短文 fail-open）────────
-# 阈值在代码常量；此处仅留 enabled 便于秒关。
-output_guard:
-  enabled: true
-
-
-# ── C13 explainers：统一旁白（progress / approval / english / recap）─────────
-# 见 owner/docs/c13-explainers.md 与清单「二次开发可复用基建 §4」。
-# 设计前提：辅助模型 ≥256k 上下文；输入默认 max_input_chars=64000（共用，可被 kind 覆盖）。
-# 取模：kind provider/model → 本块共用 → config.yaml auxiliary.<task> → 主模型；
-# call_llm task 长名：*_explainer（含 recap_explainer）。
-# 代码默认 enabled=false；本机对齐旧树实配 true。失败一律 fail-open。
-# 扩展：register_kind("name") + 本块 explainers.<name>: {enabled: true, ...}
+# ── C13 explainers：代码默认 enabled=false；本机打开 + 平台门 ────────────────
+# 共用 provider/model/timeout_ms/max_input_chars 走代码默认（auto / 30s / 64000）。
+# kind 内与 registry defaults 相同的数值已省略。
 explainers:
-  provider: auto
-  model: auto
-  timeout_ms: 30000
-  max_input_chars: 64000
   progress:
     enabled: true
-    max_output_chars: 900
-    silence_seconds: 60
-    stall_seconds: 120
-    min_interval_seconds: 120
-    max_per_turn: 5
-    tick_seconds: 5
     platforms:
       feishu: true
       telegram: false
   approval:
     enabled: true
-    max_output_chars: 800
-    cache_ttl_seconds: 600
-    cache_max_entries: 128
     platforms:
       feishu: true
   english:
     enabled: true
-    max_output_chars: 1000
     platforms:
       feishu: true
       telegram: false
   recap:
     enabled: true
-    max_output_chars: 350
-    # 长对话结束后自动回顾（对齐 Grok Build session_recap.rs）：
-    # min_user_turns=3 / idle_seconds=180；同一会话 watermark 防刷；短会话不触发。
-    auto:
-      enabled: true
-      min_user_turns: 3
-      idle_seconds: 180
     platforms:
       feishu: true
       telegram: false
 
-# ── C15 OpenViking owner extensions（无召回卡）──────────────────────────────
-# 官方插件已提供同步 prefetch；这里只开 advisory 语气 + peer-mirror URI 去重。
-# 召回卡（飞书交互卡 / QQ 文本）本波不做（用户拍板）；勿再加 recall_card 段。
-openviking:
-  advisory: true
-  dedup: true
-
-# ── C06 LDAP（API Server identity 门；默认关闭）────────────────
-# 形状见 owner/docs/design/c06-ldap-identity-auth/README.md
-# 连接字段可进仓（非机密）；勿写 admin_password / 用户密码。
-# 启用：改 enabled:true，或临时 HERMES_LDAP_ENABLED=1（见 C06c）。
-# 现网 node010 仍可能把同段放在 patch_feishu_profile.yaml（loader 回落）。
-# 遗留 admin_dn/admin_password 键会被 v2 门忽略（只用 user_dn_template 简单 bind）。
+# ── C06 LDAP（API identity 门；仓内默认关）──────────────────────────────────
+# 连接字段可进仓；勿写密码。启用：enabled:true 或 HERMES_LDAP_ENABLED=1。
+# 本机不写 fleet_profiles/user_routing；node010 路由仍可能回落 patch_feishu_profile。
 ldap:
   enabled: false
   host: "10.10.100.150"
@@ -267,4 +154,3 @@ ldap:
   cache_ttl_hours: 72
   negative_cache_seconds: 10
   fail_open_on_error: false
-

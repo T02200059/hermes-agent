@@ -33,6 +33,20 @@ def test_split_max_chars_clamped(monkeypatch):
     assert auto_card.get_auto_card_split_max_chars() == auto_card._AUTO_CARD_SPLIT_MIN_MAX_CHARS
 
 
+def test_default_notice_rules_include_recap(monkeypatch):
+    """缺 overlay notice_titles 时，内置表含 progress/english/recap（yaml 可不再复写）。"""
+    monkeypatch.setattr(auto_card, "load_patch_config", dict)
+    rules = auto_card.get_notice_rules()
+    prefixes = [r["prefix"] for r in rules]
+    assert "💡 [stream-guard]" in prefixes
+    assert "🧭 系统提示：" in prefixes
+    assert "🔤 系统提示：" in prefixes
+    assert "📋 系统提示：" in prefixes
+    recap = next(r for r in rules if r["prefix"] == "📋 系统提示：")
+    assert recap["title"] == "📋 会话回顾"
+    assert recap.get("strip_prefix") is True
+
+
 def test_notice_rule_match_stream_guard(monkeypatch):
     monkeypatch.setattr(
         auto_card,
