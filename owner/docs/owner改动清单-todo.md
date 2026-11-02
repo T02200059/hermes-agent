@@ -541,6 +541,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - 旧顶层 `progress_explainer` / `approval_explainer` / `english_explainer` → 迁入 `explainers.{progress,approval,english,recap}`；`call_llm(task=…_explainer)` 长 task 名保留
   - **已落地（H03 #3）**：progress/approval/english 输出帽读 `merged.get("max_output_chars")`（模块默认 900/800/1000 仍保留）；overlay `explainers.{progress,approval,english}.max_output_chars` 已补同值；recap 仍 350
   - **文档澄清（2026-10-28）**：仅 `max_output_chars` 可配；`max_tokens`/`_MAX_TOKENS` 仍硬编码。告警前缀（默认 `💡 [stream-guard]`）是 notice 匹配键，改前缀须同步 overlay + auto_card；`💡 [output-guard]` 有可见串但不在 `notice_titles`（见 `owner/docs/c13-explainers.md`）
+  - **活动戳中文映射（2026-11-02）**：`owner/explainers/progress/activity_i18n.py`；`_fact_line` 无 `current_tool` 时把 `last_activity_desc` 译成中文（精确+模板；未命中原文；en UI 透传）。
   - **旁白中文门（2026-11-02）**：共享 `call_explainer_llm` 在期望中文时，对输出跑 `looks_like_non_chinese_output`（复用 `english/detect.looks_like_english_reply` + 短旁白 latin 回落）；命中则带纠偏 nudge 重试 **1** 次；仍非中文 → 打日志 + fail-open 发最后一次文本。english kind 只门控**译文旁白**，不改被解说的英文原文。`require_chinese` 可在 kind cfg 覆盖；progress/approval 默认跟 `display.language`。测：`tests/owner/test_c13_explainers.py`（含 retry / fail-open）
 - [x] **C14** · 源 §14 · output_guard + stream_guard · **优先级：P1**（阶段一 · 完整版）
   - helper：`owner/output_guard/`（`transform_llm_output`）+ `owner/stream_guard/`（`on_stream_delta`；S1/S2/S3，S3=`is_repetition_dominated`）

@@ -529,12 +529,14 @@ class ProgressExplainer:
         # 用户可见尾行：复用官方 i18n（display.language），勿硬编码英文 iteration
         from agent.i18n import t
         from agent.session_activity import format_iteration_progress
+        from owner.explainers.progress.activity_i18n import localize_activity_desc
 
         parts = []
         if activity.get("current_tool"):
             parts.append(t("gateway.busy.running_tool", tool=activity["current_tool"]))
         elif activity.get("last_activity_desc"):
-            parts.append(str(activity["last_activity_desc"]))
+            # 无工具名时：活动戳走 owner 对照表（zh）；未命中 fail-open 原文
+            parts.append(localize_activity_desc(activity["last_activity_desc"]))
         if "api_call_count" in activity:
             parts.append(
                 format_iteration_progress(

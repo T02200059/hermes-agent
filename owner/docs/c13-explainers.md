@@ -133,6 +133,6 @@ PYTHONPATH=. python -m pytest tests/owner/test_c13_explainers.py -q
 ## progress fact_line（旁白正文下一行）
 
 - 尾缀经官方 `format_iteration_progress`（`display.iteration_progress.*`，随 `display.language`；zh=`第 {n}/{max} 轮迭代`）。
-- 有 `current_tool` 时前缀用 `gateway.busy.running_tool`（zh=`正在运行：{tool}`）；无工具时仍透传英文 `last_activity_desc` 活动戳（暂不做全量映射）。
+- 有 `current_tool` 时前缀用 `gateway.busy.running_tool`（zh=`正在运行：{tool}`）；无工具时前缀走 `owner/explainers/progress/activity_i18n.py` 活动戳对照表（精确 + 正则模板；未命中 fail-open 原文；仅 `display.language=zh*` 翻译）。
 - `_hard_facts.iteration` / `max_iterations` 为数值对，供 prompt「迭代 N/M」展示。
 

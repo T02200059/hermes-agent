@@ -421,7 +421,7 @@ def test_progress_fact_line_zh_uses_i18n(monkeypatch):
             "max_iterations": 120,
         }
     )
-    assert line2 == "receiving stream response — 第 12/120 轮迭代"
+    assert line2 == "正在接收流式响应 — 第 12/120 轮迭代"
     assert "iteration " not in line and "iteration " not in line2
 
 
@@ -432,6 +432,73 @@ def test_progress_fact_line_en_uses_i18n(monkeypatch):
         {"current_tool": "patch", "api_call_count": 15, "max_iterations": 120}
     )
     assert line == "running: patch — iteration 15/120"
+    # 英文 UI：活动戳保持原文
+    line2 = pe._fact_line(
+        {
+            "last_activity_desc": "receiving stream response",
+            "api_call_count": 12,
+            "max_iterations": 120,
+        }
+    )
+    assert line2 == "receiving stream response — iteration 12/120"
+
+
+def test_localize_activity_desc_exact_and_templates(monkeypatch):
+    from owner.explainers.progress.activity_i18n import (
+        localize_activity_desc,
+        mapped_exact_count,
+        mapped_template_count,
+    )
+
+    _set_lang(monkeypatch, "zh")
+    assert localize_activity_desc("receiving stream response") == "正在接收流式响应"
+    assert localize_activity_desc(
+        "waiting for stream response (12s, no chunks yet)"
+    ) == "正在等待流式响应（12 秒，尚无数据块）"
+    assert localize_activity_desc(
+        "waiting for stream response (90s, first_chunk)"
+    ) == "正在等待流式响应（90 秒，等待首块）"
+    assert localize_activity_desc("starting API call #3") == "开始第 3 次 API 调用"
+    assert localize_activity_desc("executing tool: terminal") == "正在执行工具：terminal"
+    assert localize_activity_desc(
+        "tool completed: patch (1.5s)"
+    ) == "工具已完成：patch（1.5 秒）"
+    assert localize_activity_desc(
+        "tool completed: patch (1.5s) (error)"
+    ) == "工具已完成：patch（1.5 秒）（出错）"
+    assert localize_activity_desc(
+        "error retry backoff (2/5), 40s remaining"
+    ) == "错误重试退避（2/5），剩余 40 秒"
+    assert localize_activity_desc(
+        "⏳ waiting on gpt-test — 12s waiting for the first stream chunk"
+    ) == "⏳ 正在等待 gpt-test — 已等待首个数据块 12 秒"
+    assert localize_activity_desc(
+        "⏳ still waiting on gpt-test — stream open; 80s without stream output "
+        "(auto-reconnect: stream stale watchdog in 10s)"
+    ) == (
+        "⏳ 仍在等待 gpt-test — 流已打开；80 秒无流输出"
+        "（自动重连：流过期 看门狗将在 10 秒后触发）"
+    )
+    # 未命中 fail-open
+    assert localize_activity_desc("totally unknown stamp xyz") == "totally unknown stamp xyz"
+    assert mapped_exact_count() >= 20
+    assert mapped_template_count() >= 20
+
+
+def test_localize_activity_desc_en_passthrough(monkeypatch):
+    from owner.explainers.progress.activity_i18n import localize_activity_desc
+
+    _set_lang(monkeypatch, "en")
+    assert localize_activity_desc("receiving stream response") == "receiving stream response"
+    assert (
+        localize_activity_desc("waiting for stream response (12s, no chunks yet)")
+        == "waiting for stream response (12s, no chunks yet)"
+    )
+    # force_chinese 覆盖 display.language
+    assert (
+        localize_activity_desc("receiving stream response", force_chinese=True)
+        == "正在接收流式响应"
+    )
 
 
 def test_progress_hard_facts_numeric_iteration_for_prompt(monkeypatch):
