@@ -162,6 +162,7 @@ explainers:
 | Checkpoint 预测 | C17 | `owner/checkpoint_predictor`（`predict_and_checkpoint`） | `owner.checkpoints.*` |
 | 护栏 i18n | C10 | `owner/i18n/localized.py` → `localized` | locales + 调用方 `_localized` |
 | 审批历史结构判定 | B11 | 与 C10 同批；历史挖掘勿再靠英文文案子串 | （见 `c10-b11-*.md`） |
+| 飞书 WS 重连守卫 | C29 | `owner/feishu/ws_reconnect_guard.py`（apply / supervise / note_*）；adapter 薄挂 | `feishu.ws_reconnect_guard` |
 
 ---
 
@@ -349,7 +350,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 | **三** | 飞书定制 + 杂项 | **C09**（依赖 C04）→ C11 余下 → **C12** → C15 → C25（`/providers` 已归 C26）→ **C06** LDAP / **C07** API media（延后） → C20（忽略）→ C23（运行时脱钩 + §11.2 args→CLI ✅，整包迁仓不做）→ **B17 飞书半边** ✅；**C24** 全量战役不排 |
 | **四** | 飞书多 profile | **仅 C05**（`profile_endpoints` / bots 路由；不吃 multiplex）。勿提前；与阶段三 LDAP **文件边界**分开 |
 
-**依赖速记**：C01 万物前置 → 阶段二 C04 先于一切飞书体验/skill 门 → C09/C12 依赖 C04 → **C05 最后**。yaml 随 C01 / 阶段三 LDAP / 阶段四路由穿插缩文件，不大爆炸。
+**依赖速记**：C01 万物前置 → 阶段二 C04 先于一切飞书体验/skill 门 → C09/C12 依赖 C04 → **C05 最后**。yaml 随 C01 / 阶段三 LDAP / 阶段四路由穿插缩文件，不大爆炸。**C29** 飞书 WS 重连守卫见「§ 渠道运行时加固」（穿插；不进四阶段必做）。
 
 ---
 
@@ -617,7 +618,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - 压缩中文摘要：`owner/feishu/compression_summary.py` + `hygiene_compression_notice.py`；auto/manual/hygiene 薄胶水
   - 测：`tests/owner/test_c25_*.py`
 
-**定制段：原 C01–C25 + C26（providers）+ C27（resume 卡）。执行顺序：四阶段（见上）。**
+**定制段：原 C01–C25 + C26（providers）+ C27（resume 卡）+ C28（platform_users）+ C29（飞书 WS 重连守卫，见「§ 渠道运行时加固」）。执行顺序：四阶段（见上）；C29 穿插、非阶段阻塞。**
 
 ---
 
@@ -666,9 +667,9 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 
 ## § 渠道运行时加固（穿插）
 
-- [x] **C29** · 飞书 WS 重连守卫（2026-11-02）· **优先级：P1**
+- [x] **C29** · 飞书 WS 重连守卫（2026-11-02）· **优先级：P1** · **已落地** · tip `a10f7c49f1`
   - **根因**：keepalive ping timeout 后 SDK `trying to reconnect for the 1st time` 卡在无 timeout 的 `requests.post`（`_get_conn_url`）；线程仍活 → supervisor 不重建；进程看似健康、入站全哑。
-  - **策略**：不整进程 `gateway restart`；强制有限 SDK ladder；conn-url timeout；supervisor 首次快、其后约 **10 min**；连续失败达上限 → 告警并停止自动重试（`note_link_up` 清零）。
+  - **策略**：不整进程 `gateway restart`；强制有限 SDK ladder；conn-url timeout；supervisor 首次快、其后约 **10 min** 单飞重建；连续失败达上限 → 告警并停止自动重试（`note_link_up` 清零；防数天空转占资源）。
   - **落地**：`owner/feishu/ws_reconnect_guard.py`；adapter 薄挂（apply / supervise / note_*）；设计 `owner/docs/design/feishu-ws-reconnect/README.md`
   - **配置**：overlay 可选 `feishu.ws_reconnect_guard`（DEFAULTS：`supervisor_retry_interval_s=600`，`max_failures=18`，`conn_url_timeout_s=30`，`sdk_reconnect_count=2`）
   - **测**：`tests/owner/test_feishu_ws_reconnect_guard.py`；官方 multiplex supervise 测已接短 interval policy
