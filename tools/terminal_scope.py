@@ -87,7 +87,11 @@ def terminal_env(name: str, default: str = "") -> str:
 
 
 def _apply_terminal_mapping(scope: dict[str, str], mapping: dict[str, Any]) -> None:
-    from hermes_cli.config import TERMINAL_CONFIG_ENV_MAP, _terminal_env_value
+    from hermes_cli.config import (
+        TERMINAL_CONFIG_ENV_MAP,
+        _is_ssh_remote_tilde_cwd,
+        _terminal_env_value,
+    )
 
     for cfg_key, value in mapping.items():
         # cwd placeholders are resolved per-surface later; not a policy value.
@@ -95,6 +99,18 @@ def _apply_terminal_mapping(scope: dict[str, str], mapping: dict[str, Any]) -> N
             continue
         env_var = TERMINAL_CONFIG_ENV_MAP.get(cfg_key)
         if env_var:
+            # Mirror apply_terminal_config_to_env / gateway bridge: expand "~" for
+            # local/container cwd so abspath/footer never treat "~" as a relative
+            # path under the process PWD (e.g. ~/.hermes/~/.hermes). SSH keeps "~"
+            # for the remote shell.
+            if cfg_key == "cwd" and isinstance(value, str):
+                backend = str(
+                    mapping.get("backend")
+                    or scope.get("TERMINAL_ENV")
+                    or ""
+                )
+                if not _is_ssh_remote_tilde_cwd(backend, value.strip()):
+                    value = os.path.expanduser(value)
             # List/dict config values must be JSON (same contract as
             # apply_terminal_config_to_env). str() yields Python repr, which
             # json.loads in terminal_tool rejects.

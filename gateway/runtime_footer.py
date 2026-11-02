@@ -24,7 +24,9 @@ def _home_relative_cwd(cwd: str) -> str:
         return ""
     try:
         home = os.path.expanduser("~")
-        p = os.path.abspath(cwd)
+        # expanduser BEFORE abspath: a literal "~/.hermes" must not be treated as
+        # a relative path under process PWD (would yield ~/.hermes/~/.hermes).
+        p = os.path.abspath(os.path.expanduser(cwd))
         if home and (p == home or p.startswith(home + os.sep)):
             return "~" + p[len(home):]
         return p

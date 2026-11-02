@@ -302,3 +302,23 @@ def test_launch_turn_binds_terminal_scope_once_multiplexing_is_active(
     finally:
         reset_terminal_scope(token)
     assert get_terminal_scope() is None
+
+def test_profile_scope_expands_tilde_cwd(tmp_path, monkeypatch):
+    """config.yaml ``terminal.cwd: ~/.hermes`` must expand in the profile scope.
+
+    Without expanduser, footer ``abspath`` treated ``~`` as a relative segment under
+    the gateway PWD and rendered ``~/.hermes/~/.hermes``.
+    """
+    from tools.terminal_scope import build_profile_terminal_scope
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    hermes = tmp_path / ".hermes"
+    hermes.mkdir(exist_ok=True)
+    home = _profile(
+        tmp_path,
+        "tilde-cwd",
+        "terminal:\n  backend: local\n  cwd: ~/.hermes\n",
+    )
+    scope = build_profile_terminal_scope(home)
+    assert scope["TERMINAL_CWD"] == str(hermes)
+

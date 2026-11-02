@@ -41,6 +41,19 @@ def test_home_relative_cwd_collapses_home(tmp_path, monkeypatch):
     assert result == "~/projects/hermes"
 
 
+def test_home_relative_cwd_expands_tilde_before_abspath(tmp_path, monkeypatch):
+    """Literal ``~/.hermes`` must not abspath against process PWD (footer doubled path)."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    hermes = tmp_path / ".hermes"
+    hermes.mkdir()
+    # Process PWD is some other hermes-ish dir; unexpanded "~" would glue under it.
+    other = tmp_path / "other" / ".hermes"
+    other.mkdir(parents=True)
+    monkeypatch.chdir(other)
+    assert _home_relative_cwd("~/.hermes") == "~/.hermes"
+    assert _home_relative_cwd(str(hermes)) == "~/.hermes"
+
+
 # ---------------------------------------------------------------------------
 # format_runtime_footer
 # ---------------------------------------------------------------------------
