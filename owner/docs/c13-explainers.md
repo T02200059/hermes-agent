@@ -119,3 +119,14 @@ register_kind("summary", defaults={"enabled": False, "platforms": {}})
 cd ~/.hermes/hermes-agent-v2
 PYTHONPATH=. python -m pytest tests/owner/test_c13_explainers.py -q
 ```
+
+## 旁白中文门（输出语言）
+
+共享入口 `owner/explainers/llm.py::call_explainer_llm` 在期望简体中文时：
+
+1. 生成后用 `owner/explainers/english/detect.looks_like_non_chinese_output` 校验（内部先走 `looks_like_english_reply`，短旁白另有 latin-heavy 回落）。
+2. 命中非中文 → 追加 assistant 原文 + 用户纠偏 nudge，再生成 **1** 次（temperature 仍为 0，靠 nudge 而不是盲重抽）。
+3. 仍非中文：日志 warning，**fail-open** 返回最后一次文本（与其它 explainer 软失败一致）。
+
+适用范围：`english` / `recap` 默认强制中文旁白；`progress` / `approval` 跟随 `display.language`（可用 kind cfg `require_chinese` 覆盖）。**不**改写 english explainer 的英文源正文。
+

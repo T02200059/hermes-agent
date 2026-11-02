@@ -92,6 +92,104 @@ def test_english_detect_positive_and_negative():
     assert looks_like_english_reply(mixed) is None
 
 
+
+def test_non_chinese_output_detects_short_and_long():
+    from owner.explainers.english.detect import looks_like_non_chinese_output
+
+    en_long = (
+        "The deployment finished successfully and the service is now healthy. "
+        "You should check the logs if anything looks wrong."
+    )
+    assert looks_like_non_chinese_output(en_long) is not None
+    en_short = "Still checking the deployment logs carefully now."
+    assert looks_like_non_chinese_output(en_short) is not None
+    zh = "正在核对部署日志，稍等片刻。"
+    assert looks_like_non_chinese_output(zh) is None
+    mixed = "用 `kubectl apply -f deploy.yaml` 部署到 prod namespace。"
+    assert looks_like_non_chinese_output(mixed) is None
+
+
+def test_call_explainer_llm_retries_once_on_english(monkeypatch):
+    from owner.explainers import llm as llm_mod
+
+    en = (
+        "The deployment finished successfully and the service is now healthy. "
+        "You should check the logs if anything looks wrong."
+    )
+    zh = "部署已经完成，服务现在是健康的。"
+    calls = {"n": 0}
+
+    class _Msg:
+        def __init__(self, content):
+            self.content = content
+
+    class _Choice:
+        def __init__(self, content):
+            self.message = _Msg(content)
+
+    class _Resp:
+        def __init__(self, content):
+            self.choices = [_Choice(content)]
+
+    def fake_call_llm(**kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return _Resp(en)
+        return _Resp(zh)
+
+    import agent.auxiliary_client as ac
+
+    monkeypatch.setattr(ac, "call_llm", fake_call_llm)
+    monkeypatch.setattr(
+        llm_mod,
+        "_should_enforce_chinese",
+        lambda kind, cfg: True,
+    )
+    out = llm_mod.call_explainer_llm(
+        "progress",
+        [{"role": "system", "content": "x"}, {"role": "user", "content": "y"}],
+    )
+    assert out == zh
+    assert calls["n"] == 2
+
+
+def test_call_explainer_llm_fail_open_keeps_english_after_retry(monkeypatch):
+    from owner.explainers import llm as llm_mod
+
+    en = (
+        "The deployment finished successfully and the service is now healthy. "
+        "You should check the logs if anything looks wrong."
+    )
+    calls = {"n": 0}
+
+    class _Msg:
+        def __init__(self, content):
+            self.content = content
+
+    class _Choice:
+        def __init__(self, content):
+            self.message = _Msg(content)
+
+    class _Resp:
+        def __init__(self, content):
+            self.choices = [_Choice(content)]
+
+    def fake_call_llm(**kwargs):
+        calls["n"] += 1
+        return _Resp(en)
+
+    import agent.auxiliary_client as ac
+
+    monkeypatch.setattr(ac, "call_llm", fake_call_llm)
+    monkeypatch.setattr(llm_mod, "_should_enforce_chinese", lambda kind, cfg: True)
+    out = llm_mod.call_explainer_llm(
+        "english",
+        [{"role": "user", "content": "translate"}],
+    )
+    assert out == en
+    assert calls["n"] == 2
+
+
 def test_english_prefix_and_format_delivery():
     from owner.explainers.english.prompt import PREFIX, format_delivery
 

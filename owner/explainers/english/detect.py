@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 _CODE_FENCE_RE = re.compile(r"```[\s\S]*?```", re.MULTILINE)
 _INLINE_CODE_RE = re.compile(r"`[^`\n]+`")
@@ -38,7 +38,7 @@ def _strip_code(text: str) -> str:
     return s
 
 
-def looks_like_english_reply(text: str) -> Optional[Dict[str, Any]]:
+def looks_like_english_reply(text: str) -> Optional[dict[str, Any]]:
     """若整段更像英文回复（而非中文夹术语），返回检测细节；否则 None。"""
     raw = (text or "").strip()
     if len(raw) < MIN_CHARS:
@@ -76,3 +76,51 @@ def looks_like_english_reply(text: str) -> Optional[Dict[str, Any]]:
         "word_count": len(words),
         "reason": "english_heavy",
     }
+
+
+# Short narration floor (progress/approval often < MIN_LATIN_CHARS of the long-form detector).
+_SHORT_MIN_CHARS = 12
+_SHORT_MIN_LATIN = 18
+_SHORT_MAX_ZH_RATIO = 0.35
+
+
+def looks_like_non_chinese_output(text: str) -> Optional[dict[str, Any]]:
+    """Explainer-output gate: True-ish dict when the reply looks non-Chinese-primary.
+
+    Reuses ``looks_like_english_reply`` (long English prose), then a short-latin
+    fallback for brief narrations that never reach the long-form latin floor.
+    Returns None when Chinese-primary, mixed-with-terms, or too little signal.
+    """
+    hit = looks_like_english_reply(text)
+    if hit is not None:
+        return hit
+
+    raw = (text or "").strip()
+    if len(raw) < _SHORT_MIN_CHARS:
+        return None
+    sample = _strip_code(raw)
+    if len(sample.strip()) < _SHORT_MIN_CHARS:
+        return None
+
+    zh_chars = len(_ZH_RE.findall(sample))
+    latin_chars = len(_LATIN_CHAR_RE.findall(sample))
+    total = zh_chars + latin_chars
+    if total == 0:
+        return None
+    zh_ratio = zh_chars / total
+    # Enough Chinese already → accept (术语夹杂 OK).
+    if zh_ratio >= 0.45 or zh_chars >= 8:
+        return None
+    if latin_chars < _SHORT_MIN_LATIN or zh_ratio > _SHORT_MAX_ZH_RATIO:
+        return None
+    return {
+        "language": "en",
+        "stopword_hits": 0,
+        "density": 0.0,
+        "zh_ratio": round(zh_ratio, 3),
+        "latin_chars": latin_chars,
+        "zh_chars": zh_chars,
+        "word_count": len(_LATIN_WORD_RE.findall(sample.lower())),
+        "reason": "short_latin_heavy",
+    }
+
