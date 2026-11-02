@@ -453,6 +453,11 @@ gateway:
   discard:
     nothing: "沒有可捨棄的內容：此聊天沒有在重新啟動時遺失的回合。"
     done: "🗑️ 已捨棄 {count} 個遺失的回合；未重新執行。現在會回覆你已儲存的訊息。"
+  pause_notice:
+    runtime_draining: "⏳ Hermes 正在重啟——你的訊息已儲存，恢復後會繼續回覆。"
+    session_busy: "⏳ 你的訊息已儲存，等本對話中正在進行的工作結束後會回覆。"
+    unknown_execution: "⏸️ 此對話已暫停：Hermes 重啟時有一個回合未完成，是否重發只有你知道。你的訊息已儲存。傳送 {discard} 可丟棄該遺失回合併繼續（不會重跑），或傳送 /reset 開始全新對話。"
+    generic: "⏸️ 此對話已暫停：有一條排隊訊息無法重新授權（{reason}）。你的訊息已儲存，但不會在此回覆。傳送 /reset 開始全新對話，或請維運恢復此對話。"
   stop:
     stopped_pending: "⚡ 已停止。代理尚未啟動 — 你可以繼續此工作階段。"
     stopped: "⚡ 已停止。你可以繼續此工作階段。"

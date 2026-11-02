@@ -456,6 +456,11 @@ gateway:
   discard:
     nothing: "Nincs mit elvetni: ebben a csevegésben nem veszett el kör újraindításkor."
     done: "🗑️ {count} elveszett kör elvetve; nem futottak újra. A mentett üzeneteidre most válasz érkezik."
+  pause_notice:
+    runtime_draining: "⏳ Hermes is restarting — your message is saved and will be answered when it is back."
+    session_busy: "⏳ Your message is saved and will be answered when the work running in this conversation finishes."
+    unknown_execution: "⏸️ This conversation is paused: a previous turn did not finish when Hermes restarted, and only you know whether to send it again. Your message is saved. Send {discard} to drop the lost turn and continue (it is not re-run), or /reset to start a fresh conversation."
+    generic: "⏸️ This conversation is paused: a queued message could not be re-authorized ({reason}). Your message is saved but will not be answered here. Send /reset to start a fresh conversation, or ask the operator to resume this one."
   stop:
     stopped_pending: "⚡ Leállítva. Az ügynök még el sem kezdte — folytathatod ezt a munkamenetet."
     stopped: "⚡ Leállítva. Folytathatod ezt a munkamenetet."

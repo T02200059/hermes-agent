@@ -493,6 +493,11 @@ gateway:
   discard:
     nothing: "Rien à ignorer : ce chat n'a aucun tour perdu lors d'un redémarrage."
     done: "🗑️ {count} tour(s) perdu(s) ignoré(s) ; ils n'ont pas été relancés. Vos messages enregistrés vont maintenant recevoir une réponse."
+  pause_notice:
+    runtime_draining: "⏳ Hermes is restarting — your message is saved and will be answered when it is back."
+    session_busy: "⏳ Your message is saved and will be answered when the work running in this conversation finishes."
+    unknown_execution: "⏸️ This conversation is paused: a previous turn did not finish when Hermes restarted, and only you know whether to send it again. Your message is saved. Send {discard} to drop the lost turn and continue (it is not re-run), or /reset to start a fresh conversation."
+    generic: "⏸️ This conversation is paused: a queued message could not be re-authorized ({reason}). Your message is saved but will not be answered here. Send /reset to start a fresh conversation, or ask the operator to resume this one."
   stop:
     stopped_pending: "⚡ Arrêté. L'agent n'avait pas encore commencé — vous pouvez continuer cette session."
     stopped: "⚡ Arrêté. Vous pouvez continuer cette session."

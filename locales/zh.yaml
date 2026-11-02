@@ -468,6 +468,11 @@ gateway:
   discard:
     nothing: "没有可丢弃的内容：此聊天没有在重启时丢失的回合。"
     done: "🗑️ 已丢弃 {count} 个丢失的回合；未重新执行。现在会回复你已保存的消息。"
+  pause_notice:
+    runtime_draining: "⏳ Hermes 正在重启——你的消息已保存，恢复后会继续回复。"
+    session_busy: "⏳ 你的消息已保存，等本对话中正在进行的工作结束后会回复。"
+    unknown_execution: "⏸️ 此对话已暂停：Hermes 重启时有一个回合未完成，是否重发只有你知道。你的消息已保存。发送 {discard} 可丢弃该丢失回合并继续（不会重跑），或发送 /reset 开始全新对话。"
+    generic: "⏸️ 此对话已暂停：有一条排队消息无法重新授权（{reason}）。你的消息已保存，但不会在此回复。发送 /reset 开始全新对话，或请运维恢复此对话。"
   stop:
     stopped_pending: "⚡ 已停止。代理尚未启动 — 你可以继续此会话。"
     stopped: "⚡ 已停止。你可以继续此会话。"

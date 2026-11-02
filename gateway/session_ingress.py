@@ -187,28 +187,25 @@ def pause_notice(authority, ref, reason):
     """The committed input stays queued behind a paused FIFO (a turn lost across an owner
     restart, or a head the preflight refused). Tell the platform user once per pause episode
     through the ordinary reply path; later messages onto the same pause are admitted silently."""
+    from agent.i18n import t
     live = authority.sessions[ref.session_id]
     if live.pause_notified:
         return None
     live.pause_notified = True
     if reason == 'runtime_draining':
         # Transient: the row runs when the restarted owner drains it, so /reset would be wrong advice.
-        return '⏳ Hermes is restarting — your message is saved and will be answered when it is back.'
+        return t('gateway.pause_notice.runtime_draining')
     if reason == 'session_busy':
         # Transient: queued behind work already running on this conversation (a worker execution).
-        return '⏳ Your message is saved and will be answered when the work running in this conversation finishes.'
+        return t('gateway.pause_notice.session_busy')
     if reason == 'unknown_execution':
         # GW-10: the way out is in this chat. /discard acknowledges the lost turn (never replayed)
         # through the same fenced resolve_unknown as Desktop/TUI, and the saved messages then run.
         # Slack registers no native /discard (its slash cap): the umbrella `/hermes discard` reaches it.
         slack = getattr(getattr(live.source, 'platform', None), 'value', None) == 'slack'
         discard = '/hermes discard' if slack else '/discard'
-        return ('⏸️ This conversation is paused: a previous turn did not finish when Hermes restarted, '
-                f'and only you know whether to send it again. Your message is saved. Send {discard} to drop '
-                'the lost turn and continue (it is not re-run), or /reset to start a fresh conversation.')
-    cause = f'a queued message could not be re-authorized ({reason})'
-    return (f'⏸️ This conversation is paused: {cause}. Your message is saved but will not be answered here. '
-            'Send /reset to start a fresh conversation, or ask the operator to resume this one.')
+        return t('gateway.pause_notice.unknown_execution', discard=discard)
+    return t('gateway.pause_notice.generic', reason=reason)
 
 
 def row_turn_author(policy, row):

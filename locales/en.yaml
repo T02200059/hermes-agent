@@ -472,6 +472,11 @@ gateway:
   discard:
     nothing: "Nothing to discard: this chat has no turn lost in a restart."
     done: "🗑️ Discarded {count} lost turn(s); they were not re-run. Your saved messages will be answered now."
+  pause_notice:
+    runtime_draining: "⏳ Hermes is restarting — your message is saved and will be answered when it is back."
+    session_busy: "⏳ Your message is saved and will be answered when the work running in this conversation finishes."
+    unknown_execution: "⏸️ This conversation is paused: a previous turn did not finish when Hermes restarted, and only you know whether to send it again. Your message is saved. Send {discard} to drop the lost turn and continue (it is not re-run), or /reset to start a fresh conversation."
+    generic: "⏸️ This conversation is paused: a queued message could not be re-authorized ({reason}). Your message is saved but will not be answered here. Send /reset to start a fresh conversation, or ask the operator to resume this one."
   stop:
     stopped_pending: "⚡ Stopped. The agent hadn't started yet — you can continue this session."
     stopped: "⚡ Stopped. You can continue this session."
