@@ -193,3 +193,96 @@ def test_on_session_end_schedules_when_routed():
         )
     assert scheduled.get("sid") == "sid-1"
     assert scheduled.get("chat_id") == "oc_z"
+
+
+def test_pre_gateway_dispatch_uses_event_source_only():
+    """Official hook: event + gateway only; platform/chat_id on event.source."""
+    from types import SimpleNamespace
+    from owner.explainers.recap import auto as auto_mod
+
+    with auto_mod._ROUTE_LOCK:
+        auto_mod._SESSION_ROUTES.clear()
+    with auto_mod._REF_LOCK:
+        auto_mod._GATEWAY_REF = None
+        auto_mod._ADAPTERS.clear()
+
+    source = SimpleNamespace(platform="feishu", chat_id="oc_only_source")
+    # Deliberately NO top-level platform / chat_id / session_key / session_id.
+    event = SimpleNamespace(source=source, text="hi")
+
+    class FakeStore:
+        def lookup_by_session_key(self, key):
+            assert "oc_only_source" in key
+            return SimpleNamespace(session_id="sid-from-store", origin=source)
+
+        def lookup_by_session_id(self, sid):
+            if sid == "sid-from-store":
+                return SimpleNamespace(
+                    session_id=sid,
+                    session_key="agent:main:feishu:dm:oc_only_source",
+                    origin=source,
+                    platform="feishu",
+                )
+            return None
+
+    class FakeGw:
+        adapters = {"feishu": object()}
+        session_store = FakeStore()
+
+        def _session_key_for_source(self, src):
+            return f"agent:main:feishu:dm:{src.chat_id}"
+
+    auto_mod._on_pre_gateway_dispatch(event=event, gateway=FakeGw())
+    with auto_mod._ROUTE_LOCK:
+        routes = dict(auto_mod._SESSION_ROUTES)
+    assert routes.get("sid-from-store") == ("feishu", "oc_only_source")
+    assert routes.get("agent:main:feishu:dm:oc_only_source") == ("feishu", "oc_only_source")
+
+
+def test_on_session_end_gateway_routing_fallback():
+    """When _SESSION_ROUTES is empty, pull chat_id from session_store.origin."""
+    from types import SimpleNamespace
+    from owner.explainers.recap import auto as auto_mod
+
+    auto_mod.cancel_pending("sid-gw")
+    with auto_mod._ROUTE_LOCK:
+        auto_mod._SESSION_ROUTES.clear()
+
+    origin = SimpleNamespace(platform="feishu", chat_id="oc_from_store")
+
+    class FakeStore:
+        def lookup_by_session_id(self, sid):
+            if sid == "sid-gw":
+                return SimpleNamespace(
+                    session_id=sid,
+                    session_key="agent:main:feishu:dm:oc_from_store",
+                    origin=origin,
+                    platform="feishu",
+                )
+            return None
+
+    class FakeGw:
+        adapters = {}
+        session_store = FakeStore()
+
+    with auto_mod._REF_LOCK:
+        auto_mod._GATEWAY_REF = FakeGw()
+
+    scheduled = {}
+
+    def fake_sched(sid, **kw):
+        scheduled["sid"] = sid
+        scheduled.update(kw)
+
+    with patch.object(auto_mod, "resolve_enabled", return_value=True), patch.object(
+        auto_mod, "load_auto_config", return_value={"enabled": True, "min_user_turns": 3, "idle_seconds": 1}
+    ), patch.object(auto_mod, "schedule_auto_recap", side_effect=fake_sched):
+        auto_mod._on_session_end(
+            session_id="sid-gw",
+            completed=True,
+            failed=False,
+            interrupted=False,
+            platform="feishu",
+        )
+    assert scheduled.get("sid") == "sid-gw"
+    assert scheduled.get("chat_id") == "oc_from_store"

@@ -538,6 +538,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - **输入默认 64k**（`max_input_chars`）；按辅助模型 **≥256k** 上下文设计；`clip_input` 保尾截断
   - **recap**：第四 kind；`/recap` 按需；notice `📋 系统提示：`；不写主会话
   - **recap 自动**（对齐 Grok Build `session_recap.rs`）：`min_user_turns=3` + `idle_seconds=180`；回合结束后闲置触发；watermark 防刷；短会话不发；`explainers.recap.auto`；**已落地**
+  - **2026-11-03**：recap auto 路由挂点修：`pre_gateway_dispatch` 读 `event.source`；`on_session_end` 可用 session_store origin 回补（idle 阈值不变）
   - **统一约定（已敲定，代码已做）**：单一 `owner.explainers` 块 + 共享取模 helper；禁止各 kind 各写 provider/model。详见上方「§ 二次开发可复用基建 §4」。
   - 旧顶层 `progress_explainer` / `approval_explainer` / `english_explainer` → 迁入 `explainers.{progress,approval,english,recap}`；`call_llm(task=…_explainer)` 长 task 名保留
   - **已落地（H03 #3）**：progress/approval/english 输出帽读 `merged.get("max_output_chars")`（模块默认 900/800/1000 仍保留）；overlay `explainers.{progress,approval,english}.max_output_chars` 已补同值；recap 仍 350

@@ -77,6 +77,8 @@ explainers:
 2. `pre_gateway_dispatch` / `agent_loop_stopped` → 取消（用户又开口或打断）；
 3. Timer 到期 → 同 `/recap` 生成 + notice 发送 → 写 watermark。
 
+路由：`pre_gateway_dispatch` 从 **`event.source`**（官方 hook 不传顶层 platform/chat_id）写 `_SESSION_ROUTES`；缺 session_id 时 `on_session_end` 经 `session_store.lookup_by_session_id`（gateway routing）回补 chat_id。
+
 配置（`overlay.yaml`）::
 
 ```yaml

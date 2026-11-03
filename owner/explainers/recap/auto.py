@@ -134,26 +134,171 @@ def register_hooks(ctx: Any) -> None:
     logger.debug("recap_auto hooks registered")
 
 
-def _on_pre_gateway_dispatch(**kwargs: Any) -> None:
-    """Cache gateway/adapters/route; cancel pending auto (user returned)."""
-    global _GATEWAY_REF
-    gateway = kwargs.get("gateway")
+def _coerce_source(raw: Any) -> Any:
+    """Accept SessionSource, dict (post_admission shape), or None."""
+    if raw is None:
+        return None
+    if isinstance(raw, dict):
+        # Minimal duck for platform/chat_id extraction.
+        class _Src:
+            pass
+
+        src = _Src()
+        src.platform = raw.get("platform")  # type: ignore[attr-defined]
+        src.chat_id = raw.get("chat_id")  # type: ignore[attr-defined]
+        return src
+    return raw
+
+
+def _platform_chat_from_source(source: Any) -> tuple[str, str]:
+    if source is None:
+        return "", ""
+    platform = normalize_platform(getattr(source, "platform", "") or "")
+    chat_id = str(getattr(source, "chat_id", "") or "").strip()
+    return platform, chat_id
+
+
+def _resolve_inbound_source(**kwargs: Any) -> Any:
+    """Official ``pre_gateway_dispatch`` passes ``event`` + ``gateway`` only.
+
+    Platform/chat_id live on ``event.source`` (SessionSource), not top-level
+    MessageEvent fields. Also accept an explicit ``source`` kwarg for tests /
+    ``post_gateway_admission``-style callers.
+    """
+    source = _coerce_source(kwargs.get("source"))
+    if source is not None:
+        return source
     event = kwargs.get("event")
-    source = kwargs.get("source")
+    if event is not None:
+        return _coerce_source(getattr(event, "source", None))
+    return None
+
+
+def _derive_session_key(gateway: Any, source: Any, event: Any, kwargs: dict[str, Any]) -> str:
     session_key = str(
         kwargs.get("session_key")
         or kwargs.get("gateway_session_key")
         or getattr(event, "session_key", "")
         or ""
-    )
-    platform = ""
-    chat_id = ""
+    ).strip()
+    if session_key:
+        return session_key
+    if gateway is not None and source is not None:
+        try:
+            key = getattr(gateway, "_session_key_for_source", None)
+            if callable(key):
+                derived = key(source)
+                if isinstance(derived, str) and derived.strip():
+                    return derived.strip()
+        except Exception:
+            logger.debug("recap_auto derive session_key via gateway failed", exc_info=True)
+        store = getattr(gateway, "session_store", None)
+        if store is not None:
+            try:
+                gen = getattr(store, "_generate_session_key", None)
+                if callable(gen):
+                    derived = gen(source)
+                    if isinstance(derived, str) and derived.strip():
+                        return derived.strip()
+            except Exception:
+                logger.debug("recap_auto derive session_key via store failed", exc_info=True)
     if source is not None:
-        platform = str(getattr(source, "platform", "") or "")
-        chat_id = str(getattr(source, "chat_id", "") or "")
+        try:
+            from gateway.session import build_session_key
+
+            derived = build_session_key(source)
+            if isinstance(derived, str) and derived.strip():
+                return derived.strip()
+        except Exception:
+            logger.debug("recap_auto build_session_key failed", exc_info=True)
+    return ""
+
+
+def _remember_route(
+    *,
+    platform: str,
+    chat_id: str,
+    session_key: str = "",
+    sid_hint: str = "",
+    gateway: Any = None,
+) -> None:
+    if not platform or not chat_id:
+        return
+    keys: list[str] = []
+    if session_key:
+        keys.append(session_key)
+        if ":" in session_key:
+            keys.append(session_key.split(":")[-1])
+    if sid_hint:
+        keys.append(sid_hint)
+    # Gateway routing: map current session_id under the same route so
+    # on_session_end(session_id=…) can find chat_id without fuzzy match.
+    if gateway is not None and session_key:
+        store = getattr(gateway, "session_store", None)
+        if store is not None:
+            try:
+                lookup = getattr(store, "lookup_by_session_key", None)
+                entry = lookup(session_key) if callable(lookup) else None
+                if entry is not None:
+                    eid = str(getattr(entry, "session_id", "") or "").strip()
+                    if eid:
+                        keys.append(eid)
+            except Exception:
+                logger.debug("recap_auto remember route via session_key failed", exc_info=True)
+    if not keys:
+        return
+    route = (platform, chat_id)
+    with _ROUTE_LOCK:
+        for key in keys:
+            if key:
+                _SESSION_ROUTES[key] = route
+
+
+def _route_from_gateway(session_id: str) -> tuple[str, str]:
+    """Fall back to SessionStore origin when the in-memory route cache missed."""
+    sid = str(session_id or "").strip()
+    if not sid:
+        return "", ""
+    with _REF_LOCK:
+        gw = _GATEWAY_REF
+    if gw is None:
+        return "", ""
+    store = getattr(gw, "session_store", None)
+    if store is None:
+        return "", ""
+    try:
+        lookup = getattr(store, "lookup_by_session_id", None)
+        entry = lookup(sid) if callable(lookup) else None
+    except Exception:
+        logger.debug("recap_auto gateway routing lookup failed", exc_info=True)
+        return "", ""
+    if entry is None:
+        return "", ""
+    origin = getattr(entry, "origin", None)
+    platform, chat_id = _platform_chat_from_source(origin)
+    if not platform:
+        platform = normalize_platform(getattr(entry, "platform", "") or "")
+    if not chat_id:
+        return platform, ""
+    # Seed cache for subsequent ends / cancels.
+    sk = str(getattr(entry, "session_key", "") or "").strip()
+    _remember_route(platform=platform, chat_id=chat_id, session_key=sk, sid_hint=sid, gateway=None)
+    return platform, chat_id
+
+
+def _on_pre_gateway_dispatch(**kwargs: Any) -> None:
+    """Cache gateway/adapters/route; cancel pending auto (user returned)."""
+    global _GATEWAY_REF
+    gateway = kwargs.get("gateway")
+    event = kwargs.get("event")
+    source = _resolve_inbound_source(**kwargs)
+    platform, chat_id = _platform_chat_from_source(source)
+    # Legacy / test shapes: rare top-level fields on the event itself.
     if event is not None:
-        platform = platform or str(getattr(event, "platform", "") or "")
-        chat_id = chat_id or str(getattr(event, "chat_id", "") or "")
+        if not platform:
+            platform = normalize_platform(getattr(event, "platform", "") or "")
+        if not chat_id:
+            chat_id = str(getattr(event, "chat_id", "") or "").strip()
     platform = normalize_platform(platform)
 
     if gateway is not None:
@@ -168,19 +313,36 @@ def _on_pre_gateway_dispatch(**kwargs: Any) -> None:
         except Exception:
             logger.debug("recap_auto cache adapters failed", exc_info=True)
 
+    session_key = _derive_session_key(gateway, source, event, kwargs)
     sid_hint = ""
     if event is not None:
-        sid_hint = str(getattr(event, "session_id", "") or "")
-    if session_key and platform and chat_id:
-        with _ROUTE_LOCK:
-            _SESSION_ROUTES[session_key] = (platform, chat_id)
-            if ":" in session_key:
-                _SESSION_ROUTES[session_key.split(":")[-1]] = (platform, chat_id)
-            if sid_hint:
-                _SESSION_ROUTES[sid_hint] = (platform, chat_id)
+        sid_hint = str(getattr(event, "session_id", "") or "").strip()
+    _remember_route(
+        platform=platform,
+        chat_id=chat_id,
+        session_key=session_key,
+        sid_hint=sid_hint,
+        gateway=gateway,
+    )
 
     # User spoke → cancel idle auto for this conversation.
-    for key in (sid_hint, session_key, session_key.split(":")[-1] if ":" in session_key else ""):
+    cancel_keys = [sid_hint, session_key]
+    if session_key and ":" in session_key:
+        cancel_keys.append(session_key.split(":")[-1])
+    # Also cancel by session_id resolved from the store under this key.
+    if gateway is not None and session_key:
+        store = getattr(gateway, "session_store", None)
+        if store is not None:
+            try:
+                lookup = getattr(store, "lookup_by_session_key", None)
+                entry = lookup(session_key) if callable(lookup) else None
+                if entry is not None:
+                    eid = str(getattr(entry, "session_id", "") or "").strip()
+                    if eid:
+                        cancel_keys.append(eid)
+            except Exception:
+                pass
+    for key in cancel_keys:
         if key:
             cancel_pending(key)
 
@@ -388,6 +550,11 @@ def _lookup_route(session_id: str, platform_hint: str) -> tuple[str, str]:
         for key, val in list(_SESSION_ROUTES.items())[-64:]:
             if sid and (sid in key or key.endswith(sid) or key in sid):
                 return val
+    # Gateway routing backfill: SessionEntry.origin when cache was never seeded
+    # (e.g. first turn — session_id only exists after prepare, past pre_dispatch).
+    gw_platform, gw_chat = _route_from_gateway(sid)
+    if gw_chat:
+        return gw_platform or normalize_platform(platform_hint), gw_chat
     return normalize_platform(platform_hint), ""
 
 
