@@ -28,8 +28,9 @@ _CONTENT_CLAUSES = frozenset({
 })
 
 # Nothing was committed (main's busy-queue cap); /retry answers it before rewriting (#139257).
-QUEUE_FULL_REPLY = ('⏳ Too many messages are already waiting in this conversation; '
-                    'send this again after the current reply.')
+def queue_full_reply():
+    from agent.i18n import t
+    return t('gateway.queue_full')
 
 
 async def admit_message(authority, event):
@@ -50,12 +51,12 @@ async def admit_message(authority, event):
             # The reply reaches the whole chat, so only content clauses are named; trust and provenance
             # clauses (and any new one) stay generic, and gateway.log keeps the clause (``_refuse``).
             named = f'{exc.reason}: {exc.field}' if exc.field in _CONTENT_CLAUSES else exc.reason
-            return (f'💡 Hermes refused this message ({named}), so it was not saved '  # [owner]
-                    'or answered. Ask the operator to check gateway.log.')
+            from agent.i18n import t
+            return t('gateway.message_refused', named=named)
         if exc.reason != 'queue_full':
             raise
         # Nothing was committed (main's busy-queue cap): say so instead of a generic turn error.
-        return QUEUE_FULL_REPLY
+        return queue_full_reply()
     finally:
         messaging_admission.reset(ingress)
     if receipt.status == 'terminal':
