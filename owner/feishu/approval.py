@@ -47,8 +47,15 @@ class FeishuApprovalContext:
     sender_is_bot: bool = False
 
 
-def build_resolved_card(*, decision: str, user_name: str) -> dict:
-    """Frozen card after a successful approve/deny click."""
+def build_resolved_card(
+    *, decision: str, user_name: str, body_text: str = ""
+) -> dict:
+    """Frozen card after a successful approve/deny click.
+
+    ``body_text`` is the original pending-card body (command + optional C13
+    approval_explainer appendix). Keep it so the post-click card still shows
+    what was approved/denied, including the AI interpretation.
+    """
     labels = {
         "once": ("✅", t("platform.feishu.approval.resolved_once")),
         "session": ("🔓", t("platform.feishu.approval.resolved_session")),
@@ -61,23 +68,28 @@ def build_resolved_card(*, decision: str, user_name: str) -> dict:
     display = (user_name or "").strip() or t(
         "platform.feishu.approval.operator_fallback"
     )
+    elements: list[dict] = [
+        {
+            "tag": "markdown",
+            "content": t(
+                "platform.feishu.approval.resolved_by_user",
+                icon=icon,
+                label=label,
+                user=display,
+            ),
+        }
+    ]
+    body = (body_text or "").strip()
+    if body:
+        elements.append({"tag": "hr"})
+        elements.append({"tag": "markdown", "content": body})
     return {
         "config": {"wide_screen_mode": True},
         "header": {
             "title": {"tag": "plain_text", "content": f"{icon} {label}"},
             "template": "green" if decision != "deny" else "red",
         },
-        "elements": [
-            {
-                "tag": "markdown",
-                "content": t(
-                    "platform.feishu.approval.resolved_by_user",
-                    icon=icon,
-                    label=label,
-                    user=display,
-                ),
-            }
-        ],
+        "elements": elements,
     }
 
 
@@ -222,7 +234,11 @@ def handle_approval_card_action(
         return adapter._card_response(build_failed_card(reason="submit_failed"))
 
     return adapter._card_response(
-        build_resolved_card(decision=choice, user_name=user_name)
+        build_resolved_card(
+            decision=choice,
+            user_name=user_name,
+            body_text=str(state.get("body_text") or ""),
+        )
     )
 
 

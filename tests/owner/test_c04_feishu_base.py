@@ -31,6 +31,71 @@ def test_build_resolved_card_never_leaks_empty_operator():
     assert "用户" in body or "user" in body.lower() or "**" in body
 
 
+def test_build_resolved_card_keeps_pending_body_and_ai_appendix():
+    """Approve/deny freeze must retain the pending body (command + C13 appendix)."""
+    pending = (
+        "```\nrm -rf /tmp/x\n```\n"
+        "原因：cleanup\n\n"
+        "**命令说明**\n删除临时目录 /tmp/x"
+    )
+    card = build_resolved_card(
+        decision="once", user_name="杨天宝", body_text=pending,
+    )
+    texts = [el.get("content", "") for el in card["elements"] if el.get("tag") == "markdown"]
+    joined = "\n".join(texts)
+    assert "杨天宝" in joined
+    assert "rm -rf /tmp/x" in joined
+    assert "命令说明" in joined
+    assert "删除临时目录" in joined
+    assert any(el.get("tag") == "hr" for el in card["elements"])
+
+
+def test_handle_resolved_passes_body_text_from_state():
+    adapter = MagicMock()
+    adapter._approval_state = {
+        1: {
+            "session_key": "s",
+            "message_id": "m",
+            "chat_id": "oc_1",
+            "body_text": "```\necho hi\n```\n\n**命令说明**\n打印 hi",
+        }
+    }
+    adapter._is_interactive_operator_authorized.return_value = True
+    captured = {}
+
+    def _card_response(card_data=None, **kw):
+        captured["card"] = card_data if card_data is not None else kw.get("data")
+        return SimpleNamespace(card=captured["card"])
+
+    adapter._card_response.side_effect = _card_response
+    adapter._submit_on_loop.return_value = True
+
+    event = SimpleNamespace(
+        operator=SimpleNamespace(open_id="ou_ok"),
+        context=SimpleNamespace(open_chat_id="oc_1"),
+    )
+    from unittest.mock import patch
+
+    with patch(
+        "owner.feishu.sender_name_helpers.operator_display_name",
+        return_value="测试用户",
+    ):
+        resp = handle_approval_card_action(
+            adapter=adapter,
+            event=event,
+            action_value={"hermes_action": "approve_once", "approval_id": 1},
+            loop=MagicMock(),
+        )
+    assert resp.card is not None
+    joined = "\n".join(
+        el.get("content", "")
+        for el in resp.card["elements"]
+        if el.get("tag") == "markdown"
+    )
+    assert "命令说明" in joined
+    assert "echo hi" in joined
+
+
 def test_build_failed_card_reasons():
     for reason in (
         "unauthorized",

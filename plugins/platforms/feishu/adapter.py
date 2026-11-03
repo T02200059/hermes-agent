@@ -1876,10 +1876,14 @@ class FeishuAdapter(BasePlatformAdapter):
                              {"hermes_action": self._EA_CARD_ACTIONS[choice], "approval_id": approval_id})
                 for label, choice, style in prompt.actions]
             card = _card(f"💡 {t('gateway.exec_approval.header')}", "orange", _approval_text, actions=actions)  # [owner]
-            return await self._send_interactive_card(
+            result = await self._send_interactive_card(
                 prompt.chat_id, card, prompt.metadata, "send_exec_approval failed",
                 state_map=self._approval_state, state_id=approval_id, session_key=prompt.session_key,
             )
+            # [owner] C13: stash pending body (command + AI appendix) for resolved-card freeze
+            if result.success and approval_id in self._approval_state:
+                self._approval_state[approval_id]["body_text"] = _approval_text or ""
+            return result
         except Exception as exc:
             logger.warning("[Feishu] send_exec_approval failed: %s", exc)
             return SendResult(success=False, error=str(exc))
@@ -1932,11 +1936,15 @@ class FeishuAdapter(BasePlatformAdapter):
             return SendResult(success=False, error=str(exc))
 
     @staticmethod
-    def _build_resolved_approval_card(*, choice: str, user_name: str) -> dict[str, Any]:
+    def _build_resolved_approval_card(
+        *, choice: str, user_name: str, body_text: str = "",
+    ) -> dict[str, Any]:
         """Raw card JSON shown in place of the buttons once an approval is resolved."""
-        # [owner] C04: resolved card body lives in owner/feishu/approval.py
+        # [owner] C04/C13: resolved card (+ optional pending body) in owner/feishu/approval.py
         from owner.feishu.approval import build_resolved_card
-        return build_resolved_card(decision=choice, user_name=user_name)
+        return build_resolved_card(
+            decision=choice, user_name=user_name, body_text=body_text,
+        )
 
     @staticmethod
     def _build_resolved_update_prompt_card(*, answer: str, user_name: str) -> dict[str, Any]:

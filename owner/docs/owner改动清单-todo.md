@@ -533,6 +533,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
     - 用户指示覆盖原「queue-card 不做」备注（2026-10-27）
     - **harden（2026-10-27）**：`_enqueue_fifo` 整体 fail-open；overlay `feishu.queue_card.enabled`（默认 true）；guide submit `_submit_on_loop` 失败 → `coro.close()` + 失败卡（禁假「已排队」）。**操作者鉴权暂不做**（注释说明；靠「由 xx …」显示名，同审批卡思路）
 - [x] **C13** · 源 §7.24–7.26 · progress / approval / english / **recap** explainer · **已落地** · 飞书底座（C04/C10/C11）已齐
+  - **2026-11-03**：飞书审批冻结卡保留 C13 命令说明附录（send 写入 `_approval_state.body_text` → `build_resolved_card`）
   - **统一基建**：单一 `owner.explainers` 块 + `owner/explainers/`（config/llm/registry）；`register_kind` 可扩。详见「§ 二次开发可复用基建 §4」与 `owner/docs/c13-explainers.md`
   - **输入默认 64k**（`max_input_chars`）；按辅助模型 **≥256k** 上下文设计；`clip_input` 保尾截断
   - **recap**：第四 kind；`/recap` 按需；notice `📋 系统提示：`；不写主会话
