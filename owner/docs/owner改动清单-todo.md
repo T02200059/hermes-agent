@@ -396,6 +396,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
     3. `sessions.owner_provider_name` + messages 四列 token 用量落盘
   - **2026-10-27 补丁**：`PERSISTENCE_ONLY_MESSAGE_FIELDS` 增 `model`/`provider`（出站剥离；不落盘 DDL）；attribution docstring 改为「仅内存」
   - **已核实并落地（2026-10-30）**：`/model` mid-switch 传入的 `new_provider` 对 named-custom 多为 `custom:<slug>`（`resolve_provider_full`），会把 init 时 runtime 盖成的 slug 名冲掉。`bind_agent_attribution` 现剥离 `custom:` 前缀，与 named-custom runtime stamp（`custom_provider["name"]`）对齐；裸 `custom` 仍记 `custom`。测：`tests/owner/test_attribution.py`。
+  - **C02/C26 follow-up（2026-11-04）**：`_lap_canonical_rows` 改走 `_any_env(..., provider=slug)`（修 copilot `ghp_*` / coding-plan 裸 `sk-` 假阳性）；`credential_helpers` 增 coding-plan-cn 等 `sk-sp` 前缀。测：`tests/owner/test_credential_helpers.py`、`tests/owner/test_listing_filters.py`。
 - [x] **C03** · 源 §2.7–2.8 · damodel provider/proxy · **优先级：P0**
   - 落地：`owner/providers/damodel.py` + `plugins/model-providers/damodel/`；测 `tests/owner/test_damodel_provider.py`
   - **C03+ 2026-10-27**：`is_damodel_route` + `anthropic_prompt_cache_policy` 3 行 `# [owner]` 委托，恢复 damodel cache_control（成本回归）；thinking/extra_body 仍延后
@@ -596,6 +597,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - 缓存：`_PROVIDER_MODELS_CACHE_TTL` 24h；`_store_cache_entry` 目录无变更不写盘
   - `/providers`：`owner/commands/providers.py` + `owner/owner-extensions`（`plugins/owner-extensions` 符号链接）；文本列表；飞书交互卡见 **C26-feishu-picker**
   - 测：`tests/owner/test_providers_command.py`、`tests/owner/test_provider_models_cache_ttl.py`
+  - **listing tighten（2026-11-04）**：`owner/providers/listing_filters.py` — 剔除 Alibaba Coding Plan、按量只留优先 `alibaba-cn`；`allow_ambient_anthropic_listing()→False` 挡住 Claude Code 钥匙串假阳性；`_finalize_picker_rows` 薄胶水。测：`tests/owner/test_listing_filters.py`。
 - [x] **C26-feishu-picker** · 源 §4.9 飞书半边 · `/providers` 交互卡（provider→model→确认）· **优先级：P1**（阶段三）· **已落地**
   - `owner/feishu/model_picker.py`；adapter `_model_picker_state` / `send_model_picker_card` / card-action `hermes_model_picker`
   - 测：`tests/owner/test_c26_model_picker.py`；说明：`owner/docs/c26-model-picker.md`

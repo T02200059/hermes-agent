@@ -924,14 +924,21 @@ def _overlay_has_creds(b: _PickerBuild, pid: str, hermes_slug: str, overlay) -> 
     if not has_creds and hermes_slug == "anthropic":
         # The pool gates anthropic behind is_provider_explicitly_configured() (aux tasks must not
         # consume Claude Code tokens); the picker is discovery-oriented, so read the files directly.
+        # [owner] C26 — ambient Claude Code keychain must not surface anthropic unless opted in.
         try:
-            from agent.anthropic_credentials import read_claude_code_credentials, read_hermes_oauth_credentials
-            hermes_creds = read_hermes_oauth_credentials()
-            cc_creds = read_claude_code_credentials()
-            if (hermes_creds and hermes_creds.get("accessToken")) or (cc_creds and cc_creds.get("accessToken")):
-                has_creds = True
-        except Exception as exc:
-            logger.debug("Anthropic external creds check failed: %s", exc)
+            from owner.providers.listing_filters import allow_ambient_anthropic_listing
+            _allow_ambient = bool(allow_ambient_anthropic_listing())
+        except Exception:
+            _allow_ambient = True
+        if _allow_ambient:
+            try:
+                from agent.anthropic_credentials import read_claude_code_credentials, read_hermes_oauth_credentials
+                hermes_creds = read_hermes_oauth_credentials()
+                cc_creds = read_claude_code_credentials()
+                if (hermes_creds and hermes_creds.get("accessToken")) or (cc_creds and cc_creds.get("accessToken")):
+                    has_creds = True
+            except Exception as exc:
+                logger.debug("Anthropic external creds check failed: %s", exc)
     return has_creds
 
 
@@ -987,7 +994,11 @@ def _lap_canonical_rows(b: _PickerBuild) -> None:
         cp_config = PROVIDER_REGISTRY.get(cp.slug)
         has_creds = False
         if cp_config and cp_config.api_key_env_vars:
-            lit = {ev for ev in cp_config.api_key_env_vars if os.environ.get(ev)}
+            # [owner] C02 — prefix-aware (copilot rejects ghp_*; coding-plan needs sk-sp)
+            lit = {
+                ev for ev in cp_config.api_key_env_vars
+                if _any_env((ev,), provider=cp.slug)
+            }
             has_creds = bool(lit)
             # A regional "-cn" twin lit only by key vars shared with its non-CN sibling is a
             # phantom row: hide it unless it is the current provider, and only when it has a
@@ -1353,6 +1364,19 @@ def _finalize_picker_rows(results: list, user_providers, current_model: str) -> 
                     r for r in results
                     if str(r.get("provider_id", "")).strip().lower() not in disabled
                     and str(r.get("slug", "")).strip().lower() not in disabled]
+    except Exception:
+        pass
+
+    # [owner] C26 — Alibaba paygo dedupe / drop coding-plan; keep current provider.
+    try:
+        from owner.providers.listing_filters import filter_authenticated_provider_rows
+        current_slug = ""
+        for row in results:
+            if row.get("is_current"):
+                current_slug = str(row.get("slug") or "")
+                break
+        results = filter_authenticated_provider_rows(
+            results, current_provider=current_slug)
     except Exception:
         pass
 

@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime, timezone
-from typing import Callable, Optional, Union
+from datetime import UTC, datetime
+from typing import Callable, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +20,11 @@ logger = logging.getLogger(__name__)
 _OWNER_EXTRA_PREFIXES: dict[str, tuple[str, ...]] = {
     # Classic PATs (ghp_*) are rejected by the Copilot API — omit them intentionally.
     "copilot": ("gho_", "github_pat_", "ghu_"),
+    # Coding Plan keys are sk-sp…; plain DashScope sk- must not light these rows.
     "alibaba-coding-plan": ("sk-sp",),
+    "alibaba-coding-plan-cn": ("sk-sp",),
+    "alibaba-coding-cn": ("sk-sp",),
+    "dashscope-coding-cn": ("sk-sp",),
 }
 
 
@@ -42,13 +46,13 @@ def _merged_prefix_map() -> dict[str, tuple[str, ...]]:
     return merged
 
 
-def has_valid_github_token(env_vars: Union[tuple, list], read_env: Optional[Callable] = None) -> bool:
+def has_valid_github_token(env_vars: tuple | list, read_env: Optional[Callable] = None) -> bool:
     """Backward-compatible Copilot GitHub token check (non-classic PAT)."""
     return has_valid_env_credential(env_vars, "copilot", read_env=read_env)
 
 
 def has_valid_env_credential(
-    env_vars: Union[tuple, list],
+    env_vars: tuple | list,
     provider: str = "",
     read_env: Optional[Callable] = None,
 ) -> bool:
@@ -82,6 +86,6 @@ def is_token_expired(expires_at: str | None) -> bool:
         return False
     try:
         exp_dt = datetime.fromisoformat(expires_at)
-        return datetime.now(timezone.utc) > exp_dt
+        return datetime.now(UTC) > exp_dt
     except Exception:
         return False
