@@ -238,9 +238,10 @@ _DEFAULT_NOTICE_RULES: tuple[dict[str, Any], ...] = (
     {
         # [owner] C13 recap：PREFIX 须与 owner/explainers/recap/prompt.py 一致。
         # 进 DEFAULTS 后 overlay 可不再复写整表 notice_titles（替换语义）。
+        # 标题色：橘黄（飞书 schema template=orange；yellow 偏浅黄，非橘）。
         "prefix": "📋 系统提示：",
         "title": "📋 会话回顾",
-        "template": "blue",
+        "template": "orange",
         "strip_prefix": True,
     },
 )

@@ -44,6 +44,7 @@ def test_default_notice_rules_include_recap(monkeypatch):
     assert "📋 系统提示：" in prefixes
     recap = next(r for r in rules if r["prefix"] == "📋 系统提示：")
     assert recap["title"] == "📋 会话回顾"
+    assert recap["template"] == "orange"
     assert recap.get("strip_prefix") is True
 
 
