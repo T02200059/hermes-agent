@@ -450,6 +450,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - locales：`approval.protected_file_*` / `ssh_config_*` / `gate_why_*`（en↔代码漂移守卫）
   - 说明：`owner/docs/c10-b11-i18n-approval-history.md`
   - 测：`tests/owner/test_file_tools_guard_text_i18n.py`
+  - **思考展示标签口语化（2026-11-04）**：不改 bundled `locales/zh.yaml`；用官方 `$HERMES_HOME/locales` overlay → `owner/config/locales/zh.yaml`（本机 `~/.hermes/locales` 软链），仅覆盖 `gateway.reasoning.quote_label_*` / `block`：`💭 推理`→`💭 想法`。测：`tests/owner/test_reasoning_label_zh_overlay.py`。生效需软重启（catalog 进程内缓存）。
   - 范围：护栏文案层（T2-12）；非废弃的 display_filter；官方 `tools/approval.py` agent-facing 大段英文模板未整迁（B11 已用 summary.* + 护栏键 + 兜底覆盖历史挖掘）
   - **2026-10-27 文案**：`gateway.shutdown.{notice_restart,notice_shutdown,cron_interrupted}` 开头 ⚠️→♻（与 `startup.restarted` 一致）；zh/en 语气收紧，其它 locale 仅换 emoji
   - **2026-10-27 文案**：故障/告警类用户可见串开头 `⚠️`/`⚠`→`❕`（更柔和）；`locales/*.yaml` + `.tui.yaml` 同前缀；lifecycle 三键保持 ♻；正文未改

@@ -1,0 +1,8 @@
+# [owner] HERMES_HOME locale overlay — shadows bundled locales/zh.yaml key-by-key.
+# Runtime: ~/.hermes/locales -> this directory (same symlink pattern as overlay.yaml).
+# Scope: agent/gateway 「展示思考内容」标签 only；勿塞「推理强度」等配置用语。
+gateway:
+  reasoning:
+    quote_label_discord: "-# 💭 想法"
+    quote_label_md: "> 💭 **想法：**"
+    block: "💭 **想法：**\n```\n{reasoning}\n```\n\n{response}"
