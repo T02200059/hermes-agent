@@ -526,6 +526,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
     - 意图：busy 排队不再只有纯文本 ack；飞书发可操作状态卡（取消 / 立即执行 / 转向），引导卡 queue 提交变身同卡；空闲提交走 freeze + 跳过二次 dispatch
     - helper：`owner/feishu/queue_card.py`（建卡 / 回调 / send）；`owner/patches/queue_cancel_patch.py`（runtime patch `_enqueue_fifo` / `_dequeue_pending_event` / `_busy_queue_command`；token=`_owner_queue_token`）；`owner/feishu/steer_card.py`（guide morph + should_skip / notify）；`owner/feishu/card_sender.py`（`send_card_via_rest`）
     - 胶水：`plugins/platforms/feishu/adapter.py` `send_queue_status_card` / `_handle_queue_card_action` + `hermes_queue_card` 分支（`# [owner] C12-queue-card`）；`owner/owner-extensions` `apply_patch`
+    - **热修 2026-11-04**：`queue_cancel_patch.apply_patch` 禁止在插件 `register()` 里 `import gateway.run`（与主线程导入死锁 → `plugins.load_timeout_seconds` 弃载 owner-extensions → 飞书 bot menu `/providers` 报未知命令）；改为 `sys.modules.get` + 延迟 apply。生效需软重启 gateway。
     - 设计：`owner/docs/design/queue-steer-lifecycle/queue-steer-lifecycle.md`
     - 测：`tests/owner/test_c12_queue_card.py`
     - 验证：`python -m pytest tests/owner/test_c12_queue_card.py -q`

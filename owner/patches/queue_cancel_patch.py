@@ -24,11 +24,19 @@ Hardening (2026-10-27):
     bypass straight to originals (no card / no token stamping).
 
 Removable via ``revert_patch()``.
+
+Plugin-load safety (2026-11-04):
+  ``apply_patch`` must **not** ``import gateway.run`` while ``discover_plugins``
+  is on the loader worker — that deadlocks the main-thread import of
+  ``gateway.run`` until ``plugins.load_timeout_seconds``, abandoning
+  owner-extensions and dropping ``/providers``. Use ``sys.modules.get`` +
+  deferred apply instead.
 """
 
 from __future__ import annotations
 
 import logging
+import sys
 import threading
 import time
 from collections.abc import Mapping, MutableMapping
@@ -51,6 +59,8 @@ _TOKEN_STALE_AFTER = 3600.0  # seconds after last update before pruning
 
 _originals: dict[str, Any] = {}
 _applied: bool = False
+_defer_lock = threading.Lock()
+_defer_thread: Optional[threading.Thread] = None
 
 _EVENT_TOKEN_ATTR = "_owner_queue_token"
 # Also stored under event.metadata for durability / easier debugging.
@@ -1250,21 +1260,67 @@ def _prefetch_provider(self, provider: Any, query: str, *, session_id: str = "")
     return _originals["_prefetch_provider"](self, provider, query, session_id=session_id)
 
 
+def _schedule_deferred_apply() -> None:
+    """Apply once ``gateway.run.GatewayRunner`` appears in ``sys.modules``.
+
+    Plugin ``register()`` runs on a loader worker. Doing ``import gateway.run``
+    there while the main thread is mid-import (and waiting on discovery) deadlocks
+    until ``plugins.load_timeout_seconds``; the abandoned load then drops every
+    registration from this plugin — including ``/providers``. Never import here.
+    """
+    global _defer_thread
+    with _defer_lock:
+        if _applied:
+            return
+        if _defer_thread is not None and _defer_thread.is_alive():
+            return
+
+        def _wait() -> None:
+            deadline = time.monotonic() + 120.0
+            while time.monotonic() < deadline:
+                if _applied:
+                    return
+                mod = sys.modules.get("gateway.run")
+                if mod is not None and getattr(mod, "GatewayRunner", None) is not None:
+                    try:
+                        apply_patch()
+                    except Exception:
+                        logger.warning(
+                            "queue_cancel_patch: deferred apply failed",
+                            exc_info=True,
+                        )
+                    return
+                time.sleep(0.05)
+            logger.warning(
+                "queue_cancel_patch: deferred apply gave up waiting for gateway.run"
+            )
+
+        _defer_thread = threading.Thread(
+            target=_wait, name="owner-queue-cancel-defer", daemon=True
+        )
+        _defer_thread.start()
+    logger.info(
+        "queue_cancel_patch: deferred until gateway.run is loaded "
+        "(avoid plugin-load import deadlock)"
+    )
+
+
 def apply_patch() -> None:
-    """Monkey-patch enqueue/dequeue + prefetch wait. Idempotent."""
+    """Monkey-patch enqueue/dequeue + prefetch wait. Idempotent.
+
+    Uses ``sys.modules.get("gateway.run")`` only — never imports during plugin
+    discovery (see ``_schedule_deferred_apply``).
+    """
     global _applied
     if _applied:
         return
 
-    try:
-        import gateway.run as gateway_run
-    except ImportError:
-        logger.warning("queue_cancel_patch: gateway.run not importable; skip")
-        return
-
-    runner_cls = getattr(gateway_run, "GatewayRunner", None)
+    gateway_run = sys.modules.get("gateway.run")
+    runner_cls = (
+        getattr(gateway_run, "GatewayRunner", None) if gateway_run is not None else None
+    )
     if runner_cls is None or not hasattr(runner_cls, "_enqueue_fifo"):
-        logger.warning("queue_cancel_patch: GatewayRunner._enqueue_fifo missing; skip")
+        _schedule_deferred_apply()
         return
 
     _originals["_enqueue_fifo"] = runner_cls._enqueue_fifo
@@ -1296,14 +1352,15 @@ def revert_patch() -> None:
             _token_state.clear()
         return
     try:
-        import gateway.run as gateway_run
-
-        runner_cls = getattr(gateway_run, "GatewayRunner", None)
+        gateway_run = sys.modules.get("gateway.run")
+        runner_cls = (
+            getattr(gateway_run, "GatewayRunner", None) if gateway_run is not None else None
+        )
         if runner_cls is not None and "_enqueue_fifo" in _originals:
             runner_cls._enqueue_fifo = _originals["_enqueue_fifo"]
         if runner_cls is not None and "_busy_queue_command" in _originals:
             runner_cls._busy_queue_command = _originals["_busy_queue_command"]
-        if "_dequeue_pending_event" in _originals:
+        if gateway_run is not None and "_dequeue_pending_event" in _originals:
             gateway_run._dequeue_pending_event = _originals["_dequeue_pending_event"]
     except Exception:
         logger.warning("queue_cancel_patch: revert gateway failed", exc_info=True)

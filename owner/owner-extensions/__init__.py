@@ -113,6 +113,8 @@ def register(ctx) -> None:
 
     # [owner] C12-queue-card: Feishu /queue lifecycle card (cancel / process_now / freeze)
     # + guide-card morph to status card. Feishu-only; other platforms keep text ack.
+    # apply_patch must stay non-blocking (no import gateway.run) or plugin load
+    # times out and drops /providers. See queue_cancel_patch deferred apply.
     # See owner/patches/queue_cancel_patch.py + owner/feishu/queue_card.py.
     try:
         from owner.patches.queue_cancel_patch import apply_patch as _apply_queue_cancel

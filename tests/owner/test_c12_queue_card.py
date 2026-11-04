@@ -202,6 +202,32 @@ def test_apply_and_revert_patch_idempotent(monkeypatch):
 # ── guide morph ────────────────────────────────────────────────────────────
 
 
+
+def test_apply_patch_defers_without_importing_gateway_run(monkeypatch):
+    """Plugin load must not ``import gateway.run`` (deadlocks discovery worker)."""
+    import sys
+
+    import owner.patches.queue_cancel_patch as qcp
+
+    qcp.revert_patch()
+    saved = sys.modules.pop("gateway.run", None)
+    calls = {"n": 0}
+
+    def _count_defer():
+        calls["n"] += 1
+
+    monkeypatch.setattr(qcp, "_schedule_deferred_apply", _count_defer)
+    try:
+        qcp.apply_patch()
+        assert calls["n"] == 1
+        assert qcp._applied is False
+        assert "gateway.run" not in sys.modules
+    finally:
+        if saved is not None:
+            sys.modules["gateway.run"] = saved
+        qcp.revert_patch()
+
+
 def test_guide_queue_submit_morphs_to_status_card():
     adapter = MagicMock()
     adapter._app_id = "cli_x"
