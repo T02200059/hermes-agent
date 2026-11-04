@@ -597,6 +597,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - 缓存：`_PROVIDER_MODELS_CACHE_TTL` 24h；`_store_cache_entry` 目录无变更不写盘
   - `/providers`：`owner/commands/providers.py` + `owner/owner-extensions`（`plugins/owner-extensions` 符号链接）；文本列表；飞书交互卡见 **C26-feishu-picker**
   - 测：`tests/owner/test_providers_command.py`、`tests/owner/test_provider_models_cache_ttl.py`
+  - **deepseek-v4-flash alias（2026-11-04）**：`owner/providers/deepseek_aliases.py` — 原生 DeepSeek 上把已下架公开 id `deepseek-v4-flash` 折到 `deepseek-flash`（`GET /v1/models` 现仅 `deepseek-flash`/`deepseek-v4-pro`；wire 仍接受旧 id）。`hermes_cli/model_normalize.py` 薄胶水 update `_DEEPSEEK_RETIRED_ALIASES`。damodel 等聚合商 id 不动。测：`tests/owner/test_deepseek_aliases.py`。
   - **listing tighten（2026-11-04）**：`owner/providers/listing_filters.py` — 剔除 Alibaba Coding Plan、按量只留优先 `alibaba-cn`；`allow_ambient_anthropic_listing()→False` 挡住 Claude Code 钥匙串假阳性；`_finalize_picker_rows` 薄胶水。测：`tests/owner/test_listing_filters.py`。
 - [x] **C26-feishu-picker** · 源 §4.9 飞书半边 · `/providers` 交互卡（provider→model→确认）· **优先级：P1**（阶段三）· **已落地**
   - `owner/feishu/model_picker.py`；adapter `_model_picker_state` / `send_model_picker_card` / card-action `hermes_model_picker`

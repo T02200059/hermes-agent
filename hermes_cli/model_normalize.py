@@ -93,6 +93,13 @@ _LOWERCASE_MODEL_PROVIDERS: frozenset[str] = frozenset({
 # and any new id without a ``v<N>`` marker would have met the same fate.
 _DEEPSEEK_RETIRED_ALIASES: dict[str, str] = {
     "deepseek-chat": "deepseek-flash", "deepseek-reasoner": "deepseek-flash"}
+# [owner] fold delisted native deepseek-v4-flash → deepseek-flash (API listing 2026-09+)
+try:
+    from owner.providers.deepseek_aliases import apply_deepseek_retired_aliases
+
+    apply_deepseek_retired_aliases(_DEEPSEEK_RETIRED_ALIASES)
+except Exception:
+    pass
 
 
 def _normalize_for_deepseek(model_name: str) -> str:
