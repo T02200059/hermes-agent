@@ -428,6 +428,12 @@ def test_progress_fact_line_zh_uses_i18n(monkeypatch):
         {"current_tool": "patch", "api_call_count": 15, "max_iterations": 120}
     )
     assert line == "正在编辑 — 第 15/120 轮迭代"
+    # 当前进度卡底栏：裸 tool id → display.verb（与心跳友好文案同源）
+    line_term = pe._fact_line(
+        {"current_tool": "terminal", "api_call_count": 9, "max_iterations": 120}
+    )
+    assert line_term == "正在运行命令 — 第 9/120 轮迭代"
+    assert "正在运行：terminal" not in line_term
     line2 = pe._fact_line(
         {
             "last_activity_desc": "receiving stream response",
