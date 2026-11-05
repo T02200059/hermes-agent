@@ -589,6 +589,31 @@ def get_tool_verb(tool_name: str) -> str | None:
     return _tool_verb(tool_name) if _friendly_tool_labels else None
 
 
+def format_running_tool(tool_name: str | None) -> str:
+    """User-facing 'currently doing …' phrase for a bare tool id (busy ack / heartbeat / progress).
+
+    Reuses ``display.verb.<tool>`` via :func:`get_tool_verb` (honours
+    ``display.friendly_tool_labels``). Chinese → ``正在{verb}`` (terminal → 正在运行命令);
+    English → the verb as-is (already progressive). Unknown / labels off →
+    ``gateway.busy.running_tool``.
+    """
+    n = str(tool_name or "").strip()
+    if not n:
+        return ""
+    verb = get_tool_verb(n)
+    if not verb:
+        return t("gateway.busy.running_tool", tool=n)
+    lang = ""
+    try:
+        from agent.i18n import get_language
+        lang = str(get_language() or "")
+    except Exception:
+        lang = ""
+    if lang.lower().startswith("zh"):
+        return f"正在{verb}"
+    return verb
+
+
 def tool_verb_connector(tool_name: str) -> str:
     """Return the connector between a verb and its preview (" for " or " ")."""
     return t("display.verb_connector.search" if tool_name in _TOOL_VERBS_FOR_CONNECTOR else "display.verb_connector.default")

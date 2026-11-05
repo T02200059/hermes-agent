@@ -839,7 +839,8 @@ class GatewayBusySessionMixin:
                         )
                     )
                 if summary.get("current_tool"):
-                    status_parts.append(t("gateway.busy.running_tool", tool=summary.get("current_tool")))
+                    from agent.display import format_running_tool
+                    status_parts.append(format_running_tool(summary.get("current_tool")))
             except Exception:
                 pass
         status_detail = (t("gateway.busy.ack_detail_wrap", detail=t("gateway.busy.ack_detail_joiner").join(status_parts))

@@ -427,7 +427,7 @@ def test_progress_fact_line_zh_uses_i18n(monkeypatch):
     line = pe._fact_line(
         {"current_tool": "patch", "api_call_count": 15, "max_iterations": 120}
     )
-    assert line == "正在运行：patch — 第 15/120 轮迭代"
+    assert line == "正在编辑 — 第 15/120 轮迭代"
     line2 = pe._fact_line(
         {
             "last_activity_desc": "receiving stream response",
@@ -445,7 +445,7 @@ def test_progress_fact_line_en_uses_i18n(monkeypatch):
     line = pe._fact_line(
         {"current_tool": "patch", "api_call_count": 15, "max_iterations": 120}
     )
-    assert line == "running: patch — iteration 15/120"
+    assert line == "Editing — iteration 15/120"
     # 英文 UI：活动戳保持原文
     line2 = pe._fact_line(
         {
@@ -473,13 +473,13 @@ def test_localize_activity_desc_exact_and_templates(monkeypatch):
         "waiting for stream response (90s, first_chunk)"
     ) == "正在等待流式响应（90 秒，等待首块）"
     assert localize_activity_desc("starting API call #3") == "开始第 3 次 API 调用"
-    assert localize_activity_desc("executing tool: terminal") == "正在执行工具：terminal"
+    assert localize_activity_desc("executing tool: terminal") == "正在运行命令"
     assert localize_activity_desc(
         "tool completed: patch (1.5s)"
-    ) == "工具已完成：patch（1.5 秒）"
+    ) == "工具已完成：编辑（1.5 秒）"
     assert localize_activity_desc(
         "tool completed: patch (1.5s) (error)"
-    ) == "工具已完成：patch（1.5 秒）（出错）"
+    ) == "工具已完成：编辑（1.5 秒）（出错）"
     assert localize_activity_desc(
         "error retry backoff (2/5), 40s remaining"
     ) == "错误重试退避（2/5），剩余 40 秒"
@@ -513,6 +513,28 @@ def test_localize_activity_desc_en_passthrough(monkeypatch):
         localize_activity_desc("receiving stream response", force_chinese=True)
         == "正在接收流式响应"
     )
+
+
+def test_format_running_tool_reuses_display_verb(monkeypatch):
+    from owner.explainers.progress.activity_i18n import (
+        format_running_tool,
+        friendly_tool_token,
+        localize_activity_desc,
+    )
+
+    _set_lang(monkeypatch, "zh")
+    assert friendly_tool_token("terminal") == "运行命令"
+    assert format_running_tool("terminal") == "正在运行命令"
+    assert format_running_tool("web_search") == "正在搜索网页"
+    assert format_running_tool("not_a_real_tool_xyz") == "正在运行：not_a_real_tool_xyz"
+    # bare tool id mirrored into last_activity_desc
+    assert localize_activity_desc("terminal") == "运行命令"
+
+    _set_lang(monkeypatch, "en")
+    assert friendly_tool_token("terminal") == "Running"
+    assert format_running_tool("terminal") == "Running"
+    assert localize_activity_desc("terminal") == "Running"
+    assert localize_activity_desc("receiving stream response") == "receiving stream response"
 
 
 def test_progress_hard_facts_numeric_iteration_for_prompt(monkeypatch):

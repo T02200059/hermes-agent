@@ -546,15 +546,18 @@ class ProgressExplainer:
 
     def _fact_line(self, activity: dict) -> str:
         # 用户可见尾行：复用官方 i18n（display.language），勿硬编码英文 iteration
-        from agent.i18n import t
         from agent.session_activity import format_iteration_progress
-        from owner.explainers.progress.activity_i18n import localize_activity_desc
+        from owner.explainers.progress.activity_i18n import (
+            format_running_tool,
+            localize_activity_desc,
+        )
 
         parts = []
         if activity.get("current_tool"):
-            parts.append(t("gateway.busy.running_tool", tool=activity["current_tool"]))
+            # display.verb.* via get_tool_verb（与 tool progress 友好文案同源）
+            parts.append(format_running_tool(activity["current_tool"]))
         elif activity.get("last_activity_desc"):
-            # 无工具名时：活动戳走 owner 对照表（zh）；未命中 fail-open 原文
+            # 无工具名时：活动戳走 owner 对照表（zh）；裸 tool id 走 verb；未命中原文
             parts.append(localize_activity_desc(activity["last_activity_desc"]))
         if "api_call_count" in activity:
             parts.append(

@@ -2315,9 +2315,13 @@ class GatewayTurnMixin(GatewayTurnPrepareMixin, GatewayTurnHygieneMixin, Gateway
                     _parts = []
                     if _want_iteration_detail:
                         _parts.append(format_iteration_progress(_a["api_call_count"], _a["max_iterations"]))
-                    _action = _a.get("current_tool") or _a.get("last_activity_desc")
-                    if _action:
-                        _parts.append(str(_action))
+                    # Friendly tool / activity stamp (display.verb.* + activity_i18n), not bare ids.
+                    if _a.get("current_tool"):
+                        from agent.display import format_running_tool
+                        _parts.append(format_running_tool(_a["current_tool"]))
+                    elif _a.get("last_activity_desc"):
+                        from owner.explainers.progress.activity_i18n import localize_activity_desc
+                        _parts.append(localize_activity_desc(_a["last_activity_desc"]))
                     if _parts:
                         _status_detail = " — " + ", ".join(_parts)
             _heartbeat_text = (

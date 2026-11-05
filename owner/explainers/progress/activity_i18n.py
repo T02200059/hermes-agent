@@ -72,6 +72,39 @@ def _watchdog(raw: str) -> str:
     return _WATCHDOG_LABEL_ZH.get(raw, raw)
 
 
+def friendly_tool_token(name: object) -> str:
+    """Map a bare tool id to curated ``display.verb.*`` (via ``get_tool_verb``).
+
+    Same source as tool-progress friendly labels / ``display.friendly_tool_labels``.
+    """
+    n = str(name or "").strip()
+    if not n:
+        return n
+    try:
+        from agent.display import get_tool_verb
+
+        verb = get_tool_verb(n)
+    except Exception:
+        verb = None
+    return verb or n
+
+
+def friendly_tool_list(names: object) -> str:
+    """Comma-separated tool ids → friendly tokens (keeps unknown names)."""
+    raw = str(names or "").strip()
+    if not raw:
+        return raw
+    parts = [p.strip() for p in raw.split(",") if p.strip()]
+    return ", ".join(friendly_tool_token(p) for p in parts)
+
+
+def format_running_tool(tool_name: object) -> str:
+    """Delegate to :func:`agent.display.format_running_tool` (display.verb.*)."""
+    from agent.display import format_running_tool as _fmt
+
+    return _fmt(str(tool_name or ""))
+
+
 def _templates() -> Sequence[_Template]:
     return (
         (
@@ -87,27 +120,34 @@ def _templates() -> Sequence[_Template]:
             lambda m: f"工具结果已回写，继续第 {m.group(1)} 轮迭代",
         ),
         (
+            # Prefer curated verb phrase (display.verb.*) over "正在执行工具：terminal".
             re.compile(r"^executing tool: (.+)$"),
-            lambda m: f"正在执行工具：{m.group(1)}",
+            lambda m: format_running_tool(m.group(1)),
         ),
         (
             re.compile(r"^tool running: (.+)$"),
-            lambda m: f"工具运行中：{m.group(1)}",
+            lambda m: format_running_tool(m.group(1)),
         ),
         (
             re.compile(r"^tool completed: (.+) \(([0-9.]+)s\)( \(error\))?$"),
             lambda m: (
-                f"工具已完成：{m.group(1)}（{m.group(2)} 秒）"
+                f"工具已完成：{friendly_tool_token(m.group(1))}（{m.group(2)} 秒）"
                 + ("（出错）" if m.group(3) else "")
             ),
         ),
         (
             re.compile(r"^sequential tool running \((\d+)s\): (.+)$"),
-            lambda m: f"顺序工具运行中（{m.group(1)} 秒）：{m.group(2)}",
+            lambda m: (
+                f"顺序工具运行中（{m.group(1)} 秒）："
+                f"{friendly_tool_list(m.group(2))}"
+            ),
         ),
         (
             re.compile(r"^executing (\d+) tools concurrently: (.+)$"),
-            lambda m: f"正在并发执行 {m.group(1)} 个工具：{m.group(2)}",
+            lambda m: (
+                f"正在并发执行 {m.group(1)} 个工具："
+                f"{friendly_tool_list(m.group(2))}"
+            ),
         ),
         (
             re.compile(
@@ -115,7 +155,7 @@ def _templates() -> Sequence[_Template]:
             ),
             lambda m: (
                 f"并发工具运行中（{m.group(1)} 秒，剩余 {m.group(2)} 个："
-                f"{m.group(3)}）"
+                f"{friendly_tool_list(m.group(3))}）"
             ),
         ),
         (
@@ -295,7 +335,10 @@ def _localize_body(desc: str, *, allow_remaining: bool = True) -> str:
                 return fmt(m)
             except Exception:
                 return s
-    return s
+    # Bare tool id (e.g. activity summary current_tool mirrored into last_activity_desc)
+    # → curated display.verb.* when friendly labels are on.
+    token = friendly_tool_token(s)
+    return token if token != s else s
 
 
 def localize_activity_desc(
@@ -319,7 +362,9 @@ def localize_activity_desc(
         else bool(force_chinese)
     )
     if not chinese:
-        return s
+        # Activity stamp sentences stay English; bare tool ids still take display.verb.*.
+        token = friendly_tool_token(s)
+        return token if token != s else s
     return _localize_body(s)
 
 
@@ -334,6 +379,9 @@ def mapped_template_count() -> int:
 
 
 __all__ = [
+    "format_running_tool",
+    "friendly_tool_list",
+    "friendly_tool_token",
     "localize_activity_desc",
     "mapped_exact_count",
     "mapped_template_count",
