@@ -543,6 +543,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - **recap 自动**（对齐 Grok Build `session_recap.rs`）：`min_user_turns=3` + `idle_seconds=180`；回合结束后闲置触发；watermark 防刷；短会话不发；`explainers.recap.auto`；**已落地**
   - **2026-11-03**：recap auto 路由挂点修：`pre_gateway_dispatch` 读 `event.source`；`on_session_end` 可用 session_store origin 回补（idle 阈值不变）
   - **2026-11-05**：recap 提示词改为进度条文案（做到哪了/完成度/下一步），禁文件名/表 id 罗列；硬帽仍 350（`clean_output`）；正文仍不落盘、仅 watermark 回合数
+  - **2026-11-05 设计**：recap/progress 正文落盘同表 `messages`（`role=notice` + `display_kind`）；**未实现**。设计稿 `owner/docs/design/explainer-notice-persist/README.md`
   - **统一约定（已敲定，代码已做）**：单一 `owner.explainers` 块 + 共享取模 helper；禁止各 kind 各写 provider/model。详见上方「§ 二次开发可复用基建 §4」。
   - 旧顶层 `progress_explainer` / `approval_explainer` / `english_explainer` → 迁入 `explainers.{progress,approval,english,recap}`；`call_llm(task=…_explainer)` 长 task 名保留
   - **已落地（H03 #3）**：progress/approval/english 输出帽读 `merged.get("max_output_chars")`（模块默认 900/800/1000 仍保留）；overlay `explainers.{progress,approval,english}.max_output_chars` 已补同值；recap 仍 350

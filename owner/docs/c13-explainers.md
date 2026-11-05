@@ -19,7 +19,7 @@
 - **输入默认**：共用 `explainers.max_input_chars: 64000`（各 kind 可覆盖）。
 - 截断策略：优先保留**尾部**（近轮对话 / 近证据）；见 `owner.explainers.common.clip_input`。
 - 输出帽（已落地）：progress `max_tokens=400` / `max_output_chars=900`；approval `400` / `800`；english `450` / `1000`；recap `260` / `max_output_chars=350`（硬截断 +「…」；提示词要求 ≤220 汉字的进度文案，避免半句被砍）。**仅 `max_output_chars` 可经 yaml/registry 配置**；各 kind 的 `max_tokens` / `_MAX_TOKENS` **仍硬编码**（改码才动）。共享 `call_explainer_llm` 默认 `max_tokens=400`、`clean_output` 默认 1000。
-- **recap 文案取向（2026-11-05）**：进度/完成度/下一步；禁止文件名、表 id、测试条数等变更清单式罗列；正文**不落盘**（仅飞书 notice；watermark 只记回合数）。
+- **recap 文案取向（2026-11-05）**：进度/完成度/下一步；禁止文件名、表 id、测试条数等变更清单式罗列；正文落盘方案见设计稿 `design/explainer-notice-persist/`（**设计中，代码仍不落盘**；watermark 仍记回合数）。
 - **告警前缀 = notice 匹配键**：如默认 `💡 [stream-guard]` 须与 `overlay.yaml` → `feishu_card.notice_titles` 以及 `owner/feishu/auto_card.py` 内置表字面一致；改前缀要三处同步，否则旁白/告警不会升格为 notice 卡。`💡 [output-guard]` 有用户可见串，但**不在** `notice_titles`（多半内嵌正文末尾，不单独发卡）。
 
 ## 配置（`owner/config/overlay.yaml` → `~/.hermes/overlay.yaml`）
