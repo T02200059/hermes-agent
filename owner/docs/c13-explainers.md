@@ -1,6 +1,6 @@
 # C13 · 统一 explainers（progress / approval / english / recap）
 
-状态：**已落地**（含第四 kind `recap`；正文落盘审计已实现；分支 `v2` tip `ad76168735`，已双推 `origin`/`gitlab`）
+状态：**已落地**（含第四 kind `recap`；正文落盘审计已实现；分支 `v2`，已双推 `origin`/`gitlab`）
 
 ## 做什么
 
@@ -69,7 +69,7 @@ explainers:
 |---|---|---|
 | `MIN_TURNS_FOR_AUTO_RECAP` | **3** | 至少 3 个真实用户主回合才自动（turns 路径） |
 | `RECAP_MIN_IDLE` | **180s**（`3 * 60`） | 闲置阈值；shell 从上次模型请求计，daemon 从回合结束计 |
-| `MIN_ASSISTANT_CHARS_FOR_AUTO_RECAP` | **1500**（owner OR） | 末条可见 assistant 回复字数 ≥ 此值也可自动；`0` 关闭 |
+| `MIN_ASSISTANT_CHARS_FOR_AUTO_RECAP` | **800**（owner OR） | 末条可见 assistant 回复字数 ≥ 此值也可自动；`0` 关闭 |
 | watermark 文件 | `last_recap_main_turn` | 成功（或超长抑制展示）后写入；无新主回合不重复自动 |
 
 门控失败原因（turns 路径与上游字符串一致）：`no main turns yet` / `fewer than min turns for auto recap` / `idle threshold not met` / `no new main turn since last recap`。字数 OR 未达标时复用 turns-short 原因串。
@@ -92,10 +92,10 @@ explainers:
       enabled: true
       min_user_turns: 3      # = Grok MIN_TURNS_FOR_AUTO_RECAP
       idle_seconds: 180      # = Grok RECAP_MIN_IDLE
-      min_assistant_chars: 1500  # owner OR；0=关闭
+      min_assistant_chars: 800  # owner OR；0=关闭
 ```
 
-触发条件（idle 到期后）：有新主回合，且 **turns≥3 或 末条助手可见字数≥1500**。短短答仍不触发；同一段落内不重复自动。手动 `/recap` 仍即时可用且会抬高 watermark。
+触发条件（idle 到期后）：有新主回合，且 **turns≥3 或 末条助手可见字数≥800**。短短答仍不触发；同一段落内不重复自动。手动 `/recap` 仍即时可用且会抬高 watermark。
 - 失败 fail-open（返回短状态文案，不抛）。
 
 ## 扩展更多 kind

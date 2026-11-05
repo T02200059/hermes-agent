@@ -9,7 +9,7 @@ completed turn** as the end of a long chat:
 3. Timer fires → gate (min user turns + watermark) → same notice as ``/recap``.
 
 Defaults match Grok for turns/idle: ``min_user_turns=3``, ``idle_seconds=180``.
-Owner OR: ``min_assistant_chars=1500`` (latest visible assistant reply length;
+Owner OR: ``min_assistant_chars=800`` (latest visible assistant reply length;
 0 disables). Config under ``explainers.recap.auto`` in overlay.yaml.
 """
 

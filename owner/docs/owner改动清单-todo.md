@@ -117,7 +117,7 @@ explainers:
       enabled: true
       min_user_turns: 3
       idle_seconds: 180
-      min_assistant_chars: 1500
+      min_assistant_chars: 800
 ```
 
 - **块名**：`explainers`（对齐清单「yaml 整合方向」）。
@@ -546,8 +546,8 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - **统一基建**：单一 `owner.explainers` 块 + `owner/explainers/`（config/llm/registry）；`register_kind` 可扩。详见「§ 二次开发可复用基建 §4」与 `owner/docs/c13-explainers.md`
   - **输入默认 64k**（`max_input_chars`）；按辅助模型 **≥256k** 上下文设计；`clip_input` 保尾截断
   - **recap**：第四 kind；`/recap` 按需；notice `📋 系统提示：`（标题色 `template=orange`）；正文落 `messages`（`role=notice`）作审计，不入主会话模型；watermark 只管自动门控
-  - **recap 自动**（对齐 Grok Build `session_recap.rs`）：`min_user_turns=3` + `idle_seconds=180`；owner OR `min_assistant_chars=1500`（末条助手可见字数）；回合结束后闲置触发；watermark 防刷；`explainers.recap.auto`；**已落地**
-  - **2026-11-05**：recap auto 加字数 OR（`min_assistant_chars=1500`，末条助手可见正文）；单回合长答也可触发
+  - **recap 自动**（对齐 Grok Build `session_recap.rs`）：`min_user_turns=3` + `idle_seconds=180`；owner OR `min_assistant_chars=800`（末条助手可见字数）；回合结束后闲置触发；watermark 防刷；`explainers.recap.auto`；**已落地**
+  - **2026-11-05**：recap auto 加字数 OR（末条助手可见正文；默认先 `1500` 后改为 **`800`**）；单回合长答也可触发；`0` 关闭；按 Unicode 字符计
   - **2026-11-03**：recap auto 路由挂点修：`pre_gateway_dispatch` 读 `event.source`；`on_session_end` 可用 session_store origin 回补（idle 阈值不变）
   - **2026-11-04**：recap notice 卡标题色改橘黄（飞书 `template=orange`；`yellow` 偏浅黄），落点 `owner/feishu/auto_card.py` `_DEFAULT_NOTICE_RULES`
   - **2026-11-05**：recap 提示词改为进度条文案（做到哪了/完成度/下一步），禁文件名/表 id 罗列；硬帽仍 350（`clean_output`）

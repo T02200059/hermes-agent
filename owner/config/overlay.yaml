@@ -144,7 +144,7 @@ explainers:
       min_user_turns: 3
       idle_seconds: 180
       # OR with turns: latest visible assistant reply length; 0 = off
-      min_assistant_chars: 1500
+      min_assistant_chars: 800
 
 # ── C06 LDAP（API identity 门；仓内默认关）──────────────────────────────────
 # 连接字段可进仓；勿写密码。启用：enabled:true 或 HERMES_LDAP_ENABLED=1。

@@ -9,7 +9,7 @@ Upstream (xai-org/grok-build ``session_recap.rs``)::
 Manual ``/recap`` only needs ``main_turns > 0``; auto also needs a new turn
 since the watermark, idle OK, and either ``>= min_user_turns`` **or**
 (owner) latest assistant reply ``>= min_assistant_chars`` (0 disables the
-char path; default 1500 so a long single-turn reply can still auto-recap).
+char path; default 800 so a long single-turn reply can still auto-recap).
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ MIN_TURNS_FOR_AUTO_RECAP = 3
 RECAP_MIN_IDLE_SECONDS = 3 * 60
 
 # Owner extension: OR with turns. 0 = char path off (pure Grok turns gate).
-MIN_ASSISTANT_CHARS_FOR_AUTO_RECAP = 1500
+MIN_ASSISTANT_CHARS_FOR_AUTO_RECAP = 800
 
 
 def recap_gate(
