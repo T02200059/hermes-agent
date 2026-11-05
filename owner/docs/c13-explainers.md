@@ -8,7 +8,7 @@
 
 | kind | 行为 | 投递 |
 |------|------|------|
-| `progress` | 沉默期进度旁白；`stream_guard.snapshot.tripped` 时让位 | `🧭 系统提示：` → notice 卡 |
+| `progress` | 沉默期进度旁白（飞书 notice 蓝标题 **「🧭 当前进度」**，原「进度旁白」）；`stream_guard.snapshot.tripped` 时让位 | `🧭 系统提示：` → notice 卡（`template=blue`） |
 | `approval` | 审批卡发出前 2–3 句事实解说；**绝不建议批/拒**；fail-open | 嵌进飞书审批卡正文；**批准/拒绝冻结卡仍保留该附录**（`body_text` 经 `_approval_state`） |
 | `english` | `display.language=zh` 且终局整段英文 → 侧路中文解说；**不改原文** | `🔤 系统提示：` → notice 卡 |
 | `recap` | 按需 `/recap` + **长对话闲置自动**：压平 User/Agent → **进度条文案**（做到哪了/完成度/下一步；勿列文件清单） | `📋 系统提示：` → notice 卡（标题色 `template=orange`）；**正文落 `messages`（`role=notice`）作审计，不入主会话模型历史**；watermark 只管自动门控 |

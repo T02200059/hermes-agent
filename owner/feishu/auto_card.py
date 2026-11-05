@@ -224,7 +224,7 @@ _DEFAULT_NOTICE_RULES: tuple[dict[str, Any], ...] = (
         # [owner] progress explainer 旁白：prefix 须与
         # owner/explainers/progress 投递 PREFIX 字面一致。
         "prefix": "🧭 系统提示：",
-        "title": "🧭 进度旁白",
+        "title": "🧭 当前进度",
         "template": "blue",
         "strip_prefix": True,
     },

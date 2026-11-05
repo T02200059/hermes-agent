@@ -555,7 +555,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
     - 文案取向：进度条文案（做到哪了/完成度/下一步），禁文件名/表 id 罗列；硬帽仍 350（`clean_output`；提示词要求 ≤220 汉字，2026-11-05）
     - 卡片：标题色见 C11「notice 卡规则」（2026-11-04）
   - **kind · approval**：审批卡发出前 2–3 句事实解说；飞书冻结卡保留 C13 命令说明附录（send 写入 `_approval_state.body_text` → `build_resolved_card`，2026-11-03）
-  - **kind · progress**：沉默期进度旁白；`stream_guard.snapshot.tripped` 时让位；活动戳中文映射 `owner/explainers/progress/activity_i18n.py`（`_fact_line` 无 `current_tool` 时把 `last_activity_desc` 译成中文：精确+模板；未命中原文；en UI 透传，2026-11-02）
+  - **kind · progress**：沉默期进度旁白；飞书 notice 蓝标题 **「🧭 当前进度」**（原「进度旁白」，`auto_card._DEFAULT_NOTICE_RULES`）；`stream_guard.snapshot.tripped` 时让位；活动戳中文映射 `owner/explainers/progress/activity_i18n.py`（`_fact_line` 无 `current_tool` 时把 `last_activity_desc` 译成中文：精确+模板；未命中原文；en UI 透传，2026-11-02）
   - **kind · english**：`display.language=zh` 且终局整段英文 → 侧路中文解说；不改原文
   - **旁白中文门**：共享 `call_explainer_llm` 在期望中文时，对输出跑 `looks_like_non_chinese_output`（复用 `english/detect.looks_like_english_reply` + 短旁白 latin 回落）；命中则带纠偏 nudge 重试 **1** 次；仍非中文 → 打日志 + fail-open 发最后一次文本。english kind 只门控**译文旁白**，不改被解说的英文原文。`require_chinese` 可在 kind cfg 覆盖；progress/approval 默认跟 `display.language`（2026-11-02）。测：`tests/owner/test_c13_explainers.py`（含 retry / fail-open）
   - **旁白落盘（notice）**：recap/progress/english 正文落同表 `messages`（`role=notice` + `display_kind`）；helper `owner/explainers/persist.py`（`persist_notice`，fail-open；`owner_provider_name` 事后 UPDATE 补列）；trigger：recap `manual`/`auto`、progress `tick`、english `reply`；送模 / 导出 / TUI 一律排除 `role=notice`；设计稿 `owner/docs/design/explainer-notice-persist/README.md`；测 `tests/owner/test_c13_notice_persist.py`；**需软重启 gateway 后生效**（2026-11-05）
