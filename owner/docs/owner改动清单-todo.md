@@ -10,7 +10,7 @@
 | 源清单 | `/Users/yangtb/.hermes/hermes-agent/owner/docs/owner改动清单.md` |
 | 源仓 tip | `299e23205b66df082a2615aa1a4f3ed1edc69d25` |
 | v2 worktree | `/Users/yangtb/.hermes/hermes-agent`（主 worktree 检出分支 `v2`；`owner` 分支另在 `hermes-agent-owner`） |
-| v2 分支 tip | `ad76168735`（已双推 `origin`/`gitlab` 的 `v2`） |
+| v2 分支 tip（快照） | `c7e1a1d73b`（已双推 `origin`/`gitlab` 的 `v2`；SHA 随提交前进，以 `git log -1` 为准） |
 | v2 tip（官方 main 基点） | `3ba2b0787ed3a73ec3b08085ed0137f235209cf4` |
 | 规范 | 同目录 `二次开发规范.md` |
 | 实现顺序 | 同目录 `v2实现顺序.md` |
@@ -434,7 +434,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - **C05b（2026-10-29）**：node010 survey + v2 preview worktree + overlay 草稿（`/data/hermes/c05b-draft/`）；**未**切生产 / 未重启；计划见 `owner/docs/design/c05-feishu-user-routing/c05b-node010-plan.md`
   - **C05a 补丁**：子网关 `FEISHU_CONNECTION_MODE=send_only`（`plugins/platforms/feishu/adapter.py` connect 早退、不抢 Hub app_id WS lock）；测 `tests/owner/test_c05_feishu_send_only.py`；**勿**把实地测 `overlay.yaml` / profile `.env` 入库
 - [x] **C06** · 源 §15.1–15.6 · API Server LDAP 身份准入 + `fleet_profiles`/`hub_only.api`（旧 `api_identity`/`identity_*` 只读别名）+ 头剥离/SSE · **优先级：P0**
-  - **已落地（2026-10-29，v2 重做，不照搬 owner）**：设计稿 `owner/docs/design/c06-ldap-identity-auth/`；`owner/gateway/ldap_auth.py` + `identity_routing.py`；api_server 薄胶水；overlay 非机密连接字段 + `enabled:false`；`HERMES_LDAP_*` env；探针 `c06_ldap_probe.py`；单测+E2E（负向真 LDAP 已过）；**未**做 C05b / 本机默认仍不开门
+  - **LDAP 身份准入（2026-10-29，v2 重做，不照搬 owner）**：设计稿 `owner/docs/design/c06-ldap-identity-auth/`；`owner/gateway/ldap_auth.py` + `identity_routing.py`；api_server 薄胶水；overlay 非机密连接字段 + `enabled:false`；`HERMES_LDAP_*` env；探针 `c06_ldap_probe.py`；单测+E2E（负向真 LDAP 已过）；**未**做 C05b / 本机默认仍不开门
 - [ ] **C07** · 源 §16.1–16.6 · API 产物媒体 / `hermes.files` / tool.progress 脱敏与归属 · **优先级：P0** · **延后**（2026-10-27 用户拍板；与 C05/C06 一并靠后，非当前主线）
 - [x] **C08** · 源 §7.27 · outbound BOS/EOS scrub · **优先级：P0**
   - 落地：终局走官方 O8；interim/status 薄补复用 `_strip_deepseek_special_tokens`（`owner/outbound_special_token_scrub.py` + stream_delivery / gateway status 胶水）
@@ -542,28 +542,29 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
     - **范围决策（2026-10-27）**：用户指示覆盖原「queue-card 不做」备注
     - **队列容错（2026-10-27）**：`_enqueue_fifo` 整体 fail-open；overlay `feishu.queue_card.enabled`（默认 true）；guide submit `_submit_on_loop` 失败 → `coro.close()` + 失败卡（禁假「已排队」）。**操作者鉴权暂不做**（注释说明；靠「由 xx …」显示名，同审批卡思路）
 - [x] **C13** · 源 §7.24–7.26 · progress / approval / english / **recap** explainer · **已落地** · 飞书底座（C04/C10/C11）已齐
-  - **2026-11-03**：飞书审批冻结卡保留 C13 命令说明附录（send 写入 `_approval_state.body_text` → `build_resolved_card`）
   - **统一基建**：单一 `owner.explainers` 块 + `owner/explainers/`（config/llm/registry）；`register_kind` 可扩。详见「§ 二次开发可复用基建 §4」与 `owner/docs/c13-explainers.md`
-  - **输入默认 64k**（`max_input_chars`）；按辅助模型 **≥256k** 上下文设计；`clip_input` 保尾截断
-  - **recap**：第四 kind；`/recap` 按需；notice `📋 系统提示：`（标题色 `template=orange`）；正文落 `messages`（`role=notice`）作审计，不入主会话模型；watermark 只管自动门控
-  - **recap 自动**（对齐 Grok Build `session_recap.rs`）：`min_user_turns=3` + `idle_seconds=180`；owner OR `min_assistant_chars=800`（末条助手可见字数）；回合结束后闲置触发；watermark 防刷；`explainers.recap.auto`；**已落地**
-  - **2026-11-05**：recap auto 加字数 OR（末条助手可见正文；默认先 `1500` 后改为 **`800`**）；单回合长答也可触发；`0` 关闭；按 Unicode 字符计
-  - **2026-11-03**：recap auto 路由挂点修：`pre_gateway_dispatch` 读 `event.source`；`on_session_end` 可用 session_store origin 回补（idle 阈值不变）
-  - **2026-11-04**：recap notice 卡标题色改橘黄（飞书 `template=orange`；`yellow` 偏浅黄），落点 `owner/feishu/auto_card.py` `_DEFAULT_NOTICE_RULES`
-  - **2026-11-05**：recap 提示词改为进度条文案（做到哪了/完成度/下一步），禁文件名/表 id 罗列；硬帽仍 350（`clean_output`）
-  - **2026-11-05 已实现**：recap/progress/english 正文落盘同表 `messages`（`role=notice` + `display_kind`）；helper `owner/explainers/persist.py`（`persist_notice`，fail-open；`owner_provider_name` 事后 UPDATE 补列）；trigger：recap `manual`/`auto`、progress `tick`、english `reply`；送模 / 导出 / TUI 一律排除 `role=notice`；设计稿 `owner/docs/design/explainer-notice-persist/README.md`；测 `tests/owner/test_c13_notice_persist.py`；**需软重启 gateway 后生效**
-  - **统一约定（已敲定，代码已做）**：单一 `owner.explainers` 块 + 共享取模 helper；禁止各 kind 各写 provider/model。详见上方「§ 二次开发可复用基建 §4」。
-  - 旧顶层 `progress_explainer` / `approval_explainer` / `english_explainer` → 迁入 `explainers.{progress,approval,english,recap}`；`call_llm(task=…_explainer)` 长 task 名保留
-  - **已落地（H03 #3）**：progress/approval/english 输出帽读 `merged.get("max_output_chars")`（模块默认 900/800/1000 仍保留）；overlay `explainers.{progress,approval,english}.max_output_chars` 已补同值；recap 仍 350
-  - **文档澄清（2026-10-28）**：仅 `max_output_chars` 可配；`max_tokens`/`_MAX_TOKENS` 仍硬编码。告警前缀（默认 `💡 [stream-guard]`）是 notice 匹配键，改前缀须同步 overlay + auto_card；`💡 [output-guard]` 有可见串但不在 `notice_titles`（见 `owner/docs/c13-explainers.md`）
-  - **活动戳中文映射（2026-11-02）**：`owner/explainers/progress/activity_i18n.py`；`_fact_line` 无 `current_tool` 时把 `last_activity_desc` 译成中文（精确+模板；未命中原文；en UI 透传）。
-  - **旁白中文门（2026-11-02）**：共享 `call_explainer_llm` 在期望中文时，对输出跑 `looks_like_non_chinese_output`（复用 `english/detect.looks_like_english_reply` + 短旁白 latin 回落）；命中则带纠偏 nudge 重试 **1** 次；仍非中文 → 打日志 + fail-open 发最后一次文本。english kind 只门控**译文旁白**，不改被解说的英文原文。`require_chinese` 可在 kind cfg 覆盖；progress/approval 默认跟 `display.language`。测：`tests/owner/test_c13_explainers.py`（含 retry / fail-open）
+  - **统一约定（已敲定，代码已做）**：单一 `owner.explainers` 块 + 共享取模 helper；禁止各 kind 各写 provider/model。详见上方「§ 二次开发可复用基建 §4」
+  - **配置迁移**：旧顶层 `progress_explainer` / `approval_explainer` / `english_explainer` → `explainers.{progress,approval,english,recap}`；`call_llm(task=…_explainer)` 长 task 名保留
+  - **输入预算**：共用 64k（`max_input_chars`）；按辅助模型 **≥256k** 上下文设计；`clip_input` 保尾截断
+  - **输出帽**：progress/approval/english 读 `merged.get("max_output_chars")`（模块默认 900/800/1000 仍保留；overlay `explainers.{progress,approval,english}.max_output_chars` 已补同值，H03 #3）；recap 仍 350。**仅 `max_output_chars` 可配**，`max_tokens`/`_MAX_TOKENS` 仍硬编码（2026-10-28 文档澄清）
+  - **告警前缀 = notice 匹配键**：默认 `💡 [stream-guard]` 须与 overlay `feishu_card.notice_titles` + `owner/feishu/auto_card.py` 内置表 + C13 各 kind 的 PREFIX 三处同步；`💡 [output-guard]` 有可见串但不在 `notice_titles`（见 `owner/docs/c13-explainers.md`）
+  - **kind · recap**
+    - 入口：按需 `/recap`（第四 kind）；notice `📋 系统提示：`；正文落 `messages`（`role=notice`）作审计，不入主会话模型；watermark 只管自动门控
+    - 自动触发（对齐 Grok Build `session_recap.rs`）：回合结束后闲置 `idle_seconds=180`；触发条件为 `min_user_turns=3` **或** 末条助手可见字数 ≥ `min_assistant_chars`（默认 800，按 Unicode 字符计；`0` 关闭）—— 单回合长答也可触发（2026-11-05）；watermark 防刷；配置 `explainers.recap.auto`；判定逻辑 `owner/explainers/recap/gate.py`
+    - 自动路由：`pre_gateway_dispatch` 读 `event.source`；`on_session_end` 经 session_store origin 回补 chat_id（idle 阈值不变，2026-11-03）
+    - 文案取向：进度条文案（做到哪了/完成度/下一步），禁文件名/表 id 罗列；硬帽仍 350（`clean_output`；提示词要求 ≤220 汉字，2026-11-05）
+    - 卡片：标题色见 C11「notice 卡规则」（2026-11-04）
+  - **kind · approval**：审批卡发出前 2–3 句事实解说；飞书冻结卡保留 C13 命令说明附录（send 写入 `_approval_state.body_text` → `build_resolved_card`，2026-11-03）
+  - **kind · progress**：沉默期进度旁白；`stream_guard.snapshot.tripped` 时让位；活动戳中文映射 `owner/explainers/progress/activity_i18n.py`（`_fact_line` 无 `current_tool` 时把 `last_activity_desc` 译成中文：精确+模板；未命中原文；en UI 透传，2026-11-02）
+  - **kind · english**：`display.language=zh` 且终局整段英文 → 侧路中文解说；不改原文
+  - **旁白中文门**：共享 `call_explainer_llm` 在期望中文时，对输出跑 `looks_like_non_chinese_output`（复用 `english/detect.looks_like_english_reply` + 短旁白 latin 回落）；命中则带纠偏 nudge 重试 **1** 次；仍非中文 → 打日志 + fail-open 发最后一次文本。english kind 只门控**译文旁白**，不改被解说的英文原文。`require_chinese` 可在 kind cfg 覆盖；progress/approval 默认跟 `display.language`（2026-11-02）。测：`tests/owner/test_c13_explainers.py`（含 retry / fail-open）
+  - **旁白落盘（notice）**：recap/progress/english 正文落同表 `messages`（`role=notice` + `display_kind`）；helper `owner/explainers/persist.py`（`persist_notice`，fail-open；`owner_provider_name` 事后 UPDATE 补列）；trigger：recap `manual`/`auto`、progress `tick`、english `reply`；送模 / 导出 / TUI 一律排除 `role=notice`；设计稿 `owner/docs/design/explainer-notice-persist/README.md`；测 `tests/owner/test_c13_notice_persist.py`；**需软重启 gateway 后生效**（2026-11-05）
 - [x] **C14** · 源 §14 · output_guard + stream_guard · **优先级：P1**（阶段一 · 完整版）
   - helper：`owner/output_guard/`（`transform_llm_output`）+ `owner/stream_guard/`（`on_stream_delta`；S1/S2/S3，S3=`is_repetition_dominated`）
   - 注册：`owner/owner-extensions` `register()` + `plugin.yaml` hooks
   - 配置：`owner/config/overlay.yaml` → `stream_guard.*`（默认 `action: interrupt`）+ `output_guard.enabled`
   - **暂缓**：代码 `DEFAULTS["action"]` 仍 `warn_only`（overlay 缺段时的 fail-open 灰度默认）；现网靠 overlay `interrupt`。是否把 DEFAULTS 改成 interrupt 另议
-  - **已落地（H03 #2）**：`owner/output_guard/__init__.py` 注释已归一为 `# [owner] P2-3: …`（唯一拼写）
+  - **owner 标记拼写归一（H03 #2）**：`owner/output_guard/__init__.py` 注释已归一为 `# [owner] P2-3: …`（唯一拼写）
   - 胶水：`agent/stream_delivery.py`（`request_stop` + latch）；`turn_finalizer.apply_llm_output_transform`（C1 interrupted + reasoning）；`turn_final_response`（C1）；`turn_api_call.handle_api_interrupt`（C2 early-persist 前 transform）
   - 落地说明：`owner/docs/c14-output-stream-guard.md`
   - 测：`tests/owner/test_c14_guards.py`；自检 `python -m owner.{output,stream}_guard.selfcheck`
@@ -623,7 +624,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - **可忽略（现网 paused/不用）**：HN Daily、Skill 同步、Upstream Sync、汇率、mac backup-configs、swagger-collector。
   - **§11.2 job args→CLI**：✅ 已落地（2026-10-27）。逻辑 `owner/cron/job_args.py`；薄胶水 `cron/scheduler_script.py` / `cron/scheduler_prompt.py`（`# [owner] §11.2`）；调度跑 script 时把 `job["args"]` 映射为 `--key value`（`True`→裸 flag；`False`/`None`/空串跳过）。现网样例：`viking`→`--mode pref-card`，backup→`--BACKUP_QUIET 1` 等。测：`tests/owner/test_cron_job_args.py`。**整包迁仓仍不做**。§11.1 目录豁免视官方/软链现状可再议。
   - 舰队开户自动化设计（未实现）：见 `owner/docs/design/c05-feishu-user-routing/fleet-add.md`（对话触发 → Hermes 执行；归属 C05/Ops，非整包迁仓；非人手敲 CLI 主路径）
-  - **已落地（归属 C05 O5，非 C23 整包迁仓）**：westcloud `xy-user-onboarding` 已与开户内核对齐（allowlist + home channel；同 fleet-add.md §5 / D1）；skill 仍在仓外 skills 树
+  - **开户 skill 对齐（归属 C05 O5，非 C23 整包迁仓）**：westcloud `xy-user-onboarding` 已与开户内核对齐（allowlist + home channel；同 fleet-add.md §5 / D1）；skill 仍在仓外 skills 树
   - 开户 allowlist + home channel：收集 ou 时同步写 **目标 + Hub** `FEISHU_ALLOWED_USERS` 与目标 `FEISHU_HOME_CHANNEL`（同 fleet-add.md §2）
 - [ ] **C24** · 源 §12 / §16.8–16.16 · 治理标记、T2-11~20 换码债、全量 `[owner]` 铺开 · **优先级：P2**（v2 **不做**「官方测全绿」与全量标记战役；H03 #4 仅轻量补了本轮相对上游官方运行时 hunk 标记，不算 C24 收口）
 - [x] **C25** · 源 §4.7–4.8 · 编辑上限轮转 / progress dedup / 中文摘要等体验项 · **优先级：P2**（`/providers` 已归 **C26**）

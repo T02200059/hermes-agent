@@ -1,6 +1,6 @@
 # C13 · 统一 explainers（progress / approval / english / recap）
 
-状态：**已落地**（含第四 kind `recap`；正文落盘审计已实现；分支 `v2`，已双推 `origin`/`gitlab`）
+状态：**已落地**（含第四 kind `recap`；正文落盘审计已实现；分支 `v2` 已双推 `origin`/`gitlab`）
 
 ## 做什么
 

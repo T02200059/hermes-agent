@@ -19,13 +19,13 @@
 
 **范围**：`recap` + `progress` + `english`。`approval` 同形可扩，**未做**。
 
-## 2. 现状（探查摘要）
+## 2. 现状与基线（探查摘要）
 
 - `state.db.messages` 已有：`role`、`content`、`display_kind`、`display_metadata`、`owner_provider_name`、`platform_message_id`、token 四列、`timestamp`、`active` 等。
 - **无**通用 `metadata` 列；旁路 JSON 用 `display_metadata`。
 - 现网 `display_kind` 已见：`steer` / `internal_notification` / `hidden` 等。
 - `role` 现网：`user` / `assistant` / `tool` / `session_meta` / `system`。`role` 为自由 TEXT，**无 CHECK**，新枚举无需 DDL。
-- C13 今日：生成后只飞书 `adapter.send`；**正文不落盘**；recap 仅 `~/.hermes/owner/recap_watermarks/<session_id>` 记用户回合数。
+- C13 现状：生成 → 飞书 `adapter.send` → **正文落 `messages`**（`role=notice`，send 成功后写）；recap 另在 `~/.hermes/owner/recap_watermarks/<session_id>` 记用户回合数（只管自动门控）。
 - 归因：当前 `_INSERT_MESSAGE_SQL` **只写** `owner_provider_name`（且 `_message_row_params` 仅在 `role=="assistant"` 时绑定）。live 库上的 `messages.model` / `messages.provider` 是**历史残留列**，近期 INSERT **不再写入**（近行多为 NULL）——**落盘渠道不要依赖这两列**。
 - 模型上下文：`session_meta` 在 resume model_history 被显式丢掉；TUI `_HISTORY_ROLES={user,assistant,tool,system}`；recap `flatten_messages` 只认 user/assistant。
 
@@ -42,7 +42,7 @@
 | `timestamp` | 发送成功时刻 | `time.time()` |
 | `active` | `1` | 可查；不参与 compaction 摘要对象（见 §5） |
 | `platform_message_id` | 飞书 `message_id`（有则写） | 已有列；progress 已从 `send` 结果取过 |
-| `owner_provider_name` | 解析后的渠道 slug（尽力） | 见 §3.2；若标准 `append_message` 因 role≠assistant 写 NULL，则 owner 写入后 **UPDATE** 补齐，或走 owner 专用 INSERT 助手 |
+| `owner_provider_name` | 解析后的渠道 slug（尽力） | 见 §3.2；标准 `append_message` 仅在 `role=assistant` 时绑该列，notice 行由 helper 事后 **UPDATE** 补齐 |
 | `display_metadata` | JSON（§3.3） | 种类冗余、trigger、resolved model、task 名等 |
 | 其余 | NULL / 默认 | 不碰 tool_* / reasoning_* |
 
@@ -89,7 +89,7 @@ C13 取模链：`explainers.<kind>.provider|model` → 共用 `explainers.*` →
 | 键 | 适用 | 说明 |
 |----|------|------|
 | `explainer_kind` | 两者 | 与 `display_kind` 同值（冗余，防 display_kind 被 UI 改写时仍可辨） |
-| `trigger` | recap: `manual`\|`auto`；progress: `tick` | |
+| `trigger` | recap: `manual`\|`auto`；progress: `tick`；english: `reply` | |
 | `provider` / `model` / `task` | 两者 | 见 §3.2 |
 | `user_turns` | recap | 写入时的主用户回合数（与 watermark 同口径） |
 | `digest_hash` | progress | 可选；与 dispatcher 去重同源 |
@@ -130,37 +130,40 @@ WHERE session_id = ? AND role = 'notice' AND display_kind IN ('recap','progress'
 ORDER BY id;
 ```
 
-## 4. 写入点（实现落点 · 下轮）
+## 4. 写入点（已实现落点）
 
 全部 **owner/**，官方 SCHEMA 字面不动。
 
 | 步骤 | 位置 | 行为 |
 |------|------|------|
-| 共享 helper | 新 `owner/explainers/persist.py`（名可微调） | `persist_notice(session_id, kind, body, *, provider, model, task, trigger, platform_message_id, extra_meta) -> row_id\|None`；fail-open；永不抛穿旁白路径 |
-| recap 手动 | `owner/explainers/recap/command.py` | 生成成功且将返回 body **之后**、watermark 前后均可；建议 **send/返回成功口径** 与 auto 一致后再写 |
-| recap 自动 | `owner/explainers/recap/auto.py` `_send_notice` 成功后 | 与 `save_recap_watermark` 同成功闸；先发后写或写失败只打 debug |
-| progress | `owner/explainers/progress/dispatcher.py` 在 `adapter.send` success 后 | 已有 `message_id`；`cleanup_progress` 若删飞书消息，**DB 行默认保留**（审计）；若需联删列为 P2 |
-| english | `owner/explainers/english/hook.py` `_bg_translate_and_send` send 成功后 | `display_kind=english`；顺带修正 `explain_sync(..., cfg=cfg)` 关键字调用 |
-| 取模 | `call_explainer_llm` / 调用方 | 尽量把 resolved route 传进 persist（可扩返回值或 out-param；保持「失败仍 None」契约） |
+| 共享 helper | `owner/explainers/persist.py` | `persist_notice(session_id, kind, body, *, provider, model, task, trigger, platform_message_id, extra_meta, cfg, route_info, db) -> row_id\|None`；fail-open；永不抛穿旁白路径 |
+| recap 手动 | `owner/explainers/recap/command.py` | 生成成功后写（命令路径无 send 钩，body 交网关投递）；`trigger=manual` |
+| recap 自动 | `owner/explainers/recap/auto.py` `_send_notice` 成功后 | 与 `save_recap_watermark` 同成功闸；`trigger=auto`；写失败只打 debug |
+| progress | `owner/explainers/progress/dispatcher.py` 在 `adapter.send` success 后 | 已有 `message_id`；`trigger=tick`；`cleanup_progress` 若删飞书消息，**DB 行默认保留**（审计）；联删列为 P2 |
+| english | `owner/explainers/english/hook.py` `_bg_translate_and_send` send 成功后 | `display_kind=english`；`trigger=reply`；顺带修正 `explain_sync(..., cfg=cfg)` 关键字调用 |
+| 取模 | `call_explainer_llm` / 调用方 | `route_info` 出参回填 resolved provider/model（`call_llm(route_info=...)`）；保持「失败仍 None」契约 |
 
 写入 API 偏好：
 
 1. `SessionDB.append_message(session_id, role="notice", content=..., display_kind=..., display_metadata=..., platform_message_id=...)`；
 2. 若 `owner_provider_name` 因 role 门被置 NULL → helper 内短 `UPDATE messages SET owner_provider_name=? WHERE id=?`（owner 侧，不改官方 `_message_row_params` 字面；若必须改门控，标 `# [owner]` 并登清单——优先 UPDATE 以免碰官方）。
 
-**P0**：helper + recap manual/auto + progress send 成功钩。  
-**P1**：`route_info` 实渠道路；english 同形；导出会话可选渲染 notice。  
-**P2**：progress 飞书 cleanup 联删 DB；FTS 噪音（notice 进 messages_fts）若烦可再滤。
+**P0（已做）**：helper + recap manual/auto + progress send 成功钩。  
+**P1（已做）**：`route_info` 实渠道路；english 同形落盘。  
+**P1（未做）**：导出会话可选渲染 notice（当前导出默认**过滤** notice）。  
+**P2（未做）**：progress 飞书 cleanup 联删 DB；FTS 噪音（notice 进 messages_fts）若烦可再滤。  
+**非目标（未做）**：approval 同形落盘。
 
 ## 5. 读出 / 不注入主上下文
 
 | 路径 | 策略 |
 |------|------|
-| 主模型请求 | `role=notice` ∉ 常规对话角色；实现时在 **model restore**（`get_messages_as_conversation` / resume `model_history`）加 `role != 'notice'`（与 `session_meta` 同级）。若只改 owner 薄补丁：runtime patch 过滤函数，或确认现有 sanitize 丢弃未知 role 后补测。**必须有单测：notice 行不得出现在送模 messages。** |
+| 主模型请求 | **已落地**：`gateway/run.py` `_build_gateway_agent_history` / `_last_transcript_timestamp`、`gateway/run_startup.py` 崩溃残留尾帧、`gateway/session_results.py` 尾行角色、`hermes_state_messages.py`（resume `model_history` + 尾角色）、`hermes_state_worker_context.py`、`hermes_cli/{cli_commands_mixin,oneshot}.py` 恢复历史，均排除 `role=notice`（与 `session_meta` 同级）。单测：`tests/owner/test_c13_notice_persist.py::test_notice_excluded_from_model_resume` |
 | recap flatten | 已只认 user/assistant → 自然忽略 notice（防「回顾里套回顾」） |
-| TUI / `_HISTORY_ROLES` | 默认不展示；需要「会话内回顾列表」时再按 `display_kind` 特制表面 |
+| TUI / `_HISTORY_ROLES` | **已落地**：`tui_gateway/session_history.py` 的 `_HISTORY_ROLES` 保持 `user/assistant/tool/system`，notice 永不展示；需要「会话内回顾列表」时再按 `display_kind` 特制表面 |
+| 导出 | **已落地**：`hermes_cli/session_export.py`（md）与 `session_export_html.py`（html）过滤 `role=notice` |
 | FTS 搜索 | 触发器会索引 content；可接受。若要排除：P2 搜条件加 `role != 'notice'` |
-| compaction | notice 不应充当 user turn；compressor 已跳过多数 `display_kind` user 行——补测 notice 不被当成用户意图 |
+| compaction | notice 不进送模历史（见上）⇒ 不充当 user turn，不参与用户意图摘要 |
 
 ## 6. 与 watermark 关系
 
@@ -169,7 +172,7 @@ ORDER BY id;
 | `owner/recap_watermarks/<sid>` | **门控**：`last_recap_main_turn`；无新用户主回合不自动再发 |
 | `messages` notice 行 | **正文审计**：可查历史 recap/旁白全文与渠道 |
 
-成功路径建议顺序：`生成 → 发送成功 → persist_notice → save_recap_watermark`（auto）；手动 `/recap`：`生成 → （网关投递）→ persist → note_manual_recap`。  
+实际顺序：自动 `生成 → 发送成功 → persist_notice → save_recap_watermark`；手动 `/recap` `生成 → note_manual_recap → persist_notice`（命令路径无 send 钩，body 交网关投递）。  
 persist 失败 **不**回滚 watermark（避免刷屏）；watermark 失败不删已写 notice。
 
 ## 7. 风险
@@ -179,21 +182,22 @@ persist 失败 **不**回滚 watermark（避免刷屏）；watermark 失败不�
 | notice 误入主上下文 | 单测 + model_history 显式过滤；禁止用 assistant role |
 | `owner_provider_name` 写不进 | UPDATE 补列或 metadata 双写 model/provider |
 | 官方以后占用 `role=notice` | 低概率；若冲突改 `explainer_notice` 并迁移 display_kind 查询 |
-| FTS / 导出噪音 | 默认接受；导出过滤 P1 |
+| FTS / 导出噪音 | 导出已过滤 notice；FTS 默认接受（若烦再加 `role != 'notice'` 条件） |
 | progress 频繁写放大 DB | 已有 silence/digest 门；行短（≤900 字级） |
-| 与 tip `c3da56ebf1` 文案改动 | 正交；落盘存最终投递串即可 |
+| 与 tip `c3da56ebf1`（recap 文案）/ `c807d24f48`（recap 卡标题色 orange） | 正交；落盘存最终投递串即可 |
 
 ## 8. 非目标
 
-- 不改 recap 提示词 / 350 硬帽（已在 tip `c3da56ebf1`）。
+- 不改 recap 提示词 / 350 硬帽（另见 tip `c3da56ebf1`）。
 - 不迁 watermark 进 DB（文件方案与 Grok Build 对齐，继续保留）。
-- 本轮不实现、不迁库、不重启 gateway。
-- 不强制 approval 落盘（english 已纳入）。
+- **零 ALTER、不迁库**：复用现有列（`role` / `display_kind` / `display_metadata` / `owner_provider_name` / `platform_message_id`）；生效需软重启 gateway。
+- 不做 approval 落盘（english 已纳入）。
 
 ## 9. 拍板结果
 
-1. **导出 / TUI 不展示 `role=notice`**（已落地：`_HISTORY_ROLES` 不含 notice；export md/html 过滤）。
-2. **`english` 同 helper 落盘**（`display_kind=english`，send 成功后写）。
+1. **导出 / TUI 不展示 `role=notice`**（已落地：`_HISTORY_ROLES` 不含 notice；export md/html 过滤；送模路径同步排除）。
+2. **`english` 同 helper 落盘**（`display_kind=english`，send 成功后写，`trigger=reply`）。
+3. **渠道记 `owner_provider_name` + `display_metadata`**（`append_message` 对 `role≠assistant` 不绑列，helper 事后 `UPDATE` 补列；model 以 `display_metadata.model` 为主存放处）。
 
 ## 10. 验收
 
@@ -202,3 +206,4 @@ persist 失败 **不**回滚 watermark（避免刷屏）；watermark 失败不�
 - [x] `display_metadata` 含 provider/model/task；`owner_provider_name` UPDATE 补列
 - [x] 送模 / TUI / export 排除 notice（薄 `[owner]` 门控）
 - [x] 无 DDL；官方 SCHEMA CREATE 字面未改
+- [x] 生效条件：软重启 gateway 后才写入；未重启的旧进程仍只发卡不落盘
