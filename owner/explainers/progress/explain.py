@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 from owner.explainers import llm as llm_mod
 from owner.explainers.progress import prompt as prompt_mod
@@ -19,6 +19,7 @@ async def explain(
     cfg: dict,
     user_message: str,
     language: str,
+    route_info: Optional[dict[str, Any]] = None,
 ) -> Optional[str]:
     """Generate progress narration (no PREFIX). Fail → None."""
     try:
@@ -35,6 +36,7 @@ async def explain(
             cfg=cfg,
             max_tokens=_MAX_TOKENS,
             max_output_chars=max(80, out_cap),
+            route_info=route_info,
         )
     except Exception as exc:
         logger.debug("progress explain failed: %s", exc)

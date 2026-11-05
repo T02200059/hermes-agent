@@ -509,8 +509,9 @@ def run_auto_recap(
         return None
 
     cfg = load_kind_config("recap")
+    route_info: dict = {}
     try:
-        text = explain_from_messages(messages, cfg=cfg)
+        text = explain_from_messages(messages, cfg=cfg, route_info=route_info)
     except Exception as exc:
         logger.debug("recap_auto explain failed: %s", exc)
         return None
@@ -520,6 +521,21 @@ def run_auto_recap(
 
     if not _send_notice(plat, chat_id, body, cfg):
         return None
+
+    try:
+        from owner.explainers.persist import persist_notice
+
+        persist_notice(
+            sid,
+            "recap",
+            body,
+            trigger="auto",
+            cfg=cfg,
+            route_info=route_info,
+            extra_meta={"user_turns": turns},
+        )
+    except Exception:
+        logger.debug("recap_auto persist failed", exc_info=True)
 
     save_recap_watermark(sid, turns)
     logger.info(

@@ -279,6 +279,7 @@ _HISTORY_ASSISTANT_DETAIL_KEYS = (
     "codex_reasoning_items",
     "codex_message_items",
 )
+# role=notice (owner C13 explainer audit) intentionally omitted — never shown in TUI.
 _HISTORY_ROLES = frozenset({"user", "assistant", "tool", "system"})
 
 

@@ -467,7 +467,8 @@ def _load_resume_target(session_db, resume: Optional[str]) -> tuple[Optional[str
         raise RuntimeError(f"cannot resume session {resume}: {kanban_refusal}")
     session_db.assert_resume_safe(resolved, tip_only=True)
     restored, _display = session_db.get_resume_conversations(resolved)
-    history = [m for m in restored if m.get("role") != "session_meta"]
+    # [owner] C13: also drop explainer notice audit rows.
+    history = [m for m in restored if m.get("role") not in ("session_meta", "notice")]
     try:
         session_db.reopen_session(resolved)
     except Exception:

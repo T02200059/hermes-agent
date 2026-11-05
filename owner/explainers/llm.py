@@ -111,6 +111,7 @@ def _invoke_llm(
     temperature: float,
     max_tokens: int,
     max_output_chars: int,
+    route_info: Optional[dict[str, Any]] = None,
 ) -> Optional[str]:
     from agent.auxiliary_client import call_llm
 
@@ -122,6 +123,7 @@ def _invoke_llm(
         timeout=resolved["timeout_s"],
         provider=resolved["provider"],
         model=resolved["model"],
+        route_info=route_info,
     )
     content = extract_content(response)
     if not content:
@@ -137,10 +139,23 @@ def call_explainer_llm(
     temperature: float = 0,
     max_tokens: int = 400,
     max_output_chars: int = _MAX_OUTPUT_CHARS_DEFAULT,
+    route_info: Optional[dict[str, Any]] = None,
 ) -> Optional[str]:
-    """Sync call; returns cleaned text or None. Never raises."""
+    """Sync call; returns cleaned text or None. Never raises.
+
+    Optional *route_info* dict is filled with the resolved provider/model from
+    ``call_llm`` (for notice persist attribution).
+    """
     try:
         resolved = resolve_explainer_call(kind, cfg)
+        # Seed with config intent so persist still has a channel if call_llm
+        # never writes route_info (e.g. mocked tests).
+        if route_info is not None:
+            if resolved.get("provider"):
+                route_info.setdefault("provider", resolved["provider"])
+            if resolved.get("model"):
+                route_info.setdefault("model", resolved["model"])
+            route_info.setdefault("task", resolved.get("task"))
         text = _invoke_llm(
             kind=kind,
             messages=messages,
@@ -148,6 +163,7 @@ def call_explainer_llm(
             temperature=temperature,
             max_tokens=max_tokens,
             max_output_chars=max_output_chars,
+            route_info=route_info,
         )
         if not text:
             return None
@@ -180,6 +196,7 @@ def call_explainer_llm(
                 temperature=temperature,
                 max_tokens=max_tokens,
                 max_output_chars=max_output_chars,
+                route_info=route_info,
             )
             if not retry:
                 break
@@ -206,6 +223,7 @@ async def call_explainer_llm_async(
     temperature: float = 0,
     max_tokens: int = 400,
     max_output_chars: int = _MAX_OUTPUT_CHARS_DEFAULT,
+    route_info: Optional[dict[str, Any]] = None,
 ) -> Optional[str]:
     """Async wrapper with hard timeout (to_thread + wait_for). Never raises."""
     import asyncio
@@ -222,6 +240,7 @@ async def call_explainer_llm_async(
                 temperature=temperature,
                 max_tokens=max_tokens,
                 max_output_chars=max_output_chars,
+                route_info=route_info,
             )
 
         return await asyncio.wait_for(asyncio.to_thread(_call), timeout=timeout_s)

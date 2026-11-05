@@ -695,7 +695,7 @@ def _generate_messages_html(messages: list[dict[str, Any]]) -> str:
     html_list = []
     for i, msg in enumerate(messages):
         role = msg.get("role", "unknown")
-        if role == "session_meta":  # internal metadata, never rendered
+        if role in ("session_meta", "notice"):  # [owner] C13: internal / explainer audit, never rendered
             continue
         content = _content_text(msg.get("content") or "")
         # The role feeds two sinks and is externally influenced for tool/MCP messages: HTML-escape

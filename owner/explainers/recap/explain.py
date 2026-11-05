@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from owner.explainers import llm as llm_mod
 from owner.explainers.common import DEFAULT_MAX_INPUT_CHARS
@@ -17,9 +17,10 @@ _MAX_TOKENS = 260
 
 
 def explain_from_messages(
-    messages: List[Any],
+    messages: list[Any],
     *,
-    cfg: Optional[Dict[str, Any]] = None,
+    cfg: Optional[dict[str, Any]] = None,
+    route_info: Optional[dict[str, Any]] = None,
 ) -> Optional[str]:
     """Flatten ``messages`` then call the shared explainer LLM. Returns cleaned text or None."""
     try:
@@ -35,6 +36,7 @@ def explain_from_messages(
             cfg=merged,
             max_tokens=_MAX_TOKENS,
             max_output_chars=max(80, out_cap),
+            route_info=route_info,
         )
     except Exception as exc:
         logger.debug("recap explain_from_messages failed: %s", exc)
@@ -42,9 +44,10 @@ def explain_from_messages(
 
 
 async def explain_from_messages_async(
-    messages: List[Any],
+    messages: list[Any],
     *,
-    cfg: Optional[Dict[str, Any]] = None,
+    cfg: Optional[dict[str, Any]] = None,
+    route_info: Optional[dict[str, Any]] = None,
 ) -> Optional[str]:
     try:
         merged = cfg if isinstance(cfg, dict) else load_kind_config("recap")
@@ -59,6 +62,7 @@ async def explain_from_messages_async(
             cfg=merged,
             max_tokens=_MAX_TOKENS,
             max_output_chars=max(80, out_cap),
+            route_info=route_info,
         )
     except Exception as exc:
         logger.debug("recap explain_from_messages_async failed: %s", exc)

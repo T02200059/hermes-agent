@@ -91,8 +91,11 @@ async def handle_recap_command(
         return _EMPTY
 
     cfg = load_kind_config("recap")
+    route_info: dict = {}
     try:
-        text = await asyncio.to_thread(explain_from_messages, messages, cfg=cfg)
+        text = await asyncio.to_thread(
+            explain_from_messages, messages, cfg=cfg, route_info=route_info
+        )
     except Exception as exc:
         logger.warning("/recap explain failed: %s", exc)
         return _FAILED
@@ -107,4 +110,21 @@ async def handle_recap_command(
         note_manual_recap(sid, messages)
     except Exception:
         logger.debug("/recap watermark note failed", exc_info=True)
+    # Persist after generation success; gateway delivers the returned notice body.
+    # (Manual path has no send-result hook here.)
+    try:
+        from owner.explainers.persist import persist_notice
+        from owner.explainers.recap.auto import count_user_turns
+
+        persist_notice(
+            sid,
+            "recap",
+            body,
+            trigger="manual",
+            cfg=cfg,
+            route_info=route_info,
+            extra_meta={"user_turns": count_user_turns(messages)},
+        )
+    except Exception:
+        logger.debug("/recap persist failed", exc_info=True)
     return body

@@ -409,12 +409,14 @@ class ProgressExplainer:
         from agent.i18n import get_language
 
         self._sending = True
+        route_info: dict = {}
         try:
             text = await _explain(
                 state=tracker_state,
                 cfg=cfg,
                 user_message=self._tracker.user_message,
                 language=get_language(),
+                route_info=route_info,
             )
         finally:
             self._sending = False
@@ -445,6 +447,23 @@ class ProgressExplainer:
                     cleanup_ids.append(str(msg_id))
                 except Exception:
                     pass
+        try:
+            from owner.explainers.persist import persist_notice
+
+            persist_notice(
+                self._session_id,
+                "progress",
+                body,
+                trigger="tick",
+                platform_message_id=str(msg_id) if msg_id else None,
+                cfg=cfg,
+                route_info=route_info,
+                extra_meta={
+                    "digest_hash": state.get("digest_hash"),
+                },
+            )
+        except Exception:
+            logger.debug("progress_explainer persist failed", exc_info=True)
 
     # ---- 辅助方法 ----
 

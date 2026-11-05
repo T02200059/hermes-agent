@@ -618,9 +618,10 @@ class SessionMessagesMixin(SessionDetachedResultsMixin, SessionTodoResultMixin):
         """Role of the newest active user/assistant/tool row, or ``None``. ``session_meta`` /
         ``system`` rows are transcript bookkeeping stripped before the model sees history, so
         they must not hide an open user tail from the failed-turn boundary check."""
+        # [owner] C13: notice is bookkeeping like session_meta/system.
         row = self._read_one(
             "SELECT role FROM messages WHERE session_id = ? AND active = 1 "
-            "AND role NOT IN ('session_meta', 'system') ORDER BY id DESC LIMIT 1", (session_id,))
+            "AND role NOT IN ('session_meta', 'system', 'notice') ORDER BY id DESC LIMIT 1", (session_id,))
         return row[0] if row else None
 
     def get_message_role(self, session_id: str, row_id: int) -> Optional[str]:
@@ -1663,8 +1664,10 @@ class SessionMessagesMixin(SessionDetachedResultsMixin, SessionTodoResultMixin):
         # first-turn ``session_meta`` marker (tools/model/platform bookkeeping) is transcript logging,
         # never LLM input: a resuming surface that fed it to the agent would count it in the history
         # and send a prefix the previous process never sent.
+        # [owner] C13: drop role=notice (explainer audit) from model resume history.
         model_history = self._rows_to_conversation(
-            [r for r in rows if r["session_id"] == session_id and r["active"] and r["role"] != "session_meta"],
+            [r for r in rows if r["session_id"] == session_id and r["active"]
+             and r["role"] not in ("session_meta", "notice")],
             session_id=session_id,
             include_ancestors=False, repair_alternation=True, include_row_ids=True, include_summary_markers=True)
         display_history = self._rows_to_conversation(

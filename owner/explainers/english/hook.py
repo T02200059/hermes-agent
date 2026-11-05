@@ -12,7 +12,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Optional
 
 from owner.explainers.common import display_language_is_chinese, normalize_platform
 from owner.explainers.config import load_kind_config, resolve_enabled
@@ -24,15 +24,15 @@ logger = logging.getLogger("hermes.owner.explainers.english")
 
 
 _GATEWAY_REF: Any = None
-_ADAPTERS: Dict[str, Any] = {}
+_ADAPTERS: dict[str, Any] = {}
 _REF_LOCK = threading.Lock()
 
 # session_id / gateway_session_key → (platform, chat_id)
-_SESSION_ROUTES: Dict[str, Tuple[str, str]] = {}
+_SESSION_ROUTES: dict[str, tuple[str, str]] = {}
 _ROUTE_LOCK = threading.Lock()
 
 # 去重：同一 session+正文指纹短时只解说一次
-_RECENT: Dict[str, float] = {}
+_RECENT: dict[str, float] = {}
 _RECENT_LOCK = threading.Lock()
 _RECENT_TTL_S = 120.0
 _RECENT_MAX = 256
@@ -94,7 +94,7 @@ def _on_pre_gateway_dispatch(**kwargs: Any) -> None:
                 _SESSION_ROUTES[session_key.split(":")[-1]] = (platform, chat_id)
 
 
-def _lookup_route(session_id: str, platform_hint: str) -> Tuple[str, str]:
+def _lookup_route(session_id: str, platform_hint: str) -> tuple[str, str]:
     sid = str(session_id or "")
     with _ROUTE_LOCK:
         if sid in _SESSION_ROUTES:
@@ -193,11 +193,11 @@ def _on_transform_llm_output(
     """检测英文回复并调度侧路解说。始终返回 None（不改原文）。"""
     try:
         if interrupted:
-            return None
+            return
         if not response_text or not isinstance(response_text, str):
-            return None
+            return
         if not display_language_is_chinese():
-            return None
+            return
 
         platform_l = str(platform or "").lower()
         if "." in platform_l:
@@ -206,13 +206,13 @@ def _on_transform_llm_output(
         if not platform_l:
             platform_l = route_platform
         if not resolve_enabled("english", platform_l, chat_id or None):
-            return None
+            return
 
         detection = looks_like_english_reply(response_text)
         if not detection:
-            return None
+            return
         if _should_skip_recent(session_id, response_text):
-            return None
+            return
 
         cfg = load_kind_config("english")
         # 后台执行：避免卡住 transform_llm_output 热路径
@@ -231,7 +231,7 @@ def _on_transform_llm_output(
         ).start()
     except Exception:
         logger.debug("english_explainer transform hook failed", exc_info=True)
-    return None
+    return
 
 
 def _bg_translate_and_send(
@@ -244,7 +244,9 @@ def _bg_translate_and_send(
     detection: dict,
 ) -> None:
     try:
-        translation = explain_sync(response_text, cfg)
+        route_info: dict = {}
+        # cfg is keyword-only on explain(); positional was a latent TypeError.
+        translation = explain_sync(response_text, cfg=cfg, route_info=route_info)
         body = format_delivery(translation or "")
         if not body:
             return
@@ -264,9 +266,18 @@ def _bg_translate_and_send(
             logger.debug("english_explainer no event loop for send")
             return
 
+        send_ok = False
+        msg_id = None
+
         async def _send() -> None:
+            nonlocal send_ok, msg_id
             try:
-                await adapter.send(chat_id, body)
+                res = await adapter.send(chat_id, body)
+                send_ok = True
+                if res is not None:
+                    msg_id = getattr(res, "message_id", None)
+                    if getattr(res, "success", True) is False:
+                        send_ok = False
             except Exception as exc:
                 logger.debug("english_explainer send failed: %s", exc)
 
@@ -275,6 +286,25 @@ def _bg_translate_and_send(
             fut.result(timeout=max(5.0, int(cfg.get("timeout_ms") or cfg.get("explainer_timeout_ms") or 30000) / 1000.0 + 5))
         except Exception as exc:
             logger.debug("english_explainer send wait failed: %s", exc)
+            send_ok = False
+        if send_ok:
+            try:
+                from owner.explainers.persist import persist_notice
+
+                persist_notice(
+                    session_id,
+                    "english",
+                    body,
+                    trigger="reply",
+                    platform_message_id=str(msg_id) if msg_id else None,
+                    cfg=cfg,
+                    route_info=route_info,
+                    extra_meta={
+                        "detection_reason": (detection or {}).get("reason"),
+                    },
+                )
+            except Exception:
+                logger.debug("english_explainer persist failed", exc_info=True)
     except Exception:
         logger.debug("english_explainer background failed", exc_info=True)
 

@@ -1,8 +1,9 @@
 # explainer-notice-persist — recap / 进度旁白落盘到 messages
 
-状态：**设计稿**（本轮不改生产代码、不迁库、不重启）  
-关联：C13 explainers；清单占位见 `owner/docs/owner改动清单-todo.md` C13 条  
-规范对照：`owner/docs/二次开发规范.md` §2.1 P0/P1、§2.2.2 设计目录
+状态：**已实现**（零 ALTER；未迁库）  
+关联：C13 explainers；清单见 `owner/docs/owner改动清单-todo.md` C13 条  
+规范对照：`owner/docs/二次开发规范.md` §2.1 P0/P1、§2.2.2 设计目录  
+拍板：导出/TUI **不展示** `role=notice`；**english** 与 recap/progress 同 helper 落盘
 
 ## 1. 目标
 
@@ -11,12 +12,12 @@
 | 要求 | 做法 |
 |------|------|
 | 同表、少字段 | **零 ALTER**：复用现有列；不新增表、不扩官方 SCHEMA 字面 |
-| 标明种类 | `display_kind ∈ {recap, progress}`（跟 C13 kind / 仓库惯例；进度旁白 = `progress`） |
+| 标明种类 | `display_kind ∈ {recap, progress, english}`（跟 C13 kind / 仓库惯例；进度旁白 = `progress`） |
 | 标明生成渠道 | 与主会话模型可不同：见 §3.2 |
 | 不污染主上下文 | 新 `role=notice` + 读路径排除（§5） |
 | watermark 关系 | 文件水位仍管「自动是否再发」；DB 行是正文审计（§6） |
 
-**本轮范围**：仅 `recap` + `progress`。`english` / `approval` 同形可扩，**不在本轮必做**。
+**范围**：`recap` + `progress` + `english`。`approval` 同形可扩，**未做**。
 
 ## 2. 现状（探查摘要）
 
@@ -139,6 +140,7 @@ ORDER BY id;
 | recap 手动 | `owner/explainers/recap/command.py` | 生成成功且将返回 body **之后**、watermark 前后均可；建议 **send/返回成功口径** 与 auto 一致后再写 |
 | recap 自动 | `owner/explainers/recap/auto.py` `_send_notice` 成功后 | 与 `save_recap_watermark` 同成功闸；先发后写或写失败只打 debug |
 | progress | `owner/explainers/progress/dispatcher.py` 在 `adapter.send` success 后 | 已有 `message_id`；`cleanup_progress` 若删飞书消息，**DB 行默认保留**（审计）；若需联删列为 P2 |
+| english | `owner/explainers/english/hook.py` `_bg_translate_and_send` send 成功后 | `display_kind=english`；顺带修正 `explain_sync(..., cfg=cfg)` 关键字调用 |
 | 取模 | `call_explainer_llm` / 调用方 | 尽量把 resolved route 传进 persist（可扩返回值或 out-param；保持「失败仍 None」契约） |
 
 写入 API 偏好：
@@ -186,18 +188,17 @@ persist 失败 **不**回滚 watermark（避免刷屏）；watermark 失败不�
 - 不改 recap 提示词 / 350 硬帽（已在 tip `c3da56ebf1`）。
 - 不迁 watermark 进 DB（文件方案与 Grok Build 对齐，继续保留）。
 - 本轮不实现、不迁库、不重启 gateway。
-- 不强制 english/approval 落盘。
+- 不强制 approval 落盘（english 已纳入）。
 
-## 9. 待拍板（开放点）
+## 9. 拍板结果
 
-1. **会话导出 / TUI 是否展示 `role=notice` 行？** 设计默认：**否**（仅 SQL / 后续专用查询；飞书侧用户已看过）。若要「在桌面历史里重看回顾」，再加 display 投影例外。
-2. **`english` 旁白是否同一 helper 一并落盘？** 默认本轮不做；接口可预留 `display_kind=english`。
+1. **导出 / TUI 不展示 `role=notice`**（已落地：`_HISTORY_ROLES` 不含 notice；export md/html 过滤）。
+2. **`english` 同 helper 落盘**（`display_kind=english`，send 成功后写）。
 
-## 10. 验收（实现轮）
+## 10. 验收
 
-- [ ] 手动 `/recap` 成功后 `messages` 有 `role=notice, display_kind=recap` 且 content 含 PREFIX
-- [ ] auto recap 发送成功后同上，`trigger=auto`，watermark 仍更新
-- [ ] progress send 成功后有 `display_kind=progress`
-- [ ] `display_metadata.model`（或等价）可区分于会话主模型
-- [ ] 送模 transcript / flatten **不含** notice
-- [ ] 无 DDL；官方 `hermes_state_common` CREATE 字面无改（除非仅清单登记的必要薄门控）
+- [x] helper `owner/explainers/persist.py` + 单测 `tests/owner/test_c13_notice_persist.py`
+- [x] 手动 `/recap` / auto recap / progress / english 成功路径调用 persist
+- [x] `display_metadata` 含 provider/model/task；`owner_provider_name` UPDATE 补列
+- [x] 送模 / TUI / export 排除 notice（薄 `[owner]` 门控）
+- [x] 无 DDL；官方 SCHEMA CREATE 字面未改

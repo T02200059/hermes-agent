@@ -16,7 +16,12 @@ _MAX_OUTPUT_CHARS = 1000
 _MAX_TOKENS = 450
 
 
-def explain(english_text: str, *, cfg: Optional[dict[str, Any]] = None) -> Optional[str]:
+def explain(
+    english_text: str,
+    *,
+    cfg: Optional[dict[str, Any]] = None,
+    route_info: Optional[dict[str, Any]] = None,
+) -> Optional[str]:
     try:
         text = (english_text or "").strip()
         if not text:
@@ -31,13 +36,19 @@ def explain(english_text: str, *, cfg: Optional[dict[str, Any]] = None) -> Optio
             cfg=merged,
             max_tokens=_MAX_TOKENS,
             max_output_chars=max(80, out_cap),
+            route_info=route_info,
         )
     except Exception as exc:
         logger.debug("english explain failed: %s", exc)
         return None
 
 
-async def explain_async(english_text: str, *, cfg: Optional[dict[str, Any]] = None) -> Optional[str]:
+async def explain_async(
+    english_text: str,
+    *,
+    cfg: Optional[dict[str, Any]] = None,
+    route_info: Optional[dict[str, Any]] = None,
+) -> Optional[str]:
     try:
         text = (english_text or "").strip()
         if not text:
@@ -52,6 +63,7 @@ async def explain_async(english_text: str, *, cfg: Optional[dict[str, Any]] = No
             cfg=merged,
             max_tokens=_MAX_TOKENS,
             max_output_chars=max(80, out_cap),
+            route_info=route_info,
         )
     except Exception as exc:
         logger.debug("english explain_async failed: %s", exc)

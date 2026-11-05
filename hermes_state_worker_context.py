@@ -73,7 +73,7 @@ def worker_tail_role(db, conn, session_id, payload):
     if payload:
         raise RuntimeStoreError('invalid_params')
     row = conn.execute("SELECT role FROM messages WHERE session_id=? AND active=1 "
-                       "AND role NOT IN ('session_meta','system') ORDER BY id DESC LIMIT 1", (session_id,)).fetchone()
+                       "AND role NOT IN ('session_meta','system','notice') ORDER BY id DESC LIMIT 1  /* [owner] C13 */", (session_id,)).fetchone()
     return {'value': row[0] if row else None}
 
 

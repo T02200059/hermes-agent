@@ -806,7 +806,8 @@ class GatewayStartupMixin:
         from gateway.run_turn import _unexpected_silence_reply
         from gateway.warning_notifications import diagnostic_turn_muted
         from hermes_cli.timefmt import coerce_epoch
-        visible = [m for m in history if m.get("role") not in ("session_meta", "system")]
+        # [owner] C13: exclude explainer notice audit rows from crash-left visible tail.
+        visible = [m for m in history if m.get("role") not in ("session_meta", "system", "notice")]
         last = visible[-1] if visible else {}
         if (last.get("role") != "assistant" or last.get("tool_calls") or not isinstance(last.get("content"), str)
                 or (coerce_epoch(last.get("timestamp")) or 0) < started):

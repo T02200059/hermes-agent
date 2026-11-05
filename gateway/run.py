@@ -1281,7 +1281,8 @@ def _build_gateway_agent_history(
     for msg in history or []:
         role = msg.get("role")
         # session_meta rows are transcript logging, not LLM input; the agent rebuilds its own system prompt.
-        if not role or role in {"session_meta", "system"}:
+        # [owner] C13 explainer notices (role=notice) are audit rows — never LLM input.
+        if not role or role in {"session_meta", "system", "notice"}:
             continue
 
         content = msg.get("content")
@@ -1392,7 +1393,8 @@ def _last_transcript_timestamp(history: Optional[list[dict[str, Any]]]) -> Any:
         if not isinstance(msg, dict):
             continue
         role = msg.get("role")
-        if not role or role in {"session_meta", "system"}:
+        # [owner] C13: skip explainer notice rows for "last usable" timestamp.
+        if not role or role in {"session_meta", "system", "notice"}:
             continue
         ts = msg.get("timestamp")
         if ts is not None:

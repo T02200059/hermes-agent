@@ -119,7 +119,8 @@ def _append_prompt_records(lines: list[str], session: dict[str, Any], *, heading
 
 def _append_session_messages(lines: list[str], session: dict[str, Any], *, heading_level: int) -> None:
     marker = "#" * heading_level
-    visible_messages = [message for message in _messages(session) if message.get("role") != "system"]
+    # [owner] C13: hide explainer notice audit rows from markdown export (user拍板).
+    visible_messages = [message for message in _messages(session) if message.get("role") not in ("system", "notice", "session_meta")]
     if not visible_messages:
         lines += ["_No messages found._", ""]
         return

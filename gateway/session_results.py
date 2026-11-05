@@ -145,7 +145,7 @@ def close_discarded_turn(db, conn, row, notice=None, *, replace_after=None, disp
     from hermes_state_runtime import _canonical_chain
     target = _canonical_chain(conn, local_physical_target(conn, row['target_session_id']))[-1]
     tail = conn.execute("SELECT role, tool_calls, id, display_kind FROM messages WHERE session_id=? AND active=1 "
-                        "AND role NOT IN ('session_meta','system') ORDER BY id DESC LIMIT 1", (target,)).fetchone()
+                        "AND role NOT IN ('session_meta','system','notice') ORDER BY id DESC LIMIT 1  /* [owner] C13 */", (target,)).fetchone()
     if (notice is not None and type(replace_after) is int and tail is not None and tail[0] == 'assistant'
             and tail[3] == FAILED_TURN_DISPLAY_KIND and tail[2] > replace_after):
         conn.execute("UPDATE messages SET content=?, display_metadata=? WHERE id=?",

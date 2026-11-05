@@ -181,7 +181,8 @@ def _cron_api(**kwargs) -> dict:
 
 
 def _without_session_meta(messages) -> list:
-    return [m for m in (messages or []) if m.get("role") != "session_meta"]
+    # [owner] C13: also drop explainer notice audit rows from CLI resume history.
+    return [m for m in (messages or []) if m.get("role") not in ("session_meta", "notice")]
 
 
 def _db_unavailable_line() -> str:
