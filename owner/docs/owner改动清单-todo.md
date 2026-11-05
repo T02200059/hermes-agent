@@ -9,8 +9,9 @@
 |----|----|
 | 源清单 | `/Users/yangtb/.hermes/hermes-agent/owner/docs/owner改动清单.md` |
 | 源仓 tip | `299e23205b66df082a2615aa1a4f3ed1edc69d25` |
-| v2 worktree | `/Users/yangtb/.hermes/hermes-agent-v2` · 分支 `v2` |
-| v2 tip（官方 main） | `3ba2b0787ed3a73ec3b08085ed0137f235209cf4` |
+| v2 worktree | `/Users/yangtb/.hermes/hermes-agent`（主 worktree 检出分支 `v2`；`owner` 分支另在 `hermes-agent-owner`） |
+| v2 分支 tip | `ad76168735`（已双推 `origin`/`gitlab` 的 `v2`） |
+| v2 tip（官方 main 基点） | `3ba2b0787ed3a73ec3b08085ed0137f235209cf4` |
 | 规范 | 同目录 `二次开发规范.md` |
 | 实现顺序 | 同目录 `v2实现顺序.md` |
 | 背景说明 | 同目录 `v2背景说明.md` |
@@ -21,6 +22,8 @@
 **验证状态枚举**（bug 段）：`待对照官方 main` | `官方已修` | `仍存在/需自研` | `部分` | `不适用(纯 owner)` | `已退役`
 
 勾选约定：`- [ ]` 未处理；`- [x]` 已结论（状态字段已填）。
+
+**子点记法（按功能点，不按日期流水）**：条目内子点以**功能点**命名（`- **功能点**：…`）；同一功能点的多次改动**并入同一条**、按子项分行，日期只作括注（`- **功能点（2026-11-04）**：…`）。**不**按「一行一次改动、以日期开头」流水记账；标签不写「补丁 / 复审修 / 热修 / follow-up / 核实」这类过程词。依据：`二次开发规范.md` §6.2。
 
 ## § 二次开发可复用基建（后续 AI 优先看）
 
@@ -108,12 +111,13 @@ explainers:
     enabled: true
     # kind 专有：platforms 等
   recap:
-    enabled: true         # 第四 kind：/recap 按需回顾（notice；不写主会话）
+    enabled: true         # 第四 kind：/recap 按需回顾（notice；正文落 messages 审计，不入主会话模型）
     max_output_chars: 350
     auto:                 # 长对话闲置自动（Grok：3 回合 / 180s）
       enabled: true
       min_user_turns: 3
       idle_seconds: 180
+      min_assistant_chars: 1500
 ```
 
 - **块名**：`explainers`（对齐清单「yaml 整合方向」）。
@@ -207,7 +211,7 @@ explainers:
 ### TUI / CLI 稳定性
 
 - [x] **B12** · 源 §6.3 · Ctrl+C /exit 与 graceful drain（SIGINT 逃出清理链） · **验证状态：已核实 · 暂不实施**
-  - **2026-10-30 核实**：不加 OS SIGINT handler。按键 Ctrl+C 已由 prompt_toolkit `c-c` 覆盖；`cli_terminal_input` 注明 raw mode clears ISIG；TUI `SIGINT→SIG_IGN` 有意（SIGTERM/SIGHUP→exit）；单查询路径已有 handler。无「逃出清理链」廉价复现 → 暂不实施（见阶段一旁注）。
+  - **核实结论（2026-10-30）**：不加 OS SIGINT handler —— 按键 Ctrl+C 已由 prompt_toolkit `c-c` 覆盖；`cli_terminal_input` 注明 raw mode clears ISIG；TUI `SIGINT→SIG_IGN` 有意（SIGTERM/SIGHUP→exit）；单查询路径已有 handler。无「逃出清理链」廉价复现 → 暂不实施（见阶段一旁注）。
 - [x] **B13** · 源 §6.4 · live compression sync 误清 per-model `context_length` · **验证状态：官方已修**
   - owner：`tui_gateway/server.py` 缺顶层时回退 `get_custom_provider_context_length`。v2：`tui_gateway/session_compression.py` + `agent_init.config_context_length_for_runtime`，引脚缺失时强制重新推断，`get_model_context_length` 步骤 0c 精确匹配 `providers.*.models`。
 - [x] **B14** · 源 §7.20 · 后台插件发现超时死锁（启动空白屏） · **验证状态：官方已修**
@@ -222,7 +226,7 @@ explainers:
 - [x] **B17** · 源 §7.6 · Clarify 清理路径缺 stop sentinel / 飞书 clarify 超时未中断 · **验证状态：已修（官方半边 + 飞书半边）**
   - **官方半边已修**：`CLARIFY_STOP_SENTINEL`（= `clarify_gateway.CANCELLED`）+ `wait_for_response` 在 entry 消失 / event 空应答时返回 CANCELLED（不再伪造成用户超时）。见 §「v2 已落地官方 fix」。
   - **飞书半边已落地（2026-10-27）**：`owner/clarify/feishu_timeout_stop.py` + `gateway/run_turn_runner.py` `_ask_clarify_question` 薄钩；飞书真超时（`[user did not respond…]`）补发提示并返回 CANCELLED → outcome=`cancelled` 停转。测：`tests/owner/test_b17_feishu_clarify_timeout_stop.py`。
-  - **i18n harden（2026-10-27）**：`locales/{zh,en}.yaml` 补 `gateway.clarify_timeout_notice`；`timeout_notice_text` 经 `display_language()` 取语言，不再默认死 zh。
+  - **超时提示 i18n（2026-10-27）**：`locales/{zh,en}.yaml` 补 `gateway.clarify_timeout_notice`；`timeout_notice_text` 经 `display_language()` 取语言，不再默认死 zh。
 - [x] **B18** · 源 §7.9 · 429 配额耗尽被当 transient 静默重试；长等待无即时状态 · **验证状态：官方已修**
   - owner：`error_classifier.py` `_has_long_reset_window` 单向降级 + `conversation_loop.py` `wait_time >= 60` 立即出状态。v2 本树已用 **O5**：天/周配额墙单向降为 billing，不再白等。即时状态（≥60s 立即出）未单独追平，主痛点（长墙当 transient）已消化。
 - [x] **B19** · 源 §7.10 · 运行中 agent 时 plugin 斜杠命令被当普通文本注入 · **验证状态：官方已修**
@@ -389,17 +393,17 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
     2. `owner/approval/permanent_policy.py`（飞书/QQ 永久审批禁用；官方 approval 薄委托）
     3. `owner/attribution.py`（官方 agent_init / chat_completion_helpers / run_agent / messages 薄委托）
 - [x] **C02** · 源 §2.1–2.2（credential）+ §10 token 用量数量落盘 · **优先级：P0**
-  - [x] **C02 follow-up（2026-10-27）**：`_CONVERSATION_ROW_COLUMNS` 补 `owner_provider_name` + 四列 token，避免第二轮飞书 `history_unavailable`（`transcript_row_snapshot` IndexError）
   - 落地：
     1. 归因整链透传 + `api_messages` 剥离（runtime/oneshot/cli/tui/gateway/cron/delegate/mid-switch）
     2. `owner/providers/credential_helpers.py`；`model_switch_providers` 薄委托
     3. `sessions.owner_provider_name` + messages 四列 token 用量落盘
-  - **2026-10-27 补丁**：`PERSISTENCE_ONLY_MESSAGE_FIELDS` 增 `model`/`provider`（出站剥离；不落盘 DDL）；attribution docstring 改为「仅内存」
-  - **已核实并落地（2026-10-30）**：`/model` mid-switch 传入的 `new_provider` 对 named-custom 多为 `custom:<slug>`（`resolve_provider_full`），会把 init 时 runtime 盖成的 slug 名冲掉。`bind_agent_attribution` 现剥离 `custom:` 前缀，与 named-custom runtime stamp（`custom_provider["name"]`）对齐；裸 `custom` 仍记 `custom`。测：`tests/owner/test_attribution.py`。
-  - **C02/C26 follow-up（2026-11-04）**：`_lap_canonical_rows` 改走 `_any_env(..., provider=slug)`（修 copilot `ghp_*` / coding-plan 裸 `sk-` 假阳性）；`credential_helpers` 增 coding-plan-cn 等 `sk-sp` 前缀。测：`tests/owner/test_credential_helpers.py`、`tests/owner/test_listing_filters.py`。
+  - **落盘列（2026-10-27）**：`_CONVERSATION_ROW_COLUMNS` 补 `owner_provider_name` + 四列 token，避免第二轮飞书 `history_unavailable`（`transcript_row_snapshot` IndexError）
+  - **出站剥离字段（2026-10-27）**：`PERSISTENCE_ONLY_MESSAGE_FIELDS` 增 `model`/`provider`（不落盘 DDL）；attribution docstring 改为「仅内存」
+  - **provider 名归一（2026-10-30）**：`/model` mid-switch 传入的 `new_provider` 对 named-custom 多为 `custom:<slug>`（`resolve_provider_full`），会把 init 时 runtime 盖成的 slug 名冲掉；`bind_agent_attribution` 剥离 `custom:` 前缀，与 named-custom runtime stamp（`custom_provider["name"]`）对齐；裸 `custom` 仍记 `custom`。测：`tests/owner/test_attribution.py`
+  - **密钥前缀判定（2026-11-04，与 C26 共用）**：`_lap_canonical_rows` 改走 `_any_env(..., provider=slug)`（修 copilot `ghp_*` / coding-plan 裸 `sk-` 假阳性）；`credential_helpers` 增 coding-plan-cn 等 `sk-sp` 前缀。测：`tests/owner/test_credential_helpers.py`、`tests/owner/test_listing_filters.py`
 - [x] **C03** · 源 §2.7–2.8 · damodel provider/proxy · **优先级：P0**
   - 落地：`owner/providers/damodel.py` + `plugins/model-providers/damodel/`；测 `tests/owner/test_damodel_provider.py`
-  - **C03+ 2026-10-27**：`is_damodel_route` + `anthropic_prompt_cache_policy` 3 行 `# [owner]` 委托，恢复 damodel cache_control（成本回归）；thinking/extra_body 仍延后
+  - **anthropic cache_control 委托（2026-10-27）**：`is_damodel_route` + `anthropic_prompt_cache_policy` 3 行 `# [owner]` 委托，恢复 damodel cache_control（成本回归）；thinking/extra_body 仍延后
   - **手工验证（可选）**：本机对 damodel（含非 qwen 如 deepseek-v4-flash）发一枪，确认无 400 且 `cache_read_tokens > 0`；若某 upstream 拒 envelope，再按模型家族收窄
 - [x] **C04** · 源 §3.1–3.4 · 飞书审批卡片 + sender_name 缓存 + inbound 身份 + 多平台审批签名 · **优先级：P0**（阶段二首项）
   - helper：`owner/feishu/{approval,user_store,user_cache,sender_name_helpers,inbound_context}.py` + `owner/gateway/inbound_context.py`
@@ -419,7 +423,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - 设计稿：`owner/docs/design/c05-feishu-user-routing/README.md`（配置结构已定稿；按人 **`fleet_profiles`**）
   - 开户自动化：`owner/docs/design/c05-feishu-user-routing/fleet-add.md`；**O1–O5 已落地**（2026-10-29：`fleet_add*.py` + `test_fleet_add_o1/o2/o3/o4.py`；对话 UX = 现网 skill）
   - 开户步骤提醒：对话收集到 `ou_*` 时，**apply 前/中**同批写入 **目标 profile + Hub** 的 `FEISHU_ALLOWED_USERS`（ou ± 已知 tenant user_id；或钉死 Hub `FEISHU_ALLOW_ALL_USERS`）与目标 **`FEISHU_HOME_CHANNEL`**（优先 DM `oc_*`；兼写 `platforms.feishu.home_channel`）；勿等首条私聊被丢弃或事后 `/sethome`（见 fleet-add.md §2 / O2）。inject 绕过子 adapter `_admit`，但 gateway authz 仍读子白名单；Hub `_admit` 在路由前执行
-  - **审查修补（2026-10-29）**：S1 卡打标改 `container_profile_identity`；M1 inbound 仅 send_only；M2 overlay 加载失败 ERROR + last-good；M3 缺 api_server 不回落 Hub；M4/M5 文档钉死 allowlist 口径
+  - **子网关/路由/allowlist 审查修补（2026-10-29）**：S1 卡打标改 `container_profile_identity`；M1 inbound 仅 send_only；M2 overlay 加载失败 ERROR + last-good；M3 缺 api_server 不回落 Hub；M4/M5 文档钉死 allowlist 口径
   - **O5 已落地（2026-10-29）**：完全更新现网 `~/.hermes/skills/westcloud/xy-user-onboarding/SKILL.md`（仓外；备份 `SKILL.md.bak-pre-o5-20261029`）；skill 只编排，mutating → `fleet_add`（allowlist + home channel）；对齐三层挂载 / `fleet_profiles` / LDAP uid；去掉旧整挂与平行 endpoints / heredoc invent；仓内仅文档勾选（见 fleet-add.md §5 / D1）
   - **C05a（Mac v2）已落地已 push** 2026-10-29：`owner/feishu/profile_routing.py` + card_action + adapter/api_server 薄胶水 + `send_only` + 审查修补（S1/M1–M5）+ 单测；已 dual-push `origin`/`gitlab` `v2`；**未**部署 node010（**C05b 仍开**）
   - **fleet_add O1（2026-10-29）**：dry-run 内核已落地（默认 dry-run）
@@ -442,8 +446,8 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - 适配：超时补丁挂 `tools.approval_context._get_approval_timeout`；发卡走 `send_card`；adapter `_on_card_action_trigger` 薄分支
   - 设计：`owner/docs/design/skill-approval/README.md`
   - 测：`tests/owner/test_skill_script_approval.py` / `test_skill_manage_gate.py`
-  - **2026-10-27 补丁**：skill_approval 迁入 overlay（含旧树 `approval_home_chat_id` 真值）；脚本白名单增加「绝对/相对路径须落在 skill 目录内」
-  - **2026-10-27 复审修**：`./`/`../` 前缀不再被 Path 规范化成纯 basename 免审；纯 basename 仍豁免（approval 未传 tool workdir，暂不接 ②）
+  - **配置迁移（2026-10-27）**：`skill_approval` 迁入 overlay（含旧树 `approval_home_chat_id` 真值）
+  - **脚本白名单路径判定（2026-10-27）**：白名单要求「绝对/相对路径须落在 skill 目录内」；`./`/`../` 前缀不再被 Path 规范化成纯 basename 免审；纯 basename 仍豁免（approval 未传 tool workdir，暂不接 ②）
 - [x] **C10** · 源 i18n 层 · 显示层 i18n / `_localized` 与护栏文案（源 §12.2 / §16.9 相关） · **优先级：P0**（阶段二 · 与 B11 同批）
   - helper：`owner/i18n/localized.py`（`localized` / `GUARD_EN_TEXTS`）
   - 胶水：`tools/file_tools_write_guards.py`（受保护指令 / SSH 配置写入护栏走 `_localized`/`_blocked`）
@@ -452,9 +456,10 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - 测：`tests/owner/test_file_tools_guard_text_i18n.py`
   - **思考展示标签口语化（2026-11-04）**：不改 bundled `locales/zh.yaml`；用官方 `$HERMES_HOME/locales` overlay → `owner/config/locales/zh.yaml`（本机 `~/.hermes/locales` 软链），仅覆盖 `gateway.reasoning.quote_label_*` / `block`：`💭 推理`→`💭 想法`。测：`tests/owner/test_reasoning_label_zh_overlay.py`。生效需软重启（catalog 进程内缓存）。
   - 范围：护栏文案层（T2-12）；非废弃的 display_filter；官方 `tools/approval.py` agent-facing 大段英文模板未整迁（B11 已用 summary.* + 护栏键 + 兜底覆盖历史挖掘）
-  - **2026-10-27 文案**：`gateway.shutdown.{notice_restart,notice_shutdown,cron_interrupted}` 开头 ⚠️→♻（与 `startup.restarted` 一致）；zh/en 语气收紧，其它 locale 仅换 emoji
-  - **2026-10-27 文案**：故障/告警类用户可见串开头 `⚠️`/`⚠`→`❕`（更柔和）；`locales/*.yaml` + `.tui.yaml` 同前缀；lifecycle 三键保持 ♻；正文未改
-  - **2026-10-28 文案**：代码硬编码审批/告警前缀 ⚠️→💡（飞书卡 `_card`、多平台 `_EA_HEADER`、C13 stream-guard notice 键与 overlay 同步）；locales 保持 💡/🔄，不回滚
+  - **用户可见串前缀与图标**：
+    - 生命周期/关停提示：⚠️→♻（`gateway.shutdown.{notice_restart,notice_shutdown,cron_interrupted}`，与 `startup.restarted` 一致）；zh/en 语气收紧，其它 locale 仅换 emoji；lifecycle 三键保持 ♻，正文未改
+    - 故障/告警类：开头 `⚠️`/`⚠`→`❕`（更柔和）；`locales/*.yaml` + `.tui.yaml` 同前缀
+    - 审批/告警类：代码硬编码前缀 ⚠️→💡（飞书卡 `_card`、多平台 `_EA_HEADER`、C13 stream-guard notice 键与 overlay 同步）；locales 保持 💡/🔄，不回滚
 
 ### P1
 
@@ -462,8 +467,9 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - helper：`owner/feishu/auto_card.py` / `agent_end.py` / `card_sender.py`
   - 配置：`owner/config/overlay.yaml` → `feishu_card.*`（threshold / split / notice_titles）
   - 胶水：`plugins/platforms/feishu/adapter.py`（`send` try_auto_card / `send_card` / early-typing）；`gateway/run_turn.py`（`try_auto_card_on_end` + progress bubble 标记）
+  - **notice 卡规则**（`_DEFAULT_NOTICE_RULES`：前缀 → 标题 → 模板色）：recap 规则标题色 `template=orange`（橘黄；`yellow` 偏浅黄，2026-11-04）；前缀字面须与 overlay `notice_titles` 及 C13 各 kind 的 PREFIX 三处一致，否则旁白/告警不会升格为 notice 卡
   - 说明：`owner/docs/c11-feishu-auto-card-base.md`
-  - 测：`tests/owner/test_c11_auto_card.py`、`tests/owner/test_feishu_agent_end_media.py`
+  - 测：`tests/owner/test_c11_auto_card.py`（含 `recap["template"] == "orange"` 断言）、`tests/owner/test_feishu_agent_end_media.py`
   - 依赖：C04 已落地；卡发送复用官方 `_feishu_send_with_retry` / `_finalize_send_result`
 - [x] **C11-bot-menu** · 源 §4.6 · bot 菜单 menu_v6 + p2p 暖缓存 · **优先级：P1**（阶段三）· **已落地**
   - `owner/feishu/bot_menu.py`；adapter 注册/委托 + p2p/inbound cache warm；`overlay.yaml` → `feishu.bot_menu*`
@@ -479,7 +485,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - i18n：`gateway.resume.card_title`（en/zh）
   - 测：`tests/owner/test_c27_resume_card.py`；说明：`owner/docs/c27-resume-card.md`
   - 操作者鉴权：保留 clicker==owner（切会话 IDOR；与审批卡「由 xx 批准」展示不同）
-  - **UX harden（2026-10-28）**：`_submit_on_loop` 失败 → 失败卡（仿 C12）；成功点选后回冻卡 `build_done_card`（仿 model_picker confirm，防连点）；按钮 value 顺带 stash `session_title`
+  - **点选提交流程（2026-10-28）**：`_submit_on_loop` 失败 → 失败卡（仿 C12）；成功点选后回冻卡 `build_done_card`（仿 model_picker confirm，防连点）；按钮 value 顺带 stash `session_title`
 - [ ] **C11-diff** · 源 §4.4 · Feishu diff 卡 · **忽略（不做）**
 - [x] **C12** · 源 §4.10–4.15 · memory write-approval 卡 / feishu-guide / 上传守卫 / doc_read 图 OCR / @所有人 / merge_forward / **queue 状态卡** · **优先级：P1**（子点分批；已落地 C12-at-all + C12-upload-guard + C12-feishu-guide + C12-merge-forward-recv + C12-doc-ocr + **C12-queue-card**；**C12-memory-approval 忽略（不做）**）
   - [x] **C12-at-all** · 源 §4.14 · 群 `@_all`（@所有人）不再当提到自己 · **优先级：P2** · **已落地**
@@ -528,22 +534,24 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
     - 意图：busy 排队不再只有纯文本 ack；飞书发可操作状态卡（取消 / 立即执行 / 转向），引导卡 queue 提交变身同卡；空闲提交走 freeze + 跳过二次 dispatch
     - helper：`owner/feishu/queue_card.py`（建卡 / 回调 / send）；`owner/patches/queue_cancel_patch.py`（runtime patch `_enqueue_fifo` / `_dequeue_pending_event` / `_busy_queue_command`；token=`_owner_queue_token`）；`owner/feishu/steer_card.py`（guide morph + should_skip / notify）；`owner/feishu/card_sender.py`（`send_card_via_rest`）
     - 胶水：`plugins/platforms/feishu/adapter.py` `send_queue_status_card` / `_handle_queue_card_action` + `hermes_queue_card` 分支（`# [owner] C12-queue-card`）；`owner/owner-extensions` `apply_patch`
-    - **热修 2026-11-04**：`queue_cancel_patch.apply_patch` 禁止在插件 `register()` 里 `import gateway.run`（与主线程导入死锁 → `plugins.load_timeout_seconds` 弃载 owner-extensions → 飞书 bot menu `/providers` 报未知命令）；改为 `sys.modules.get` + 延迟 apply。生效需软重启 gateway。
+    - **patch 导入时机（2026-11-04）**：`queue_cancel_patch.apply_patch` 禁止在插件 `register()` 里 `import gateway.run`（与主线程导入死锁 → `plugins.load_timeout_seconds` 弃载 owner-extensions → 飞书 bot menu `/providers` 报未知命令）；改为 `sys.modules.get` + 延迟 apply。生效需软重启 gateway。
     - 设计：`owner/docs/design/queue-steer-lifecycle/queue-steer-lifecycle.md`
     - 测：`tests/owner/test_c12_queue_card.py`
     - 验证：`python -m pytest tests/owner/test_c12_queue_card.py -q`
     - 影响面：飞书 busy/queue 体验；其它平台仍文本 ack。v2 相对旧树：跳过 MemoryManager prefetch patch（官方已有 `_PREFETCH_GATE`）；i18n 键用 `gateway.queue.usage`；token 无绑定时允许按文案匹配以便 guide morph 复用卡
-    - 用户指示覆盖原「queue-card 不做」备注（2026-10-27）
-    - **harden（2026-10-27）**：`_enqueue_fifo` 整体 fail-open；overlay `feishu.queue_card.enabled`（默认 true）；guide submit `_submit_on_loop` 失败 → `coro.close()` + 失败卡（禁假「已排队」）。**操作者鉴权暂不做**（注释说明；靠「由 xx …」显示名，同审批卡思路）
+    - **范围决策（2026-10-27）**：用户指示覆盖原「queue-card 不做」备注
+    - **队列容错（2026-10-27）**：`_enqueue_fifo` 整体 fail-open；overlay `feishu.queue_card.enabled`（默认 true）；guide submit `_submit_on_loop` 失败 → `coro.close()` + 失败卡（禁假「已排队」）。**操作者鉴权暂不做**（注释说明；靠「由 xx …」显示名，同审批卡思路）
 - [x] **C13** · 源 §7.24–7.26 · progress / approval / english / **recap** explainer · **已落地** · 飞书底座（C04/C10/C11）已齐
   - **2026-11-03**：飞书审批冻结卡保留 C13 命令说明附录（send 写入 `_approval_state.body_text` → `build_resolved_card`）
   - **统一基建**：单一 `owner.explainers` 块 + `owner/explainers/`（config/llm/registry）；`register_kind` 可扩。详见「§ 二次开发可复用基建 §4」与 `owner/docs/c13-explainers.md`
   - **输入默认 64k**（`max_input_chars`）；按辅助模型 **≥256k** 上下文设计；`clip_input` 保尾截断
-  - **recap**：第四 kind；`/recap` 按需；notice `📋 系统提示：`；不写主会话
-  - **recap 自动**（对齐 Grok Build `session_recap.rs`）：`min_user_turns=3` + `idle_seconds=180`；回合结束后闲置触发；watermark 防刷；短会话不发；`explainers.recap.auto`；**已落地**
+  - **recap**：第四 kind；`/recap` 按需；notice `📋 系统提示：`（标题色 `template=orange`）；正文落 `messages`（`role=notice`）作审计，不入主会话模型；watermark 只管自动门控
+  - **recap 自动**（对齐 Grok Build `session_recap.rs`）：`min_user_turns=3` + `idle_seconds=180`；owner OR `min_assistant_chars=1500`（末条助手可见字数）；回合结束后闲置触发；watermark 防刷；`explainers.recap.auto`；**已落地**
+  - **2026-11-05**：recap auto 加字数 OR（`min_assistant_chars=1500`，末条助手可见正文）；单回合长答也可触发
   - **2026-11-03**：recap auto 路由挂点修：`pre_gateway_dispatch` 读 `event.source`；`on_session_end` 可用 session_store origin 回补（idle 阈值不变）
-  - **2026-11-05**：recap 提示词改为进度条文案（做到哪了/完成度/下一步），禁文件名/表 id 罗列；硬帽仍 350（`clean_output`）；正文仍不落盘、仅 watermark 回合数
-  - **2026-11-05 设计→已实现**：recap/progress/english 正文落盘同表 `messages`（`role=notice` + `display_kind`）；helper `owner/explainers/persist.py`；设计稿 `owner/docs/design/explainer-notice-persist/README.md`；**需软重启 gateway 后生效**
+  - **2026-11-04**：recap notice 卡标题色改橘黄（飞书 `template=orange`；`yellow` 偏浅黄），落点 `owner/feishu/auto_card.py` `_DEFAULT_NOTICE_RULES`
+  - **2026-11-05**：recap 提示词改为进度条文案（做到哪了/完成度/下一步），禁文件名/表 id 罗列；硬帽仍 350（`clean_output`）
+  - **2026-11-05 已实现**：recap/progress/english 正文落盘同表 `messages`（`role=notice` + `display_kind`）；helper `owner/explainers/persist.py`（`persist_notice`，fail-open；`owner_provider_name` 事后 UPDATE 补列）；trigger：recap `manual`/`auto`、progress `tick`、english `reply`；送模 / 导出 / TUI 一律排除 `role=notice`；设计稿 `owner/docs/design/explainer-notice-persist/README.md`；测 `tests/owner/test_c13_notice_persist.py`；**需软重启 gateway 后生效**
   - **统一约定（已敲定，代码已做）**：单一 `owner.explainers` 块 + 共享取模 helper；禁止各 kind 各写 provider/model。详见上方「§ 二次开发可复用基建 §4」。
   - 旧顶层 `progress_explainer` / `approval_explainer` / `english_explainer` → 迁入 `explainers.{progress,approval,english,recap}`；`call_llm(task=…_explainer)` 长 task 名保留
   - **已落地（H03 #3）**：progress/approval/english 输出帽读 `merged.get("max_output_chars")`（模块默认 900/800/1000 仍保留）；overlay `explainers.{progress,approval,english}.max_output_chars` 已补同值；recap 仍 350
@@ -576,17 +584,16 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - **未迁（明确不做）**：旧树 `openviking_owner_recall_patch` 召回卡发送/防抖/执行器；ChatLog 截断（仍仅旧树 bundled 插件侧）；`recall_card` overlay 段
 - [x] **C16** · 源 §7.4 · Cron env 隔离（ContextVar + restart scrub） · **优先级：P1** · **验证状态：官方已修 + 薄缺口已补（2026-10-30）**
   - v2：`gateway/session_context._VAR_MAP["HERMES_CRON_SESSION"]` + `cron/scheduler._CronRunScope` set/reset；gateway/ACP/TUI bind `cron_session=""`；`tools/approval_context` ContextVar 感知；外部 worker 剥离 presence vars。无进程级 `os.environ["HERMES_CRON_SESSION"]=1` 写入。
-  - **薄缺口已补**：`owner/cron/restart_scrub.py`（`owner_cron_scrub_process_env` / `owner_cron_scrub_watcher_env`）清 `HERMES_CRON_SESSION`/`HERMES_SESSION_KEY`/`HERMES_SESSION_ID`；胶水：`gateway/run.py`（dotenv 后）+ `gateway/run_shutdown._restart_watcher_env`。测：`tests/owner/test_c16_cron_env_scrub.py`。
+  - **env 残留清理**：`owner/cron/restart_scrub.py`（`owner_cron_scrub_process_env` / `owner_cron_scrub_watcher_env`）清 `HERMES_CRON_SESSION`/`HERMES_SESSION_KEY`/`HERMES_SESSION_ID`；胶水：`gateway/run.py`（dotenv 后）+ `gateway/run_shutdown._restart_watcher_env`。测：`tests/owner/test_c16_cron_env_scrub.py`。
 - [x] **C17** · 源 §8.1 · Checkpoint Mutation Predictor · **优先级：P1**（阶段一）
-  - [x] **C17 follow-up（2026-10-27）**：官方 `_REDIRECT_OVERWRITE` 不再把 `2>&1`/`>&2` 当成破坏性覆盖（消 checkpoint 误报）
+  - **破坏性覆盖判定（2026-10-27）**：官方 `_REDIRECT_OVERWRITE` 不再把 `2>&1`/`>&2` 当成破坏性覆盖（消 checkpoint 误报）
   - helper：`owner/checkpoint_predictor/`（`predict_and_checkpoint` / static_parser / llm_predict）
   - 配置：`owner/config/overlay.yaml` → `checkpoints.*`（predict_enabled / llm timeout / cache / static threshold）
   - 胶水：`agent/tool_executor.py` `_begin_tool_execution` terminal 分支（替换 destructive+cwd；保留 container skip）
   - 设计：`owner/docs/checkpoint-mutation-predictor.md`
   - 测：`tests/owner/test_checkpoint_predictor.py`
   - 依赖核验：无硬依赖未做定制；硬依赖 = 官方 CheckpointManager + 已落地 C01 `patch_config`；LLM（auxiliary `task=approval`）与 `_owner_warn_callback` 为软依赖 fail-open
-  - **2026-10-27 补丁**：`agent_init` 挂 `_owner_warn_callback=_emit_warning`；预测失败回落 `_emit_warning`；静态为空且 `_is_destructive_command` → cwd 窄兜底快照
-  - **2026-10-27 复审修**：① 静态+LLM 皆空时只读命令降 `logger.debug`，破坏性才用户可见 warn；② 破坏性 cwd 兜底跳过 home/`/`，且 `ensure_checkpoint` 返回 False 不算成功
+  - **预测失败 / 静态为空的告警与兜底（2026-10-27）**：`agent_init` 挂 `_owner_warn_callback=_emit_warning`；预测失败回落 `_emit_warning`；静态为空且 `_is_destructive_command` → cwd 窄兜底快照（跳过 home/`/`，`ensure_checkpoint` 返回 False 不算成功）；静态+LLM 皆空时只读命令降 `logger.debug`，破坏性才用户可见 warn
 - [x] **C18** · 源 §9.1 · per-chat display overrides · **优先级：P1** · **忽略（不做）**（2026-10-27 用户拍板）
   - 范围（未落地，仅记）：`owner/display_overrides.py` 机制 — `owner.display.per_chat.<platform>.<chat_id>.*` 覆盖显示族（示例 yaml：`tool_progress` / `streaming` / `interim_assistant_messages` / `tool_preview_length`；解析器还可覆盖 `show_reasoning`、`long_running_notifications`、`tool_progress_grouping` 等经 `resolve_display_setting_for_source` 的键）+ 多处 `source=` 透传胶水。**不是**只有 tool_progress/streaming 两项。
 - [x] **C19** · 源 §5 · 链式快捷命令 `;;` + Quick Alias · **优先级：P1**（阶段一）
@@ -605,10 +612,6 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 - [x] **C26-feishu-picker** · 源 §4.9 飞书半边 · `/providers` 交互卡（provider→model→确认）· **优先级：P1**（阶段三）· **已落地**
   - `owner/feishu/model_picker.py`；adapter `_model_picker_state` / `send_model_picker_card` / card-action `hermes_model_picker`
   - 测：`tests/owner/test_c26_model_picker.py`；说明：`owner/docs/c26-model-picker.md`
-- [x] **C27-resume-card** · 源漏记 · Feishu `/resume` 数字按钮交互卡 · **优先级：P1**（阶段三余量）· **已落地**
-  - `owner/feishu/resume_card.py`；adapter `send_resume_card` / card-action `resume_select`；slash 列表薄胶水；说明：`owner/docs/c27-resume-card.md`
-  - 测：`tests/owner/test_c27_resume_card.py`
-  - **UX harden（2026-10-28）**：`_submit_on_loop` 失败 → 失败卡（仿 C12）；成功点选后回冻卡 `build_done_card`（仿 model_picker confirm，防连点）；按钮 value 顺带 stash `session_title`
 - [x] **C21** · 源 §2.4–2.6 / §2.9 · 模型杂项 · **优先级：P1** · **忽略（不做）**（2026-10-27 用户拍板：MiniMax/Kimi 不要；其余官方/C10/C26 已覆盖或现网无感；§2.6 Qwen debris 若飞书再出现截断 thinking 再单开）
 
 ### P2 暂缓

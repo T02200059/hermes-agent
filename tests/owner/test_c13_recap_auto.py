@@ -11,6 +11,7 @@ import pytest
 
 def test_recap_gate_mirrors_grok():
     from owner.explainers.recap.gate import (
+        MIN_ASSISTANT_CHARS_FOR_AUTO_RECAP,
         MIN_TURNS_FOR_AUTO_RECAP,
         RECAP_MIN_IDLE_SECONDS,
         recap_gate,
@@ -18,12 +19,20 @@ def test_recap_gate_mirrors_grok():
 
     assert MIN_TURNS_FOR_AUTO_RECAP == 3
     assert RECAP_MIN_IDLE_SECONDS == 180
+    assert MIN_ASSISTANT_CHARS_FOR_AUTO_RECAP == 1500
     assert recap_gate(0, 0, auto=False, idle_ok=True) == "no main turns yet"
-    assert recap_gate(2, 0, auto=True, idle_ok=True) == "fewer than min turns for auto recap"
-    assert recap_gate(3, 0, auto=True, idle_ok=False) == "idle threshold not met"
+    assert recap_gate(2, 0, auto=True, idle_ok=True, min_assistant_chars=0) == "fewer than min turns for auto recap"
+    assert recap_gate(3, 0, auto=True, idle_ok=False, min_assistant_chars=0) == "idle threshold not met"
     assert recap_gate(3, 3, auto=True, idle_ok=True) == "no new main turn since last recap"
     assert recap_gate(3, 2, auto=True, idle_ok=True) is None
     assert recap_gate(1, 0, auto=False, idle_ok=False) is None  # manual exempt
+    # Owner OR: long latest assistant reply can pass with few turns
+    assert recap_gate(1, 0, auto=True, idle_ok=True, assistant_chars=2582) is None
+    assert recap_gate(1, 0, auto=True, idle_ok=True, assistant_chars=1499) == "fewer than min turns for auto recap"
+    assert (
+        recap_gate(1, 0, auto=True, idle_ok=True, assistant_chars=2582, min_assistant_chars=0)
+        == "fewer than min turns for auto recap"
+    )
 
 
 def test_watermark_roundtrip(tmp_path, monkeypatch):
@@ -51,20 +60,37 @@ def test_count_user_turns_skips_synthetic():
     assert count_user_turns(msgs) == 3
 
 
+def test_latest_assistant_chars():
+    from owner.explainers.recap.auto import latest_assistant_chars
+
+    msgs = [
+        {"role": "assistant", "content": ""},
+        {"role": "assistant", "content": "short"},
+        {"role": "user", "content": "q"},
+        {"role": "assistant", "content": "x" * 2582},
+    ]
+    assert latest_assistant_chars(msgs) == 2582
+    assert latest_assistant_chars([]) == 0
+
+
 def test_load_auto_config_defaults_and_overlay(monkeypatch):
     from owner.explainers.recap.auto import load_auto_config
     from owner.explainers import config as cfg_mod
 
-    auto = load_auto_config({"auto": {"enabled": True, "min_user_turns": 5, "idle_seconds": 30}})
+    auto = load_auto_config(
+        {"auto": {"enabled": True, "min_user_turns": 5, "idle_seconds": 30, "min_assistant_chars": 2000}}
+    )
     assert auto["min_user_turns"] == 5
     assert auto["idle_seconds"] == 30
+    assert auto["min_assistant_chars"] == 2000
     assert auto["enabled"] is True
 
-    # No overlay auto block → Grok defaults
+    # No overlay auto block → Grok turns/idle + owner char default
     monkeypatch.setattr(cfg_mod, "_raw_explainers", lambda: {"recap": {"enabled": True}})
     bare = load_auto_config({})
     assert bare["min_user_turns"] == 3
     assert bare["idle_seconds"] == 180
+    assert bare["min_assistant_chars"] == 1500
 
 
 def test_schedule_cancel_before_fire():
@@ -131,7 +157,7 @@ def test_run_auto_recap_respects_gate(tmp_path, monkeypatch):
     ]
     with patch("owner.explainers.recap.command._load_messages", return_value=msgs), patch.object(
         auto_mod, "resolve_enabled", return_value=True
-    ), patch.object(auto_mod, "load_auto_config", return_value={"enabled": True, "min_user_turns": 3, "idle_seconds": 180}):
+    ), patch.object(auto_mod, "load_auto_config", return_value={"enabled": True, "min_user_turns": 3, "idle_seconds": 180, "min_assistant_chars": 0}):
         # only 2 turns → skip
         assert auto_mod.run_auto_recap("s", platform="feishu", chat_id="c", idle_ok=True) is None
 
@@ -140,7 +166,7 @@ def test_run_auto_recap_respects_gate(tmp_path, monkeypatch):
     with patch("owner.explainers.recap.command._load_messages", return_value=msgs), patch.object(
         auto_mod, "resolve_enabled", return_value=True
     ), patch.object(
-        auto_mod, "load_auto_config", return_value={"enabled": True, "min_user_turns": 3, "idle_seconds": 180}
+        auto_mod, "load_auto_config", return_value={"enabled": True, "min_user_turns": 3, "idle_seconds": 180, "min_assistant_chars": 0}
     ), patch.object(auto_mod, "explain_from_messages", return_value="我们做了三件事"), patch.object(
         auto_mod, "_send_notice", return_value=True
     ) as send:
@@ -153,10 +179,36 @@ def test_run_auto_recap_respects_gate(tmp_path, monkeypatch):
     with patch("owner.explainers.recap.command._load_messages", return_value=msgs), patch.object(
         auto_mod, "resolve_enabled", return_value=True
     ), patch.object(
-        auto_mod, "load_auto_config", return_value={"enabled": True, "min_user_turns": 3, "idle_seconds": 180}
+        auto_mod, "load_auto_config", return_value={"enabled": True, "min_user_turns": 3, "idle_seconds": 180, "min_assistant_chars": 0}
     ), patch.object(auto_mod, "_send_notice") as send2:
         assert auto_mod.run_auto_recap("s", platform="feishu", chat_id="c", idle_ok=True) is None
         send2.assert_not_called()
+
+
+def test_run_auto_recap_char_or_allows_short_session(tmp_path, monkeypatch):
+    """1 user turn + long final assistant reply (≥1500) passes auto gate."""
+    from owner.explainers.recap import auto as auto_mod
+    from owner.explainers.recap import watermark as wm
+
+    monkeypatch.setattr(wm, "_root", lambda: tmp_path)
+    long_body = "答" * 1600
+    msgs = [
+        {"role": "user", "content": "分析一下"},
+        {"role": "assistant", "content": long_body},
+    ]
+    with patch("owner.explainers.recap.command._load_messages", return_value=msgs), patch.object(
+        auto_mod, "resolve_enabled", return_value=True
+    ), patch.object(
+        auto_mod,
+        "load_auto_config",
+        return_value={"enabled": True, "min_user_turns": 3, "idle_seconds": 180, "min_assistant_chars": 1500},
+    ), patch.object(auto_mod, "explain_from_messages", return_value="已核对口径，下一步等你确认"), patch.object(
+        auto_mod, "_send_notice", return_value=True
+    ) as send:
+        body = auto_mod.run_auto_recap("s-long", platform="feishu", chat_id="c", idle_ok=True)
+        assert body and body.startswith("📋 系统提示：")
+        assert wm.load_recap_watermark("s-long") == 1
+        send.assert_called_once()
 
 
 def test_note_manual_recap_bumps_watermark(tmp_path, monkeypatch):

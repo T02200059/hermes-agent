@@ -8,8 +8,9 @@ completed turn** as the end of a long chat:
 2. New inbound (``pre_gateway_dispatch``) or ``agent_loop_stopped`` cancels it.
 3. Timer fires → gate (min user turns + watermark) → same notice as ``/recap``.
 
-Defaults match Grok: ``min_user_turns=3``, ``idle_seconds=180``. Config under
-``explainers.recap.auto`` in overlay.yaml.
+Defaults match Grok for turns/idle: ``min_user_turns=3``, ``idle_seconds=180``.
+Owner OR: ``min_assistant_chars=1500`` (latest visible assistant reply length;
+0 disables). Config under ``explainers.recap.auto`` in overlay.yaml.
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ from owner.explainers.common import normalize_platform
 from owner.explainers.config import load_kind_config, resolve_enabled
 from owner.explainers.recap.explain import explain_from_messages
 from owner.explainers.recap.gate import (
+    MIN_ASSISTANT_CHARS_FOR_AUTO_RECAP,
     MIN_TURNS_FOR_AUTO_RECAP,
     RECAP_MIN_IDLE_SECONDS,
     recap_gate,
@@ -36,6 +38,7 @@ _AUTO_DEFAULTS: dict[str, Any] = {
     "enabled": True,
     "min_user_turns": MIN_TURNS_FOR_AUTO_RECAP,
     "idle_seconds": RECAP_MIN_IDLE_SECONDS,
+    "min_assistant_chars": MIN_ASSISTANT_CHARS_FOR_AUTO_RECAP,
 }
 
 # Synthetic / control prefixes — not real user main turns (align C15 guard).
@@ -83,7 +86,11 @@ def load_auto_config(cfg: Optional[dict[str, Any]] = None) -> dict[str, Any]:
             pass
     if "enabled" in raw_auto:
         merged["enabled"] = bool(raw_auto.get("enabled"))
-    for key, default in (("min_user_turns", MIN_TURNS_FOR_AUTO_RECAP), ("idle_seconds", RECAP_MIN_IDLE_SECONDS)):
+    for key, default in (
+        ("min_user_turns", MIN_TURNS_FOR_AUTO_RECAP),
+        ("idle_seconds", RECAP_MIN_IDLE_SECONDS),
+        ("min_assistant_chars", MIN_ASSISTANT_CHARS_FOR_AUTO_RECAP),
+    ):
         if key in raw_auto:
             try:
                 merged[key] = max(0, int(raw_auto[key]))
@@ -93,6 +100,9 @@ def load_auto_config(cfg: Optional[dict[str, Any]] = None) -> dict[str, Any]:
         merged["min_user_turns"] = MIN_TURNS_FOR_AUTO_RECAP
     if merged["idle_seconds"] < 0:
         merged["idle_seconds"] = RECAP_MIN_IDLE_SECONDS
+    # 0 keeps the char OR path disabled (pure Grok turns gate).
+    if merged["min_assistant_chars"] < 0:
+        merged["min_assistant_chars"] = MIN_ASSISTANT_CHARS_FOR_AUTO_RECAP
     return merged
 
 
@@ -124,6 +134,35 @@ def count_user_turns(messages: list[Any]) -> int:
         # purposes (user actively engaged); count it.
         n += 1
     return n
+
+
+def _content_chars(content: Any) -> int:
+    """Visible text length for one message content field."""
+    if isinstance(content, list):
+        parts: list[str] = []
+        for part in content:
+            if isinstance(part, str):
+                parts.append(part)
+            elif isinstance(part, dict) and part.get("type") in {"text", "input_text"}:
+                parts.append(str(part.get("text") or ""))
+        return len("".join(parts).strip())
+    if content is None:
+        return 0
+    return len(str(content).strip())
+
+
+def latest_assistant_chars(messages: list[Any]) -> int:
+    """Length of the latest non-empty assistant reply (user-visible final text)."""
+    last = 0
+    for msg in messages or []:
+        if not isinstance(msg, dict):
+            continue
+        if str(msg.get("role") or "").strip().lower() != "assistant":
+            continue
+        n = _content_chars(msg.get("content"))
+        if n > 0:
+            last = n
+    return last
 
 
 def register_hooks(ctx: Any) -> None:
@@ -371,8 +410,11 @@ def _on_session_end(**kwargs: Any) -> None:
             session_id,
             platform=platform,
             chat_id=chat_id,
-            idle_seconds=float(auto_cfg["idle_seconds"]),
-            min_user_turns=int(auto_cfg["min_user_turns"]),
+            idle_seconds=float(auto_cfg.get("idle_seconds", RECAP_MIN_IDLE_SECONDS)),
+            min_user_turns=int(auto_cfg.get("min_user_turns", MIN_TURNS_FOR_AUTO_RECAP)),
+            min_assistant_chars=int(
+                auto_cfg.get("min_assistant_chars", MIN_ASSISTANT_CHARS_FOR_AUTO_RECAP)
+            ),
         )
     except Exception:
         logger.debug("recap_auto on_session_end failed", exc_info=True)
@@ -399,6 +441,7 @@ def schedule_auto_recap(
     chat_id: str,
     idle_seconds: float = RECAP_MIN_IDLE_SECONDS,
     min_user_turns: int = MIN_TURNS_FOR_AUTO_RECAP,
+    min_assistant_chars: int = MIN_ASSISTANT_CHARS_FOR_AUTO_RECAP,
 ) -> None:
     """Cancel any prior timer and schedule a new idle auto-recap."""
     global _EPOCH
@@ -423,6 +466,11 @@ def schedule_auto_recap(
                     platform=str(entry.get("platform") or platform),
                     chat_id=str(entry.get("chat_id") or chat_id),
                     min_user_turns=int(entry.get("min_user_turns") or min_user_turns),
+                    min_assistant_chars=int(
+                        entry.get("min_assistant_chars")
+                        if entry.get("min_assistant_chars") is not None
+                        else min_assistant_chars
+                    ),
                     idle_ok=True,
                 )
             except Exception:
@@ -436,6 +484,7 @@ def schedule_auto_recap(
             "platform": platform,
             "chat_id": chat_id,
             "min_user_turns": min_user_turns,
+            "min_assistant_chars": min_assistant_chars,
         }
         timer.start()
     logger.debug(
@@ -473,6 +522,7 @@ def run_auto_recap(
     platform: str,
     chat_id: str,
     min_user_turns: int = MIN_TURNS_FOR_AUTO_RECAP,
+    min_assistant_chars: int = MIN_ASSISTANT_CHARS_FOR_AUTO_RECAP,
     idle_ok: bool = True,
 ) -> Optional[str]:
     """Gate + generate + send. Returns delivery body or None. Updates watermark on success."""
@@ -486,6 +536,11 @@ def run_auto_recap(
     if not auto_cfg.get("enabled", True):
         return None
     need = int(auto_cfg.get("min_user_turns") or min_user_turns)
+    need_chars = int(
+        auto_cfg["min_assistant_chars"]
+        if "min_assistant_chars" in auto_cfg
+        else min_assistant_chars
+    )
 
     from owner.explainers.recap.command import _load_messages
 
@@ -496,13 +551,23 @@ def run_auto_recap(
         return None
 
     turns = count_user_turns(messages)
+    chars = latest_assistant_chars(messages)
     last = load_recap_watermark(sid)
-    reason = recap_gate(turns, last, auto=True, idle_ok=idle_ok, min_user_turns=need)
+    reason = recap_gate(
+        turns,
+        last,
+        auto=True,
+        idle_ok=idle_ok,
+        min_user_turns=need,
+        assistant_chars=chars,
+        min_assistant_chars=need_chars,
+    )
     if reason:
         logger.debug(
-            "recap_auto skipped session=%s turns=%s last=%s reason=%s",
+            "recap_auto skipped session=%s turns=%s chars=%s last=%s reason=%s",
             sid,
             turns,
+            chars,
             last,
             reason,
         )
@@ -539,9 +604,10 @@ def run_auto_recap(
 
     save_recap_watermark(sid, turns)
     logger.info(
-        "recap_auto sent session=%s turns=%s platform=%s",
+        "recap_auto sent session=%s turns=%s chars=%s platform=%s",
         sid,
         turns,
+        chars,
         plat,
     )
     return body

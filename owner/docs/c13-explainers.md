@@ -1,6 +1,6 @@
 # C13 · 统一 explainers（progress / approval / english / recap）
 
-状态：**已落地**（含第四 kind `recap`；本地 commit；未要求前不 push）
+状态：**已落地**（含第四 kind `recap`；正文落盘审计已实现；分支 `v2` tip `ad76168735`，已双推 `origin`/`gitlab`）
 
 ## 做什么
 
@@ -11,7 +11,7 @@
 | `progress` | 沉默期进度旁白；`stream_guard.snapshot.tripped` 时让位 | `🧭 系统提示：` → notice 卡 |
 | `approval` | 审批卡发出前 2–3 句事实解说；**绝不建议批/拒**；fail-open | 嵌进飞书审批卡正文；**批准/拒绝冻结卡仍保留该附录**（`body_text` 经 `_approval_state`） |
 | `english` | `display.language=zh` 且终局整段英文 → 侧路中文解说；**不改原文** | `🔤 系统提示：` → notice 卡 |
-| `recap` | 按需 `/recap` + **长对话闲置自动**：压平 User/Agent → **进度条文案**（做到哪了/完成度/下一步；勿列文件清单） | `📋 系统提示：` → notice 卡；**不写主会话模型历史**（仅 watermark 回合数） |
+| `recap` | 按需 `/recap` + **长对话闲置自动**：压平 User/Agent → **进度条文案**（做到哪了/完成度/下一步；勿列文件清单） | `📋 系统提示：` → notice 卡（标题色 `template=orange`）；**正文落 `messages`（`role=notice`）作审计，不入主会话模型历史**；watermark 只管自动门控 |
 
 ## 上下文与输入预算
 
@@ -19,7 +19,7 @@
 - **输入默认**：共用 `explainers.max_input_chars: 64000`（各 kind 可覆盖）。
 - 截断策略：优先保留**尾部**（近轮对话 / 近证据）；见 `owner.explainers.common.clip_input`。
 - 输出帽（已落地）：progress `max_tokens=400` / `max_output_chars=900`；approval `400` / `800`；english `450` / `1000`；recap `260` / `max_output_chars=350`（硬截断 +「…」；提示词要求 ≤220 汉字的进度文案，避免半句被砍）。**仅 `max_output_chars` 可经 yaml/registry 配置**；各 kind 的 `max_tokens` / `_MAX_TOKENS` **仍硬编码**（改码才动）。共享 `call_explainer_llm` 默认 `max_tokens=400`、`clean_output` 默认 1000。
-- **recap / progress / english 落盘（2026-11-05）**：send 成功后写入 `messages`（`role=notice`，`display_kind`=kind）；渠道记 `owner_provider_name` + `display_metadata`；导出/TUI 不展示。设计稿 `design/explainer-notice-persist/`。watermark 仍只管 recap 门控。
+- **recap / progress / english 落盘（2026-11-05）**：send 成功后写入 `messages`（`role=notice`，`display_kind`=kind）；渠道记 `owner_provider_name` + `display_metadata`；送模 / 导出 / TUI 一律排除 notice。helper `owner/explainers/persist.py`（`persist_notice`，fail-open）；trigger：recap `manual`/`auto`、progress `tick`、english `reply`。设计稿 `design/explainer-notice-persist/`。watermark 仍只管 recap 门控。
 - **recap 文案取向（2026-11-05）**：进度/完成度/下一步；禁止文件名、表 id、测试条数等变更清单式罗列；硬帽仍 350。
 - **告警前缀 = notice 匹配键**：如默认 `💡 [stream-guard]` 须与 `overlay.yaml` → `feishu_card.notice_titles` 以及 `owner/feishu/auto_card.py` 内置表字面一致；改前缀要三处同步，否则旁白/告警不会升格为 notice 卡。`💡 [output-guard]` 有用户可见串，但**不在** `notice_titles`（多半内嵌正文末尾，不单独发卡）。
 
@@ -57,7 +57,7 @@ explainers:
 
 - 注册：`owner/owner-extensions` → `register_command("recap", …)`
 - 路径：`SessionDB` 读当前 `session_id` transcript → `flatten_messages` → `call_explainer_llm("recap", …)` → `📋 系统提示：…`
-- 飞书：`feishu_card.notice_titles` 已含该前缀 → auto-card notice。
+- 飞书：`feishu_card.notice_titles` 已含该前缀 → auto-card notice；标题色 `template=orange`（橘黄；`yellow` 偏浅黄），改色只动 `owner/feishu/auto_card.py` 的 `_DEFAULT_NOTICE_RULES`。
 - 成功后写入 watermark（`~/.hermes/owner/recap_watermarks/<session_id>`），避免紧接着再自动发一次。
 
 ## 长对话结束自动 recap（对齐 Grok Build）
@@ -67,11 +67,12 @@ explainers:
 
 | 常量 | 值 | 含义 |
 |---|---|---|
-| `MIN_TURNS_FOR_AUTO_RECAP` | **3** | 至少 3 个真实用户主回合才自动 |
+| `MIN_TURNS_FOR_AUTO_RECAP` | **3** | 至少 3 个真实用户主回合才自动（turns 路径） |
 | `RECAP_MIN_IDLE` | **180s**（`3 * 60`） | 闲置阈值；shell 从上次模型请求计，daemon 从回合结束计 |
+| `MIN_ASSISTANT_CHARS_FOR_AUTO_RECAP` | **1500**（owner OR） | 末条可见 assistant 回复字数 ≥ 此值也可自动；`0` 关闭 |
 | watermark 文件 | `last_recap_main_turn` | 成功（或超长抑制展示）后写入；无新主回合不重复自动 |
 
-门控失败原因（与上游字符串一致）：`no main turns yet` / `fewer than min turns for auto recap` / `idle threshold not met` / `no new main turn since last recap`。
+门控失败原因（turns 路径与上游字符串一致）：`no main turns yet` / `fewer than min turns for auto recap` / `idle threshold not met` / `no new main turn since last recap`。字数 OR 未达标时复用 turns-short 原因串。
 
 **Hermes 适配（飞书无 TUI 焦点）**：把「从闲置回来」映射为「一轮正常结束后安静 `idle_seconds`」——
 
@@ -89,11 +90,12 @@ explainers:
     enabled: true
     auto:
       enabled: true
-      min_user_turns: 3   # = Grok MIN_TURNS_FOR_AUTO_RECAP
-      idle_seconds: 180   # = Grok RECAP_MIN_IDLE
+      min_user_turns: 3      # = Grok MIN_TURNS_FOR_AUTO_RECAP
+      idle_seconds: 180      # = Grok RECAP_MIN_IDLE
+      min_assistant_chars: 1500  # owner OR；0=关闭
 ```
 
-短会话（<3 用户回合）不触发；同一段落内不重复自动。手动 `/recap` 仍即时可用且会抬高 watermark。
+触发条件（idle 到期后）：有新主回合，且 **turns≥3 或 末条助手可见字数≥1500**。短短答仍不触发；同一段落内不重复自动。手动 `/recap` 仍即时可用且会抬高 watermark。
 - 失败 fail-open（返回短状态文案，不抛）。
 
 ## 扩展更多 kind
@@ -108,7 +110,7 @@ register_kind("summary", defaults={"enabled": False, "platforms": {}})
 
 ## 模块
 
-- 共享：`owner/explainers/{common,config,llm,registry,__init__}.py`
+- 共享：`owner/explainers/{common,config,llm,registry,persist,__init__}.py`（`persist.py` = notice 落盘 helper）
 - kind：`owner/explainers/{progress,approval,english,recap}/`
 - 胶水：`gateway/run_turn.py`（progress）、`plugins/platforms/feishu/adapter.py`（approval 嵌卡）、`owner/owner-extensions/__init__.py`（progress/english hooks + `/recap`）
 
@@ -120,8 +122,8 @@ register_kind("summary", defaults={"enabled": False, "platforms": {}})
 ## 验证
 
 ```bash
-cd ~/.hermes/hermes-agent-v2
-PYTHONPATH=. python -m pytest tests/owner/test_c13_explainers.py -q
+cd ~/.hermes/hermes-agent          # 分支 v2
+PYTHONPATH=. python -m pytest tests/owner/test_c13_explainers.py tests/owner/test_c13_notice_persist.py tests/owner/test_c11_auto_card.py -q
 ```
 
 ## 旁白中文门（输出语言）
