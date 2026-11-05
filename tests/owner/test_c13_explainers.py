@@ -367,6 +367,20 @@ def test_recap_command_disabled():
         out = asyncio.run(handle_recap_command("", session_id="s1", platform="feishu"))
     assert "未启用" in out
 
+def test_recap_prompt_is_progress_style_not_changelog():
+    """Recap should emphasize status/completion/next, not file inventories."""
+    from owner.explainers.recap.prompt import build_messages
+
+    msgs = build_messages("User: 继续\nAgent: 好")
+    system = msgs[0]["content"]
+    user = msgs[1]["content"]
+    assert "status note" in system
+    assert "Do NOT list filenames" in system
+    assert "≤220" in system or "220" in system
+    assert "进度回顾" in user
+    assert "不要罗列文件名" in user
+
+
 def test_explainer_output_caps_defaults():
     """Chinese-friendly output caps; recap stays short (~二三百汉字)."""
     import importlib
