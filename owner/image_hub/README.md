@@ -14,7 +14,7 @@ DashScope multimodal-generation 与 OpenAI 兼容生图后端。保留原协议�
 
 - 用户级 backend：`~/.hermes/plugins/image-hub` 为指向仓内绝对路径 `owner/image_hub` 的目录 symlink，仍受 `plugins.enabled` 独立开关控制。不要放入 bundled `plugins/`，以免绕过用户级开关。
 - 旧实现归档到 `~/.hermes/backups/image-hub-pre-overlay-20261106-113253`，不在插件扫描目录。
-- **软重启 gateway 后才生效；本轮未重启、未发付费生图、未发飞书图片。** 旧进程仍持有旧代码，运行期间 `~/.hermes/patch.yaml` 软链保留。
+- **已软重启并完成飞书真实生图验收**（2026-11-06）。`~/.hermes/patch.yaml` 软链已撤（备份在 `~/.hermes/backups/patch.yaml.symlink-pre-remove-20261106`）。
 - reload 出现错误时关闭 `image-hub` 插件或软重启，再用存档恢复插件路径；恢复后需再次软重启。新配置无需回滚凭据。
 
 ## 验收范围

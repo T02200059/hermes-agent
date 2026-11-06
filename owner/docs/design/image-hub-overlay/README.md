@@ -1,6 +1,6 @@
 # image-hub 迁移 overlay / 官方 image-gen 能力
 
-状态：**代码 / mock / 隔离发现已完成，待软重启与生产验收**（2026-11-06；未重启，未做付费生图）
+状态：**已完成**（2026-11-06；软重启 + 飞书真实生图验收通过；`~/.hermes/patch.yaml` 软链已撤）
 实现：`25d883e93b`（代码与测试）；文档下一条 tip 快照提交。
 调研依据：本仓 v2 `f3ed6e4055`；上游 `main` `44ec783afd1193afb7576d9c01d7fe9d18c87339`（`git ls-remote upstream`，2026-11-06 查）。
 
@@ -50,12 +50,14 @@
 - [x] 用户级 backend 官方 `PluginManager.discover_and_load()` 与 disabled gate，和 owner-extensions 共存；隔离 HERMES_HOME 验证，不接触实际密钥。迁移及官方生图 / overlay 相关 **43 测通过**（最终代码）。
 - [x] `~/.hermes/plugins/image-hub` 已改为指向仓内 `owner/image_hub` 的绝对目标目录链接，保留独立 `plugins.enabled` 开关。旧目录归档至 `~/.hermes/backups/image-hub-pre-overlay-20261106-113253`，不在插件扫描目录下。
 
-待办 / 边界：
+生产验收（2026-11-06 续）：
 
-- [ ] **需软重启 gateway**：当前进程持有旧 provider 代码。新 provider 读取、schema / dispatch 与插件启停均要软重启后生效。本轮未重启。
-- [ ] 软重启后做实际插件注册 / schema 检查、mock 生图与真实飞书投图验收；付费真实生图本轮未执行。
-- [ ] **本轮不能撤 `~/.hermes/patch.yaml` 软链**：旧进程在重启前仍可能读取它。软重启及生产验收后再核运行时读者，最后解绑。
-- [ ] `owner/patch_config.py` 改用仓内 `utils.fast_safe_load`（项目锁定 ruamel 的 YAML 支持），修正规 runner 中原有 overlay 测失败；未新增依赖。
+- [x] 软重启 gateway（PID 36885；飞书 12:02:04 上海时区已连；tip `bea9b4a508`）。
+- [x] 飞书真实文生图验收通过：默认 `dashscope-qwen` → `cache/generated/images/imagehub_qwen-image-2.0_…png`，日志 `Sending image:`。
+- [x] 核运行时无 `patch.yaml` 读者（`patch_config` / `image_hub` 只读 overlay）；已将 `~/.hermes/patch.yaml` 软链移至 `~/.hermes/backups/patch.yaml.symlink-pre-remove-20261106`（目标仍指向老 `hermes-agent-owner/.../patch.yaml`，仅作备份）。
+- [x] `owner/patch_config.py` 已用仓内 `utils.fast_safe_load`（项目锁定 ruamel）；未新增依赖。
+
+仍保留：`~/.hermes/patch_feishu_profile.yaml`（LDAP / skill_approval 回落，与本迁移无关）。
 
 部署回滚：将原插件目录从上述备份恢复为 `~/.hermes/plugins/image-hub` 后软重启；新版配置没有迁移或复制凭据，无需改 key。
 
