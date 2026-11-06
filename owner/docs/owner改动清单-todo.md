@@ -10,7 +10,7 @@
 | 源清单 | `/Users/yangtb/.hermes/hermes-agent/owner/docs/owner改动清单.md` |
 | 源仓 tip | `299e23205b66df082a2615aa1a4f3ed1edc69d25` |
 | v2 worktree | `/Users/yangtb/.hermes/hermes-agent`（主 worktree 检出分支 `v2`；`owner` 分支另在 `hermes-agent-owner`） |
-| v2 分支 tip（快照） | `30e23888b7`（已双推 `origin`/`gitlab` 的 `v2`；SHA 随提交前进，以 `git log -1` 为准） |
+| v2 分支 tip（快照） | `cc2ed00a5b`（已双推 `origin`/`gitlab` 的 `v2`；SHA 随提交前进，以 `git log -1` 为准） |
 | v2 tip（官方 main 基点） | `3ba2b0787ed3a73ec3b08085ed0137f235209cf4` |
 | 规范 | 同目录 `二次开发规范.md` |
 | 实现顺序 | 同目录 `v2实现顺序.md` |
