@@ -1,16 +1,16 @@
-# C05 · 飞书多 profile 舰队路由（初步设计稿）
+# C05 · 飞书多 profile 舰队路由（设计与生产验收）
 
-> 状态：**配置结构已定稿**（2026-10-28），**C05a 已 push**；**C05b 计划已更新**见 [c05b-node010-plan.md](./c05b-node010-plan.md)（2026-11-06 拍板 tip `7be19213ff`；B1 草稿+预切流备份已就绪；**未**切生产）。  
+> 状态：**C05a / C05b 已完成**（2026-11-06）。node010 已启用正式 overlay，13 个 LDAP uid 短名容器完成切流；三层挂载已按 `fleet_add` O3 对齐，compose 软链、叠挂探针与 `/health` **13/13 = 200** 均验收通过。切流与三层窗口内未无故重启 Hub。详见 [c05b-node010-plan.md](./c05b-node010-plan.md)。
 > 依据：node010 现网拓扑 + 挂载规范 + **按人 `fleet_profiles` 主结构** + overlay 节名 + 方案② HTTP 舰队路由 + `二次开发规范.md` v2 基线。
 
 ## 意图
 
-同一飞书 bot 的 WebSocket 只由 **Hub gateway** 持有；按飞书 `open_id` / `chat_id` 把入站消息 **HTTP 转发**到各人独立的 Hermes 进程（Docker profile 容器）。  
+同一飞书 bot 的 WebSocket 只由 **Hub gateway** 持有；按飞书 `open_id` / `chat_id` 把入站消息 **HTTP 转发**到各人独立的 Hermes 进程（Docker profile 容器）。
 配置进 **`overlay.yaml`**。本轮 **不做 LDAP / `api_identity` 加载**（C06）；身份与目录、endpoints 在配置形状上已收成 **按人一张卡片**。
 
 **不**用官方同进程 `gateway.multiplex_profiles` / `gateway.profile_routes` 替代舰队；二者正交（见下）。
 
-**相关**：[舰队开户链路（fleet add）](./fleet-add.md) — 对话触发、Hermes 编排的加人设计；**O1–O5 已落地**（含对话 UX：现网 `xy-user-onboarding` 只编排 → `fleet_add`；skill 仓外）；**未**生产切流。
+**相关**：[舰队开户链路（fleet add）](./fleet-add.md) — 对话触发、Hermes 编排的加人设计；**O1–O5 已落地**（含对话 UX：现网 `xy-user-onboarding` 只编排 → `fleet_add`；skill 仓外）；现网 compose 与三层挂载已按同一 O3 约定对齐。
 
 ## 已拍板（本讨论收敛）
 
@@ -72,7 +72,7 @@ Docker hermes-<ldap_uid> ×N（容器内 uid0，自认 root）
 
 ## 配置主结构：按人 `fleet_profiles`（已拍板）
 
-**键 = LDAP uid = 逻辑 profile = 默认 passwd 名。**  
+**键 = LDAP uid = 逻辑 profile = 默认 passwd 名。**
 每人一张卡片；飞书只做 `ou_*`→uid 的映射；endpoints / 目录 / hub 白名单都从人卡推导或读取。
 
 ### 完整示意 yaml（假数据；真值留部署机）
@@ -96,8 +96,8 @@ fleet_profiles:
       #   hermes_dir = /data/hermes/profiles/yangtb
       #   home_dir   = /home/yangtb
       # 历史目录例外才写：
-      hermes_dir: /data/hermes/profiles/yangtianbao   # → /root/.hermes
-      home_dir: /home/yangtianbao                     # → /root
+      hermes_dir: /data/hermes/profiles/yangtb   # → /root/.hermes（与省略推导一致）
+      home_dir: /home/yangtb                     # → /root（与省略推导一致）
     api_server:
       url: http://127.0.0.1:26027
       api_key: "example-key-not-real"
@@ -105,11 +105,11 @@ fleet_profiles:
       feishu: false                    # true = 飞书入站留 Hub，不转发（测试白名单）
       api: false                       # true = API/X-Hermes-Identity 留 Hub（C06）
 
-  liruiyang:
-    display_name: 李瑞阳
+  gaor:
+    display_name: 高蓉
     # ldap.uid / docker.* 全省略 → 路径与 uid 对齐
     api_server:
-      url: http://127.0.0.1:26028
+      url: http://127.0.0.1:26037
       api_key: "example-key-not-real"
     hub_only:
       feishu: false
@@ -143,7 +143,7 @@ feishu:
         # 值必须是 fleet_profiles 的键（LDAP uid）
         user_profile_routes:
           ou_alice: yangtb
-          ou_bob: liruiyang
+          ou_bob: gaor
 
         default_profile: fleet_default
 
@@ -175,23 +175,23 @@ feishu:
 | `hub_only.api: true` | 该用户 API 身份 **留 Hub**（等价旧 `identity_whitelist`） |
 | 两者可独立 | 例如只测飞书留 Hub、API 仍反代，或反过来 |
 
-解析飞书入站时（C05）：若命中 profile 且 `hub_only.feishu`，视为「无路由 / Hub 本地」。  
+解析飞书入站时（C05）：若命中 profile 且 `hub_only.feishu`，视为「无路由 / Hub 本地」。
 （open_id→uid 仍靠 `user_profile_routes`；`hub_only` 挂在 uid 上，比「两张平行 ou/uid 表」好找。）
 
 ### 推导规则
 
-- **endpoints**：`fleet_profiles[name].api_server` → `{url, api_key}`；缺 `api_server` 且已命中候选 profile → **ERROR + 拒绝并通知用户，绝不回落 Hub 本地**（与「绑定用户绝不回落」一致；实现返回 `(profile, "", "")`，由 `try_route_*` 停本地并通知）。  
-- **默认路径**：未写 `docker.hermes_dir` → `/data/hermes/profiles/<uid>`；未写 `docker.home_dir` → `/home/<uid>`。  
+- **endpoints**：`fleet_profiles[name].api_server` → `{url, api_key}`；缺 `api_server` 且已命中候选 profile → **ERROR + 拒绝并通知用户，绝不回落 Hub 本地**（与「绑定用户绝不回落」一致；实现返回 `(profile, "", "")`，由 `try_route_*` 停本地并通知）。
+- **默认路径**：未写 `docker.hermes_dir` → `/data/hermes/profiles/<uid>`；未写 `docker.home_dir` → `/home/<uid>`。
 - **逻辑名**：路由表值、compose 服务名、passwd 默认均用 uid；目录例外只写在 `docker.*`。
 
 ### 解析优先级（飞书入站 / C05）
 
-1. 解析候选 profile：`chat_profile_routes` → `user_profile_routes` → `default_profile`  
-2. 若候选 ∈ 飞书 open_id whitelist **或** 对应人卡 `hub_only.feishu`（DM）→ Hub 本地  
-3. 用候选名查 `fleet_profiles[…].api_server` → HTTP 转发  
+1. 解析候选 profile：`chat_profile_routes` → `user_profile_routes` → `default_profile`
+2. 若候选 ∈ 飞书 open_id whitelist **或** 对应人卡 `hub_only.feishu`（DM）→ Hub 本地
+3. 用候选名查 `fleet_profiles[…].api_server` → HTTP 转发
 4. **无候选** → Hub 本地；**有候选但无 endpoint** → ERROR + 通知用户、**不**回落 Hub（已钉死，2026-10-29）
 
-群聊跳过「按人 feishu hub_only / open_id whitelist」的 DM 语义，直接走 chat→user→default（与现网一致）。  
+群聊跳过「按人 feishu hub_only / open_id whitelist」的 DM 语义，直接走 chat→user→default（与现网一致）。
 **C05 不走** `hub_only.api` / LDAP / 旧 `identity_*`。
 
 ### 相对旧 patch / 方案 A 的改进
@@ -204,9 +204,9 @@ feishu:
 | 目录 map 另开 `fleet_dirs` / 开放项 | **`docker.hermes_dir` / `home_dir`** 收人卡 |
 | 测试白名单两张表难找 | **按人 `hub_only`，飞书/API 可分开** |
 
-## 现状 vs 目标
+## 切流前现状 vs 已落地目标
 
-| | 现网（node010 历史） | 目标 |
+| | node010 历史 | C05b 后现网 |
 |--|--|--|
 | 数据面 | `/home/<name>/.hermes` 整挂 `/root` | `profiles/<uid>` → `/root/.hermes`；home 另挂 `/root` |
 | 路由配置主源 | `patch_feishu_profile.yaml` | **`overlay.yaml`**：`fleet_profiles` + `feishu…user_routing` |
@@ -226,11 +226,11 @@ feishu:
 | 匹配 | `gateway/profile_routing.py` | owner：`resolve` → 查人卡 → HTTP |
 | 送达 | **同进程**切 `HERMES_HOME` | **跨容器** `POST {endpoint}/v1/feishu/inbound` |
 
-**正交**：官方 = 同机多 profile 家目录切换；我们 = 一 bot 多容器。  
-**可借鉴**：profile 名校验、目标未配置则拒绝。  
+**正交**：官方 = 同机多 profile 家目录切换；我们 = 一 bot 多容器。
+**可借鉴**：profile 名校验、目标未配置则拒绝。
 **不可直接吃**：官方送达路径。
 
-## 代码落点（实现时，本回合不写）
+## 代码落点（已实现）
 
 参考旧树（只读）：`hermes-agent-owner/owner/feishu/profile_routing.py`
 
@@ -242,14 +242,14 @@ feishu:
 | `_forward_to_profile_container` | `POST …/v1/feishu/inbound` |
 | 子容器 | `inject_inbound` + api_server doorway |
 
-v2：逻辑放 `owner/feishu/profile_routing.py`；官方 adapter / api_server **薄胶水**（`# [owner] C05`）。  
-配置加载：**主读 overlay** 的 `fleet_profiles` + `user_routing`；回落 patch（与 C09 同模式）。  
+v2：逻辑放 `owner/feishu/profile_routing.py`；官方 adapter / api_server **薄胶水**（`# [owner] C05`）。
+配置加载：**主读 overlay** 的 `fleet_profiles` + `user_routing`；回落 patch（与 C09 同模式）。
 **C05 不**实现 LDAP 认证、不读 `hub_only.api` / 旧 `api_identity` 作主路径。
 
 ## 复用官方的策略（已锁定）
 
-1. ~~薄封装官方匹配、只换送达为 HTTP~~ — 不采用。  
-2. **照迁旧 `profile_routing`，配置改读 overlay + 人卡推导 endpoints** — **已拍板**。  
+1. ~~薄封装官方匹配、只换送达为 HTTP~~ — 不采用。
+2. **照迁旧 `profile_routing`，配置改读 overlay + 人卡推导 endpoints** — **已拍板**。
 3. ~~仅 Hook 送达层~~ — 不采用。
 
 ## 明确不做
@@ -261,14 +261,14 @@ v2：逻辑放 `owner/feishu/profile_routing.py`；官方 adapter / api_server *
 - 把 Hub 拆进「多人自认 root 容器」 unless 另议
 - 第三人路径半吊子迁移
 
-## 落地切片（以后实现）
+## 落地切片与状态
 
 | 切片 | 内容 |
 |------|------|
 | **C05a** | v2 迁 `profile_routing` + overlay `fleet_profiles`/`user_routing` + 单测；endpoints 从人卡推导；**不**接 LDAP/`hub_only.api` |
-| **C05b** | node010 配置切 overlay；退役 patch 作主路径 |
+| **C05b** | **已完成**：node010 配置切 overlay；退役 patch 作主路径，旧文件留作回退 |
 | **C06** | 顶层 `ldap` 认证 + 人卡 `hub_only.api`；旧 `api_identity`/`identity_*` 只读别名；api_server 身份反代 |
-| **Ops** | 数据 rsync → `profiles/<uid>`；compose 读 `docker.*` 双挂；补 passwd；清遗迹；**开户**（对话触发、Hermes 执行）见 [fleet-add.md](./fleet-add.md)（**O1–O5 已落地**；增量新人走 skill；存量 rsync 仍开） |
+| **Ops** | **存量迁移已完成**：短名 passwd、数据移至 `profiles/<uid>`、三层 compose；**开户**见 [fleet-add.md](./fleet-add.md)（**O1–O5 已落地**；增量新人走 skill）；旧全名回退目录稳定后再清 |
 
 ## 已收开放项
 
@@ -291,32 +291,32 @@ v2：逻辑放 `owner/feishu/profile_routing.py`；官方 adapter / api_server *
 |---|------|----------|
 | R1 | 飞书 `whitelist`（ou 列表）是否完全废弃，只认 `hub_only.feishu`？ | 迁移期两者兼容：ou whitelist ∪ 人卡 hub_only；稳定后文档建议只维护人卡 |
 | R2 | compose 是否直接读 overlay `fleet_profiles`，还是生成中间 env？ | Ops 另议；设计上人卡是真相源 |
-| R3 | 开户自动化（fleet add）对话/tool 落点 / 是否双写旧 patch | 见 [fleet-add.md](./fleet-add.md)；**O5 已落地**（对话 skill 仓外）；C05b 前可双写 patch 路由键仍开放（F2） |
+| R3 | 开户自动化（fleet add）对话/tool 落点 / 是否双写旧 patch | 见 [fleet-add.md](./fleet-add.md)；**O5 已落地**（对话 skill 仓外）；C05b 后旧 patch 仅作回退，不再双写路由键 |
 
 ## 清单（实现 / 评审用）
 
-- [x] C05a：overlay 加载 `fleet_profiles` + `user_routing`；endpoints 从 `api_server` 推导  
-- [x] C05a：`hub_only.feishu`（及可选 ou whitelist）参与 resolve  
-- [x] C05a：单测夹具用假 `fleet_profiles`（无真 key / ou）  
-- [ ] C05b：node010 从 patch 迁到 overlay 人卡；旧 `profile_endpoints` / `identity_*` 标回落
-  - 2026-10-29：survey + v2 preview worktree + overlay 草稿已就绪；**未**切流（见 c05b-node010-plan.md）
-  - 2026-11-06：计划已更新（拍板 tip `7be19213ff`；B2+B3 同窗强制 overlay/`fleet_profiles`；人卡 LDAP uid；旧 patch **不删**作回落；预切流备份 `c05b-draft/backups-pre-cutover/20261106-134142/`）；**仍未**切流  
-- [x] C06：`ldap:` + `hub_only.api`；`api_identity` 只读别名后废弃（见 c06-ldap-identity-auth；现网接线另开）  
-- [x] Ops：开户内核 O3 三层 compose 模板 + 种子（见 [fleet-add.md](./fleet-add.md)；**O1–O3 已落地** 2026-10-29；现网挂载迁徙 / passwd 对齐仍属另开 Ops；O4+ 未实现）  
-- [x] **配置形状**：按人 `fleet_profiles`（ldap/docker/api_server/hub_only）已写入本稿  
+- [x] C05a：overlay 加载 `fleet_profiles` + `user_routing`；endpoints 从 `api_server` 推导
+- [x] C05a：`hub_only.feishu`（及可选 ou whitelist）参与 resolve
+- [x] C05a：单测夹具用假 `fleet_profiles`（无真 key / ou）
+- [x] C05b：node010 已从 patch 迁到 overlay 人卡；旧 patch 文件保留作回退材料
+  - 2026-11-06：正式 overlay 已启用；13 个短名 Linux 用户和容器已对齐；`liry` / `wuyj` 容器已停；Viking 保持方案 B
+  - 2026-11-06：三层挂载已验收：home → `/root`、`profiles/<uid>` → `/root/.hermes`（后叠挂）、代码/venv RO；`/data/hermes/compose/docker-compose.fleet-<uid>.yml` 软链已建；探针通过，`/health` 13/13 = 200
+  - 切流时代码 tip 为 `7be19213ff`；后续 PM 兼容修复 `8cfb9d975b` 已进 gitlab。映射与回退矩阵见 c05b-node010-plan.md
+- [x] C06：`ldap:` + `hub_only.api`；`api_identity` 只读别名后废弃（见 c06-ldap-identity-auth；现网接线另开）
+- [x] Ops：开户 O1–O5 与 O3 三层 compose 模板已落地；现网挂载迁徙、短名 passwd、compose 软链与健康验收均已完成。历史全名容器和家目录暂留回退，另行清理
+- [x] **配置形状**：按人 `fleet_profiles`（ldap/docker/api_server/hub_only）已写入本稿
 
 ## 非目标（本设计稿）
 
-- 不写路由实现、不改 compose、不重启 gateway、不 push。  
-- 不在本稿提交真实 `api_key` / `open_id` / LDAP 清单（示例脱敏）。
+- 不把真实 `api_key` / `open_id` / LDAP 清单写入本稿（示例脱敏）；历史实施约束见切流操作单。
 
 
-## 实现状态（C05a）
+## 实现与生产状态（C05）
 
-- **已落地已 push（Mac v2 → origin/gitlab `v2`，2026-10-29；未部署 node010 / C05b；fleet_add O1–O5 已收；onboarding skill 仓外已全更）**
+- **C05a 已落地已 push（2026-10-29）；fleet_add O1–O5 已收；onboarding skill 仓外已全更**
   - `owner/feishu/profile_routing.py`：fleet_profiles 加载、hub_only.feishu、HTTP 转发、归属校验
   - `owner/feishu/card_action.py`：卡片分派表（含 try_route_card_action）
   - adapter / api_server 薄胶水：`try_route_inbound`、`inject_inbound`、`/v1/feishu/inbound|card-actions`
   - 单测：`tests/owner/test_c05_*.py`
-- **C05b 进行中（2026-11-06）**：计划已更新（目标 tip `7be19213ff`；B0 tag / B1 草稿 / 预切流备份已做）；**未**切 `v2`、**未**装正式 overlay、**未**重启、**未**删旧 patch。详见 [c05b-node010-plan.md](./c05b-node010-plan.md)。
-- **仍开**：C05b 生产切流（B2+B3 同窗）；Ops 三层挂载后置；C06 现网接线；开户见 [fleet-add.md](./fleet-add.md)（O1–O5 已落地）
+- **C05b 已完成（2026-11-06）**：node010 已切 `v2`、装正式 overlay、完成 13 短名容器切流与三层挂载验收；旧 patch 未删，留作回退材料。切流/三层窗口内未无故重启 Hub。详见 [c05b-node010-plan.md](./c05b-node010-plan.md)。
+- **后续**：C06 生产门闸另开；旧全名容器/家目录、`gaor` 的 0 字节 `state.db` 等待独立处理；Viking 仍按方案 B，不随本次迁移改短名。

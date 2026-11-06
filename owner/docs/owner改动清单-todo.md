@@ -1,6 +1,6 @@
 # owner 改动清单（v2 todo · 从新开始）
 
-> 生成：2026-10-23 · Asia/Shanghai  
+> 生成：2026-10-23 · Asia/Shanghai
 > **不是**源清单 3000 行粘贴；从源清单提炼为可勾选 todo。
 
 ## 元信息
@@ -27,7 +27,7 @@
 
 ## § 二次开发可复用基建（后续 AI 优先看）
 
-> **开新能力前先扫本表。** 已落地的接现成入口；未落地的按「约定」接线，勿另起一套。  
+> **开新能力前先扫本表。** 已落地的接现成入口；未落地的按「约定」接线，勿另起一套。
 > 细则仍以各 C 条目 / 设计稿为准；本节只钉**接哪、怎么调、挂哪配置**。
 
 ### 1. `overlay.yaml` 加载器 · **C01 · 已落地**
@@ -133,9 +133,9 @@ explainers:
 
 优先级（高 → 低）：
 
-1. **patch** `explainers.<kind>.provider|model`（显式非空且非 `auto`）  
-2. **patch** 共用 `explainers.provider|model`（显式非空且非 `auto`）  
-3. 传给 `call_llm(task="<kind>_explainer", provider=None, model=None)` → 官方 **`config.yaml` `auxiliary.<task>.*`**  
+1. **patch** `explainers.<kind>.provider|model`（显式非空且非 `auto`）
+2. **patch** 共用 `explainers.provider|model`（显式非空且非 `auto`）
+3. 传给 `call_llm(task="<kind>_explainer", provider=None, model=None)` → 官方 **`config.yaml` `auxiliary.<task>.*`**
 4. auxiliary 未配 → **主聊天模型**（`call_llm` auto 链）
 
 `timeout_ms`：kind 覆盖 > 共用 `explainers.timeout_ms` > 代码默认 30000；显式传入 `call_llm(timeout=...)`。
@@ -343,8 +343,8 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 
 ## § 落地顺序（四阶段）
 
-> **执行顺序以本表 + [`v2实现顺序.md`](./v2实现顺序.md) 为准。**  
-> 下方「P0 / P1 / P2」分组仍保留作**优先级参考**（现网必保 vs 可后移），但**不要**再按 P0→P1→P2 当落地节奏。  
+> **执行顺序以本表 + [`v2实现顺序.md`](./v2实现顺序.md) 为准。**
+> 下方「P0 / P1 / P2」分组仍保留作**优先级参考**（现网必保 vs 可后移），但**不要**再按 P0→P1→P2 当落地节奏。
 > Bug 对照与 O/B15/B17 官方半边已完成；定制从阶段一起步。
 
 | 阶段 | 主题 | 条目（保留原 C 编号） |
@@ -360,7 +360,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 
 ## § 定制功能类（bug 对照完成后再落）
 
-> **落地节奏见上方「落地顺序（四阶段）」**，勿按本组标题当执行顺序。  
+> **落地节奏见上方「落地顺序（四阶段）」**，勿按本组标题当执行顺序。
 > 本组仍按 P0 必保 / P1 可后移 / P2 暂缓标优先级，便于对照源清单。路由：**维持自研**跨进程转发，不对齐吃官方 multiplex；**C05 仅第四阶段**。
 
 
@@ -419,23 +419,24 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - 设计：`owner/docs/design/platform-users/README.md`
   - 测：`tests/owner/test_platform_users.py`
   - **不改**官方 SCHEMA；不改写 `sessions.display_name`
-- [ ] **C05** · 源 §4.1 · **飞书多 profile 舰队路由**（`profile_endpoints` HTTP 转发；**不吃**官方 `profile_routes`） · **优先级：P0**
+- [x] **C05** · 源 §4.1 · **飞书多 profile 舰队路由**（`profile_endpoints` HTTP 转发；**不吃**官方 `profile_routes`） · **优先级：P0** · **C05a/C05b 与三层挂载已完成**
   - 设计稿：`owner/docs/design/c05-feishu-user-routing/README.md`（配置结构已定稿；按人 **`fleet_profiles`**）
   - 开户自动化：`owner/docs/design/c05-feishu-user-routing/fleet-add.md`；**O1–O5 已落地**（2026-10-29：`fleet_add*.py` + `test_fleet_add_o1/o2/o3/o4.py`；对话 UX = 现网 skill）
   - 开户步骤提醒：对话收集到 `ou_*` 时，**apply 前/中**同批写入 **目标 profile + Hub** 的 `FEISHU_ALLOWED_USERS`（ou ± 已知 tenant user_id；或钉死 Hub `FEISHU_ALLOW_ALL_USERS`）与目标 **`FEISHU_HOME_CHANNEL`**（优先 DM `oc_*`；兼写 `platforms.feishu.home_channel`）；勿等首条私聊被丢弃或事后 `/sethome`（见 fleet-add.md §2 / O2）。inject 绕过子 adapter `_admit`，但 gateway authz 仍读子白名单；Hub `_admit` 在路由前执行
   - **子网关/路由/allowlist 审查修补（2026-10-29）**：S1 卡打标改 `container_profile_identity`；M1 inbound 仅 send_only；M2 overlay 加载失败 ERROR + last-good；M3 缺 api_server 不回落 Hub；M4/M5 文档钉死 allowlist 口径
   - **O5 已落地（2026-10-29）**：完全更新现网 `~/.hermes/skills/westcloud/xy-user-onboarding/SKILL.md`（仓外；备份 `SKILL.md.bak-pre-o5-20261029`）；skill 只编排，mutating → `fleet_add`（allowlist + home channel）；对齐三层挂载 / `fleet_profiles` / LDAP uid；去掉旧整挂与平行 endpoints / heredoc invent；仓内仅文档勾选（见 fleet-add.md §5 / D1）
-  - **C05a（Mac v2）已落地已 push** 2026-10-29：`owner/feishu/profile_routing.py` + card_action + adapter/api_server 薄胶水 + `send_only` + 审查修补（S1/M1–M5）+ 单测；已 dual-push `origin`/`gitlab` `v2`；**未**部署 node010（**C05b 仍开**）
+  - **C05a（Mac v2）已落地已 push** 2026-10-29：`owner/feishu/profile_routing.py` + card_action + adapter/api_server 薄胶水 + `send_only` + 审查修补（S1/M1–M5）+ 单测；已 dual-push `origin`/`gitlab` `v2`；生产部署见下方 C05b 完成记录
   - **fleet_add O1（2026-10-29）**：dry-run 内核已落地（默认 dry-run）
-  - **fleet_add O2（2026-10-29）**：`--apply` 写 overlay 人卡 + `user_profile_routes`、目标/Hub `FEISHU_ALLOWED_USERS`、目标 `FEISHU_HOME_CHANNEL` + `platforms.feishu.home_channel`；备份与回滚说明；默认拒 `/data/hermes`；**不** docker/useradd；假夹具单测；**未** push 本切片前以本地 commit 为准
-  - **fleet_add O3（2026-10-29）**：`--apply-host` 种子 `profiles/<uid>` + 三层挂载 compose（代码/venv RO + home→/root + profiles→/root/.hermes）；`useradd` 默认只列（Mac=`unsupported`，`--run-useradd` 门闩）；默认拒生产路径；**不** compose up（O4）；测 `test_fleet_add_o3.py`；本地 commit、**不** push
+  - **fleet_add O2（2026-10-29）**：`--apply` 写 overlay 人卡 + `user_profile_routes`、目标/Hub `FEISHU_ALLOWED_USERS`、目标 `FEISHU_HOME_CHANNEL` + `platforms.feishu.home_channel`；备份与回滚说明；默认拒 `/data/hermes`；**不** docker/useradd；假夹具单测；后续已随 O1–O5 入库推送
+  - **fleet_add O3（2026-10-29）**：`--apply-host` 种子 `profiles/<uid>` + 三层挂载 compose（代码/venv RO + home→/root + profiles→/root/.hermes）；`useradd` 默认只列（Mac=`unsupported`，`--run-useradd` 门闩）；默认拒生产路径；**不** compose up（O4）；测 `test_fleet_add_o3.py`；后续已随 O1–O5 入库推送
   - **fleet_add O4（2026-10-29）**：`--apply-up` → `docker compose -f … up -d` + 探活 `api_server.url`（`/health` 或 `/`）；可注入 `compose_runner`/`health_get`（单测 mock，不依赖真 Docker）；失败结构化错误 + compose stop/回滚文案；默认 dry；拒 `/data/hermes`；测 `test_fleet_add_o4.py`；已随 O1–O4 双推
   - **fleet_add O5（2026-10-29）**：对话 UX — 现网 `xy-user-onboarding` 全更（只编排 → dry-run → apply / apply-host / apply-up）；仓外 skill，仓内 docs 勾选并 push
-  - **C05b（2026-10-29）**：node010 survey + v2 preview worktree + overlay 草稿（`/data/hermes/c05b-draft/`）；**未**切生产 / 未重启；计划见 `owner/docs/design/c05-feishu-user-routing/c05b-node010-plan.md`
-  - **C05b 计划已更新（2026-11-06）**：拍板 tip `7be19213ff`；B2+B3 同窗强制 overlay `fleet_profiles`；人卡 LDAP uid；旧 patch **保留不删**；B0 tag `owner-2026-11-06` + B1 草稿刷新 + 预切流备份已就绪；**仍未**切流（见同目录 `c05b-node010-plan.md`）
+  - **C05b 准备（2026-10-29）**：node010 survey + v2 preview worktree + overlay 草稿（`/data/hermes/c05b-draft/`）；当时未切生产 / 未重启；后续完成记录见下方。计划见 `owner/docs/design/c05-feishu-user-routing/c05b-node010-plan.md`
+  - **C05b 已完成（2026-11-06）**：正式 overlay `fleet_profiles` 已启用；13 个 LDAP uid 短名 Linux 用户/容器已对齐；`liry` / `wuyj` 已停；`gaor` LDAP 已建；Viking 保持方案 B；旧 patch 留作回退。切流 tip `7be19213ff`，后续 PM fix `8cfb9d975b` 已进 gitlab
+  - **三层挂载已完成（2026-11-06）**：home → `/root`、`profiles/<uid>` → `/root/.hermes`、代码/venv RO；compose 软链与 `xy-user-onboarding` / `fleet_add` O3 一致；叠挂探针与 `/health` 13/13 = 200 通过；切流/三层窗口内未无故重启 Hub（见同目录 `c05b-node010-plan.md`）
   - **C05a 补丁**：子网关 `FEISHU_CONNECTION_MODE=send_only`（`plugins/platforms/feishu/adapter.py` connect 早退、不抢 Hub app_id WS lock）；测 `tests/owner/test_c05_feishu_send_only.py`；**勿**把实地测 `overlay.yaml` / profile `.env` 入库
 - [x] **C06** · 源 §15.1–15.6 · API Server LDAP 身份准入 + `fleet_profiles`/`hub_only.api`（旧 `api_identity`/`identity_*` 只读别名）+ 头剥离/SSE · **优先级：P0**
-  - **LDAP 身份准入（2026-10-29，v2 重做，不照搬 owner）**：设计稿 `owner/docs/design/c06-ldap-identity-auth/`；`owner/gateway/ldap_auth.py` + `identity_routing.py`；api_server 薄胶水；overlay 非机密连接字段 + `enabled:false`；`HERMES_LDAP_*` env；探针 `c06_ldap_probe.py`；单测+E2E（负向真 LDAP 已过）；**未**做 C05b / 本机默认仍不开门
+  - **LDAP 身份准入（2026-10-29，v2 重做，不照搬 owner）**：设计稿 `owner/docs/design/c06-ldap-identity-auth/`；`owner/gateway/ldap_auth.py` + `identity_routing.py`；api_server 薄胶水；overlay 非机密连接字段 + `enabled:false`；`HERMES_LDAP_*` env；探针 `c06_ldap_probe.py`；单测+E2E（负向真 LDAP 已过）；C05b 已完成；生产 LDAP 门闸另开 / 本机默认仍不开门
 - [ ] **C07** · 源 §16.1–16.6 · API 产物媒体 / `hermes.files` / tool.progress 脱敏与归属 · **优先级：P0** · **延后**（2026-10-27 用户拍板；与 C05/C06 一并靠后，非当前主线）
 - [x] **C08** · 源 §7.27 · outbound BOS/EOS scrub · **优先级：P0**
   - 落地：终局走官方 O8；interim/status 薄补复用 `_strip_deepseek_special_tokens`（`owner/outbound_special_token_scrub.py` + stream_delivery / gateway status 胶水）
@@ -624,7 +625,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - **仍在跑（运行时目录已有，不必迁仓）**：日备三件套、`cron-health-check`、`todo-scan`、Viking quality kanban、周报 `feishu_weekly_ops`、`swagger-kanban`。
   - **可忽略（现网 paused/不用）**：HN Daily、Skill 同步、Upstream Sync、汇率、mac backup-configs、swagger-collector。
   - **§11.2 job args→CLI**：✅ 已落地（2026-10-27）。逻辑 `owner/cron/job_args.py`；薄胶水 `cron/scheduler_script.py` / `cron/scheduler_prompt.py`（`# [owner] §11.2`）；调度跑 script 时把 `job["args"]` 映射为 `--key value`（`True`→裸 flag；`False`/`None`/空串跳过）。现网样例：`viking`→`--mode pref-card`，backup→`--BACKUP_QUIET 1` 等。测：`tests/owner/test_cron_job_args.py`。**整包迁仓仍不做**。§11.1 目录豁免视官方/软链现状可再议。
-  - 舰队开户自动化设计（未实现）：见 `owner/docs/design/c05-feishu-user-routing/fleet-add.md`（对话触发 → Hermes 执行；归属 C05/Ops，非整包迁仓；非人手敲 CLI 主路径）
+  - 舰队开户自动化（O1–O5 已落地）：见 `owner/docs/design/c05-feishu-user-routing/fleet-add.md`（对话触发 → Hermes 执行；归属 C05/Ops，非整包迁仓；非人手敲 CLI 主路径）
   - **开户 skill 对齐（归属 C05 O5，非 C23 整包迁仓）**：westcloud `xy-user-onboarding` 已与开户内核对齐（allowlist + home channel；同 fleet-add.md §5 / D1）；skill 仍在仓外 skills 树
   - 开户 allowlist + home channel：收集 ou 时同步写 **目标 + Hub** `FEISHU_ALLOWED_USERS` 与目标 `FEISHU_HOME_CHANNEL`（同 fleet-add.md §2）
 - [ ] **C24** · 源 §12 / §16.8–16.16 · 治理标记、T2-11~20 换码债、全量 `[owner]` 铺开 · **优先级：P2**（v2 **不做**「官方测全绿」与全量标记战役；H03 #4 仅轻量补了本轮相对上游官方运行时 hunk 标记，不算 C24 收口）
@@ -700,18 +701,18 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 **本机现状（2026-11-02）**：
 - ① **缩 DEFAULTS 重复** · **已做**：overlay 去掉与代码 DEFAULTS 相同的段/键（`stream_guard` 整段、`openviking`、`output_guard`、`approvals` 空默认、`queue_card.enabled`、checkpoints 除 `predict_llm_timeout_ms`、explainers 共用默认与 kind 内重复数值、`feishu_card.split_*`）；`notice_titles` 的 recap 规则已进 `auto_card._DEFAULT_NOTICE_RULES`，overlay 不再复写整表。
 - ② **削注释噪声** · **已做**：压缩 feishu_card / bot_menu 旁大段说明。
-- ③ **身份/路由边界** · **文档约定，本机不写舰队段**：本机 overlay **不写** `fleet_profiles` / `user_routing`；留给 **C05b** 在 node010 迁人卡时一次写入。加载仍主读 overlay、回落 `patch_feishu_profile`。`ldap:` 连接字段可留仓内，`enabled` 仓内默认 `false`（节点用 patch/env 开门）。
+- ③ **身份/路由边界** · **本机不写舰队段；生产已完成**：本机 overlay **不写** `fleet_profiles` / `user_routing`；node010 已随 C05b 安装正式人卡 overlay，旧 `patch_feishu_profile` 仅留回落材料。`ldap:` 连接字段可留仓内，`enabled` 仓内默认 `false`（节点用 patch/env 开门）。
 - ④ **`~/.hermes/patch.yaml` 软链** · **已撤**（2026-11-06）：软重启 + 飞书真实生图验收后，确认无运行时读者；软链移至 `~/.hermes/backups/patch.yaml.symlink-pre-remove-20261106`。主定制继续走 `overlay.yaml`；`patch_feishu_profile.yaml` 仍作 LDAP / skill_approval 回落。
 - [x] ⑤ **image-hub 配置与注册迁移** · 2026-11-06 · **完成** · 实现 `25d883e93b` / tip `bea9b4a508`：源码收至 `owner/image_hub`，读 overlay 顶层 `image_gen:`，官方 `ImageGenProvider` + 动态 model/alias；43 测通过；软重启后飞书真实生图验收 OK；`patch.yaml` 软链已撤。详见 `owner/docs/design/image-hub-overlay/README.md`。
-- 回落面大迁（人卡进 overlay）→ **跟 C05b**，此处只点明。
+- 回落面大迁（人卡进 overlay）→ **已随 C05b 完成**，旧 patch 文件未删，留作回退材料。
 
 方向备忘（未改语义的中长期）：
 
-1. **拆「路由/身份」与「行为开关」**  
-   - 终态结构：`feishu.bots.*.user_routing` / `profile_endpoints`；顶层 **`api_identity`** + **`ldap`**；避免 LDAP/身份埋在飞书 bot 节。  
+1. **拆「路由/身份」与「行为开关」**
+   - 终态结构：`feishu.bots.*.user_routing` / `profile_endpoints`；顶层 **`api_identity`** + **`ldap`**；避免 LDAP/身份埋在飞书 bot 节。
    - **不**为对齐官方而改成 `gateway.profile_routes`（语义不覆盖跨进程）。
-2. **`overlay.yaml` 合并同类开关**（已大部分完成）  
-   - `explainers:` / `openviking:` 已合并；行为默认进代码后 yaml 只留差异。  
+2. **`overlay.yaml` 合并同类开关**（已大部分完成）
+   - `explainers:` / `openviking:` 已合并；行为默认进代码后 yaml 只留差异。
    - 长期 `enabled: false` 且无现网依赖的可继续迁「默认关 + 文档」。
 3. **上游 sync 配置独立** — `upstream_sync.yaml` 不并进 overlay。
 
@@ -719,7 +720,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 
 ## 附录：对照时怎么用源清单
 
-- 打开源 `owner改动清单.md`，按本 todo 的「源 §x.y」跳转。  
-- 不要把附录 B 侵入流水账搬进 v2。  
-- 官方已修的 bug：在本文件标 `官方已修`，定制重放时**跳过**或只留回归测。  
+- 打开源 `owner改动清单.md`，按本 todo 的「源 §x.y」跳转。
+- 不要把附录 B 侵入流水账搬进 v2。
+- 官方已修的 bug：在本文件标 `官方已修`，定制重放时**跳过**或只留回归测。
 - 仍需自研：进入对应 C0x 或新建薄能力包条目。
