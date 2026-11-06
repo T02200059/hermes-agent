@@ -1,7 +1,8 @@
 # image-hub 迁移 overlay / 官方 image-gen 能力
 
 状态：**代码 / mock / 隔离发现已完成，待软重启与生产验收**（2026-11-06；未重启，未做付费生图）
-依据：本仓 v2 `f3ed6e4055`；上游 `main` `44ec783afd1193afb7576d9c01d7fe9d18c87339`（`git ls-remote upstream`，2026-11-06 查）。
+实现：`25d883e93b`（代码与测试）；文档下一条 tip 快照提交。
+调研依据：本仓 v2 `f3ed6e4055`；上游 `main` `44ec783afd1193afb7576d9c01d7fe9d18c87339`（`git ls-remote upstream`，2026-11-06 查）。
 
 ## 1. 结论
 

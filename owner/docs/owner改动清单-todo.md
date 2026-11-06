@@ -701,7 +701,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 - ② **削注释噪声** · **已做**：压缩 feishu_card / bot_menu 旁大段说明。
 - ③ **身份/路由边界** · **文档约定，本机不写舰队段**：本机 overlay **不写** `fleet_profiles` / `user_routing`；留给 **C05b** 在 node010 迁人卡时一次写入。加载仍主读 overlay、回落 `patch_feishu_profile`。`ldap:` 连接字段可留仓内，`enabled` 仓内默认 `false`（节点用 patch/env 开门）。
 - ④ **`~/.hermes/patch.yaml` 软链**：新 image-hub 已不读它；等待 gateway 软重启及生产验收，旧进程用旧代码期间继续保留，**本轮暂不删**；迁移设计与验收边界见 `owner/docs/design/image-hub-overlay/README.md`。
-- [ ] ⑤ **image-hub 配置与注册迁移** · 2026-11-06 · **代码 / mock / 隔离发现已完成，待软重启与生产验收**：保留 DashScope multimodal-generation，不切供应商；源码收至 `owner/image_hub`，改读 overlay 顶层 `image_gen:`，接官方 `ImageGenProvider`，动态 `model` schema 与实际 dispatch 均恢复五 alias，相关回归 **43 测通过**。`~/.hermes/plugins/image-hub` 已链接至仓内用户 backend，旧实现移出插件目录备份；**本轮未付费生成、未发飞书、未软重启**，旧进程仍用旧代码，故 `patch.yaml` 软链暂留。
+- [ ] ⑤ **image-hub 配置与注册迁移** · 2026-11-06 · **代码 / mock / 隔离发现已完成，待软重启与生产验收** · 实现 `25d883e93b`：保留 DashScope multimodal-generation，不切供应商；源码收至 `owner/image_hub`，改读 overlay 顶层 `image_gen:`，接官方 `ImageGenProvider`，动态 `model` schema 与实际 dispatch 均恢复五 alias，相关回归 **43 测通过**。`~/.hermes/plugins/image-hub` 已链接至仓内用户 backend，旧实现移出插件目录备份；**本轮未付费生成、未发飞书、未软重启**，旧进程仍用旧代码，故 `patch.yaml` 软链暂留。
 - 回落面大迁（人卡进 overlay）→ **跟 C05b**，此处只点明。
 
 方向备忘（未改语义的中长期）：
