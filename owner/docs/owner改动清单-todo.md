@@ -432,6 +432,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - **fleet_add O4（2026-10-29）**：`--apply-up` → `docker compose -f … up -d` + 探活 `api_server.url`（`/health` 或 `/`）；可注入 `compose_runner`/`health_get`（单测 mock，不依赖真 Docker）；失败结构化错误 + compose stop/回滚文案；默认 dry；拒 `/data/hermes`；测 `test_fleet_add_o4.py`；已随 O1–O4 双推
   - **fleet_add O5（2026-10-29）**：对话 UX — 现网 `xy-user-onboarding` 全更（只编排 → dry-run → apply / apply-host / apply-up）；仓外 skill，仓内 docs 勾选并 push
   - **C05b（2026-10-29）**：node010 survey + v2 preview worktree + overlay 草稿（`/data/hermes/c05b-draft/`）；**未**切生产 / 未重启；计划见 `owner/docs/design/c05-feishu-user-routing/c05b-node010-plan.md`
+  - **C05b 计划已更新（2026-11-06）**：拍板 tip `7be19213ff`；B2+B3 同窗强制 overlay `fleet_profiles`；人卡 LDAP uid；旧 patch **保留不删**；B0 tag `owner-2026-11-06` + B1 草稿刷新 + 预切流备份已就绪；**仍未**切流（见同目录 `c05b-node010-plan.md`）
   - **C05a 补丁**：子网关 `FEISHU_CONNECTION_MODE=send_only`（`plugins/platforms/feishu/adapter.py` connect 早退、不抢 Hub app_id WS lock）；测 `tests/owner/test_c05_feishu_send_only.py`；**勿**把实地测 `overlay.yaml` / profile `.env` 入库
 - [x] **C06** · 源 §15.1–15.6 · API Server LDAP 身份准入 + `fleet_profiles`/`hub_only.api`（旧 `api_identity`/`identity_*` 只读别名）+ 头剥离/SSE · **优先级：P0**
   - **LDAP 身份准入（2026-10-29，v2 重做，不照搬 owner）**：设计稿 `owner/docs/design/c06-ldap-identity-auth/`；`owner/gateway/ldap_auth.py` + `identity_routing.py`；api_server 薄胶水；overlay 非机密连接字段 + `enabled:false`；`HERMES_LDAP_*` env；探针 `c06_ldap_probe.py`；单测+E2E（负向真 LDAP 已过）；**未**做 C05b / 本机默认仍不开门

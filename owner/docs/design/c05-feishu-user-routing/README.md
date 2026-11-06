@@ -1,6 +1,6 @@
 # C05 · 飞书多 profile 舰队路由（初步设计稿）
 
-> 状态：**配置结构已定稿**（2026-10-28），**C05a 已 push**；**C05b survey+可逆准备**见 [c05b-node010-plan.md](./c05b-node010-plan.md)（2026-10-29；**未**切生产）。  
+> 状态：**配置结构已定稿**（2026-10-28），**C05a 已 push**；**C05b 计划已更新**见 [c05b-node010-plan.md](./c05b-node010-plan.md)（2026-11-06 拍板 tip `7be19213ff`；B1 草稿+预切流备份已就绪；**未**切生产）。  
 > 依据：node010 现网拓扑 + 挂载规范 + **按人 `fleet_profiles` 主结构** + overlay 节名 + 方案② HTTP 舰队路由 + `二次开发规范.md` v2 基线。
 
 ## 意图
@@ -299,7 +299,8 @@ v2：逻辑放 `owner/feishu/profile_routing.py`；官方 adapter / api_server *
 - [x] C05a：`hub_only.feishu`（及可选 ou whitelist）参与 resolve  
 - [x] C05a：单测夹具用假 `fleet_profiles`（无真 key / ou）  
 - [ ] C05b：node010 从 patch 迁到 overlay 人卡；旧 `profile_endpoints` / `identity_*` 标回落
-  - 2026-10-29：survey + v2 preview worktree + overlay 草稿已就绪；**未**切流（见 c05b-node010-plan.md）  
+  - 2026-10-29：survey + v2 preview worktree + overlay 草稿已就绪；**未**切流（见 c05b-node010-plan.md）
+  - 2026-11-06：计划已更新（拍板 tip `7be19213ff`；B2+B3 同窗强制 overlay/`fleet_profiles`；人卡 LDAP uid；旧 patch **不删**作回落；预切流备份 `c05b-draft/backups-pre-cutover/20261106-134142/`）；**仍未**切流  
 - [x] C06：`ldap:` + `hub_only.api`；`api_identity` 只读别名后废弃（见 c06-ldap-identity-auth；现网接线另开）  
 - [x] Ops：开户内核 O3 三层 compose 模板 + 种子（见 [fleet-add.md](./fleet-add.md)；**O1–O3 已落地** 2026-10-29；现网挂载迁徙 / passwd 对齐仍属另开 Ops；O4+ 未实现）  
 - [x] **配置形状**：按人 `fleet_profiles`（ldap/docker/api_server/hub_only）已写入本稿  
@@ -317,5 +318,5 @@ v2：逻辑放 `owner/feishu/profile_routing.py`；官方 adapter / api_server *
   - `owner/feishu/card_action.py`：卡片分派表（含 try_route_card_action）
   - adapter / api_server 薄胶水：`try_route_inbound`、`inject_inbound`、`/v1/feishu/inbound|card-actions`
   - 单测：`tests/owner/test_c05_*.py`
-- **C05b 进行中（2026-10-29）**：只读 survey + `/data/hermes/hermes-agent-v2-preview` + `/data/hermes/c05b-draft/`；**未**切 `v2`、**未**装 overlay、**未**重启。详见 [c05b-node010-plan.md](./c05b-node010-plan.md)。
-- **仍开**：C05b 生产切流；Ops 挂载迁 `profiles/`；C06；开户见 [fleet-add.md](./fleet-add.md)（O1–O5 已落地）
+- **C05b 进行中（2026-11-06）**：计划已更新（目标 tip `7be19213ff`；B0 tag / B1 草稿 / 预切流备份已做）；**未**切 `v2`、**未**装正式 overlay、**未**重启、**未**删旧 patch。详见 [c05b-node010-plan.md](./c05b-node010-plan.md)。
+- **仍开**：C05b 生产切流（B2+B3 同窗）；Ops 三层挂载后置；C06 现网接线；开户见 [fleet-add.md](./fleet-add.md)（O1–O5 已落地）
