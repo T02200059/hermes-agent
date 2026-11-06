@@ -43,6 +43,17 @@ class ImageGenProvider(CatalogProviderBase):
         keeps non-overriding providers backward compatible."""
         return {"modalities": ["text"], "max_reference_images": 0}
 
+    # [owner] Provider-scoped image_generate schema/dispatch extension.
+    def tool_parameter_overrides(self) -> dict[str, dict[str, Any]]:
+        """Return optional JSON Schema properties this backend consumes.
+
+        ``image_generate`` merges these after its capability-derived
+        parameters and forwards supplied ``model`` values only when this
+        declares ``"model"``. The default adds no schema or dispatch
+        surface, preserving the protocol for existing providers.
+        """
+        return {}
+
     @abc.abstractmethod
     def generate(
         self,

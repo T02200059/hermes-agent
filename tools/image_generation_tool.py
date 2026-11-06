@@ -636,7 +636,7 @@ def _declared_controls(provider, controls: Optional[dict[str, Any]]) -> Optional
 def _dispatch_to_plugin_provider(
     prompt: str, aspect_ratio: str, image_url: Optional[str] = None,
     reference_image_urls: Optional[list] = None, upscale: Optional[bool] = None,
-    controls: Optional[dict[str, Any]] = None):
+    controls: Optional[dict[str, Any]] = None, requested_model: Optional[str] = None):
     """JSON result from the selected plugin provider, or ``None`` to fall through to in-tree FAL
     (provider unset / ``"fal"`` / ``"nous"``). Providers without ``upscale`` ignore it via ``**kwargs``."""
     configured = _plugin_provider_name()
@@ -661,8 +661,11 @@ def _dispatch_to_plugin_provider(
     pname = getattr(provider, "name", "?")
     kwargs: dict[str, Any] = {"prompt": prompt, "aspect_ratio": aspect_ratio}
     try:
+        # [owner] provider-declared model dispatch; see owner/image_hub/.
+        from owner.image_hub.schema import dispatch_model
+        model = dispatch_model(provider, requested_model, _read_configured_image_model())
         _add_provider_kwargs(kwargs, image_url, reference_image_urls, upscale,
-                             model=_read_configured_image_model(), controls=_declared_controls(provider, controls))
+                             model=model, controls=_declared_controls(provider, controls))
         result = provider.generate(**kwargs)
     except Exception as exc:
         # A TypeError from generate() predating image_url support (third-party plugin not yet
@@ -783,7 +786,8 @@ def _handle_image_generate(args, **kw):
     sources = dict(image_url=image_url, reference_image_urls=reference_image_urls,
                    upscale=upscale if isinstance(upscale, bool) else None)
     controls = {name: args[name] for name in _CREATIVE_CONTROL_PARAMS if name in args}
-    raw = _dispatch_to_plugin_provider(prompt, aspect_ratio, controls=controls or None, **sources)
+    raw = _dispatch_to_plugin_provider(
+        prompt, aspect_ratio, controls=controls or None, requested_model=args.get("model"), **sources)
     if raw is None:
         raw = _maybe_route_managed_model(prompt, aspect_ratio, controls=controls or None, **sources)
         if raw is not None:
@@ -864,6 +868,8 @@ def _active_image_capabilities() -> dict[str, Any]:
                     info["creative_controls"] = list(caps["creative_controls"])
                 if caps.get("source_image_role") == "style":
                     info["source_image_role"] = "style"
+                # [owner] Provider-scoped schema extension, defaults to {}.
+                info["tool_parameters"] = getattr(provider, "tool_parameter_overrides", dict)()
                 return info
         except Exception:
             pass
@@ -990,6 +996,11 @@ def _build_dynamic_image_schema() -> dict[str, Any]:
     for name in info.get("creative_controls") or []:
         if name in _CREATIVE_CONTROL_PARAMS:
             properties[name] = _CREATIVE_CONTROL_PARAMS[name]
+    # [owner] Keep provider aliases in the real dynamic schema, not the placeholder.
+    for name, parameter in (info.get("tool_parameters") or {}).items():
+        if (isinstance(name, str) and name not in properties
+                and isinstance(parameter, dict) and "type" in parameter):
+            properties[name] = parameter
     return {"description": base_desc.format(edit_clause=edit_clause),
             "parameters": {"type": "object", "properties": properties, "required": ["prompt"]}}
 

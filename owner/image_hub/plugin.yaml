@@ -1,0 +1,6 @@
+name: image-hub
+version: 3.0.0
+description: "Owner DashScope/OpenAI image backend; overlay image_gen presets and model aliases."
+author: owner
+kind: backend
+requires_env: []

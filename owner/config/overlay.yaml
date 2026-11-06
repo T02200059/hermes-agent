@@ -161,7 +161,8 @@ ldap:
   negative_cache_seconds: 10
   fail_open_on_error: false
 
-# image-hub 自定义后端：保留 DashScope 原生协议与 alias；密钥仅引用环境变量。
+# image-hub 已迁 owner.image_hub；provider 选择仍在 config.yaml:image_gen，以下为 overlay 预设。
+# 密钥仅引用环境变量；检索时不展开或输出值。
 image_gen:
   current: dashscope-qwen
   presets:

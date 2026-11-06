@@ -13,14 +13,14 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
 _PATCH_TTL_SECONDS = 60
 
-_cache: Dict[str, Any] = {"path": None, "mtime": None, "data": None, "last_load": 0}
-_feishu_profile_cache: Dict[str, Any] = {
+_cache: dict[str, Any] = {"path": None, "mtime": None, "data": None, "last_load": 0}
+_feishu_profile_cache: dict[str, Any] = {
     "path": None,
     "mtime": None,
     "data": None,
@@ -29,11 +29,11 @@ _feishu_profile_cache: Dict[str, Any] = {
 
 
 def _load_yaml_file(
-    cache: Dict[str, Any],
+    cache: dict[str, Any],
     filename: str,
     *,
     force: bool = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Fail-open YAML loader with mtime + TTL caching.
 
     Returns the **top-level dict** of ``~/.hermes/<filename>`` (no subsection peel).
@@ -62,10 +62,10 @@ def _load_yaml_file(
         ):
             return cache["data"]
 
-        import yaml
+        from utils import fast_safe_load
 
-        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-        result: Dict[str, Any] = data if isinstance(data, dict) else {}
+        data = fast_safe_load(path.read_text(encoding="utf-8")) or {}
+        result: dict[str, Any] = data if isinstance(data, dict) else {}
 
         cache["path"] = path_str
         cache["mtime"] = mtime
@@ -77,7 +77,7 @@ def _load_yaml_file(
         return {}
 
 
-def load_owner_config(force: bool = False) -> Dict[str, Any]:
+def load_owner_config(force: bool = False) -> dict[str, Any]:
     """Load ``~/.hermes/overlay.yaml`` as the owner-layer dict (file first level = sections).
 
     Fail-open: missing/unreadable → ``{}``.
@@ -85,7 +85,7 @@ def load_owner_config(force: bool = False) -> Dict[str, Any]:
     return _load_yaml_file(_cache, "overlay.yaml", force=force)
 
 
-def load_patch_config(force: bool = False) -> Dict[str, Any]:
+def load_patch_config(force: bool = False) -> dict[str, Any]:
     """Alias of :func:`load_owner_config` (callers historically named it patch)."""
     return load_owner_config(force=force)
 
@@ -102,7 +102,7 @@ def invalidate_patch_owner_config_cache() -> None:
     invalidate_owner_config_cache()
 
 
-def load_patch_feishu_profile_config(force: bool = False) -> Dict[str, Any]:
+def load_patch_feishu_profile_config(force: bool = False) -> dict[str, Any]:
     """Load ``~/.hermes/patch_feishu_profile.yaml`` (top-level dict; used later by C05/C06)."""
     return _load_yaml_file(
         _feishu_profile_cache,
@@ -118,7 +118,7 @@ def invalidate_patch_feishu_profile_config_cache() -> None:
     _feishu_profile_cache["last_load"] = 0
 
 
-def apply_owner_overlay(config: Dict[str, Any]) -> Dict[str, Any]:
+def apply_owner_overlay(config: dict[str, Any]) -> dict[str, Any]:
     """Hang the owner-layer YAML under ``config['owner']`` (in-place).
 
     Deep-merge strategy:
@@ -134,7 +134,7 @@ def apply_owner_overlay(config: Dict[str, Any]) -> Dict[str, Any]:
         return config
     try:
         base = config.get("owner")
-        base_dict: Dict[str, Any] = dict(base) if isinstance(base, dict) else {}
+        base_dict: dict[str, Any] = dict(base) if isinstance(base, dict) else {}
         overlay = load_owner_config()
         if overlay:
             # Shallow section merge: each first-level key from overlay replaces the same
@@ -152,7 +152,7 @@ def apply_owner_overlay(config: Dict[str, Any]) -> Dict[str, Any]:
 
 def get_model_extra_body(
     owner_provider_name: Optional[str], model: Optional[str]
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Return per-model ``extra_body`` entries from ``owner.model_extra_body`` (C03+).
 
     Expected shape (file first level, no shell)::
