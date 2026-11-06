@@ -221,7 +221,12 @@ def extract_tar(archive: Path | IO[bytes], dest: Path) -> None:
     real_dest = os.path.realpath(dest)
     opened = tarfile.open(archive) if isinstance(archive, (str, os.PathLike)) else tarfile.open(fileobj=archive)
     with opened as tf:
-        tf.extractall(dest, filter=lambda member, path: _tar_filter(member, real_dest))
+        # [owner] Bootstrap PEP 706 fallback; see owner/patches/pm_tar_compat.py.
+        if not hasattr(tarfile, "data_filter") or not hasattr(tarfile.TarInfo, "replace"):
+            from owner.patches.pm_tar_compat import extract_tar_legacy
+            extract_tar_legacy(tf, dest, real_dest)
+        else:
+            tf.extractall(dest, filter=lambda member, path: _tar_filter(member, real_dest))
 
 
 def extract(archive: Path, dest: Path) -> None:
