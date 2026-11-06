@@ -700,7 +700,8 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 - ① **缩 DEFAULTS 重复** · **已做**：overlay 去掉与代码 DEFAULTS 相同的段/键（`stream_guard` 整段、`openviking`、`output_guard`、`approvals` 空默认、`queue_card.enabled`、checkpoints 除 `predict_llm_timeout_ms`、explainers 共用默认与 kind 内重复数值、`feishu_card.split_*`）；`notice_titles` 的 recap 规则已进 `auto_card._DEFAULT_NOTICE_RULES`，overlay 不再复写整表。
 - ② **削注释噪声** · **已做**：压缩 feishu_card / bot_menu 旁大段说明。
 - ③ **身份/路由边界** · **文档约定，本机不写舰队段**：本机 overlay **不写** `fleet_profiles` / `user_routing`；留给 **C05b** 在 node010 迁人卡时一次写入。加载仍主读 overlay、回落 `patch_feishu_profile`。`ldap:` 连接字段可留仓内，`enabled` 仓内默认 `false`（节点用 patch/env 开门）。
-- ④ **`~/.hermes/patch.yaml` 软链**：可选卫生；若仍有插件（如 image-hub）直读该路径则**勿删**，见当次收口说明。
+- ④ **`~/.hermes/patch.yaml` 软链**：仍有用户插件 image-hub 回落直读，**暂勿删**；迁移设计已列 `owner/docs/design/image-hub-overlay/README.md`。
+- [ ] ⑤ **image-hub 配置与注册迁移** · 2026-11-06 · **设计已出，代码未落**：上游有官方 `image_generate` / provider registry / 缓存，未发现可直接迁现 DashScope multimodal-generation 的上游 provider；不切供应商、不停现有能力。迁源码至 `owner/image_hub`，overlay 顶层 `image_gen:`，标准 provider 注册与 `model` alias 动态 schema 一起迁，验收后再撤旧插件/软链。**迁移配置已准备，旧插件不会读它，不能视作已生效**。
 - 回落面大迁（人卡进 overlay）→ **跟 C05b**，此处只点明。
 
 方向备忘（未改语义的中长期）：

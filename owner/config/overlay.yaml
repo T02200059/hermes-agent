@@ -160,3 +160,43 @@ ldap:
   cache_ttl_hours: 72
   negative_cache_seconds: 10
   fail_open_on_error: false
+
+# image-hub 自定义后端：保留 DashScope 原生协议与 alias；密钥仅引用环境变量。
+image_gen:
+  current: dashscope-qwen
+  presets:
+    # ── 文生图 (text-to-image) ────────────────────────────────────────
+    dashscope-qwen:        # alias: qwen
+      alias:
+        - qwen
+      endpoint: https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation
+      model: qwen-image-2.0
+      api_key: ${DASHSCOPE_API_KEY}
+    dashscope-qwen-pro:    # alias: qwen-pro  (Pro 增强,2026-04 新版)
+      alias:
+        - qwen-pro
+      endpoint: https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation
+      model: qwen-image-2.0-pro-2026-04-22
+      api_key: ${DASHSCOPE_API_KEY}
+    dashscope-wan:         # alias: wan  (通义文生图,基础)
+      alias:
+        - wan
+      endpoint: https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation
+      model: wan2.6-t2i
+      api_key: ${DASHSCOPE_API_KEY}
+    dashscope-wan2-pro:    # alias: wan2  (Wan 2.7 Pro,高质量)
+      alias:
+        - wan2
+      endpoint: https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation
+      model: wan2.7-image-pro
+      api_key: ${DASHSCOPE_API_KEY}
+
+    # ── 图片编辑 (image-to-image / editing) ───────────────────────────
+    # 使用方法:image_generate(prompt, image_url=<源图>, model="image-edit")
+    # qwen-image-edit 系列支持 mask 涂抹式编辑和 instruction 指令式编辑
+    dashscope-image-edit:  # alias: image-edit
+      alias:
+        - image-edit
+      endpoint: https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation
+      model: qwen-image-edit-plus
+      api_key: ${DASHSCOPE_API_KEY}
