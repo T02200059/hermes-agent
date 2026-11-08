@@ -56,7 +56,7 @@ def test_static_readonly_unknown_returns_empty():
 
 
 def test_config_fail_open_defaults(monkeypatch):
-    monkeypatch.setattr(cp_config, "_load_owner_checkpoints_cfg", lambda: {})
+    monkeypatch.setattr(cp_config, "_load_owner_checkpoints_cfg", dict)
     cfg = cp_config.get_checkpoints_cfg()
     assert cfg["predict_enabled"] is True
     assert cfg["predict_static_threshold"] == 1
@@ -290,3 +290,105 @@ def test_warn_falls_back_to_emit_warning_when_callback_missing(monkeypatch):
     predict_and_checkpoint("rm /etc/passwd", "/proj", agent)
     mgr.ensure_checkpoint.assert_not_called()
     emit.assert_called_once()
+
+
+# ── cd 前缀 / 黑名单 / 降噪 (2026-11) ────────────────────────────────────────
+
+
+def test_effective_cwd_consumes_leading_cd_chain():
+    assert static_parser.effective_cwd("cd /srv/app && python x.py", "/root") == "/srv/app"
+    assert static_parser.effective_cwd("cd sub && cd deeper && ls", "/proj") == "/proj/sub/deeper"
+    assert static_parser.effective_cwd("cd '/srv/a b' && ls", "/root") == "/srv/a b"
+
+
+def test_effective_cwd_leaves_unresolvable_prefix_alone():
+    # 非 cd 开头 / 变量 / cd - 都不消费, 保持 session cwd
+    assert static_parser.effective_cwd("ls; cd /srv", "/root") == "/root"
+    assert static_parser.effective_cwd("cd $WORKDIR && ls", "/root") == "/root"
+    assert static_parser.effective_cwd("cd -", "/root") == "/root"
+    assert static_parser.effective_cwd("", "/root") == "/root"
+
+
+def test_predict_resolves_relative_paths_against_cd_target(monkeypatch):
+    """cd 前缀的目录才是相对重定向目标的基准, 不是 session cwd (不能误报 home)。"""
+    monkeypatch.setattr(cp_config, "get_checkpoints_cfg", lambda: dict(cp_config._DEFAULTS))
+    monkeypatch.setattr(llm_predict, "llm_predict", lambda *a, **k: [])
+    agent = _agent()
+    home = str(__import__("pathlib").Path.home())
+    seen = []
+
+    def get_wd(p):
+        seen.append(str(p))
+        return "/srv/app"
+
+    agent._checkpoint_mgr.get_working_dir_for_path.side_effect = get_wd
+    predict_and_checkpoint(
+        "cd /srv/app && python3 gen.py > out.txt 2> err.txt; echo done", home, agent
+    )
+    assert seen == ["/srv/app/out.txt"]
+    agent._checkpoint_mgr.ensure_checkpoint.assert_called_once()
+    assert agent._checkpoint_mgr.ensure_checkpoint.call_args[0][0] == "/srv/app"
+    agent._owner_warn_callback.assert_not_called()
+
+
+def test_predict_skips_blacklisted_tmp_root(monkeypatch):
+    """/tmp 这类目录的根不进快照, 也不弹卡。"""
+    monkeypatch.setattr(cp_config, "get_checkpoints_cfg", lambda: dict(cp_config._DEFAULTS))
+    monkeypatch.setattr(static_parser, "static_parse", lambda *_: ["/tmp/out.txt"])
+    monkeypatch.setattr(llm_predict, "llm_predict", lambda *a, **k: [])
+    agent = _agent()
+    agent._checkpoint_mgr.get_working_dir_for_path.side_effect = lambda p: "/tmp"
+    predict_and_checkpoint("echo hi > /tmp/out.txt", "/tmp", agent)
+    agent._checkpoint_mgr.ensure_checkpoint.assert_not_called()
+    agent._owner_warn_callback.assert_not_called()
+
+
+def test_predict_skips_hermes_scratch_roots(monkeypatch, tmp_path):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    monkeypatch.setattr(cp_config, "get_checkpoints_cfg", lambda: dict(cp_config._DEFAULTS))
+    monkeypatch.setattr(static_parser, "static_parse", lambda *_: ["out.txt"])
+    monkeypatch.setattr(llm_predict, "llm_predict", lambda *a, **k: [])
+    agent = _agent()
+    scratch = tmp_path / "cache" / "scratch"
+    scratch.mkdir(parents=True)
+    agent._checkpoint_mgr.get_working_dir_for_path.side_effect = lambda p: str(scratch)
+    predict_and_checkpoint(f"cd {scratch} && python3 gen.py > out.txt", str(tmp_path), agent)
+    agent._checkpoint_mgr.ensure_checkpoint.assert_not_called()
+    agent._owner_warn_callback.assert_not_called()
+
+
+def test_predict_quiet_for_non_destructive_home_write(monkeypatch):
+    """落在 home 的非破坏性写入只记 debug, 不弹卡。"""
+    monkeypatch.setattr(cp_config, "get_checkpoints_cfg", lambda: dict(cp_config._DEFAULTS))
+    monkeypatch.setattr(static_parser, "static_parse", lambda *_: ["out.txt"])
+    monkeypatch.setattr(llm_predict, "llm_predict", lambda *a, **k: [])
+    agent = _agent()
+    home = str(__import__("pathlib").Path.home())
+    agent._checkpoint_mgr.get_working_dir_for_path.side_effect = lambda p: home
+    predict_and_checkpoint("echo hi | tee out.txt", home, agent)
+    agent._checkpoint_mgr.ensure_checkpoint.assert_not_called()
+    agent._owner_warn_callback.assert_not_called()
+
+
+def test_predict_still_warns_for_destructive_home_write(monkeypatch):
+    monkeypatch.setattr(cp_config, "get_checkpoints_cfg", lambda: dict(cp_config._DEFAULTS))
+    monkeypatch.setattr(static_parser, "static_parse", lambda *_: ["important.txt"])
+    monkeypatch.setattr(llm_predict, "llm_predict", lambda *a, **k: [])
+    agent = _agent()
+    home = str(__import__("pathlib").Path.home())
+    agent._checkpoint_mgr.get_working_dir_for_path.side_effect = lambda p: home
+    predict_and_checkpoint("rm important.txt", home, agent)
+    agent._checkpoint_mgr.ensure_checkpoint.assert_not_called()
+    agent._owner_warn_callback.assert_called_once()
+
+
+def test_destructive_fallback_skips_blacklisted_cwd(monkeypatch):
+    monkeypatch.setattr(cp_config, "get_checkpoints_cfg", lambda: dict(cp_config._DEFAULTS))
+    monkeypatch.setattr(static_parser, "static_parse", lambda *_: [])
+    monkeypatch.setattr(llm_predict, "llm_predict", lambda *a, **k: [])
+    monkeypatch.setattr(
+        "agent.tool_dispatch_helpers._is_destructive_command", lambda cmd: True
+    )
+    agent = _agent()
+    predict_and_checkpoint("find . -delete", "/tmp", agent)
+    agent._checkpoint_mgr.ensure_checkpoint.assert_not_called()

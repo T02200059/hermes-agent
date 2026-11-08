@@ -9,9 +9,10 @@ predictor 将其映射为 cwd 的项目根。
 
 from __future__ import annotations
 
+import os
 import re
 import shlex
-from typing import List
+from pathlib import Path
 
 GIT_REPO_SENTINEL = "__git_repo__"
 
@@ -20,6 +21,11 @@ _REDIRECT_OVERWRITE = re.compile(r"[^>]>[^>]")
 
 # git 操作影响整个 repo
 _GIT_REPO_RE = re.compile(r"(?:^|\s|&&|;|\|)git\s+(?:reset|clean|checkout)(?:\s|$)")
+
+# 命令开头的 cd 链: cd <字面量目录> [&&|;|&||] ...
+_CD_LEAD_RE = re.compile(
+    r"^\s*cd\s+(?:\"([^\"]*)\"|'([^']*)'|([^\s;&|]+))\s*(?:&&|\|\||;|&)?\s*"
+)
 
 
 def _is_flag(tok: str) -> bool:
@@ -37,10 +43,10 @@ _FLAGS_WITH_VALUE = {
 
 
 def _strip_positionals(
-    args: List[str], value_flags: set
-) -> List[str]:
+    args: list[str], value_flags: set
+) -> list[str]:
     """从 args 中提取位置参数 (非 flag), 跳过"flag + 其值"对。"""
-    positionals: List[str] = []
+    positionals: list[str] = []
     skip_next = False
     for tok in args:
         if skip_next:
@@ -55,7 +61,7 @@ def _strip_positionals(
     return positionals
 
 
-def _parse_simple(cmd_tokens: List[str]) -> List[str]:
+def _parse_simple(cmd_tokens: list[str]) -> list[str]:
     """对已分词的命令做主命令模式匹配。"""
     if not cmd_tokens:
         return []
@@ -110,7 +116,7 @@ def _parse_simple(cmd_tokens: List[str]) -> List[str]:
     return []
 
 
-def static_parse(command: str, cwd: str) -> List[str]:
+def static_parse(command: str, cwd: str) -> list[str]:
     """静态解析命令, 返回将要被修改的文件路径列表。"""
     if not command or not command.strip():
         return []
@@ -132,7 +138,7 @@ def static_parse(command: str, cwd: str) -> List[str]:
         return []
 
     pipe_segments = re.split(r"\s\|\s", command)
-    results: List[str] = []
+    results: list[str] = []
     for seg in pipe_segments:
         try:
             seg_tokens = shlex.split(seg)
@@ -142,10 +148,47 @@ def static_parse(command: str, cwd: str) -> List[str]:
         results.extend(seg_result)
 
     seen = set()
-    deduped: List[str] = []
+    deduped: list[str] = []
     for r in results:
         if r not in seen:
             seen.add(r)
             deduped.append(r)
 
     return deduped
+
+
+def effective_cwd(command: str, cwd: str) -> str:
+    """命令真正生效的目录: 消费开头的 ``cd`` 链, 返回最终目录。
+
+    相对路径预测必须按这个目录解析 —— 用 session cwd 解析 ``cd /x && ... > out.txt``
+    会把 ``out.txt`` 错算到 cwd 下 (cwd 为 home 时直接被安全过滤, 误报"预测失败")。
+
+    只处理字面量目标; 目标含变量/通配符/``cd -`` 时停止消费 (无法静态确定)。
+    永不抛异常, 解析不出变化时原样返回 ``cwd``。
+    """
+    try:
+        current = cwd
+        rest = command or ""
+        changed = False
+        while True:
+            m = _CD_LEAD_RE.match(rest)
+            if not m:
+                break
+            target = next((g for g in m.groups() if g is not None), "")
+            if not target or target == "-" or any(ch in target for ch in "$`*?"):
+                break
+            try:
+                path = Path(target).expanduser()
+            except (OSError, RuntimeError):
+                break
+            if not path.is_absolute():
+                path = Path(current) / path
+            try:
+                current = str(path.resolve())
+            except (OSError, RuntimeError):
+                current = os.path.normpath(str(path))
+            changed = True
+            rest = rest[m.end():]
+        return current if changed else cwd
+    except Exception:
+        return cwd

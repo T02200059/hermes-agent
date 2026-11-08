@@ -1609,13 +1609,16 @@ class CheckpointManager:
             "Checkpoint: dropping %d oversize file(s) (>%d MB) from index",
             len(oversize), self.max_file_size_mb,
         )
-        # Use --pathspec-from-file for safety with many paths.
-        # Chunk into manageable batches.
+        # Use --pathspec-from-file for safety when many paths.
+        # Chunk into manageable batches. ``-f`` is required: a hot file (browser
+        # cache, live DB) changes between ``add -A`` and this rm, and plain
+        # ``rm --cached`` then refuses with "staged content different from both
+        # the file and the HEAD" — leaving the oversize blob in the snapshot.
         BATCH = 200
         for i in range(0, len(oversize), BATCH):
             chunk = oversize[i:i + BATCH]
             _run_git(
-                ["rm", "--cached", "--quiet", "--"] + chunk,
+                ["rm", "--cached", "-f", "--quiet", "--"] + chunk,
                 store, working_dir, index_file=index_file,
                 allowed_returncodes={128},
             )

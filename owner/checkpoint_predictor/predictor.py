@@ -1,8 +1,11 @@
 """编排器 —— terminal 工具执行前的预测式 checkpoint 触发。
 
-数据流: 配置检查 → 静态解析 → (候选不足时) LLM 兜底 → 安全过滤 →
-有合法 root 则 ensure_checkpoint；静态为空且官方判定破坏性时窄兜底拍 cwd；
-其余失败：破坏性/过滤失败才用户可见 warn；只读降 debug（不盲目拍 cwd）。
+数据流: 配置检查 → 解析 cd 前缀得生效目录 → 静态解析 → (候选不足时) LLM 兜底 →
+安全过滤 (丢弃 / 与 home, 丢弃不纳入快照的临时/内部目录) → 有合法 root 则
+ensure_checkpoint；静态为空且官方判定破坏性时窄兜底拍 cwd。
+
+warn 策略：破坏性命令才用户可见；只读命令、落在 home/root 的非破坏性写入、
+以及落在黑名单目录的写入都只记 debug —— 这几类占历史上 9 成以上的噪音。
 
 永不抛异常 (与 CheckpointManager.ensure_checkpoint 的 "never raises" 一致)。
 """
@@ -10,6 +13,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 from typing import List
 
@@ -17,16 +21,73 @@ from owner.checkpoint_predictor import config, llm_predict, static_parser
 
 logger = logging.getLogger(__name__)
 
+# 临时/系统/挂载类目录: 快照它们没有回滚价值, 只会把 GB 级缓存灌进 store。
+_EPHEMERAL_PREFIXES = (
+    "/dev", "/proc", "/sys", "/run", "/tmp", "/var/tmp", "/var/run",
+    "/var/cache", "/var/lib/docker", "/var/lib/containers", "/snap",
+    "/mnt", "/media", "/Volumes",
+)
 
-def _safe_roots(paths: list[str], cwd: str, agent) -> list[str]:
-    """对每个预测路径映射项目根, 丢弃 == / 或 == home 的根。"""
+# 目录名本身就是缓存/内部状态的根。
+_JUNK_COMPONENTS = {
+    ".git", "__pycache__", "node_modules", ".venv", "site-packages",
+    ".cache", "chrome-clean-profile", ".Trash", ".cargo", ".rustup",
+}
+
+
+def _hermes_scratch_prefixes() -> tuple[str, ...]:
+    """Hermes 自身的临时目录 (cache/tmp/logs/...), 不做快照。"""
+    base = os.environ.get("HERMES_HOME") or str(Path.home() / ".hermes")
+    try:
+        base = str(Path(base).expanduser().resolve())
+    except (OSError, RuntimeError):
+        pass
+    return tuple(f"{base}/{name}" for name in ("cache", "tmp", "logs", "sandboxes", "checkpoints"))
+
+
+def _root_is_blacklisted(root: str) -> bool:
+    """项目根是否落在不纳入快照的目录 (临时/系统/内部缓存)。
+
+    同时比较字面路径与 realpath: macOS 上 ``/tmp`` 就是 ``/private/tmp``,
+    只比字面会让 ``cd /tmp`` 绕过黑名单。
+    """
+    try:
+        path = Path(root)
+    except (OSError, RuntimeError):
+        return False
+    candidates = {path}
+    try:
+        candidates.add(path.resolve())
+    except (OSError, RuntimeError):
+        pass
+    if any(_JUNK_COMPONENTS.intersection(c.parts) for c in candidates):
+        return True
+    for prefix in _EPHEMERAL_PREFIXES + _hermes_scratch_prefixes():
+        bases = {Path(prefix)}
+        try:
+            bases.add(Path(prefix).resolve())
+        except (OSError, RuntimeError):
+            pass
+        for base in bases:
+            if any(c == base or base in c.parents for c in candidates):
+                return True
+    return False
+
+
+def _safe_roots(paths: list[str], cwd: str, agent) -> tuple[list[str], bool]:
+    """对每个预测路径映射项目根。
+
+    返回 ``(合法根, 是否有根被黑名单剔除)``。丢弃 == /、== home (官方 manager
+    也拒绝) 的根; 黑名单目录的根静默跳过, 由调用方降级为 debug。
+    """
     mgr = getattr(agent, "_checkpoint_mgr", None)
     if mgr is None:
-        return []
+        return [], False
 
     home = str(Path.home())
     roots: list[str] = []
     seen = set()
+    blacklisted = False
 
     for p in paths:
         if p == static_parser.GIT_REPO_SENTINEL:
@@ -39,11 +100,14 @@ def _safe_roots(paths: list[str], cwd: str, agent) -> list[str]:
 
         if root in {"/", home}:
             continue
+        if _root_is_blacklisted(root):
+            blacklisted = True
+            continue
         if root not in seen:
             seen.add(root)
             roots.append(root)
 
-    return roots
+    return roots, blacklisted
 
 
 def _emit_owner_warn(agent, msg: str) -> None:
@@ -89,13 +153,15 @@ def _warn_uncheckpointed(command: str, cwd: str, reason: str, agent, *, surface:
 
 
 def _cwd_is_unsafe_snapshot_root(cwd: str) -> bool:
-    """True when cwd resolves to ``/`` or home (same filter as ``_safe_roots``)."""
+    """True when cwd resolves to ``/``, home, or a blacklisted root."""
     try:
         resolved = str(Path(cwd).expanduser().resolve())
-    except Exception:
+    except (OSError, RuntimeError):
         resolved = str(cwd)
     home = str(Path.home())
-    return resolved in {"/", home} or str(cwd) in {"/", home}
+    if resolved in {"/", home} or str(cwd) in {"/", home}:
+        return True
+    return _root_is_blacklisted(resolved)
 
 
 def _destructive_cwd_fallback(command: str, cwd: str, agent, mgr) -> bool:
@@ -144,15 +210,18 @@ def predict_and_checkpoint(command: str, cwd: str, agent) -> None:
         if mgr is None or not mgr.enabled:
             return
 
+        # 0. 命令自带 cd 前缀时, 相对路径要按生效目录解析 (session cwd 会算错)
+        work_dir = static_parser.effective_cwd(command, cwd)
+
         # 1. 静态解析
-        static_candidates = static_parser.static_parse(command, cwd)
+        static_candidates = static_parser.static_parse(command, work_dir)
         candidates = list(static_candidates)
 
         # 2. 静态不足时 LLM 兜底
         if len(candidates) < cfg["predict_static_threshold"]:
             llm_results = llm_predict.llm_predict(
                 command,
-                cwd,
+                work_dir,
                 cfg["predict_llm_timeout_ms"],
                 cache_size=cfg["predict_cache_size"],
             )
@@ -163,21 +232,24 @@ def predict_and_checkpoint(command: str, cwd: str, agent) -> None:
                     candidates.append(p)
 
         # 3. 安全过滤 → 项目根
-        roots = _safe_roots(candidates, cwd, agent)
+        roots, blacklisted = _safe_roots(candidates, work_dir, agent)
 
         if not roots:
             # 窄兜底：静态为空 + 官方破坏性判定 → 仍快照 cwd（恢复旧树覆盖面）
-            if not static_candidates and _destructive_cwd_fallback(command, cwd, agent, mgr):
+            if not static_candidates and _destructive_cwd_fallback(command, work_dir, agent, mgr):
                 return
-            if candidates:
+            destructive = _command_looks_destructive(command)
+            if candidates and not blacklisted:
                 reason = "预测路径均被安全过滤 (项目根为 / 或 home)"
-                # Had write-path predictions but all roots were unsafe — always surface.
-                surface = True
+                # 非破坏性的 home 写入 (cd ~ && echo > out.txt) 不值得弹卡: 预测本身已尽力。
+                surface = destructive
+            elif blacklisted:
+                reason = "预测路径落在不纳入快照的目录 (临时/缓存/内部目录)"
+                surface = False
             else:
                 reason = "静态解析与 LLM 均未能预测目标文件"
-                # Empty prediction: only surface for destructive cmds (avoid ls/git noise).
-                surface = _command_looks_destructive(command)
-            _warn_uncheckpointed(command, cwd, reason, agent, surface=surface)
+                surface = destructive
+            _warn_uncheckpointed(command, work_dir, reason, agent, surface=surface)
             return
 
         # 4. 对每个合法项目根拍快照
