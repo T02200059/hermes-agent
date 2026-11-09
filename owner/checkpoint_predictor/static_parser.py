@@ -16,8 +16,14 @@ from pathlib import Path
 
 GIT_REPO_SENTINEL = "__git_repo__"
 
-# 覆盖式重定向 (> file 但不是 >>)
-_REDIRECT_OVERWRITE = re.compile(r"[^>]>[^>]")
+# 覆盖式重定向 (> file 但不是 >> / >= 比较 / fd 复向)。
+# 官方旧式 [^>]>[^>] 会把 Python `n>=maxn` / `printed>0` 当成重定向。
+_REDIRECT_OVERWRITE = re.compile(r"(?<![>&])>(?!>)(?!&)(?!=)")
+
+# <<EOF / <<'EOF' / <<"EOF" / <<-EOF  heredoc 起始
+_HEREDOC_START = re.compile(
+    r"<<-?\s*(?:'([^']+)'|\"([^\"]+)\"|\\?(\S+))"
+)
 
 # git 操作影响整个 repo
 _GIT_REPO_RE = re.compile(r"(?:^|\s|&&|;|\|)git\s+(?:reset|clean|checkout)(?:\s|$)")
@@ -116,6 +122,36 @@ def _parse_simple(cmd_tokens: list[str]) -> list[str]:
     return []
 
 
+
+def strip_heredoc_bodies(command: str) -> str:
+    """把 heredoc 体替换成等长空白, 避免体里的 `>`/`>=` 被当成 shell 重定向。
+
+    保留 `<<EOF` 标记与结束定界行, 只抹掉中间正文。未闭合 heredoc 则抹掉余下全部。
+    """
+    if not command or "<<" not in command:
+        return command
+    out: list[str] = []
+    i = 0
+    n = len(command)
+    while i < n:
+        m = _HEREDOC_START.search(command, i)
+        if not m:
+            out.append(command[i:])
+            break
+        out.append(command[i:m.end()])
+        delim = next(g for g in m.groups() if g is not None)
+        rest = command[m.end():]
+        end_re = re.compile(r"\n(?:\t)*" + re.escape(delim) + r"(?=\n|$)")
+        em = end_re.search(rest)
+        if not em:
+            out.append(" " * len(rest))
+            break
+        out.append(" " * em.start())
+        out.append(em.group(0))
+        i = m.end() + em.end()
+    return "".join(out)
+
+
 def static_parse(command: str, cwd: str) -> list[str]:
     """静态解析命令, 返回将要被修改的文件路径列表。"""
     if not command or not command.strip():
@@ -124,9 +160,12 @@ def static_parse(command: str, cwd: str) -> list[str]:
     if _GIT_REPO_RE.search(command):
         return [GIT_REPO_SENTINEL]
 
-    if _REDIRECT_OVERWRITE.search(command):
-        m = re.search(r"(?:^|[^>])>\s*([^\s|&;<>]+)", command)
-        if m:
+    # heredoc 体内的 Python/脚本比较运算符不能当重定向; 外壳上的 > file 仍保留。
+    shell_visible = strip_heredoc_bodies(command)
+
+    if _REDIRECT_OVERWRITE.search(shell_visible):
+        m = re.search(r"(?:^|[^>])>\s*([^\s|&;<>]+)", shell_visible)
+        if m and not m.group(1).startswith("="):
             return [m.group(1)]
 
     try:

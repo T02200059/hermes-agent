@@ -392,3 +392,75 @@ def test_destructive_fallback_skips_blacklisted_cwd(monkeypatch):
     agent = _agent()
     predict_and_checkpoint("find . -delete", "/tmp", agent)
     agent._checkpoint_mgr.ensure_checkpoint.assert_not_called()
+
+
+# ── heredoc 内 Python 比较误判降噪 (2026-11-09) ──────────────────────────────
+
+
+_HEREDOC_READONLY_SQLITE = (
+    "cd /root && python3 - <<'EOF'\n"
+    "import sqlite3, datetime, re\n"
+    "c=sqlite3.connect('/root/.hermes/state.db'); c.row_factory=sqlite3.Row\n"
+    "def dump(sid, maxlen=700, kw=None, maxn=60):\n"
+    "    printed=0\n"
+    "    for i,r in enumerate(rows):\n"
+    "        n=i+1\n"
+    "        if n>=maxn: break\n"
+    "        if printed>0: print('---')\n"
+    "        printed+=1\n"
+    "EOF"
+)
+
+
+def test_static_heredoc_python_comparison_not_redirect():
+    """heredoc 里的 n>=maxn / printed>0 不能当成 > file 重定向。"""
+    assert static_parse(_HEREDOC_READONLY_SQLITE, "/root") == []
+    assert static_parse("echo hi > out.txt", "/proj") == ["out.txt"]
+    assert static_parse("echo hi >> out.txt", "/proj") == []
+
+
+def test_static_redirect_after_heredoc_still_detected():
+    cmd = (
+        "python3 - <<'EOF'\n"
+        "print(1)\n"
+        "EOF\n"
+        "echo hi > out.txt"
+    )
+    assert static_parse(cmd, "/proj") == ["out.txt"]
+
+
+def test_strip_heredoc_bodies_keeps_outer_redirect():
+    cmd = "cat > /tmp/x <<'EOF'\nline with n>=1 and a>b\nEOF"
+    visible = static_parser.strip_heredoc_bodies(cmd)
+    assert "n>=1" not in visible
+    assert "a>b" not in visible
+    assert "cat > /tmp/x <<'EOF'" in visible or visible.startswith("cat > /tmp/x")
+
+
+def test_predict_heredoc_python_comparison_no_feishu_tip(monkeypatch):
+    """只读 python heredoc（体含 >= / > 比较）+ 根被滤掉 → 不建快照、不发飞书 tip。"""
+    monkeypatch.setattr(cp_config, "get_checkpoints_cfg", lambda: dict(cp_config._DEFAULTS))
+    monkeypatch.setattr(llm_predict, "llm_predict", lambda *a, **k: [])
+    agent = _agent()
+
+    def get_wd(p):
+        # any predicted path under /root or home resolves to unsafe root
+        return "/"
+
+    agent._checkpoint_mgr.get_working_dir_for_path.side_effect = get_wd
+    predict_and_checkpoint(_HEREDOC_READONLY_SQLITE, "/root", agent)
+    agent._checkpoint_mgr.ensure_checkpoint.assert_not_called()
+    agent._owner_warn_callback.assert_not_called()
+
+
+def test_predict_real_redirect_home_still_tips(monkeypatch):
+    """真 shell 重定向写 home、根被滤掉 → 仍用户可见 tip（真实破坏性）。"""
+    monkeypatch.setattr(cp_config, "get_checkpoints_cfg", lambda: dict(cp_config._DEFAULTS))
+    monkeypatch.setattr(llm_predict, "llm_predict", lambda *a, **k: [])
+    agent = _agent()
+    home = str(__import__("pathlib").Path.home())
+    agent._checkpoint_mgr.get_working_dir_for_path.side_effect = lambda p: home
+    predict_and_checkpoint("echo hi > important.txt", home, agent)
+    agent._checkpoint_mgr.ensure_checkpoint.assert_not_called()
+    agent._owner_warn_callback.assert_called_once()
+    assert "预测失败" in agent._owner_warn_callback.call_args[0][0]

@@ -6,6 +6,7 @@ ensure_checkpoint；静态为空且官方判定破坏性时窄兜底拍 cwd。
 
 warn 策略：破坏性命令才用户可见；只读命令、落在 home/root 的非破坏性写入、
 以及落在黑名单目录的写入都只记 debug —— 这几类占历史上 9 成以上的噪音。
+heredoc 体内的 ``>``/``>=`` 比较不算破坏性（不发飞书 tip）。
 
 永不抛异常 (与 CheckpointManager.ensure_checkpoint 的 "never raises" 一致)。
 """
@@ -123,11 +124,17 @@ def _emit_owner_warn(agent, msg: str) -> None:
 
 
 def _command_looks_destructive(command: str) -> bool:
-    """Reuse official destructive heuristic; fail-open False on import errors."""
+    """Reuse official destructive heuristic; fail-open False on import errors.
+
+    Strip heredoc bodies first so Python/script comparisons like ``n>=maxn`` /
+    ``printed>0`` inside ``<<EOF`` are not treated as shell redirects (and thus
+    do not surface a Feishu tip when the project root is filtered).
+    """
     try:
         from agent.tool_dispatch_helpers import _is_destructive_command
 
-        return bool(_is_destructive_command(command))
+        visible = static_parser.strip_heredoc_bodies(command)
+        return bool(_is_destructive_command(visible))
     except Exception:
         return False
 
@@ -165,13 +172,11 @@ def _cwd_is_unsafe_snapshot_root(cwd: str) -> bool:
 
 
 def _destructive_cwd_fallback(command: str, cwd: str, agent, mgr) -> bool:
-    """静态为空且官方 _is_destructive_command 为真 → 仍快照 cwd。返回是否已兜底。"""
-    try:
-        from agent.tool_dispatch_helpers import _is_destructive_command
+    """静态为空且官方破坏性判定为真 → 仍快照 cwd。返回是否已兜底。
 
-        if not _is_destructive_command(command):
-            return False
-    except Exception:
+    走 ``_command_looks_destructive``（已剥 heredoc），避免 Python 比较运算符误触发兜底/弹卡。
+    """
+    if not _command_looks_destructive(command):
         return False
     if _cwd_is_unsafe_snapshot_root(cwd):
         logger.debug(
