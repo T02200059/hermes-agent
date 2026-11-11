@@ -105,7 +105,7 @@
 
 | 已定项 | 开户链路如何服从 |
 |--------|------------------|
-| **挂载三层** | 新 compose：**代码 RO** + **`profiles/<uid>`→`/root/.hermes`** + **`/home/<uid>`→`/root`**（`.hermes` 叠在 home 上） |
+| **挂载三层** | 新 compose：**代码 RO** + **`profiles/<uid>`→`/root/.hermes`** + **`/home/<uid>`→`/root`**（`.hermes` 叠在 home 上）+ **舰队 `overlay.yaml`→`/etc/hermes/overlay.yaml:ro`**（并设 `HERMES_OVERLAY_PATH`，供生命周期通知读 `fleet_profiles.<uid>.display_name`） |
 | **`fleet_profiles.<ldap_uid>`** | 开户写入的**唯一人卡真相源**；`api_server` 供 C05 推导 endpoints |
 | **`hub_only`** | 人卡可选；测试号可 `hub_only.feishu: true` 留 Hub、不转发 |
 | **端口** | 写入 `api_server.url: http://127.0.0.1:<port>`；与现网 2602x 段一致 |

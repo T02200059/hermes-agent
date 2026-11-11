@@ -556,7 +556,13 @@ class GatewayNotificationsMixin(GatewayUpdateNotificationsMixin, GatewayNotifica
         """
         delivered: set[tuple[str, str, Optional[str]]] = set()
         skipped = skip_targets or set()
-        message = t("gateway.startup.online")
+        # [owner] profile display name in the online notice
+        # (owner/gateway/lifecycle_copy.py). Fail-open to the official string.
+        try:
+            from owner.gateway.lifecycle_copy import lifecycle_msg
+            message = lifecycle_msg("gateway.startup.online")
+        except Exception:
+            message = t("gateway.startup.online")
         targets = list(self._served_home_channel_transports())
         # A chat already notified for ANOTHER profile is not notified again.
         notified_chats = {

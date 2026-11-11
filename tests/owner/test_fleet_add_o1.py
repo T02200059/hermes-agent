@@ -72,8 +72,10 @@ def test_plan_dry_run_structured(fixture_overlay):
     assert any(v.endswith(":/root") and "/home/alice" in v for v in vols)
     assert any("/root/.hermes" in v and "profiles/alice" in v for v in vols)
     assert any(":ro" in v for v in vols)
+    assert any(v.endswith("/etc/hermes/overlay.yaml:ro") and "overlay.yaml:" in v for v in vols)
     assert plan["compose"]["environment"]["FEISHU_CONNECTION_MODE"] == "send_only"
     assert plan["compose"]["environment"]["HERMES_PROFILE"] == "alice"
+    assert plan["compose"]["environment"]["HERMES_OVERLAY_PATH"] == "/etc/hermes/overlay.yaml"
     phases = {c["phase"] for c in plan["planned_commands"]}
     assert phases == {"O3", "O4"}
     text = format_plan_text(plan)

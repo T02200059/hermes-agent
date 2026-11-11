@@ -703,6 +703,12 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - **落地**：`owner/patches/systemd_timeout_probe.py`；`gateway/shutdown_forensics.py` 薄委托 + prefer_scope。
   - **测**：`tests/owner/patches/test_systemd_timeout_probe.py`；`tests/gateway/test_shutdown_forensics.py` alignment 段。
   - **生效**：需重启 gateway 后启动对齐检查才走新探针。
+- [ ] **C31** · Docker profile 网关重启/上线通知带中文名（2026-11-11）· **优先级：P1** · **已落地** · tip 待定
+  - **现象**：profile 容器的「Hermes 正在重启」「网关已上线」与 Hub 文案完全相同，分不清是哪个人的网关。
+  - **策略**：复用旧 owner §7.14 `{profile_tag}`：`owner/gateway/lifecycle_copy.py`；default / custom / Hub 不加标签。标签解析：`HERMES_LIFECYCLE_LABEL`（手工覆盖，非官方）→ overlay `fleet_profiles.<id>.display_name`（人卡短中文名，集中管理；主来源）→ `profile.yaml` `display_name` → `profile.yaml` `description` → `HERMES_PROFILE`。overlay 查找：`HERMES_OVERLAY_PATH` → `$HERMES_HOME/overlay.yaml`（Hub/本机；容器内该路径是 per-profile 目录，不是舰队 overlay）→ 约定路径 `/etc/hermes/overlay.yaml`、`/data/hermes/overlay.yaml`。`fleet_add` compose 模板增加 `{hermes_root}/overlay.yaml:/etc/hermes/overlay.yaml:ro` 并设 `HERMES_OVERLAY_PATH`。本机 overlay 仍不写舰队段。node010 人卡已补短中文名（含张文国、曹灿、谢劼丹等；hermesxiyun 仍为默认服务号）；现网 13 个短名容器 compose 已加 overlay 只读挂载。
+  - **落地**：`gateway/run_shutdown.py`、`gateway/run_notifications.py` 薄委托，fail-open；不改官方 locale 骨架，按锚点插入标签（`Hermes` / `网关` / `Gateway`）。
+  - **测**：`tests/owner/gateway/test_lifecycle_copy.py`；`tests/owner/test_fleet_add_o1.py` / `test_fleet_add_o3.py` 覆盖 compose 挂载与 `HERMES_OVERLAY_PATH`。
+  - **生效**：需软重启对应 Docker profile 网关（USR1）；Hub 不重启。
 
 ## § yaml 整合方向（穿插落地；不大爆炸）
 

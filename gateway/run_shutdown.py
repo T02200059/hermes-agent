@@ -1026,7 +1026,15 @@ class GatewayShutdownMixin(GatewaySessionEndMixin):
         Called at the start of stop() while adapters are connected; send failures never block shutdown.
         """
         restart_source = self._restart_command_source if self._restart_requested else None
-        msg = t("gateway.shutdown.notice_restart" if self._restart_requested else "gateway.shutdown.notice_shutdown")
+        # [owner] profile display name in restart/shutdown notices
+        # (owner/gateway/lifecycle_copy.py). Fail-open to the official string.
+        try:
+            from owner.gateway.lifecycle_copy import lifecycle_msg
+            msg = lifecycle_msg(
+                "gateway.shutdown.notice_restart" if self._restart_requested else "gateway.shutdown.notice_shutdown"
+            )
+        except Exception:
+            msg = t("gateway.shutdown.notice_restart" if self._restart_requested else "gateway.shutdown.notice_shutdown")
         restart_key = None
         if restart_source is not None:
             with suppress(Exception):

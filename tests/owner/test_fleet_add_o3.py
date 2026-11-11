@@ -81,6 +81,8 @@ def test_compose_draft_three_layer_not_single_home():
     assert any(v.endswith(":/opt/venv:ro") for v in vols)
     assert any(v.endswith(":/root") and "home/alice" in v for v in vols)
     assert any("/root/.hermes" in v and "profiles/alice" in v for v in vols)
+    assert any(v.endswith("/etc/hermes/overlay.yaml:ro") for v in vols)
+    assert draft["environment"]["HERMES_OVERLAY_PATH"] == "/etc/hermes/overlay.yaml"
     # .hermes 必须排在 home 之后（叠挂）
     idx_root = next(i for i, v in enumerate(vols) if v.rstrip().endswith(":/root"))
     idx_hermes = next(i for i, v in enumerate(vols) if "/root/.hermes" in v)
