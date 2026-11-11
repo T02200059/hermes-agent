@@ -14,7 +14,15 @@ import logging
 import threading
 from typing import Any, Optional
 
-from owner.explainers.common import display_language_is_chinese, normalize_platform
+from owner.explainers.common import (
+    coerce_session_source,
+    display_language_is_chinese,
+    normalize_platform,
+    pack_explainer_route,
+    reply_anchor_from_source,
+    send_metadata_for_thread,
+    unpack_explainer_route,
+)
 from owner.explainers.config import load_kind_config, resolve_enabled
 from owner.explainers.english.detect import looks_like_english_reply
 from owner.explainers.english.explain import explain as explain_sync
@@ -27,8 +35,8 @@ _GATEWAY_REF: Any = None
 _ADAPTERS: dict[str, Any] = {}
 _REF_LOCK = threading.Lock()
 
-# session_id / gateway_session_key → (platform, chat_id)
-_SESSION_ROUTES: dict[str, tuple[str, str]] = {}
+# session_id / gateway_session_key → (platform, chat_id, thread_id, reply_to_message_id)
+_SESSION_ROUTES: dict[str, tuple[str, str, str, str]] = {}
 _ROUTE_LOCK = threading.Lock()
 
 # 去重：同一 session+正文指纹短时只解说一次
@@ -49,7 +57,9 @@ def _on_pre_gateway_dispatch(**kwargs: Any) -> None:
     global _GATEWAY_REF
     gateway = kwargs.get("gateway")
     event = kwargs.get("event")
-    source = kwargs.get("source")
+    source = coerce_session_source(kwargs.get("source"))
+    if source is None and event is not None:
+        source = coerce_session_source(getattr(event, "source", None))
     session_key = str(
         kwargs.get("session_key")
         or kwargs.get("gateway_session_key")
@@ -58,12 +68,23 @@ def _on_pre_gateway_dispatch(**kwargs: Any) -> None:
     )
     platform = ""
     chat_id = ""
+    thread_id = ""
+    reply_to = ""
     if source is not None:
         platform = str(getattr(source, "platform", "") or "")
         chat_id = str(getattr(source, "chat_id", "") or "")
-    if not platform and event is not None:
-        platform = str(getattr(event, "platform", "") or "")
-        chat_id = chat_id or str(getattr(event, "chat_id", "") or "")
+        thread_id = str(getattr(source, "thread_id", "") or "").strip()
+        reply_to = reply_anchor_from_source(source, event)
+    if event is not None:
+        if not platform:
+            platform = str(getattr(event, "platform", "") or "")
+        if not chat_id:
+            chat_id = str(getattr(event, "chat_id", "") or "")
+        if not thread_id:
+            # Native topic id only; never event.root_id (that is a quote).
+            thread_id = str(getattr(event, "thread_id", "") or "").strip()
+        if not reply_to:
+            reply_to = reply_anchor_from_source(source, event)
     platform = platform.lower().replace("Platform.", "").strip()
     if hasattr(platform, "value"):
         platform = str(getattr(platform, "value", platform))
@@ -87,25 +108,26 @@ def _on_pre_gateway_dispatch(**kwargs: Any) -> None:
             logger.debug("english_explainer cache adapters failed", exc_info=True)
 
     if session_key and platform and chat_id:
+        route = pack_explainer_route(platform, chat_id, thread_id, reply_to)
         with _ROUTE_LOCK:
-            _SESSION_ROUTES[session_key] = (platform, chat_id)
+            _SESSION_ROUTES[session_key] = route
             # 也用尾段做宽松命中
             if ":" in session_key:
-                _SESSION_ROUTES[session_key.split(":")[-1]] = (platform, chat_id)
+                _SESSION_ROUTES[session_key.split(":")[-1]] = route
 
 
-def _lookup_route(session_id: str, platform_hint: str) -> tuple[str, str]:
+def _lookup_route(session_id: str, platform_hint: str) -> tuple[str, str, str, str]:
     sid = str(session_id or "")
     with _ROUTE_LOCK:
         if sid in _SESSION_ROUTES:
-            return _SESSION_ROUTES[sid]
+            return unpack_explainer_route(_SESSION_ROUTES[sid])
         for key, val in list(_SESSION_ROUTES.items())[-32:]:
             if sid and (sid in key or key in sid):
-                return val
+                return unpack_explainer_route(val)
     p = str(platform_hint or "").lower()
     if "." in p:
         p = p.split(".")[-1]
-    return p, ""
+    return pack_explainer_route(p, "")
 
 
 def _resolve_adapter(platform: str) -> Any:
@@ -202,7 +224,7 @@ def _on_transform_llm_output(
         platform_l = str(platform or "").lower()
         if "." in platform_l:
             platform_l = platform_l.split(".")[-1]
-        route_platform, chat_id = _lookup_route(session_id, platform_l)
+        route_platform, chat_id, thread_id, reply_to = _lookup_route(session_id, platform_l)
         if not platform_l:
             platform_l = route_platform
         if not resolve_enabled("english", platform_l, chat_id or None):
@@ -225,6 +247,8 @@ def _on_transform_llm_output(
                 "chat_id": chat_id,
                 "session_id": session_id,
                 "detection": detection,
+                "thread_id": thread_id,
+                "reply_to_message_id": reply_to,
             },
             name="english-explainer",
             daemon=True,
@@ -242,6 +266,8 @@ def _bg_translate_and_send(
     chat_id: str,
     session_id: str,
     detection: dict,
+    thread_id: str = "",
+    reply_to_message_id: str = "",
 ) -> None:
     try:
         route_info: dict = {}
@@ -269,10 +295,12 @@ def _bg_translate_and_send(
         send_ok = False
         msg_id = None
 
+        metadata = send_metadata_for_thread(thread_id, reply_to_message_id)
+
         async def _send() -> None:
             nonlocal send_ok, msg_id
             try:
-                res = await adapter.send(chat_id, body)
+                res = await adapter.send(chat_id, body, metadata=metadata)
                 send_ok = True
                 if res is not None:
                     msg_id = getattr(res, "message_id", None)

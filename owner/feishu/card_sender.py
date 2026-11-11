@@ -22,10 +22,12 @@ logger = logging.getLogger(__name__)
 
 
 def _resolve_receive_target(chat_id: str, metadata: Optional[dict[str, Any]] = None) -> tuple[str, str]:
-    """Resolve (receive_id, receive_id_type) for Feishu im/v1/messages.
+    """Resolve (receive_id, receive_id_type) for Feishu im/v1/messages create.
 
-    DM (p2p) paths require open_id + receive_id_type=open_id; group/thread
-    always use chat_id. Driven off explicit chat_type (not prefix heuristics).
+    DM (p2p) paths require open_id + receive_id_type=open_id. Interactive cards
+    in a topic must not use this create path with receive_id_type=thread_id
+    (API 99992402); callers should use ``_resolve_card_delivery`` / the reply
+    API instead. Group messages without a thread still use chat_id.
     """
     raw_chat_type = (metadata or {}).get("chat_type", "") or ""
     is_dm = raw_chat_type.strip().lower() in ("p2p", "dm")
@@ -42,6 +44,35 @@ def _resolve_receive_target(chat_id: str, metadata: Optional[dict[str, Any]] = N
         return chat_id, "chat_id"
 
     return chat_id, "chat_id"
+
+
+def _thread_id_from_metadata(metadata: Optional[dict[str, Any]] = None) -> str:
+    return str((metadata or {}).get("thread_id") or "").strip()
+
+
+def _reply_to_from_metadata(metadata: Optional[dict[str, Any]] = None) -> str:
+    return str((metadata or {}).get("reply_to_message_id") or "").strip()
+
+
+def _resolve_card_delivery(
+    chat_id: str, metadata: Optional[dict[str, Any]] = None
+) -> tuple[str, ...]:
+    """How to deliver an interactive card.
+
+    Returns either:
+      - ``("reply", message_id)`` — use im/v1/messages/{id}/reply with reply_in_thread
+      - ``("thread_pending", thread_id)`` — topic send, but no reply anchor yet
+        (caller may fetch the last thread message; must NOT create on chat_id)
+      - ``("create", receive_id, receive_id_type)`` — main-chat / DM create path
+    """
+    thread_id = _thread_id_from_metadata(metadata)
+    if thread_id:
+        reply_to = _reply_to_from_metadata(metadata)
+        if reply_to:
+            return ("reply", reply_to)
+        return ("thread_pending", thread_id)
+    receive_id, receive_id_type = _resolve_receive_target(chat_id, metadata)
+    return ("create", receive_id, receive_id_type)
 
 
 
@@ -90,6 +121,72 @@ def _maybe_tag_card_profile(adapter: FeishuAdapter, card: dict[str, Any]) -> Non
 
 
 
+async def _resolve_interactive_reply_to(
+    adapter: FeishuAdapter,
+    metadata: Optional[dict[str, Any]] = None,
+) -> Optional[str]:
+    """Return a topic message id so interactive cards can use the reply API.
+
+    Creating an interactive card with receive_id_type=thread_id fails with
+    Feishu 99992402. Official ``_send_raw_message`` already uses
+    ``reply_in_thread=True`` when reply_to / metadata.reply_to_message_id is set.
+    """
+    delivery = _resolve_card_delivery("", metadata)
+    if delivery[0] == "reply":
+        return delivery[1]
+    if delivery[0] != "thread_pending":
+        return None
+    thread_id = delivery[1]
+    fetch = getattr(adapter, "_fetch_last_message_in_thread", None)
+    if not callable(fetch):
+        return None
+    try:
+        last = await fetch(thread_id)
+    except Exception:
+        logger.debug(
+            "[Feishu] fetch last thread message failed thread_id=%s", thread_id, exc_info=True
+        )
+        return None
+    if last:
+        return str(last)
+    return None
+
+
+def _rest_last_message_in_thread(
+    requests_mod: Any, base_url: str, access_token: str, thread_id: str
+) -> Optional[str]:
+    """List the latest message in a topic using the REST token (not the WS client)."""
+    if not thread_id:
+        return None
+    try:
+        resp = requests_mod.get(
+            f"{base_url}/im/v1/messages",
+            headers={"Authorization": f"Bearer {access_token}"},
+            params={
+                "container_id_type": "thread",
+                "container_id": thread_id,
+                "page_size": 1,
+                "sort_type": "ByCreateTimeDesc",
+            },
+            timeout=10,
+        )
+        data = resp.json()
+        if data.get("code", -1) != 0:
+            logger.debug(
+                "[Feishu] list thread messages failed (code %s): %s",
+                data.get("code"),
+                data.get("msg"),
+            )
+            return None
+        items = (data.get("data") or {}).get("items") or []
+        if items and isinstance(items[0], dict):
+            mid = str(items[0].get("message_id") or "").strip()
+            return mid or None
+    except Exception:
+        logger.debug("[Feishu] list thread messages failed thread_id=%s", thread_id, exc_info=True)
+    return None
+
+
 async def send_card_via_rest(
     adapter: FeishuAdapter,
     chat_id: str,
@@ -130,19 +227,55 @@ async def send_card_via_rest(
     except Exception as exc:
         return SendResult(success=False, error=f"Feishu token request failed: {exc}")
 
-    receive_id, receive_id_type = _resolve_receive_target(chat_id, metadata)
+    payload = json.dumps(card, ensure_ascii=False)
+    delivery = _resolve_card_delivery(chat_id, metadata)
+    mode = delivery[0]
+    reply_to = ""
+    if mode == "reply":
+        reply_to = delivery[1]
+    elif mode == "thread_pending":
+        reply_to = _rest_last_message_in_thread(
+            _requests, base_url, access_token, delivery[1]
+        ) or ""
+        if not reply_to:
+            logger.warning(
+                "[Feishu] send_card_via_rest: topic card has thread_id=%s but no reply "
+                "anchor; refusing chat_id fallback (interactive create-by-thread_id is 99992402)",
+                delivery[1],
+            )
+            return SendResult(
+                success=False,
+                error="Feishu topic interactive card requires reply_in_thread (missing reply anchor)",
+            )
 
     try:
-        payload = json.dumps(card, ensure_ascii=False)
-        send_resp = _requests.post(  # noqa: ASYNC210 — sync REST avoids WS token refresh
-            f"{base_url}/im/v1/messages?receive_id_type={receive_id_type}",
-            headers={
-                "Authorization": f"Bearer {access_token}",
-                "Content-Type": "application/json",
-            },
-            json={"receive_id": receive_id, "msg_type": "interactive", "content": payload},
-            timeout=15,
-        )
+        if reply_to:
+            # Reply API + reply_in_thread keeps the card in the topic without 99992402.
+            send_resp = _requests.post(  # noqa: ASYNC210 — sync REST avoids WS token refresh
+                f"{base_url}/im/v1/messages/{reply_to}/reply",
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "content": payload,
+                    "msg_type": "interactive",
+                    "reply_in_thread": True,
+                },
+                timeout=15,
+            )
+            receive_id_type = "reply_in_thread"
+        else:
+            receive_id, receive_id_type = delivery[1], delivery[2]
+            send_resp = _requests.post(  # noqa: ASYNC210 — sync REST avoids WS token refresh
+                f"{base_url}/im/v1/messages?receive_id_type={receive_id_type}",
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Content-Type": "application/json",
+                },
+                json={"receive_id": receive_id, "msg_type": "interactive", "content": payload},
+                timeout=15,
+            )
         send_data = send_resp.json()
         code = send_data.get("code", -1)
         if code != 0:
@@ -210,12 +343,30 @@ async def send_card(
     try:
         _maybe_tag_card_profile(adapter, card)
         payload = json.dumps(card, ensure_ascii=False)
+        meta = dict(metadata) if metadata else None
+        reply_to = await _resolve_interactive_reply_to(adapter, meta)
+        if reply_to:
+            if meta is None:
+                meta = {}
+            meta.setdefault("reply_to_message_id", reply_to)
+        elif _thread_id_from_metadata(meta):
+            # Do not create with receive_id_type=thread_id (99992402). Stay
+            # in the topic by failing closed so callers can fall back to text.
+            logger.warning(
+                "[Feishu] send_card: topic card has thread_id=%s but no reply "
+                "anchor; skip create-by-thread_id (99992402)",
+                _thread_id_from_metadata(meta),
+            )
+            return SendResult(
+                success=False,
+                error="Feishu topic interactive card requires reply_in_thread (missing reply anchor)",
+            )
         response = await adapter._feishu_send_with_retry(
             chat_id=chat_id,
             msg_type="interactive",
             payload=payload,
-            reply_to=None,
-            metadata=metadata,
+            reply_to=reply_to,
+            metadata=meta,
         )
         result = adapter._finalize_send_result(response, "card send failed")
         if result.success:

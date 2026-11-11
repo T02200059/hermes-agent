@@ -103,3 +103,105 @@ def clip_input(text: Any, limit: int = DEFAULT_MAX_INPUT_CHARS) -> str:
         return s[-n:]
     body_budget = n - len(marker)
     return marker + s[-body_budget:]
+
+# ---------------------------------------------------------------------------
+# Outbound route: keep Feishu topic cards in the topic (not the parent chat).
+# ---------------------------------------------------------------------------
+
+def coerce_session_source(raw: Any) -> Any:
+    """Accept SessionSource, a dict, or None. Never promote ``root_id`` to thread_id."""
+    if raw is None:
+        return None
+    if isinstance(raw, dict):
+        class _Src:
+            pass
+
+        src = _Src()
+        src.platform = raw.get("platform")
+        src.chat_id = raw.get("chat_id")
+        # Native topic id only — quoted replies also have root_id, which is not a topic.
+        src.thread_id = raw.get("thread_id")
+        src.message_id = raw.get("message_id")
+        src.reply_to_message_id = raw.get("reply_to_message_id")
+        return src
+    return raw
+
+
+def native_thread_id(source: Any) -> str:
+    """SessionSource.thread_id only (Feishu native topic). Never root_id / quote id."""
+    if source is None:
+        return ""
+    return str(getattr(source, "thread_id", "") or "").strip()
+
+
+def reply_anchor_from_source(source: Any, event: Any = None) -> str:
+    """A message id that already lives in the topic, used as reply_in_thread anchor."""
+    candidates = []
+    if source is not None:
+        candidates.append(getattr(source, "message_id", None))
+        candidates.append(getattr(source, "reply_to_message_id", None))
+    if event is not None:
+        candidates.append(getattr(event, "message_id", None))
+        candidates.append(getattr(event, "reply_to_message_id", None))
+    for cand in candidates:
+        value = str(cand or "").strip()
+        if value:
+            return value
+    return ""
+
+
+def pack_explainer_route(
+    platform: str,
+    chat_id: str,
+    thread_id: str = "",
+    reply_to_message_id: str = "",
+) -> tuple[str, str, str, str]:
+    return (
+        str(platform or ""),
+        str(chat_id or ""),
+        str(thread_id or ""),
+        str(reply_to_message_id or ""),
+    )
+
+
+def unpack_explainer_route(val: Any) -> tuple[str, str, str, str]:
+    """Normalize a stored route; older 2-tuples (platform, chat_id) still unpack."""
+    if not val:
+        return "", "", "", ""
+    if isinstance(val, dict):
+        return pack_explainer_route(
+            str(val.get("platform") or ""),
+            str(val.get("chat_id") or ""),
+            str(val.get("thread_id") or ""),
+            str(val.get("reply_to_message_id") or ""),
+        )
+    try:
+        parts = tuple(val)
+    except TypeError:
+        return "", "", "", ""
+    platform = str(parts[0] or "") if len(parts) > 0 else ""
+    chat_id = str(parts[1] or "") if len(parts) > 1 else ""
+    thread_id = str(parts[2] or "") if len(parts) > 2 else ""
+    reply_to = str(parts[3] or "") if len(parts) > 3 else ""
+    return pack_explainer_route(platform, chat_id, thread_id, reply_to)
+
+
+def send_metadata_for_thread(
+    thread_id: str = "",
+    reply_to_message_id: str = "",
+    *,
+    source: Any = None,
+    event: Any = None,
+) -> dict[str, str] | None:
+    """Adapter.send metadata so official outbound stays in a Feishu topic.
+
+    Returns None when there is no native thread_id (main-chat behaviour unchanged).
+    """
+    tid = str(thread_id or native_thread_id(source) or "").strip()
+    if not tid:
+        return None
+    rid = str(reply_to_message_id or "").strip() or reply_anchor_from_source(source, event)
+    meta = {"thread_id": tid}
+    if rid:
+        meta["reply_to_message_id"] = rid
+    return meta

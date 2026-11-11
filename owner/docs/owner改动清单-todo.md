@@ -473,6 +473,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - 说明：`owner/docs/c11-feishu-auto-card-base.md`
   - 测：`tests/owner/test_c11_auto_card.py`（含 `recap["template"] == "orange"` 断言）、`tests/owner/test_feishu_agent_end_media.py`
   - 依赖：C04 已落地；卡发送复用官方 `_feishu_send_with_retry` / `_finalize_send_result`
+  - **话题交互卡（2026-11-11）**：`send_card` / `send_card_via_rest` 在有 `metadata.thread_id` 时走 reply API（`reply_in_thread=True`），不按 `receive_id_type=thread_id` 创建（99992402）。详见 C13「飞书话题发卡」。测：`tests/owner/test_c13_feishu_thread_cards.py`
 - [x] **C11-bot-menu** · 源 §4.6 · bot 菜单 menu_v6 + p2p 暖缓存 · **优先级：P1**（阶段三）· **已落地**
   - `owner/feishu/bot_menu.py`；adapter 注册/委托 + p2p/inbound cache warm；`overlay.yaml` → `feishu.bot_menu*`
   - 测：`tests/owner/test_owner_feishu_bot_menu_cold_cache.py`；说明：`owner/docs/c11-bot-menu.md`
@@ -554,6 +555,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
     - 入口：按需 `/recap`（第四 kind）；notice `📋 系统提示：`；正文落 `messages`（`role=notice`）作审计，不入主会话模型；watermark 只管自动门控
     - 自动触发（对齐 Grok Build `session_recap.rs`）：回合结束后闲置 `idle_seconds=180`；触发条件为 `min_user_turns=3` **或** 末条助手可见字数 ≥ `min_assistant_chars`（默认 800，按 Unicode 字符计；`0` 关闭）—— 单回合长答也可触发（2026-11-05）；watermark 防刷；配置 `explainers.recap.auto`；判定逻辑 `owner/explainers/recap/gate.py`
     - 自动路由：`pre_gateway_dispatch` 读 `event.source`；`on_session_end` 经 session_store origin 回补 chat_id（idle 阈值不变，2026-11-03）
+    - **飞书话题发卡（2026-11-11）**：主对话 + 话题并发时，progress / recap / english 只把 `chat_id` 传给 `adapter.send`，丢掉 `source.thread_id`，回顾/进度/英文卡会落到主对话。现于 explainer 路由记住并下发 `metadata.thread_id`（及 `reply_to_message_id`）；主对话（无 thread_id）行为不变，不把 `root_id` 当话题。交互卡在 owner `card_sender` 走官方 reply API（`reply_in_thread=True`，必要时回复话题内最近一条），避免 `receive_id_type=thread_id` 创建触发 99992402。REST 旁路同样认识 thread_id，不再回落到只发 chat_id。测：`tests/owner/test_c13_feishu_thread_cards.py`、`tests/owner/test_c13_recap_auto.py`、`tests/owner/test_c11_auto_card.py`
     - 文案取向：进度条文案（做到哪了/完成度/下一步），禁文件名/表 id 罗列；硬帽仍 350（`clean_output`；提示词要求 ≤220 汉字，2026-11-05）
     - 卡片：标题色见 C11「notice 卡规则」（2026-11-04）
   - **kind · approval**：审批卡发出前 2–3 句事实解说；飞书冻结卡保留 C13 命令说明附录（send 写入 `_approval_state.body_text` → `build_resolved_card`，2026-11-03）

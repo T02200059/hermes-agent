@@ -158,9 +158,20 @@ class ProgressExplainer:
         self._agent_holder = agent_holder if agent_holder is not None else ([agent] if agent is not None else None)
         # 性能纪律：配置只在安装时读一次（§4），tick 循环里只读缓存值
         self._cfg = load_kind_config("progress")
-        from owner.explainers.common import normalize_platform
+        from owner.explainers.common import (
+            native_thread_id,
+            normalize_platform,
+            reply_anchor_from_source,
+            send_metadata_for_thread,
+        )
         self._platform = normalize_platform(getattr(source, "platform", "") if source is not None else "")
         self._chat_id = str(getattr(source, "chat_id", "") or "") if source is not None else ""
+        # Native topic id only; reply anchor lets interactive cards use reply_in_thread.
+        self._thread_id = native_thread_id(source) if source is not None else ""
+        self._reply_to_message_id = reply_anchor_from_source(source) if source is not None else ""
+        self._send_metadata = send_metadata_for_thread(
+            self._thread_id, self._reply_to_message_id
+        )
         # identity 占位：agent 未解出前 tracker 先按 session_key 注册（唯一、
         # 非 None —— 安装点已保证 session_key 可用），agent 解出后重键到
         # "session_id|turn_id"（与 on_stream_delta payload 的 key 一致）。
@@ -430,7 +441,7 @@ class ProgressExplainer:
         if not self._run_still_current():
             return
         try:
-            res = await adapter.send(self._chat_id, body)
+            res = await adapter.send(self._chat_id, body, metadata=self._send_metadata)
         except Exception as exc:
             logger.debug("progress_explainer send failed: %s", exc)
             return

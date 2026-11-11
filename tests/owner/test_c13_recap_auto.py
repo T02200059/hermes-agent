@@ -287,8 +287,8 @@ def test_pre_gateway_dispatch_uses_event_source_only():
     auto_mod._on_pre_gateway_dispatch(event=event, gateway=FakeGw())
     with auto_mod._ROUTE_LOCK:
         routes = dict(auto_mod._SESSION_ROUTES)
-    assert routes.get("sid-from-store") == ("feishu", "oc_only_source")
-    assert routes.get("agent:main:feishu:dm:oc_only_source") == ("feishu", "oc_only_source")
+    assert routes.get("sid-from-store") == ("feishu", "oc_only_source", "", "")
+    assert routes.get("agent:main:feishu:dm:oc_only_source") == ("feishu", "oc_only_source", "", "")
 
 
 def test_on_session_end_gateway_routing_fallback():

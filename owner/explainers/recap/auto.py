@@ -20,7 +20,14 @@ import logging
 import threading
 from typing import Any, Dict, List, Optional, Tuple
 
-from owner.explainers.common import normalize_platform
+from owner.explainers.common import (
+    coerce_session_source,
+    normalize_platform,
+    pack_explainer_route,
+    reply_anchor_from_source,
+    send_metadata_for_thread,
+    unpack_explainer_route,
+)
 from owner.explainers.config import load_kind_config, resolve_enabled
 from owner.explainers.recap.explain import explain_from_messages
 from owner.explainers.recap.gate import (
@@ -54,11 +61,11 @@ _GATEWAY_REF: Any = None
 _ADAPTERS: dict[str, Any] = {}
 _REF_LOCK = threading.Lock()
 
-# session_id / gateway_session_key → (platform, chat_id)
-_SESSION_ROUTES: dict[str, tuple[str, str]] = {}
+# session_id / gateway_session_key → (platform, chat_id, thread_id, reply_to_message_id)
+_SESSION_ROUTES: dict[str, tuple[str, str, str, str]] = {}
 _ROUTE_LOCK = threading.Lock()
 
-# session_id → {timer, epoch, platform, chat_id}
+# session_id → {timer, epoch, platform, chat_id, thread_id, reply_to_message_id}
 _PENDING: dict[str, dict[str, Any]] = {}
 _PENDING_LOCK = threading.Lock()
 _EPOCH = 0
@@ -175,26 +182,17 @@ def register_hooks(ctx: Any) -> None:
 
 def _coerce_source(raw: Any) -> Any:
     """Accept SessionSource, dict (post_admission shape), or None."""
-    if raw is None:
-        return None
-    if isinstance(raw, dict):
-        # Minimal duck for platform/chat_id extraction.
-        class _Src:
-            pass
-
-        src = _Src()
-        src.platform = raw.get("platform")  # type: ignore[attr-defined]
-        src.chat_id = raw.get("chat_id")  # type: ignore[attr-defined]
-        return src
-    return raw
+    return coerce_session_source(raw)
 
 
-def _platform_chat_from_source(source: Any) -> tuple[str, str]:
+def _platform_chat_from_source(source: Any) -> tuple[str, str, str, str]:
     if source is None:
-        return "", ""
+        return pack_explainer_route("", "")
     platform = normalize_platform(getattr(source, "platform", "") or "")
     chat_id = str(getattr(source, "chat_id", "") or "").strip()
-    return platform, chat_id
+    thread_id = str(getattr(source, "thread_id", "") or "").strip()
+    reply_to = reply_anchor_from_source(source)
+    return pack_explainer_route(platform, chat_id, thread_id, reply_to)
 
 
 def _resolve_inbound_source(**kwargs: Any) -> Any:
@@ -260,6 +258,8 @@ def _remember_route(
     session_key: str = "",
     sid_hint: str = "",
     gateway: Any = None,
+    thread_id: str = "",
+    reply_to_message_id: str = "",
 ) -> None:
     if not platform or not chat_id:
         return
@@ -286,43 +286,51 @@ def _remember_route(
                 logger.debug("recap_auto remember route via session_key failed", exc_info=True)
     if not keys:
         return
-    route = (platform, chat_id)
+    route = pack_explainer_route(platform, chat_id, thread_id, reply_to_message_id)
     with _ROUTE_LOCK:
         for key in keys:
             if key:
                 _SESSION_ROUTES[key] = route
 
 
-def _route_from_gateway(session_id: str) -> tuple[str, str]:
+def _route_from_gateway(session_id: str) -> tuple[str, str, str, str]:
     """Fall back to SessionStore origin when the in-memory route cache missed."""
     sid = str(session_id or "").strip()
     if not sid:
-        return "", ""
+        return pack_explainer_route("", "")
     with _REF_LOCK:
         gw = _GATEWAY_REF
     if gw is None:
-        return "", ""
+        return pack_explainer_route("", "")
     store = getattr(gw, "session_store", None)
     if store is None:
-        return "", ""
+        return pack_explainer_route("", "")
     try:
         lookup = getattr(store, "lookup_by_session_id", None)
         entry = lookup(sid) if callable(lookup) else None
     except Exception:
         logger.debug("recap_auto gateway routing lookup failed", exc_info=True)
-        return "", ""
+        return pack_explainer_route("", "")
     if entry is None:
-        return "", ""
+        return pack_explainer_route("", "")
     origin = getattr(entry, "origin", None)
-    platform, chat_id = _platform_chat_from_source(origin)
+    platform, chat_id, thread_id, reply_to = _platform_chat_from_source(origin)
     if not platform:
         platform = normalize_platform(getattr(entry, "platform", "") or "")
     if not chat_id:
-        return platform, ""
+        return pack_explainer_route(platform, "")
     # Seed cache for subsequent ends / cancels.
     sk = str(getattr(entry, "session_key", "") or "").strip()
-    _remember_route(platform=platform, chat_id=chat_id, session_key=sk, sid_hint=sid, gateway=None)
-    return platform, chat_id
+    _remember_route(
+        platform=platform,
+        chat_id=chat_id,
+        session_key=sk,
+        sid_hint=sid,
+        gateway=None,
+        thread_id=thread_id,
+        reply_to_message_id=reply_to,
+    )
+    return pack_explainer_route(platform, chat_id, thread_id, reply_to)
 
 
 def _on_pre_gateway_dispatch(**kwargs: Any) -> None:
@@ -331,13 +339,19 @@ def _on_pre_gateway_dispatch(**kwargs: Any) -> None:
     gateway = kwargs.get("gateway")
     event = kwargs.get("event")
     source = _resolve_inbound_source(**kwargs)
-    platform, chat_id = _platform_chat_from_source(source)
+    platform, chat_id, thread_id, reply_to = _platform_chat_from_source(source)
     # Legacy / test shapes: rare top-level fields on the event itself.
     if event is not None:
         if not platform:
             platform = normalize_platform(getattr(event, "platform", "") or "")
         if not chat_id:
             chat_id = str(getattr(event, "chat_id", "") or "").strip()
+        if not thread_id:
+            # Only event.source.thread_id (already tried) or a native event.thread_id.
+            # Never event.root_id — that is a quote, not a topic.
+            thread_id = str(getattr(event, "thread_id", "") or "").strip()
+        if not reply_to:
+            reply_to = reply_anchor_from_source(source, event)
     platform = normalize_platform(platform)
 
     if gateway is not None:
@@ -362,6 +376,8 @@ def _on_pre_gateway_dispatch(**kwargs: Any) -> None:
         session_key=session_key,
         sid_hint=sid_hint,
         gateway=gateway,
+        thread_id=thread_id,
+        reply_to_message_id=reply_to,
     )
 
     # User spoke → cancel idle auto for this conversation.
@@ -396,7 +412,7 @@ def _on_session_end(**kwargs: Any) -> None:
         if not session_id:
             return
         platform = normalize_platform(kwargs.get("platform") or "")
-        route_platform, chat_id = _lookup_route(session_id, platform)
+        route_platform, chat_id, thread_id, reply_to = _lookup_route(session_id, platform)
         platform = platform or route_platform
         if not resolve_enabled("recap", platform, chat_id or None):
             return
@@ -415,6 +431,8 @@ def _on_session_end(**kwargs: Any) -> None:
             min_assistant_chars=int(
                 auto_cfg.get("min_assistant_chars", MIN_ASSISTANT_CHARS_FOR_AUTO_RECAP)
             ),
+            thread_id=thread_id,
+            reply_to_message_id=reply_to,
         )
     except Exception:
         logger.debug("recap_auto on_session_end failed", exc_info=True)
@@ -442,6 +460,8 @@ def schedule_auto_recap(
     idle_seconds: float = RECAP_MIN_IDLE_SECONDS,
     min_user_turns: int = MIN_TURNS_FOR_AUTO_RECAP,
     min_assistant_chars: int = MIN_ASSISTANT_CHARS_FOR_AUTO_RECAP,
+    thread_id: str = "",
+    reply_to_message_id: str = "",
 ) -> None:
     """Cancel any prior timer and schedule a new idle auto-recap."""
     global _EPOCH
@@ -472,6 +492,10 @@ def schedule_auto_recap(
                         else min_assistant_chars
                     ),
                     idle_ok=True,
+                    thread_id=str(entry.get("thread_id") or thread_id or ""),
+                    reply_to_message_id=str(
+                        entry.get("reply_to_message_id") or reply_to_message_id or ""
+                    ),
                 )
             except Exception:
                 logger.debug("recap_auto fire failed", exc_info=True)
@@ -485,6 +509,8 @@ def schedule_auto_recap(
             "chat_id": chat_id,
             "min_user_turns": min_user_turns,
             "min_assistant_chars": min_assistant_chars,
+            "thread_id": thread_id,
+            "reply_to_message_id": reply_to_message_id,
         }
         timer.start()
     logger.debug(
@@ -524,6 +550,8 @@ def run_auto_recap(
     min_user_turns: int = MIN_TURNS_FOR_AUTO_RECAP,
     min_assistant_chars: int = MIN_ASSISTANT_CHARS_FOR_AUTO_RECAP,
     idle_ok: bool = True,
+    thread_id: str = "",
+    reply_to_message_id: str = "",
 ) -> Optional[str]:
     """Gate + generate + send. Returns delivery body or None. Updates watermark on success."""
     sid = str(session_id or "").strip()
@@ -584,7 +612,10 @@ def run_auto_recap(
     if not body:
         return None
 
-    if not _send_notice(plat, chat_id, body, cfg):
+    if not _send_notice(
+        plat, chat_id, body, cfg,
+        thread_id=thread_id, reply_to_message_id=reply_to_message_id,
+    ):
         return None
 
     try:
@@ -624,20 +655,25 @@ def note_manual_recap(session_id: str, messages: list[Any]) -> None:
     cancel_pending(sid)
 
 
-def _lookup_route(session_id: str, platform_hint: str) -> tuple[str, str]:
+def _lookup_route(session_id: str, platform_hint: str) -> tuple[str, str, str, str]:
     sid = str(session_id or "")
     with _ROUTE_LOCK:
         if sid in _SESSION_ROUTES:
-            return _SESSION_ROUTES[sid]
+            return unpack_explainer_route(_SESSION_ROUTES[sid])
         for key, val in list(_SESSION_ROUTES.items())[-64:]:
             if sid and (sid in key or key.endswith(sid) or key in sid):
-                return val
+                return unpack_explainer_route(val)
     # Gateway routing backfill: SessionEntry.origin when cache was never seeded
     # (e.g. first turn — session_id only exists after prepare, past pre_dispatch).
-    gw_platform, gw_chat = _route_from_gateway(sid)
+    gw_platform, gw_chat, gw_thread, gw_reply = _route_from_gateway(sid)
     if gw_chat:
-        return gw_platform or normalize_platform(platform_hint), gw_chat
-    return normalize_platform(platform_hint), ""
+        return pack_explainer_route(
+            gw_platform or normalize_platform(platform_hint),
+            gw_chat,
+            gw_thread,
+            gw_reply,
+        )
+    return pack_explainer_route(normalize_platform(platform_hint), "")
 
 
 def _resolve_adapter(platform: str) -> Any:
@@ -683,7 +719,15 @@ def _resolve_loop(adapter: Any) -> Any:
     return None
 
 
-def _send_notice(platform: str, chat_id: str, body: str, cfg: dict[str, Any]) -> bool:
+def _send_notice(
+    platform: str,
+    chat_id: str,
+    body: str,
+    cfg: dict[str, Any],
+    *,
+    thread_id: str = "",
+    reply_to_message_id: str = "",
+) -> bool:
     adapter = _resolve_adapter(platform)
     if adapter is None or not chat_id:
         logger.debug("recap_auto skip send (no adapter/chat) platform=%s", platform)
@@ -692,9 +736,10 @@ def _send_notice(platform: str, chat_id: str, body: str, cfg: dict[str, Any]) ->
     if loop is None:
         logger.debug("recap_auto no event loop for send")
         return False
+    metadata = send_metadata_for_thread(thread_id, reply_to_message_id)
 
     async def _send() -> None:
-        await adapter.send(chat_id, body)
+        await adapter.send(chat_id, body, metadata=metadata)
 
     try:
         fut = asyncio.run_coroutine_threadsafe(_send(), loop)
