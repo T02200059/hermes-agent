@@ -165,3 +165,71 @@ class TestParseSystemdDuration:
 # ---------------------------------------------------------------------------
 # check_systemd_timing_alignment
 # ---------------------------------------------------------------------------
+
+class TestCheckSystemdTimingAlignment:
+    def test_system_slice_cgroup_prefers_system_scope(self, monkeypatch, tmp_path):
+        """cgroup 含 system.slice 时把 prefer_scope=system 交给 owner probe，不误报 90s。"""
+        import builtins
+
+        cgroup = tmp_path / "cgroup"
+        cgroup.write_text(
+            "0::/system.slice/hermes-gateway.service\n", encoding="utf-8"
+        )
+        monkeypatch.setenv("INVOCATION_ID", "test-invocation")
+        real_open = builtins.open
+
+        def fake_open(path, *args, **kwargs):
+            if str(path) == "/proc/self/cgroup":
+                return real_open(cgroup, *args, **kwargs)
+            return real_open(path, *args, **kwargs)
+
+        monkeypatch.setattr(sf, "open", fake_open, raising=False)
+
+        seen = {}
+
+        def fake_probe(unit_name, prefer_scope=None):
+            seen["unit"] = unit_name
+            seen["prefer_scope"] = prefer_scope
+            return 330 * 1_000_000
+
+        monkeypatch.setattr(sf, "_systemd_timeout_stop_us", fake_probe)
+        monkeypatch.setattr(sf, "resolve_systemd_timeout_stop_sec", lambda drain, cron: 300)
+
+        result = sf.check_systemd_timing_alignment(drain_timeout=120.0, cron_drain_timeout=60.0)
+        assert seen["unit"] == "hermes-gateway.service"
+        assert seen["prefer_scope"] == "system"
+        assert result is not None
+        assert result["timeout_stop_sec"] == 330.0
+        assert result["mismatch"] is False
+
+    def test_user_slice_cgroup_prefers_user_scope(self, monkeypatch, tmp_path):
+        import builtins
+
+        cgroup = tmp_path / "cgroup"
+        cgroup.write_text(
+            "0::/user.slice/user-1000.slice/user@1000.service/app.slice/hermes-gateway.service\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("INVOCATION_ID", "test-invocation")
+        real_open = builtins.open
+
+        def fake_open(path, *args, **kwargs):
+            if str(path) == "/proc/self/cgroup":
+                return real_open(cgroup, *args, **kwargs)
+            return real_open(path, *args, **kwargs)
+
+        monkeypatch.setattr(sf, "open", fake_open, raising=False)
+
+        seen = {}
+
+        def fake_probe(unit_name, prefer_scope=None):
+            seen["prefer_scope"] = prefer_scope
+            return 90 * 1_000_000
+
+        monkeypatch.setattr(sf, "_systemd_timeout_stop_us", fake_probe)
+        monkeypatch.setattr(sf, "resolve_systemd_timeout_stop_sec", lambda drain, cron: 90)
+
+        result = sf.check_systemd_timing_alignment(drain_timeout=30.0)
+        assert seen["prefer_scope"] == "user"
+        assert result is not None
+        assert result["mismatch"] is False

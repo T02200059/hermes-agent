@@ -210,13 +210,20 @@ def check_systemd_timing_alignment(
         return None  # Not running under systemd (or at least not directly)
     # /proc/self/cgroup: "0::/user.slice/.../hermes-gateway.service"
     unit_name: Optional[str] = None
+    prefer_scope: Optional[str] = None
     with contextlib.suppress(OSError), open("/proc/self/cgroup", encoding="utf-8") as fh:
         for line in fh:
-            parts = reversed(line.strip().split("/"))
+            stripped = line.strip()
+            parts = reversed(stripped.split("/"))
             unit_name = next((p for p in parts if p.endswith(".service")), None)
             if unit_name:
+                path_parts = stripped.split("/")
+                if "system.slice" in path_parts:
+                    prefer_scope = "system"
+                elif "user.slice" in path_parts:
+                    prefer_scope = "user"
                 break
-    if (timeout_us := _systemd_timeout_stop_us(unit_name) if unit_name else None) is None:
+    if (timeout_us := _systemd_timeout_stop_us(unit_name, prefer_scope=prefer_scope) if unit_name else None) is None:
         return None
     timeout_stop_sec = timeout_us / 1_000_000.0
     expected = float(resolve_systemd_timeout_stop_sec(drain_timeout, cron_drain_timeout))
@@ -225,25 +232,10 @@ def check_systemd_timing_alignment(
             "mismatch": timeout_stop_sec < expected}
 
 
-def _systemd_timeout_stop_us(unit_name: str) -> Optional[int]:
-    """``TimeoutStopUSec`` of ``unit_name`` in microseconds; ``--user`` first (hermes' usual)."""
-    for flag in (["--user"], []):
-        try:
-            result = subprocess.run(
-                ["systemctl", *flag, "show", unit_name, "--property=TimeoutStopUSec"],
-                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=2.0,
-                check=False,
-            )
-        except (subprocess.TimeoutExpired, OSError):
-            continue
-        # Output: "TimeoutStopUSec=1min 30s" or "TimeoutStopUSec=90000000"
-        for line in result.stdout.splitlines() if result.returncode == 0 else ():
-            if line.startswith("TimeoutStopUSec="):
-                value = line.split("=", 1)[1].strip()
-                timeout_us = int(value) if value.isdigit() else parse_systemd_duration_to_us(value)
-                if timeout_us is not None:
-                    return timeout_us
-    return None
+def _systemd_timeout_stop_us(unit_name: str, prefer_scope: Optional[str] = None) -> Optional[int]:
+    # [owner] Scope-aware LoadState=loaded probe; see owner/patches/systemd_timeout_probe.py.
+    from owner.patches.systemd_timeout_probe import systemd_timeout_stop_us as _owner_probe
+    return _owner_probe(unit_name, prefer_scope=prefer_scope)
 
 
 def parse_systemd_duration_to_us(raw: str) -> Optional[int]:
