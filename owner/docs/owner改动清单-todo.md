@@ -697,7 +697,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - **配置**：overlay 可选 `feishu.ws_reconnect_guard`（DEFAULTS：`supervisor_retry_interval_s=600`，`max_failures=18`，`conn_url_timeout_s=30`，`sdk_reconnect_count=2`）
   - **测**：`tests/owner/test_feishu_ws_reconnect_guard.py`；官方 multiplex supervise 测已接短 interval policy
   - **生效**：需重启 gateway 后新 WS client 才带 guard
-- [x] **C30** · systemd TimeoutStop 启动误报（2026-11-06）· **优先级：P2** · **已落地** · tip `dc850fc7cf`
+- [x] **C30** · systemd TimeoutStop 启动误报（2026-11-06）· **优先级：P2** · **已落地** · tip `578ec5c72b`
   - **根因**：系统级 unit（cgroup `system.slice`）时 `systemctl --user show` 对未加载同名 unit 仍返回默认 `TimeoutStopUSec=1min 30s`（LoadState=not-found），对齐检查误报 90s < expected。
   - **策略**：按 cgroup scope 优先探测；仅 `LoadState=loaded` 才解析 TimeoutStopUSec；不关检查。
   - **落地**：`owner/patches/systemd_timeout_probe.py`；`gateway/shutdown_forensics.py` 薄委托 + prefer_scope。
