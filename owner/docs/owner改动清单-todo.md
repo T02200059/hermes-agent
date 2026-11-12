@@ -709,6 +709,13 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - **落地**：`gateway/run_shutdown.py`、`gateway/run_notifications.py` 薄委托，fail-open；不改官方 locale 骨架，按锚点插入标签（`Hermes` / `网关` / `Gateway`）。
   - **测**：`tests/owner/gateway/test_lifecycle_copy.py`；`tests/owner/test_fleet_add_o1.py` / `test_fleet_add_o3.py` 覆盖 compose 挂载与 `HERMES_OVERLAY_PATH`。
   - **生效**：需软重启对应 Docker profile 网关（USR1）；Hub 不重启。
+- [x] **C32** · 图像路由 `prefer-native` 档位（2026-11-12）· **优先级：P1** · **已落地** · tip `14d4eccc6c`
+  - **根因**：`auto` 下只要显式配了 `auxiliary.vision`，`decide_image_input_mode` 就无条件返回 `text`（维护者 2026-08-28 决策：命名的视觉后端即 de-facto 路由），主模型原生视觉被旁路；而官方 `providers.md` 又承诺 `model.supports_vision: true` 是单旋钮 —— 两者冲突，实测 `auto + supports_vision + aux 显式 = text`。根子是 `auxiliary.vision` 一键背三职（入站路由开关 / `vision_analyze` 后端 / 文本模型兜底描述器），无法表达「主模型能看图就用主模型，不能看再用 aux」。
+  - **策略**：**不动** `auto` / `native` / `text` 既有语义（保上游可合并），新增第四档 `prefer-native`：先查主模型 `supports_vision`，`True` → `native`，否则 → `text`（走 `auxiliary.vision` 描述器）；显式 aux 后端在该档只作 fallback。
+  - **落地**：`agent/image_routing.py`（`_VALID_MODES` 加档位、`decide_image_input_mode` 新增分支并前移 `extra`、模块 docstring）；`website/docs/user-guide/features/vision.md` 路由表补 `prefer-native` 行。
+  - **测**：`tests/agent/test_image_routing.py`（`_coerce_mode` 认可新档位；主模型支持→native、不支持→text），该文件 53 passed。
+  - **配置**：本机与 node010 `config.yaml` → `agent.image_input_mode: prefer-native`；`auxiliary.vision` 保持 `deepseek/deepseek-v4-flash` 非空，作文本模型兜底。
+  - **生效**：需重启 gateway；旧进程不认识新档位会回落 `auto`（即 `text`）。cron 等子进程启动时即读到新代码。
 
 ## § yaml 整合方向（穿插落地；不大爆炸）
 
