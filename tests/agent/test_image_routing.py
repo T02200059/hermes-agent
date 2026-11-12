@@ -28,6 +28,9 @@ class TestCoerceMode:
         assert _coerce_mode("NATIVE") == "native"
         assert _coerce_mode("Auto") == "auto"
 
+    def test_prefer_native_is_a_valid_mode(self):
+        assert _coerce_mode("prefer-native") == "prefer-native"
+
     def test_invalid_falls_back_to_auto(self):
         assert _coerce_mode("nonsense") == "auto"
         assert _coerce_mode("") == "auto"
@@ -80,6 +83,16 @@ class TestDecideImageInputMode:
                "auxiliary": {"vision": {"provider": "openrouter", "model": "google/gemini-2.5-flash"}}}
         with patch("agent.image_routing._lookup_supports_vision", return_value=True):
             assert decide_image_input_mode("anthropic", "claude-sonnet-4", cfg) == "native"
+
+    def test_prefer_native_follows_main_model_with_aux_as_fallback(self):
+        """agent.image_input_mode: prefer-native — the main model's capability
+        decides; a named auxiliary.vision backend only kicks in when it cannot see."""
+        cfg = {"agent": {"image_input_mode": "prefer-native"},
+               "auxiliary": {"vision": {"provider": "openrouter", "model": "google/gemini-2.5-flash"}}}
+        with patch("agent.image_routing._lookup_supports_vision", return_value=True):
+            assert decide_image_input_mode("anthropic", "claude-sonnet-4", cfg) == "native"
+        with patch("agent.image_routing._lookup_supports_vision", return_value=False):
+            assert decide_image_input_mode("deepseek", "deepseek-v4-pro", cfg) == "text"
 
 
     def test_none_config_is_auto(self):

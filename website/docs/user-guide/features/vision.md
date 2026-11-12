@@ -211,6 +211,7 @@ To override the automatic choice, set `agent.image_input_mode` in `config.yaml`:
 |-------|----------|
 | `auto` (default) | Native pixels when the model reports vision support, `vision_analyze` description otherwise. Configuring an explicit `auxiliary.vision` backend (a `provider` other than `auto`, or a `model` / `base_url`) also selects the description path, even for a vision-capable main model. |
 | `native` | Always attach pixels, even when the catalog says the model is text-only. |
+| `prefer-native` | Native pixels when the model reports vision support, and the `vision_analyze` describer only when it does not. Unlike `auto`, an explicit `auxiliary.vision` backend is a fallback here rather than an override — the right choice when you keep a dedicated describer for text-only models but want a vision-capable main model to read the pixels itself. |
 | `text` | Always route images through the `vision_analyze` describer, never attach pixels to the main request. |
 
 This is the knob to reach for when a backend accepts text but rejects native image input (for example an `openai-codex` account whose backend answers image requests with `server_error`): keep your main model and point `auxiliary.vision` at a different vision-capable provider and model (with `auxiliary.vision.provider: auto` the describer would auto-detect the same main model again). That alone switches images to the description path in `auto` mode; `agent.image_input_mode: text` makes the same choice explicit.

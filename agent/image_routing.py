@@ -3,9 +3,11 @@
 ``native`` attaches images as OpenAI-style ``image_url`` parts; ``text`` runs
 ``vision_analyze`` up-front and prepends the lossy description (right for
 non-vision models). :func:`decide_image_input_mode` picks once per turn from
-``agent.image_input_mode`` (``auto`` | ``native`` | ``text``): in ``auto`` an
-explicit ``auxiliary.vision`` backend forces ``text`` even for vision-capable
-main models (``native`` is the absolute override); else ``supports_vision``
+``agent.image_input_mode`` (``auto`` | ``native`` | ``text`` | ``prefer-native``):
+in ``auto`` an explicit ``auxiliary.vision`` backend forces ``text`` even for
+vision-capable main models (``native`` is the absolute override); in
+``prefer-native`` the main model's ``supports_vision`` decides first and an
+explicit auxiliary backend is only the fallback; else ``supports_vision``
 (config override or catalog) decides. ``vision_analyze`` stays a tool regardless.
 """
 
@@ -24,7 +26,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 logger = logging.getLogger(__name__)
 
 
-_VALID_MODES = frozenset({"auto", "native", "text"})
+_VALID_MODES = frozenset({"auto", "native", "text", "prefer-native"})
 
 
 # Extensions extract_image_refs() auto-attaches. Documents/archives are excluded:
@@ -382,12 +384,16 @@ def decide_image_input_mode(
     """Return ``"native"`` or ``"text"`` for the given turn (``cfg`` None behaves as
     auto; ``requested_provider`` is the identity before runtime canonicalization)."""
     mode_cfg = _coerce_mode(_dict_or_empty(_dict_or_empty(cfg).get("agent")).get("image_input_mode"))
+    # Keep the three-argument call contract for callers/tests that replace the lookup hook.
+    extra = {"requested_provider": requested_provider} if requested_provider else {}
+    if mode_cfg == "prefer-native":
+        # Capability-first: the main model decides; an explicit auxiliary.vision
+        # backend is only the fallback when it cannot take pixels.
+        return "native" if _lookup_supports_vision(provider, model, cfg, **extra) is True else "text"
     if mode_cfg != "auto":
         return mode_cfg
     if _explicit_aux_vision_override(cfg):  # auto: an explicit auxiliary.vision backend wins
         return "text"
-    # Keep the three-argument call contract for callers/tests that replace the lookup hook.
-    extra = {"requested_provider": requested_provider} if requested_provider else {}
     return "native" if _lookup_supports_vision(provider, model, cfg, **extra) is True else "text"
 
 
