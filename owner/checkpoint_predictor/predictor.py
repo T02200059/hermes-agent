@@ -1,11 +1,12 @@
 """编排器 —— terminal 工具执行前的预测式 checkpoint 触发。
 
-数据流: 配置检查 → 解析 cd 前缀得生效目录 → 静态解析 → (候选不足时) LLM 兜底 →
-安全过滤 (丢弃 / 与 home, 丢弃不纳入快照的临时/内部目录) → 有合法 root 则
+数据流: 配置检查 → 解析 cd 前缀得生效目录 → 静态解析 → 只读命令短路 → (候选不足时)
+LLM 兜底 → 安全过滤 (丢弃 / 与 home, 丢弃凭据/临时/内部目录) → 有合法 root 则
 ensure_checkpoint；静态为空且官方判定破坏性时窄兜底拍 cwd。
 
-warn 策略：破坏性命令才用户可见；只读命令、落在 home/root 的非破坏性写入、
-以及落在黑名单目录的写入都只记 debug —— 这几类占历史上 9 成以上的噪音。
+warn 策略：只有真实写信号 (rm/cp/mv/sed -i/find -exec/引号外 >) 才用户可见；
+只读命令、落在 home/root 的非破坏性写入、以及落在黑名单目录的写入都只记 debug
+—— 这几类占历史上 9 成以上的噪音。只读命令整体短路，连 LLM 都不调。
 heredoc 体内的 ``>``/``>=`` 比较不算破坏性（不发飞书 tip）。
 
 永不抛异常 (与 CheckpointManager.ensure_checkpoint 的 "never raises" 一致)。
@@ -35,6 +36,11 @@ _JUNK_COMPONENTS = {
     ".cache", "chrome-clean-profile", ".Trash", ".cargo", ".rustup",
 }
 
+# 凭据目录: 快照它们没有回滚价值, 却会把私钥灌进 shadow store。
+_SECRET_COMPONENTS = {
+    ".ssh", ".aws", ".gnupg", ".kube", ".docker", ".password-store",
+}
+
 
 def _hermes_scratch_prefixes() -> tuple[str, ...]:
     """Hermes 自身的临时目录 (cache/tmp/logs/...), 不做快照。"""
@@ -62,6 +68,8 @@ def _root_is_blacklisted(root: str) -> bool:
     except (OSError, RuntimeError):
         pass
     if any(_JUNK_COMPONENTS.intersection(c.parts) for c in candidates):
+        return True
+    if any(_SECRET_COMPONENTS.intersection(c.parts) for c in candidates):
         return True
     for prefix in _EPHEMERAL_PREFIXES + _hermes_scratch_prefixes():
         bases = {Path(prefix)}
@@ -222,6 +230,13 @@ def predict_and_checkpoint(command: str, cwd: str, agent) -> None:
         static_candidates = static_parser.static_parse(command, work_dir)
         candidates = list(static_candidates)
 
+        # 1b. 只读闸门: 静态为空且整条命令没有写信号 → 不调 LLM、不弹 tip。
+        # 旧解析器下 7 天 1610 条 terminal 有 66% 静态为空 (含 449 条 2>/dev/null 假目标),
+        # 其中只读命令占大头; 让它们走 LLM 兜底既加延迟又会猜出 ~/.ssh。
+        if not static_candidates and static_parser.is_read_only_command(command):
+            logger.debug("checkpoint predict skipped: read-only cmd=%r", command[:80])
+            return
+
         # 2. 静态不足时 LLM 兜底
         if len(candidates) < cfg["predict_static_threshold"]:
             llm_results = llm_predict.llm_predict(
@@ -243,7 +258,7 @@ def predict_and_checkpoint(command: str, cwd: str, agent) -> None:
             # 窄兜底：静态为空 + 官方破坏性判定 → 仍快照 cwd（恢复旧树覆盖面）
             if not static_candidates and _destructive_cwd_fallback(command, work_dir, agent, mgr):
                 return
-            destructive = _command_looks_destructive(command)
+            destructive = static_parser.destructive_signal(command)
             if candidates and not blacklisted:
                 reason = "预测路径均被安全过滤 (项目根为 / 或 home)"
                 # 非破坏性的 home 写入 (cd ~ && echo > out.txt) 不值得弹卡: 预测本身已尽力。

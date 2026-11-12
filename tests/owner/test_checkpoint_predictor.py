@@ -325,7 +325,7 @@ def test_predict_resolves_relative_paths_against_cd_target(monkeypatch):
     predict_and_checkpoint(
         "cd /srv/app && python3 gen.py > out.txt 2> err.txt; echo done", home, agent
     )
-    assert seen == ["/srv/app/out.txt"]
+    assert seen == ["/srv/app/out.txt", "/srv/app/err.txt"]
     agent._checkpoint_mgr.ensure_checkpoint.assert_called_once()
     assert agent._checkpoint_mgr.ensure_checkpoint.call_args[0][0] == "/srv/app"
     agent._owner_warn_callback.assert_not_called()
@@ -464,3 +464,197 @@ def test_predict_real_redirect_home_still_tips(monkeypatch):
     agent._checkpoint_mgr.ensure_checkpoint.assert_not_called()
     agent._owner_warn_callback.assert_called_once()
     assert "预测失败" in agent._owner_warn_callback.call_args[0][0]
+
+
+# ── 引号感知重定向 / 只读闸门 (2026-11-12 线上回归) ──────────────────────────
+
+
+@pytest.mark.parametrize(
+    "cmd",
+    [
+        "awk '$1>2048{print $1\"KB\\t\"$2}' files.txt",  # 线上 11-12 10:30
+        "awk 'NR>1' all_nodes.yml",  # 线上 11-11 16:38
+        "grep -c 'a>b' x.txt",
+        'echo "=== 1. expired -> 2. done ==="',
+        "docker inspect c --format '{{range .Mounts}}{{.Source}} -> {{.Dest}}{{end}}'",
+    ],
+)
+def test_static_quoted_gt_is_not_redirect(cmd):
+    """引号里的 > / -> / >= 是文本, 不是重定向 (旧正则把它们都当写信号)。"""
+    assert static_parse(cmd, "/proj") == []
+
+
+def test_static_redirect_multiple_targets_skip_dev_null():
+    assert static_parse("python3 gen.py > out.txt 2> err.txt 2>/dev/null", "/proj") == [
+        "out.txt",
+        "err.txt",
+    ]
+
+
+def test_static_multiline_chain_detects_cp_target():
+    """cd/赋值/cp 用 && 串起来时也要认出真目标 (线上 11-12 18:57 漏拍的那条)。"""
+    cmd = (
+        "cd /data/hermes/profiles/zhangwg && TS=$(date +%Y%m%d-%H%M%S) && "
+        "echo \"TS=$TS\" && cp config.yaml config.yaml.bak-$TS"
+    )
+    assert static_parse(cmd, "/root") == ["config.yaml.bak-$TS"]
+
+
+@pytest.mark.parametrize(
+    "cmd",
+    [
+        "ls -la",
+        "cat foo.py | head -20",
+        "cd /data/xy-portal && grep -n expired bmc.py",
+        "docker logs --since 1h hermes 2>&1 | tail -50",
+        "docker inspect x --format '{{.Mounts}}'",
+        "kubectl -n prod get pods",
+        "ssh -o BatchMode=yes root@10.0.0.1 'kubectl get node'",
+        "git stash list; git ls-files | wc -l; du -sh .git",
+        "git ls-files -z | xargs -0 -I{} du -k '{}' | sort -rn | head",
+        "sed -n '1,40p' config.yaml",
+        "systemctl status nginx",
+        "find /var/log -name '*.log' | head",
+        "mysql --defaults-extra-file=/tmp/x.cnf -e \"START TRANSACTION; SELECT 1; COMMIT\"",
+        "nvidia-smi",
+    ],
+)
+def test_is_read_only_command_accepts_inspection(cmd):
+    assert static_parser.is_read_only_command(cmd) is True
+
+
+@pytest.mark.parametrize(
+    "cmd",
+    [
+        "rm -rf build",
+        "cp a b",
+        "sed -i 's/a/b/' f.py",
+        "echo hi > out.txt",
+        "echo hi >> out.txt",
+        "find . -delete",
+        r"find . -exec rm {} \;",
+        "python3 - <<'EOF'\nprint(1)\nEOF",
+        "bash deploy.sh",
+        "git stash push -m x",
+        "git reset --hard",
+        "docker exec c sh -c 'rm /x'",
+        "awk '{print > \"out\"}' f",
+        "kubectl delete pod x",
+        "mysql -e 'DELETE FROM t'",
+        "nvidia-smi --gpu-reset",
+    ],
+)
+def test_is_read_only_command_rejects_writes(cmd):
+    assert static_parser.is_read_only_command(cmd) is False
+
+
+@pytest.mark.parametrize(
+    "cmd,expected",
+    [
+        ("rm -rf x", True),
+        ("sed -i 's/a/b/' f", True),
+        ("echo hi > out.txt", True),
+        ("echo hi >> out.txt", False),  # 追加不覆盖
+        ("awk '$1>2048{print}' f", False),
+        ("docker logs x --format '{{.A}} -> {{.B}}'", False),
+        ("grep -n 'n>=3' f", False),
+        ("find . -exec rm {} \\;", True),
+    ],
+)
+def test_destructive_signal_is_quote_aware(cmd, expected):
+    assert static_parser.destructive_signal(cmd) is expected
+
+
+def test_predict_readonly_command_skips_llm_and_snapshot(monkeypatch):
+    """线上 11-12 18:57: sed/diff 只读命令 → 不调 LLM、不拍快照、不弹 tip。"""
+    monkeypatch.setattr(cp_config, "get_checkpoints_cfg", lambda: dict(cp_config._DEFAULTS))
+    called = {"llm": False}
+
+    def fake_llm(*a, **k):
+        called["llm"] = True
+        return ["config.yaml"]
+
+    monkeypatch.setattr(llm_predict, "llm_predict", fake_llm)
+    agent = _agent()
+    cmd = (
+        "cd /data/hermes/profiles/zhangwg; echo '--- model block'; "
+        "sed -n '/^model:/,/^providers:/p' config.yaml; "
+        "diff config.yaml.bak-x config.yaml | grep -c '^[<>]'"
+    )
+    predict_and_checkpoint(cmd, "/root", agent)
+    assert called["llm"] is False
+    agent._checkpoint_mgr.ensure_checkpoint.assert_not_called()
+    agent._owner_warn_callback.assert_not_called()
+
+
+def test_predict_awk_comparison_skips_llm(monkeypatch):
+    """线上 11-11 16:38 / 11-12 10:30: awk 里的 NR>1 / $1>2048 不再触发预测。"""
+    monkeypatch.setattr(cp_config, "get_checkpoints_cfg", lambda: dict(cp_config._DEFAULTS))
+    called = {"llm": False}
+
+    def fake_llm(*a, **k):
+        called["llm"] = True
+        return ["bmc.py"]
+
+    monkeypatch.setattr(llm_predict, "llm_predict", fake_llm)
+    agent = _agent()
+    predict_and_checkpoint(
+        "cd /data/xy-portal/backend/app/routers\n"
+        "grep -n expired bmc.py | head -10\n"
+        "awk 'NR>1 {print $1}' bmc.py",
+        "/data/xy-portal",
+        agent,
+    )
+    assert called["llm"] is False
+    agent._checkpoint_mgr.ensure_checkpoint.assert_not_called()
+    agent._owner_warn_callback.assert_not_called()
+
+
+def test_predict_ssh_pipeline_skips_llm(monkeypatch):
+    """ssh 远程命令不动本地文件 → 不调 LLM、不拍快照。"""
+    monkeypatch.setattr(cp_config, "get_checkpoints_cfg", lambda: dict(cp_config._DEFAULTS))
+    called = {"llm": False}
+
+    def fake_llm(*a, **k):
+        called["llm"] = True
+        return ["known_hosts"]
+
+    monkeypatch.setattr(llm_predict, "llm_predict", fake_llm)
+    agent = _agent()
+    predict_and_checkpoint(
+        "ssh -o BatchMode=yes root@10.10.100.9 'kubectl get node -o wide'",
+        "/root",
+        agent,
+    )
+    assert called["llm"] is False
+    agent._checkpoint_mgr.ensure_checkpoint.assert_not_called()
+    agent._owner_warn_callback.assert_not_called()
+
+
+def test_predict_script_ssh_guess_is_blacklisted(monkeypatch):
+    """线上 11-11 11:54: LLM 对 bash 脚本猜出 ~/.ssh → 被凭据黑名单挡掉。"""
+    monkeypatch.setattr(cp_config, "get_checkpoints_cfg", lambda: dict(cp_config._DEFAULTS))
+    monkeypatch.setattr(llm_predict, "llm_predict", lambda *a, **k: ["known_hosts"])
+    agent = _agent()
+    ssh_dir = str(__import__("pathlib").Path.home() / ".ssh")
+    agent._checkpoint_mgr.get_working_dir_for_path.side_effect = lambda p: ssh_dir
+    predict_and_checkpoint(
+        "bash /data/hermes/cache/scratch/maas_rack_ip.sh 2>&1 | grep -E 'ip|host'",
+        "/root",
+        agent,
+    )
+    agent._checkpoint_mgr.ensure_checkpoint.assert_not_called()
+    agent._owner_warn_callback.assert_not_called()
+
+
+def test_predict_blacklists_secret_dirs(monkeypatch):
+    """凭据目录 (如 ~/.ssh) 不作为快照根, 即使预测命中也不弹卡。"""
+    monkeypatch.setattr(cp_config, "get_checkpoints_cfg", lambda: dict(cp_config._DEFAULTS))
+    monkeypatch.setattr(static_parser, "static_parse", lambda *_: ["known_hosts"])
+    monkeypatch.setattr(llm_predict, "llm_predict", lambda *a, **k: [])
+    agent = _agent()
+    ssh_dir = str(__import__("pathlib").Path.home() / ".ssh")
+    agent._checkpoint_mgr.get_working_dir_for_path.side_effect = lambda p: ssh_dir
+    predict_and_checkpoint("ssh-keygen -R host", ssh_dir, agent)
+    agent._checkpoint_mgr.ensure_checkpoint.assert_not_called()
+    agent._owner_warn_callback.assert_not_called()
