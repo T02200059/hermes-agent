@@ -723,6 +723,13 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - **测**：`tests/agent/test_image_routing.py`（`_coerce_mode` 认可新档位；主模型支持→native、不支持→text），该文件 53 passed。
   - **配置**：本机与 node010 `config.yaml` → `agent.image_input_mode: prefer-native`；`auxiliary.vision` 保持 `deepseek/deepseek-v4-flash` 非空，作文本模型兜底。
   - **生效**：需重启 gateway；旧进程不认识新档位会回落 `auto`（即 `text`）。cron 等子进程启动时即读到新代码。
+- [x] **C33** · `feishu_doc_read` 读取 docx 嵌入式电子表格（2026-11-16）· **优先级：P1** · **已落地** · tip `58522ff021`
+  - **根因**：docx 的「插入 → 电子表格」是 `block_type=30` 的 inline sheet block，`raw_content` 对它**不产出任何文本**（连占位符都没有）。旧实现只回填了 image(27) 与 bitable(18)，于是数据全在表格里的文档读回来只剩标题骨架——实测某拓扑分析文档 5 个表格共 111 个单元格 = 正文 50.4% 字符、**全部 14 个 IP 与 5 个 MAC 全丢**，且失败是静默的（模型拿到的是一段没有 IP/端口的定性叙述）。
+  - **策略**：不重写读取管线（raw_content 还负责拍平 grid/样式），沿用 bitable 的「扫块 → 追加」写法；`sheet.token` 形如 `{spreadsheet_token}_{sheet_id}`，按 sheet 元数据取行列数后只读该 sheet 的范围（不是整个 spreadsheet），渲染 TSV。raw_content 不提供位置线索，故扫描时记录**最近的前置标题**作为小节锚点。读取失败输出「（读取失败：<token>）」占位，杜绝静默丢弃。
+  - **同族 bug**：sheets API 的带样式单元格是 segment 列表（`[{"text": "Partner "}, {"text": "e4:84…"}]`），旧代码借用 bitable 的 `_stringify_field` 会在片段间插 `", "`，把 `Partner e4:84:29:fc:43:2f` 变成 `Partner , e4:84…`（MAC/`{ACDEF}`/`0xa` 全部被污染）。新增 `_sheet_cell_text` 逐段拼接，`read_sheet_as_text` 与嵌入式表格共用。
+  - **落地**：`owner/feishu/client_utils.py`（`_sheet_cell_text`、`_block_plain_text`、`list_docx_sheet_blocks`、`_sheet_meta_by_id`、`_render_embedded_sheet`、`read_docx_embedded_sheets`；`read_docx_with_images` 追加 sheet 段）；`tools/feishu_doc_tool.py` schema 描述补一句。
+  - **测**：`tests/owner/test_c12_feishu_doc_enhancements.py` 105 passed（新增 16 条：顺序/跨页标题继承/坏 token/失败占位/元数据复用/富文本单元格）。注意 test 环境 `.venv` 无 `lark_oapi`（该文件 69 条用例在 `scripts/run_tests.sh` 下本就红），需用 `venv/bin/python -m pytest` 跑。
+  - **生效**：需重启 gateway（模块已在旧进程内存里）。cron 等子进程启动即生效。
 
 ## § yaml 整合方向（穿插落地；不大爆炸）
 
