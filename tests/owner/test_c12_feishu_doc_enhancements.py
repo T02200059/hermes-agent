@@ -1383,3 +1383,223 @@ class TestReadMergeForwardAsText:
         text, err = read_merge_forward_as_text(client, "om_parent")
         assert text is None
         assert "[230002]" in err
+
+
+class TestListDocxSheetBlocks(unittest.TestCase):
+    """Embedded spreadsheet blocks (block_type=30) are found in document order."""
+
+    def test_extracts_sheet_blocks_with_section_heading(self):
+        blocks = _make_response(data={
+            "items": [
+                {"block_type": 3, "heading1": {"elements": [
+                    {"text_run": {"content": "冗余情况"}}]}},
+                {"block_type": 2, "text": {"elements": [
+                    {"text_run": {"content": "正文"}}]}},
+                {"block_type": 30, "block_id": "blkA", "sheet": {
+                    "token": "ssTok1_S8iKuq"}},
+                {"block_type": 4, "heading2": {"elements": [
+                    {"text_run": {"content": "GPFS 现状"}}]}},
+                {"block_type": 30, "block_id": "blkB", "sheet": {
+                    "token": "ssTok1_f9Tafz"}},
+            ],
+            "has_more": False,
+        })
+        client = _StubClient(blocks)
+        sheets = fcu.list_docx_sheet_blocks(client, "doc123")
+        self.assertEqual([s["sheet_id"] for s in sheets], ["S8iKuq", "f9Tafz"])
+        self.assertEqual(sheets[0]["spreadsheet_token"], "ssTok1")
+        self.assertEqual(sheets[0]["sheet_token"], "ssTok1_S8iKuq")
+        self.assertEqual(sheets[0]["heading"], "冗余情况")
+        self.assertEqual(sheets[1]["heading"], "GPFS 现状")
+
+    def test_paginates_and_keeps_heading_across_pages(self):
+        page1 = _make_response(data={
+            "items": [
+                {"block_type": 3, "heading1": {"elements": [
+                    {"text_run": {"content": "跨页小节"}}]}},
+            ],
+            "has_more": True,
+            "page_token": "p2",
+        })
+        page2 = _make_response(data={
+            "items": [{"block_type": 30, "sheet": {"token": "ssTok_X1"}}],
+            "has_more": False,
+        })
+        client = _StubClient([page1, page2])
+        sheets = fcu.list_docx_sheet_blocks(client, "doc")
+        self.assertEqual(len(sheets), 1)
+        self.assertEqual(sheets[0]["heading"], "跨页小节")
+        self.assertEqual(len(client.calls), 2)
+
+    def test_skips_blocks_without_usable_token(self):
+        blocks = _make_response(data={
+            "items": [
+                {"block_type": 30, "sheet": {}},
+                {"block_type": 30, "sheet": "not-a-dict"},
+                {"block_type": 30, "sheet": {"token": "noUnderscore"}},
+                {"block_type": 30, "sheet": {"token": "okTok_Zz9"}},
+            ],
+            "has_more": False,
+        })
+        client = _StubClient(blocks)
+        sheets = fcu.list_docx_sheet_blocks(client, "doc")
+        self.assertEqual([s["sheet_token"] for s in sheets], ["okTok_Zz9"])
+
+    def test_api_error_returns_empty(self):
+        client = _StubClient(_make_response(code=1770002, msg="not found"))
+        self.assertEqual(fcu.list_docx_sheet_blocks(client, "doc"), [])
+
+    def test_no_sheet_blocks(self):
+        blocks = _make_response(data={
+            "items": [{"block_type": 1}, {"block_type": 2},
+                      {"block_type": 27, "image": {"token": "t"}}],
+            "has_more": False,
+        })
+        client = _StubClient(blocks)
+        self.assertEqual(fcu.list_docx_sheet_blocks(client, "doc"), [])
+
+
+class TestReadDocxEmbeddedSheets(unittest.TestCase):
+    """A doc whose data lives in inline spreadsheets must not read back empty."""
+
+    def _blocks_resp(self, tokens, heading="冗余情况"):
+        items = [{"block_type": 3, "heading1": {"elements": [
+            {"text_run": {"content": heading}}]}}]
+        items += [{"block_type": 30, "sheet": {"token": t}} for t in tokens]
+        return _make_response(data={"items": items, "has_more": False})
+
+    def _meta_resp(self, sheet_id, title, rows, cols):
+        return _make_response(data={"sheets": [{
+            "sheet_id": sheet_id,
+            "title": title,
+            "grid_properties": {"row_count": rows, "column_count": cols},
+        }]})
+
+    def _values_resp(self, values):
+        return _make_response(data={"valueRange": {"values": values}})
+
+    def test_renders_rows_with_section_anchor(self):
+        client = _StubClient([
+            self._blocks_resp(["ssTok_S1"]),
+            self._meta_resp("S1", "冗余情况表", 3, 2),
+            self._values_resp([["层级", "断点"], ["GPFS 接入", "ASW09 单点"], ["EOF", ""]]),
+        ])
+        text = fcu.read_docx_embedded_sheets(client, "doc")
+        self.assertIn("嵌入式电子表格 1", text)
+        self.assertIn("位于「冗余情况」", text)
+        self.assertIn("冗余情况表", text)
+        self.assertIn("GPFS 接入\tASW09 单点", text)
+
+    def test_shares_one_meta_call_across_sheets_of_the_same_spreadsheet(self):
+        client = _StubClient([
+            self._blocks_resp(["ssTok_S1", "ssTok_S2"]),
+            _make_response(data={"sheets": [
+                {"sheet_id": "S1", "title": "T1",
+                 "grid_properties": {"row_count": 2, "column_count": 1}},
+                {"sheet_id": "S2", "title": "T2",
+                 "grid_properties": {"row_count": 2, "column_count": 1}},
+            ]}),
+            self._values_resp([["a"]]),
+            self._values_resp([["b"]]),
+        ])
+        text = fcu.read_docx_embedded_sheets(client, "doc")
+        self.assertIn("工作表 T1（1 行） ===\na", text)
+        self.assertIn("工作表 T2（1 行） ===\nb", text)
+        # blocks + one meta + two value reads (meta not re-fetched per block)
+        self.assertEqual(len(client.calls), 4)
+
+    def test_read_failure_is_reported_not_silently_dropped(self):
+        client = _StubClient([
+            self._blocks_resp(["ssTok_S1"]),
+            _make_response(code=0, data={"sheets": []}),
+            _make_response(code=1310204, msg="range error"),
+        ])
+        text = fcu.read_docx_embedded_sheets(client, "doc")
+        self.assertIn("读取失败", text)
+        self.assertIn("ssTok_S1", text)
+
+    def test_cell_newlines_do_not_break_tsv(self):
+        client = _StubClient([
+            self._blocks_resp(["ssTok_S1"]),
+            self._meta_resp("S1", "T", 2, 1),
+            self._values_resp([["multi\nline\tcell"]]),
+        ])
+        text = fcu.read_docx_embedded_sheets(client, "doc")
+        self.assertIn("multi / line cell", text)
+
+    def test_no_sheets_returns_empty(self):
+        client = _StubClient(_make_response(data={"items": [], "has_more": False}))
+        self.assertEqual(fcu.read_docx_embedded_sheets(client, "doc"), "")
+
+
+class TestReadDocxWithImagesSheets(unittest.TestCase):
+    """End-to-end: embedded sheet data lands in the returned docx content."""
+
+    def test_sheet_data_appended_to_content(self):
+        responses = [
+            _make_response(data={"content": "问题结论\n正文"}),
+            # image token scan
+            _make_response(data={"items": [], "has_more": False}),
+            # bitable block scan
+            _make_response(data={"items": [], "has_more": False}),
+            # sheet block scan
+            _make_response(data={"items": [
+                {"block_type": 3, "heading1": {"elements": [
+                    {"text_run": {"content": "设备清单"}}]}},
+                {"block_type": 30, "sheet": {"token": "ssTok_e1"}},
+            ], "has_more": False}),
+            _make_response(data={"sheets": [{
+                "sheet_id": "e1", "title": "清单",
+                "grid_properties": {"row_count": 2, "column_count": 2},
+            }]}),
+            _make_response(data={"valueRange": {"values": [
+                ["设备", "IP"], ["ASW09", "10.20.254.31"],
+            ]}}),
+        ]
+        client = _StubClient(responses)
+        content, err, images = fcu.read_docx_with_images(
+            client, "doc", analyze_images=False,
+        )
+        self.assertIsNone(err)
+        self.assertEqual(images, [])
+        self.assertIn("问题结论", content)
+        self.assertIn("10.20.254.31", content)
+        self.assertIn("位于「设备清单」", content)
+
+
+class TestSheetCellText(unittest.TestCase):
+    """Rich-text segments must be concatenated, not joined with ", "."""
+
+    def test_segments_concatenate_verbatim(self):
+        cell = [
+            {"text": "6/6 节点 UP；Partner ", "type": "text",
+             "segmentStyle": {"bold": False}},
+            {"text": "e4:84:29:fc:43:2f", "type": "text",
+             "segmentStyle": {"bold": False}},
+            {"text": "，key 40003–40008", "type": "text",
+             "segmentStyle": {"bold": False}},
+        ]
+        self.assertEqual(
+            fcu._sheet_cell_text(cell),
+            "6/6 节点 UP；Partner e4:84:29:fc:43:2f，key 40003–40008",
+        )
+
+    def test_scalars_and_empty(self):
+        self.assertEqual(fcu._sheet_cell_text(None), "")
+        self.assertEqual(fcu._sheet_cell_text("x"), "x")
+        self.assertEqual(fcu._sheet_cell_text(30), "30")
+        self.assertEqual(fcu._sheet_cell_text(1.5), "1.5")
+
+    def test_read_sheet_as_text_keeps_styled_cell_intact(self):
+        meta_resp = _make_response(data={"sheets": [{
+            "sheet_id": "s1", "title": "T",
+            "grid_properties": {"row_count": 1, "column_count": 1},
+        }]})
+        values_resp = _make_response(data={"valueRange": {"values": [[
+            [{"text": "LACP ", "type": "text"},
+             {"text": "{ACDEF}", "type": "text"}],
+        ]]}})
+        client = _StubClient([meta_resp, values_resp])
+        text = fcu.read_sheet_as_text(client, "ss1")
+        self.assertIn("LACP {ACDEF}", text)
+        self.assertNotIn("LACP, {ACDEF}", text)

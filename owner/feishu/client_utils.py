@@ -668,6 +668,44 @@ def _col_letter(n):
     return s
 
 
+def _sheet_cell_text(value):
+    """Render one sheets-API cell value as plain text.
+
+    A styled cell comes back as a LIST of rich-text segments
+    (``[{"text": "Partner ", "segmentStyle": {...}}, {"text": "e4:84..."}]``).
+    Joining those with a separator (what ``_stringify_field`` does for bitable
+    fields) inserts punctuation that was never in the cell — segments must be
+    concatenated verbatim.
+    """
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (int, float, bool)):
+        return str(value)
+    if isinstance(value, list):
+        parts = []
+        for item in value:
+            if isinstance(item, dict):
+                text = item.get("text")
+                if text is not None:
+                    parts.append(str(text))
+                elif item.get("link"):
+                    parts.append(str(item["link"]))
+                else:
+                    parts.append(json.dumps(item, ensure_ascii=False))
+            else:
+                parts.append(str(item))
+        return "".join(parts)
+    if isinstance(value, dict):
+        if value.get("text") is not None:
+            return str(value["text"])
+        if value.get("link"):
+            return str(value["link"])
+        return json.dumps(value, ensure_ascii=False)
+    return str(value)
+
+
 _SHEET_META_URI = "/open-apis/sheets/v3/spreadsheets/:spreadsheet_token/sheets/query"
 _SHEET_VALUES_URI = (
     "/open-apis/sheets/v2/spreadsheets/:spreadsheet_token/values/:range"
@@ -749,7 +787,7 @@ def read_sheet_as_text(client, sheet_token):
             cells = []
             for c_idx in range(cols_to_read):
                 if c_idx < len(row) and row[c_idx] is not None:
-                    cells.append(_stringify_field(row[c_idx]))
+                    cells.append(_sheet_cell_text(row[c_idx]))
                 else:
                     cells.append("")
             row_lines.append("\t".join(cells))
@@ -1034,6 +1072,227 @@ def read_docx_embedded_bitables(client, doc_token):
             )
 
     return "\n\n".join(parts) if parts else ""
+
+
+# ---------------------------------------------------------------------------
+# [owner] Embedded spreadsheet blocks (block_type=30)
+#
+# A docx "电子表格" block (插入 → 电子表格, the inline spreadsheet view) is
+# neither text nor table: ``raw_content`` emits NOTHING for it, so a document
+# whose data lives in such blocks reads back as bare headings with the tables
+# silently missing. Verified against the live blocks API: block_type=30 carries
+# ``{"sheet": {"token": "{spreadsheet_token}_{sheet_id}"}}``.
+# ---------------------------------------------------------------------------
+
+_SHEET_BLOCK_TYPE = 30
+_DOCX_MAX_EMBEDDED_SHEETS = 50
+# Per-sheet render caps: an embedded sheet is a window into a spreadsheet and
+# can be padded to a huge grid. Keep the read bounded like read_sheet_as_text.
+_DOCX_EMBEDDED_SHEET_MAX_ROWS = 200
+_DOCX_EMBEDDED_SHEET_MAX_COLS = 30
+
+_HEADING_BLOCK_TYPES = range(3, 12)  # block_type 3..11 → heading1..heading9
+_HEADING_FIELD_NAMES = {
+    3: "heading1", 4: "heading2", 5: "heading3", 6: "heading4", 7: "heading5",
+    8: "heading6", 9: "heading7", 10: "heading8", 11: "heading9",
+}
+
+
+def _block_plain_text(block):
+    """Concatenate the ``text_run`` contents of a text-bearing block."""
+    field = _HEADING_FIELD_NAMES.get(block.get("block_type"), "text")
+    payload = block.get(field) or {}
+    if not isinstance(payload, dict):
+        return ""
+    parts = []
+    for element in payload.get("elements") or []:
+        if not isinstance(element, dict):
+            continue
+        run = element.get("text_run") or {}
+        if isinstance(run, dict):
+            parts.append(run.get("content") or "")
+    return "".join(parts).strip()
+
+
+def list_docx_sheet_blocks(client, doc_token, *, max_blocks=_DOCX_MAX_BLOCKS_SCANNED):
+    """Return ordered embedded-sheet blocks from a docx document's blocks.
+
+    Each item is ``{"block_id", "sheet_token", "spreadsheet_token", "sheet_id",
+    "heading"}``. ``spreadsheet_token`` is the part before the last ``_`` of
+    ``sheet.token``; ``heading`` is the nearest preceding heading text (the
+    only positional anchor available, because ``raw_content`` leaves sheet
+    blocks out entirely). Returns ``[]`` on API error or when none exist.
+    """
+    sheets = []
+    page_token = ""
+    scanned = 0
+    last_heading = ""
+    while len(sheets) < _DOCX_MAX_EMBEDDED_SHEETS and scanned < max_blocks:
+        queries = [("page_size", str(_DOCX_BLOCKS_PAGE_SIZE))]
+        if page_token:
+            queries.append(("page_token", page_token))
+        code, msg, data = do_request(
+            client, "GET", _DOCX_BLOCKS_URI,
+            paths={"document_id": doc_token},
+            queries=queries,
+        )
+        if code != 0:
+            logger.debug(
+                "feishu_client_utils: list blocks (sheets) failed doc=%s code=%s msg=%s",
+                doc_token, code, msg,
+            )
+            break
+
+        items = data.get("items") or []
+        scanned += len(items)
+        for block in items:
+            if not isinstance(block, dict):
+                continue
+            block_type = block.get("block_type")
+            if block_type in _HEADING_BLOCK_TYPES:
+                heading = _block_plain_text(block)
+                if heading:
+                    last_heading = heading
+                continue
+            if block_type != _SHEET_BLOCK_TYPE:
+                continue
+            sheet = block.get("sheet")
+            if not isinstance(sheet, dict):
+                continue
+            token = sheet.get("token") or ""
+            if not token or "_" not in token:
+                continue
+            spreadsheet_token, sheet_id = token.rsplit("_", 1)
+            sheets.append({
+                "block_id": block.get("block_id") or "",
+                "sheet_token": token,
+                "spreadsheet_token": spreadsheet_token,
+                "sheet_id": sheet_id,
+                "heading": last_heading,
+            })
+            if len(sheets) >= _DOCX_MAX_EMBEDDED_SHEETS:
+                break
+
+        if scanned >= max_blocks:
+            break
+        if not data.get("has_more") or not (data.get("page_token") or ""):
+            break
+        page_token = data.get("page_token") or ""
+    return sheets
+
+
+def _sheet_meta_by_id(client, spreadsheet_token):
+    """Return ``{sheet_id: sheet_meta}`` for one spreadsheet (``{}`` on error)."""
+    code, msg, data = do_request(
+        client, "GET", _SHEET_META_URI,
+        paths={"spreadsheet_token": spreadsheet_token},
+    )
+    if code != 0:
+        logger.debug(
+            "feishu_client_utils: sheet meta failed token=%s code=%s msg=%s",
+            spreadsheet_token, code, msg,
+        )
+        return {}
+    spreadsheet = (data or {}).get("spreadsheet") if isinstance(data, dict) else None
+    sheets = []
+    if isinstance(spreadsheet, dict):
+        sheets = spreadsheet.get("sheets") or []
+    if not sheets and isinstance(data, dict):
+        sheets = data.get("sheets") or []
+    return {
+        s.get("sheet_id"): s
+        for s in sheets
+        if isinstance(s, dict) and s.get("sheet_id")
+    }
+
+
+def _render_embedded_sheet(client, block, meta):
+    """Render one embedded sheet block as (header_line, row_lines)."""
+    sheet_id = block["sheet_id"]
+    grid = (meta or {}).get("grid_properties") or {}
+    rows_avail = int(grid.get("row_count") or 0)
+    cols_avail = int(grid.get("column_count") or 0)
+    rows = min(rows_avail or _DOCX_EMBEDDED_SHEET_MAX_ROWS,
+               _DOCX_EMBEDDED_SHEET_MAX_ROWS)
+    cols = min(cols_avail or _DOCX_EMBEDDED_SHEET_MAX_COLS,
+               _DOCX_EMBEDDED_SHEET_MAX_COLS)
+    if rows <= 0 or cols <= 0:
+        return None, []
+
+    range_str = f"{sheet_id}!A1:{_col_letter(cols)}{rows}"
+    code, msg, data = do_request(
+        client, "GET", _SHEET_VALUES_URI,
+        paths={"spreadsheet_token": block["spreadsheet_token"], "range": range_str},
+    )
+    if code != 0:
+        logger.debug(
+            "feishu_client_utils: embedded sheet values failed token=%s code=%s msg=%s",
+            block["sheet_token"], code, msg,
+        )
+        return None, []
+
+    value_range = None
+    if isinstance(data, dict):
+        value_range = data.get("valueRange")
+    rows_data = []
+    if isinstance(value_range, dict):
+        rows_data = value_range.get("values") or []
+
+    row_lines = []
+    for row in rows_data:
+        if not isinstance(row, list):
+            continue
+        cells = []
+        for c_idx in range(cols):
+            raw = row[c_idx] if c_idx < len(row) else None
+            text = _sheet_cell_text(raw)
+            # Tab/newline would break the TSV shape (same as sheet reads).
+            cells.append(text.replace("\t", " ").replace("\n", " / "))
+        row_lines.append("\t".join(cells))
+    # Spreadsheets pad the grid; drop trailing blank rows.
+    while row_lines and not row_lines[-1].strip():
+        row_lines.pop()
+
+    title = (meta or {}).get("title") or sheet_id
+    header = f"工作表 {title}（{len(row_lines)} 行）"
+    return header, row_lines
+
+
+def read_docx_embedded_sheets(client, doc_token):
+    """Render every embedded spreadsheet block (block_type=30) as text.
+
+    ``raw_content`` skips these blocks, so they are appended to the docx text
+    after the fact. Output per block::
+
+        === 嵌入式电子表格 2（位于「GPFS 现状」，工作表 f9Tafz）===
+        节点	存储 IP / MAC	ASW09 端口	...
+
+    Returns ``""`` when the document has no embedded sheets.
+    """
+    blocks = list_docx_sheet_blocks(client, doc_token)
+    if not blocks:
+        return ""
+
+    metas = {}
+    parts = []
+    for idx, block in enumerate(blocks, 1):
+        spreadsheet_token = block["spreadsheet_token"]
+        if spreadsheet_token not in metas:
+            metas[spreadsheet_token] = _sheet_meta_by_id(client, spreadsheet_token)
+        meta = metas[spreadsheet_token].get(block["sheet_id"]) or {}
+
+        header, row_lines = _render_embedded_sheet(client, block, meta)
+        where = f"，位于「{block['heading']}」" if block.get("heading") else ""
+        if header is None:
+            # Never drop silently: say the block exists but could not be read.
+            parts.append(
+                f"=== 嵌入式电子表格 {idx}{where}（读取失败：{block['sheet_token']}）==="
+            )
+            continue
+        parts.append(f"=== 嵌入式电子表格 {idx}{where}，{header} ===")
+        parts.extend(row_lines or ["(无数据)"])
+
+    return "\n".join(parts)
 
 
 def list_docx_image_tokens(client, doc_token, *, max_images=_DOCX_MAX_IMAGES):
@@ -1567,6 +1826,13 @@ def read_docx_with_images(
     bitable_text = read_docx_embedded_bitables(client, doc_token)
     if bitable_text:
         content = (content.rstrip() + "\n\n" + bitable_text) if content else bitable_text
+
+    # [owner] Embedded spreadsheet blocks (block_type=30). raw_content emits
+    # nothing for them, so without this a doc whose data lives in inline
+    # spreadsheets reads back as bare headings with the tables missing.
+    sheet_text = read_docx_embedded_sheets(client, doc_token)
+    if sheet_text:
+        content = (content.rstrip() + "\n\n" + sheet_text) if content else sheet_text
 
     return content, None, images
 

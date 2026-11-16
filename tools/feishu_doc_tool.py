@@ -22,6 +22,8 @@ FEISHU_DOC_READ_SCHEMA = {
         "For docx, embedded images are downloaded, OCR'd via auxiliary vision, "
         "and inlined into the text as [Image N: /path] plus the transcribed "
         "content (screenshot-heavy docs become readable without a second tool call). "
+        "Embedded bitables and embedded spreadsheets (电子表格 blocks) are "
+        "rendered as tab-separated tables appended to the text. "
         "Local paths remain available for re-inspection with vision_analyze."
     ),
     "parameters": {
