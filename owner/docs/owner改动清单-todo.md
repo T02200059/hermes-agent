@@ -463,6 +463,13 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
     - 故障/告警类：开头 `⚠️`/`⚠`→`❕`（更柔和）；`locales/*.yaml` + `.tui.yaml` 同前缀
     - 审批/告警类：代码硬编码前缀 ⚠️→💡（飞书卡 `_card`、多平台 `_EA_HEADER`、C13 stream-guard notice 键与 overlay 同步）；locales 保持 💡/🔄，不回滚
 
+- [x] **C10b** · 审批卡「标记原因」description 展示中文（保留英文键与术语） · **已落地**（2026-11-16）
+  - helper：`owner/i18n/approval_reasons.py`（`REASON_ZH` / `translate_reason` / 漂移用 `collect_static_detector_descriptions`）
+  - 胶水：`gateway/platforms/base.py::_format_exec_approval`；`gateway/run.py::_format_exec_approval_fallback`；`tools/approval_prompt.py::_ask_human`（CLI header only）
+  - 设计：`owner/docs/design/approval-reason-i18n/README.md`
+  - 测：`tests/owner/test_approval_reason_i18n.py`
+  - 约束：英文 description 仍是 allowlist/pattern 键；`ExecApprovalPrompt.description` / smart-approve / 检测器原文不改
+
 ### P1
 
 - [x] **C11 底座** · 源 §4.2–4.3 · auto-card / early-typing · **优先级：P1**（阶段二）

@@ -158,6 +158,13 @@ def _ask_human(command: str, description: str, timeout_seconds: int, allow_perma
     os.environ["HERMES_SPINNER_PAUSE"] = "1"
     try:
         from agent.i18n import t
+        # [owner] approval reason display i18n (see owner/i18n/approval_reasons.py)
+        # CLI header only — approval_callback above keeps English for allowlist / structured events.
+        try:
+            from owner.i18n.approval_reasons import translate_reason
+            display_description = translate_reason(display_description) or display_description
+        except Exception:
+            pass
         # (prompt key, menu key) by menu shape: once/deny, full, or no [a]lways.
         shape = "smart_deny" if once_only else "long" if allow_permanent else "short"
         prompt_key, menu_key = f"approval.prompt_{shape}", f"approval.choose_{shape}"

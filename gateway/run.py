@@ -595,6 +595,12 @@ def _format_exec_approval_fallback(
     steps a surface without buttons needs."""
     from gateway.platforms.base_exec_approval import (
         approval_timeout_seconds, ea_header_text, ea_reason_label_text, format_approval_deadline_line)
+    # [owner] approval reason display i18n (see owner/i18n/approval_reasons.py)
+    try:
+        from owner.i18n.approval_reasons import translate_reason
+        description = translate_reason(description) or description
+    except Exception:
+        pass
     cmd_preview = command[:200] + "..." if len(command) > 200 else command
     heading = (t("gateway.exec_approval.smart_deny_heading") if smart_denied
                else f"💡 **{ea_header_text()}**")  # [owner]

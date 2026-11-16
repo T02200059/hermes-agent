@@ -2832,6 +2832,12 @@ class BasePlatformAdapter(ABC):
         platform-local. ``description=None`` renders the localized default reason."""
         if description is None:
             description = ea_default_reason_text()
+        # [owner] approval reason display i18n (see owner/i18n/approval_reasons.py)
+        try:
+            from owner.i18n.approval_reasons import translate_reason
+            description = translate_reason(description) or description
+        except Exception:
+            pass
         if self._EA_REASON_BUDGET:
             description = self._ea_fit(str(description or ""), self._EA_REASON_BUDGET)
         cmd_preview = self._ea_fit(
