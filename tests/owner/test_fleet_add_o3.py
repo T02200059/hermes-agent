@@ -77,12 +77,20 @@ def test_compose_draft_three_layer_not_single_home():
         venv_dir="/tmp/fa/venv-docker",
     )
     vols = draft["volumes"]
-    assert any(v.endswith(":/opt/hermes-agent:ro") for v in vols)
-    assert any(v.endswith(":/opt/venv:ro") for v in vols)
+    assert any(v.endswith(":/data/hermes/hermes-agent:ro") for v in vols)
+    assert any(v.endswith(":/data/hermes/hermes-agent/venv:ro") for v in vols)
+    assert any(v.endswith(":/data/hermes/tools:ro") and "/tools:" in v for v in vols)
+    assert any(v.endswith(":/data/hermes/installs:rw") and "/installs:" in v for v in vols)
+    assert any(v.endswith(":/entrypoint.sh:ro") and "entrypoint-fleet.sh" in v for v in vols)
+    assert any("libsqlite3.so.3.53.4" in v for v in vols)
     assert any(v.endswith(":/root") and "home/alice" in v for v in vols)
     assert any("/root/.hermes" in v and "profiles/alice" in v for v in vols)
     assert any(v.endswith("/etc/hermes/overlay.yaml:ro") for v in vols)
     assert draft["environment"]["HERMES_OVERLAY_PATH"] == "/etc/hermes/overlay.yaml"
+    assert draft["environment"]["HERMES_SUPERVISED_CHILD"] == "1"
+    assert draft["environment"]["API_SERVER_HOST"] == "0.0.0.0"
+    # tools/installs 必须在 profile 叠挂之后，且不要直接盖到 /root/.hermes/tools
+    assert not any(":/root/.hermes/tools:" in v or ":/root/.hermes/installs:" in v for v in vols)
     # .hermes 必须排在 home 之后（叠挂）
     idx_root = next(i for i, v in enumerate(vols) if v.rstrip().endswith(":/root"))
     idx_hermes = next(i for i, v in enumerate(vols) if "/root/.hermes" in v)

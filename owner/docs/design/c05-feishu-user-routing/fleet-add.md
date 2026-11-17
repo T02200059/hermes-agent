@@ -105,7 +105,7 @@
 
 | 已定项 | 开户链路如何服从 |
 |--------|------------------|
-| **挂载三层** | 新 compose：**代码 RO** + **`profiles/<uid>`→`/root/.hermes`** + **`/home/<uid>`→`/root`**（`.hermes` 叠在 home 上）+ **舰队 `overlay.yaml`→`/etc/hermes/overlay.yaml:ro`**（并设 `HERMES_OVERLAY_PATH`，供生命周期通知读 `fleet_profiles.<uid>.display_name`） |
+| **挂载三层** | 新 compose：**代码 RO**（容器路径 `/data/hermes/hermes-agent`）+ **`profiles/<uid>`→`/root/.hermes`** + **`/home/<uid>`→`/root`**（`.hermes` 叠在 home 上）+ **共用 `tools` RO / `installs` RW**（Python 3.14.9 + 完整 PM env；容器路径固定 `/data/hermes/tools|installs`）+ **`entrypoint-fleet.sh`** + sqlite 修复库 + **舰队 `overlay.yaml`→`/etc/hermes/overlay.yaml:ro`**（并设 `HERMES_OVERLAY_PATH`，供生命周期通知读 `fleet_profiles.<uid>.display_name`）。**不要**把共用树直接 bind 到 `/root/.hermes/tools|installs`。`venv-docker` 仍可挂，启动不用 3.11.0rc1。 |
 | **`fleet_profiles.<ldap_uid>`** | 开户写入的**唯一人卡真相源**；`api_server` 供 C05 推导 endpoints |
 | **`hub_only`** | 人卡可选；测试号可 `hub_only.feishu: true` 留 Hub、不转发 |
 | **端口** | 写入 `api_server.url: http://127.0.0.1:<port>`；与现网 2602x 段一致 |

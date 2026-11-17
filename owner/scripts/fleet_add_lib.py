@@ -43,8 +43,13 @@ DEFAULT_CODE_DIR = "/data/hermes/hermes-agent"
 DEFAULT_VENV_DIR = "/data/hermes/venv-docker"
 DEFAULT_HERMES_ROOT = "/data/hermes"
 DEFAULT_HUB_HOME = "/data/hermes"  # Hub HERMES_HOME；.env 在此下
-DEFAULT_CODE_CONTAINER = "/opt/hermes-agent"
-DEFAULT_VENV_CONTAINER = "/opt/venv"
+# 容器内路径与现网一致：entrypoint-fleet.sh / facts.json 都按这些绝对路径解析。
+DEFAULT_CODE_CONTAINER = "/data/hermes/hermes-agent"
+DEFAULT_VENV_CONTAINER = "/data/hermes/hermes-agent/venv"
+DEFAULT_TOOLS_CONTAINER = "/data/hermes/tools"
+DEFAULT_INSTALLS_CONTAINER = "/data/hermes/installs"
+DEFAULT_ENTRYPOINT_CONTAINER = "/entrypoint.sh"
+DEFAULT_SQLITE_LIB_CONTAINER = "/usr/local/lib/libsqlite3.so.3.53.4"
 DEFAULT_COMPOSE_IMAGE = "hermes-profile:latest"
 DEFAULT_COMPOSE_FILENAME = "docker-compose.fleet-{uid}.yml"
 # Profile containers mount HERMES_HOME at /root/.hermes (per-profile dir), so
@@ -214,23 +219,36 @@ def build_compose_service_draft(
     hermes_root: str = DEFAULT_HERMES_ROOT,
     overlay_path: Optional[str] = None,
 ) -> dict[str, Any]:
-    """目标态 compose 服务草稿：代码/venv RO + home→/root + profiles→/root/.hermes
-    + 舰队 overlay 只读挂载。
+    """目标态 compose 服务草稿：三层挂载 + 共用 Python 3.14.9 tools / PM installs。
 
-    挂载顺序：先 home 再 ``.hermes``，确保 profile 叠在 home 之上。
-    **禁止**仅 ``/home/<name>:/root`` 单挂。
+    挂载顺序：先 home 再 ``.hermes``，再叠共用 ``tools`` / ``installs``（宿主路径
+    取 ``{hermes_root}/tools|installs``，容器内固定 ``/data/hermes/tools|installs``，
+    与 facts.json 绝对路径及 ``entrypoint-fleet.sh`` 符号链接对齐）。
+    **禁止**仅 ``/home/<name>:/root`` 单挂；**不要**把共用树直接 bind 到
+    ``/root/.hermes/tools|installs``（路径前缀不一致会触发 pm repair）。
     overlay 默认 ``{hermes_root}/overlay.yaml`` → 容器内
     ``/etc/hermes/overlay.yaml``（RO），并设置 ``HERMES_OVERLAY_PATH``，供
     生命周期通知读取 ``fleet_profiles.<uid>.display_name``。
+    启动解释器走 ``entrypoint-fleet.sh`` + hermes wrapper（Python 3.14.9），
+    不用 ``venv-docker`` 里的 3.11.0rc1。
     """
     service_name = f"hermes-{ldap_uid}"
     overlay_host = (overlay_path or f"{hermes_root.rstrip('/')}/overlay.yaml").strip()
+    root = hermes_root.rstrip("/")
+    tools_host = f"{root}/tools"
+    installs_host = f"{root}/installs"
+    entrypoint_host = f"{root}/sqlite-fixed/entrypoint-fleet.sh"
+    sqlite_lib_host = f"{root}/sqlite-fixed/output/lib/libsqlite3.so.3.53.4"
     volumes = [
-        f"{code_dir}:{DEFAULT_CODE_CONTAINER}:ro",
-        f"{venv_dir}:{DEFAULT_VENV_CONTAINER}:ro",
         f"{home_dir}:/root",
         f"{hermes_dir}:/root/.hermes",
+        f"{tools_host}:{DEFAULT_TOOLS_CONTAINER}:ro",
+        f"{installs_host}:{DEFAULT_INSTALLS_CONTAINER}:rw",
+        f"{code_dir}:{DEFAULT_CODE_CONTAINER}:ro",
+        f"{venv_dir}:{DEFAULT_VENV_CONTAINER}:ro",
         f"{overlay_host}:{DEFAULT_OVERLAY_CONTAINER}:ro",
+        f"{sqlite_lib_host}:{DEFAULT_SQLITE_LIB_CONTAINER}:ro",
+        f"{entrypoint_host}:{DEFAULT_ENTRYPOINT_CONTAINER}:ro",
     ]
     return {
         "service": service_name,
@@ -239,18 +257,23 @@ def build_compose_service_draft(
         "network_mode": "host",
         "ports": [f"127.0.0.1:{port}:{port}"],
         "environment": {
+            "HOME": "/root",
             "HERMES_HOME": "/root/.hermes",
             "HERMES_PROFILE": ldap_uid,
+            "HERMES_SUPERVISED_CHILD": "1",
             "HERMES_OVERLAY_PATH": DEFAULT_OVERLAY_CONTAINER,
             "FEISHU_CONNECTION_MODE": "send_only",
+            "API_SERVER_HOST": "0.0.0.0",
             # 注：生产 node010 现网 HERMES_PROFILE / 路由键仍可能是全名；
             # 切 LDAP uid 另开 Ops，勿在 O1 改生产。
         },
         "volumes": volumes,
         "notes": [
-            "三层挂载：代码/venv RO 共用 + home→/root + profiles→/root/.hermes（.hermes 叠在 home 上）",
+            "三层挂载：home→/root + profiles→/root/.hermes（.hermes 叠在 home 上）+ 代码 RO",
+            "共用 Python 3.14.9 tools（RO）与完整 PM installs（RW，供锁/lease）；入口 entrypoint-fleet.sh 把 profile 内 tools/installs 链到共用树",
+            "venv-docker 仍挂到代码树 /venv，但启动解释器不用 3.11.0rc1",
             "舰队 overlay 只读挂到 /etc/hermes/overlay.yaml，并设 HERMES_OVERLAY_PATH（生命周期中文名）",
-            "禁止照抄现网「只挂 /home」单挂模板",
+            "禁止照抄现网「只挂 /home」单挂模板；禁止把共用树直接 bind 到 /root/.hermes/tools|installs",
             "O3 只生成草稿/写文件；docker compose up 属 O4",
         ],
     }
@@ -276,9 +299,18 @@ def render_compose_yaml(
     has_root = any(str(v).rstrip().endswith(":/root") for v in volumes)
     has_hermes = any("/root/.hermes" in str(v) for v in volumes)
     has_ro_code = any(":ro" in str(v) for v in volumes)
+    has_tools = any(f":{DEFAULT_TOOLS_CONTAINER}:" in str(v) for v in volumes)
+    has_installs = any(f":{DEFAULT_INSTALLS_CONTAINER}:" in str(v) for v in volumes)
+    has_entrypoint = any(
+        str(v).rstrip().endswith(f":{DEFAULT_ENTRYPOINT_CONTAINER}:ro") for v in volumes
+    )
     if not (has_root and has_hermes and has_ro_code):
         raise FleetAddError(
             "compose 必须含三层：代码/venv RO + home→/root + profiles→/root/.hermes"
+        )
+    if not (has_tools and has_installs and has_entrypoint):
+        raise FleetAddError(
+            "compose 必须挂共用 tools/installs，并用 sqlite-fixed/entrypoint-fleet.sh 作入口"
         )
     # 仅 home→/root、无 profiles 叠挂 → 拒绝
     if has_root and not has_hermes:
@@ -299,9 +331,11 @@ def render_compose_yaml(
     }
     header_lines = [
         "# Generated by owner/scripts/fleet_add (O3). 勿手改密钥进仓。",
-        "# 三层挂载：代码/venv RO + home→/root + profiles→/root/.hermes",
+        "# 三层挂载：代码 RO + home→/root + profiles→/root/.hermes",
+        "# 另挂共用 tools/installs（Python 3.14.9 + 完整 PM env）与 entrypoint-fleet.sh。",
         "# 另挂舰队 overlay.yaml → /etc/hermes/overlay.yaml:ro（HERMES_OVERLAY_PATH）。",
-        "# 禁止现网单挂 /home/<name>:/root。docker compose up 属 O4。",
+        "# 禁止现网单挂 /home/<name>:/root；禁止 bind 共用树到 /root/.hermes/tools|installs。",
+        "# docker compose up 属 O4。",
     ]
     if compose_project_comment:
         header_lines.append(f"# {compose_project_comment}")
