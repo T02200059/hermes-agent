@@ -478,6 +478,15 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - 测：`tests/owner/test_diagnostic_notice_i18n.py`
   - 生效：需重启本机 gateway（此次未重启、未 push）
 
+- [x] **C10d** · 定时任务出错/未运行等投递文案展示层中文（2026-11-17）· **已落地**
+  - 背景：自动回顾之外，定时任务失败会把英文模板直接投到飞书/QQ（`scheduler_failure_copy` / 看门狗 / 监视器 / 自动暂停 / 包装头）。上次 C10c 扫描按「emoji + 大写英文」做过诊断气泡，这类报错多为 `💡 Cron '{name}' failed:` / `⛔ Cron '{name}' did not run:`，不走 `_prepare_gateway_status_message`，因此当时未覆盖。
+  - helper：`owner/i18n/cron_notices.py`（`translate_cron_delivery`；任务名、id、路径、时间、连续失败次数、时长，以及 `hermes cron …` / `/login` / `hermes setup` / `hermes fallback add` / `hermes gateway restart` / `cron.model` 等命令与配置键原样保留；`💡`/`⛔` 前缀保留；缺译/英文 UI 回落原文）
+  - 胶水：`cron/scheduler_delivery.py::_deliver_result`（redact 之后、live/standalone/bot-chat 发送之前；包装头与正文一并翻译；镜像进会话的正文同步翻译）。官方英文原句不改（仍是匹配键）。
+  - **已译**：供应商分类失败（含 cause/action/备用供应商句）、通用失败、脚本超时、任务停滞、配置预检未运行（含若干稳定预检原因）、看门狗脚本失败、监视器数据源失败、自动暂停、连续失败提醒、额度窗口暂挂、网关代码偏斜、以及 `Cronjob Response` 包装头。
+  - **仍跳过**：日志和给模型的说明（含 prompt 里「请以 💡 Skill(s) not found… 开头」的指示）；CLI/`hermes cron status` 专用打印；成功任务的正文（agent 输出不译）；通用失败里的原始异常摘要（`cleaned_error` 当参数保留）；已走官方 `t()` 的中断通知（`gateway.shutdown.cron_interrupted`）和 Cron 存储不可写/恢复通知。
+  - 测：`tests/owner/test_cron_notice_i18n.py`
+  - 生效：需重启本机 gateway（此次未重启、未 push）
+
 ### P1
 
 - [x] **C11 底座** · 源 §4.2–4.3 · auto-card / early-typing · **优先级：P1**（阶段二）

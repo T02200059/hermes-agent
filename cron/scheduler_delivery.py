@@ -1859,6 +1859,16 @@ def _deliver_result(
     # the chat message itself was clean — and a transcript outlives the message.
     mirror_text = _redact_cron_payload((mirror_text or "").strip(), "mirror payload")
 
+    # [owner] cron notice display i18n (see owner/i18n/cron_notices.py)
+    try:
+        from owner.i18n.cron_notices import translate_cron_delivery
+        cleaned_delivery_content = translate_cron_delivery(cleaned_delivery_content)
+        content = translate_cron_delivery(content)
+        if mirror_text:
+            mirror_text = translate_cron_delivery(mirror_text)
+    except Exception:
+        pass
+
     try:
         config = load_gateway_config()
     except Exception as e:
