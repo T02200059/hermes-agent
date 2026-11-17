@@ -470,6 +470,14 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - 测：`tests/owner/test_approval_reason_i18n.py`
   - 约束：英文 description 仍是 allowlist/pattern 键；`ExecApprovalPrompt.description` / smart-approve / 检测器原文不改
 
+- [x] **C10c** · 诊断提示（供应商自动重试等）展示层中文（2026-11-17）· **已落地**
+  - 背景：官方 `ladder_notice()` 拼出 `⏳ Provider temporarily unavailable — retrying automatically in {N}s (cycle {c}/{t}); send /stop to cancel`，经 `_emit_diagnostic_status` → 飞书/QQ 等 messaging 状态气泡原文直出；不是「回完后再空等 180 秒」那类问题，是未译。
+  - helper：`owner/i18n/diagnostic_notices.py`（`translate_diagnostic_notice`；参数与 `/stop` `/retry` `/model` / `Esc` 原样保留；缺译/英文 UI 回落原文）
+  - 胶水：`gateway/run.py::_prepare_gateway_status_message`（provider-error 官方 `t()` 改写之后；local/api_server 仍走 raw 诊断）；`owner/explainers/progress/activity_i18n.py` 进度戳未命中时复用同一翻译（wait line）
+  - **不改**官方英文原句（部分形状同时是 noisy-filter / provider-error 匹配键）；未覆盖：日志、给模型的说明、已被 `_TELEGRAM_NOISY_STATUS_RE` 吞掉的重试刷屏、已被 `_gateway_provider_error_reply` 改写的 API/限流信封、动态 `❌ {label}: {summary}`
+  - 测：`tests/owner/test_diagnostic_notice_i18n.py`
+  - 生效：需重启本机 gateway（此次未重启、未 push）
+
 ### P1
 
 - [x] **C11 底座** · 源 §4.2–4.3 · auto-card / early-typing · **优先级：P1**（阶段二）

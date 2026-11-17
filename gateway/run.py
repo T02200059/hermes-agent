@@ -753,6 +753,12 @@ def _prepare_gateway_status_message(platform: Any, event_type: str, message: str
         return None
     if _looks_like_gateway_provider_error(text):
         return _gateway_provider_error_reply(text)
+    # [owner] diagnostic notice display i18n (see owner/i18n/diagnostic_notices.py)
+    try:
+        from owner.i18n.diagnostic_notices import translate_diagnostic_notice
+        text = translate_diagnostic_notice(text)
+    except Exception:
+        pass
     return text
 
 

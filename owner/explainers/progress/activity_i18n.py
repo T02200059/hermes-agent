@@ -335,6 +335,14 @@ def _localize_body(desc: str, *, allow_remaining: bool = True) -> str:
                 return fmt(m)
             except Exception:
                 return s
+    # Durable diagnostic notices may also land in last_activity_desc (wait line).
+    try:
+        from owner.i18n.diagnostic_notices import translate_diagnostic_notice
+        localized = translate_diagnostic_notice(s, force_chinese=True)
+        if localized and localized != s:
+            return localized
+    except Exception:
+        pass
     # Bare tool id (e.g. activity summary current_tool mirrored into last_activity_desc)
     # → curated display.verb.* when friendly labels are on.
     token = friendly_tool_token(s)
