@@ -17,7 +17,7 @@
 | 项 | 决定 |
 |----|------|
 | 路由实现策略 | **方案②**：照迁旧 owner HTTP 舰队路由（`resolve` → `POST …/v1/feishu/inbound`）；**不接**官方同进程 multiplex 送达 |
-| 配置主源 | **`overlay.yaml`**（C01 `load_owner_config` / `load_patch_config`）；与 C09 一样可短暂回落 `patch_feishu_profile.yaml` |
+| 配置主源 | **`overlay.yaml`**（C01 `load_owner_config`）；`patch_feishu_profile.yaml` 已于 2026-11-17 退役删除，无回落 |
 | **人卡主结构** | 顶层 **`fleet_profiles.<ldap_uid>`**：每人下挂 `ldap` / `docker` / `api_server` / `hub_only`；**主键 = LDAP uid** |
 | 全局 LDAP | 顶层 **`ldap:`** 只做连接 / enforce（认证怎么连）；**不**塞每人路由 |
 | 飞书节 | **`feishu.bots.<app_id>.user_routing`** 只留 `ou_*`→uid、chat、`default_profile`、以及可选的飞书侧 `whitelist`（或改读人卡 `hub_only.feishu`）；**`profile_endpoints` 从 `fleet_profiles` 推导**，不再平行抄一份 |
@@ -26,7 +26,7 @@
 | 目录映射 | 收人卡 **`docker.hermes_dir` / `docker.home_dir`**；省略则按 uid 推导 |
 | 进程模型 | Docker；容器内 **uid0 自认 root**；一 profile 一容器 |
 | 数据 / 家目录 | 三层挂载（见下）；passwd 用户 **保留**（好认、好找），**不**当隔离机制 |
-| patch 回落 | **与 C09 同模式**：主 overlay、缺段再读 patch；C05b 稳定后文档标 deprecated |
+| patch 回落 | **已退役（2026-11-17）**：patch 文件已删除，overlay 为唯一来源；代码对缺失文件返回 `{}` |
 | ssh / 共享卷 | **先维持现网共享卷** |
 | cron | 迁 `profiles/` 前 **先保持现网行为** |
 | Mac overlay | **不写真舰队路由**；实现时用假数据单测夹具 |
@@ -69,6 +69,7 @@ Docker hermes-<ldap_uid> ×N（容器内 uid0，自认 root）
 - 缺 passwd 用户的 profile 在 Ops 切片补齐，不挡路由代码迁 overlay。
 - 共享运维卷（scripts、inventory、常挂 ssh 等）仍可挂。
 - 官方 `get_profile_dir(name)` → `<hermes_root>/profiles/<name>`，与默认路径对齐。
+- **容器 profile 必须 `gateway.standalone: true`**：宿主 default 网关的 cron ticker 会枚举 `profiles/` 下所有 profile，而容器内 `HERMES_HOME=/root/.hermes` 与宿主路径 `/data/hermes/profiles/<uid>` 不是同一字符串，宿主抢到 tick 时会报 `Gateway inaccessible: profile_mismatch`（2026-11-11 起亚信巡检 4 个 job 间歇失败即此因）。该键让 `profiles_to_serve()` 跳过此人（宿主的 serve/tick 集合都不再包含），容器内行为不变（单 profile 兜底）。2026-11-17 已对 13 个容器 profile 全量生效；新开户由 `fleet_add` 种子自动写入（`owner/scripts/fleet_add_lib.py::minimal_profile_config_yaml`）。
 
 ## 配置主结构：按人 `fleet_profiles`（已拍板）
 
@@ -243,7 +244,7 @@ feishu:
 | 子容器 | `inject_inbound` + api_server doorway |
 
 v2：逻辑放 `owner/feishu/profile_routing.py`；官方 adapter / api_server **薄胶水**（`# [owner] C05`）。
-配置加载：**主读 overlay** 的 `fleet_profiles` + `user_routing`；回落 patch（与 C09 同模式）。
+配置加载：**只读 overlay** 的 `fleet_profiles` + `user_routing`；`patch_feishu_profile.yaml` 已于 2026-11-17 退役删除。
 **C05 不**实现 LDAP 认证、不读 `hub_only.api` / 旧 `api_identity` 作主路径。
 
 ## 复用官方的策略（已锁定）
@@ -266,15 +267,15 @@ v2：逻辑放 `owner/feishu/profile_routing.py`；官方 adapter / api_server *
 | 切片 | 内容 |
 |------|------|
 | **C05a** | v2 迁 `profile_routing` + overlay `fleet_profiles`/`user_routing` + 单测；endpoints 从人卡推导；**不**接 LDAP/`hub_only.api` |
-| **C05b** | **已完成**：node010 配置切 overlay；退役 patch 作主路径，旧文件留作回退 |
+| **C05b** | **已完成**：node010 配置切 overlay；旧 patch 已于 2026-11-17 删除（备份在 `/data/hermes/backups/`） |
 | **C06** | 顶层 `ldap` 认证 + 人卡 `hub_only.api`；旧 `api_identity`/`identity_*` 只读别名；api_server 身份反代 |
-| **Ops** | **存量迁移已完成**：短名 passwd、数据移至 `profiles/<uid>`、三层 compose；**开户**见 [fleet-add.md](./fleet-add.md)（**O1–O5 已落地**；增量新人走 skill）；旧全名回退目录稳定后再清 |
+| **Ops** | **存量迁移已完成**：短名 passwd、数据移至 `profiles/<uid>`、三层 compose；**开户**见 [fleet-add.md](./fleet-add.md)（**O1–O5 已落地**；增量新人走 skill）；旧全名回退目录已于 2026-11-17 清理 |
 
 ## 已收开放项
 
 | # | 原问题 | 拍板 |
 |---|--------|------|
-| 1 | patch 回落 | 与 C09 同模式；C05b 后 deprecated |
+| 1 | patch 回落 | **已退役**：2026-11-17 删除 patch 文件，overlay 唯一来源 |
 | 2 | ssh/共享卷 | 先维持现网共享卷 |
 | 3 | cron | 先不动语义 |
 | 4 | Mac overlay | 不写真路由 |
@@ -291,14 +292,14 @@ v2：逻辑放 `owner/feishu/profile_routing.py`；官方 adapter / api_server *
 |---|------|----------|
 | R1 | 飞书 `whitelist`（ou 列表）是否完全废弃，只认 `hub_only.feishu`？ | 迁移期两者兼容：ou whitelist ∪ 人卡 hub_only；稳定后文档建议只维护人卡 |
 | R2 | compose 是否直接读 overlay `fleet_profiles`，还是生成中间 env？ | Ops 另议；设计上人卡是真相源 |
-| R3 | 开户自动化（fleet add）对话/tool 落点 / 是否双写旧 patch | 见 [fleet-add.md](./fleet-add.md)；**O5 已落地**（对话 skill 仓外）；C05b 后旧 patch 仅作回退，不再双写路由键 |
+| R3 | 开户自动化（fleet add）对话/tool 落点 / 是否双写旧 patch | 见 [fleet-add.md](./fleet-add.md)；**O5 已落地**（对话 skill 仓外）；旧 patch 已于 2026-11-17 删除，只写 overlay |
 
 ## 清单（实现 / 评审用）
 
 - [x] C05a：overlay 加载 `fleet_profiles` + `user_routing`；endpoints 从 `api_server` 推导
 - [x] C05a：`hub_only.feishu`（及可选 ou whitelist）参与 resolve
 - [x] C05a：单测夹具用假 `fleet_profiles`（无真 key / ou）
-- [x] C05b：node010 已从 patch 迁到 overlay 人卡；旧 patch 文件保留作回退材料
+- [x] C05b：node010 已从 patch 迁到 overlay 人卡；2026-11-17 旧 patch 文件已删除（备份 `/data/hermes/backups/patch_feishu_profile.yaml.retired-*`）
   - 2026-11-06：正式 overlay 已启用；13 个短名 Linux 用户和容器已对齐；`liry` / `wuyj` 容器已停；Viking 保持方案 B
   - 2026-11-06：三层挂载已验收：home → `/root`、`profiles/<uid>` → `/root/.hermes`（后叠挂）、代码/venv RO；`/data/hermes/compose/docker-compose.fleet-<uid>.yml` 软链已建；探针通过，`/health` 13/13 = 200
   - 切流时代码 tip 为 `7be19213ff`；后续 PM 兼容修复 `8cfb9d975b` 已进 gitlab。映射与回退矩阵见 c05b-node010-plan.md
@@ -318,5 +319,5 @@ v2：逻辑放 `owner/feishu/profile_routing.py`；官方 adapter / api_server *
   - `owner/feishu/card_action.py`：卡片分派表（含 try_route_card_action）
   - adapter / api_server 薄胶水：`try_route_inbound`、`inject_inbound`、`/v1/feishu/inbound|card-actions`
   - 单测：`tests/owner/test_c05_*.py`
-- **C05b 已完成（2026-11-06）**：node010 已切 `v2`、装正式 overlay、完成 13 短名容器切流与三层挂载验收；旧 patch 未删，留作回退材料。切流/三层窗口内未无故重启 Hub。详见 [c05b-node010-plan.md](./c05b-node010-plan.md)。
+- **C05b 已完成（2026-11-06）**：node010 已切 `v2`、装正式 overlay、完成 13 短名容器切流与三层挂载验收；旧 patch 已于 2026-11-17 删除（备份在 `/data/hermes/backups/`）。切流/三层窗口内未无故重启 Hub。详见 [c05b-node010-plan.md](./c05b-node010-plan.md)。
 - **后续**：C06 生产门闸另开；旧全名容器/家目录、`gaor` 的 0 字节 `state.db` 等待独立处理；Viking 仍按方案 B，不随本次迁移改短名。

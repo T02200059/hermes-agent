@@ -106,6 +106,7 @@
 | 已定项 | 开户链路如何服从 |
 |--------|------------------|
 | **挂载三层** | 新 compose：**代码 RO**（容器路径 `/data/hermes/hermes-agent`）+ **`profiles/<uid>`→`/root/.hermes`** + **`/home/<uid>`→`/root`**（`.hermes` 叠在 home 上）+ **共用 `tools` RO / `installs` RW**（Python 3.14.9 + 完整 PM env；容器路径固定 `/data/hermes/tools|installs`）+ **`entrypoint-fleet.sh`** + sqlite 修复库 + **舰队 `overlay.yaml`→`/etc/hermes/overlay.yaml:ro`**（并设 `HERMES_OVERLAY_PATH`，供生命周期通知读 `fleet_profiles.<uid>.display_name`）。**不要**把共用树直接 bind 到 `/root/.hermes/tools|installs`。`venv-docker` 仍可挂，启动不用 3.11.0rc1。 |
+| **`gateway.standalone: true`** | 新人 `config.yaml` 种子必须写入（`fleet_add` O3 已内置）；容器网关自管，宿主 default 不 serve/tick 它 |
 | **`fleet_profiles.<ldap_uid>`** | 开户写入的**唯一人卡真相源**；`api_server` 供 C05 推导 endpoints |
 | **`hub_only`** | 人卡可选；测试号可 `hub_only.feishu: true` 留 Hub、不转发 |
 | **端口** | 写入 `api_server.url: http://127.0.0.1:<port>`；与现网 2602x 段一致 |
@@ -149,7 +150,7 @@
 | # | 问题 | 默认倾向 |
 |---|------|----------|
 | F1 | **工具面落点**：仅 Hermes tool → `owner/scripts/fleet_add.py`，是否再加 `hermes fleet add` 薄入口给 tool/逃生？ | 先脚本/tool；有干净扩展点再加子命令。**默认 UX 仍是对话** |
-| F2 | **是否双写旧 `patch_feishu_profile.yaml`**？ | C05b 前若 Hub 仍回落 patch：**可双写**路由相关键；C05b 后只写 overlay。人卡主结构只进 overlay |
+| F2 | **是否双写旧 `patch_feishu_profile.yaml`**？ | **已定**：旧 patch 于 2026-11-17 删除，只写 overlay。人卡主结构只进 overlay |
 | F3 | Hub 加载新人卡：热更新 vs 重启 gateway？ | 先文档「改完需 reload/重启」；热更新另议 |
 | F4 | 种子 `profiles/<uid>` 从哪来（空骨架 / 模板 profile / 拷 hub 最小集）？ | 最小空骨架 + 必要 config 键；模板可后加 |
 | F5 | 对话鉴权：谁可以在飞书里触发开户？ | 仅运维白名单 / Hub 管理员会话；开户 tool 默认高权限 |
