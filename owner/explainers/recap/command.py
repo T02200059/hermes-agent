@@ -94,7 +94,11 @@ async def handle_recap_command(
     route_info: dict = {}
     try:
         text = await asyncio.to_thread(
-            explain_from_messages, messages, cfg=cfg, route_info=route_info
+            explain_from_messages,
+            messages,
+            cfg=cfg,
+            route_info=route_info,
+            session_id=sid,
         )
     except Exception as exc:
         logger.warning("/recap explain failed: %s", exc)
@@ -116,6 +120,8 @@ async def handle_recap_command(
         from owner.explainers.persist import persist_notice
         from owner.explainers.recap.auto import count_user_turns
 
+        extra_meta = {"user_turns": count_user_turns(messages)}
+        extra_meta.update(route_info.get("recap_input") or {})
         persist_notice(
             sid,
             "recap",
@@ -123,7 +129,7 @@ async def handle_recap_command(
             trigger="manual",
             cfg=cfg,
             route_info=route_info,
-            extra_meta={"user_turns": count_user_turns(messages)},
+            extra_meta=extra_meta,
         )
     except Exception:
         logger.debug("/recap persist failed", exc_info=True)

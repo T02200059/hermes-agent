@@ -18,6 +18,7 @@
 - **设计前提**：辅助模型上下文 **≥ 256k**。
 - **输入默认**：共用 `explainers.max_input_chars: 64000`（各 kind 可覆盖）。
 - 截断策略：优先保留**尾部**（近轮对话 / 近证据）；见 `owner.explainers.common.clip_input`。
+- **recap 超预算混合兜底（2026-11-17）**：仅当可见 User/Agent 正文超过当前 `max_input_chars`（默认 64k）、即将/已经尾部截断时启用。prompt 带上同一 compression 链最近一条 `display_kind=recap` 作为被省略前半段的说明，再加上截断后的近期原文；找不到旧回顾则仍走纯尾部截断。不沿 session_reset 链，不用 watermark 正文，进度卡不算回顾。flatten 仍跳过 notice，避免回顾套回顾。超预算路径上每 3 次混合后做 1 次不依赖旧回顾的纯尾部校准。不到预算时行为不变。自动回顾的 180 秒闲置与触发门槛不改。设计稿 `design/recap-hybrid-fallback/hybrid.md`；测 `tests/owner/test_c13_recap_hybrid.py`。
 - 输出帽（已落地）：progress `max_tokens=400` / `max_output_chars=900`；approval `400` / `800`；english `450` / `1000`；recap `260` / `max_output_chars=350`（硬截断 +「…」；提示词要求 ≤220 汉字的进度文案，避免半句被砍）。**仅 `max_output_chars` 可经 yaml/registry 配置**；各 kind 的 `max_tokens` / `_MAX_TOKENS` **仍硬编码**（改码才动）。共享 `call_explainer_llm` 默认 `max_tokens=400`、`clean_output` 默认 1000。
 - **recap / progress / english 落盘（2026-11-05）**：send 成功后写入 `messages`（`role=notice`，`display_kind`=kind）；渠道记 `owner_provider_name` + `display_metadata`；送模 / 导出 / TUI 一律排除 notice。helper `owner/explainers/persist.py`（`persist_notice`，fail-open）；trigger：recap `manual`/`auto`、progress `tick`、english `reply`。设计稿 `design/explainer-notice-persist/`。watermark 仍只管 recap 门控。
 - **recap 文案取向（2026-11-05）**：进度/完成度/下一步；禁止文件名、表 id、测试条数等变更清单式罗列；硬帽仍 350。
