@@ -431,6 +431,11 @@ def minimal_profile_config_yaml() -> str:
         "model:\n"
         "  default: null\n"
         "platforms: {}\n"
+        "gateway:\n"
+        "  # C05 舰队：该 profile 的网关跑在自己的容器里（容器内 HERMES_HOME=/root/.hermes，\n"
+        "  # 自认 root）。宿主默认网关不得把它当成要 serve / cron tick 的子 profile，\n"
+        "  # 否则容器路径与宿主路径身份不一致会报 Gateway inaccessible: profile_mismatch。\n"
+        "  standalone: true\n"
     )
 
 
