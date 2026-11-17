@@ -110,11 +110,11 @@ def _ensure_builtins() -> None:
             defaults={
                 "enabled": False,
                 "max_output_chars": 350,
-                # auto: Grok Build aligned (session_recap.rs MIN_TURNS=3, IDLE=180s)
+                # auto: long turn (>= min_turn_seconds) or long end message
                 "auto": {
                     "enabled": True,
-                    "min_user_turns": 3,
-                    "idle_seconds": 180,
+                    "min_turn_seconds": 180,
+                    "min_assistant_chars": 800,
                 },
                 "platforms": {},
                 "chats": {},

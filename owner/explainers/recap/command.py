@@ -107,7 +107,7 @@ async def handle_recap_command(
     body = format_delivery(text or "")
     if not body:
         return _FAILED
-    # Manual success bumps watermark so idle auto won't re-fire until a new user turn.
+    # Manual success bumps watermark so auto recap won't re-fire until a new user turn.
     try:
         from owner.explainers.recap.auto import note_manual_recap
 

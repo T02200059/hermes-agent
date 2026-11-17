@@ -1,16 +1,21 @@
-"""[owner] C13 recap — auto trigger after long-conversation idle.
+"""[owner] C13 recap — auto trigger after a long turn or a long end message.
 
-Grok Build (``session_recap.rs``) fires a "where was I" recap when the user
-returns from idle. Feishu has no TUI focus signal, so we treat **quiet after a
-completed turn** as the end of a long chat:
+Auto recap is for turns that took too long or ended with a long assistant
+reply — not for waiting on the user's next message.
 
-1. ``on_session_end`` (per completed turn) schedules ``idle_seconds`` (default 180).
-2. New inbound (``pre_gateway_dispatch``) or ``agent_loop_stopped`` cancels it.
-3. Timer fires → gate (min user turns + watermark) → same notice as ``/recap``.
+1. ``on_session_end`` of a normally completed turn immediately evaluates
+   the gate and, if it passes, generates the same notice as ``/recap``.
+2. Trigger: a new user main turn since the watermark, and either
+   turn duration ``>= min_turn_seconds`` (default 180; user message →
+   session end) **or** latest visible assistant reply
+   ``>= min_assistant_chars`` (default 800; 0 disables).
+3. Interrupted / failed / incomplete turns are skipped. ``agent_loop_stopped``
+   records a mark used only when ``on_session_end`` flags are ambiguous.
+4. Manual ``/recap`` stays immediate and ignores these automatic thresholds.
 
-Defaults match Grok for turns/idle: ``min_user_turns=3``, ``idle_seconds=180``.
-Owner OR: ``min_assistant_chars=800`` (latest visible assistant reply length;
-0 disables). Config under ``explainers.recap.auto`` in overlay.yaml.
+Config under ``explainers.recap.auto``. ``min_turn_seconds`` is the
+canonical duration key; overlay ``idle_seconds`` is still read as a
+fallback and no longer means "wait after the turn ends".
 """
 
 from __future__ import annotations
@@ -18,7 +23,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
-from typing import Any, Dict, List, Optional, Tuple
+import time
+from typing import Any, Optional
 
 from owner.explainers.common import (
     coerce_session_source,
@@ -33,7 +39,7 @@ from owner.explainers.recap.explain import explain_from_messages
 from owner.explainers.recap.gate import (
     MIN_ASSISTANT_CHARS_FOR_AUTO_RECAP,
     MIN_TURNS_FOR_AUTO_RECAP,
-    RECAP_MIN_IDLE_SECONDS,
+    RECAP_MIN_TURN_SECONDS,
     recap_gate,
 )
 from owner.explainers.recap.prompt import format_delivery
@@ -43,8 +49,8 @@ logger = logging.getLogger("hermes.owner.explainers.recap")
 
 _AUTO_DEFAULTS: dict[str, Any] = {
     "enabled": True,
-    "min_user_turns": MIN_TURNS_FOR_AUTO_RECAP,
-    "idle_seconds": RECAP_MIN_IDLE_SECONDS,
+    "min_user_turns": MIN_TURNS_FOR_AUTO_RECAP,  # parsed for compat; not an auto trigger
+    "min_turn_seconds": RECAP_MIN_TURN_SECONDS,
     "min_assistant_chars": MIN_ASSISTANT_CHARS_FOR_AUTO_RECAP,
 }
 
@@ -65,82 +71,103 @@ _REF_LOCK = threading.Lock()
 _SESSION_ROUTES: dict[str, tuple[str, str, str, str]] = {}
 _ROUTE_LOCK = threading.Lock()
 
-# session_id → {timer, epoch, platform, chat_id, thread_id, reply_to_message_id}
-_PENDING: dict[str, dict[str, Any]] = {}
-_PENDING_LOCK = threading.Lock()
-_EPOCH = 0
+# session_id / session_key → unix time of the inbound user message that started this turn
+_TURN_STARTED: dict[str, float] = {}
+# session_id / session_key → interrupt mark from agent_loop_stopped
+_INTERRUPTED: set[str] = set()
+_STATE_LOCK = threading.Lock()
+
+
+def _raw_auto_block(cfg: Optional[dict[str, Any]] = None) -> dict[str, Any]:
+    """Return the overlay/test ``auto`` dict, not merged registry defaults."""
+    if isinstance(cfg, dict) and isinstance(cfg.get("auto"), dict):
+        return dict(cfg["auto"])
+    try:
+        from owner.explainers.config import _raw_explainers
+
+        root = _raw_explainers().get("recap") or {}
+        if isinstance(root, dict) and isinstance(root.get("auto"), dict):
+            return dict(root["auto"])
+    except Exception:
+        pass
+    return {}
+
+
+def _coerce_nonneg_int(value: Any, default: int) -> int:
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return default
 
 
 def load_auto_config(cfg: Optional[dict[str, Any]] = None) -> dict[str, Any]:
-    """Merge overlay ``explainers.recap.auto`` over Grok-aligned defaults."""
-    merged = dict(_AUTO_DEFAULTS)
-    raw_auto: dict[str, Any] = {}
-    try:
-        kind_cfg = cfg if isinstance(cfg, dict) else load_kind_config("recap")
-        block = kind_cfg.get("auto") if isinstance(kind_cfg, dict) else None
-        if isinstance(block, dict):
-            raw_auto.update(block)
-    except Exception:
-        pass
-    if not raw_auto:
-        try:
-            from owner.explainers.config import _raw_explainers
+    """Merge overlay ``explainers.recap.auto`` over defaults.
 
-            root = _raw_explainers().get("recap") or {}
-            if isinstance(root, dict) and isinstance(root.get("auto"), dict):
-                raw_auto.update(root["auto"])
-        except Exception:
-            pass
+    ``min_turn_seconds`` is canonical. If it is absent, ``idle_seconds`` is
+    used as the duration floor so existing overlays keep working. That old
+    key no longer means "idle after the turn ends".
+    """
+    merged = dict(_AUTO_DEFAULTS)
+    raw_auto = _raw_auto_block(cfg)
     if "enabled" in raw_auto:
         merged["enabled"] = bool(raw_auto.get("enabled"))
-    for key, default in (
-        ("min_user_turns", MIN_TURNS_FOR_AUTO_RECAP),
-        ("idle_seconds", RECAP_MIN_IDLE_SECONDS),
-        ("min_assistant_chars", MIN_ASSISTANT_CHARS_FOR_AUTO_RECAP),
-    ):
-        if key in raw_auto:
-            try:
-                merged[key] = max(0, int(raw_auto[key]))
-            except (TypeError, ValueError):
-                merged[key] = default
+    if "min_user_turns" in raw_auto:
+        merged["min_user_turns"] = _coerce_nonneg_int(
+            raw_auto["min_user_turns"], MIN_TURNS_FOR_AUTO_RECAP
+        )
     if merged["min_user_turns"] < 1:
         merged["min_user_turns"] = MIN_TURNS_FOR_AUTO_RECAP
-    if merged["idle_seconds"] < 0:
-        merged["idle_seconds"] = RECAP_MIN_IDLE_SECONDS
-    # 0 keeps the char OR path disabled (pure Grok turns gate).
+    if "min_assistant_chars" in raw_auto:
+        merged["min_assistant_chars"] = _coerce_nonneg_int(
+            raw_auto["min_assistant_chars"], MIN_ASSISTANT_CHARS_FOR_AUTO_RECAP
+        )
+    # 0 keeps the char OR path disabled.
     if merged["min_assistant_chars"] < 0:
         merged["min_assistant_chars"] = MIN_ASSISTANT_CHARS_FOR_AUTO_RECAP
+    if "min_turn_seconds" in raw_auto:
+        merged["min_turn_seconds"] = _coerce_nonneg_int(
+            raw_auto["min_turn_seconds"], RECAP_MIN_TURN_SECONDS
+        )
+    elif "idle_seconds" in raw_auto:
+        merged["min_turn_seconds"] = _coerce_nonneg_int(
+            raw_auto["idle_seconds"], RECAP_MIN_TURN_SECONDS
+        )
+    else:
+        merged["min_turn_seconds"] = RECAP_MIN_TURN_SECONDS
     return merged
+
+
+def _user_text(msg: dict[str, Any]) -> str:
+    text = msg.get("content")
+    if isinstance(text, list):
+        parts = []
+        for part in text:
+            if isinstance(part, str):
+                parts.append(part)
+            elif isinstance(part, dict) and part.get("type") in {"text", "input_text"}:
+                parts.append(str(part.get("text") or ""))
+        text = "\n".join(parts)
+    if not isinstance(text, str):
+        text = str(text or "")
+    return text
+
+
+def _is_real_user_turn(msg: Any) -> bool:
+    if not isinstance(msg, dict):
+        return False
+    if str(msg.get("role") or "").strip().lower() != "user":
+        return False
+    stripped = _user_text(msg).lstrip()
+    if not stripped:
+        return False
+    if stripped.startswith(_SYNTHETIC_PREFIXES):
+        return False
+    return True
 
 
 def count_user_turns(messages: list[Any]) -> int:
     """Count real user prompts (skip tool/system/synthetic)."""
-    n = 0
-    for msg in messages or []:
-        if not isinstance(msg, dict):
-            continue
-        if str(msg.get("role") or "").strip().lower() != "user":
-            continue
-        text = msg.get("content")
-        if isinstance(text, list):
-            parts = []
-            for part in text:
-                if isinstance(part, str):
-                    parts.append(part)
-                elif isinstance(part, dict) and part.get("type") in {"text", "input_text"}:
-                    parts.append(str(part.get("text") or ""))
-            text = "\n".join(parts)
-        if not isinstance(text, str):
-            text = str(text or "")
-        stripped = text.lstrip()
-        if not stripped:
-            continue
-        if stripped.startswith(_SYNTHETIC_PREFIXES):
-            continue
-        # Slash-only control with no user payload — still a turn for watermark
-        # purposes (user actively engaged); count it.
-        n += 1
-    return n
+    return sum(1 for msg in (messages or []) if _is_real_user_turn(msg))
 
 
 def _content_chars(content: Any) -> int:
@@ -170,6 +197,145 @@ def latest_assistant_chars(messages: list[Any]) -> int:
         if n > 0:
             last = n
     return last
+
+
+def _coerce_epoch(value: Any) -> Optional[float]:
+    """Best-effort unix seconds; None if missing or unusable."""
+    if value is None or value is False:
+        return None
+    if isinstance(value, (int, float)):
+        ts = float(value)
+    elif isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        try:
+            ts = float(text)
+        except ValueError:
+            return None
+    else:
+        return None
+    if ts > 1e12:  # milliseconds
+        ts /= 1000.0
+    if ts <= 0:
+        return None
+    return ts
+
+
+def latest_user_turn_started_at(messages: list[Any]) -> Optional[float]:
+    """Timestamp of the latest real user main-turn message, not the first turn."""
+    last: Optional[float] = None
+    for msg in messages or []:
+        if not _is_real_user_turn(msg):
+            continue
+        ts = _coerce_epoch(msg.get("timestamp"))
+        if ts is not None:
+            last = ts
+    return last
+
+
+def resolve_turn_seconds(
+    messages: list[Any],
+    *,
+    inbound_started_at: Optional[float] = None,
+    ended_at: Optional[float] = None,
+    session_id: str = "",
+) -> Optional[float]:
+    """Seconds from this turn's user message to session end, or None if unknown.
+
+    Prefers the latest real user-message timestamp. If an inbound hook time is
+    clearly later, the current user message may not be in the transcript yet
+    and the inbound time is used instead. Does not invent a wait.
+    """
+    end = float(ended_at if ended_at is not None else time.time())
+    msg_ts = latest_user_turn_started_at(messages)
+    inbound = _coerce_epoch(inbound_started_at)
+    start: Optional[float] = None
+    source = ""
+    if msg_ts is not None and inbound is not None and inbound > msg_ts + 1.0:
+        start, source = inbound, "inbound"
+    elif msg_ts is not None:
+        start, source = msg_ts, "message"
+    elif inbound is not None:
+        start, source = inbound, "inbound"
+    if start is None:
+        logger.info(
+            "recap_auto no reliable turn start session=%s; skip duration path",
+            session_id or "-",
+        )
+        return None
+    if end < start:
+        logger.info(
+            "recap_auto turn end before start session=%s source=%s; skip duration path",
+            session_id or "-",
+            source,
+        )
+        return None
+    return end - start
+
+
+def _remember_turn_start(*keys: str, started_at: Optional[float] = None) -> None:
+    ts = float(started_at if started_at is not None else time.time())
+    with _STATE_LOCK:
+        for key in keys:
+            k = str(key or "").strip()
+            if k:
+                _TURN_STARTED[k] = ts
+
+
+def _pop_turn_start(*keys: str) -> Optional[float]:
+    found: Optional[float] = None
+    with _STATE_LOCK:
+        for key in keys:
+            k = str(key or "").strip()
+            if not k:
+                continue
+            ts = _TURN_STARTED.pop(k, None)
+            if ts is not None and (found is None or ts > found):
+                found = ts
+    return found
+
+
+def _mark_interrupted(*keys: str) -> None:
+    with _STATE_LOCK:
+        for key in keys:
+            k = str(key or "").strip()
+            if k:
+                _INTERRUPTED.add(k)
+
+
+def _pop_interrupt_mark(*keys: str) -> bool:
+    hit = False
+    with _STATE_LOCK:
+        for key in keys:
+            k = str(key or "").strip()
+            if k and k in _INTERRUPTED:
+                _INTERRUPTED.discard(k)
+                hit = True
+    return hit
+
+
+def _clear_turn_state(*keys: str) -> None:
+    with _STATE_LOCK:
+        for key in keys:
+            k = str(key or "").strip()
+            if not k:
+                continue
+            _TURN_STARTED.pop(k, None)
+            _INTERRUPTED.discard(k)
+
+
+def _session_keys(session_id: str, *extra: str) -> tuple[str, ...]:
+    keys: list[str] = []
+    for key in (session_id, *extra):
+        k = str(key or "").strip()
+        if k and k not in keys:
+            keys.append(k)
+            if ":" in k:
+                tail = k.split(":")[-1]
+                if tail and tail not in keys:
+                    keys.append(tail)
+    return tuple(keys)
 
 
 def register_hooks(ctx: Any) -> None:
@@ -333,8 +499,9 @@ def _route_from_gateway(session_id: str) -> tuple[str, str, str, str]:
     return pack_explainer_route(platform, chat_id, thread_id, reply_to)
 
 
+
 def _on_pre_gateway_dispatch(**kwargs: Any) -> None:
-    """Cache gateway/adapters/route; cancel pending auto (user returned)."""
+    """Cache gateway/adapters/route; record this inbound as the turn start."""
     global _GATEWAY_REF
     gateway = kwargs.get("gateway")
     event = kwargs.get("event")
@@ -370,21 +537,7 @@ def _on_pre_gateway_dispatch(**kwargs: Any) -> None:
     sid_hint = ""
     if event is not None:
         sid_hint = str(getattr(event, "session_id", "") or "").strip()
-    _remember_route(
-        platform=platform,
-        chat_id=chat_id,
-        session_key=session_key,
-        sid_hint=sid_hint,
-        gateway=gateway,
-        thread_id=thread_id,
-        reply_to_message_id=reply_to,
-    )
-
-    # User spoke → cancel idle auto for this conversation.
-    cancel_keys = [sid_hint, session_key]
-    if session_key and ":" in session_key:
-        cancel_keys.append(session_key.split(":")[-1])
-    # Also cancel by session_id resolved from the store under this key.
+    store_sid = ""
     if gateway is not None and session_key:
         store = getattr(gateway, "session_store", None)
         if store is not None:
@@ -392,21 +545,55 @@ def _on_pre_gateway_dispatch(**kwargs: Any) -> None:
                 lookup = getattr(store, "lookup_by_session_key", None)
                 entry = lookup(session_key) if callable(lookup) else None
                 if entry is not None:
-                    eid = str(getattr(entry, "session_id", "") or "").strip()
-                    if eid:
-                        cancel_keys.append(eid)
+                    store_sid = str(getattr(entry, "session_id", "") or "").strip()
             except Exception:
                 pass
-    for key in cancel_keys:
-        if key:
-            cancel_pending(key)
+    _remember_route(
+        platform=platform,
+        chat_id=chat_id,
+        session_key=session_key,
+        sid_hint=sid_hint or store_sid,
+        gateway=gateway,
+        thread_id=thread_id,
+        reply_to_message_id=reply_to,
+    )
+    # New inbound starts a new turn: remember its time, drop a stale interrupt mark.
+    start_keys = _session_keys(sid_hint, session_key, store_sid)
+    _remember_turn_start(*start_keys)
+    _pop_interrupt_mark(*start_keys)
+
+
+def _session_end_should_skip(**kwargs: Any) -> bool:
+    """Skip interrupted / failed / incomplete turns.
+
+    Official ``turn_finalizer`` sets ``interrupted`` and ``completed=False`` on
+    abort. ``agent_loop_stopped`` may fire first; its mark is used only when
+    those flags are absent or ambiguous, and is cleared here so it cannot
+    poison a later successful turn.
+    """
+    sid = str(kwargs.get("session_id") or kwargs.get("session_key") or "").strip()
+    keys = _session_keys(sid, str(kwargs.get("session_key") or ""))
+    marked = _pop_interrupt_mark(*keys)
+    if kwargs.get("interrupted") or kwargs.get("failed"):
+        return True
+    if kwargs.get("completed") is False:
+        return True
+    if kwargs.get("completed") is True and not kwargs.get("interrupted"):
+        return False
+    if marked:
+        logger.info(
+            "recap_auto skip session=%s: agent_loop_stopped mark with ambiguous end flags",
+            sid or "-",
+        )
+        return True
+    return False
 
 
 def _on_session_end(**kwargs: Any) -> None:
     try:
-        if kwargs.get("interrupted") or kwargs.get("failed"):
-            return
-        if kwargs.get("completed") is False:
+        if _session_end_should_skip(**kwargs):
+            sid = str(kwargs.get("session_id") or kwargs.get("session_key") or "").strip()
+            _clear_turn_state(*_session_keys(sid, str(kwargs.get("session_key") or "")))
             return
         session_id = str(kwargs.get("session_id") or "").strip()
         if not session_id:
@@ -422,17 +609,35 @@ def _on_session_end(**kwargs: Any) -> None:
         if not chat_id:
             # No messaging route (CLI-only) — skip auto notice.
             return
-        schedule_auto_recap(
+        start_keys = list(_session_keys(session_id, str(kwargs.get("session_key") or "")))
+        # Also pop any session_key cached on the gateway entry.
+        with _REF_LOCK:
+            gw = _GATEWAY_REF
+        if gw is not None:
+            store = getattr(gw, "session_store", None)
+            if store is not None:
+                try:
+                    lookup = getattr(store, "lookup_by_session_id", None)
+                    entry = lookup(session_id) if callable(lookup) else None
+                    if entry is not None:
+                        sk = str(getattr(entry, "session_key", "") or "").strip()
+                        if sk:
+                            start_keys.extend(_session_keys(sk))
+                except Exception:
+                    pass
+        inbound_started_at = _pop_turn_start(*start_keys)
+        start_auto_recap(
             session_id,
             platform=platform,
             chat_id=chat_id,
-            idle_seconds=float(auto_cfg.get("idle_seconds", RECAP_MIN_IDLE_SECONDS)),
-            min_user_turns=int(auto_cfg.get("min_user_turns", MIN_TURNS_FOR_AUTO_RECAP)),
+            min_turn_seconds=int(auto_cfg.get("min_turn_seconds", RECAP_MIN_TURN_SECONDS)),
             min_assistant_chars=int(
                 auto_cfg.get("min_assistant_chars", MIN_ASSISTANT_CHARS_FOR_AUTO_RECAP)
             ),
             thread_id=thread_id,
             reply_to_message_id=reply_to,
+            inbound_started_at=inbound_started_at,
+            ended_at=time.time(),
         )
     except Exception:
         logger.debug("recap_auto on_session_end failed", exc_info=True)
@@ -441,105 +646,58 @@ def _on_session_end(**kwargs: Any) -> None:
 def _on_agent_loop_stopped(**kwargs: Any) -> None:
     sid = str(kwargs.get("session_id") or kwargs.get("session_key") or "").strip()
     if sid:
-        cancel_pending(sid)
-        if ":" in sid:
-            cancel_pending(sid.split(":")[-1])
+        _mark_interrupted(*_session_keys(sid))
 
 
 def _on_session_reset(**kwargs: Any) -> None:
     sid = str(kwargs.get("session_id") or "").strip()
     if sid:
-        cancel_pending(sid)
+        _clear_turn_state(*_session_keys(sid))
 
 
-def schedule_auto_recap(
+def start_auto_recap(
     session_id: str,
     *,
     platform: str,
     chat_id: str,
-    idle_seconds: float = RECAP_MIN_IDLE_SECONDS,
-    min_user_turns: int = MIN_TURNS_FOR_AUTO_RECAP,
+    min_turn_seconds: int = RECAP_MIN_TURN_SECONDS,
     min_assistant_chars: int = MIN_ASSISTANT_CHARS_FOR_AUTO_RECAP,
     thread_id: str = "",
     reply_to_message_id: str = "",
+    inbound_started_at: Optional[float] = None,
+    ended_at: Optional[float] = None,
+    background: bool = True,
 ) -> None:
-    """Cancel any prior timer and schedule a new idle auto-recap."""
-    global _EPOCH
+    """Evaluate the auto-recap gate immediately and generate if it passes.
+
+    Generation runs on a daemon thread by default so the session-end hook
+    does not block on the explainer LLM. There is no idle delay.
+    """
     sid = str(session_id or "").strip()
     if not sid:
         return
-    cancel_pending(sid)
-    delay = max(0.0, float(idle_seconds))
-    with _PENDING_LOCK:
-        _EPOCH += 1
-        epoch = _EPOCH
-
-        def _fire() -> None:
-            with _PENDING_LOCK:
-                entry = _PENDING.get(sid)
-                if not entry or entry.get("epoch") != epoch:
-                    return
-                _PENDING.pop(sid, None)
-            try:
-                run_auto_recap(
-                    sid,
-                    platform=str(entry.get("platform") or platform),
-                    chat_id=str(entry.get("chat_id") or chat_id),
-                    min_user_turns=int(entry.get("min_user_turns") or min_user_turns),
-                    min_assistant_chars=int(
-                        entry.get("min_assistant_chars")
-                        if entry.get("min_assistant_chars") is not None
-                        else min_assistant_chars
-                    ),
-                    idle_ok=True,
-                    thread_id=str(entry.get("thread_id") or thread_id or ""),
-                    reply_to_message_id=str(
-                        entry.get("reply_to_message_id") or reply_to_message_id or ""
-                    ),
-                )
-            except Exception:
-                logger.debug("recap_auto fire failed", exc_info=True)
-
-        timer = threading.Timer(delay, _fire)
-        timer.daemon = True
-        _PENDING[sid] = {
-            "timer": timer,
-            "epoch": epoch,
-            "platform": platform,
-            "chat_id": chat_id,
-            "min_user_turns": min_user_turns,
-            "min_assistant_chars": min_assistant_chars,
-            "thread_id": thread_id,
-            "reply_to_message_id": reply_to_message_id,
-        }
-        timer.start()
-    logger.debug(
-        "recap_auto scheduled session=%s idle=%.1fs platform=%s",
-        sid,
-        delay,
-        platform,
+    kwargs = dict(
+        platform=platform,
+        chat_id=chat_id,
+        min_turn_seconds=int(min_turn_seconds),
+        min_assistant_chars=int(min_assistant_chars),
+        thread_id=thread_id,
+        reply_to_message_id=reply_to_message_id,
+        inbound_started_at=inbound_started_at,
+        ended_at=ended_at if ended_at is not None else time.time(),
     )
 
-
-def cancel_pending(session_id: str) -> None:
-    sid = str(session_id or "").strip()
-    if not sid:
-        return
-    with _PENDING_LOCK:
-        entry = _PENDING.pop(sid, None)
-    if not entry:
-        return
-    timer = entry.get("timer")
-    if timer is not None:
+    def _run() -> None:
         try:
-            timer.cancel()
+            run_auto_recap(sid, **kwargs)
         except Exception:
-            pass
+            logger.debug("recap_auto immediate run failed", exc_info=True)
 
-
-def pending_count() -> int:
-    with _PENDING_LOCK:
-        return len(_PENDING)
+    if background:
+        threading.Thread(target=_run, name=f"recap-auto-{sid[:12]}", daemon=True).start()
+    else:
+        _run()
+    logger.debug("recap_auto started session=%s platform=%s", sid, platform)
 
 
 def run_auto_recap(
@@ -547,11 +705,13 @@ def run_auto_recap(
     *,
     platform: str,
     chat_id: str,
-    min_user_turns: int = MIN_TURNS_FOR_AUTO_RECAP,
+    min_turn_seconds: int = RECAP_MIN_TURN_SECONDS,
     min_assistant_chars: int = MIN_ASSISTANT_CHARS_FOR_AUTO_RECAP,
-    idle_ok: bool = True,
     thread_id: str = "",
     reply_to_message_id: str = "",
+    inbound_started_at: Optional[float] = None,
+    ended_at: Optional[float] = None,
+    turn_seconds: Optional[float] = None,
 ) -> Optional[str]:
     """Gate + generate + send. Returns delivery body or None. Updates watermark on success."""
     sid = str(session_id or "").strip()
@@ -563,7 +723,11 @@ def run_auto_recap(
     auto_cfg = load_auto_config()
     if not auto_cfg.get("enabled", True):
         return None
-    need = int(auto_cfg.get("min_user_turns") or min_user_turns)
+    need_secs = int(
+        auto_cfg["min_turn_seconds"]
+        if "min_turn_seconds" in auto_cfg
+        else min_turn_seconds
+    )
     need_chars = int(
         auto_cfg["min_assistant_chars"]
         if "min_assistant_chars" in auto_cfg
@@ -581,21 +745,29 @@ def run_auto_recap(
     turns = count_user_turns(messages)
     chars = latest_assistant_chars(messages)
     last = load_recap_watermark(sid)
+    if turn_seconds is None:
+        turn_seconds = resolve_turn_seconds(
+            messages,
+            inbound_started_at=inbound_started_at,
+            ended_at=ended_at,
+            session_id=sid,
+        )
     reason = recap_gate(
         turns,
         last,
         auto=True,
-        idle_ok=idle_ok,
-        min_user_turns=need,
+        turn_seconds=turn_seconds,
+        min_turn_seconds=need_secs,
         assistant_chars=chars,
         min_assistant_chars=need_chars,
     )
     if reason:
         logger.debug(
-            "recap_auto skipped session=%s turns=%s chars=%s last=%s reason=%s",
+            "recap_auto skipped session=%s turns=%s chars=%s turn_s=%s last=%s reason=%s",
             sid,
             turns,
             chars,
+            turn_seconds,
             last,
             reason,
         )
@@ -637,10 +809,11 @@ def run_auto_recap(
 
     save_recap_watermark(sid, turns)
     logger.info(
-        "recap_auto sent session=%s turns=%s chars=%s platform=%s",
+        "recap_auto sent session=%s turns=%s chars=%s turn_s=%s platform=%s",
         sid,
         turns,
         chars,
+        turn_seconds,
         plat,
     )
     return body
@@ -654,7 +827,6 @@ def note_manual_recap(session_id: str, messages: list[Any]) -> None:
     turns = count_user_turns(messages)
     if turns > 0:
         save_recap_watermark(sid, turns)
-    cancel_pending(sid)
 
 
 def _lookup_route(session_id: str, platform_hint: str) -> tuple[str, str, str, str]:

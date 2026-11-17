@@ -1,4 +1,4 @@
-"""[owner] C13 — recap explainer (on-demand /recap + idle auto; notice bypass)."""
+"""[owner] C13 — recap explainer (on-demand /recap + long-turn/long-reply auto; notice bypass)."""
 
 from __future__ import annotations
 

@@ -273,8 +273,8 @@ def test_recap_route_remembers_thread_and_send_notice_passes_metadata():
     with patch.object(auto_mod, "resolve_enabled", return_value=True), patch.object(
         auto_mod,
         "load_auto_config",
-        return_value={"enabled": True, "min_user_turns": 3, "idle_seconds": 1},
-    ), patch.object(auto_mod, "schedule_auto_recap", side_effect=fake_sched):
+        return_value={"enabled": True, "min_turn_seconds": 180, "min_assistant_chars": 800},
+    ), patch.object(auto_mod, "start_auto_recap", side_effect=fake_sched):
         auto_mod._on_session_end(
             session_id="sid-topic",
             completed=True,

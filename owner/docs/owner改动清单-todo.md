@@ -113,10 +113,9 @@ explainers:
   recap:
     enabled: true         # 第四 kind：/recap 按需回顾（notice；正文落 messages 审计，不入主会话模型）
     max_output_chars: 350
-    auto:                 # 长对话闲置自动（Grok：3 回合 / 180s）
+    auto:                 # 长耗时或长结束消息才自动；结束后不再空等
       enabled: true
-      min_user_turns: 3
-      idle_seconds: 180
+      min_turn_seconds: 180     # 本轮用户消息 → session_end；旧键 idle_seconds 作回退，不再表示空等
       min_assistant_chars: 800
 ```
 
@@ -561,11 +560,11 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - **告警前缀 = notice 匹配键**：默认 `💡 [stream-guard]` 须与 overlay `feishu_card.notice_titles` + `owner/feishu/auto_card.py` 内置表 + C13 各 kind 的 PREFIX 三处同步；`💡 [output-guard]` 有可见串但不在 `notice_titles`（见 `owner/docs/c13-explainers.md`）
   - **kind · recap**
     - 入口：按需 `/recap`（第四 kind）；notice `📋 系统提示：`；正文落 `messages`（`role=notice`）作审计，不入主会话模型；watermark 只管自动门控
-    - 自动触发（对齐 Grok Build `session_recap.rs`）：回合结束后闲置 `idle_seconds=180`；触发条件为 `min_user_turns=3` **或** 末条助手可见字数 ≥ `min_assistant_chars`（默认 800，按 Unicode 字符计；`0` 关闭）—— 单回合长答也可触发（2026-11-05）；watermark 防刷；配置 `explainers.recap.auto`；判定逻辑 `owner/explainers/recap/gate.py`
-    - 自动路由：`pre_gateway_dispatch` 读 `event.source`；`on_session_end` 经 session_store origin 回补 chat_id（idle 阈值不变，2026-11-03）
+    - 自动触发：本轮耗时 ≥ `min_turn_seconds`（默认 180，用户消息 → `on_session_end`）**或** 末条助手可见字数 ≥ `min_assistant_chars`（默认 800，按 Unicode 字符计；`0` 关闭）。有新主回合才发（watermark 防刷）；**不再**用「用户回合数 ≥ 3」单独触发，也**不再**在结束后空等下一条输入。配置 `explainers.recap.auto`；判定逻辑 `owner/explainers/recap/gate.py`。旧键 `idle_seconds` 仅作 `min_turn_seconds` 回退，语义不再是空等（2026-11-17）
+    - 自动路由：`pre_gateway_dispatch` 读 `event.source` 并记下本轮起点；`on_session_end` 经 session_store origin 回补 chat_id。打断 / 失败 / 未完成跳过；`agent_loop_stopped` 若先到，仅在结束标志含糊时据此跳过（2026-11-17）
     - **飞书话题发卡（2026-11-11）**：主对话 + 话题并发时，progress / recap / english 只把 `chat_id` 传给 `adapter.send`，丢掉 `source.thread_id`，回顾/进度/英文卡会落到主对话。现于 explainer 路由记住并下发 `metadata.thread_id`（及 `reply_to_message_id`）；主对话（无 thread_id）行为不变，不把 `root_id` 当话题。交互卡在 owner `card_sender` 走官方 reply API（`reply_in_thread=True`，必要时回复话题内最近一条），避免 `receive_id_type=thread_id` 创建触发 99992402。REST 旁路同样认识 thread_id，不再回落到只发 chat_id。测：`tests/owner/test_c13_feishu_thread_cards.py`、`tests/owner/test_c13_recap_auto.py`、`tests/owner/test_c11_auto_card.py`
     - 文案取向：进度条文案（做到哪了/完成度/下一步），禁文件名/表 id 罗列；硬帽仍 350（`clean_output`；提示词要求 ≤220 汉字，2026-11-05）
-    - **超预算混合兜底（2026-11-17）**：可见正文超过 `max_input_chars`（默认 64k）才启用；prompt 用同一 compression 链最近一条 recap notice 说明被省略的前半段，并保留尾部原文；无旧回顾则退回纯尾部截断。不沿 session_reset 链，不用 watermark 正文，进度卡忽略。每 3 次混合后做 1 次纯尾部校准。不到预算与 180 秒闲置门控均不变。实现 `owner/explainers/recap/hybrid.py`；设计稿 `owner/docs/design/recap-hybrid-fallback/hybrid.md`；测 `tests/owner/test_c13_recap_hybrid.py`。
+    - **超预算混合兜底（2026-11-17）**：可见正文超过 `max_input_chars`（默认 64k）才启用；prompt 用同一 compression 链最近一条 recap notice 说明被省略的前半段，并保留尾部原文；无旧回顾则退回纯尾部截断。不沿 session_reset 链，不用 watermark 正文，进度卡忽略。每 3 次混合后做 1 次纯尾部校准。混合阈值与校准规则不变；自动触发已改为「长耗时 / 长结束消息，回合结束立刻判定」，不再空等 180 秒。实现 `owner/explainers/recap/hybrid.py`；设计稿 `owner/docs/design/recap-hybrid-fallback/hybrid.md`；测 `tests/owner/test_c13_recap_hybrid.py`。
     - 卡片：标题色见 C11「notice 卡规则」（2026-11-04）
   - **kind · approval**：审批卡发出前 2–3 句事实解说；飞书冻结卡保留 C13 命令说明附录（send 写入 `_approval_state.body_text` → `build_resolved_card`，2026-11-03）
   - **kind · progress**：沉默期进度旁白；飞书 notice 蓝标题 **「🧭 当前进度」**（原「进度旁白」，`auto_card._DEFAULT_NOTICE_RULES`）；`stream_guard.snapshot.tripped` 时让位；活动戳中文映射 `owner/explainers/progress/activity_i18n.py`（当前进度卡底栏/`_fact_line`/`busy`/长跑心跳的 `current_tool` 复用官方 `display.verb.*`→如 terminal=`正在运行命令`；无工具时译 `last_activity_desc`：精确+模板+裸 tool id；未命中原文；en UI 透传句子仍映射裸 tool id，2026-11-05）

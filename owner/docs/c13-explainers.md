@@ -61,27 +61,25 @@ explainers:
 - 飞书：`feishu_card.notice_titles` 已含该前缀 → auto-card notice；标题色 `template=orange`（橘黄；`yellow` 偏浅黄），改色只动 `owner/feishu/auto_card.py` 的 `_DEFAULT_NOTICE_RULES`。
 - 成功后写入 watermark（`~/.hermes/owner/recap_watermarks/<session_id>`），避免紧接着再自动发一次。
 
-## 长对话结束自动 recap（对齐 Grok Build）
+## 长对话自动 recap（长耗时或长结束消息）
 
-权威来源：本机 Grok Build 1.0.62 二进制 + 上游
-`crates/codegen/xai-grok-shell/src/session/helpers/session_recap.rs`：
+自动回顾只覆盖「本轮 agent turn 时间过长」或「end 消息过长」，**不是**等待用户下一条输入。回合结束后不再空等。
 
-| 常量 | 值 | 含义 |
+| 门槛 | 默认 | 含义 |
 |---|---|---|
-| `MIN_TURNS_FOR_AUTO_RECAP` | **3** | 至少 3 个真实用户主回合才自动（turns 路径） |
-| `RECAP_MIN_IDLE` | **180s**（`3 * 60`） | 闲置阈值；shell 从上次模型请求计，daemon 从回合结束计 |
-| `MIN_ASSISTANT_CHARS_FOR_AUTO_RECAP` | **800**（owner OR） | 末条可见 assistant 回复字数 ≥ 此值也可自动；`0` 关闭 |
-| watermark 文件 | `last_recap_main_turn` | 成功（或超长抑制展示）后写入；无新主回合不重复自动 |
+| `min_turn_seconds` | **180** | 本轮耗时：触发本轮的那条用户消息时间 → `on_session_end`。`0` 关闭耗时路径 |
+| `min_assistant_chars` | **800** | 末条可见 assistant 回复字数 ≥ 此值也可自动；`0` 关闭 |
+| watermark 文件 | `last_recap_main_turn` | 成功后写入；无新主回合不重复自动 |
 
-门控失败原因（turns 路径与上游字符串一致）：`no main turns yet` / `fewer than min turns for auto recap` / `idle threshold not met` / `no new main turn since last recap`。字数 OR 未达标时复用 turns-short 原因串。
+门控失败原因：`no main turns yet` / `no new main turn since last recap` / `turn duration and end message below auto recap thresholds`。拿不到可靠本轮起点时跳过耗时路径（打日志），只走「消息过长」这条 OR，不会再空等 180 秒充数。
 
-**Hermes 适配（飞书无 TUI 焦点）**：把「从闲置回来」映射为「一轮正常结束后安静 `idle_seconds`」——
+流程：
 
-1. hook `on_session_end`（每轮完成）→ 调度 Timer；
-2. `pre_gateway_dispatch` / `agent_loop_stopped` → 取消（用户又开口或打断）；
-3. Timer 到期 → 同 `/recap` 生成 + notice 发送 → 写 watermark。
+1. `pre_gateway_dispatch` 记住本轮用户消息到达时间，并缓存路由（从 **`event.source`** 读 platform/chat_id；官方 hook 不传顶层字段）。
+2. hook `on_session_end`（正常完成的一轮）立刻判定并生成，同 `/recap` notice，写 watermark。不再调度结束后的 Timer。
+3. 被打断 / 失败 / `completed=False` 的回合跳过。`agent_loop_stopped` 可能先于 `on_session_end` 到达，会留下标记；仅在结束标志含糊时据此跳过，并在本次结束时清掉，以免污染下一轮。
 
-路由：`pre_gateway_dispatch` 从 **`event.source`**（官方 hook 不传顶层 platform/chat_id）写 `_SESSION_ROUTES`；缺 session_id 时 `on_session_end` 经 `session_store.lookup_by_session_id`（gateway routing）回补 chat_id。
+缺 session_id 时 `on_session_end` 经 `session_store.lookup_by_session_id`（gateway routing）回补 chat_id。
 
 配置（`overlay.yaml`）::
 
@@ -91,12 +89,14 @@ explainers:
     enabled: true
     auto:
       enabled: true
-      min_user_turns: 3      # = Grok MIN_TURNS_FOR_AUTO_RECAP
-      idle_seconds: 180      # = Grok RECAP_MIN_IDLE
-      min_assistant_chars: 800  # owner OR；0=关闭
+      min_turn_seconds: 180     # 本轮耗时门槛；0=关闭耗时路径
+      # idle_seconds: 180       # 旧键，仅作 min_turn_seconds 的回退，不再表示「结束后空等」
+      min_assistant_chars: 800  # 结束消息过长；0=关闭
 ```
 
-触发条件（idle 到期后）：有新主回合，且 **turns≥3 或 末条助手可见字数≥800**。短短答仍不触发；同一段落内不重复自动。手动 `/recap` 仍即时可用且会抬高 watermark。
+现网若只配了旧键 `idle_seconds: 180`，会被读成耗时门槛，不必改 overlay。`min_user_turns` 仍可解析，但**不再**单独触发自动回顾。
+
+触发条件（回合结束立刻判断）：有新主回合，且 **本轮耗时≥180 秒或末条助手可见字数≥800**。短耗时且短结束消息不自动出卡。手动 `/recap` 仍即时可用，不走这两个自动门槛，成功后会抬高 watermark。
 - 失败 fail-open（返回短状态文案，不抛）。
 
 ## 扩展更多 kind
@@ -124,7 +124,7 @@ register_kind("summary", defaults={"enabled": False, "platforms": {}})
 
 ```bash
 cd ~/.hermes/hermes-agent          # 分支 v2
-PYTHONPATH=. python -m pytest tests/owner/test_c13_explainers.py tests/owner/test_c13_notice_persist.py tests/owner/test_c11_auto_card.py -q
+PYTHONPATH=. python -m pytest tests/owner/test_c13_explainers.py tests/owner/test_c13_notice_persist.py tests/owner/test_c13_recap_auto.py tests/owner/test_c11_auto_card.py -q
 ```
 
 ## 旁白中文门（输出语言）

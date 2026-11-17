@@ -196,11 +196,13 @@ def test_recap_auto_persists_after_send(tmp_path, monkeypatch):
     ), patch.object(
         auto_mod,
         "load_auto_config",
-        return_value={"enabled": True, "min_user_turns": 3, "idle_seconds": 180},
+        return_value={"enabled": True, "min_turn_seconds": 180, "min_assistant_chars": 800},
     ), patch.object(auto_mod, "explain_from_messages", return_value="做到哪了"), patch.object(
         auto_mod, "_send_notice", return_value=True
     ), patch("owner.explainers.persist.persist_notice", side_effect=fake_persist):
-        body = auto_mod.run_auto_recap("s-persist", platform="feishu", chat_id="c", idle_ok=True)
+        body = auto_mod.run_auto_recap(
+            "s-persist", platform="feishu", chat_id="c", turn_seconds=200
+        )
         assert body and body.startswith("📋")
         assert persisted.get("kind") == "recap"
         assert persisted.get("sid") == "s-persist"

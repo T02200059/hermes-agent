@@ -1,27 +1,41 @@
-"""[owner] C13 recap — auto-recap eligibility gate (Grok Build aligned + char OR).
+"""[owner] C13 recap — auto-recap eligibility gate.
 
-Upstream (xai-org/grok-build ``session_recap.rs``)::
+Auto recap fires at turn end when there is a new main user turn since the
+watermark, and either:
 
-    MIN_TURNS_FOR_AUTO_RECAP = 3
-    RECAP_MIN_IDLE = Duration::from_secs(3 * 60)  # 180s
-    recap_gate(main_turns, last, auto, idle_ok)
+- this turn lasted ``>= min_turn_seconds`` (default 180; user message →
+  ``on_session_end``), or
+- the latest visible assistant reply is ``>= min_assistant_chars``
+  (default 800; 0 disables the char path).
 
-Manual ``/recap`` only needs ``main_turns > 0``; auto also needs a new turn
-since the watermark, idle OK, and either ``>= min_user_turns`` **or**
-(owner) latest assistant reply ``>= min_assistant_chars`` (0 disables the
-char path; default 800 so a long single-turn reply can still auto-recap).
+User-turn count alone no longer triggers auto recap. Manual ``/recap`` only
+needs ``main_turns > 0`` and ignores both automatic thresholds.
+
+The 180s value used to mean "idle after the turn ended". It is now a
+**turn-duration** floor (``min_turn_seconds``; overlay ``idle_seconds`` is
+still read as a fallback).
 """
 
 from __future__ import annotations
 
 from typing import Optional
 
-# Grok Build constants (authoritative for the turns path).
+# Historical Grok Build turn-count constant. Kept for config compat; no longer
+# an automatic trigger by itself.
 MIN_TURNS_FOR_AUTO_RECAP = 3
-RECAP_MIN_IDLE_SECONDS = 3 * 60
 
-# Owner extension: OR with turns. 0 = char path off (pure Grok turns gate).
+# Turn-duration floor (user message → agent end). Same default as the old
+# post-end idle wait, new semantics.
+RECAP_MIN_TURN_SECONDS = 3 * 60
+RECAP_MIN_IDLE_SECONDS = RECAP_MIN_TURN_SECONDS  # deprecated alias
+
+# Owner extension: OR with duration. 0 = char path off.
 MIN_ASSISTANT_CHARS_FOR_AUTO_RECAP = 800
+
+# Stable English reasons (auto path).
+REASON_NO_TURNS = "no main turns yet"
+REASON_NO_NEW_TURN = "no new main turn since last recap"
+REASON_BELOW_THRESHOLDS = "turn duration and end message below auto recap thresholds"
 
 
 def recap_gate(
@@ -29,30 +43,32 @@ def recap_gate(
     last: int,
     *,
     auto: bool,
-    idle_ok: bool,
-    min_user_turns: int = MIN_TURNS_FOR_AUTO_RECAP,
+    turn_seconds: Optional[float] = None,
+    min_turn_seconds: int = RECAP_MIN_TURN_SECONDS,
     assistant_chars: int = 0,
     min_assistant_chars: int = MIN_ASSISTANT_CHARS_FOR_AUTO_RECAP,
 ) -> Optional[str]:
     """Return ``None`` if allowed, else a stable English reason string.
 
-    Turns-path reasons stay Grok-parity. When the char OR is configured and
-    also fails, the turns-short reason is reused (same user-facing skip).
+    ``turn_seconds is None`` skips the duration path (caller could not time
+    this turn reliably). ``min_turn_seconds <= 0`` also disables duration.
     """
     turns = int(main_turns or 0)
     watermark = int(last or 0)
-    need = max(1, int(min_user_turns or MIN_TURNS_FOR_AUTO_RECAP))
     chars = max(0, int(assistant_chars or 0))
     need_chars = max(0, int(min_assistant_chars or 0))
+    need_secs = int(min_turn_seconds or 0)
     if turns == 0:
-        return "no main turns yet"
+        return REASON_NO_TURNS
     if auto:
         if turns <= watermark:
-            return "no new main turn since last recap"
-        turns_ok = turns >= need
+            return REASON_NO_NEW_TURN
+        duration_ok = (
+            need_secs > 0
+            and turn_seconds is not None
+            and float(turn_seconds) >= float(need_secs)
+        )
         chars_ok = need_chars > 0 and chars >= need_chars
-        if not turns_ok and not chars_ok:
-            return "fewer than min turns for auto recap"
-        if not idle_ok:
-            return "idle threshold not met"
+        if not duration_ok and not chars_ok:
+            return REASON_BELOW_THRESHOLDS
     return None
