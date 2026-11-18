@@ -37,7 +37,7 @@
   - `load_patch_config()` / `load_owner_config()` → 读 `~/.hermes/overlay.yaml`（本仓常软链到 `owner/config/overlay.yaml`）
   - `apply_owner_overlay(config)` → 官方 `load_config` 薄挂点后的叠层
   - `invalidate_owner_config_cache()` → 强制重读
-  - 舰队路由主读 overlay `feishu.bots.*.user_routing`（C05）；`load_patch_feishu_profile_config()` → `patch_feishu_profile.yaml` 仅回落 / LDAP（C06）仍可暂留该文件
+  - 舰队路由主读 overlay `feishu.bots.*.user_routing`（C05）；`load_patch_feishu_profile_config()` 在 `patch_feishu_profile.yaml` 缺失时返回 `{}`（该文件已于 2026-11-17 退役删除，不再回落）
 - **配置**：读写一律 `config.owner.<section>.*` 或直接 `load_patch_config().get("<section>")`；新开关进对应 section，不要散落 `config.yaml`。
 - **文件名**：运行时定制文件为 **`overlay.yaml`**（不再用 `patch.yaml`），与老版 owner 分支的 `patch.yaml`（含顶层 `owner:` 外壳）隔离；加载器**禁止**回退读 `patch.yaml`。
 - **规范**：[`二次开发规范.md`](./二次开发规范.md) §2.2.1；[`v2背景说明.md`](./v2背景说明.md)「定制化 yaml」。
@@ -72,7 +72,7 @@
   - `owner/approval/skill_manage_gate.py` — `run_gate` / `should_escalate` / `apply_all_patches`
   - `owner/feishu/skill_approval_card.py` — `send_skill_approval_card` / `handle_card_click`
   - Hook 桥：`owner/owner-extensions/skill_manage_bridge/`（`pre_tool_call` + `pre_gateway_dispatch`）
-- **配置**：`config.owner.approvals.skill_script_allowlist`（overlay.yaml）；`feishu.skill_approval`（**主读 overlay.yaml**；`patch_feishu_profile.yaml` 仅回落）
+- **配置**：`config.owner.approvals.skill_script_allowlist`（overlay.yaml）；`feishu.skill_approval`（**主读 overlay.yaml**；`patch_feishu_profile.yaml` 已于 2026-11-17 退役删除，不再回落）
 - **路径口径**：绝对/`./`/`../`/嵌套路径须落在已 view skill 根内；**纯 basename** 仍免目录校验（approval 未传 workdir）
 - **下游接线**：复用 C04 name cache / `send_card`；卡片 `hermes_action=skill_approval_gate`；永久按钮不展示（门内 `allow_permanent=False` + C01 策略）
 
@@ -431,9 +431,10 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - **fleet_add O4（2026-10-29）**：`--apply-up` → `docker compose -f … up -d` + 探活 `api_server.url`（`/health` 或 `/`）；可注入 `compose_runner`/`health_get`（单测 mock，不依赖真 Docker）；失败结构化错误 + compose stop/回滚文案；默认 dry；拒 `/data/hermes`；测 `test_fleet_add_o4.py`；已随 O1–O4 双推
   - **fleet_add O5（2026-10-29）**：对话 UX — 现网 `xy-user-onboarding` 全更（只编排 → dry-run → apply / apply-host / apply-up）；仓外 skill，仓内 docs 勾选并 push
   - **C05b 准备（2026-10-29）**：node010 survey + v2 preview worktree + overlay 草稿（`/data/hermes/c05b-draft/`）；当时未切生产 / 未重启；后续完成记录见下方。计划见 `owner/docs/design/c05-feishu-user-routing/c05b-node010-plan.md`
-  - **C05b 已完成（2026-11-06）**：正式 overlay `fleet_profiles` 已启用；13 个 LDAP uid 短名 Linux 用户/容器已对齐；`liry` / `wuyj` 已停；`gaor` LDAP 已建；Viking 保持方案 B；旧 patch 留作回退。切流 tip `7be19213ff`，后续 PM fix `8cfb9d975b` 已进 gitlab
+  - **C05b 已完成（2026-11-06）**：正式 overlay `fleet_profiles` 已启用；13 个 LDAP uid 短名 Linux 用户/容器已对齐；`liry` / `wuyj` 已停；`gaor` LDAP 已建；Viking 保持方案 B。切流 tip `7be19213ff`，后续 PM fix `8cfb9d975b` 已进 gitlab。切流当时旧 `patch_feishu_profile.yaml` 曾留作回退；该文件已于 **2026-11-17 退役删除**，overlay 为唯一来源，加载器对缺失文件返回 `{}`
   - **三层挂载已完成（2026-11-06）**：home → `/root`、`profiles/<uid>` → `/root/.hermes`、代码/venv RO；compose 软链与 `xy-user-onboarding` / `fleet_add` O3 一致；叠挂探针与 `/health` 13/13 = 200 通过；切流/三层窗口内未无故重启 Hub（见同目录 `c05b-node010-plan.md`）
   - **fleet_add 模板对齐 3.14.9（2026-11-17）**：O3 草稿挂共用 `/data/hermes/tools`（RO）与 `/data/hermes/installs`（RW）、`sqlite-fixed/entrypoint-fleet.sh`，容器内代码/venv 路径改为 `/data/hermes/hermes-agent` 与 `.../venv`，并设 `HERMES_SUPERVISED_CHILD=1`；**不要**把共用树 bind 到 `/root/.hermes/tools|installs`。venv-docker 仍可挂，启动不用 3.11.0rc1。测 `test_fleet_add_o3.py`。`xy-user-onboarding` 文档在 westskill 仓同步（先本机再 node010 pull）
+  - **fleet_add 模板对齐现网 compose 布局与运维卷（2026-11-18）**：O3 实体写到 `profiles/<uid>/docker-compose.yml`，并在 `compose/docker-compose.fleet-<uid>.yml` 建软链；服务名=`<uid>`、`container_name=hermes-<uid>`；补现网 13 份共性运维卷（`/root/.ssh`、ansible.cfg、inventory、scripts、cron、ansible tmpfs）与 `OPENVIKING_ENDPOINT=http://host.docker.internal:1933`。`FEISHU_HOME_CHANNEL` 仍由 O2 写 `.env`，不把频道 ID 写进仓内 compose 模板（现网 12/13 份 compose 另有一份）。测 `test_fleet_add_o1/o3/o4.py`（含 `gateway.standalone: true`、软链与运维卷断言）。
   - **C05a 补丁**：子网关 `FEISHU_CONNECTION_MODE=send_only`（`plugins/platforms/feishu/adapter.py` connect 早退、不抢 Hub app_id WS lock）；测 `tests/owner/test_c05_feishu_send_only.py`；**勿**把实地测 `overlay.yaml` / profile `.env` 入库
 - [x] **C06** · 源 §15.1–15.6 · API Server LDAP 身份准入 + `fleet_profiles`/`hub_only.api`（旧 `api_identity`/`identity_*` 只读别名）+ 头剥离/SSE · **优先级：P0**
   - **LDAP 身份准入（2026-10-29，v2 重做，不照搬 owner）**：设计稿 `owner/docs/design/c06-ldap-identity-auth/`；`owner/gateway/ldap_auth.py` + `identity_routing.py`；api_server 薄胶水；overlay 非机密连接字段 + `enabled:false`；`HERMES_LDAP_*` env；探针 `c06_ldap_probe.py`；单测+E2E（负向真 LDAP 已过）；C05b 已完成；生产 LDAP 门闸另开 / 本机默认仍不开门
@@ -444,7 +445,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 - [x] **C09** · 源 §3.6 / §3.11 · skill 脚本自动审批 + skill_manage 飞书审批门 · **优先级：P0**（阶段三）
   - skill 脚本：`owner/approval/skill_script_approval.py`；`approvals.skill_script_allowlist`；胶水 `tools/approval.py` + `tools/skills_tool.py`
   - skill_manage 门：`owner/approval/skill_manage_gate.py` + `owner/owner-extensions/skill_manage_bridge/`；卡 `owner/feishu/skill_approval_card.py`
-  - 配置：`feishu.skill_approval`（**主读** `overlay.yaml`；`patch_feishu_profile.yaml` 仅回落；默认 enabled:false）
+  - 配置：`feishu.skill_approval`（**主读** `overlay.yaml`；`patch_feishu_profile.yaml` 已于 2026-11-17 退役删除；默认 enabled:false）
   - 适配：超时补丁挂 `tools.approval_context._get_approval_timeout`；发卡走 `send_card`；adapter `_on_card_action_trigger` 薄分支
   - 设计：`owner/docs/design/skill-approval/README.md`
   - 测：`tests/owner/test_skill_script_approval.py` / `test_skill_manage_gate.py`
@@ -751,17 +752,17 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
 
 ## § yaml 整合方向（穿插落地；不大爆炸）
 
-现状（源仓）：`owner/config/overlay.yaml`（v2 扁平）+ `patch_feishu_profile.yaml`（含 bots 路由与 LDAP，回落）+ `upstream_sync.yaml`（独立）。老版 owner 分支仍用独立的 `patch.yaml`（含 `owner:` 外壳）；v2 加载器**不读** `patch.yaml`。
+现状（源仓）：`owner/config/overlay.yaml`（v2 扁平）+ `upstream_sync.yaml`（独立）。`patch_feishu_profile.yaml` 已于 2026-11-17 退役删除，不再作为回落源。老版 owner 分支仍用独立的 `patch.yaml`（含 `owner:` 外壳）；v2 加载器**不读** `patch.yaml`。
 
 **目标**：定制 yaml **更小、更好读**；密钥仍可内网提交，对外另做 template。
 
 **本机现状（2026-11-02）**：
 - ① **缩 DEFAULTS 重复** · **已做**：overlay 去掉与代码 DEFAULTS 相同的段/键（`stream_guard` 整段、`openviking`、`output_guard`、`approvals` 空默认、`queue_card.enabled`、checkpoints 除 `predict_llm_timeout_ms`、explainers 共用默认与 kind 内重复数值、`feishu_card.split_*`）；`notice_titles` 的 recap 规则已进 `auto_card._DEFAULT_NOTICE_RULES`，overlay 不再复写整表。
 - ② **削注释噪声** · **已做**：压缩 feishu_card / bot_menu 旁大段说明。
-- ③ **身份/路由边界** · **本机不写舰队段；生产已完成**：本机 overlay **不写** `fleet_profiles` / `user_routing`；node010 已随 C05b 安装正式人卡 overlay，旧 `patch_feishu_profile` 仅留回落材料。`ldap:` 连接字段可留仓内，`enabled` 仓内默认 `false`（节点用 patch/env 开门）。
-- ④ **`~/.hermes/patch.yaml` 软链** · **已撤**（2026-11-06）：软重启 + 飞书真实生图验收后，确认无运行时读者；软链移至 `~/.hermes/backups/patch.yaml.symlink-pre-remove-20261106`。主定制继续走 `overlay.yaml`；`patch_feishu_profile.yaml` 仍作 LDAP / skill_approval 回落。
+- ③ **身份/路由边界** · **本机不写舰队段；生产已完成**：本机 overlay **不写** `fleet_profiles` / `user_routing`；node010 已随 C05b 安装正式人卡 overlay。`patch_feishu_profile.yaml` 已于 2026-11-17 退役删除。`ldap:` 连接字段可留仓内，`enabled` 仓内默认 `false`（节点用 overlay/env 开门）。
+- ④ **`~/.hermes/patch.yaml` 软链** · **已撤**（2026-11-06）：软重启 + 飞书真实生图验收后，确认无运行时读者；软链移至 `~/.hermes/backups/patch.yaml.symlink-pre-remove-20261106`。主定制继续走 `overlay.yaml`。`patch_feishu_profile.yaml` 已于 2026-11-17 退役删除，不再作 LDAP / skill_approval 回落。
 - [x] ⑤ **image-hub 配置与注册迁移** · 2026-11-06 · **完成** · 实现 `25d883e93b` / tip `bea9b4a508`：源码收至 `owner/image_hub`，读 overlay 顶层 `image_gen:`，官方 `ImageGenProvider` + 动态 model/alias；43 测通过；软重启后飞书真实生图验收 OK；`patch.yaml` 软链已撤。详见 `owner/docs/design/image-hub-overlay/README.md`。
-- 回落面大迁（人卡进 overlay）→ **已随 C05b 完成**，旧 patch 文件未删，留作回退材料。
+- 回落面大迁（人卡进 overlay）→ **已随 C05b 完成**；`patch_feishu_profile.yaml` 已于 2026-11-17 退役删除，不再留作回退材料。
 
 方向备忘（未改语义的中长期）：
 

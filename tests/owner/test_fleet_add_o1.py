@@ -69,13 +69,19 @@ def test_plan_dry_run_structured(fixture_overlay):
     assert "ou_tenant_alice" in plan["feishu_allowed_users"]["members"]
     assert plan["feishu_home_channel"]["feishu_home_channel"] == "oc_dm_alice"
     vols = plan["compose"]["volumes"]
-    assert any(v.endswith(":/root") and "/home/alice" in v for v in vols)
-    assert any("/root/.hermes" in v and "profiles/alice" in v for v in vols)
+    assert any(v.endswith(":/root:rw") and "/home/alice" in v for v in vols)
+    assert any(v.endswith(":/root/.hermes:rw") and "profiles/alice" in v for v in vols)
     assert any(":ro" in v for v in vols)
     assert any(v.endswith("/etc/hermes/overlay.yaml:ro") and "overlay.yaml:" in v for v in vols)
+    assert any(v.endswith("/root/.ssh:ro") for v in vols)
+    assert plan["compose"]["service"] == "alice"
+    assert plan["compose"]["container_name"] == "hermes-alice"
     assert plan["compose"]["environment"]["FEISHU_CONNECTION_MODE"] == "send_only"
     assert plan["compose"]["environment"]["HERMES_PROFILE"] == "alice"
     assert plan["compose"]["environment"]["HERMES_OVERLAY_PATH"] == "/etc/hermes/overlay.yaml"
+    assert plan["compose"]["environment"]["OPENVIKING_ENDPOINT"] == "http://host.docker.internal:1933"
+    assert plan["compose_file"].endswith("profiles/alice/docker-compose.yml")
+    assert plan["compose_link"].endswith("compose/docker-compose.fleet-alice.yml")
     phases = {c["phase"] for c in plan["planned_commands"]}
     assert phases == {"O3", "O4"}
     text = format_plan_text(plan)

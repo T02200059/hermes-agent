@@ -3,13 +3,15 @@
 设计见 ``owner/docs/design/c05-feishu-user-routing/fleet-add.md`` §5 O1–O4。
 
 主键 = LDAP uid（与主稿 ``fleet_profiles.<ldap_uid>`` 对齐）。
-生产 node010 现网路由键仍可能是全名（如 ``yangtianbao``）；切 uid 属另开 Ops。
+新开户与现网容器均使用短名 uid（如 ``yangtb``）；全名只作历史回退映射，不再作为路由键或 ``HERMES_PROFILE``。
 
 - **O1** ``plan_fleet_add``：零落盘计划（含三层 compose 草稿与宿主机命令清单）。
 - **O2** ``apply_fleet_add``：写 overlay 人卡 + ``user_profile_routes``、目标/Hub
   ``FEISHU_ALLOWED_USERS``、目标 ``FEISHU_HOME_CHANNEL`` / ``platforms.feishu.home_channel``；
   可选备份与回滚说明。**不** compose up、**不** useradd。
-- **O3** ``apply_fleet_add_host``：种子 ``profiles/<uid>`` 目录、写三层挂载 compose 文件；
+- **O3** ``apply_fleet_add_host``：种子 ``profiles/<uid>`` 目录、写三层挂载 compose 实体
+  （``profiles/<uid>/docker-compose.yml``）并在 ``compose/docker-compose.fleet-<uid>.yml``
+  建指向它的软链；
   ``useradd`` 仅在 Linux + ``run_useradd=True`` 时执行，否则 dry 列出 / Darwin 标
   ``unsupported``。**不** ``docker compose up``（属 O4）。
 - **O4** ``apply_fleet_add_up``：``docker compose up -d`` + 探活 ``api_server.url``；
@@ -51,12 +53,54 @@ DEFAULT_INSTALLS_CONTAINER = "/data/hermes/installs"
 DEFAULT_ENTRYPOINT_CONTAINER = "/entrypoint.sh"
 DEFAULT_SQLITE_LIB_CONTAINER = "/usr/local/lib/libsqlite3.so.3.53.4"
 DEFAULT_COMPOSE_IMAGE = "hermes-profile:latest"
-DEFAULT_COMPOSE_FILENAME = "docker-compose.fleet-{uid}.yml"
+DEFAULT_COMPOSE_FILENAME = "docker-compose.fleet-{uid}.yml"  # compose/ 下软链名
+DEFAULT_COMPOSE_ENTITY_NAME = "docker-compose.yml"  # profiles/<uid>/ 下实体
+# 容器内 OpenViking 连宿主机；13 份现网 compose 同值，非密钥。
+DEFAULT_OPENVIKING_ENDPOINT = "http://host.docker.internal:1933"
+# 现网运维卷（13 份 compose 共性；挂的是宿主机 root 的 ssh/ansible，不是用户家目录）。
+DEFAULT_HOST_SSH = "/root/.ssh"
+DEFAULT_HOST_ANSIBLE_CFG = "/root/.ansible.cfg"
+DEFAULT_ANSIBLE_TMPFS = "/root/.ansible/cp"
 # Profile containers mount HERMES_HOME at /root/.hermes (per-profile dir), so
 # the fleet overlay is bind-mounted here and advertised via HERMES_OVERLAY_PATH.
 DEFAULT_OVERLAY_CONTAINER = "/etc/hermes/overlay.yaml"
 
 _PORT_IN_URL = re.compile(r":(\d+)(?:/|$)")
+
+
+def default_compose_entity_path(
+    ldap_uid: str,
+    *,
+    hermes_dir: Optional[str] = None,
+    hermes_root: str = DEFAULT_HERMES_ROOT,
+) -> str:
+    """现网 compose 实体：``<hermes_dir>/docker-compose.yml``（即 ``profiles/<uid>/``）。"""
+    if hermes_dir:
+        return f"{hermes_dir.rstrip('/')}/{DEFAULT_COMPOSE_ENTITY_NAME}"
+    return (
+        f"{hermes_root.rstrip('/')}/profiles/{ldap_uid}/{DEFAULT_COMPOSE_ENTITY_NAME}"
+    )
+
+
+def default_compose_link_path(
+    ldap_uid: str,
+    *,
+    hermes_root: str = DEFAULT_HERMES_ROOT,
+) -> str:
+    """现网软链：``<hermes_root>/compose/docker-compose.fleet-<uid>.yml``。"""
+    return (
+        f"{hermes_root.rstrip('/')}/compose/"
+        f"{DEFAULT_COMPOSE_FILENAME.format(uid=ldap_uid)}"
+    )
+
+
+def compose_mount_dest(spec: str) -> str:
+    """从 ``host:dest`` 或 ``host:dest:ro|rw`` 取出容器内目标路径。"""
+    parts = str(spec).split(":")
+    if len(parts) >= 3 and parts[-1] in {"ro", "rw"}:
+        return parts[-2]
+    return parts[-1] if parts else ""
+
 
 # 输出中永不回显真实 api_key
 _REDACTED_KEY = "<redacted-reuse-shared-fleet-key>"
@@ -219,43 +263,57 @@ def build_compose_service_draft(
     hermes_root: str = DEFAULT_HERMES_ROOT,
     overlay_path: Optional[str] = None,
 ) -> dict[str, Any]:
-    """目标态 compose 服务草稿：三层挂载 + 共用 Python 3.14.9 tools / PM installs。
+    """目标态 compose 服务草稿：与 node010 现网 13 份 YAML 同构。
 
-    挂载顺序：先 home 再 ``.hermes``，再叠共用 ``tools`` / ``installs``（宿主路径
-    取 ``{hermes_root}/tools|installs``，容器内固定 ``/data/hermes/tools|installs``，
-    与 facts.json 绝对路径及 ``entrypoint-fleet.sh`` 符号链接对齐）。
+    挂载顺序（13 份共性）：先 home 再 ``.hermes``，再共用 ``tools`` / ``installs``，
+    代码/venv RO，运维卷（ssh / ansible.cfg / inventory / scripts / cron），
+    sqlite 修复库、``entrypoint-fleet.sh``、舰队 overlay RO。
+    宿主 tools/installs 取 ``{hermes_root}/tools|installs``，容器内固定
+    ``/data/hermes/tools|installs``，与 facts.json 及入口符号链接对齐。
     **禁止**仅 ``/home/<name>:/root`` 单挂；**不要**把共用树直接 bind 到
     ``/root/.hermes/tools|installs``（路径前缀不一致会触发 pm repair）。
     overlay 默认 ``{hermes_root}/overlay.yaml`` → 容器内
-    ``/etc/hermes/overlay.yaml``（RO），并设置 ``HERMES_OVERLAY_PATH``，供
-    生命周期通知读取 ``fleet_profiles.<uid>.display_name``。
-    启动解释器走 ``entrypoint-fleet.sh`` + hermes wrapper（Python 3.14.9），
+    ``/etc/hermes/overlay.yaml``（RO），并设置 ``HERMES_OVERLAY_PATH``。
+    启动走 ``entrypoint-fleet.sh`` + hermes wrapper（Python 3.14.9），
     不用 ``venv-docker`` 里的 3.11.0rc1。
+    服务名 = LDAP uid，``container_name`` = ``hermes-<uid>``（与现网一致）。
+    ``FEISHU_HOME_CHANNEL`` 由 O2 写入 profile ``.env``，不写进 compose 模板
+    （避免把频道 ID 入库）；现网 12/13 份 compose 另有一份，不作为模板值。
     """
-    service_name = f"hermes-{ldap_uid}"
+    service_name = ldap_uid
+    container_name = f"hermes-{ldap_uid}"
     overlay_host = (overlay_path or f"{hermes_root.rstrip('/')}/overlay.yaml").strip()
     root = hermes_root.rstrip("/")
     tools_host = f"{root}/tools"
     installs_host = f"{root}/installs"
     entrypoint_host = f"{root}/sqlite-fixed/entrypoint-fleet.sh"
     sqlite_lib_host = f"{root}/sqlite-fixed/output/lib/libsqlite3.so.3.53.4"
+    inventory_host = f"{root}/inventory"
+    scripts_host = f"{root}/scripts"
+    cron_host = f"{root}/cron"
     volumes = [
-        f"{home_dir}:/root",
-        f"{hermes_dir}:/root/.hermes",
+        f"{home_dir}:/root:rw",
+        f"{hermes_dir}:/root/.hermes:rw",
         f"{tools_host}:{DEFAULT_TOOLS_CONTAINER}:ro",
         f"{installs_host}:{DEFAULT_INSTALLS_CONTAINER}:rw",
         f"{code_dir}:{DEFAULT_CODE_CONTAINER}:ro",
         f"{venv_dir}:{DEFAULT_VENV_CONTAINER}:ro",
-        f"{overlay_host}:{DEFAULT_OVERLAY_CONTAINER}:ro",
+        f"{DEFAULT_HOST_SSH}:{DEFAULT_HOST_SSH}:ro",
+        f"{DEFAULT_HOST_ANSIBLE_CFG}:{DEFAULT_HOST_ANSIBLE_CFG}:ro",
+        f"{inventory_host}:{inventory_host}:ro",
+        f"{scripts_host}:{scripts_host}:ro",
+        f"{cron_host}:{cron_host}:rw",
         f"{sqlite_lib_host}:{DEFAULT_SQLITE_LIB_CONTAINER}:ro",
         f"{entrypoint_host}:{DEFAULT_ENTRYPOINT_CONTAINER}:ro",
+        f"{overlay_host}:{DEFAULT_OVERLAY_CONTAINER}:ro",
     ]
     return {
         "service": service_name,
-        "container_name": service_name,
+        "container_name": container_name,
         "image": image,
         "network_mode": "host",
         "ports": [f"127.0.0.1:{port}:{port}"],
+        "tmpfs": [DEFAULT_ANSIBLE_TMPFS],
         "environment": {
             "HOME": "/root",
             "HERMES_HOME": "/root/.hermes",
@@ -264,16 +322,18 @@ def build_compose_service_draft(
             "HERMES_OVERLAY_PATH": DEFAULT_OVERLAY_CONTAINER,
             "FEISHU_CONNECTION_MODE": "send_only",
             "API_SERVER_HOST": "0.0.0.0",
-            # 注：生产 node010 现网 HERMES_PROFILE / 路由键仍可能是全名；
-            # 切 LDAP uid 另开 Ops，勿在 O1 改生产。
+            "OPENVIKING_ENDPOINT": DEFAULT_OPENVIKING_ENDPOINT,
         },
         "volumes": volumes,
         "notes": [
             "三层挂载：home→/root + profiles→/root/.hermes（.hermes 叠在 home 上）+ 代码 RO",
             "共用 Python 3.14.9 tools（RO）与完整 PM installs（RW，供锁/lease）；入口 entrypoint-fleet.sh 把 profile 内 tools/installs 链到共用树",
             "venv-docker 仍挂到代码树 /venv，但启动解释器不用 3.11.0rc1",
+            "运维卷与现网 13 人共性一致：ssh / ansible.cfg / inventory / scripts / cron + ansible tmpfs",
             "舰队 overlay 只读挂到 /etc/hermes/overlay.yaml，并设 HERMES_OVERLAY_PATH（生命周期中文名）",
-            "禁止照抄现网「只挂 /home」单挂模板；禁止把共用树直接 bind 到 /root/.hermes/tools|installs",
+            "服务名=<uid>，container_name=hermes-<uid>；实体写在 profiles/<uid>/docker-compose.yml，compose/ 下建软链",
+            "禁止照抄「只挂 /home」单挂模板；禁止把共用树直接 bind 到 /root/.hermes/tools|installs",
+            "FEISHU_HOME_CHANNEL 由 O2 写 .env，不写进 compose 模板",
             "O3 只生成草稿/写文件；docker compose up 属 O4",
         ],
     }
@@ -296,11 +356,13 @@ def render_compose_yaml(
         raise FleetAddError("compose.environment 非法")
     volumes = list(draft.get("volumes") or [])
     # 守卫：必须同时有 /root 与 /root/.hermes，且禁止「仅单挂 home」
-    has_root = any(str(v).rstrip().endswith(":/root") for v in volumes)
-    has_hermes = any("/root/.hermes" in str(v) for v in volumes)
+    dests = [compose_mount_dest(v) for v in volumes]
+    has_root = "/root" in dests
+    has_hermes = "/root/.hermes" in dests
     has_ro_code = any(":ro" in str(v) for v in volumes)
     has_tools = any(f":{DEFAULT_TOOLS_CONTAINER}:" in str(v) for v in volumes)
     has_installs = any(f":{DEFAULT_INSTALLS_CONTAINER}:" in str(v) for v in volumes)
+    has_ops = any(str(v).startswith(f"{DEFAULT_HOST_SSH}:") for v in volumes)
     has_entrypoint = any(
         str(v).rstrip().endswith(f":{DEFAULT_ENTRYPOINT_CONTAINER}:ro") for v in volumes
     )
@@ -312,29 +374,49 @@ def render_compose_yaml(
         raise FleetAddError(
             "compose 必须挂共用 tools/installs，并用 sqlite-fixed/entrypoint-fleet.sh 作入口"
         )
+    if not has_ops:
+        raise FleetAddError(
+            "compose 必须挂现网运维卷（/root/.ssh、ansible、inventory、scripts、cron）"
+        )
     # 仅 home→/root、无 profiles 叠挂 → 拒绝
     if has_root and not has_hermes:
         raise FleetAddError("禁止只挂 /home → /root 的单挂模板")
 
+    tmpfs = list(draft.get("tmpfs") or [])
     service_body: dict[str, Any] = {
         "image": draft.get("image") or DEFAULT_COMPOSE_IMAGE,
-        "container_name": draft.get("container_name") or svc_name,
-        "network_mode": draft.get("network_mode") or "host",
-        "environment": {str(k): str(v) for k, v in env.items()},
-        "volumes": volumes,
+        "container_name": draft.get("container_name") or f"hermes-{svc_name}",
         "restart": "unless-stopped",
+        "network_mode": draft.get("network_mode") or "host",
+        "volumes": volumes,
+        "environment": {str(k): str(v) for k, v in env.items()},
     }
+    if tmpfs:
+        # 现网把 tmpfs 放在 volumes 与 environment 之间；dump 顺序随此字典。
+        service_body = {
+            "image": service_body["image"],
+            "container_name": service_body["container_name"],
+            "restart": service_body["restart"],
+            "network_mode": service_body["network_mode"],
+            "volumes": volumes,
+            "tmpfs": tmpfs,
+            "environment": service_body["environment"],
+        }
     doc: dict[str, Any] = {
+        "version": "3.8",
         "services": {
             svc_name: service_body,
-        }
+        },
     }
     header_lines = [
         "# Generated by owner/scripts/fleet_add (O3). 勿手改密钥进仓。",
         "# 三层挂载：代码 RO + home→/root + profiles→/root/.hermes",
         "# 另挂共用 tools/installs（Python 3.14.9 + 完整 PM env）与 entrypoint-fleet.sh。",
+        "# 另挂现网运维卷：ssh / ansible.cfg / inventory / scripts / cron + ansible tmpfs。",
         "# 另挂舰队 overlay.yaml → /etc/hermes/overlay.yaml:ro（HERMES_OVERLAY_PATH）。",
-        "# 禁止现网单挂 /home/<name>:/root；禁止 bind 共用树到 /root/.hermes/tools|installs。",
+        "# 实体：profiles/<uid>/docker-compose.yml；compose/docker-compose.fleet-<uid>.yml 为软链。",
+        "# 服务名=<uid>，container_name=hermes-<uid>。",
+        "# 禁止单挂 /home/<name>:/root；禁止 bind 共用树到 /root/.hermes/tools|installs。",
         "# docker compose up 属 O4。",
     ]
     if compose_project_comment:
@@ -360,10 +442,44 @@ def build_seed_plan(
     home_dir: str,
     compose_file: str,
     port: int,
+    compose_link: str = "",
 ) -> dict[str, Any]:
     """O3 种子计划：profiles 目录骨架 + 可选最小 config/.env（无真密钥）。"""
     hermes = hermes_dir.rstrip("/")
     home = home_dir.rstrip("/")
+    files: list[dict[str, Any]] = [
+        {
+            "path": f"{hermes}/config.yaml",
+            "kind": "minimal_config",
+            "action": "create_if_missing",
+            "note": "最小骨架；无 API/飞书密钥。home_channel 由 O2 写入。含 gateway.standalone: true。",
+        },
+        {
+            "path": f"{hermes}/.env",
+            "kind": "dotenv_stub",
+            "action": "create_if_missing",
+            "note": (
+                "仅占位注释；FEISHU_* 由 O2 apply 写入。"
+                "禁止把真实密钥写进仓内模板。"
+            ),
+        },
+        {
+            "path": compose_file,
+            "kind": "compose_yaml",
+            "action": "write",
+            "note": "三层挂载 compose 实体（profiles/<uid>/docker-compose.yml）；up 属 O4",
+        },
+    ]
+    if compose_link and compose_link.rstrip("/") != compose_file.rstrip("/"):
+        files.append(
+            {
+                "path": compose_link,
+                "kind": "compose_symlink",
+                "action": "symlink",
+                "target": compose_file,
+                "note": "compose/docker-compose.fleet-<uid>.yml → 实体",
+            }
+        )
     return {
         "ldap_uid": ldap_uid,
         "directories": [
@@ -372,29 +488,7 @@ def build_seed_plan(
             f"{hermes}/logs",
             f"{home}",
         ],
-        "files": [
-            {
-                "path": f"{hermes}/config.yaml",
-                "kind": "minimal_config",
-                "action": "create_if_missing",
-                "note": "最小骨架；无 API/飞书密钥。home_channel 由 O2 写入。",
-            },
-            {
-                "path": f"{hermes}/.env",
-                "kind": "dotenv_stub",
-                "action": "create_if_missing",
-                "note": (
-                    "仅占位注释；FEISHU_* 由 O2 apply 写入。"
-                    "禁止把真实密钥写进仓内模板。"
-                ),
-            },
-            {
-                "path": compose_file,
-                "kind": "compose_yaml",
-                "action": "write",
-                "note": "三层挂载 compose；up 属 O4",
-            },
-        ],
+        "files": files,
         "host_commands": [
             {
                 "step": "useradd",
@@ -932,8 +1026,11 @@ def plan_fleet_add(
     )
     resolved_compose_file = (
         compose_file
-        or f"{hermes_root.rstrip('/')}/compose/{DEFAULT_COMPOSE_FILENAME.format(uid=uid)}"
+        or default_compose_entity_path(
+            uid, hermes_dir=resolved_hermes, hermes_root=hermes_root
+        )
     )
+    resolved_compose_link = default_compose_link_path(uid, hermes_root=hermes_root)
     compose_yaml = render_compose_yaml(
         compose,
         compose_project_comment=f"ldap_uid={uid} port={port}",
@@ -944,6 +1041,7 @@ def plan_fleet_add(
         home_dir=resolved_home,
         compose_file=resolved_compose_file,
         port=port,
+        compose_link=resolved_compose_link,
     )
     allowlist = build_allowlist_plan(
         ldap_uid=uid,
@@ -987,9 +1085,9 @@ def plan_fleet_add(
         "display_name": name,
         "notes": [
             "默认 dry-run：零落盘（不写 overlay / .env / compose，不 useradd，不 docker up）",
-            "逻辑主键 = LDAP uid；生产 node010 现网路由键仍可能是全名——切 uid 另开 Ops",
+            "逻辑主键 = LDAP uid 短名（与现网容器 / HERMES_PROFILE 一致）；全名只作历史回退映射",
             "O2 --apply：人卡 + routes + FEISHU_ALLOWED_USERS（ou±tenant）+ home channel",
-            "O3 --apply-host：种子 profiles/ + 三层 compose 文件；useradd 默认只列（Mac unsupported）",
+            "O3 --apply-host：种子 profiles/ + 三层 compose 实体与 compose/ 软链；useradd 默认只列（Mac unsupported）",
             "O4 --apply-up：docker compose up -d + 探活 api_server.url（可注入 mock；本计划不执行）",
         ],
         "person_card": card,
@@ -1009,6 +1107,7 @@ def plan_fleet_add(
         "feishu_home_channel": home_ch,
         "compose": compose,
         "compose_file": resolved_compose_file,
+        "compose_link": resolved_compose_link,
         "compose_yaml": compose_yaml,
         "seed": seed,
         "host_useradd": host_useradd_support(),
@@ -1062,7 +1161,9 @@ def format_plan_text(plan: Mapping[str, Any]) -> str:
     lines.append("## compose 三层挂载草稿")
     lines.append(json.dumps(plan.get("compose"), ensure_ascii=False, indent=2))
     lines.append("")
-    lines.append(f"## compose 文件路径: {plan.get('compose_file')}")
+    lines.append(f"## compose 实体路径: {plan.get('compose_file')}")
+    if plan.get("compose_link"):
+        lines.append(f"## compose 软链路径: {plan.get('compose_link')} -> {plan.get('compose_file')}")
     lines.append("## compose YAML 预览")
     lines.append(str(plan.get("compose_yaml") or ""))
     lines.append("")
@@ -1634,6 +1735,12 @@ def apply_fleet_add_host(
     compose_file = str(plan.get("compose_file") or seed.get("files", [{}])[-1].get("path") or "")
     if not compose_file:
         raise FleetAddError("plan 缺少 compose_file")
+    compose_link = str(plan.get("compose_link") or "")
+    if not compose_link:
+        for f in seed.get("files") or []:
+            if isinstance(f, dict) and f.get("kind") == "compose_symlink" and f.get("path"):
+                compose_link = str(f["path"])
+                break
     compose_yaml = str(plan.get("compose_yaml") or "")
     if not compose_yaml.strip():
         # 容错：从 draft 重渲
@@ -1652,6 +1759,8 @@ def apply_fleet_add_host(
 
     dirs = [str(d) for d in (seed.get("directories") or [])]
     paths_to_check = [Path(compose_file), *[Path(d) for d in dirs]]
+    if compose_link:
+        paths_to_check.append(Path(compose_link))
     # 也检查 person_card docker paths
     person = plan.get("person_card") or {}
     docker = person.get("docker") if isinstance(person, dict) else {}
@@ -1738,7 +1847,7 @@ def apply_fleet_add_host(
                 }
             )
 
-    # compose 文件
+    # compose 实体
     compose_p = Path(compose_file)
     backups["compose"] = backup_file(compose_p, stamp=st)
     compose_p.parent.mkdir(parents=True, exist_ok=True)
@@ -1751,6 +1860,59 @@ def apply_fleet_add_host(
             "volumes": list((plan.get("compose") or {}).get("volumes") or []),
         }
     )
+
+    # compose/ 下软链指向实体（与现网 13 人布局一致）
+    link_p: Optional[Path] = Path(compose_link) if compose_link else None
+    if link_p is not None and str(link_p) != str(compose_p):
+        link_p.parent.mkdir(parents=True, exist_ok=True)
+        target_s = str(compose_p.resolve()) if not compose_p.is_absolute() else str(compose_p)
+        if link_p.is_symlink():
+            cur = os.readlink(link_p)
+            if cur != target_s:
+                link_p.unlink()
+                os.symlink(target_s, link_p)
+                written.append(
+                    {
+                        "kind": "compose_symlink",
+                        "path": str(link_p),
+                        "target": target_s,
+                        "replaced": cur,
+                        "created": True,
+                    }
+                )
+            else:
+                written.append(
+                    {
+                        "kind": "compose_symlink",
+                        "path": str(link_p),
+                        "target": target_s,
+                        "created": False,
+                        "skipped": "already_points_to_target",
+                    }
+                )
+        elif link_p.exists():
+            backups["compose_link"] = backup_file(link_p, stamp=st)
+            link_p.unlink()
+            os.symlink(target_s, link_p)
+            written.append(
+                {
+                    "kind": "compose_symlink",
+                    "path": str(link_p),
+                    "target": target_s,
+                    "created": True,
+                    "replaced_file": True,
+                }
+            )
+        else:
+            os.symlink(target_s, link_p)
+            written.append(
+                {
+                    "kind": "compose_symlink",
+                    "path": str(link_p),
+                    "target": target_s,
+                    "created": True,
+                }
+            )
 
     # useradd
     support = host_useradd_support()
@@ -1809,6 +1971,11 @@ def apply_fleet_add_host(
         rollback.append(f"  cp {backups['compose']} {compose_p}")
     else:
         rollback.append(f"  rm -f {compose_p}")
+    if compose_link:
+        if backups.get("compose_link"):
+            rollback.append(f"  cp {backups['compose_link']} {compose_link}")
+        else:
+            rollback.append(f"  rm -f {compose_link}")
     for d in created_dirs:
         rollback.append(f"  # 本次新建目录（确认无其它数据后）: rm -rf {d}")
     for w in written:
@@ -1830,6 +1997,7 @@ def apply_fleet_add_host(
         "backups": backups,
         "useradd": useradd_result,
         "compose_file": str(compose_p),
+        "compose_link": compose_link or None,
         "rollback": rollback,
         "notes": [
             "O3 已种子目录 + 三层 compose 文件；未 docker up（O4）",
@@ -1849,6 +2017,8 @@ def format_host_apply_text(result: Mapping[str, Any]) -> str:
     lines.append(f"display_name: {result.get('display_name')}")
     lines.append(f"stamp: {result.get('stamp')}")
     lines.append(f"compose_file: {result.get('compose_file')}")
+    if result.get("compose_link"):
+        lines.append(f"compose_link: {result.get('compose_link')}")
     lines.append("")
     for n in result.get("notes") or []:
         lines.append(f"- {n}")
@@ -1910,7 +2080,7 @@ def apply_fleet_add_up(
         # 容错：从 plan 字段重建
         compose_file = str(plan.get("compose_file") or "")
         draft = plan.get("compose") or {}
-        service = str((draft.get("service") if isinstance(draft, dict) else None) or f"hermes-{uid}")
+        service = str((draft.get("service") if isinstance(draft, dict) else None) or uid)
         port_info = plan.get("port") or {}
         port = int((port_info.get("allocated") if isinstance(port_info, dict) else None) or 0)
         person = plan.get("person_card") or {}
@@ -1931,7 +2101,7 @@ def apply_fleet_add_up(
         )
 
     compose_file = str(up.get("compose_file") or plan.get("compose_file") or "")
-    service = str(up.get("service") or f"hermes-{uid}")
+    service = str(up.get("service") or uid)
     api_base = str(up.get("api_base") or "")
     port = int(up.get("port") or 0)
     up_cmd = str(up.get("up_cmd") or f"docker compose -f {compose_file} up -d {service}")
@@ -2172,6 +2342,8 @@ def format_up_apply_text(result: Mapping[str, Any]) -> str:
     lines.append(f"display_name: {result.get('display_name')}")
     lines.append(f"stamp: {result.get('stamp')}")
     lines.append(f"compose_file: {result.get('compose_file')}")
+    if result.get("compose_link"):
+        lines.append(f"compose_link: {result.get('compose_link')}")
     lines.append(f"service: {result.get('service')}")
     lines.append(f"api_base: {result.get('api_base')}")
     lines.append("")

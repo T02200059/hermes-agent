@@ -42,7 +42,7 @@ Hub gateway（宿主机 systemd，root，HERMES_HOME=/data/hermes）
     │ HTTP localhost:2602x  + Bearer per-profile key
     ▼
 Docker hermes-<ldap_uid> ×N（容器内 uid0，自认 root）
-    ├─ 代码/venv：RO 共用
+    ├─ 代码/venv RO 共用；tools RO / installs RW 共用（入口再链到 $HERMES_HOME）
     ├─ /root        ← passwd /home/<ldap_uid>（或 docker.home_dir）
     └─ /root/.hermes ← /data/hermes/profiles/<ldap_uid>
                        （或 docker.hermes_dir；叠挂在 home 之上）
@@ -50,14 +50,21 @@ Docker hermes-<ldap_uid> ×N（容器内 uid0，自认 root）
 
 ## 已定挂载规范
 
+与 node010 现网 13 份短名 compose、`fleet_add` O3 模板、`fleet-add.md` §4 对齐（2026-11-17/18）。
+
 | # | 宿主机 | 容器 | 说明 |
 |---|--------|------|------|
-| 1 | `/data/hermes/hermes-agent`（+ venv） | 代码/venv 路径 | **一份**，只读共用 |
-| 2 | `/data/hermes/profiles/<ldap_uid>`（或 `docker.hermes_dir`） | `/root/.hermes` | 官方一等 `HERMES_HOME` |
-| 3 | `/home/<ldap_uid>`（或 `docker.home_dir`） | `/root` | 容器自认 root 的家；passwd 好认 |
-| 4 | — | — | **`.hermes` 必须叠挂在 home 之上** |
-| 5 | — | uid 0 | Docker 内自认 root；**不做**裸机 `User=` |
-| 6 | Hub：`/data/hermes` | — | systemd；**唯一**飞书 WS；HTTP 转发 |
+| 1 | `/home/<ldap_uid>`（或 `docker.home_dir`） | `/root`（rw） | 容器自认 root 的家；passwd 好认；**必须先挂** |
+| 2 | `/data/hermes/profiles/<ldap_uid>`（或 `docker.hermes_dir`） | `/root/.hermes`（rw） | 官方一等 `HERMES_HOME`；**叠挂在 home 之上** |
+| 3 | `/data/hermes/tools` | `/data/hermes/tools`（ro） | 共用 Python 3.14.9 工具树。**不要** bind 到 `/root/.hermes/tools` |
+| 4 | `/data/hermes/installs` | `/data/hermes/installs`（rw） | 共用完整 PM env（锁/lease）。**不要** bind 到 `/root/.hermes/installs` |
+| 5 | `/data/hermes/hermes-agent` | `/data/hermes/hermes-agent`（ro） | 一份代码，只读共用 |
+| 6 | `/data/hermes/venv-docker` | `/data/hermes/hermes-agent/venv`（ro） | 仍挂；启动解释器**不用**这里的 3.11.0rc1 |
+| 7 | `/data/hermes/sqlite-fixed/entrypoint-fleet.sh` | `/entrypoint.sh`（ro） | **共用**入口（不在 git；只在 node010 该路径）。在容器内把 `$HERMES_HOME/tools`、`installs` 做成指向共用树的符号链接，并以 `/data/hermes/hermes-agent/.hermes/bin/hermes gateway run` 启动（Python 3.14.9）。不要再用 `entrypoint-<uid>.sh` 或 `python -m hermes_cli.main` |
+| 8 | 运维共享卷 | 同路径 | `/root/.ssh`、`/root/.ansible.cfg`、`/data/hermes/inventory`、`/data/hermes/scripts`（ro）；`/data/hermes/cron`（rw）；tmpfs `/root/.ansible/cp`。13 份现网 YAML 共性 |
+| 9 | `/data/hermes/overlay.yaml` | `/etc/hermes/overlay.yaml`（ro） | 舰队 overlay；设 `HERMES_OVERLAY_PATH` |
+| 10 | Hub：`/data/hermes` | — | systemd；**唯一**飞书 WS；HTTP 转发 |
+| — | — | uid 0 | Docker 内自认 root；**不做**裸机 `User=` |
 
 补充：
 
@@ -70,6 +77,9 @@ Docker hermes-<ldap_uid> ×N（容器内 uid0，自认 root）
 - 共享运维卷（scripts、inventory、常挂 ssh 等）仍可挂。
 - 官方 `get_profile_dir(name)` → `<hermes_root>/profiles/<name>`，与默认路径对齐。
 - **容器 profile 必须 `gateway.standalone: true`**：宿主 default 网关的 cron ticker 会枚举 `profiles/` 下所有 profile，而容器内 `HERMES_HOME=/root/.hermes` 与宿主路径 `/data/hermes/profiles/<uid>` 不是同一字符串，宿主抢到 tick 时会报 `Gateway inaccessible: profile_mismatch`（2026-11-11 起亚信巡检 4 个 job 间歇失败即此因）。该键让 `profiles_to_serve()` 跳过此人（宿主的 serve/tick 集合都不再包含），容器内行为不变（单 profile 兜底）。2026-11-17 已对 13 个容器 profile 全量生效；新开户由 `fleet_add` 种子自动写入（`owner/scripts/fleet_add_lib.py::minimal_profile_config_yaml`）。
+- **compose 布局**：实体为 `/data/hermes/profiles/<uid>/docker-compose.yml`；`/data/hermes/compose/docker-compose.fleet-<uid>.yml` 是指向它的软链。服务名 = `<uid>`，`container_name` = `hermes-<uid>`。
+- **环境（compose）**：`HOME=/root`、`HERMES_HOME=/root/.hermes`、`HERMES_PROFILE=<uid>`、`HERMES_SUPERVISED_CHILD=1`、`HERMES_OVERLAY_PATH=/etc/hermes/overlay.yaml`、`FEISHU_CONNECTION_MODE=send_only`、`API_SERVER_HOST=0.0.0.0`、`OPENVIKING_ENDPOINT=http://host.docker.internal:1933`。`FEISHU_HOME_CHANNEL` 由开户 O2 写入 profile `.env`（不要把频道 ID 写进仓内模板）；现网多数 compose 也有一份，不是模板值。
+- **`entrypoint-fleet.sh` 不在 git**：现网真相源是 node010 `/data/hermes/sqlite-fixed/entrypoint-fleet.sh`。磁盘上可能仍留有旧的 `entrypoint-<uid>.sh`，现网 compose 已不再挂它们，也不要删（除非另有点头）。
 
 ## 配置主结构：按人 `fleet_profiles`（已拍板）
 

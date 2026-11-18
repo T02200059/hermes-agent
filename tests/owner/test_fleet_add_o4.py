@@ -38,12 +38,14 @@ def staged(tmp_path, fixture_overlay):
     )
     hermes_dir = tmp_path / "profiles" / "alice"
     home_dir = tmp_path / "home" / "alice"
-    compose_file = tmp_path / "compose" / "docker-compose.fleet-alice.yml"
+    compose_file = hermes_dir / "docker-compose.yml"
+    compose_link = tmp_path / "compose" / "docker-compose.fleet-alice.yml"
     return {
         "overlay_path": overlay_path,
         "hermes_dir": hermes_dir,
         "home_dir": home_dir,
         "compose_file": compose_file,
+        "compose_link": compose_link,
         "tmp_path": tmp_path,
         "hermes_root": tmp_path,
         "code_dir": tmp_path / "code",
@@ -73,13 +75,13 @@ def test_health_probe_urls_and_build_up_plan():
     assert urls[0] == "http://127.0.0.1:26029/health"
     assert "http://127.0.0.1:26029/" in urls or urls[-1].endswith("26029")
     up = build_up_plan(
-        compose_file="/tmp/fa/compose/docker-compose.fleet-alice.yml",
-        service_name="hermes-alice",
+        compose_file="/tmp/fa/profiles/alice/docker-compose.yml",
+        service_name="alice",
         api_url="http://127.0.0.1:26029",
         port=26029,
     )
     assert "docker compose -f" in up["up_cmd"]
-    assert "up -d hermes-alice" in up["up_cmd"]
+    assert "up -d alice" in up["up_cmd"]
     assert "26029/health" in up["health"]["probe_urls"][0]
     assert any("stop" in s for s in up["rollback"])
 
@@ -87,7 +89,7 @@ def test_health_probe_urls_and_build_up_plan():
 def test_plan_includes_up_section(fixture_overlay, staged):
     plan = _plan(fixture_overlay, staged)
     assert plan["up"]["phase"] == "O4"
-    assert plan["up"]["service"] == "hermes-alice"
+    assert plan["up"]["service"] == "alice"
     assert "compose_up" in [c["step"] for c in plan["planned_commands"]]
     assert "health" in [c["step"] for c in plan["planned_commands"]]
     assert "fixture-shared-key" not in json.dumps(plan)

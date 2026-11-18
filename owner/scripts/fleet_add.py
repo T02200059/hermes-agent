@@ -26,7 +26,6 @@
       --open-id ou_alice \
       --hermes-dir /tmp/fleet-add-demo/profiles/alice \
       --home-dir /tmp/fleet-add-demo/home/alice \
-      --compose-file /tmp/fleet-add-demo/compose/docker-compose.fleet-alice.yml \
       --hermes-root /tmp/fleet-add-demo \
       --fixture tests/owner/fixtures/fleet_add_overlay.yaml \
       --app-id cli_fixture_app --apply-host
@@ -37,7 +36,7 @@
       --ldap-uid alice --display-name 爱丽丝 --open-id ou_alice \
       --hermes-dir /tmp/fleet-add-demo/profiles/alice \
       --home-dir /tmp/fleet-add-demo/home/alice \
-      --compose-file /tmp/fleet-add-demo/compose/docker-compose.fleet-alice.yml \
+      --hermes-root /tmp/fleet-add-demo \
       --fixture tests/owner/fixtures/fleet_add_overlay.yaml \
       --app-id cli_fixture_app --apply-host --apply-up
 
@@ -79,7 +78,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "  python -m owner.scripts.fleet_add \\\n"
             "    --ldap-uid alice --display-name 爱丽丝 --open-id ou_alice \\\n"
             "    --hermes-dir /tmp/fa/profiles/alice --home-dir /tmp/fa/home/alice \\\n"
-            "    --compose-file /tmp/fa/compose/docker-compose.fleet-alice.yml \\\n"
+            "    --hermes-root /tmp/fa \\\n"
             "    --fixture tests/owner/fixtures/fleet_add_overlay.yaml \\\n"
             "    --app-id cli_fixture_app --apply-host\n"
             "\n"
@@ -87,7 +86,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "  python -m owner.scripts.fleet_add \\\n"
             "    --ldap-uid alice --display-name 爱丽丝 --open-id ou_alice \\\n"
             "    --hermes-dir /tmp/fa/profiles/alice --home-dir /tmp/fa/home/alice \\\n"
-            "    --compose-file /tmp/fa/compose/docker-compose.fleet-alice.yml \\\n"
+            "    --hermes-root /tmp/fa \\\n"
             "    --fixture tests/owner/fixtures/fleet_add_overlay.yaml \\\n"
             "    --app-id cli_fixture_app --apply-host --apply-up\n"
         ),
@@ -144,7 +143,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument(
         "--compose-file",
         default="",
-        help="O3 将写的 compose YAML 路径（默认 <hermes-root>/compose/docker-compose.fleet-<uid>.yml）",
+        help="O3 compose 实体路径（默认 <hermes-dir>/docker-compose.yml；并在 <hermes-root>/compose/docker-compose.fleet-<uid>.yml 建软链）",
     )
     p.add_argument(
         "--hub-allow-all",

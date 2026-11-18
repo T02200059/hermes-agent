@@ -2,7 +2,7 @@
 
 > 状态：**O1–O5 已落地**（2026-10-29）：内核 `owner/scripts/fleet_add*.py` + `test_fleet_add_o1/o2/o3/o4.py`；对话 UX = 现网 skill `~/.hermes/skills/westcloud/xy-user-onboarding`（**仓外**，只编排 → `fleet_add`）。  
 > 隶属 [`README.md`](./README.md)（C05 飞书多 profile 舰队路由）。挂载三层、`fleet_profiles`、`hub_only` 以该主稿已定稿为准。  
-> 本文件描述「加人」如何**对话触发、由 Hermes 编排执行**；内核脚本已有；**不**改生产、**不**改 compose 现网（O2/O3 默认拒 `/data/hermes`）。
+> 本文件描述「加人」如何**对话触发、由 Hermes 编排执行**；内核脚本已有。C05b 已切流。脚本默认仍拒写 `/data/hermes`（须显式 `--allow-production`），避免误改现网 13 份已在跑的 compose。
 
 ## 1. 目标
 
@@ -26,7 +26,8 @@
   /data/hermes/profiles/<uid> 种子
         │
         ▼
-  compose 双挂载（home → /root；profiles → /root/.hermes）
+  compose 三层挂载（home → /root；profiles → /root/.hermes；共用 tools/installs + entrypoint-fleet.sh + 运维卷）
+  实体写在 profiles/<uid>/docker-compose.yml；compose/ 下建软链
         │
         ▼
   docker compose up + health（localhost:2602x）
@@ -65,7 +66,7 @@
 | `api_key` | **舰队共用一把**（与现网一致），自动写入人卡，不每人新钥 |
 | `useradd` + home | 建 passwd + `/home/<uid>`（缺则补；已存在则校验对齐） |
 | 种子 Hermes 家 | `/data/hermes/profiles/<uid>`（config/sqlite 骨架；可从模板或 hub 拷贝最小集） |
-| 生成 compose | **目标态双挂载**（见主稿 §已定挂载规范）；**禁止**照抄现网「只挂 home」模板 |
+| 生成 compose | **目标态三层挂载**（见主稿 §已定挂载规范与下方 §4）；实体 `profiles/<uid>/docker-compose.yml`，`compose/docker-compose.fleet-<uid>.yml` 为软链；服务名=`<uid>`，`container_name=hermes-<uid>`；**禁止**照抄「只挂 home」模板 |
 | `compose up` | 起 `hermes-<uid>`；探活 `url` / health |
 | dry-run | 默认先在对话里展示将改文件与将执行命令，确认后再写 |
 
@@ -105,7 +106,7 @@
 
 | 已定项 | 开户链路如何服从 |
 |--------|------------------|
-| **挂载三层** | 新 compose：**代码 RO**（容器路径 `/data/hermes/hermes-agent`）+ **`profiles/<uid>`→`/root/.hermes`** + **`/home/<uid>`→`/root`**（`.hermes` 叠在 home 上）+ **共用 `tools` RO / `installs` RW**（Python 3.14.9 + 完整 PM env；容器路径固定 `/data/hermes/tools|installs`）+ **`entrypoint-fleet.sh`** + sqlite 修复库 + **舰队 `overlay.yaml`→`/etc/hermes/overlay.yaml:ro`**（并设 `HERMES_OVERLAY_PATH`，供生命周期通知读 `fleet_profiles.<uid>.display_name`）。**不要**把共用树直接 bind 到 `/root/.hermes/tools|installs`。`venv-docker` 仍可挂，启动不用 3.11.0rc1。 |
+| **挂载三层** | 新 compose 与现网 13 人同构（细节以主稿「已定挂载规范」为准）：**代码 RO**（容器路径 `/data/hermes/hermes-agent`）+ **`profiles/<uid>`→`/root/.hermes`** + **`/home/<uid>`→`/root`**（`.hermes` 叠在 home 上）+ **共用 `tools` RO / `installs` RW**（Python 3.14.9 + 完整 PM env；容器路径固定 `/data/hermes/tools|installs`）+ **`entrypoint-fleet.sh`**（只在 node010 `/data/hermes/sqlite-fixed/`，不在 git）+ sqlite 修复库 + **运维卷**（`/root/.ssh`、`/root/.ansible.cfg`、inventory、scripts、cron、ansible tmpfs）+ **舰队 `overlay.yaml`→`/etc/hermes/overlay.yaml:ro`**（并设 `HERMES_OVERLAY_PATH`）。实体写在 `profiles/<uid>/docker-compose.yml`，`compose/docker-compose.fleet-<uid>.yml` 为软链；服务名=`<uid>`，`container_name=hermes-<uid>`。**不要**把共用树直接 bind 到 `/root/.hermes/tools|installs`。`venv-docker` 仍可挂，启动不用 3.11.0rc1。`FEISHU_HOME_CHANNEL` 由 O2 写 `.env`，不写进 compose 模板。 |
 | **`gateway.standalone: true`** | 新人 `config.yaml` 种子必须写入（`fleet_add` O3 已内置）；容器网关自管，宿主 default 不 serve/tick 它 |
 | **`fleet_profiles.<ldap_uid>`** | 开户写入的**唯一人卡真相源**；`api_server` 供 C05 推导 endpoints |
 | **`hub_only`** | 人卡可选；测试号可 `hub_only.feishu: true` 留 Hub、不转发 |
@@ -118,7 +119,7 @@
 
 ## 5. 实现切片（O1–O5）
 
-**当前：O1–O5 已有（dry-run / overlay apply / 宿主机种子+三层 compose / up+health / 对话 onboarding skill）；无生产改动（未切 node010）。**
+**当前：O1–O5 已有（dry-run / overlay apply / 宿主机种子+三层 compose / up+health / 对话 onboarding skill）。C05b 已于 2026-11-06 切流完成，13 个短名容器在跑。** 脚本默认仍拒写 `/data/hermes`（须 `--allow-production`），这是保护，不是「还没切流」。
 
 建议实现切片（以后开做时）：
 

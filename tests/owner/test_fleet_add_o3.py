@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -37,12 +38,14 @@ def staged(tmp_path, fixture_overlay):
     )
     hermes_dir = tmp_path / "profiles" / "alice"
     home_dir = tmp_path / "home" / "alice"
-    compose_file = tmp_path / "compose" / "docker-compose.fleet-alice.yml"
+    compose_file = hermes_dir / "docker-compose.yml"
+    compose_link = tmp_path / "compose" / "docker-compose.fleet-alice.yml"
     return {
         "overlay_path": overlay_path,
         "hermes_dir": hermes_dir,
         "home_dir": home_dir,
         "compose_file": compose_file,
+        "compose_link": compose_link,
         "tmp_path": tmp_path,
         "hermes_root": tmp_path,
         "code_dir": tmp_path / "code",
@@ -83,17 +86,27 @@ def test_compose_draft_three_layer_not_single_home():
     assert any(v.endswith(":/data/hermes/installs:rw") and "/installs:" in v for v in vols)
     assert any(v.endswith(":/entrypoint.sh:ro") and "entrypoint-fleet.sh" in v for v in vols)
     assert any("libsqlite3.so.3.53.4" in v for v in vols)
-    assert any(v.endswith(":/root") and "home/alice" in v for v in vols)
-    assert any("/root/.hermes" in v and "profiles/alice" in v for v in vols)
+    assert any(v.endswith(":/root:rw") and "home/alice" in v for v in vols)
+    assert any(v.endswith(":/root/.hermes:rw") and "profiles/alice" in v for v in vols)
     assert any(v.endswith("/etc/hermes/overlay.yaml:ro") for v in vols)
+    assert any(v.endswith("/root/.ssh:ro") for v in vols)
+    assert any(v.endswith("/root/.ansible.cfg:ro") for v in vols)
+    assert any("/inventory:" in v and v.endswith(":ro") for v in vols)
+    assert any("/scripts:" in v and v.endswith(":ro") for v in vols)
+    assert any("/cron:" in v and v.endswith(":rw") for v in vols)
+    assert draft["tmpfs"] == ["/root/.ansible/cp"]
+    assert draft["service"] == "alice"
+    assert draft["container_name"] == "hermes-alice"
     assert draft["environment"]["HERMES_OVERLAY_PATH"] == "/etc/hermes/overlay.yaml"
     assert draft["environment"]["HERMES_SUPERVISED_CHILD"] == "1"
     assert draft["environment"]["API_SERVER_HOST"] == "0.0.0.0"
+    assert draft["environment"]["OPENVIKING_ENDPOINT"] == "http://host.docker.internal:1933"
+    assert "FEISHU_HOME_CHANNEL" not in draft["environment"]
     # tools/installs 必须在 profile 叠挂之后，且不要直接盖到 /root/.hermes/tools
     assert not any(":/root/.hermes/tools:" in v or ":/root/.hermes/installs:" in v for v in vols)
     # .hermes 必须排在 home 之后（叠挂）
-    idx_root = next(i for i, v in enumerate(vols) if v.rstrip().endswith(":/root"))
-    idx_hermes = next(i for i, v in enumerate(vols) if "/root/.hermes" in v)
+    idx_root = next(i for i, v in enumerate(vols) if v.endswith(":/root:rw"))
+    idx_hermes = next(i for i, v in enumerate(vols) if v.endswith(":/root/.hermes:rw"))
     assert idx_hermes > idx_root
     # 禁止「只有 home」语义
     assert len([v for v in vols if ":/root" in v]) >= 2
@@ -111,8 +124,12 @@ def test_render_compose_yaml_guards_single_home():
     assert ":ro" in yaml_text
     assert "FEISHU_CONNECTION_MODE: send_only" in yaml_text or "send_only" in yaml_text
     doc = yaml.safe_load(yaml_text)
-    vols = doc["services"]["hermes-alice"]["volumes"]
+    svc = doc["services"]["alice"]
+    assert svc["container_name"] == "hermes-alice"
+    vols = svc["volumes"]
     assert any("/root/.hermes" in v for v in vols)
+    assert any(v.endswith("/root/.ssh:ro") for v in vols)
+    assert svc["tmpfs"] == ["/root/.ansible/cp"]
 
     bad = dict(draft)
     bad["volumes"] = ["/tmp/h/alice:/root"]
@@ -123,8 +140,14 @@ def test_render_compose_yaml_guards_single_home():
 def test_plan_includes_seed_and_compose_yaml(fixture_overlay, staged):
     plan = _plan(fixture_overlay, staged)
     assert plan["compose_file"] == str(staged["compose_file"])
+    assert plan["compose_link"] == str(staged["compose_link"])
     assert "services:" in plan["compose_yaml"]
     assert "/root/.hermes" in plan["compose_yaml"]
+    assert "alice:" in plan["compose_yaml"]
+    assert "hermes-alice" in plan["compose_yaml"]
+    assert "standalone: true" in plan["seed"]["files"][0]["note"] or any(
+        f.get("kind") == "minimal_config" for f in plan["seed"]["files"]
+    )
     seed = plan["seed"]
     assert str(staged["hermes_dir"]) in seed["directories"]
     assert plan["host_useradd"]["status"] in {"unsupported", "available"}
@@ -150,6 +173,18 @@ def test_apply_host_writes_dirs_and_compose(fixture_overlay, staged):
     assert "FEISHU_APP_SECRET" not in env
     assert result["useradd"]["status"] == "mocked"
     assert result["useradd"]["executed"] is False
+    cfg_text = (staged["hermes_dir"] / "config.yaml").read_text(encoding="utf-8")
+    assert "standalone: true" in cfg_text
+    link = staged["compose_link"]
+    assert link.is_symlink()
+    assert Path(os.readlink(link)).name == "docker-compose.yml"
+    assert Path(os.readlink(link)) == staged["compose_file"] or Path(os.readlink(link)).resolve() == staged["compose_file"].resolve()
+    doc = yaml.safe_load(text)
+    assert "alice" in doc["services"]
+    assert doc["services"]["alice"]["container_name"] == "hermes-alice"
+    vols = doc["services"]["alice"]["volumes"]
+    assert any(v.endswith("/root/.ssh:ro") for v in vols)
+    assert "OPENVIKING_ENDPOINT" in text
     # 无生产密钥泄漏
     assert "fixture-shared-key" not in json.dumps(result)
 
@@ -222,8 +257,12 @@ def test_cli_apply_host_on_tmp(staged, fixture_overlay):
     assert rc == 0
     assert staged["compose_file"].is_file()
     doc = yaml.safe_load(staged["compose_file"].read_text(encoding="utf-8"))
-    vols = doc["services"]["hermes-alice"]["volumes"]
+    svc = doc["services"]["alice"]
+    assert svc["container_name"] == "hermes-alice"
+    vols = svc["volumes"]
     assert any("/root/.hermes" in v for v in vols)
+    assert any(v.endswith("/root/.ssh:ro") for v in vols)
+    assert svc["tmpfs"] == ["/root/.ansible/cp"]
     assert any(v.endswith(":ro") for v in vols)
 
 
@@ -250,6 +289,7 @@ def test_cli_dry_run_still_default_no_host_writes(staged, fixture_overlay):
     )
     assert rc == 0
     assert not staged["compose_file"].exists()
+    assert not staged["compose_link"].exists()
     assert not staged["hermes_dir"].exists()
 
 
