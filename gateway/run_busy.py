@@ -839,6 +839,7 @@ class GatewayBusySessionMixin:
                         )
                     )
                 if summary.get("current_tool"):
+                    # [owner] friendly running-tool phrase (display.verb.*, owner/i18n/running_tool.py)
                     from agent.display import format_running_tool
                     status_parts.append(format_running_tool(summary.get("current_tool")))
             except Exception:

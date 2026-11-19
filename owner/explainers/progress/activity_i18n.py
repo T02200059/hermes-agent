@@ -99,8 +99,8 @@ def friendly_tool_list(names: object) -> str:
 
 
 def format_running_tool(tool_name: object) -> str:
-    """Delegate to :func:`agent.display.format_running_tool` (display.verb.*)."""
-    from agent.display import format_running_tool as _fmt
+    """Delegate to :func:`owner.i18n.running_tool.format_running_tool` (display.verb.*)."""
+    from owner.i18n.running_tool import format_running_tool as _fmt
 
     return _fmt(str(tool_name or ""))
 
