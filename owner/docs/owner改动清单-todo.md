@@ -553,8 +553,8 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
       5. DM/群聊 env-fallback client（`resolve_client`；drive 薄接）
       6. 工具侧 `om_` 合并转发再读（`read_merge_forward_as_text` + `offset`/`mf_limit`；renderer 复用 C12-merge-forward-recv）
     - helper：`owner/feishu/client_utils.py`（原 `tools/feishu_client_utils` 迁入 owner）
-    - 胶水：`tools/feishu_doc_tool.py`（schema + handler 委托；`# [owner] C12-doc-ocr`）；`tools/feishu_drive_tool.py`（`resolve_client` 薄接）
-    - 测：`tests/owner/test_c12_feishu_doc_enhancements.py`
+    - 胶水（0b1e269dc0 审查整改后）：`tools/feishu_doc_tool.py` 回上游字面，仅 handler 3 行薄委托 + 顶部标记（`# [owner] C12-doc-ocr`）；schema 扩展与 handler 编排全在 `owner/feishu/doc_tool.py`（post-registration `dynamic_schema_overrides`）；`tools/feishu_drive_tool.py` 回上游字面，env fallback 走 `owner/feishu/drive_tool_patch.py` 运行时改绑 `get_client`（见 C37）
+    - 测：`tests/owner/test_c12_feishu_doc_enhancements.py`、`tests/owner/test_c12_feishu_doc_tool_thin.py`（官方文件字面/行为/幂等守卫）
     - 验证：`python -m pytest tests/owner/test_c12_feishu_doc_enhancements.py -q`
     - 影响面：`feishu_doc_read` 全能力；drive 仅 client fallback；不含 memory-approval（queue 状态卡见 **C12-queue-card**）
     - 原可后移的 **C12-doc-types** / **C12-merge-forward-tool（om_）** 随本波一并落地，不另开子点
@@ -746,7 +746,7 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - **根因**：docx 的「插入 → 电子表格」是 `block_type=30` 的 inline sheet block，`raw_content` 对它**不产出任何文本**（连占位符都没有）。旧实现只回填了 image(27) 与 bitable(18)，于是数据全在表格里的文档读回来只剩标题骨架——实测某拓扑分析文档 5 个表格共 111 个单元格 = 正文 50.4% 字符、**全部 14 个 IP 与 5 个 MAC 全丢**，且失败是静默的（模型拿到的是一段没有 IP/端口的定性叙述）。
   - **策略**：不重写读取管线（raw_content 还负责拍平 grid/样式），沿用 bitable 的「扫块 → 追加」写法；`sheet.token` 形如 `{spreadsheet_token}_{sheet_id}`，按 sheet 元数据取行列数后只读该 sheet 的范围（不是整个 spreadsheet），渲染 TSV。raw_content 不提供位置线索，故扫描时记录**最近的前置标题**作为小节锚点。读取失败输出「（读取失败：<token>）」占位，杜绝静默丢弃。
   - **同族 bug**：sheets API 的带样式单元格是 segment 列表（`[{"text": "Partner "}, {"text": "e4:84…"}]`），旧代码借用 bitable 的 `_stringify_field` 会在片段间插 `", "`，把 `Partner e4:84:29:fc:43:2f` 变成 `Partner , e4:84…`（MAC/`{ACDEF}`/`0xa` 全部被污染）。新增 `_sheet_cell_text` 逐段拼接，`read_sheet_as_text` 与嵌入式表格共用。
-  - **落地**：`owner/feishu/client_utils.py`（`_sheet_cell_text`、`_block_plain_text`、`list_docx_sheet_blocks`、`_sheet_meta_by_id`、`_render_embedded_sheet`、`read_docx_embedded_sheets`；`read_docx_with_images` 追加 sheet 段）；`tools/feishu_doc_tool.py` schema 描述补一句。
+  - **落地**：`owner/feishu/client_utils.py`（`_sheet_cell_text`、`_block_plain_text`、`list_docx_sheet_blocks`、`_sheet_meta_by_id`、`_render_embedded_sheet`、`read_docx_embedded_sheets`；`read_docx_with_images` 追加 sheet 段）；schema 描述句落在 `owner/feishu/doc_tool.py` 的 `SCHEMA_OVERRIDES`（0b1e269dc0 整改后 schema 扩展居 owner 侧，官方文件回上游字面）。
   - **测**：`tests/owner/test_c12_feishu_doc_enhancements.py` 105 passed（新增 16 条：顺序/跨页标题继承/坏 token/失败占位/元数据复用/富文本单元格）。注意 test 环境 `.venv` 无 `lark_oapi`（该文件 69 条用例在 `scripts/run_tests.sh` 下本就红），需用 `venv/bin/python -m pytest` 跑。
   - **生效**：需重启 gateway（模块已在旧进程内存里）。cron 等子进程启动即生效。
 - [x] **C34** · gateway 生命周期守卫豁免远端 ssh（2026-11-19）· **优先级：P1** · **已落地** · tip `429b611a4e`
@@ -781,6 +781,12 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - **补登（审查发现的历史漏登）**：`a4d5a41f70`（C17 引号感知+只读闸门，2026-11-12）此前未按 §6.1 登记，现补记于本批。
   - **验收**：合并跑 `tests/owner` + 触及的 agent/tools/pm 套件 **1430 passed, 2 skipped**；`test_i18n` 54/54 全绿。
   - **流程教训（审查结论，留档）**：三个"落地即坏"（recap kwargs 误配 / queue patch 注册期死锁 / resume 卡空 ack）共性根因是单测用自造 kwargs/mock 未对接真实官方调用点——hook/patch 类功能应补真实调用点契约测试。
+- [x] **C37** · `0b1e269dc0` 结构性违规整改：feishu 官方工具文件回上游字面（2026-11-19）· **已落地** · tip `b39336057a`
+  - **违规**：`0b1e269dc0` 把官方 `tools/feishu_doc_tool.py` 从上游 70 行原地重写为 247 行（schema 15-95 行加 7 参数、handler 98-235 行编排内联），`tools/feishu_drive_tool.py` 亦内联 `resolve_client` + 错误文案改写——违反 §2.1「官方 schema 字面不动、扩展走运行时 patch」。
+  - **整改**：① `tools/feishu_doc_tool.py` 回上游字面，仅保留 handler 3 行薄委托（函数内 import `owner.feishu.doc_tool.handle_feishu_doc_read`）+ 顶部 2 行标记，`git diff main --numstat` = **5 插入 / 28 删除**；② schema 扩展（7 参数 + C33 嵌入式表格描述句）收进 `owner/feishu/doc_tool.py::SCHEMA_OVERRIDES`，`apply_patch()` 经 `registry.get_entry().dynamic_schema_overrides` 整键替换（`get_definitions` 浅合并，官方静态 schema 零改动），幂等、entry 缺失 fail-open；③ handler 编排（om_ 分页/wiki/文件夹/bitable/sheet/docx OCR）原样迁 `handle_feishu_doc_read`；④ `tools/feishu_drive_tool.py` 回上游字面（0 diff），env fallback 改 `owner/feishu/drive_tool_patch.py` 运行时改绑模块局部 `get_client`（唯一行为损失：无 client 错误文案回退上游短句，纯 cosmetic）。
+  - **接线时序**：gateway 启动 `discover_plugins()` 先于 `model_tools` 导入工具栈（`run_startup.py::_start_register_plugins_relay_hooks`），register() 时 entry 常不存在 → `apply_patch` 对轻模块 `tools.feishu_doc_tool` force-import 触发注册（`feishu_lark` 只 import json/threading，无 queue_cancel_patch 式死锁风险），非 defer 线程模式。
+  - **测**：新增 `tests/owner/test_c12_feishu_doc_tool_thin.py` 9 条（上游字面护栏含注册 entry schema 等值断言、官方源无扩展字面、委托透传 args/kwargs、apply 后 `get_definitions` 出全 7 参数、双 apply 幂等、drive 改绑单次包裹/注入优先/无 client 报错）。
+  - **验收**：c12 feishu 三套件 125 passed（116 + 守卫 9）；`tests/owner` + `tests/tools` 合并全量 552 failed / 10484 passed——经 stash 基线复跑证明 552 项失败在 HEAD 原文件上逐条复现（沙箱文件系统/子进程/缺 `mcp`·`jsonschema`·`fal_client` 可选依赖/网络类），**当前态相对基线零新增失败**，且基线多出的 5 条失败恰为本守卫对旧 247 行文件的正确拒绝。`tests/owner` 子集 0 失败。
 
 
 ## § yaml 整合方向（穿插落地；不大爆炸）
