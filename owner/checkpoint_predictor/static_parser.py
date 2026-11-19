@@ -224,10 +224,11 @@ def _split_segments(command: str) -> list[str]:
 
 
 def scan_redirects(command: str, *, include_append: bool = False) -> list[str]:
-    """引号感知地提取覆盖式重定向目标 (``>`` / ``&>`` / ``>|``)。
+    """引号感知地提取覆盖式重定向目标 (``>`` / ``&>`` / ``>&file`` / ``>|``)。
 
     引号里的 ``>`` (awk ``$1>2048`` / ``NR>1`` / ``echo "a -> b"``) 不是重定向;
-    ``>>``(追加)、``>&``(fd 复向)、``>=``(比较) 按既有契约不计;
+    ``>>``(追加)、``>&数字``(fd 复向, 如 2>&1 / >&2)、``>=``(比较) 按既有契约不计;
+    ``>&word`` 的 word 非纯数字时是双流覆盖写 (同 ``&>``), 必须计入;
     ``2>/dev/null`` 这类无回滚价值的目标直接丢弃。返回按出现顺序去重。
     """
     visible = strip_heredoc_bodies(command)
@@ -269,16 +270,28 @@ def scan_redirects(command: str, *, include_append: bool = False) -> list[str]:
                     targets.append(target)
                 i = max(k, i)
             continue
-        if nxt in ("&", "="):  # >&2 / >= 比较
+        if nxt == "=":  # >= 比较
             i += 2
             continue
         j = i + 1
         if j < n and visible[j] == "|":  # >| clobber
             j += 1
+        # >&word / > &word: word(去空白)以数字开头才是 fd 复制 (2>&1 / >&2);
+        # 否则是 >&file 双流覆盖写 —— 目标从 & 之后取, 不能笼统放过。
+        saw_amp = j < n and visible[j] == "&"
+        if saw_amp:
+            j += 1
         while j < n and visible[j] in " \t":
             j += 1
-        if j < n and visible[j] == "&":  # >&fd
-            i = j + 1
+        if not saw_amp and j < n and visible[j] == "&":
+            saw_amp = True
+            j += 1
+            while j < n and visible[j] in " \t":
+                j += 1
+        if saw_amp and j < n and visible[j].isdigit():
+            while j < n and visible[j].isdigit():
+                j += 1
+            i = j
             continue
         if j < n and visible[j] in ("'", '"'):
             q = visible[j]

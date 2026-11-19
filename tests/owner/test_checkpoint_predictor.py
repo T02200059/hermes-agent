@@ -42,6 +42,20 @@ def test_static_redirect_overwrite():
     assert static_parse("echo hi >> out.txt", "/proj") == []  # append, not overwrite
 
 
+def test_static_redirect_dual_stream_overwrite_targets():
+    """[回归 06d7cdbcc9] &>file / >&file 是双流覆盖写, 目标要被提取。"""
+    assert static_parse("cmd &> log.txt", "/proj") == ["log.txt"]
+    assert static_parse("cmd &>log.txt", "/proj") == ["log.txt"]
+    assert static_parse("cmd >&log.txt", "/proj") == ["log.txt"]
+    assert static_parse("cmd >& log.txt", "/proj") == ["log.txt"]
+    # fd 复制 (目标为数字) 不是写文件
+    assert static_parse("cmd >&2", "/proj") == []
+    assert static_parse("cmd 2>&1", "/proj") == []
+    assert static_parse("cmd >& 2", "/proj") == []
+    # 双流追加不覆盖
+    assert static_parse("cmd &>> log.txt", "/proj") == []
+
+
 def test_static_git_repo_sentinel():
     assert static_parse("git reset --hard HEAD", "/proj") == [GIT_REPO_SENTINEL]
     assert static_parse("git clean -fd", "/proj") == [GIT_REPO_SENTINEL]
@@ -382,6 +396,23 @@ def test_predict_still_warns_for_destructive_home_write(monkeypatch):
     agent._owner_warn_callback.assert_called_once()
 
 
+@pytest.mark.parametrize("cmd", ["westcloud sync &> log.txt", "westcloud sync >&log.txt"])
+def test_predict_warns_for_dual_stream_overwrite_home_write(monkeypatch, cmd):
+    """[回归 06d7cdbcc9+190a300a16] &>file / >&file 是覆盖写:
+
+    预测目标被 home 安全过滤时, destructive_signal 必须为真,
+    否则 warn 收敛后连用户告警都消失。
+    """
+    monkeypatch.setattr(cp_config, "get_checkpoints_cfg", lambda: dict(cp_config._DEFAULTS))
+    monkeypatch.setattr(llm_predict, "llm_predict", lambda *a, **k: [])
+    agent = _agent()
+    home = str(__import__("pathlib").Path.home())
+    agent._checkpoint_mgr.get_working_dir_for_path.side_effect = lambda p: home
+    predict_and_checkpoint(cmd, home, agent)
+    agent._checkpoint_mgr.ensure_checkpoint.assert_not_called()
+    agent._owner_warn_callback.assert_called_once()
+
+
 def test_destructive_fallback_skips_blacklisted_cwd(monkeypatch):
     monkeypatch.setattr(cp_config, "get_checkpoints_cfg", lambda: dict(cp_config._DEFAULTS))
     monkeypatch.setattr(static_parser, "static_parse", lambda *_: [])
@@ -563,6 +594,50 @@ def test_is_read_only_command_rejects_writes(cmd):
 )
 def test_destructive_signal_is_quote_aware(cmd, expected):
     assert static_parser.destructive_signal(cmd) is expected
+
+
+@pytest.mark.parametrize(
+    "cmd,expected",
+    [
+        # fd 复制 (目标为数字) — 非破坏性 (06d7cdbcc9 原始意图, 不得回退)
+        ("cmd 2>&1", False),
+        ("cmd 1>&2", False),
+        ("cmd >&2", False),
+        ("cmd >& 2", False),
+        ("cmd 2>&1 >> app.log", False),
+        ("git fetch origin 2>&1 | tail -3", False),
+        # bash 双流覆盖写文件 — 破坏性 (06d7cdbcc9 回归漏判)
+        ("cmd &> log.txt", True),
+        ("cmd &>log.txt", True),
+        ("cmd &> log.txt 2>&1", True),
+        ("cmd >&log.txt", True),
+        ("cmd >& log.txt", True),
+        # 常规覆盖写 — 破坏性 (现状保持)
+        ("cmd > file.txt", True),
+        ("cmd >file.txt", True),
+        ("cmd 2> err.txt", True),
+        ("cmd > out 2>&1", True),
+        # 追加 — 非破坏性 (现状保持)
+        ("cmd >> file.txt", False),
+        ("cmd &>> log.txt", False),
+        # a4d5a41f70 引号感知不得回退
+        ('echo "a -> b"', False),
+        ("awk '$3>10' f", False),
+        ("awk 'NR>1' f", False),
+        ('grep -n "n>=3" f', False),
+    ],
+)
+def test_destructive_signal_redirect_semantics_matrix(cmd, expected):
+    """fd 复制 / 覆盖写 / 追加 / 引号文本 的完整语义矩阵。"""
+    assert static_parser.destructive_signal(cmd) is expected
+
+
+def test_read_only_gate_dual_stream_overwrite():
+    """&>file / >&file 构成写信号 → 不是只读命令; fd 复制不构成。"""
+    assert static_parser.is_read_only_command("docker logs x 2>&1") is True
+    assert static_parser.is_read_only_command("ls -la &> log.txt") is False
+    assert static_parser.is_read_only_command("ls -la >&log.txt") is False
+    assert static_parser.is_read_only_command("ls -la &>> log.txt") is False
 
 
 def test_predict_readonly_command_skips_llm_and_snapshot(monkeypatch):

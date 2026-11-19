@@ -6986,3 +6986,41 @@ def test_is_destructive_command_ignores_fd_dup_redirects():
     assert _is_destructive_command("cmd >&2") is False
     assert _is_destructive_command("echo hi > file.txt") is True
     assert _is_destructive_command("2>file") is True
+
+
+@pytest.mark.parametrize(
+    "cmd,expected",
+    [
+        # fd duplication (target is a numeric fd) — never an overwrite.
+        ("cmd 2>&1", False),
+        ("cmd 1>&2", False),
+        ("cmd >&2", False),
+        ("cmd >& 2", False),
+        ("cmd 2>&1 >> app.log", False),
+        ("docker logs x 2>&1 | tail -50", False),
+        # bash dual-stream OVERWRITE to a file — destructive (06d7cdbcc9 regression).
+        ("cmd &> log.txt", True),
+        ("cmd &>log.txt", True),
+        ("cmd &> log.txt 2>&1", True),
+        ("cmd >&log.txt", True),
+        ("cmd >& log.txt", True),
+        # plain overwrite redirects — destructive.
+        ("cmd > file.txt", True),
+        ("cmd >file.txt", True),
+        ("cmd 2> err.txt", True),
+        ("cmd > out 2>&1", True),
+        # append — not destructive.
+        ("cmd >> file.txt", False),
+        ("cmd &>> log.txt", False),
+    ],
+)
+def test_is_destructive_command_redirect_semantics_matrix(cmd, expected):
+    """[owner] Redirect semantics matrix: fd dup vs overwrite vs append.
+
+    Regression for 06d7cdbcc9: the blanket `(?<!&)/(?!&)` lookarounds also
+    excluded `&> file` / `>&file` (dual-stream truncating writes) — only
+    `N>&M` fd copies (digit fd after `&`) may be treated as non-destructive.
+    """
+    from agent.tool_dispatch_helpers import _is_destructive_command
+
+    assert _is_destructive_command(cmd) is expected
