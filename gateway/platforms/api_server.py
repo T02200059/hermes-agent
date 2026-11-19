@@ -851,6 +851,38 @@ def _profile_mismatch_response(reason: str) -> "web.Response":
     )
 
 
+def _owner_send_only_rejection(
+    adapter: Any, doorway: str
+) -> Optional["web.Response"]:
+    """[owner] C05 M1: 403 unless the in-process Feishu adapter is send_only.
+
+    Shared gate for /v1/feishu/inbound and /v1/feishu/card-actions — the Hub
+    (connection_mode=websocket) must not accept forwarded injects or card
+    replays; see owner.feishu.profile_routing.send_only_gate_rejection for the
+    threat-model rationale. Fails closed when the verdict cannot be obtained.
+    """
+    verdict: Optional[tuple[str, str]] = None
+    checker = _owner_import(
+        "owner.feishu.profile_routing", "send_only_gate_rejection"
+    )
+    if checker is not None:
+        try:
+            verdict = checker(adapter, doorway)
+        except Exception as exc:
+            logging.getLogger(__name__).warning(
+                "[API] send_only gate check failed (%s); denying closed", exc
+            )
+            verdict = (f"{doorway}_not_send_only", "send_only gate check failed")
+    elif getattr(adapter, "_connection_mode", "") != "send_only":
+        # [owner] C05 M1: owner module absent — nothing verifiably send_only,
+        # so deny (fail closed).
+        verdict = (f"{doorway}_not_send_only", "send_only gate unavailable")
+    if verdict is None:
+        return None
+    code, message = verdict
+    return web.json_response(_openai_error(message, code=code), status=403)
+
+
 async def _owner_identity_gate_rejection(
     identity: str, request: "web.Request"
 ) -> Optional["web.Response"]:
@@ -4784,20 +4816,9 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
         # RPCs — a shared fleet api_key would otherwise let anyone forge Hub
         # conversations as an allowlisted user. Sub-containers set
         # FEISHU_CONNECTION_MODE=send_only.
-        if getattr(adapter, "_connection_mode", "") != "send_only":
-            logger.warning(
-                "[api_server] /v1/feishu/inbound rejected: adapter mode=%r "
-                "(only send_only sub-profiles accept inject)",
-                getattr(adapter, "_connection_mode", None),
-            )
-            return web.json_response(
-                _openai_error(
-                    "Feishu inbound doorway only available on send_only "
-                    "sub-profile gateways",
-                    code="inbound_not_send_only",
-                ),
-                status=403,
-            )
+        _send_only_err = _owner_send_only_rejection(adapter, "inbound")
+        if _send_only_err is not None:
+            return _send_only_err
 
         forwarded_kwargs = {
             "text": str(text_body),
@@ -4927,6 +4948,13 @@ class APIServerAdapter(OpenAICompatRoutesMixin, BasePlatformAdapter):
                 _openai_error("Feishu adapter unavailable", code="feishu_unavailable"),
                 status=503,
             )
+
+        # [owner] C05 M1: card-actions shares the inbound send_only gate — a
+        # fleet api_key holder must not be able to replay approval/skill-card
+        # clicks on the websocket-mode Hub. Same 403 as /v1/feishu/inbound.
+        _send_only_err = _owner_send_only_rejection(adapter, "card_action")
+        if _send_only_err is not None:
+            return _send_only_err
 
         _handle = _owner_import(
             "owner.feishu.profile_routing", "handle_card_action_request"

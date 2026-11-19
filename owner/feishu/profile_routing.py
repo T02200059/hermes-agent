@@ -1064,6 +1064,42 @@ def try_route_card_action(event: Any, action_value: dict[str, Any]) -> Any:
     return _build_error_card_response(str(card_profile))
 
 
+def send_only_gate_rejection(
+    adapter: Any, doorway: str
+) -> Optional[tuple[str, str]]:
+    """C05 M1: shared send_only gate for the Hub→sub-profile HTTP doorways.
+
+    ``/v1/feishu/inbound`` and ``/v1/feishu/card-actions`` must only be served
+    by sub-profile containers whose in-process FeishuAdapter runs
+    ``connection_mode=send_only``. The Hub holds the Feishu WS
+    (``connection_mode=websocket``) and must not accept forwarded injects or
+    card-action replays — a shared fleet ``api_key`` would otherwise let
+    anyone forge Hub conversations as an allowlisted user (messages *and*
+    approval / skill-card clicks).
+
+    ``doorway`` labels the endpoint and builds the error code: ``"inbound"`` →
+    ``("inbound_not_send_only", …)``, ``"card_action"`` →
+    ``("card_action_not_send_only", …)``.
+
+    Returns ``(error_code, message)`` when the doorway must be rejected with
+    403, ``None`` when the adapter runs in send_only mode (doorway passes).
+    """
+    mode = getattr(adapter, "_connection_mode", "")
+    if mode == "send_only":
+        return None
+    logger.warning(
+        "[Feishu] %s doorway rejected: adapter mode=%r "
+        "(only send_only sub-profiles accept forwarded events)",
+        doorway,
+        mode or None,
+    )
+    return (
+        f"{doorway}_not_send_only",
+        f"Feishu {doorway} doorway only available on send_only "
+        "sub-profile gateways",
+    )
+
+
 def handle_card_action_request(
     adapter: Any, body: dict[str, Any]
 ) -> Optional[dict[str, Any]]:
