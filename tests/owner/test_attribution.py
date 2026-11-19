@@ -177,3 +177,116 @@ def test_bind_strips_custom_colon_from_provider_fallback():
     bind_agent_attribution(agent, None)
     assert agent.owner_provider_name == "damodel"
 
+
+# ── C02: switch_model mid-switch attribution (named-custom alias survives) ────────────────
+
+
+def _switch_agent(provider: str, model: str):
+    """Bare MagicMock agent with the attributes agent.switch_model touches
+    (mirrors tests/agent/test_switch_model_pool_reload.py)."""
+    from unittest.mock import MagicMock
+
+    agent = MagicMock(name=f"Agent[{provider}]")
+    agent.provider = provider
+    agent.model = model
+    agent.base_url = f"https://{provider}.example/v1"
+    agent.api_key = f"{provider}-key"
+    agent.api_mode = "chat_completions"
+    agent._client_kwargs = {"api_key": "***", "base_url": agent.base_url}
+    agent._config_context_length = None
+    agent._transport_cache = {}
+    agent._cached_system_prompt = "cached"
+    agent.context_compressor = None
+    agent._use_prompt_caching = False
+    agent._use_native_cache_layout = False
+    agent._primary_runtime = {}
+    agent._fallback_activated = False
+    agent._fallback_index = 0
+    agent._fallback_chain = []
+    agent._fallback_model = None
+    agent._credential_pool = None
+    agent._session_db = None
+    agent._anthropic_prompt_cache_policy = MagicMock(return_value=(False, False))
+    return agent
+
+
+def _run_switch(agent, **overrides):
+    from unittest.mock import patch
+    from agent.agent_runtime_helpers import switch_model
+
+    fields = dict(new_model="deepseek-v4-flash", new_provider="custom",
+                  api_key="k", base_url="https://token.xfyun.cn/v1",
+                  api_mode="chat_completions")
+    fields.update(overrides)
+    with patch("agent.credential_pool.load_pool", return_value=None), \
+         patch("agent.agent_runtime_helpers._resolve_switch_context_length", return_value=(None, None)):
+        switch_model(agent, **fields)
+
+
+def test_switch_model_bare_custom_wire_name_recovers_named_alias(monkeypatch, tmp_path):
+    """C02: /model mid-switch handed the agent the bare WIRE name "custom" — the same
+    canonical_custom_identity lookup every persistence/restore path shares must recover
+    custom:<name>, and bind strips the prefix, so attribution keeps the alias."""
+    from unittest.mock import patch
+
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    agent = _switch_agent("openrouter", "anthropic/claude-sonnet-4")
+    with patch("hermes_cli.runtime_provider_custom.canonical_custom_identity",
+               return_value="custom:xfyun") as recover:
+        _run_switch(agent, base_url="https://token.xfyun.cn/v1")
+    assert agent.owner_provider_name == "xfyun"
+    recover.assert_called_once()
+    assert recover.call_args.kwargs.get("base_url") == "https://token.xfyun.cn/v1"
+
+
+def test_switch_model_bare_custom_without_identity_keeps_wire_name(monkeypatch, tmp_path):
+    """A genuinely bare custom endpoint (no named entry) keeps the wire attribution."""
+    from unittest.mock import patch
+
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    agent = _switch_agent("openrouter", "anthropic/claude-sonnet-4")
+    with patch("hermes_cli.runtime_provider_custom.canonical_custom_identity", return_value=None):
+        _run_switch(agent)
+    assert agent.owner_provider_name == "custom"
+
+
+def test_switch_model_prefixed_custom_slug_binds_without_recovery(monkeypatch, tmp_path):
+    """A caller that already passes custom:<slug> (the designed mid-switch wire id) binds
+    directly; the recovery lookup must not even run."""
+    from unittest.mock import patch
+
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    agent = _switch_agent("openrouter", "anthropic/claude-sonnet-4")
+    with patch("hermes_cli.runtime_provider_custom.canonical_custom_identity",
+               side_effect=AssertionError("recovery must not run for custom:<slug>")):
+        _run_switch(agent, new_provider="custom:sensenova")
+    assert agent.owner_provider_name == "sensenova"
+
+
+def test_switch_model_non_custom_provider_skips_recovery(monkeypatch, tmp_path):
+    from unittest.mock import patch
+
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    agent = _switch_agent("openrouter", "anthropic/claude-sonnet-4")
+    with patch("hermes_cli.runtime_provider_custom.canonical_custom_identity",
+               side_effect=AssertionError("recovery is custom-only")):
+        _run_switch(agent, new_provider="groq", base_url="https://api.groq.com/openai/v1")
+    assert agent.owner_provider_name == "groq"
+
+
+def test_switch_model_recovers_alias_from_real_config_entry(monkeypatch, tmp_path):
+    """End-to-end: switching to a named custom_providers entry's endpoint (wire provider
+    "custom") attributes the configured alias, not "custom"."""
+    home = tmp_path / "hermes-home"
+    home.mkdir()
+    (home / "config.yaml").write_text(
+        "custom_providers:\n"
+        "  - name: Xfyun\n"
+        "    base_url: https://token.xfyun.cn/v1\n"
+        "    model: deepseek-v4-flash\n",
+        encoding="utf-8")
+    monkeypatch.setenv("HERMES_HOME", str(home))
+    agent = _switch_agent("openrouter", "anthropic/claude-sonnet-4")
+    _run_switch(agent, base_url="https://token.xfyun.cn/v1")
+    assert agent.owner_provider_name == "xfyun"
+

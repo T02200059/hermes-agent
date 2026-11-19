@@ -2458,10 +2458,23 @@ def switch_model(
         _swap_switch_runtime(
             agent, new_model, new_provider, api_key, base_url, api_mode, old_provider, old_norm, new_norm
         )
-        # [owner] C02 — rebind attribution to the switched-to identity (alias or wire name)
+        # [owner] C02 — rebind attribution to the switched-to identity (alias or wire name).
+        # A named-custom switch can reach the agent as the bare WIRE name ("custom"): recover
+        # the durable ``custom:<name>`` identity from the switched-to endpoint/model — the same
+        # lookup every persistence/restore path shares — so mid-switch attribution keeps the
+        # alias instead of degrading to "custom". bind_agent_attribution strips the prefix.
         try:
             from owner.attribution import bind_agent_attribution
-            bind_agent_attribution(agent, new_provider)
+            attribution_name = new_provider
+            if str(new_provider or "").strip().lower() == "custom":
+                try:
+                    from hermes_cli.runtime_provider_custom import canonical_custom_identity
+                    attribution_name = canonical_custom_identity(
+                        base_url=base_url or getattr(agent, "base_url", None), model=new_model,
+                    ) or new_provider
+                except Exception:
+                    logger.debug("switch_model: custom identity recovery failed; attributing wire name")
+            bind_agent_attribution(agent, attribution_name)
         except Exception:
             agent.owner_provider_name = new_provider or getattr(agent, "provider", None)
     except Exception:

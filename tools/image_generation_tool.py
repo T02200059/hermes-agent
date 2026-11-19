@@ -660,9 +660,21 @@ def _dispatch_to_plugin_provider(
             f"Run `hermes plugins list` to see available image gen backends.", "provider_not_registered")
     pname = getattr(provider, "name", "?")
     kwargs: dict[str, Any] = {"prompt": prompt, "aspect_ratio": aspect_ratio}
+    # [owner] provider-declared model dispatch; see owner/image_hub/. Imported in its own
+    # try, outside the dispatch try below: a broken/missing owner overlay is an installation
+    # problem that must fail loudly (and never fall through to the in-tree FAL paid default),
+    # not masquerade as a provider failure.
     try:
-        # [owner] provider-declared model dispatch; see owner/image_hub/.
         from owner.image_hub.schema import dispatch_model
+    except ImportError as exc:
+        logger.error("[owner] owner.image_hub.schema import failed: %s — cannot run model "
+                     "dispatch for provider '%s'; refusing to fall back to FAL.", exc, pname)
+        return _provider_error(
+            "The Image Hub overlay (owner.image_hub) failed to import, so image_generate "
+            "cannot route models safely. This is an owner-overlay installation problem, not "
+            "a provider failure. Fix the owner overlay, or unset image_gen.provider to use "
+            "the FAL path explicitly.", "owner_import_error")
+    try:
         model = dispatch_model(provider, requested_model, _read_configured_image_model())
         _add_provider_kwargs(kwargs, image_url, reference_image_urls, upscale,
                              model=model, controls=_declared_controls(provider, controls))

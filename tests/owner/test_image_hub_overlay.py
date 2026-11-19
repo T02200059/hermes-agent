@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import base64
 import io
+import json
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -97,6 +99,31 @@ def test_unrelated_text_provider_gets_no_model_surface(overlay_home):
          patch.object(image_tool, "_get_plugin_provider", return_value=provider):
         assert "model" not in image_tool._build_dynamic_image_schema()["parameters"]["properties"]
     assert dispatch_model(provider, "should-not-reach", "configured") == "configured"
+
+
+def test_broken_owner_import_fails_loudly_not_as_provider_or_fal(overlay_home, caplog):
+    # sys.modules[...] = None makes `from owner.image_hub.schema import ...` raise ImportError.
+    with patch.dict(sys.modules, {"owner.image_hub.schema": None}):
+        provider = SimpleNamespace(
+            name="image-hub", display_name="Image Hub",
+            capabilities=lambda: {"modalities": ["text"]},
+            default_model=lambda: "configured-default",
+            generate=Mock(side_effect=AssertionError("provider.generate must not run")),
+        )
+        with patch.object(image_tool, "_read_configured_image_provider", return_value="image-hub"), \
+             patch.object(image_tool, "_get_plugin_provider", return_value=provider), \
+             patch.object(image_tool, "_read_configured_image_model", return_value="configured-model"), \
+             patch.object(image_tool, "image_generate_tool",
+                          side_effect=AssertionError("must not silently bill FAL")) as fal:
+            raw = image_tool._handle_image_generate({"prompt": "draw"})
+    result = json.loads(raw)
+    assert result["success"] is False
+    # Own error class: neither a misattributed provider failure nor a silent FAL fallthrough.
+    assert result["error_type"] == "owner_import_error"
+    assert "owner.image_hub" in result["error"]
+    provider.generate.assert_not_called()
+    fal.assert_not_called()
+    assert any("owner.image_hub.schema import failed" in record.getMessage() for record in caplog.records)
 
 
 def test_i2i_local_image_safety_data_uri_and_dashscope_payload(overlay_home, tmp_path):
