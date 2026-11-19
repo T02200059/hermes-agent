@@ -1873,6 +1873,9 @@ _PROVIDER_MODELS_STALE_SERVE_MAX = 7 * 24 * 3600  # 7d
 # A curated fallback row is a placeholder for an outage, not a catalog: re-probe soon and never
 # serve it through the stale window.
 _PROVIDER_MODELS_FALLBACK_TTL = 60
+# [owner] C26 — the unchanged-catalog write-skip (§2.11) may stand only while the stored ``at``
+# tracks the incoming one within this window; beyond it the row must be rewritten so ``at`` moves.
+_PROVIDER_MODELS_SKIP_WRITE_MAX_AT_AGE = 60
 
 # Cache keys with a background SWR refresh in flight — dedupes concurrent refreshes.
 _swr_refresh_inflight: set = set()
@@ -2065,6 +2068,22 @@ def _save_provider_models_cache(data: dict) -> None:
         pass
 
 
+def _at_within_skip_write_window(existing_at: Any, entry_at: Any) -> bool:
+    """[owner] C26 — whether the §2.11 unchanged-catalog write-skip may keep the stored ``at``.
+
+    ``True`` only while both timestamps are numeric and within ``_PROVIDER_MODELS_SKIP_WRITE_MAX_AGE``
+    of each other. Outside the window the skip must NOT stand: a newer incoming ``at`` re-freshens the
+    row (b5e9c62d54 froze it — a past-TTL row whose content never changed re-spawned an SWR refresh on
+    every read, and the refresh's own write was skipped, so ``at`` never advanced), while an older one
+    (aged test rows, a clock step-back) must land on disk instead of being silently dropped."""
+    def _numeric(value: Any) -> bool:
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+    if not _numeric(existing_at) or not _numeric(entry_at):
+        return False  # corrupt/absent timestamps: rewrite the row rather than freeze a bad one
+    return abs(entry_at - existing_at) < _PROVIDER_MODELS_SKIP_WRITE_MAX_AT_AGE
+
+
 def _store_cache_entry(cache_key: str, entry: dict) -> None:
     """Write one row into the disk cache, re-reading it under the thread + cross-process locks: a slow
     fetch worker or another process must never write back the snapshot it loaded before fetching."""
@@ -2074,7 +2093,8 @@ def _store_cache_entry(cache_key: str, entry: dict) -> None:
         cache = _load_provider_models_cache()
         existing = cache.get(cache_key)
         new_models = entry.get("models")
-        # [owner] §2.11 — skip disk write when catalog+fp unchanged (save I/O).
+        # [owner] §2.11 — skip disk write when catalog+fp unchanged (save I/O); C26 — but only while
+        # the stored `at` still tracks the incoming one, else the timestamp freezes past-TTL forever.
         if (
             isinstance(existing, dict)
             and existing.get("fp") == entry.get("fp")
@@ -2082,6 +2102,7 @@ def _store_cache_entry(cache_key: str, entry: dict) -> None:
             and isinstance(new_models, list)
             and set(existing["models"]) == set(new_models)
             and bool(existing.get("fallback")) == bool(entry.get("fallback"))
+            and _at_within_skip_write_window(existing.get("at"), entry.get("at"))
         ):
             return
         cache[cache_key] = entry
