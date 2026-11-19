@@ -1376,6 +1376,7 @@ def _terminal_sentinel_start(text: str) -> int:
     return start if start < end else -1
 
 
+# [owner] O8: DeepSeek 特殊 token 表与剥离函数(gateway/run.py 出站 sanitize 接线)
 # DeepSeek's chat template spells its control tokens with a fullwidth bar and SentencePiece's
 # U+2581: the glyph run cannot occur in prose the model meant to write, which is why these are
 # stripped ANYWHERE in the text — unlike the ASCII ``<|eos|>`` above, whose mid-text occurrences
@@ -4290,6 +4291,7 @@ class BasePlatformAdapter(ABC):
             from gateway.dead_targets import classify_dead_error
             from gateway.delivery_ledger import is_reconnect_only, mark_delivered, mark_failed
             if getattr(result, "success", False):
+                # [owner] O6: 出站 platform message_id 随 mark_delivered 落库
                 # Carry the platform's own id: it is what /raise, edit and react target, and until it
                 # was ledgered it survived only as long as this return value.
                 await asyncio.to_thread(

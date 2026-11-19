@@ -36,6 +36,7 @@ import threading
 import time
 import uuid
 from collections import OrderedDict
+# [owner] C12-merge-forward-recv: 增引 replace(合并转发消息展开后重建 normalized)
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from pathlib import Path

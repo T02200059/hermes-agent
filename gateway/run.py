@@ -718,7 +718,7 @@ def _sanitize_gateway_final_response(platform: Any, text: str) -> str:
     # DeepSeek-wire decoders leak the same class of token in a different glyph run (fullwidth bar +
     # SentencePiece U+2581). That literal cannot be prose, so it is stripped wherever it appears, not
     # only at the end; a turn whose entire content was one reads as no visible reply.
-    text = _strip_deepseek_special_tokens(text)
+    text = _strip_deepseek_special_tokens(text)  # [owner] O8: DeepSeek BOS/EOS 特殊 token 出站剥离
 
     # Cancellation metadata, not prose; ACP/TUI already suppress this sentinel, chat surfaces should too.
     # See #7921.
@@ -2238,7 +2238,7 @@ from gateway.run_plugin_rewire import GatewayPluginRewireMixin
 from gateway.platforms.base import (
     BasePlatformAdapter,
     _reply_anchor_for_event,
-    _strip_deepseek_special_tokens,
+    _strip_deepseek_special_tokens,  # [owner] O8 引入(上方 sanitize 接线)
     _terminal_sentinel_start,
 )
 from gateway.platforms.event import MessageEvent, MessageType

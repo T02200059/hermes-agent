@@ -28,7 +28,7 @@ _CONTENT_CLAUSES = frozenset({
 })
 
 # Nothing was committed (main's busy-queue cap); /retry answers it before rewriting (#139257).
-def queue_full_reply():
+def queue_full_reply():  # [owner] queue_full 提示接 t() i18n(原为硬编码英文常量)
     from agent.i18n import t
     return t('gateway.queue_full')
 
@@ -51,6 +51,7 @@ async def admit_message(authority, event):
             # The reply reaches the whole chat, so only content clauses are named; trust and provenance
             # clauses (and any new one) stay generic, and gateway.log keeps the clause (``_refuse``).
             named = f'{exc.reason}: {exc.field}' if exc.field in _CONTENT_CLAUSES else exc.reason
+            # [owner] message_refused 拒绝提示接 t() i18n(原硬编码英文,标记曾在重写中丢失)
             from agent.i18n import t
             return t('gateway.message_refused', named=named)
         if exc.reason != 'queue_full':
@@ -188,6 +189,7 @@ def pause_notice(authority, ref, reason):
     """The committed input stays queued behind a paused FIFO (a turn lost across an owner
     restart, or a head the preflight refused). Tell the platform user once per pause episode
     through the ordinary reply path; later messages onto the same pause are admitted silently."""
+    # [owner] pause_notice 各分支文案接 t() i18n(原硬编码英文)
     from agent.i18n import t
     live = authority.sessions[ref.session_id]
     if live.pause_notified:

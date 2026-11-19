@@ -210,7 +210,7 @@ def check_systemd_timing_alignment(
         return None  # Not running under systemd (or at least not directly)
     # /proc/self/cgroup: "0::/user.slice/.../hermes-gateway.service"
     unit_name: Optional[str] = None
-    prefer_scope: Optional[str] = None
+    prefer_scope: Optional[str] = None  # [owner] 按 cgroup slice 判 system/user scope(传给下方 owner probe)
     with contextlib.suppress(OSError), open("/proc/self/cgroup", encoding="utf-8") as fh:
         for line in fh:
             stripped = line.strip()

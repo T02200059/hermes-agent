@@ -15,6 +15,7 @@ from tools.registry import registry, tool_error, tool_result
 FEISHU_DOC_READ_SCHEMA = {
     "name": "feishu_doc_read",
     "description": (
+        # [owner] C12 嵌入式电子表格:改动在下方多行字符串内(补一句"嵌入式 bitable/电子表格以 TSV 附表输出")
         "Read the full content of a Feishu/Lark document as plain text. "
         "Useful when you need more context beyond the quoted text in a comment. "
         "Accepts a docx token, a wiki node token, or a full Feishu/Lark URL; "

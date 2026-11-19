@@ -1371,6 +1371,7 @@ class GatewayTurnMixin(GatewayTurnPrepareMixin, GatewayTurnHygieneMixin, Gateway
                 "Skipping stale agent promotion for %s — generation %s is no longer current",
                 session_key or "", run_generation,
             )
+            # [owner] O7: /stop 孤儿轮次硬中断 — 清单见 owner/docs/owner改动清单-todo.md § O7
             # Not promoting is only half the job: this turn's agent keeps running with its slot already
             # cleared by /stop, and it took the session's durable turn lease the moment it started. The
             # next message then finds an empty slot (so the session reads as idle) and a held lease (so
@@ -1383,6 +1384,7 @@ class GatewayTurnMixin(GatewayTurnPrepareMixin, GatewayTurnHygieneMixin, Gateway
         if self._draining:
             self._update_runtime_status("draining")
 
+    # [owner] O7: /stop 孤儿轮次硬中断 — 清单见 owner/docs/owner改动清单-todo.md § O7
     def _cancel_stale_run(self, session_key: str, run_generation: int, agent: Any) -> None:
         """Interrupt an agent whose run lost its generation while it was being constructed.
 
@@ -2315,7 +2317,7 @@ class GatewayTurnMixin(GatewayTurnPrepareMixin, GatewayTurnHygieneMixin, Gateway
                     _parts = []
                     if _want_iteration_detail:
                         _parts.append(format_iteration_progress(_a["api_call_count"], _a["max_iterations"]))
-                    # Friendly tool / activity stamp (display.verb.* + activity_i18n), not bare ids.
+                    # [owner] friendly tool / activity stamp (display.verb.* + owner activity_i18n), not bare ids
                     if _a.get("current_tool"):
                         from agent.display import format_running_tool
                         _parts.append(format_running_tool(_a["current_tool"]))

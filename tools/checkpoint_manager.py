@@ -1618,7 +1618,7 @@ class CheckpointManager:
         for i in range(0, len(oversize), BATCH):
             chunk = oversize[i:i + BATCH]
             _run_git(
-                ["rm", "--cached", "-f", "--quiet", "--"] + chunk,
+                ["rm", "--cached", "-f", "--quiet", "--"] + chunk,  # [owner] 加 -f:热文件在 add 与 rm 间变化时删得掉,超限 blob 不漏进快照
                 store, working_dir, index_file=index_file,
                 allowed_returncodes={128},
             )

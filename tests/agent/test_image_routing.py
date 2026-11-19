@@ -28,6 +28,7 @@ class TestCoerceMode:
         assert _coerce_mode("NATIVE") == "native"
         assert _coerce_mode("Auto") == "auto"
 
+    # [owner] prefer-native 模式回归测试
     def test_prefer_native_is_a_valid_mode(self):
         assert _coerce_mode("prefer-native") == "prefer-native"
 
@@ -84,6 +85,7 @@ class TestDecideImageInputMode:
         with patch("agent.image_routing._lookup_supports_vision", return_value=True):
             assert decide_image_input_mode("anthropic", "claude-sonnet-4", cfg) == "native"
 
+    # [owner] prefer-native:主模型能力优先、显式 aux 仅兜底的回归测试
     def test_prefer_native_follows_main_model_with_aux_as_fallback(self):
         """agent.image_input_mode: prefer-native — the main model's capability
         decides; a named auxiliary.vision backend only kicks in when it cannot see."""

@@ -87,6 +87,7 @@ def terminal_env(name: str, default: str = "") -> str:
 
 
 def _apply_terminal_mapping(scope: dict[str, str], mapping: dict[str, Any]) -> None:
+    # [owner] 增引 _is_ssh_remote_tilde_cwd(配合下方 ~ 展开豁免 ssh 远端)
     from hermes_cli.config import (
         TERMINAL_CONFIG_ENV_MAP,
         _is_ssh_remote_tilde_cwd,
@@ -99,6 +100,7 @@ def _apply_terminal_mapping(scope: dict[str, str], mapping: dict[str, Any]) -> N
             continue
         env_var = TERMINAL_CONFIG_ENV_MAP.get(cfg_key)
         if env_var:
+            # [owner] 本地/容器 cwd 展开 ~(ssh 远端保留),防止 footer 拼出重复的 ~/.hermes
             # Mirror apply_terminal_config_to_env / gateway bridge: expand "~" for
             # local/container cwd so abspath/footer never treat "~" as a relative
             # path under the process PWD (e.g. ~/.hermes/~/.hermes). SSH keeps "~"

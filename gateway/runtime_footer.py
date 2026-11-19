@@ -24,6 +24,7 @@ def _home_relative_cwd(cwd: str) -> str:
         return ""
     try:
         home = os.path.expanduser("~")
+        # [owner] cwd 先 expanduser 再 abspath(字面 ~ 不再被拼成 ~/.hermes/~/.hermes)
         # expanduser BEFORE abspath: a literal "~/.hermes" must not be treated as
         # a relative path under process PWD (would yield ~/.hermes/~/.hermes).
         p = os.path.abspath(os.path.expanduser(cwd))

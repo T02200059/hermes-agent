@@ -1,3 +1,4 @@
+# [owner] prefer-native 路由模式:模式说明的改动在下方模块 docstring 字符串内
 """Routing helpers for inbound user-attached images.
 
 ``native`` attaches images as OpenAI-style ``image_url`` parts; ``text`` runs
@@ -26,7 +27,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 logger = logging.getLogger(__name__)
 
 
-_VALID_MODES = frozenset({"auto", "native", "text", "prefer-native"})
+_VALID_MODES = frozenset({"auto", "native", "text", "prefer-native"})  # [owner] 收录 prefer-native 模式
 
 
 # Extensions extract_image_refs() auto-attaches. Documents/archives are excluded:
@@ -386,6 +387,7 @@ def decide_image_input_mode(
     mode_cfg = _coerce_mode(_dict_or_empty(_dict_or_empty(cfg).get("agent")).get("image_input_mode"))
     # Keep the three-argument call contract for callers/tests that replace the lookup hook.
     extra = {"requested_provider": requested_provider} if requested_provider else {}
+    # [owner] prefer-native 分支:主模型 supports_vision 优先,显式 aux 仅兜底
     if mode_cfg == "prefer-native":
         # Capability-first: the main model decides; an explicit auxiliary.vision
         # backend is only the fallback when it cannot take pixels.
