@@ -749,6 +749,13 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - **落地**：`owner/feishu/client_utils.py`（`_sheet_cell_text`、`_block_plain_text`、`list_docx_sheet_blocks`、`_sheet_meta_by_id`、`_render_embedded_sheet`、`read_docx_embedded_sheets`；`read_docx_with_images` 追加 sheet 段）；`tools/feishu_doc_tool.py` schema 描述补一句。
   - **测**：`tests/owner/test_c12_feishu_doc_enhancements.py` 105 passed（新增 16 条：顺序/跨页标题继承/坏 token/失败占位/元数据复用/富文本单元格）。注意 test 环境 `.venv` 无 `lark_oapi`（该文件 69 条用例在 `scripts/run_tests.sh` 下本就红），需用 `venv/bin/python -m pytest` 跑。
   - **生效**：需重启 gateway（模块已在旧进程内存里）。cron 等子进程启动即生效。
+- [x] **C34** · gateway 生命周期守卫豁免远端 ssh（2026-11-19）· **优先级：P1** · **已落地** · tip `429b611a4e`
+  - **根因**：生命周期守卫按**文本**匹配 `systemctl restart` / `launchctl` / `hermes gateway …`，无法区分作用于哪台机器。`ssh node010 '<命令>'` 重启的是另一台主机的网关，SIGTERM 只沿本地进程树下传，本进程不会被杀；execute_code 里 `subprocess.run(["ssh", …])` 同理 —— 两者都是纯误报，2026-11-19 实际卡住了 node010 主网关的重启操作。
+  - **策略**：**先解析、后剥离、再扫描**，不做"见 ssh 就放行"。① terminal：按 `;`/`&&`/`||`/`|`/换行分段（引号内不切），识别 `sudo/env/timeout/nice/stdbuf/nohup/time/command/exec` 包装与 ssh 带值选项，远端段从扫描目标里剥掉，剩余本地段照原样过 `scan_gateway_lifecycle`；② execute_code：用 AST 找出 argv 全为字面量的 `subprocess.*` / `os.system|popen` 调用，判定远端 ssh 后把调用 span 用空格抹掉（保留行号），其余代码照扫。
+  - **仍拦（fail-closed）**：ssh 目标为本机（hostname/短名/loopback/unspecified IP）、`ProxyCommand`/`LocalCommand`（本地执行）、`| bash` 等本地 shell 消费远端输出、同一命令行/同一 cell 里残留的本地生命周期调用、argv 含变量或 f-string 的调用。
+  - **落地**：`tools/terminal_tool_guards.py`（`_split_shell_segments`、`_strip_command_wrappers`、`_ssh_target_host`、`_remote_ssh_host`、`_command_without_remote_ssh_segments`、`code_without_remote_ssh_calls`；`gateway_lifecycle_block` 改为扫 `scan_command`）；`tools/code_execution_tool.py`（`scan_code = code_without_remote_ssh_calls(code)` 薄挂，host-kill 判定同步改用 `scan_code`）。
+  - **测**：`tests/tools/test_remote_ssh_lifecycle_exemption.py` 13 passed（7 条命令侧 + 6 条源码侧，含本机/ProxyCommand/管道/mixed/非字面量反例）；同批 `test_launchctl_guard_diagnostic.py`、`test_execute_code_lifecycle_guard_deadline.py` 4 passed。
+  - **生效**：需重启 gateway（运行中的进程仍持有旧函数）；cron / 子进程启动即生效。
 
 ## § yaml 整合方向（穿插落地；不大爆炸）
 
