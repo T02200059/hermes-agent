@@ -197,6 +197,75 @@ def test_user_store_operator_never_returns_raw_id(tmp_path: Path):
     assert store.operator_display_name("ou_unknown") == ""
 
 
+def _lark_client_recording(calls: list, name: str):
+    """Minimal stand-in for ``client.contact.v3.user.get`` that records calls."""
+
+    def _get(request):
+        calls.append(request)
+        user = SimpleNamespace(
+            name=name, display_name=None, nickname=None, en_name=None
+        )
+        return SimpleNamespace(success=lambda: True, data=SimpleNamespace(user=user))
+
+    return SimpleNamespace(
+        contact=SimpleNamespace(v3=SimpleNamespace(user=SimpleNamespace(get=_get)))
+    )
+
+
+def test_resolve_name_ttl_expired_refetches_from_api(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """[owner] C04: expired TTL → resolve_name re-fetches the Feishu API once.
+
+    The stale persisted display_name stays readable via get_cached_name (the
+    operator_display_name fallback) but must not short-circuit resolve_name,
+    or the Chinese name goes permanently stale after one 24h TTL window.
+    """
+    import asyncio
+
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes_home"))
+    store = FeishuUserStore(cache_path=tmp_path / "cache.json")
+    store.seed_cached_name("ou_alice", "Alice", time.time() - 10)  # already expired
+    assert store.get_cached_name("ou_alice") == "Alice"  # stale fallback still served
+
+    calls: list = []
+    store.bind_client(_lark_client_recording(calls, name="爱丽丝"))
+
+    resolved = asyncio.run(store.resolve_name("ou_alice"))
+    assert resolved == "爱丽丝"
+    assert len(calls) == 1  # exactly one re-fetch — not the stale "Alice"
+    # the refresh re-populated the hot cache + persisted record
+    assert store.get_cached_name("ou_alice") == "爱丽丝"
+    assert store.operator_display_name("ou_alice") == "爱丽丝"
+
+
+def test_resolve_name_fresh_ttl_hits_cache_without_api(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """[owner] C04: unexpired TTL → resolve_name serves the hot cache, no API call."""
+    import asyncio
+
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / "hermes_home"))
+    store = FeishuUserStore(cache_path=tmp_path / "cache.json")
+    store.seed_cached_name("ou_bob", "Bob", time.time() + 3600)
+
+    calls: list = []
+
+    def _forbidden(request):
+        calls.append(request)
+        raise AssertionError("API must not be called for a fresh cache hit")
+
+    store.bind_client(
+        SimpleNamespace(
+            contact=SimpleNamespace(
+                v3=SimpleNamespace(user=SimpleNamespace(get=_forbidden))
+            )
+        )
+    )
+    assert asyncio.run(store.resolve_name("ou_bob")) == "Bob"
+    assert calls == []
+
+
 # ---------------------------------------------------------------------------
 # inbound / sanitize
 # ---------------------------------------------------------------------------

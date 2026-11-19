@@ -191,9 +191,15 @@ class FeishuUserStore:
         if not trimmed:
             return None
 
-        cached_name = self.get_cached_name(trimmed)
-        if cached_name is not None:
-            return cached_name or None
+        # [owner] C04: only a *fresh* hot-cache hit short-circuits the API fetch.
+        # get_cached_name()/_read_ttl_name() deliberately serve the stale persisted
+        # display_name as a better-than-ou_xxx fallback (operator_display_name);
+        # honouring that stale read as a cache "hit" here meant the Feishu API was
+        # never re-queried after one TTL window (24h) — permanently stale names.
+        # Mirrors pre_warm_name: an expired or missing hot entry re-fetches.
+        cached = self._name_ttl.get(trimmed)
+        if cached is not None and time.time() < cached[1]:
+            return cached[0] or None
 
         if not self._client:
             return None

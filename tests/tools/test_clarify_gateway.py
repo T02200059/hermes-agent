@@ -231,6 +231,54 @@ class TestClarifyStopSentinel:
         result = cm.wait_for_response("idRace2", timeout=10.0)
         assert result == cm.CANCELLED
 
+    def test_wait_returns_cancelled_on_real_cancel(self):
+        """[owner] B17: clear_session during the wait is a genuine cancel."""
+        from tools import clarify_gateway as cm
+
+        cm.register("idCancel", "skCancel", "Q?", ["A"])
+
+        def canceller():
+            time.sleep(0.05)
+            cm.clear_session("skCancel")
+
+        threading.Thread(target=canceller).start()
+        result = cm.wait_for_response("idCancel", timeout=10.0)
+        assert result == cm.CANCELLED
+
+    def test_wait_returns_empty_string_answer_not_cancelled(self):
+        """[owner] B17: a submitted empty free-text answer resolves to "", not CANCELLED.
+
+        ``resolve_gateway_clarify`` stores "" verbatim (user picked "Other" /
+        open-ended prompt and submitted an empty answer); only ``response is None``
+        (nothing written) means cleanup/cancel.
+        """
+        from tools import clarify_gateway as cm
+
+        cm.register("idEmpty", "skEmpty", "Other value?", None)  # open-ended → text mode
+
+        def resolver():
+            time.sleep(0.05)
+            cm.resolve_gateway_clarify("idEmpty", "")
+
+        threading.Thread(target=resolver).start()
+        result = cm.wait_for_response("idEmpty", timeout=10.0)
+        assert result == ""
+        assert result != cm.CANCELLED
+
+    def test_whitespace_typed_reply_resolves_open_ended_clarify(self):
+        """[owner] B17: the text-intercept path also resolves (not cancels) on "".
+
+        A whitespace-only message coerces to "" on an awaiting_text entry; the
+        waiter must observe the empty answer, never the CANCELLED sentinel.
+        """
+        from tools import clarify_gateway as cm
+
+        cm.register("idWs", "skWs", "Free form?", None)
+        assert cm.attempt_text_response_for_session("skWs", "   ") == cm.TEXT_RESOLVED
+        result = cm.wait_for_response("idWs", timeout=10.0)
+        assert result == ""
+        assert result != cm.CANCELLED
+
     def test_wait_returns_none_on_genuine_deadline_timeout(self):
         """A real user-inactivity deadline still returns None."""
         from tools import clarify_gateway as cm

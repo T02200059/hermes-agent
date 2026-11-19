@@ -111,7 +111,10 @@ def wait_for_response(clarify_id: str, timeout: float) -> Optional[str]:
                 _session_index.pop(entry.session_key, None)
     # [owner] B17: event with no answer = cleanup → CANCELLED
     # Event set with no answer = cleanup (clear_session / late undeliverable), not inactivity.
-    if resolved_by_event and not entry.response:
+    # entry.response is None = nothing was ever written (cancel); "" is a real empty
+    # free-text answer the user submitted (resolve_gateway_clarify stores it verbatim
+    # via attempt_text_response_for_session) and must NOT fold into CANCELLED.
+    if resolved_by_event and entry.response is None:
         return CANCELLED
     return entry.response
 
