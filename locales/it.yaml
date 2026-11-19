@@ -1,4 +1,17 @@
 approval:
+  # [owner] C04/C10/C19/C27/B17 键补齐（未译语种英文占位 / zh-hant 真译）
+  protected_file_blocked: "BLOCKED: write to protected agent-instruction file(s) ({targets}) {why} The user has NOT consented to this write. Do NOT retry it or attempt the same edit via another path (terminal, execute_code, etc.)."
+  protected_file_request: "Write to protected agent-instruction file(s): {targets}. These files steer future agent behavior; approval is always required (not bypassed by auto-approve)."
+  ssh_config_blocked: "BLOCKED: write to SSH config file(s) ({targets}) {why} Do NOT retry it via another path (terminal, execute_code) without the user's explicit consent."
+  ssh_config_request: "Write to SSH client config file(s): {targets}. The SSH config can carry ProxyCommand / Match exec directives that run commands, so writes require your approval."
+  gate_why_approval_unavailable: "requires approval but the approval subsystem is unavailable."
+  gate_why_not_delivered: "requires approval but the approval request could not be delivered."
+  gate_why_timed_out: "approval prompt timed out without a user response. Silence is not consent."
+  gate_why_denied_by_user: "was denied by the user."
+  gate_why_no_human: "requires approval but no interactive user or gateway is present to approve it."
+  gate_why_cron_denied: "requires approval but this cron session denies it."
+  gate_why_single_query_denied: "requires approval but single-query (-q) sessions run without a user present to approve it. To allow flagged actions in single-query mode, set approvals.single_query_mode: approve in config.yaml."
+  gate_why_denied: "was denied."
   dangerous_header: "💡  COMANDO PERICOLOSO: {description}"
   choose_long: "      [o]una volta  |  [s]essione  |  [a]sempre  |  [d]nega"
   choose_short: "      [o]una volta  |  [s]essione  |  [d]nega"
@@ -42,6 +55,9 @@ approval:
     second_one: "{count} secondo"
     second_other: "{count} secondi"
 gateway:
+  # [owner] C04/C10/C19/C27/B17 键补齐（未译语种英文占位 / zh-hant 真译）
+  clarify_timeout_notice: "⏳ No response received within {minutes} minutes; the current operation has stopped. Send me a message if you need anything."
+  chained_commands_executed: "Commands executed."
   approval_expired: "💡 Approvazione scaduta (l'agente non è più in attesa). Chiedi all'agente di riprovare."
   draining: "⏳ Attendo il completamento di {count} agente/i attivo/i prima di riavviare..."
   goal_cleared: "✓ Obiettivo cancellato."
@@ -333,6 +349,8 @@ gateway:
     in_progress: "⏳ Riavvio del gateway già in corso..."
     restarting: "🔄 Riavvio del gateway. Se non ricevi una notifica entro 60 secondi, riavvia dalla console con `hermes gateway restart`."
   resume:
+    # [owner] C04/C10/C19/C27/B17 键补齐（未译语种英文占位 / zh-hant 真译）
+    card_title: "Resume recent session"
     db_unavailable: "Database delle sessioni non disponibile."
     parse_error: "💡 Could not parse `/resume` arguments: {error}. Use quotes around titles with spaces, for example: `/resume \"Project A Plan\"`."
     matrix_no_named_sessions: "No named sessions found for this Matrix room. Use `/title My Session` to name the current room session, `/resume --all` to list all Matrix sessions, or `/resume --cross-room <session name>` to explicitly cross room boundaries."
@@ -1373,6 +1391,22 @@ platform:
       not_requester: "Solo l'utente che ha richiesto questa azione può usare questi controlli."
   feishu:
     approval:
+      # [owner] C04/C10/C19/C27/B17 键补齐（未译语种英文占位 / zh-hant 真译）
+      fail_unauthorized_title: "Not authorized"
+      fail_unauthorized_body: "Your account is not allowed to act on this approval. Use an authorized account, or ask an admin to check the Feishu group policy / allowlists. **The request is still waiting** — unauthorized clicks do not cancel it."
+      fail_expired_title: "Approval expired"
+      fail_expired_body: "This approval timed out or is no longer valid. Please re-run the command."
+      fail_already_handled_title: "Already handled"
+      fail_already_handled_body: "This approval was already resolved or has expired. No further action needed."
+      fail_chat_mismatch_title: "Invalid action"
+      fail_chat_mismatch_body: "Please click the button in the original chat where the approval was posted."
+      fail_missing_id_title: "Invalid request"
+      fail_missing_id_body: "Approval id is missing; this click cannot be processed."
+      fail_submit_failed_title: "Submit failed"
+      fail_submit_failed_body: "Could not submit the approval result. Retry later or re-run the command."
+      fail_generic_title: "Action failed"
+      fail_generic_body: "The approval action did not take effect. Check logs or contact an admin."
+      operator_fallback: "user"
       action_session: "Sessione"
       action_always: "Sempre"
       resolved_once: "Approvato una volta"

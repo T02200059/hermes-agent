@@ -64,15 +64,15 @@ logger = logging.getLogger(__name__)
 #:
 #: 刻意**不含** ``timeout`` —— 那是「命令执行超时」（命令已经跑过），与
 #: 「审批超时 = 视为拒绝」是两回事；后者由文案层区分。
-NON_EXECUTION_STATUSES: FrozenSet[str] = frozenset(
+NON_EXECUTION_STATUSES: frozenset[str] = frozenset(
     {"blocked", "pending_approval", "approval_required", "denied", "rejected"}
 )
 
 #: ``approval`` 层返回 dict 上的 ``outcome`` 值（部分写入路径会保留）。
-NON_EXECUTION_OUTCOMES: FrozenSet[str] = frozenset({"denied", "timeout"})
+NON_EXECUTION_OUTCOMES: frozenset[str] = frozenset({"denied", "timeout"})
 
 #: ``outcome`` 前缀式拒绝（``transport_<failure>``）。
-NON_EXECUTION_OUTCOME_PREFIXES: Tuple[str, ...] = ("transport_",)
+NON_EXECUTION_OUTCOME_PREFIXES: tuple[str, ...] = ("transport_",)
 
 # ---------------------------------------------------------------------------
 # 层 2：catalog 键白名单
@@ -80,7 +80,7 @@ NON_EXECUTION_OUTCOME_PREFIXES: Tuple[str, ...] = ("transport_",)
 
 #: 语义为「拦截 / 拒绝 / 待审批」的 i18n 键（``approval`` 段内）。
 #: 这些键是**语言无关的结构标识** —— 只有值才分语言。
-MESSAGE_KEYS: Tuple[str, ...] = (
+MESSAGE_KEYS: tuple[str, ...] = (
     # v2 已有：user_summary 文案（会进 tool JSON；语言随 display.language）
     "summary.denied",
     "summary.timeout",
@@ -147,7 +147,7 @@ MESSAGE_KEYS: Tuple[str, ...] = (
 
 #: 结果 dict 中承载拦截文案的字段。刻意**不含** ``output`` —— 那是命令/脚本
 #: 的真实输出，可能只是「提及」了 BLOCKED 字样，纳入会引入误报。
-MESSAGE_FIELDS: Tuple[str, ...] = ("error", "message")
+MESSAGE_FIELDS: tuple[str, ...] = ("error", "message")
 
 # ---------------------------------------------------------------------------
 # 层 3：兜底标记
@@ -155,7 +155,7 @@ MESSAGE_FIELDS: Tuple[str, ...] = ("error", "message")
 
 #: catalog 不可用时的最小标记集（英 + 中）。刻意保持很小 —— 它的职责只是
 #: 「catalog 全挂时别退化成只靠 status 字段」，不是主力判据。
-FALLBACK_MARKERS: FrozenSet[str] = frozenset(
+FALLBACK_MARKERS: frozenset[str] = frozenset(
     {
         "BLOCKED",
         "The user has NOT consented",
@@ -187,7 +187,7 @@ FALLBACK_MARKERS: FrozenSet[str] = frozenset(
 #:
 #: 注意 SQLite 的 ``LIKE`` 对 ASCII 大小写不敏感，故 ``blocked`` 同时覆盖
 #: ``BLOCKED`` 与 ``"status": "blocked"``。
-SQL_LIKE_ANCHORS: Tuple[str, ...] = (
+SQL_LIKE_ANCHORS: tuple[str, ...] = (
     '"status"',   # 任何结构化结果（blocked / pending_approval / …）
     "blocked",    # 英文前缀 + 结构化 status
     "approval",   # approval_required / pending_approval / 英文提示
@@ -197,6 +197,9 @@ SQL_LIKE_ANCHORS: Tuple[str, ...] = (
     "批准",        # zh：正在请求用户批准
     "未同意",      # zh：用户未同意
     "拒绝",        # zh：用户拒绝
+    "攔截",        # zh-hant：已攔截（繁体锚点，鍵補齊後跟隨）
+    "審批",        # zh-hant：需要審批 / 審批已失效
+    "拒絕",        # zh-hant：已被用戶拒絕
 )
 
 # ---------------------------------------------------------------------------
@@ -207,8 +210,8 @@ SQL_LIKE_ANCHORS: Tuple[str, ...] = (
 _MIN_FRAGMENT_CHARS = 4
 
 _cache_lock = threading.Lock()
-_marker_cache: Optional[FrozenSet[str]] = None
-_pattern_cache: Optional["re.Pattern[str]"] = None
+_marker_cache: Optional[frozenset[str]] = None
+_pattern_cache: Optional[re.Pattern[str]] = None
 
 
 def _locales_dir() -> Optional[Path]:
@@ -230,7 +233,7 @@ def _locales_dir() -> Optional[Path]:
     return candidate if candidate.is_dir() else None
 
 
-def _load_approval_segment(path: Path) -> Dict[str, str]:
+def _load_approval_segment(path: Path) -> dict[str, str]:
     """读取某语言 catalog 的 ``approval`` 段；失败返回空表。
 
     顶层字符串键直接收录；一层嵌套（如 ``summary.denied``）展平为
@@ -247,7 +250,7 @@ def _load_approval_segment(path: Path) -> Dict[str, str]:
     segment = data.get("approval")
     if not isinstance(segment, dict):
         return {}
-    out: Dict[str, str] = {}
+    out: dict[str, str] = {}
     for k, v in segment.items():
         if isinstance(v, str):
             out[str(k)] = v
@@ -320,7 +323,7 @@ def _marker_for_template(template: str) -> Optional[str]:
     return max(literals, key=len).strip()
 
 
-def load_markers() -> FrozenSet[str]:
+def load_markers() -> frozenset[str]:
     """返回全部语言的拦截标记集合（带进程内缓存）。
 
     来源 = catalog 白名单键在**所有已安装语言**下的静态片段 ∪
@@ -365,7 +368,7 @@ def clear_cache() -> None:
         _pattern_cache = None
 
 
-def _marker_pattern() -> "re.Pattern[str]":
+def _marker_pattern() -> re.Pattern[str]:
     global _pattern_cache
     with _cache_lock:
         cached = _pattern_cache
@@ -386,7 +389,7 @@ def text_blocks_execution(text: str) -> bool:
     return _marker_pattern().search(text) is not None
 
 
-def _parse_json_object(content: str) -> Optional[Dict[str, Any]]:
+def _parse_json_object(content: str) -> Optional[dict[str, Any]]:
     if not content.lstrip().startswith("{"):
         return None
     try:
@@ -396,7 +399,7 @@ def _parse_json_object(content: str) -> Optional[Dict[str, Any]]:
     return data if isinstance(data, dict) else None
 
 
-def _status_is_non_execution(data: Dict[str, Any]) -> bool:
+def _status_is_non_execution(data: dict[str, Any]) -> bool:
     status = data.get("status")
     if isinstance(status, str) and status.strip().lower() in NON_EXECUTION_STATUSES:
         return True
@@ -441,7 +444,7 @@ def result_blocks_execution(content: str) -> bool:
     return False
 
 
-def sql_like_anchors() -> Tuple[str, ...]:
+def sql_like_anchors() -> tuple[str, ...]:
     """返回 SQL 粗筛用的 ``LIKE`` 锚点（供上游拼 WHERE 片段）。"""
     return SQL_LIKE_ANCHORS
 

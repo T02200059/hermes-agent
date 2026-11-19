@@ -1,4 +1,17 @@
 approval:
+  # [owner] C04/C10/C19/C27/B17 键补齐（未译语种英文占位 / zh-hant 真译）
+  protected_file_blocked: "已攔截：寫入受保護的 agent 指令文件（{targets}）{why}用戶未同意此寫入。不要重試，也不要換其他途徑（terminal、execute_code 等）嘗試同樣的編輯。"
+  protected_file_request: "寫入受保護的 agent 指令文件：{targets}。這些文件會引導 agent 未來的行為，因此始終需要審批（不會被 auto-approve 繞過）。"
+  ssh_config_blocked: "已攔截：寫入 SSH 配置文件（{targets}）{why}未經用戶明確同意，不要換其他途徑（terminal、execute_code）重試。"
+  ssh_config_request: "寫入 SSH 客戶端配置文件：{targets}。SSH 配置可包含會執行命令的 ProxyCommand / Match exec 指令，因此寫入需要你的審批。"
+  gate_why_approval_unavailable: "需要審批，但審批子系統不可用。"
+  gate_why_not_delivered: "需要審批，但審批請求無法送達。"
+  gate_why_timed_out: "審批提示在用戶響應前超時。沉默不等於同意。"
+  gate_why_denied_by_user: "已被用戶拒絕。"
+  gate_why_no_human: "需要審批，但沒有交互式用戶或網關在場批准。"
+  gate_why_cron_denied: "需要審批，但本定時任務會話拒絕該操作。"
+  gate_why_single_query_denied: "需要審批，但單查詢（-q）模式運行時沒有用戶在場批准。如需在單查詢模式中允許被標記的操作，請在 config.yaml 中設置 approvals.single_query_mode: approve。"
+  gate_why_denied: "已被拒絕。"
   dangerous_header: "💡  危險指令： {description}"
   choose_long: "      [o]僅此一次  |  [s]本次工作階段  |  [a]永久允許  |  [d]拒絕"
   choose_short: "      [o]僅此一次  |  [s]本次工作階段  |  [d]拒絕"
@@ -42,6 +55,9 @@ approval:
     second_one: "{count} 秒"
     second_other: "{count} 秒"
 gateway:
+  # [owner] C04/C10/C19/C27/B17 键补齐（未译语种英文占位 / zh-hant 真译）
+  clarify_timeout_notice: "⏳ 未在 {minutes} 分鐘內收到回覆，已停止當前操作。需要的話再發訊息給我。"
+  chained_commands_executed: "命令已執行。"
   approval_expired: "💡 批准已逾期（代理不再等待）。請讓代理重試。"
   draining: "⏳ 正在等待 {count} 個活躍代理結束後重新啟動..."
   goal_cleared: "✓ 目標已清除。"
@@ -333,6 +349,8 @@ gateway:
     in_progress: "⏳ 閘道重新啟動已在進行中……"
     restarting: "🔄 正在重新啟動閘道。如果 60 秒內未收到通知，請在主控台執行 `hermes gateway restart` 重新啟動。"
   resume:
+    # [owner] C04/C10/C19/C27/B17 键补齐（未译语种英文占位 / zh-hant 真译）
+    card_title: "恢復最近會話"
     db_unavailable: "工作階段資料庫無法使用。"
     parse_error: "💡 Could not parse `/resume` arguments: {error}. Use quotes around titles with spaces, for example: `/resume \"Project A Plan\"`."
     matrix_no_named_sessions: "No named sessions found for this Matrix room. Use `/title My Session` to name the current room session, `/resume --all` to list all Matrix sessions, or `/resume --cross-room <session name>` to explicitly cross room boundaries."
@@ -1373,6 +1391,22 @@ platform:
       not_requester: "只有提出此操作的使用者可以使用這些控制項。"
   feishu:
     approval:
+      # [owner] C04/C10/C19/C27/B17 键补齐（未译语种英文占位 / zh-hant 真译）
+      fail_unauthorized_title: "無權審批"
+      fail_unauthorized_body: "你的帳號無權操作此審批。請使用已授權帳號，或聯繫管理員檢查飛書群策略 / 用戶允許列表。**審批仍在等待**，未授權點擊不會取消請求。"
+      fail_expired_title: "審批已失效"
+      fail_expired_body: "該審批已逾時或已失效，請重新發起命令。"
+      fail_already_handled_title: "已處理"
+      fail_already_handled_body: "該審批已被處理或已失效，無需再次點擊。"
+      fail_chat_mismatch_title: "無效操作"
+      fail_chat_mismatch_body: "請在原審批訊息所在會話中點擊，勿轉發到其它會話。"
+      fail_missing_id_title: "無效請求"
+      fail_missing_id_body: "審批標識缺失，無法處理本次點擊。"
+      fail_submit_failed_title: "處理失敗"
+      fail_submit_failed_body: "無法提交審批結果，請稍後重試或在原對話重新發起操作。"
+      fail_generic_title: "操作失敗"
+      fail_generic_body: "審批操作未生效，請查看日誌或聯繫管理員。"
+      operator_fallback: "用戶"
       action_session: "本次工作階段"
       action_always: "永久"
       resolved_once: "已批准一次"
