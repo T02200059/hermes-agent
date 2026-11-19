@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """C05 fleet_add：舰队开户 CLI（默认 dry-run；O2 apply / O3 apply-host / O4 apply-up）。
 
-用法（本机假夹具 dry-run）::
+用法（本机假夹具 dry-run；**夹具只许 dry-run**）::
 
     python -m owner.scripts.fleet_add \
       --ldap-uid alice --display-name 爱丽丝 \
       --open-id ou_alice --fixture /path/to/fixture.yaml
 
-用法（对 temp 副本 O2 apply）::
+用法（对 temp 副本 O2 apply；--fixture 不得与任何 --apply* 同用，
+否则合并结果会把夹具假数据 dump 回 overlay）::
 
     python -m owner.scripts.fleet_add \
       --ldap-uid alice --display-name 爱丽丝 \
@@ -16,7 +17,6 @@
       --overlay /tmp/fleet-add-demo/overlay.yaml \
       --hermes-dir /tmp/fleet-add-demo/profiles/alice \
       --hub-home /tmp/fleet-add-demo/hub \
-      --fixture tests/owner/fixtures/fleet_add_overlay.yaml \
       --app-id cli_fixture_app --apply
 
 用法（对 temp O3 种子+三层 compose，不上容器）::
@@ -27,7 +27,6 @@
       --hermes-dir /tmp/fleet-add-demo/profiles/alice \
       --home-dir /tmp/fleet-add-demo/home/alice \
       --hermes-root /tmp/fleet-add-demo \
-      --fixture tests/owner/fixtures/fleet_add_overlay.yaml \
       --app-id cli_fixture_app --apply-host
 
 用法（O4：对已写 compose 的 temp 做 up+health；单测用 mock，勿对生产）::
@@ -37,7 +36,6 @@
       --hermes-dir /tmp/fleet-add-demo/profiles/alice \
       --home-dir /tmp/fleet-add-demo/home/alice \
       --hermes-root /tmp/fleet-add-demo \
-      --fixture tests/owner/fixtures/fleet_add_overlay.yaml \
       --app-id cli_fixture_app --apply-host --apply-up
 
 设计：``owner/docs/design/c05-feishu-user-routing/fleet-add.md``。
@@ -61,25 +59,24 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
-            "示例 (dry-run):\n"
+            "示例 (dry-run；--fixture 仅限 dry-run):\n"
             "  python -m owner.scripts.fleet_add \\\n"
             "    --ldap-uid alice --display-name 爱丽丝 \\\n"
             "    --open-id ou_alice --fixture tests/owner/fixtures/fleet_add_overlay.yaml\n"
             "\n"
-            "示例 (O2 apply 到 temp):\n"
+            "示例 (O2 apply 到 temp；勿带 --fixture):\n"
             "  python -m owner.scripts.fleet_add \\\n"
             "    --ldap-uid alice --display-name 爱丽丝 \\\n"
             "    --open-id ou_alice --home-channel oc_dm_alice \\\n"
             "    --overlay /tmp/fa/overlay.yaml --hermes-dir /tmp/fa/profiles/alice \\\n"
-            "    --hub-home /tmp/fa/hub --fixture tests/owner/fixtures/fleet_add_overlay.yaml \\\n"
+            "    --hub-home /tmp/fa/hub \\\n"
             "    --app-id cli_fixture_app --apply\n"
             "\n"
-            "示例 (O3 apply-host 到 temp):\n"
+            "示例 (O3 apply-host 到 temp；勿带 --fixture):\n"
             "  python -m owner.scripts.fleet_add \\\n"
             "    --ldap-uid alice --display-name 爱丽丝 --open-id ou_alice \\\n"
             "    --hermes-dir /tmp/fa/profiles/alice --home-dir /tmp/fa/home/alice \\\n"
             "    --hermes-root /tmp/fa \\\n"
-            "    --fixture tests/owner/fixtures/fleet_add_overlay.yaml \\\n"
             "    --app-id cli_fixture_app --apply-host\n"
             "\n"
             "示例 (O4 apply-up dry 计划已含在默认 dry-run；执行须 --apply-up):\n"
@@ -87,7 +84,6 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "    --ldap-uid alice --display-name 爱丽丝 --open-id ou_alice \\\n"
             "    --hermes-dir /tmp/fa/profiles/alice --home-dir /tmp/fa/home/alice \\\n"
             "    --hermes-root /tmp/fa \\\n"
-            "    --fixture tests/owner/fixtures/fleet_add_overlay.yaml \\\n"
             "    --app-id cli_fixture_app --apply-host --apply-up\n"
         ),
     )
@@ -133,7 +129,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument(
         "--fixture",
         default="",
-        help="假 overlay YAML（与 --overlay 合并；测试/对话用，无真 key）",
+        help=(
+            "假 overlay YAML（与 --overlay 合并；测试/对话 dry-run 用，无真 key。"
+            "禁止与 --apply/--apply-host/--apply-up 同用：合并结果会被整体 "
+            "dump 回 overlay，夹具假数据将污染真实配置）"
+        ),
     )
     p.add_argument("--app-id", default="", help="feishu.bots.<app_id>（多 bot 时必填）")
     p.add_argument("--code-dir", default="", help="compose 代码 RO 源路径")
@@ -219,6 +219,18 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     args = _parse_args(argv)
+
+    # 防护：夹具只许 dry-run。--fixture 与任何 apply 模式同用时，合并结果
+    # （含夹具假 fleet_profiles/路由）会被整体 dump 回 --overlay 指向的真实
+    # overlay / 写进种子与 compose，故直接拒绝；plan/dry-run 不受此限制。
+    if args.fixture.strip() and (args.apply or args.apply_host or args.apply_up):
+        print(
+            "错误: --fixture 是测试/对话用假夹具，禁止与 "
+            "--apply/--apply-host/--apply-up 同用（合并结果会把夹具假数据 "
+            "dump 回 overlay/写盘）。请去掉 --fixture 后重试；dry-run 不受限。",
+            file=sys.stderr,
+        )
+        return 1
 
     overlay_path = args.overlay.strip() or str(
         Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes")) / "overlay.yaml"

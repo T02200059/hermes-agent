@@ -110,6 +110,62 @@ class FleetAddError(ValueError):
     """开户计划校验失败（已存在 / 缺字段等）。"""
 
 
+# ---------------------------------------------------------------------------
+# 输入校验（plan 与 apply 边界共用；plan 会经对话/JSON 往返，apply 必须重验）
+# ---------------------------------------------------------------------------
+
+# 与 plan_fleet_add 历史正则一致：passwd/LDAP 风格短名
+_UID_NAME_RE = re.compile(r"[a-z_][a-z0-9_-]{0,31}")
+# 宿主机路径白名单：绝对路径 + 仅这些字符（无空格 / 无 shell 元字符 / 无换行）
+_HOST_PATH_RE = re.compile(r"[A-Za-z0-9_./-]+")
+# compose 服务名白名单（docker compose 服务名规范字符集）
+_SERVICE_TOKEN_RE = re.compile(r"[A-Za-z0-9_.-]+")
+
+
+def validate_ldap_uid(ldap_uid: object) -> str:
+    """校验 ldap_uid；plan 与 apply 边界跑同一正则，防 plan 往返注入。"""
+    s = str(ldap_uid or "").strip()
+    if not s or not _UID_NAME_RE.fullmatch(s):
+        raise FleetAddError(
+            f"ldap_uid 非法（须像 passwd/LDAP 名）: {ldap_uid!r}"
+        )
+    return s
+
+
+def validate_host_path(
+    value: object,
+    *,
+    field: str,
+    allow_relative: bool = False,
+) -> str:
+    """宿主机路径白名单校验：以 ``/`` 开头且仅 ``[A-Za-z0-9_./-]``。
+
+    拒绝空格、shell 元字符（``;`` ``&`` ``|`` ``$`` 反引号等）、换行与任何
+    非 ASCII 字符——这些正是 useradd/compose 命令拼接的注入面。
+    """
+    s = str(value or "")
+    if not allow_relative and not s.startswith("/"):
+        raise FleetAddError(f"{field} 必须为以 / 开头的绝对路径: {s!r}")
+    if not s or not _HOST_PATH_RE.fullmatch(s):
+        raise FleetAddError(
+            f"{field} 含非法字符（白名单 ^[A-Za-z0-9_./-]+$，"
+            f"不得含空格/shell 元字符/换行）: {s!r}"
+        )
+    return s
+
+
+def _validate_person_docker_paths(person: object) -> None:
+    """重验 plan 人卡里的 docker 路径（apply 边界；person 可能被往返篡改）。"""
+    if not isinstance(person, dict):
+        return
+    docker = person.get("docker")
+    if not isinstance(docker, dict):
+        return
+    for key in ("hermes_dir", "home_dir"):
+        if docker.get(key):
+            validate_host_path(docker[key], field=f"person_card.docker.{key}")
+
+
 def default_hermes_dir(ldap_uid: str, hermes_root: str = DEFAULT_HERMES_ROOT) -> str:
     return f"{hermes_root.rstrip('/')}/profiles/{ldap_uid}"
 
@@ -956,10 +1012,18 @@ def plan_fleet_add(
         raise FleetAddError("ldap_uid 必填")
     if not name:
         raise FleetAddError("display_name 必填")
-    if not re.fullmatch(r"[a-z_][a-z0-9_-]{0,31}", uid):
-        raise FleetAddError(
-            f"ldap_uid 非法（须像 passwd/LDAP 名）: {uid!r}"
-        )
+    uid = validate_ldap_uid(uid)
+    # 路径参数白名单（这些会拼进 useradd/compose 计划；apply 边界会重跑同规则）
+    if hermes_dir:
+        validate_host_path(hermes_dir, field="hermes_dir")
+    if home_dir:
+        validate_host_path(home_dir, field="home_dir")
+    validate_host_path(hermes_root, field="hermes_root")
+    validate_host_path(hub_home, field="hub_home")
+    validate_host_path(code_dir, field="code_dir")
+    validate_host_path(venv_dir, field="venv_dir")
+    if compose_file:
+        validate_host_path(compose_file, field="compose_file")
 
     oids = _normalize_ids(open_ids)
     tids = _normalize_ids(tenant_user_ids)
@@ -1456,22 +1520,36 @@ def apply_fleet_add(
     uid = str(plan.get("ldap_uid") or "").strip()
     if not uid:
         raise FleetAddError("plan 缺少 ldap_uid")
+    # apply 边界重验：plan 经对话/JSON 往返，不得信任 plan_fleet_add 已做过的校验
+    uid = validate_ldap_uid(uid)
+    _validate_person_docker_paths(plan.get("person_card"))
 
-    overlay_p = Path(overlay_path).expanduser()
+    overlay_p = Path(
+        validate_host_path(overlay_path, field="overlay_path")
+    ).expanduser()
     writes_meta = plan.get("overlay_writes") or {}
     allow = plan.get("feishu_allowed_users") or {}
     home_ch = plan.get("feishu_home_channel") or {}
 
     target_env_path = Path(
-        (allow.get("target_profile_env") or {}).get("path")
-        or f"{DEFAULT_HERMES_ROOT}/profiles/{uid}/.env"
+        validate_host_path(
+            (allow.get("target_profile_env") or {}).get("path")
+            or f"{DEFAULT_HERMES_ROOT}/profiles/{uid}/.env",
+            field="plan.feishu_allowed_users.target_profile_env.path",
+        )
     )
     hub_env_path = Path(
-        (allow.get("hub_env") or {}).get("path") or f"{DEFAULT_HUB_HOME}/.env"
+        validate_host_path(
+            (allow.get("hub_env") or {}).get("path") or f"{DEFAULT_HUB_HOME}/.env",
+            field="plan.feishu_allowed_users.hub_env.path",
+        )
     )
     config_path = Path(
-        (home_ch.get("config_yaml") or {}).get("path")
-        or f"{DEFAULT_HERMES_ROOT}/profiles/{uid}/config.yaml"
+        validate_host_path(
+            (home_ch.get("config_yaml") or {}).get("path")
+            or f"{DEFAULT_HERMES_ROOT}/profiles/{uid}/config.yaml",
+            field="plan.feishu_home_channel.config_yaml.path",
+        )
     )
 
     paths_to_check = [overlay_p, target_env_path, hub_env_path, config_path]
@@ -1728,6 +1806,8 @@ def apply_fleet_add_host(
     uid = str(plan.get("ldap_uid") or "").strip()
     if not uid:
         raise FleetAddError("plan 缺少 ldap_uid")
+    # apply 边界重验（plan 可能经对话/JSON 往返）
+    uid = validate_ldap_uid(uid)
 
     seed = plan.get("seed") or {}
     if not isinstance(seed, dict):
@@ -1758,6 +1838,12 @@ def apply_fleet_add_host(
             raise FleetAddError("拒绝单挂 /home→/root 的 compose（须三层）")
 
     dirs = [str(d) for d in (seed.get("directories") or [])]
+    # apply 边界重验：所有将写盘/进命令的路径过白名单（拒注入，先于任何写盘）
+    compose_file = validate_host_path(compose_file, field="plan.compose_file")
+    if compose_link:
+        compose_link = validate_host_path(compose_link, field="plan.compose_link")
+    for i, d in enumerate(dirs):
+        validate_host_path(d, field=f"plan.seed.directories[{i}]")
     paths_to_check = [Path(compose_file), *[Path(d) for d in dirs]]
     if compose_link:
         paths_to_check.append(Path(compose_link))
@@ -1765,6 +1851,7 @@ def apply_fleet_add_host(
     person = plan.get("person_card") or {}
     docker = person.get("docker") if isinstance(person, dict) else {}
     if isinstance(docker, dict):
+        _validate_person_docker_paths(person)
         for k in ("hermes_dir", "home_dir"):
             if docker.get(k):
                 paths_to_check.append(Path(str(docker[k])))
@@ -1914,17 +2001,15 @@ def apply_fleet_add_host(
                 }
             )
 
-    # useradd
+    # useradd：argv 由已重验的 uid/home_dir 重建（shell=False）。
+    # 不执行、也不回显 plan 回传的 seed.host_commands 展示字符串（可能被篡改）。
     support = host_useradd_support()
+    home_dir_u = str(docker.get("home_dir") or "") if isinstance(docker, dict) else ""
     useradd_result: dict[str, Any] = {
         "step": "useradd",
-        "cmd": next(
-            (
-                c.get("cmd")
-                for c in (seed.get("host_commands") or [])
-                if c.get("step") == "useradd"
-            ),
-            f"useradd -m -d ... {uid}",
+        "cmd": (
+            f"id {uid} >/dev/null 2>&1 || "
+            f"useradd -m -d {home_dir_u or '<home_dir>'} -s /bin/bash {uid}"
         ),
         "run_useradd_requested": bool(run_useradd),
         "mock": bool(mock_useradd),
@@ -1941,17 +2026,34 @@ def apply_fleet_add_host(
     elif not support.get("supported"):
         useradd_result["status"] = "unsupported"
         useradd_result["executed"] = False
+    elif not home_dir_u:
+        useradd_result["status"] = "error"
+        useradd_result["executed"] = False
+        useradd_result["error"] = (
+            "plan 缺少 person_card.docker.home_dir，无法安全重建 useradd argv"
+        )
     else:
-        cmd = useradd_result["cmd"]
-        # 仅执行计划中的 useradd 行；shell=True 因含 ||
+        check_argv = ["id", uid]
+        useradd_argv = ["useradd", "-m", "-d", home_dir_u, "-s", "/bin/bash", uid]
+        useradd_result["argv"] = list(useradd_argv)
         try:
+            # 先 id 探测，不存在才 useradd（等价旧 `id … || useradd …`，shell=False）
             proc = subprocess.run(
-                cmd,
-                shell=True,
+                check_argv,
                 check=False,
                 capture_output=True,
                 text=True,
             )
+            if proc.returncode == 0:
+                useradd_result["already_exists"] = True
+            else:
+                proc = subprocess.run(
+                    useradd_argv,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                useradd_result["already_exists"] = False
             useradd_result["executed"] = True
             useradd_result["returncode"] = proc.returncode
             useradd_result["status"] = "ok" if proc.returncode == 0 else "failed"
@@ -2074,6 +2176,9 @@ def apply_fleet_add_up(
     uid = str(plan.get("ldap_uid") or "").strip()
     if not uid:
         raise FleetAddError("plan 缺少 ldap_uid")
+    # apply 边界重验（plan 可能经对话/JSON 往返）
+    uid = validate_ldap_uid(uid)
+    _validate_person_docker_paths(plan.get("person_card"))
 
     up = plan.get("up")
     if not isinstance(up, dict) or not up.get("up_cmd"):
@@ -2102,6 +2207,15 @@ def apply_fleet_add_up(
 
     compose_file = str(up.get("compose_file") or plan.get("compose_file") or "")
     service = str(up.get("service") or uid)
+    # apply 边界重验：compose 文件路径与服务名白名单（service 会进 docker argv）
+    if compose_file:
+        compose_file = validate_host_path(
+            compose_file, field="plan.up.compose_file"
+        )
+    if not _SERVICE_TOKEN_RE.fullmatch(service):
+        raise FleetAddError(
+            f"plan 服务名含非法字符（白名单 ^[A-Za-z0-9_.-]+$）: {service!r}"
+        )
     api_base = str(up.get("api_base") or "")
     port = int(up.get("port") or 0)
     up_cmd = str(up.get("up_cmd") or f"docker compose -f {compose_file} up -d {service}")
