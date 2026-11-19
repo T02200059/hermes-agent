@@ -1,8 +1,9 @@
-"""Remote-ssh exemption for the supervised-gateway lifecycle guard.
+"""Remote-ssh exemption for the supervised-gateway lifecycle guards.
 
 Restarting a gateway on another host over ssh cannot SIGTERM this process, so
-those segments must not trip the local guard. Everything that still executes
-locally keeps the fail-closed behaviour.
+those invocations must not trip the local guards — neither the terminal tool's
+command scan nor execute_code's source-text scan. Everything that still
+executes locally keeps the fail-closed behaviour.
 """
 
 import json
@@ -73,3 +74,59 @@ def test_ssh_local_command_options_still_blocked(supervised, tmp_path):
 def test_remote_output_piped_to_local_shell_still_blocked(supervised, tmp_path):
     command = "ssh node010 'echo systemctl restart hermes-gateway' | bash"
     assert _blocked(command, tmp_path)["exit_code"] == 1
+
+
+# ── execute_code: the same exemption applied to Python source text ──
+
+
+def _scanned(code):
+    from cron.lifecycle_guard import contains_gateway_lifecycle_command
+    from tools.terminal_tool_guards import code_without_remote_ssh_calls
+
+    return contains_gateway_lifecycle_command(code_without_remote_ssh_calls(code))
+
+
+def test_execute_code_argv_remote_ssh_exempt():
+    from cron.lifecycle_guard import contains_gateway_lifecycle_command
+
+    code = (
+        "import subprocess\n"
+        "subprocess.run(['ssh', 'node010', 'systemctl restart hermes-gateway.service'])\n"
+    )
+    assert contains_gateway_lifecycle_command(code)
+    assert not _scanned(code)
+
+
+def test_execute_code_shell_string_remote_ssh_exempt():
+    code = (
+        "import os\n"
+        "os.system(\"ssh -p 2202 yangtb@node010 'systemctl restart hermes-gateway'\")\n"
+    )
+    assert not _scanned(code)
+
+
+def test_execute_code_local_lifecycle_still_flagged():
+    assert _scanned("import os\nos.system('systemctl restart hermes-gateway.service')\n")
+
+
+def test_execute_code_ssh_localhost_still_flagged():
+    code = "import os\nos.system(\"ssh localhost 'systemctl restart hermes-gateway'\")\n"
+    assert _scanned(code)
+
+
+def test_execute_code_local_call_beside_remote_ssh_still_flagged():
+    code = (
+        "import os\n"
+        "os.system(\"ssh node010 'systemctl restart hermes-gateway.service'\")\n"
+        "os.system('systemctl restart hermes-gateway.service')\n"
+    )
+    assert _scanned(code)
+
+
+def test_execute_code_non_literal_argv_stays_fail_closed():
+    code = (
+        "import subprocess\n"
+        "host = 'node010'\n"
+        "subprocess.run(['ssh', host, 'systemctl restart hermes-gateway'])\n"
+    )
+    assert _scanned(code)

@@ -9,6 +9,7 @@ module re-imports every public helper so ``tools.terminal_tool.<name>``
 keeps resolving.
 """
 
+import ast
 import json
 import logging
 import re
@@ -571,3 +572,91 @@ def _command_without_remote_ssh_segments(command: str) -> Optional[str]:
     if not local:
         return None
     return " && ".join(local)
+
+
+_SUBPROCESS_CALL_NAMES = frozenset({"run", "call", "check_call", "check_output", "Popen"})
+
+
+def _call_exec_argv(node: ast.Call) -> Optional[list]:
+    """Literal argv of a subprocess/os exec call, or None when not statically known."""
+    function = node.func
+    if isinstance(function, ast.Attribute):
+        owner = function.value.id if isinstance(function.value, ast.Name) else ""
+        if owner == "subprocess":
+            if function.attr not in _SUBPROCESS_CALL_NAMES:
+                return None
+        elif owner == "os":
+            if function.attr not in ("system", "popen"):
+                return None
+        else:
+            return None
+    elif isinstance(function, ast.Name):
+        if function.id not in ("system", "popen"):
+            return None
+    else:
+        return None
+    if not node.args:
+        return None
+    first = node.args[0]
+    if isinstance(first, (ast.List, ast.Tuple)):
+        values = []
+        for element in first.elts:
+            if not (isinstance(element, ast.Constant) and isinstance(element.value, str)):
+                return None
+            values.append(element.value)
+        return values
+    if isinstance(first, ast.Constant) and isinstance(first.value, str):
+        try:
+            return shlex.split(first.value, comments=False, posix=True)
+        except ValueError:
+            return None
+    return None
+
+
+def _call_is_remote_ssh(node: ast.Call) -> bool:
+    import os as _os
+
+    argv = _call_exec_argv(node)
+    if not argv or _os.path.basename(argv[0]) != "ssh":
+        return False
+    lowered = " ".join(argv).lower()
+    if "proxycommand" in lowered or "localcommand" in lowered:
+        return False
+    target = _ssh_target_host(argv)
+    return bool(target and not _is_local_ssh_target(target))
+
+
+def _blank_source_span(lines: list, node: ast.Call) -> None:
+    """Blank *node*'s source span with spaces, keeping newlines (UTF-8 offsets)."""
+    first = node.lineno - 1
+    last = (node.end_lineno or node.lineno) - 1
+    for row in range(first, min(last, len(lines) - 1) + 1):
+        line = lines[row]
+        encoded = line.encode("utf-8")
+        start_byte = node.col_offset if row == first else 0
+        end_byte = node.end_col_offset if row == last else len(encoded)
+        start = len(encoded[:start_byte].decode("utf-8", "ignore"))
+        end = len(encoded[:end_byte].decode("utf-8", "ignore"))
+        if end <= start:
+            continue
+        chars = list(line)
+        blanked = ["\n" if char == "\n" else " " for char in chars[start:end]]
+        lines[row] = "".join(chars[:start] + blanked + chars[end:])
+
+
+def code_without_remote_ssh_calls(code: str) -> str:
+    """*code* with remote-ssh subprocess/os call spans blanked, for text scanning.
+
+    Only calls with an entirely literal argv are handled; a variable or
+    f-string target stays fail-closed. Blanking preserves line numbers, so the
+    lifecycle scanner still sees every other line of the cell.
+    """
+    try:
+        tree = ast.parse(code)
+    except (SyntaxError, ValueError):
+        return code
+    lines = code.splitlines(keepends=True)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and _call_is_remote_ssh(node):
+            _blank_source_span(lines, node)
+    return "".join(lines)

@@ -754,8 +754,14 @@ def execute_code(
             contains_gateway_lifecycle_command,
             contains_host_interpreter_kill,
         )
-        if contains_gateway_lifecycle_command(code):
-            if contains_host_interpreter_kill(code):
+        # [owner-patch] remote-ssh exemption: a subprocess/os call that drives a
+        # gateway on ANOTHER host cannot SIGTERM this process. Blank those call
+        # spans before the text scan; a local lifecycle call in the same cell
+        # still trips it (mirrors tools/terminal_tool_guards.py).
+        from tools.terminal_tool_guards import code_without_remote_ssh_calls
+        scan_code = code_without_remote_ssh_calls(code)
+        if contains_gateway_lifecycle_command(scan_code):
+            if contains_host_interpreter_kill(scan_code):
                 return tool_error(HOST_INTERPRETER_KILL_REJECTION)
             return tool_error(
                 "Blocked: cannot restart or stop the gateway from inside the "
