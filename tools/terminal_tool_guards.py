@@ -279,6 +279,14 @@ def gateway_lifecycle_block(
 
     if not _is_supervised_gateway_process():
         return None
+    # [owner-patch] remote-ssh exemption: restarting a gateway on ANOTHER host
+    # cannot SIGTERM this process (the SIGTERM only travels on the local
+    # process tree), so remote `ssh <host> '...'` segments are dropped before
+    # the scan. Any local segment — or ssh to localhost / this host — keeps
+    # the original fail-closed path.
+    scan_command = _command_without_remote_ssh_segments(command)
+    if scan_command is None:
+        return None
     from cron.lifecycle_guard import (
         _MAX_REFERENCED_SCRIPT_BYTES,
         HOST_INTERPRETER_KILL_REJECTION,
@@ -290,7 +298,7 @@ def gateway_lifecycle_block(
     # Keep the specific launchctl diagnostic when this optional pre-scan fits the
     # budget. The full fail-closed guard below still runs when it does not, so
     # oversized roots never reach shlex here.
-    if lifecycle_scan_root_within_budget(command) and contains_launchctl_submit_command(command):
+    if lifecycle_scan_root_within_budget(scan_command) and contains_launchctl_submit_command(scan_command):
         return _blocked_json(
             "Blocked: launchctl submit/bootstrap is restricted inside a supervised "
             "gateway regardless of the job label, to prevent indirect gateway "
@@ -309,7 +317,7 @@ def gateway_lifecycle_block(
         env=env,
     )
     unsafe, refusal = scan_gateway_lifecycle(
-        command,
+        scan_command,
         cwd=guard_cwd,
         read_remote_script=lambda p: _read_script_for_guard(env, guard_cwd, p, _MAX_REFERENCED_SCRIPT_BYTES),
     )
@@ -327,7 +335,7 @@ def gateway_lifecycle_block(
     if unsafe:
         # Name the ownership-scoped route for image-name kills: the intent is almost always "stop
         # MY background job", and re-rolling the same over-broad spelling is what takes the gateway down.
-        if lifecycle_scan_root_within_budget(command) and contains_host_interpreter_kill(command):
+        if lifecycle_scan_root_within_budget(scan_command) and contains_host_interpreter_kill(scan_command):
             return _blocked_json(HOST_INTERPRETER_KILL_REJECTION, "error")
         return _blocked_json(
             "Blocked: command or referenced script cannot restart, stop, or "
@@ -366,3 +374,200 @@ def self_repo_block(
         return None
     logger.warning("Blocked self-repo git mutation (command: %s)", _safe_command_preview(command))
     return _blocked_json(msg, "blocked")
+
+
+# ── [owner-patch] Remote-ssh lifecycle exemption ─────────────────────
+# `ssh <remote-host> 'systemctl restart hermes-gateway'` restarts a gateway
+# that is NOT this process's supervisor: SIGTERM only travels down the local
+# process tree. The guard still fails closed for ssh to localhost / this host,
+# for ProxyCommand/LocalCommand (both execute locally), and for any local
+# segment left on the same command line.
+
+_SSH_OPTIONS_WITH_VALUE = frozenset({
+    "-b", "-c", "-D", "-e", "-E", "-F", "-i", "-I", "-J", "-L", "-l", "-m",
+    "-O", "-o", "-p", "-Q", "-R", "-S", "-W", "-w",
+})
+_WRAPPER_COMMANDS = frozenset({
+    "sudo", "env", "nohup", "time", "timeout", "command", "exec", "nice",
+    "ionice", "stdbuf",
+})
+_PIPE_TO_LOCAL_SHELL_RE = re.compile(r"\|\s*(?:bash|sh|zsh|dash|ksh|fish)\b", re.IGNORECASE)
+
+_LOCAL_HOST_NAMES: Optional[frozenset] = None
+
+
+def _local_host_names() -> frozenset:
+    """Names that resolve to this machine, for ssh-target comparison."""
+    global _LOCAL_HOST_NAMES
+    if _LOCAL_HOST_NAMES is None:
+        import platform as _platform
+        import socket as _socket
+
+        names = {"localhost", "localhost.localdomain", "ip6-localhost"}
+        for raw in (_socket.gethostname(), _platform.node()):
+            host = (raw or "").strip().lower().rstrip(".")
+            if host:
+                names.add(host)
+                names.add(host.split(".")[0])
+        _LOCAL_HOST_NAMES = frozenset(names)
+    return _LOCAL_HOST_NAMES
+
+
+def _is_local_ssh_target(target: str) -> bool:
+    """True when *target* is this machine (or a loopback alias) — never exempt."""
+    import ipaddress
+
+    host = (target or "").strip().lower().rstrip(".")
+    if "@" in host:
+        host = host.rsplit("@", 1)[1]
+    if host.startswith("["):
+        host = host[1:host.index("]")] if "]" in host else host.strip("[]")
+    elif host.count(":") == 1:
+        host = host.split(":", 1)[0]
+    if not host or host in _local_host_names():
+        return True
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return host.split(".")[0] in _local_host_names()
+    return address.is_loopback or address.is_unspecified
+
+
+def _split_shell_segments(command: str) -> list:
+    """Split on ; && || | and newlines, ignoring separators inside quotes."""
+    segments: list = []
+    buffer: list = []
+    quote: Optional[str] = None
+    index, length = 0, len(command)
+    while index < length:
+        char = command[index]
+        if quote is not None:
+            buffer.append(char)
+            if char == "\\" and quote == '"' and index + 1 < length:
+                buffer.append(command[index + 1])
+                index += 2
+                continue
+            if char == quote:
+                quote = None
+            index += 1
+            continue
+        if char == "\\" and index + 1 < length:
+            buffer.append(char)
+            buffer.append(command[index + 1])
+            index += 2
+            continue
+        if char in "'\"":
+            quote = char
+            buffer.append(char)
+            index += 1
+            continue
+        if command[index:index + 2] in ("&&", "||"):
+            segments.append("".join(buffer))
+            buffer = []
+            index += 2
+            continue
+        if char in ";|\n":
+            segments.append("".join(buffer))
+            buffer = []
+            index += 1
+            continue
+        buffer.append(char)
+        index += 1
+    segments.append("".join(buffer))
+    return [segment.strip() for segment in segments if segment.strip()]
+
+
+def _strip_command_wrappers(argv: list) -> list:
+    """Drop leading sudo/env/timeout/... wrappers so argv[0] can be inspected."""
+    import os as _os
+
+    index = 0
+    while index < len(argv):
+        executable = _os.path.basename(argv[index])
+        if executable not in _WRAPPER_COMMANDS:
+            return argv[index:]
+        index += 1
+        while index < len(argv):
+            argument = argv[index]
+            if executable == "env" and "=" in argument and not argument.startswith("-"):
+                index += 1
+                continue
+            if executable == "timeout" and not argument.startswith("-"):
+                index += 1
+                break
+            if executable in ("nice", "ionice", "stdbuf") and (
+                argument.startswith("-") or argument.isdigit()
+            ):
+                index += 1
+                continue
+            if executable == "sudo" and argument in ("-n", "-E", "-H", "-S", "-k", "-b"):
+                index += 1
+                continue
+            if executable == "sudo" and argument in (
+                "-u", "-g", "-p", "-C", "-h", "-r", "-t", "-U"
+            ):
+                index += 2
+                continue
+            break
+    return []
+
+
+def _ssh_target_host(argv: list) -> Optional[str]:
+    """The destination of an ssh argv (skipping options), else None."""
+    index = 1
+    while index < len(argv):
+        argument = argv[index]
+        if argument == "--":
+            index += 1
+            break
+        if not argument.startswith("-") or argument == "-":
+            break
+        flag = argument.split("=", 1)[0]
+        index += 2 if flag in _SSH_OPTIONS_WITH_VALUE and "=" not in argument else 1
+    return argv[index] if index < len(argv) else None
+
+
+def _remote_ssh_host(segment: str) -> Optional[str]:
+    """Host of *segment* when it is an ssh invocation against a remote machine."""
+    import os as _os
+
+    try:
+        argv = shlex.split(segment, comments=False, posix=True)
+    except ValueError:
+        return None
+    argv = _strip_command_wrappers(argv)
+    if not argv or _os.path.basename(argv[0]) != "ssh":
+        return None
+    lowered = " ".join(argv).lower()
+    if "proxycommand" in lowered or "localcommand" in lowered:
+        return None  # these options execute locally, inside this process tree
+    target = _ssh_target_host(argv)
+    if not target or _is_local_ssh_target(target):
+        return None
+    return target
+
+
+def _command_without_remote_ssh_segments(command: str) -> Optional[str]:
+    """*command* minus its remote-ssh segments, or None when nothing local remains.
+
+    Local segments are rejoined with ``&&`` — the lifecycle scanner matches
+    command words, not separator semantics, so a local restart still trips it.
+    """
+    if not isinstance(command, str) or not command.strip():
+        return command
+    if _PIPE_TO_LOCAL_SHELL_RE.search(command):
+        return command  # a local shell consumes the remote output: fail closed
+    remote: list = []
+    local: list = []
+    for segment in _split_shell_segments(command):
+        if segment.lstrip().startswith("#"):
+            continue
+        if _remote_ssh_host(segment):
+            remote.append(segment)
+        else:
+            local.append(segment)
+    if not remote:
+        return command
+    if not local:
+        return None
+    return " && ".join(local)
