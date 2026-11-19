@@ -10,10 +10,14 @@
 与对话引导卡兼容：引导卡选 queue 提交后，**同一消息变身**为本状态卡
 （不再在引导 done 卡上放撤销按钮）。
 
-操作者鉴权（有意延后）：本卡 **不** 校验点击者身份（不做
-``_is_interactive_operator_authorized``）。与审批卡同一思路——终态文案展示
-「由 xx 取消 / 立即处理 / 引导」操作者名称，靠显示名审计而非硬拦。群聊下
-他人可见可点的越权风险已知，暂不落地鉴权。
+操作者鉴权（C35 越权修复，语义对齐 resume 卡 ``26d3f202cc``）：三个按钮仅
+**排队归属者**可操作——比对 ``event.operator.open_id == token meta
+source.user_id``。两条注册路径（busy ``/queue`` 与引导卡 queue 提交）都在
+token meta 里存了发起者 ``source``，其 ``user_id`` 即发起者 open_id（见
+adapter ``_resolve_sender_profile``：``user_id or open_id``）。鉴权信息缺失
+（回调无 open_id / token 未知或未携带归属者身份）一律 **fail-closed** 拒绝。
+拒绝回 toast 提示且**不**更新卡片：状态卡是群内共享消息，终态卡替换会让
+任何群成员一次点击即销毁归属者的操作按钮（变相 DoS），故只提示不冻结。
 
 开关：``feishu.queue_card.enabled``（overlay，默认 true）；关闭则旁路回官方
 纯文本 ack，不发本状态卡。
@@ -26,6 +30,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
+from agent.i18n import t
 from owner.feishu.sender_name_helpers import operator_display_name
 
 logger = logging.getLogger(__name__)
@@ -459,6 +464,84 @@ class _RawCardResponse:
         self.card = _RawCard(card_data) if card_data is not None else None
 
 
+# ── 操作者鉴权（C35；语义复刻 resume 卡 26d3f202cc）─────────────────────────
+#
+# 比对字段：点击者 ``event.operator.open_id`` vs 排队归属者
+# ``get_token_meta(token)["source"].user_id``。与 resume 卡的
+# ``operator.open_id != source.user_id`` 完全同款（open_id 层比对；不比较
+# union_id / user_id_alt）。差异点：resume 在回调缺 open_id 时放行，本卡按
+# 安全审查要求 **fail-closed**——点击者或归属者任一身份缺失即拒绝。
+#
+# 拒绝反馈：toast-only（不携带 card）。状态卡是群内共享消息，回调返回 card
+# 会原地替换全员可见的卡片——若用终态卡回拒绝，任何群成员点一下就能销毁
+# 归属者的三个按钮（变相 DoS）。toast 只给点击者看，卡片保持可操作。
+
+_DENIED_TOAST_KEY = "gateway.queue_card.action_denied"
+_DENIED_TOAST_FALLBACK = (
+    "只有发起该排队的用户可以操作（引导 / 立即处理 / 取消）。\n"
+    "如需排队，请自己发送 `/queue …`。"
+)
+
+
+def queue_denied_toast_text() -> str:
+    """拒绝提示文案：i18n 覆盖键优先，缺键回退内置中文（绝不裸显 dotted key）。"""
+    try:
+        rendered = t(_DENIED_TOAST_KEY)
+    except Exception:  # pragma: no cover - t() 不抛；防御性兜底
+        rendered = ""
+    if rendered and rendered != _DENIED_TOAST_KEY:
+        return rendered
+    return _DENIED_TOAST_FALLBACK
+
+
+def queue_operator_open_id(event: Any) -> str:
+    """点击该按钮的飞书用户 open_id（缺失返回空串）。"""
+    operator = getattr(event, "operator", None)
+    return str(getattr(operator, "open_id", "") or "").strip()
+
+
+def queue_owner_open_id(token: str) -> str:
+    """排队归属者身份：token meta 里注册时的 ``source.user_id``（缺失返回空串）。"""
+    if not token:
+        return ""
+    try:
+        from owner.patches.queue_cancel_patch import get_token_meta
+    except Exception:  # pragma: no cover - owner 包内部互引，仅防御
+        return ""
+    meta = get_token_meta(token)
+    source = meta.get("source")
+    return str(getattr(source, "user_id", "") or "").strip()
+
+
+def is_queue_operator_authorized(token: str, event: Any) -> bool:
+    """True 仅当点击者是排队归属者；身份信息缺失时 fail-closed 返回 False。"""
+    operator_id = queue_operator_open_id(event)
+    if not operator_id:
+        return False
+    owner_id = queue_owner_open_id(token)
+    if not owner_id:
+        return False
+    return operator_id == owner_id
+
+
+def queue_denied_response(resp_cls: Any) -> Any:
+    """Toast-only 拒绝响应：不携带 card，共享状态卡保持原样。"""
+    if resp_cls is None:
+        # lark SDK 缺失（profile 容器经 HTTP 转发）：无 toast 通道，动作已
+        # 被阻断（fail-closed 生效），仅缺可见反馈。
+        return _RawCardResponse(None)
+    try:
+        from lark_oapi.event.callback.model.p2_card_action_trigger import CallBackToast
+    except ImportError:  # pragma: no cover - resp_cls 在则 toast 类必在
+        return _RawCardResponse(None)
+    response = resp_cls()
+    toast = CallBackToast()
+    toast.type = "info"
+    toast.content = queue_denied_toast_text()
+    response.toast = toast
+    return response
+
+
 def handle_queue_card_action(
     *,
     adapter: Any,
@@ -467,8 +550,9 @@ def handle_queue_card_action(
 ) -> Any:
     """Process queue status card button clicks (Feishu only).
 
-    鉴权有意延后：不调用 ``_is_interactive_operator_authorized``。点击者 open_id
-    仅用于 ``operator_display_name``，终态卡写「由 xx …」。群聊越权已知，暂不拦。
+    [owner] C35 操作者鉴权：仅排队归属者（``event.operator.open_id`` ==
+    token meta ``source.user_id``）可操作；点击者或归属者身份缺失时
+    fail-closed 拒绝（toast 提示、不更新共享卡片）。详见模块头「操作者鉴权」。
     """
     P2CardActionTriggerResponse, CallBackCard = _lark_card_types()
 
@@ -476,6 +560,17 @@ def handle_queue_card_action(
     token = str(action_value.get("queue_token") or "").strip()
     _alog = logging.getLogger(adapter.__class__.__module__)
     _alog.info("[Feishu card] queue action step=%s token=%s", step, token[:8] if token else "-")
+
+    # [owner] C35: fail-closed 操作者鉴权——非归属者 / 身份缺失一律拒绝。
+    if not is_queue_operator_authorized(token, event):
+        _alog.warning(
+            "[Feishu card] queue action DENIED step=%s token=%s operator=%s owner=%s",
+            step,
+            token[:8] if token else "-",
+            queue_operator_open_id(event) or "<missing>",
+            queue_owner_open_id(token) or "<missing>",
+        )
+        return queue_denied_response(P2CardActionTriggerResponse)
 
     # "guide" kept as alias for older cards already in chat.
     if step in ("steer", "guide"):

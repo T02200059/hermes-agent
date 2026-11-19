@@ -385,3 +385,195 @@ def test_is_queue_card_enabled_reads_overlay(monkeypatch):
     assert qc.is_queue_card_enabled() is True
     monkeypatch.setattr("owner.patch_config.load_patch_config", dict)
     assert qc.is_queue_card_enabled() is True
+
+
+# ── C35 操作者鉴权（仅归属者可操作；fail-closed）────────────────────────────
+
+
+def _register_owner_token(token: str = "t-auth", *, user_id: str = "ou_owner", text: str = "auth work"):
+    """Register an enqueued token whose source carries the queuer's open_id."""
+    qcp.register_scheduled_token(
+        token,
+        text=text,
+        session_key="sk",
+        source=SimpleNamespace(
+            chat_id="oc_1", chat_type="group", user_id=user_id, user_id_alt=None
+        ),
+    )
+    with qcp._token_lock:
+        qcp._token_state[token]["status"] = "enqueued"
+
+
+def _click(open_id: str):
+    return SimpleNamespace(operator=SimpleNamespace(open_id=open_id))
+
+
+def _queue_action(adapter, step: str, token: str, event, user_input: str = "auth work"):
+    return qc.handle_queue_card_action(
+        adapter=adapter,
+        action_value={
+            "hermes_queue_card": step,
+            "queue_token": token,
+            "user_input": user_input,
+            "user_name": "小明",
+        },
+        event=event,
+    )
+
+
+def test_queue_action_owner_click_cancel_executes():
+    token = "t-owner-cancel"
+    _register_owner_token(token, user_id="ou_owner", text="auth work")
+    event = SimpleNamespace(text="auth work", metadata={})
+    qcp._stamp_event(event, token)
+    adapter = MagicMock()
+    adapter._pending_messages = {"sk": event}
+    adapter._owner_gateway_runner = SimpleNamespace(_queued_events={}, _sessions_map=dict)
+
+    resp = _queue_action(adapter, "cancel", token, _click("ou_owner"))
+    card = getattr(resp, "card", None)
+    assert card is not None and card.data
+    assert "已取消排队" in card.data["header"]["title"]["content"]
+    assert "sk" not in adapter._pending_messages
+    assert qcp.get_token_meta(token).get("status") == "cancelled"
+
+
+def test_queue_action_owner_click_steer_and_process_now_pass(monkeypatch):
+    token = "t-owner-go"
+    _register_owner_token(token, user_id="ou_owner")
+    adapter = MagicMock()
+    monkeypatch.setattr(qcp, "steer_queued_by_token", lambda a, t: "ok")
+    monkeypatch.setattr(qcp, "process_now_by_token", lambda a, t: "ok")
+
+    resp = _queue_action(adapter, "steer", token, _click("ou_owner"))
+    assert "已引导注入" in resp.card.data["header"]["title"]["content"]
+
+    resp = _queue_action(adapter, "process_now", token, _click("ou_owner"))
+    assert "立即处理" in resp.card.data["header"]["title"]["content"]
+
+
+def test_queue_action_denied_for_foreign_operator(monkeypatch):
+    token = "t-deny"
+    _register_owner_token(token, user_id="ou_owner", text="deny work")
+    called = MagicMock()
+    monkeypatch.setattr(qcp, "cancel_queued_by_token", called)
+    monkeypatch.setattr(qcp, "steer_queued_by_token", called)
+    monkeypatch.setattr(qcp, "process_now_by_token", called)
+    adapter = MagicMock()
+    foreign = _click("ou_other")
+
+    for step in ("steer", "guide", "cancel", "process_now"):
+        resp = _queue_action(adapter, step, token, foreign, user_input="deny work")
+        toast = getattr(resp, "toast", None)
+        assert toast is not None, f"step={step} must deny with a toast"
+        assert "只有发起该排队" in toast.content
+        # 拒绝不得替换群内共享的状态卡（否则第三方一点击就销毁归属者的按钮）
+        assert getattr(resp, "card", None) is None
+
+    called.assert_not_called()
+    assert qcp.get_token_meta(token).get("status") == "enqueued"
+
+
+def test_queue_action_fail_closed_when_identity_missing(monkeypatch):
+    called = MagicMock()
+    monkeypatch.setattr(qcp, "cancel_queued_by_token", called)
+    monkeypatch.setattr(qcp, "steer_queued_by_token", called)
+    monkeypatch.setattr(qcp, "process_now_by_token", called)
+    adapter = MagicMock()
+
+    # 1) 回调缺点击者身份：无 operator 属性 / operator=None / open_id 空
+    no_src_token = "t-nosrc"
+    qcp.register_scheduled_token(no_src_token, text="x")  # source=None
+    for ev in (
+        SimpleNamespace(),
+        SimpleNamespace(operator=None),
+        SimpleNamespace(operator=SimpleNamespace(open_id="")),
+    ):
+        resp = _queue_action(adapter, "cancel", no_src_token, ev, user_input="x")
+        assert getattr(resp, "toast", None) is not None
+        assert getattr(resp, "card", None) is None
+
+    # 2) token 缺归属者身份：source=None（上行已覆盖）与 source 无 user_id
+    bare_src_token = "t-baresrc"
+    qcp.register_scheduled_token(
+        bare_src_token,
+        text="y",
+        source=SimpleNamespace(chat_id="oc_1", chat_type="group"),  # 无 user_id
+    )
+    resp = _queue_action(adapter, "cancel", bare_src_token, _click("ou_owner"), user_input="y")
+    assert getattr(resp, "toast", None) is not None
+
+    # 3) 未知 token（meta 已被清理/伪造卡）：即使带着 open_id 也拒绝
+    resp = _queue_action(adapter, "cancel", "tok-unknown", _click("ou_owner"), user_input="z")
+    assert getattr(resp, "toast", None) is not None
+
+    called.assert_not_called()
+
+
+def test_queue_denied_toast_text_catalog_and_fallback(monkeypatch):
+    # 目录命中 → 用目录文案
+    monkeypatch.setattr(qc, "t", lambda key, **kw: "目录拒绝文案")
+    assert qc.queue_denied_toast_text() == "目录拒绝文案"
+    # 目录缺键（t 返回裸 key）→ 回退内置中文，绝不裸显 dotted key
+    monkeypatch.setattr(qc, "t", lambda key, **kw: key)
+    assert qc.queue_denied_toast_text() == qc._DENIED_TOAST_FALLBACK
+    assert "只有发起该排队" in qc._DENIED_TOAST_FALLBACK
+
+
+def test_denied_toast_fallback_matches_owner_overlay_yaml():
+    """代码兜底中文与 owner zh.yaml 覆盖键必须一致（漂移守卫）。"""
+    from pathlib import Path
+
+    import yaml
+
+    overlay = (
+        Path(__file__).resolve().parents[2]
+        / "owner" / "config" / "locales" / "zh.yaml"
+    )
+    data = yaml.safe_load(overlay.read_text(encoding="utf-8"))
+    assert (
+        data["gateway"]["queue_card"]["action_denied"] == qc._DENIED_TOAST_FALLBACK
+    )
+
+
+def test_legacy_guide_cancel_queue_owner_and_foreign(monkeypatch):
+    """旧引导卡「撤销队列」按钮走同一 fail-closed 鉴权。"""
+    from lark_oapi.event.callback.model.p2_card_action_trigger import (
+        CallBackCard,
+        P2CardActionTriggerResponse,
+    )
+
+    token = "t-legacy"
+    _register_owner_token(token, user_id="ou_owner", text="legacy work")
+    cancel = MagicMock(return_value="ok")
+    monkeypatch.setattr(qcp, "cancel_queued_by_token", cancel)
+    adapter = MagicMock()
+    action_value = {
+        "hermes_feishu_guide": "cancel_queue",
+        "queue_token": token,
+        "user_input": "legacy work",
+        "user_name": "小明",
+    }
+
+    foreign = sc._handle_cancel_queue(
+        adapter=adapter,
+        action_value=action_value,
+        event=_click("ou_other"),
+        resp_cls=P2CardActionTriggerResponse,
+        card_cls=CallBackCard,
+    )
+    assert getattr(foreign, "toast", None) is not None
+    assert "只有发起该排队" in foreign.toast.content
+    assert getattr(foreign, "card", None) is None
+    cancel.assert_not_called()
+
+    owner = sc._handle_cancel_queue(
+        adapter=adapter,
+        action_value=action_value,
+        event=_click("ou_owner"),
+        resp_cls=P2CardActionTriggerResponse,
+        card_cls=CallBackCard,
+    )
+    assert owner.card is not None
+    assert "已取消排队" in owner.card.data["header"]["title"]["content"]
+    cancel.assert_called_once()

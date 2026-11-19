@@ -394,7 +394,17 @@ def _handle_cancel_queue(
     resp_cls: Any,
     card_cls: Any,
 ) -> Any:
-    """Legacy「撤销队列」on old guide done cards — same cancel pipeline."""
+    """Legacy「撤销队列」on old guide done cards — same cancel pipeline.
+
+    [owner] C35: 与 queue 状态卡同款 fail-closed 操作者鉴权（仅排队归属者
+    可撤销），拒绝回 toast、不更新卡片——见 ``owner/feishu/queue_card.py``。
+    """
+    from owner.feishu.queue_card import (
+        is_queue_operator_authorized,
+        queue_denied_response,
+        queue_operator_open_id,
+        queue_owner_open_id,
+    )
     from owner.patches.queue_cancel_patch import cancel_queued_by_token
 
     token = str(action_value.get("queue_token") or "").strip()
@@ -408,6 +418,15 @@ def _handle_cancel_queue(
     )
 
     _alog = logging.getLogger(adapter.__class__.__module__)
+    if not is_queue_operator_authorized(token, event):
+        _alog.warning(
+            "[Feishu Guide] cancel_queue(legacy) DENIED token=%s operator=%s owner=%s",
+            (token or "")[:8],
+            queue_operator_open_id(event) or "<missing>",
+            queue_owner_open_id(token) or "<missing>",
+        )
+        return queue_denied_response(resp_cls)
+
     status = cancel_queued_by_token(adapter, token) if token else "invalid"
     _alog.info(
         "[Feishu Guide] cancel_queue(legacy): status=%s token=%s",

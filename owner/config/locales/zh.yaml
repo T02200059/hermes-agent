@@ -1,8 +1,12 @@
 # [owner] HERMES_HOME locale overlay — shadows bundled locales/zh.yaml key-by-key.
 # Runtime: ~/.hermes/locales -> this directory (same symlink pattern as overlay.yaml).
-# Scope: agent/gateway 「展示思考内容」标签 only；勿塞「推理强度」等配置用语。
+# Scope: agent/gateway 「展示思考内容」标签 + queue 状态卡越权拒绝提示；勿塞「推理强度」等配置用语。
 gateway:
   reasoning:
     quote_label_discord: "-# 💭 想法"
     quote_label_md: "> 💭 **想法：**"
     block: "💭 **想法：**\n```\n{reasoning}\n```\n\n{response}"
+  queue_card:
+    # C35 非归属者点击 queue 状态卡按钮的拒绝 toast（代码内同款中文兜底：
+    # owner/feishu/queue_card.py::_DENIED_TOAST_FALLBACK，漂移测试比对）
+    action_denied: "只有发起该排队的用户可以操作（引导 / 立即处理 / 取消）。\n如需排队，请自己发送 `/queue …`。"
