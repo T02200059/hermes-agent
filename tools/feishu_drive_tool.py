@@ -15,9 +15,6 @@ from tools.feishu_lark import (
     set_client)
 from tools.registry import registry, tool_error, tool_result
 
-# [owner] C12-doc-ocr: DM/群聊无注入 client 时走 env fallback（与 feishu_doc_read 同管线）
-from owner.feishu.client_utils import resolve_client
-
 logger = logging.getLogger(__name__)
 
 
@@ -28,13 +25,10 @@ def _comment_op(keys, missing_msg, label, method, uri, queries=None, body=None, 
     build the request pieces; ``flag_success`` adds ``success=True`` to the result (writes).
     """
     def _handler(args: dict, **kwargs) -> str:
-        client = resolve_client(get_client())  # [owner] C12-doc-ocr
+        client = get_client()
         values = tuple(args.get(k, "").strip() for k in keys)
         if client is None:
-            return tool_error(
-            "Feishu client not available (set FEISHU_APP_ID and "
-            "FEISHU_APP_SECRET, or run from a Feishu comment context)"
-        )
+            return tool_error("Feishu client not available")
         if not all(values):
             return tool_error(missing_msg)
         code, msg, data = lark_call(

@@ -124,5 +124,27 @@ def register(ctx) -> None:
     except Exception:
         logger.warning("owner: queue_cancel_patch failed", exc_info=True)
 
+    # [owner] C12-doc-ocr: feishu_doc_read schema/handler extensions + feishu_drive
+    # env-fallback client. Official tool files stay upstream-literal (thin delegate
+    # + marker only): the schema rides ToolEntry.dynamic_schema_overrides
+    # (owner/feishu/doc_tool.py), the drive client fallback rebinds the module-local
+    # get_client (owner/feishu/drive_tool_patch.py). Both force-import their light
+    # tool modules because the gateway discovers plugins BEFORE model_tools imports
+    # the tool stack — a plain get_entry here would silently miss.
+    try:
+        from owner.feishu.doc_tool import apply_patch as _apply_doc_schema
+
+        _apply_doc_schema()
+        logger.debug("owner: feishu doc_tool schema patch applied via plugin register")
+    except Exception:
+        logger.warning("owner: feishu doc_tool schema patch failed", exc_info=True)
+    try:
+        from owner.feishu.drive_tool_patch import apply_patch as _apply_drive_fallback
+
+        _apply_drive_fallback()
+        logger.debug("owner: feishu drive env-fallback patch applied via plugin register")
+    except Exception:
+        logger.warning("owner: feishu drive env-fallback patch failed", exc_info=True)
+
 
 
