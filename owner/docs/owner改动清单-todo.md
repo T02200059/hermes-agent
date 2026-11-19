@@ -756,6 +756,32 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - **落地**：`tools/terminal_tool_guards.py`（`_split_shell_segments`、`_strip_command_wrappers`、`_ssh_target_host`、`_remote_ssh_host`、`_command_without_remote_ssh_segments`、`code_without_remote_ssh_calls`；`gateway_lifecycle_block` 改为扫 `scan_command`）；`tools/code_execution_tool.py`（`scan_code = code_without_remote_ssh_calls(code)` 薄挂，host-kill 判定同步改用 `scan_code`）。
   - **测**：`tests/tools/test_remote_ssh_lifecycle_exemption.py` 13 passed（7 条命令侧 + 6 条源码侧，含本机/ProxyCommand/管道/mixed/非字面量反例）；同批 `test_launchctl_guard_diagnostic.py`、`test_execute_code_lifecycle_guard_deadline.py` 4 passed。
   - **生效**：需重启 gateway（运行中的进程仍持有旧函数）；cron / 子进程启动即生效。
+- [x] **C35** · 飞书 queue 状态卡按钮操作者鉴权（2026-11-19）· **优先级：P0（安全审查）** · **已落地**
+  - **根因**：C12 queue 状态卡（`06c604c04a` / `d0e0f7e4fd`）三按钮（引导/立即处理/取消）**不校验点击者**（d0e0f7e4fd 明确"暂不做"）——群内任何成员都能取消 / 插队 / 转向**他人**的排队消息（越权 + 可打断他人任务）。旧引导卡的「撤销队列」按钮同样裸奔。
+  - **策略**：复刻 resume 卡（`26d3f202cc`）的操作者比对语义：`event.operator.open_id == get_token_meta(token)["source"].user_id`（两条注册路径——busy `/queue` 与引导卡提交——都已在 token meta 存发起者 `source`，其 `user_id` 即发起者 open_id）。按审查要求 **fail-closed**（resume 缺 open_id 是放行的，此处收紧）：点击者 open_id 缺失、token 未知 / 未携带归属者身份 → 一律拒绝。不做角色体系，仅归属者可操作。
+  - **拒绝反馈**：toast-only、**不**更新卡片——状态卡是群内共享消息，回调回 card 会原地替换全员可见卡片；若用终态卡回拒绝，任何群成员点一下就销毁归属者的三个按钮（变相 DoS）。文案走 i18n 覆盖键 `gateway.queue_card.action_denied`（`owner/config/locales/zh.yaml`），代码内同款中文兜底（缺键不裸显 dotted key）。
+  - **落地**：`owner/feishu/queue_card.py`（`is_queue_operator_authorized` / `queue_owner_open_id` / `queue_operator_open_id` / `queue_denied_response` + `handle_queue_card_action` 单点拦截）；`owner/feishu/steer_card.py`（旧 `_handle_cancel_queue` 同款守卫）。
+  - **测**：`tests/owner/test_c12_queue_card.py` 23 passed（新增 7 条：归属者 cancel/steer/process_now 通过、他人四步全拒且不触发生命周期、缺 operator/open_id/归属者/未知 token fail-closed、i18n 命中与缺键回退、yaml↔代码漂移守卫、旧撤销按钮双路径）；同批 guide/resume/C04/C05 卡片套件 89 passed。
+  - **生效**：需重启 gateway；重启前旧进程仍无鉴权。已存在于群内的旧状态卡点击同样受控（token meta 在内存里，跨重启丢失 → fail-closed 拒绝，与既有"已消费/清理"行为一致）。
+  - **相关 commit**：`df7c06b8bf`（2026-11-19 审查修复批）
+- [x] **C36** · 近月 commit 审查修复批（2026-11-19）· **已落地**
+  - **背景**：对 2026-10-19 起近月 188 条本地 commit 做规范+逻辑双维审查（4 子代理分批），本批收口全部审查发现。
+  - **逐项**：
+    - `472f69e731` **C26 活性缺陷**：`_store_cache_entry` 跳写不刷 `at` → 首过 24h TTL 后永远 stale、每次读取触发 SWR 实拉。加 60s 对称跳写窗口。
+    - `6e2a7074a2` **C17 回归（06d7cdbcc9）**：`&> file`/`>&file` 覆盖写漏判破坏性（叠加 190a300a16 后告警也消失）。官方端三分支正则 + static_parser fd 判定收窄，39 例矩阵双端对齐。
+    - `df7c06b8bf` **C35**（见上条目）。
+    - `cded74eae3` **C05 M1 缺口**：`/v1/feishu/card-actions` 缺 send_only 门。判定收敛 `owner/feishu/profile_routing.send_only_gate_rejection`，官方两端薄调用 fail-closed。
+    - `d8fb4c173d` **fleet_add 安全**：apply 四层重跑共享校验器（uid 正则 + 路径白名单），useradd 全 argv 去 `shell=True`，`--fixture`×apply 拒绝；34 项注入新测。
+    - `bfef32505e` **C04 缓存 + B17 边界**：`resolve_name` 短路只认未过期热表（24h 后不再永久陈旧）；clarify 空串答案改 `entry.response is None` 判定。
+    - `69068d7bc3` **image-hub + C02**：owner 导入失败显式 `owner_import_error` 不静默落 FAL；`switch_model` 裸 custom 时经 `canonical_custom_identity` 恢复命名 alias。
+    - `a5a355d93e` **a6e7e0e672 P2 违规整改**：`format_running_tool` 迁 `owner/i18n/running_tool.py`，`agent/display.py` 留 3 行委托 + 标记；19 项新测钉行为一致。
+    - `76dc056a20` **locales 补齐**：C04/C10/C19/C27/B17 共 30 键只写了 en+zh，其余 15 个 bundled locale 全缺（`test_i18n` 30 项红灯）；14 语言英占位 + zh-hant 繁体真译，`SQL_LIKE_ANCHORS` 补攔截/審批/拒絕繁体锚点。
+    - `7f54daabe3` **pm_tar_compat 补测**：安全敏感 fallback 此前零测试，24 项回归（逃逸三态/SymlinkOrder×2/mode 归一/setuid 清除）。
+    - `099c63f22b` **标记收口**：补 12 个官方文件缺失的 `[owner]` 标记（含恢复 79b1b181ed 删掉的 session_ingress 标记、O 段 run.py/run_turn.py/base.py 残留 hunk、14d4eccc6c image_routing），零行为改动。
+  - **补登（审查发现的历史漏登）**：`a4d5a41f70`（C17 引号感知+只读闸门，2026-11-12）此前未按 §6.1 登记，现补记于本批。
+  - **验收**：合并跑 `tests/owner` + 触及的 agent/tools/pm 套件 **1430 passed, 2 skipped**；`test_i18n` 54/54 全绿。
+  - **流程教训（审查结论，留档）**：三个"落地即坏"（recap kwargs 误配 / queue patch 注册期死锁 / resume 卡空 ack）共性根因是单测用自造 kwargs/mock 未对接真实官方调用点——hook/patch 类功能应补真实调用点契约测试。
+
 
 ## § yaml 整合方向（穿插落地；不大爆炸）
 
