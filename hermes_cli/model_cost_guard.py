@@ -38,6 +38,15 @@ def _format_money(value: Optional[Decimal]) -> str:
     return "unknown" if value is None else f"${value:.2f}/M"
 
 
+# [owner] C10 · 护栏文案 i18n：英文留在代码，其他语言取 locales/<lang>.yaml。
+def _localized(key: str, en_text: str, **kwargs) -> str:
+    """Owner i18n: the English literal next to the call site is the source; ``locales/<lang>.yaml``
+    supplies the active language (a miss falls back to ``en_text``, never a bare key)."""
+    from owner.i18n.localized import localized
+
+    return localized(key, en_text, **kwargs)
+
+
 def _pricing_from_model_info(
     model_info: Optional[ModelInfo]) -> tuple[Optional[Decimal], Optional[Decimal], str]:
     if model_info is None or not model_info.has_cost_data():
@@ -115,18 +124,22 @@ def expensive_model_warning(
     if not over_input and not over_output and not is_known_gpt55_pro_confusion:
         return None
 
-    lines = [
-        "!!! EXPENSIVE MODEL WARNING !!!",
-        "",
-        f"{model} has known pricing above Hermes' safety threshold.",
-        f"Input tokens: {_format_money(input_cost)}",
-        f"Output tokens: {_format_money(output_cost)}",
-        "Threshold: more than $20/M input tokens or more than $100/M output tokens."]
+    lines = [_localized(
+        "gateway.model.guard.cost.message",
+        "!!! EXPENSIVE MODEL WARNING !!!\n"
+        "\n"
+        "{model} has known pricing above Hermes' safety threshold.\n"
+        "Input tokens: {input}\n"
+        "Output tokens: {output}\n"
+        "Threshold: more than $20/M input tokens or more than $100/M output tokens.",
+        model=model, input=_format_money(input_cost), output=_format_money(output_cost))]
     if source:
-        lines.append(f"Pricing source: {source}.")
+        lines.append(_localized(
+            "gateway.model.guard.cost.pricing_source", "Pricing source: {source}.", source=source))
     if is_known_gpt55_pro_confusion:
-        lines.append(GPT55_SUGGESTION)
-    lines.append("Confirm only if you intend to use this model.")
+        lines.append(_localized("gateway.model.guard.cost.gpt55_hint", GPT55_SUGGESTION))
+    lines.append(_localized(
+        "gateway.model.guard.cost.confirm", "Confirm only if you intend to use this model."))
 
     return ExpensiveModelWarning(
         model=model, provider=(provider or "").strip(), input_cost_per_million=input_cost,

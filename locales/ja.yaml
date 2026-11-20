@@ -89,6 +89,48 @@ gateway:
     next_turn_only: "    (次のターンのみ — 1 回応答した後に元へ戻ります)"
     switch_cancelled: "🟡 モデルの切り替えをキャンセルしました。現在のモデルは変わりません ({model})。"
     guard_confirm: "💡 **{title}**\n\n{message}\n\n_テキスト代替: 切り替えるには `{prefix}approve`、現在のモデルを維持するには `{prefix}cancel` と返信してください。_"
+    guard:
+      cost:
+        title: "高コストモデルの警告"
+        message: |-
+          !!! 高コストモデルの警告 !!!
+
+          {model} は Hermes の安全しきい値を超える既知の料金設定です。
+          入力トークン: {input}
+          出力トークン: {output}
+          しきい値: 入力 $20/M 超、または出力 $100/M 超。
+        pricing_source: "料金の出典: {source}。"
+        gpt55_hint: "openai/gpt-5.5 を選ぼうとしていませんか？"
+        confirm: "このモデルを使うつもりがある場合のみ確定してください。"
+      data_policy:
+        title: "データ学習ティアの警告"
+        meta_contributor: |-
+          !!! CONTRIBUTOR ティア — あなたのデータで学習します !!!
+
+          これは Meta の contributor ティアです。選択すると、Meta があなたの
+          プロンプトと補完結果を将来の Meta モデルの学習に利用することを許可します。
+
+          Meta Model API の現在の料金とレート制限はこちら:
+            https://dev.meta.ai/docs/pricing-rate-limits/
+
+          自分のデータでの学習が許容できる試作・連携テスト・実験の拡大に
+          対する参入障壁を下げるものです。機密、専有、個人、その他の機微な
+          データには使用しないでください。同じモデルを自分のデータでの学習なしで
+          使うには、標準版（-contributor サフィックスなし）を選択してください。
+
+          プロンプトと補完結果での学習を許容できる場合にのみ確定してください。
+      context_cache:
+        title: "大きなコンテキストの切り替え警告"
+        message: |-
+          !!! 大きなコンテキストでのモデル切り替え !!!
+
+          このセッションは約 {tokens} トークンのコンテキストを保持しています。
+          {target} に切り替えると、次回の応答はすべてをキャッシュなしで再読み込みします（プロバイダーはプロンプトキャッシュをモデル単位で分けます）— 一度限りの通常料金の入力コストです。
+
+          しきい値: {setting}（現在 {threshold}、0 でこのチェックを無効化）。
+          いま切り替えるつもりがある場合のみ確定してください。
+      multiple:
+        title: "モデル選択の警告"
     err_once_local: "`--once` is not available in this session; use `/model <name>` and switch back after the turn."
     local_next_turn: "Applies from your next message."
   agents:

@@ -89,6 +89,47 @@ gateway:
     next_turn_only: "    （僅下一輪有效 — 回應一次後即還原）"
     switch_cancelled: "🟡 已取消切換模型。目前模型不變（{model}）。"
     guard_confirm: "💡 **{title}**\n\n{message}\n\n_文字備援：回覆 `{prefix}approve` 以切換，或 `{prefix}cancel` 以保留目前模型。_"
+    guard:
+      cost:
+        title: "高成本模型警告"
+        message: |-
+          !!! 高成本模型警告 !!!
+
+          {model} 的已知定價高於 Hermes 的安全閾值。
+          輸入 token：{input}
+          輸出 token：{output}
+          閾值：輸入超過 $20/M 或輸出超過 $100/M。
+        pricing_source: "定價來源：{source}。"
+        gpt55_hint: "你是想選擇 openai/gpt-5.5 嗎？"
+        confirm: "僅在確實要使用該模型時確認。"
+      data_policy:
+        title: "資料訓練層級警告"
+        meta_contributor: |-
+          !!! contributor 層級 —— 會用你的資料訓練 !!!
+
+          這是 Meta 的 contributor（貢獻者）層級。選擇它即允許 Meta 使用你的
+          提示詞與補全結果來訓練未來的 Meta 模型。
+
+          Meta Model API 目前的定價與速率限制見此：
+            https://dev.meta.ai/docs/pricing-rate-limits/
+
+          它降低了原型驗證、整合測試以及在「允許用你的資料訓練」前提下擴大
+          實驗規模的門檻。請勿用於機密、專有、個人或其他敏感資料。若需要同一
+          模型但不使用你的資料訓練，請選擇標準版本（不帶 -contributor 後綴）。
+
+          僅在允許用你的提示詞與補全結果進行訓練時才確認。
+      context_cache:
+        title: "大上下文切換警告"
+        message: |-
+          !!! 大上下文模型切換 !!!
+
+          本工作階段目前約有 {tokens} 個 token 的上下文。
+          切換到 {target} 後，下一次回覆需要重新讀取全部上下文且無法命中快取（各家 provider 的提示詞快取按模型隔離）—— 這是一次性全額輸入開銷。
+
+          閾值：{setting}（目前 {threshold}；設為 0 可關閉此檢查）。
+          僅在確實要現在切換時確認。
+      multiple:
+        title: "模型選擇警告"
     err_once_local: "`--once` is not available in this session; use `/model <name>` and switch back after the turn."
     local_next_turn: "Applies from your next message."
   agents:

@@ -89,6 +89,49 @@ gateway:
     next_turn_only: "    (nur nächster Zug — wird nach einer Antwort zurückgesetzt)"
     switch_cancelled: "🟡 Modellwechsel abgebrochen. Aktuelles Modell unverändert ({model})."
     guard_confirm: "💡 **{title}**\n\n{message}\n\n_Text-Rückfall: Antworten Sie mit `{prefix}approve`, um zu wechseln, oder mit `{prefix}cancel`, um das aktuelle Modell zu behalten._"
+    guard:
+      cost:
+        title: "Warnung: teures Modell"
+        message: |-
+          !!! WARNHINWEIS: TEURES MODELL !!!
+
+          Für {model} ist ein Preis oberhalb der Sicherheitsschwelle von Hermes bekannt.
+          Eingabe-Token: {input}
+          Ausgabe-Token: {output}
+          Schwelle: mehr als $20/M Eingabe-Token oder mehr als $100/M Ausgabe-Token.
+        pricing_source: "Preisquelle: {source}."
+        gpt55_hint: "Wolltest du openai/gpt-5.5 auswählen?"
+        confirm: "Nur bestätigen, wenn du dieses Modell wirklich nutzen willst."
+      data_policy:
+        title: "Warnung: Stufe mit Datentraining"
+        meta_contributor: |-
+          !!! CONTRIBUTOR-STUFE — TRAINIERT MIT DEINEN DATEN !!!
+
+          Dies ist Metas Contributor-Stufe. Die Auswahl erlaubt Meta, deine Prompts und
+          Completionen zum Training künftiger Meta-Modelle zu verwenden.
+
+          Aktuelle Preise und Rate-Limits der Meta Model API:
+            https://dev.meta.ai/docs/pricing-rate-limits/
+
+          Sie senkt die Einstiegshürde für Prototyping, Integrationstests und
+          größere Experimente, bei denen Training mit deinen Daten akzeptabel ist.
+          Verwende sie NICHT für vertrauliche, proprietäre, persönliche oder sonst
+          sensible Daten. Für dasselbe Modell ohne Training mit deinen Daten wähle
+          die Standardvariante (ohne Suffix -contributor).
+
+          Nur bestätigen, wenn Training mit deinen Prompts und Completionen akzeptabel ist.
+      context_cache:
+        title: "Warnung: Wechsel bei großem Kontext"
+        message: |-
+          !!! MODELLWECHSEL BEI GROSSEM KONTEXT !!!
+
+          Diese Sitzung enthält ~{tokens} Token Kontext.
+          Ein Wechsel zu {target} lässt die nächste Antwort alles ohne Cache neu lesen (Provider cachen Prompts pro Modell) — einmalige Eingabekosten zum Vollpreis.
+
+          Schwelle: {setting} (aktuell {threshold}; 0 deaktiviert diese Prüfung).
+          Nur bestätigen, wenn du jetzt wechseln willst.
+      multiple:
+        title: "Warnung zur Modellauswahl"
     err_once_local: "`--once` is not available in this session; use `/model <name>` and switch back after the turn."
     local_next_turn: "Applies from your next message."
   agents:

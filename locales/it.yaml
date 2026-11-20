@@ -89,6 +89,49 @@ gateway:
     next_turn_only: "    (solo per il prossimo turno — viene ripristinato dopo una risposta)"
     switch_cancelled: "🟡 Cambio di modello annullato. Modello attuale invariato ({model})."
     guard_confirm: "💡 **{title}**\n\n{message}\n\n_Fallback testuale: rispondi `{prefix}approve` per cambiare o `{prefix}cancel` per mantenere il modello attuale._"
+    guard:
+      cost:
+        title: "Avviso: modello costoso"
+        message: |-
+          !!! AVVISO: MODELLO COSTOSO !!!
+
+          {model} ha un prezzo noto sopra la soglia di sicurezza di Hermes.
+          Token di input: {input}
+          Token di output: {output}
+          Soglia: oltre $20/M in input o oltre $100/M in output.
+        pricing_source: "Fonte del prezzo: {source}."
+        gpt55_hint: "volevi selezionare openai/gpt-5.5?"
+        confirm: "Conferma solo se intendi usare questo modello."
+      data_policy:
+        title: "Avviso: livello con addestramento sui dati"
+        meta_contributor: |-
+          !!! LIVELLO CONTRIBUTOR — SI ADDESTRA SUI TUOI DATI !!!
+
+          Questo è il livello contributor di Meta. Selezionandolo permetti a Meta di usare
+          i tuoi prompt e completamenti per addestrare i futuri modelli Meta.
+
+          Prezzi e limiti di frequenza attuali della Meta Model API:
+            https://dev.meta.ai/docs/pricing-rate-limits/
+
+          Riduce la barriera d'ingresso per prototipi, test di integrazione ed
+          esperimenti su scala più ampia in cui l'addestramento sui tuoi dati è
+          accettabile. NON usarlo per dati riservati, proprietari, personali o
+          comunque sensibili. Per lo stesso modello senza addestramento sui tuoi dati,
+          scegli la variante standard (senza il suffisso -contributor).
+
+          Conferma solo se l'addestramento sui tuoi prompt e completamenti è accettabile.
+      context_cache:
+        title: "Avviso: cambio con contesto esteso"
+        message: |-
+          !!! CAMBIO DI MODELLO CON CONTESTO ESTESO !!!
+
+          Questa sessione contiene ~{tokens} token di contesto.
+          Passando a {target} la prossima risposta rileggerà tutto senza cache (i provider separano la cache dei prompt per modello): un costo di input a prezzo pieno, una sola volta.
+
+          Soglia: {setting} (attualmente {threshold}; 0 disattiva questo controllo).
+          Conferma solo se vuoi cambiare adesso.
+      multiple:
+        title: "Avviso di selezione del modello"
     err_once_local: "`--once` is not available in this session; use `/model <name>` and switch back after the turn."
     local_next_turn: "Applies from your next message."
   agents:

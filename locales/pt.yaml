@@ -89,6 +89,49 @@ gateway:
     next_turn_only: "    (apenas no próximo turno — volta ao normal após uma resposta)"
     switch_cancelled: "🟡 Troca de modelo cancelada. Modelo atual inalterado ({model})."
     guard_confirm: "💡 **{title}**\n\n{message}\n\n_Alternativa em texto: responda `{prefix}approve` para trocar ou `{prefix}cancel` para manter o modelo atual._"
+    guard:
+      cost:
+        title: "Aviso: modelo caro"
+        message: |-
+          !!! AVISO: MODELO CARO !!!
+
+          {model} tem preço conhecido acima do limite de segurança do Hermes.
+          Tokens de entrada: {input}
+          Tokens de saída: {output}
+          Limite: mais de $20/M em entrada ou mais de $100/M em saída.
+        pricing_source: "Fonte do preço: {source}."
+        gpt55_hint: "você queria selecionar openai/gpt-5.5?"
+        confirm: "Confirme apenas se pretende usar este modelo."
+      data_policy:
+        title: "Aviso: nível com treino nos dados"
+        meta_contributor: |-
+          !!! NÍVEL CONTRIBUTOR — TREINA COM OS SEUS DADOS !!!
+
+          Este é o nível contributor da Meta. Ao selecioná-lo, você permite que a Meta use
+          seus prompts e completions para treinar futuros modelos Meta.
+
+          Veja os preços e limites de taxa atuais da Meta Model API aqui:
+            https://dev.meta.ai/docs/pricing-rate-limits/
+
+          Ele reduz a barreira de entrada para prototipagem, testes de integração e
+          experimentos em maior escala em que treinar com seus dados é aceitável.
+          NÃO o use para dados confidenciais, proprietários, pessoais ou sensíveis.
+          Para o mesmo modelo sem treino nos seus dados, escolha a variante padrão
+          (sem o sufixo -contributor).
+
+          Confirme apenas se o treino com seus prompts e completions for aceitável.
+      context_cache:
+        title: "Aviso: troca com contexto grande"
+        message: |-
+          !!! TROCA DE MODELO COM CONTEXTO GRANDE !!!
+
+          Esta sessão contém ~{tokens} tokens de contexto.
+          Trocar para {target} faz a próxima resposta reler tudo sem cache (os provedores separam o cache de prompts por modelo) — um custo de entrada a preço cheio, uma única vez.
+
+          Limite: {setting} (atualmente {threshold}; 0 desativa esta verificação).
+          Confirme apenas se pretende trocar agora.
+      multiple:
+        title: "Aviso de seleção de modelo"
     err_once_local: "`--once` is not available in this session; use `/model <name>` and switch back after the turn."
     local_next_turn: "Applies from your next message."
   agents:

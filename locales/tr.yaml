@@ -89,6 +89,49 @@ gateway:
     next_turn_only: "    (yalnızca sonraki tur — bir yanıttan sonra geri döner)"
     switch_cancelled: "🟡 Model değişikliği iptal edildi. Geçerli model değişmedi ({model})."
     guard_confirm: "💡 **{title}**\n\n{message}\n\n_Metin alternatifi: geçmek için `{prefix}approve`, geçerli modeli korumak için `{prefix}cancel` yazın._"
+    guard:
+      cost:
+        title: "Uyarı: pahalı model"
+        message: |-
+          !!! UYARI: PAHALI MODEL !!!
+
+          {model} bilinen fiyatı Hermes'in güvenlik eşiğinin üzerinde.
+          Giriş token'ları: {input}
+          Çıkış token'ları: {output}
+          Eşik: girişte $20/M veya çıkışta $100/M üzeri.
+        pricing_source: "Fiyat kaynağı: {source}."
+        gpt55_hint: "openai/gpt-5.5 seçmek mi istediniz?"
+        confirm: "Yalnızca bu modeli kullanmayı gerçekten istiyorsanız onaylayın."
+      data_policy:
+        title: "Uyarı: veriyle eğitim katmanı"
+        meta_contributor: |-
+          !!! CONTRIBUTOR KATMANI — VERİLERİNİZLE EĞİTİLİR !!!
+
+          Bu, Meta'nın contributor katmanıdır. Seçmek, Meta'nın istemlerinizi ve
+          tamamlamalarınızı gelecekteki Meta modellerini eğitmek için kullanmasına izin verir.
+
+          Meta Model API'nin güncel fiyatları ve hız limitleri:
+            https://dev.meta.ai/docs/pricing-rate-limits/
+
+          Verilerinizle eğitimin kabul edilebilir olduğu prototipleme, entegrasyon
+          testleri ve daha büyük ölçekli denemeler için giriş engelini düşürür.
+          Gizli, tescilli, kişisel veya hassas veriler için KULLANMAYIN. Aynı modeli
+          verilerinizle eğitim olmadan kullanmak için standart sürümü seçin
+          (-contributor soneki olmadan).
+
+          Yalnızca istem ve tamamlamalarınızla eğitim kabul edilebilirse onaylayın.
+      context_cache:
+        title: "Uyarı: büyük bağlamla model değişimi"
+        message: |-
+          !!! BÜYÜK BAĞLAMLA MODEL DEĞİŞİMİ !!!
+
+          Bu oturum ~{tokens} token bağlam tutuyor.
+          {target} modeline geçmek, sonraki yanıtın tüm bağlamı önbelleksiz yeniden okumasına yol açar (sağlayıcılar istem önbelleğini model başına ayırır) — tek seferlik tam fiyatlı giriş maliyeti.
+
+          Eşik: {setting} (şu anda {threshold}; 0 bu denetimi kapatır).
+          Yalnızca şimdi geçmeyi gerçekten istiyorsanız onaylayın.
+      multiple:
+        title: "Model seçimi uyarısı"
     err_once_local: "`--once` is not available in this session; use `/model <name>` and switch back after the turn."
     local_next_turn: "Applies from your next message."
   agents:

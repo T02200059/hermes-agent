@@ -48,10 +48,19 @@ _META_CONTRIBUTOR_MESSAGE = (
 )
 
 
-# (predicate, message) pairs, evaluated in order; first match wins.
-_RULES: tuple[tuple[Callable[[str, str], bool], str], ...] = (
-    (_is_meta_contributor, _META_CONTRIBUTOR_MESSAGE),
+# (predicate, catalog key suffix, message) triples, evaluated in order; first match wins. The English
+# message here is the source of truth for `en`; `locales/<lang>.yaml` supplies other languages.
+_RULES: tuple[tuple[Callable[[str, str], bool], str, str], ...] = (
+    (_is_meta_contributor, "meta_contributor", _META_CONTRIBUTOR_MESSAGE),
 )
+
+
+# [owner] C10 · 护栏文案 i18n：英文留在代码，其他语言取 locales/<lang>.yaml。
+def _localized(key: str, en_text: str, **kwargs) -> str:
+    """Owner i18n: English literal in code is the source; a catalog miss falls back to it."""
+    from owner.i18n.localized import localized
+
+    return localized(key, en_text, **kwargs)
 
 
 def data_training_warning(
@@ -67,10 +76,12 @@ def data_training_warning(
     if not model:
         return None
     model_lower, provider_lower = model.lower(), (provider or "").strip().lower()
-    for predicate, message in _RULES:
+    for predicate, rule_key, message in _RULES:
         try:
             if predicate(model_lower, provider_lower):
-                return DataTrainingWarning(model=model, provider=(provider or "").strip(), message=message)
+                return DataTrainingWarning(
+                    model=model, provider=(provider or "").strip(),
+                    message=_localized(f"gateway.model.guard.data_policy.{rule_key}", message))
         except Exception:
             continue  # a misbehaving predicate must never break model selection
     return None

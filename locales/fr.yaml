@@ -96,6 +96,50 @@ gateway:
       {message}
 
       _Alternative texte : répondez `{prefix}approve` pour changer de modèle ou `{prefix}cancel` pour conserver le modèle actuel._
+    guard:
+      cost:
+        title: "Avertissement : modèle coûteux"
+        message: |-
+          !!! AVERTISSEMENT : MODÈLE COÛTEUX !!!
+
+          {model} a un tarif connu au-dessus du seuil de sécurité de Hermes.
+          Tokens d'entrée : {input}
+          Tokens de sortie : {output}
+          Seuil : plus de $20/M en entrée ou plus de $100/M en sortie.
+        pricing_source: "Source du tarif : {source}."
+        gpt55_hint: "vouliez-vous sélectionner openai/gpt-5.5 ?"
+        confirm: "Ne confirmez que si vous comptez utiliser ce modèle."
+      data_policy:
+        title: "Avertissement : palier avec entraînement sur vos données"
+        meta_contributor: |-
+          !!! PALIER CONTRIBUTOR — ENTRAÎNEMENT SUR VOS DONNÉES !!!
+
+          Il s'agit du palier contributor de Meta. Le sélectionner autorise Meta à utiliser
+          vos prompts et complétions pour entraîner de futurs modèles Meta.
+
+          Tarifs et limites de débit actuels de la Meta Model API :
+            https://dev.meta.ai/docs/pricing-rate-limits/
+
+          Il abaisse le seuil d'entrée pour le prototypage, les tests d'intégration et
+          les expérimentations à plus grande échelle où l'entraînement sur vos données
+          est acceptable. Ne l'utilisez PAS pour des données confidentielles,
+          propriétaires, personnelles ou autrement sensibles. Pour le même modèle sans
+          entraînement sur vos données, choisissez la variante standard (sans le suffixe
+          -contributor).
+
+          Ne confirmez que si l'entraînement sur vos prompts et complétions est acceptable.
+      context_cache:
+        title: "Avertissement : changement avec un contexte volumineux"
+        message: |-
+          !!! CHANGEMENT DE MODÈLE AVEC UN CONTEXTE VOLUMINEUX !!!
+
+          Cette session contient ~{tokens} tokens de contexte.
+          Passer à {target} fera relire tout le contexte sans cache à la prochaine réponse (les fournisseurs indexent le cache de prompts par modèle) — un coût d'entrée au prix plein, une seule fois.
+
+          Seuil : {setting} (actuellement {threshold} ; 0 désactive cette vérification).
+          Ne confirmez que si vous voulez changer maintenant.
+      multiple:
+        title: "Avertissement de sélection de modèle"
   agents:
     header: "🤖 **Agents et tâches actifs**"
     active_agents: "**Agents actifs :** {count}"

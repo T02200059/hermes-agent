@@ -97,7 +97,12 @@ def model_refusal_text(refusal, *, confirmed=False):
 def confirmation_title(refusal):
     """The one prompt title for the owner's guard warnings (as ``combined_selection_warning``)."""
     warnings = refusal.get('warnings') or []
-    return warnings[0]['title'] if len(warnings) == 1 else 'Model Selection Warning'
+    if len(warnings) == 1:
+        return warnings[0]['title']
+    # [owner] C10 · 多警告合并标题同样随语言。
+    from owner.i18n.localized import localized
+
+    return localized("gateway.model.guard.multiple.title", 'Model Selection Warning')
 
 
 def confirm_choice(raw, choices):

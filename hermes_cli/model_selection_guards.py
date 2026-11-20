@@ -53,6 +53,19 @@ def selection_context_for_agent(agent: object) -> Optional[SelectionContext]:
     return SelectionContext(context_tokens=tokens, current_model=getattr(agent, "model", "") or None)
 
 
+# [owner] C10 · 护栏标题/正文 i18n：英文留在代码，其他语言取 locales/<lang>.yaml。
+def _localized(key: str, en_text: str, **kwargs) -> str:
+    """Owner i18n: English literal in code is the source; a catalog miss falls back to it."""
+    from owner.i18n.localized import localized
+
+    return localized(key, en_text, **kwargs)
+
+
+def _title(kind: str, en_title: str) -> str:
+    """Localized prompt title for one guard kind (``cost`` / ``data_policy`` / ``context_cache``)."""
+    return _localized(f"gateway.model.guard.{kind}.title", en_title)
+
+
 def _wrap(kind: str, title: str, warning, model_name: str, provider: Optional[str]):
     """Lift a raw guard payload into a :class:`SelectionWarning` (None passes through). Duck-typed:
     payloads may carry only ``.message``."""
@@ -70,7 +83,7 @@ def _cost_guard(
 
     warning = expensive_model_warning(
         model_name, provider=provider, base_url=base_url, api_key=api_key, model_info=model_info)
-    return _wrap("cost", "Expensive Model Warning", warning, model_name, provider)
+    return _wrap("cost", _title("cost", "Expensive Model Warning"), warning, model_name, provider)
 
 
 def _data_policy_guard(
@@ -79,7 +92,8 @@ def _data_policy_guard(
     from hermes_cli.model_data_policy_guard import data_training_warning
 
     warning = data_training_warning(model_name, provider=provider, base_url=base_url)
-    return _wrap("data_policy", "Data-Training Tier Warning", warning, model_name, provider)
+    return _wrap(
+        "data_policy", _title("data_policy", "Data-Training Tier Warning"), warning, model_name, provider)
 
 
 # Context-token threshold above which a mid-session switch asks for confirmation: providers key
@@ -117,17 +131,20 @@ def _context_cache_guard(
     tokens = int(ctx.context_tokens)
     if threshold <= 0 or tokens < threshold:
         return None
-    message = "\n".join([
-        "!!! LARGE CONTEXT MODEL SWITCH !!!",
-        "",
-        f"This session holds ~{tokens:,} tokens of context.",
-        f"Switching to {target} makes the next reply re-read all of it uncached (providers key "
-        "prompt caches per model) — a one-time full-price input cost.",
-        "",
-        f"Threshold: model.switch_context_confirm_tokens (currently {threshold:,}; 0 disables this check).",
-        "Confirm only if you intend to switch now."])
+    message = _localized(
+        "gateway.model.guard.context_cache.message",
+        "!!! LARGE CONTEXT MODEL SWITCH !!!\n"
+        "\n"
+        "This session holds ~{tokens} tokens of context.\n"
+        "Switching to {target} makes the next reply re-read all of it uncached (providers key prompt "
+        "caches per model) — a one-time full-price input cost.\n"
+        "\n"
+        "Threshold: {setting} (currently {threshold}; 0 disables this check).\n"
+        "Confirm only if you intend to switch now.",
+        tokens=f"{tokens:,}", target=target, setting="model.switch_context_confirm_tokens",
+        threshold=f"{threshold:,}")
     return SelectionWarning(
-        kind="context_cache", title="Large Context Switch Warning", model=target,
+        kind="context_cache", title=_title("context_cache", "Large Context Switch Warning"), model=target,
         provider=(provider or "").strip(), message=message)
 
 
@@ -176,5 +193,6 @@ def combined_selection_warning(
     if len(warnings) == 1:
         return warnings[0]
     return SelectionWarning(
-        kind="multiple", title="Model Selection Warning", model=warnings[0].model,
-        provider=warnings[0].provider, message=combined_message(warnings))
+        kind="multiple", title=_localized(
+            "gateway.model.guard.multiple.title", "Model Selection Warning"),
+        model=warnings[0].model, provider=warnings[0].provider, message=combined_message(warnings))

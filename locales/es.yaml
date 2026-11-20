@@ -89,6 +89,49 @@ gateway:
     next_turn_only: "    (solo el próximo turno: se restaura tras una respuesta)"
     switch_cancelled: "🟡 Cambio de modelo cancelado. El modelo actual no cambia ({model})."
     guard_confirm: "💡 **{title}**\n\n{message}\n\n_Alternativa en texto: responde `{prefix}approve` para cambiar o `{prefix}cancel` para conservar el modelo actual._"
+    guard:
+      cost:
+        title: "Advertencia de modelo costoso"
+        message: |-
+          !!! ADVERTENCIA DE MODELO COSTOSO !!!
+
+          {model} tiene un precio conocido por encima del umbral de seguridad de Hermes.
+          Tokens de entrada: {input}
+          Tokens de salida: {output}
+          Umbral: más de $20/M en tokens de entrada o más de $100/M en tokens de salida.
+        pricing_source: "Fuente del precio: {source}."
+        gpt55_hint: "¿querías seleccionar openai/gpt-5.5?"
+        confirm: "Confirma solo si tienes intención de usar este modelo."
+      data_policy:
+        title: "Advertencia de nivel con entrenamiento de datos"
+        meta_contributor: |-
+          !!! NIVEL CONTRIBUTOR — ENTRENA CON TUS DATOS !!!
+
+          Este es el nivel contributor de Meta. Al seleccionarlo permites que Meta use
+          tus prompts y completions para entrenar futuros modelos de Meta.
+
+          Consulta los precios y límites de tasa actuales de la Meta Model API aquí:
+            https://dev.meta.ai/docs/pricing-rate-limits/
+
+          Reduce la barrera de entrada para prototipos, pruebas de integración y
+          experimentos a mayor escala donde entrenar con tus datos es aceptable.
+          NO lo uses con datos confidenciales, propietarios, personales o sensibles.
+          Para el mismo modelo sin entrenar con tus datos, elige la variante estándar
+          (sin el sufijo -contributor).
+
+          Confirma solo si entrenar con tus prompts y completions es aceptable.
+      context_cache:
+        title: "Advertencia de cambio con contexto grande"
+        message: |-
+          !!! CAMBIO DE MODELO CON GRAN CONTEXTO !!!
+
+          Esta sesión contiene ~{tokens} tokens de contexto.
+          Cambiar a {target} hace que la próxima respuesta vuelva a leerlo todo sin caché (los proveedores separan la caché de prompts por modelo): un coste de entrada a precio completo, por única vez.
+
+          Umbral: {setting} (actualmente {threshold}; 0 desactiva esta comprobación).
+          Confirma solo si pretendes cambiar ahora.
+      multiple:
+        title: "Advertencia de selección de modelo"
     err_once_local: "`--once` is not available in this session; use `/model <name>` and switch back after the turn."
     local_next_turn: "Applies from your next message."
   agents:

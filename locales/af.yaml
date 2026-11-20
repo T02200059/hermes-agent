@@ -89,6 +89,49 @@ gateway:
     next_turn_only: "    (slegs volgende beurt — herstel na een antwoord)"
     switch_cancelled: "🟡 Modelwisseling gekanselleer. Huidige model onveranderd ({model})."
     guard_confirm: "💡 **{title}**\n\n{message}\n\n_Teks-alternatief: antwoord `{prefix}approve` om te wissel of `{prefix}cancel` om die huidige model te behou._"
+    guard:
+      cost:
+        title: "Waarskuwing: duur model"
+        message: |-
+          !!! WAARSKUWING: DUUR MODEL !!!
+
+          {model} het bekende pryse bo Hermes se veiligheidsdrempel.
+          Invoer-tokens: {input}
+          Uitvoer-tokens: {output}
+          Drempel: meer as $20/M invoer of meer as $100/M uitvoer.
+        pricing_source: "Prysbron: {source}."
+        gpt55_hint: "wou jy openai/gpt-5.5 kies?"
+        confirm: "Bevestig net as jy van plan is om hierdie model te gebruik."
+      data_policy:
+        title: "Waarskuwing: vlak wat op jou data leer"
+        meta_contributor: |-
+          !!! CONTRIBUTOR-VLAK — LEER OP JOU DATA !!!
+
+          Dit is Meta se contributor-vlak. Deur dit te kies, laat jy Meta toe om jou
+          aanwysings en voltooiings te gebruik om toekomstige Meta-modelle op te lei.
+
+          Sien huidige pryse en tempo-limiete vir die Meta Model API hier:
+            https://dev.meta.ai/docs/pricing-rate-limits/
+
+          Dit verlaag die toegangsdrempel vir prototipering, integrasietoetsing en
+          groter eksperimente waar leer op jou data aanvaarbaar is. Moet dit NIE vir
+          vertroulike, eie, persoonlike of andersins sensitiewe data gebruik nie. Vir
+          dieselfde model sonder leer op jou data, kies die standaardvariant
+          (sonder die -contributor-agtervoegsel).
+
+          Bevestig net as leer op jou aanwysings en voltooiings aanvaarbaar is.
+      context_cache:
+        title: "Waarskuwing: skakel met groot konteks"
+        message: |-
+          !!! MODELSKAKEL MET GROOT KONTEKS !!!
+
+          Hierdie sessie hou ~{tokens} konteks-tokens.
+          Om na {target} oor te skakel laat die volgende antwoord alles weer sonder kas lees (verskaffers skei die aanwysingskas per model) — 'n eenmalige volprys invoerkoste.
+
+          Drempel: {setting} (tans {threshold}; 0 skakel hierdie kontrole af).
+          Bevestig net as jy nou wil oor skakel.
+      multiple:
+        title: "Waarskuwing oor modelkeuse"
     err_once_local: "`--once` is not available in this session; use `/model <name>` and switch back after the turn."
     local_next_turn: "Applies from your next message."
   agents:

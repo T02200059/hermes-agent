@@ -89,6 +89,49 @@ gateway:
     next_turn_only: "    (csak a következő körre — egy válasz után visszaáll)"
     switch_cancelled: "🟡 Modellváltás megszakítva. A jelenlegi modell változatlan ({model})."
     guard_confirm: "💡 **{title}**\n\n{message}\n\n_Szöveges mód: írd be: `{prefix}approve` a váltáshoz, `{prefix}cancel` a jelenlegi modell megtartásához._"
+    guard:
+      cost:
+        title: "Figyelmeztetés: drága modell"
+        message: |-
+          !!! FIGYELMEZTETÉS: DRÁGA MODELL !!!
+
+          A(z) {model} ismert ára a Hermes biztonsági küszöbe felett van.
+          Bemeneti tokenek: {input}
+          Kimeneti tokenek: {output}
+          Küszöb: több mint $20/M bemenet vagy több mint $100/M kimenet.
+        pricing_source: "Ár forrása: {source}."
+        gpt55_hint: "az openai/gpt-5.5 kiválasztását szeretted volna?"
+        confirm: "Csak akkor erősítsd meg, ha valóban használni akarod ezt a modellt."
+      data_policy:
+        title: "Figyelmeztetés: adatokon tanító szint"
+        meta_contributor: |-
+          !!! CONTRIBUTOR SZINT — AZ ADATAIDON TANUL !!!
+
+          Ez a Meta contributor szintje. Kiválasztásával engedélyezed, hogy a Meta a
+          promptjaidat és kiegészítéseidet jövőbeli Meta-modellek tanítására használja.
+
+          A Meta Model API jelenlegi árai és sebességkorlátai:
+            https://dev.meta.ai/docs/pricing-rate-limits/
+
+          Csökkenti a belépési korlátot a prototipizáláshoz, integrációs tesztekhez és
+          nagyobb léptékű kísérletekhez, ahol elfogadható az adataidon való tanítás.
+          NE használd bizalmas, saját tulajdonú, személyes vagy egyéb érzékeny adatokhoz.
+          Ugyanahhoz a modellhez adataidon való tanítás nélkül a standard változatot
+          válaszd (a -contributor utótag nélkül).
+
+          Csak akkor erősítsd meg, ha elfogadható a promptjaidon és kiegészítéseiden való tanítás.
+      context_cache:
+        title: "Figyelmeztetés: váltás nagy kontextussal"
+        message: |-
+          !!! MODELLVÁLTÁS NAGY KONTEXTUSSAL !!!
+
+          Ez a munkamenet ~{tokens} token kontextust tartalmaz.
+          A(z) {target} modellre váltva a következő válasz mindent újraolvas gyorsítótár nélkül (a szolgáltatók modellenként különítik el a prompt-gyorsítótárat) — egyszeri, teljes árú bemeneti költség.
+
+          Küszöb: {setting} (jelenleg {threshold}; 0 esetén ez az ellenőrzés kikapcsol).
+          Csak akkor erősítsd meg, ha valóban most akarsz váltani.
+      multiple:
+        title: "Modellválasztási figyelmeztetés"
     err_once_local: "`--once` is not available in this session; use `/model <name>` and switch back after the turn."
     local_next_turn: "Applies from your next message."
   agents:

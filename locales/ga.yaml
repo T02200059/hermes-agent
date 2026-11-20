@@ -89,6 +89,49 @@ gateway:
     next_turn_only: "    (an chéad seal eile amháin — filleann sé tar éis freagra amháin)"
     switch_cancelled: "🟡 Athrú samhla cealaithe. Samhail reatha gan athrú ({model})."
     guard_confirm: "💡 **{title}**\n\n{message}\n\n_Cúltaca téacs: freagair `{prefix}approve` chun athrú nó `{prefix}cancel` chun an tsamhail reatha a choinneáil._"
+    guard:
+      cost:
+        title: "Rabhadh: samhail chostasach"
+        message: |-
+          !!! RABHADH: SAMHAIL CHOSTASACH !!!
+
+          Tá praghas aitheanta ag {model} atá os cionn thairseach sábháilteachta Hermes.
+          Comharthaí ionchuir: {input}
+          Comharthaí aschuir: {output}
+          Tairseach: níos mó ná $20/M ar ionchur nó níos mó ná $100/M ar aschur.
+        pricing_source: "Foinse na praghais: {source}."
+        gpt55_hint: "an raibh tú ag iarraidh openai/gpt-5.5 a roghnú?"
+        confirm: "Ná deimhnigh mura bhfuil sé ar intinn agat an tsamhail seo a úsáid."
+      data_policy:
+        title: "Rabhadh: leibhéal a thraenálann ar do shonraí"
+        meta_contributor: |-
+          !!! LEIBHÉAL CONTRIBUTOR — TRAENÁIL AR DO SHONRAÍ !!!
+
+          Seo leibhéal contributor Meta. Má roghnaíonn tú é, ceadaítear do Meta do chuid
+          leideanna agus comhlántaí a úsáid chun samhlacha Meta amach anseo a thraenáil.
+
+          Féach ar phraghsáil agus ar theorainneacha ráta reatha Meta Model API anseo:
+            https://dev.meta.ai/docs/pricing-rate-limits/
+
+          Íslíonn sé an bac isteach do phrótatúip, do thástáil chomhtháthaithe agus do
+          thurgnaimh ar scála níos mó ina bhfuil traenáil ar do shonraí inghlactha.
+          NÁ húsáid é le sonraí faoi rún, dílsithe, pearsanta nó íogair ar bith eile.
+          Chun an tsamhail chéanna a fháil gan traenáil ar do shonraí, roghnaigh an
+          leagan caighdeánach (gan an iarmhír -contributor).
+
+          Ná deimhnigh ach amháin má tá traenáil ar do leideanna agus comhlántaí inghlactha.
+      context_cache:
+        title: "Rabhadh: athrú le comhthéacs mór"
+        message: |-
+          !!! ATHRÚ SAMHLA LE COMHTHÉACS MÓR !!!
+
+          Tá ~{tokens} comhartha comhthéacs sa seisiún seo.
+          Má athraíonn tú go {target}, léifidh an chéad fhreagra eile gach rud arís gan taisce (scarann soláthraithe an taisce leideanna de réir samhla) — costas ionchuir aonuaire ar an bpraghas iomlán.
+
+          Tairseach: {setting} (faoi láthair {threshold}; díchumasaíonn 0 an seiceáil seo).
+          Ná deimhnigh mura bhfuil sé ar intinn agat athrú anois.
+      multiple:
+        title: "Rabhadh rogha samhla"
     err_once_local: "`--once` is not available in this session; use `/model <name>` and switch back after the turn."
     local_next_turn: "Applies from your next message."
   agents:
