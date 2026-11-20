@@ -53,7 +53,7 @@ class TestAdvisoryBlock:
 
 class TestConfig:
     def test_defaults_without_overlay_keys(self, monkeypatch):
-        monkeypatch.setattr(cfg, "load_owner_config", lambda: {})
+        monkeypatch.setattr(cfg, "load_owner_config", dict)
         monkeypatch.delenv("OPENVIKING_ADVISORY_MEMORY", raising=False)
         got = cfg.load_sync_recall_config()
         assert got == {"advisory": True, "dedup": True}

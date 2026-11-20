@@ -45,6 +45,7 @@ def _record(oid="ob-1", session_key="agent:main:slack:channel:C1", **kw):
 def _row(oid):
     with dl._connect() as conn:
         r = conn.execute(
+            # [owner] platform_message_id 落账(C25 编辑/raise 定位平台消息)
             """SELECT state, attempts, owner_pid, content, last_error, platform_message_id
                FROM delivery_obligations WHERE obligation_id=?""",
             (oid,),
@@ -55,6 +56,7 @@ def _row(oid):
         "owner_pid": r[2],
         "content": r[3],
         "last_error": r[4],
+        # [owner] platform_message_id 落账(C25)
         "platform_message_id": r[5],
     }
 
@@ -126,6 +128,7 @@ class TestSchemaMigration:
 
         assert "adapter_profile" in columns
 
+    # [owner] platform_message_id:存量库 ALTER 兜底迁移(C25)
     def test_adds_platform_message_id_to_existing_ledger(self):
         """A live state.db only gets the new column through the ALTER reconciliation loop."""
         conn = sqlite3.connect(":memory:")
@@ -158,6 +161,7 @@ class TestSchemaMigration:
         assert "platform_message_id" in columns
 
 
+# [owner] platform_message_id 落账/保留语义(C25 编辑、/raise、表态定位)
 class TestPlatformMessageId:
     """The platform's own id is what /raise, edit and react target; it must survive the send."""
 

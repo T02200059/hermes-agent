@@ -18,6 +18,7 @@ SESSION_KEY = "test-cancelled-attribution"
 
 @pytest.fixture
 def gateway_session(monkeypatch):
+    # [owner] _session_approved 快照恢复:审批门状态不跨测试泄漏
     # ``_session_approved`` is a PROCESS-global table and conftest deliberately does
     # not reset it per test (it relies on per-file process isolation, see the note in
     # tests/conftest.py). Clearing it here without putting the previous contents back

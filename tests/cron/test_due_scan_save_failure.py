@@ -416,6 +416,7 @@ def test_unwritable_store_is_shown_in_cron_status_and_announced_once(cron_store,
         save_jobs([_due_job()])
         store_health.note_unwritable(enospc, "x", "scan", [_due_job()])  # flaps back within the window
         settle()
+        # [owner] 断言适配:通知图标 ⚠️→💡
         assert all(m.startswith("💡") for _, m in sent)  # still down: no "writable again", ever
         save_jobs([_due_job()])
         store_health.note_unwritable(enospc, "x", "scan", [_due_job()])  # re-entry cancels the pending recovery

@@ -49,6 +49,7 @@ class TestProviderModelsSWR:
     def test_stale_entry_served_immediately_with_background_refresh(self):
         import hermes_cli.models as mod
 
+        # [owner] 过期年龄改由 _PROVIDER_MODELS_CACHE_TTL 推导(TTL 常量化)
         # Past TTL, within the 7d stale-serve window.
         age = mod._PROVIDER_MODELS_CACHE_TTL + 60
         cache = {"openrouter": self._cache_entry(["m1", "m2"], age_seconds=age)}

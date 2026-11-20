@@ -303,6 +303,7 @@ def test_launch_turn_binds_terminal_scope_once_multiplexing_is_active(
         reset_terminal_scope(token)
     assert get_terminal_scope() is None
 
+# [owner] terminal.cwd 的 ~ 需先 expanduser(路径翻倍修复回归)
 def test_profile_scope_expands_tilde_cwd(tmp_path, monkeypatch):
     """config.yaml ``terminal.cwd: ~/.hermes`` must expand in the profile scope.
 

@@ -41,6 +41,7 @@ def test_home_relative_cwd_collapses_home(tmp_path, monkeypatch):
     assert result == "~/projects/hermes"
 
 
+# [owner] 字面 ~ cwd 先 expanduser 再 abspath(footer 路径翻倍修复回归)
 def test_home_relative_cwd_expands_tilde_before_abspath(tmp_path, monkeypatch):
     """Literal ``~/.hermes`` must not abspath against process PWD (footer doubled path)."""
     monkeypatch.setenv("HOME", str(tmp_path))

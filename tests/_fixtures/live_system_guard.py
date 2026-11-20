@@ -98,6 +98,7 @@ def _live_system_guard(request, monkeypatch):
         _psutil = None
         _initial_children = set()
 
+    # [owner] 子进程记账:spawn 时记录 pid+create_time,已退出的自有子进程也允许 signal
     # Spawn-time bookkeeping. ``_initial_children`` is a snapshot and the subtree walk
     # below follows only LIVE parent chains, so a child this test spawned and that has
     # since exited — or been reparented to init — cannot be proven ours. The only escape
@@ -142,6 +143,7 @@ def _live_system_guard(request, monkeypatch):
             return False
         if pid == test_pid or pid in _initial_children:
             return True
+        # [owner] 子进程记账:命中已记录的自有子进程放行
         if _is_recorded_child(pid):
             return True
         if _psutil is None:
@@ -493,6 +495,7 @@ def _live_system_guard(request, monkeypatch):
             def __init__(self, cmd, *args, **kwargs):
                 _check_subprocess_cmd("Popen", cmd, kwargs)
                 super().__init__(cmd, *args, **kwargs)
+                # [owner] 子进程记账:Popen 处统一记录 pid
                 # subprocess.run / check_output reach Popen through this module global,
                 # so recording here covers them too.
                 _note_spawned(self.pid)
@@ -567,12 +570,14 @@ def _live_system_guard(request, monkeypatch):
             _check_subprocess_cmd(
                 "asyncio.create_subprocess_exec", [program, *args], kwargs
             )
+            # [owner] 子进程记账:async 子进程同样记录 pid
             proc = await real_async_exec(program, *args, **kwargs)
             _note_spawned(getattr(proc, "pid", None))
             return proc
 
         async def _guarded_async_shell(cmd, *args, **kwargs):
             _check_subprocess_cmd("asyncio.create_subprocess_shell", cmd, kwargs)
+            # [owner] 子进程记账:async 子进程同样记录 pid
             proc = await real_async_shell(cmd, *args, **kwargs)
             _note_spawned(getattr(proc, "pid", None))
             return proc

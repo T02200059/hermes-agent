@@ -166,6 +166,7 @@ class TestParseSystemdDuration:
 # check_systemd_timing_alignment
 # ---------------------------------------------------------------------------
 
+# [owner] system.slice cgroup 场景 systemd 探测走 system scope(容器内部署)
 class TestCheckSystemdTimingAlignment:
     def test_system_slice_cgroup_prefers_system_scope(self, monkeypatch, tmp_path):
         """cgroup 含 system.slice 时把 prefer_scope=system 交给 owner probe，不误报 90s。"""

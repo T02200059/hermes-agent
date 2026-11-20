@@ -453,6 +453,7 @@ class TestClassifyApiError:
         assert result.reason == FailoverReason.rate_limit
         assert result.retryable is True
 
+    # [owner] 429 天/周级配额墙判 billing 不再重试(分钟/小时级仍可重试)
     @pytest.mark.parametrize(
         "phrase",
         [

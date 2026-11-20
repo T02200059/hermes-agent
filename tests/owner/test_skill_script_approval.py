@@ -132,7 +132,7 @@ def test_compound_operator_gate_is_independent_of_the_danger_gate(monkeypatch):
     独立生效 —— 否则"链式命令"这条绕过路径会随门 5 的实现细节一起漂移。
     """
     _view()
-    import tools.approval as approval
+    from tools import approval
 
     monkeypatch.setattr(
         approval, "detect_dangerous_command",
@@ -172,7 +172,7 @@ def test_quoted_metachar_gate_is_independent_of_the_danger_gate(monkeypatch):
     与门 2 同理：带 `rm -rf` 的载荷会被破坏性检测同时命中，那样拆掉门 3 也测不出来。
     """
     _view()
-    import tools.approval as approval
+    from tools import approval
 
     monkeypatch.setattr(
         approval, "detect_dangerous_command",
@@ -220,7 +220,7 @@ def test_dangerous_command_blocks_even_a_matched_script(monkeypatch):
     destroy 类命令（如 `rm -rf`），并把 detect_dangerous_command stub 成命中。
     """
     _view()
-    import tools.approval as approval
+    from tools import approval
 
     monkeypatch.setattr(
         approval, "detect_dangerous_command",

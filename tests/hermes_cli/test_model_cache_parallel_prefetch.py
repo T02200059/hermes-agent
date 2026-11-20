@@ -1,3 +1,4 @@
+# [owner] 措辞适配:模型缓存 TTL 常量化(去掉 1h 硬编码描述)
 """Tests for parallel model-catalog prefetch and thread-safe cache writes.
 
 Regression tests for the serial /v1/models bottleneck: when the provider-models disk cache

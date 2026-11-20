@@ -297,6 +297,7 @@ def test_supervisor_restarts_a_dead_ws_thread_with_backoff(monkeypatch):
     """A dead WS thread used to leave the profile silently deaf (the future
     was awaited only by disconnect()). The supervisor must rebuild the client
     and survive a failed restart without hot-looping."""
+    # [owner] 注入 owner WS 重连策略(缩短重试间隔)
     from owner.feishu import ws_reconnect_guard as guard
 
     monkeypatch.setattr(
@@ -333,6 +334,7 @@ def test_supervisor_restarts_a_dead_ws_thread_with_backoff(monkeypatch):
         return stub
 
     stub = asyncio.run(scenario())
+    # [owner] 断言放宽:guard 下失败重启后仍继续重试(≥2 次)
     assert stub.connect_calls >= 2  # failed restart, then at least one more attempt
     # The lost link is published as ``retrying`` (``connected`` is re-stamped by ``_ws_link_up``).
     assert stub.status_writes[0] == "retrying"

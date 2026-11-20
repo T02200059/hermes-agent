@@ -145,7 +145,7 @@ def test_handle_submit_routes_and_done_card():
             event=event,
         )
         route.assert_called_once()
-        args, kwargs = route.call_args
+        args, _ = route.call_args
         assert args[1] == "/steer 改用 pytest"
         assert args[2] == "ou_1"
         assert "gid" not in adapter._guide_card_state

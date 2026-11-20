@@ -254,6 +254,7 @@ from tests._fixtures.model_peer import model_peer  # fixture registers here
 from tests._fixtures.platform_gating import _platforms_gate_reason, _reject_contradictory_platform_marks
 
 
+# [owner] 测试隔离增强:按 env 基线比对恢复(新增名删除、改动复原)
 def _restore_environment(baseline: dict) -> None:
     """Delete the env names a test added and put back the ones it changed.
 
@@ -406,6 +407,7 @@ def _hermetic_environment(tmp_path, tmp_path_factory, monkeypatch):
     monkeypatch.setenv("LC_ALL", "C.UTF-8")
     monkeypatch.setenv("PYTHONHASHSEED", "0")
 
+    # [owner] 固定 HERMES_LANGUAGE=en:开发机 zh 环境会翻转 i18n 断言(缓存同步重置)
     # 4a. Pin the UI language. ``agent.i18n`` resolves
     #     explicit lang= > HERMES_LANGUAGE > config.yaml > default, then memoises the
     #     answer in an lru_cache — so an ambient ``HERMES_LANGUAGE=zh`` in the

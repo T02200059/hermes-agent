@@ -7,6 +7,7 @@ import pytest
 from hermes_cli import kanban_db
 from hermes_cli import kanban_db_connect as kbc
 
+# [owner] real_home_io 改逐用例标注(关闭整文件豁免)
 # No module-level ``pytestmark = pytest.mark.allow_real_home_io``: that switches the
 # real-home tripwire off for EVERY test in this file, including the ones that run
 # entirely under tmp_path. Mark only the cases that must observe the real root.
@@ -24,6 +25,7 @@ def test_connect_succeeds_under_test_home(tmp_path, monkeypatch):
         conn.close()
 
 
+# [owner] real_home_io 逐用例标注
 @pytest.mark.allow_real_home_io  # probes the guard against the real root on purpose
 def test_connect_raises_when_kanban_home_is_real_root(monkeypatch):
     """When kanban paths resolve to the REAL root, connect raises RuntimeError."""
@@ -41,6 +43,7 @@ def test_connect_raises_when_kanban_home_is_real_root(monkeypatch):
         kbc.connect()
 
 
+# [owner] real_home_io 逐用例标注
 @pytest.mark.allow_real_home_io  # probes the guard against the real root on purpose
 def test_connect_raises_for_explicit_db_path_under_real_root():
     """Explicit db_path pointing under the real root is also refused."""

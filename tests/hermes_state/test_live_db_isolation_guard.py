@@ -24,6 +24,7 @@ from gateway.config import GatewayConfig
 from gateway.session import SessionStore
 from hermes_state import SessionDB
 
+# [owner] real_home_io 改逐用例标注(关闭整文件豁免)
 # No module-level ``pytestmark = pytest.mark.allow_real_home_io``: that switches the
 # real-home tripwire off for the whole file, including the cases that run entirely
 # under tmp_path. The cases that must observe the real root carry the mark themselves.
@@ -41,6 +42,7 @@ if REAL_ROOT is None:  # pragma: no cover - no resolvable home on this platform
 
 
 class TestProductionPathRefused:
+    # [owner] real_home_io 逐用例标注,类内新增用例默认保持 tripwire
     """Each case hands a REAL-root path to ``SessionDB`` and asserts the refusal.
 
     The mark is per-test rather than on the class: the tripwire must stay armed for

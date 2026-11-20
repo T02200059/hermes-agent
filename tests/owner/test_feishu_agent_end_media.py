@@ -38,7 +38,7 @@ import pytest
 
 from gateway.config import Platform
 
-import owner.feishu.agent_end as agent_end
+from owner.feishu import agent_end
 
 
 class _FakeAdapter:
@@ -176,7 +176,7 @@ def test_bare_local_paths_are_stripped_from_the_card_body():
         cleaned="看图：/tmp/chart.png",   # extract_media 不动裸路径
         cleaned_no_img="看图：/tmp/chart.png",
     )
-    adapter._cleaned_no_img = "/tmp/chart.png"  # noqa: SLF001 - stub 内部字段
+    adapter._cleaned_no_img = "/tmp/chart.png"
     # extract_local_files 之后才剥干净；这里模拟联合管线的输出
     adapter_local = _FakeAdapter(local_files=["/tmp/chart.png"], cleaned="看图：/tmp/chart.png")
 
@@ -227,7 +227,7 @@ def test_media_only_response_with_failed_delivery_keeps_the_safety_net(tmp_path)
     def _boom(resp, event, adp):
         raise RuntimeError("upload failed")
 
-    result, captured, deliver_calls, agent_result = _run_end(
+    result, _captured, deliver_calls, agent_result = _run_end(
         adapter=adapter, response=f"MEDIA:{media}", deliver=_boom
     )
 

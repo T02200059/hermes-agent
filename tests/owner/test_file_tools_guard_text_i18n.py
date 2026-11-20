@@ -12,7 +12,7 @@ from typing import Any, Iterator
 
 import pytest
 
-import agent.i18n as i18n
+from agent import i18n
 import tools.file_tools_write_guards as ft
 
 _TEMPLATE_KEYS = (
@@ -85,7 +85,6 @@ def test_guard_en_texts_covers_localized_calls():
     used = {k for k in _localized_keys_in_source() if any(k.startswith(p) for p in _GUARDED_PREFIXES)}
     table = set(ft._GUARD_EN_TEXTS)
     missing = used - table
-    unused = {k for k in table if any(k.startswith(p) for p in _GUARDED_PREFIXES)} - used
     # _blocked passes template_key + why_key as literals via helper — why keys appear via _blocked
     # Also template keys appear in _localized and _blocked. unused why keys still OK if via _blocked.
     assert not missing, f"_localized 用了常量表没有的键: {missing}"

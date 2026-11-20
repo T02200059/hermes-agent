@@ -247,8 +247,8 @@ class TestApplyRevert:
         before = {n: getattr(mm.MemoryManager, n) for n in names}
         try:
             g.apply_patch()
-            assert getattr(mm.MemoryManager, "prefetch_all") is g._prefetch_all
-            assert getattr(mm.MemoryManager, "sync_all") is g._sync_all
+            assert mm.MemoryManager.prefetch_all is g._prefetch_all
+            assert mm.MemoryManager.sync_all is g._sync_all
         finally:
             g.revert_patch()
         for n in names:

@@ -43,6 +43,7 @@ sys.meta_path.insert(0, _BlockPatchStdout())
 """
 
 
+# [owner] 子进程 env 沙箱:HOME/HERMES_HOME 指向 tmp,防误写真实 ~/.hermes
 def _sandboxed_child_env(tmp_path: Path) -> dict[str, str]:
     """A child env that cannot resolve the operator's real Hermes home or logs.
 
@@ -105,6 +106,7 @@ def test_cli_patch_stdout_falls_back_to_nullcontext(child_env):
     assert proc.returncode == 0, proc.stderr
 
 
+# [owner] 守卫断言:子进程解析出的 hermes home 必须是沙箱根
 def test_child_resolves_the_sandbox_home_not_the_operator_home(child_env):
     """The guard for this file's premise: the child must resolve the sandbox root.
 

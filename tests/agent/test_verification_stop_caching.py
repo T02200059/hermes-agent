@@ -17,6 +17,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+# [owner] sys.modules 快照/恢复抽共享 fixture(tests/_fixtures/sys_modules_restore)
 from tests._fixtures.sys_modules_restore import restore_sys_modules, snapshot_sys_modules
 
 
@@ -26,6 +27,7 @@ def _restore_sys_modules():
     module objects back afterwards: sibling test files hold module-level references into
     ``hermes_cli.*`` / ``tools.*`` and their monkeypatches would otherwise land on modules
     the app no longer imports."""
+    # [owner] 委托共享快照/恢复实现
     saved = snapshot_sys_modules()
     yield
     restore_sys_modules(saved)

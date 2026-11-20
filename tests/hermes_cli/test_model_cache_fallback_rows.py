@@ -32,6 +32,7 @@ STATIC = ["gpt-5.4", "gpt-4o", "claude-sonnet-4.6"]
 
 
 def test_fallback_does_not_overwrite_the_same_credentials_live_row():
+    # [owner] 措辞适配:模型缓存 TTL 常量化(_PROVIDER_MODELS_CACHE_TTL)
     # Aged live row (past TTL when applicable; this case uses force_refresh) + a live fetch that degrades to the
     # curated list: the account's real catalog must survive, in the cache AND in the return value.
     cache = {"copilot": _row(LIVE, age_seconds=7200)}

@@ -155,6 +155,7 @@ def test_run_one_job_exception_delivers_failure_alert(monkeypatch):
     gloss = _provider_failure_cause(classify_cron_failure_reason("Gemini HTTP 503 (UNAVAILABLE)"))
     assert gloss and gloss in delivered[0][1]
     text = delivered[0][1]
+    # [owner] 断言适配:通知图标 ⚠️→💡
     if text.startswith(("💡 ", "⚠️ ", "⚠ ")):
         text = text.split(" ", 1)[-1]
     assert not text.startswith("Gemini HTTP 503")

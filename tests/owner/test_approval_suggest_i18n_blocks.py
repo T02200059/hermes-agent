@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-import agent.i18n as i18n
+from agent import i18n
 from hermes_cli import approvals_suggest as suggest
 from owner.approval import approval_history_policy as policy
 
@@ -36,7 +36,7 @@ def _make_db(path: Path) -> sqlite3.Connection:
 
 
 def _add_terminal_call(con, command: str, result: str, ts: float | None = None) -> str:
-    call_id = "call_%d" % (id(result) % 10_000_000) + str(int((ts or time.time()) * 1e6))
+    call_id = f"call_{id(result) % 10_000_000}" + str(int((ts or time.time()) * 1e6))
     ts = ts if ts is not None else time.time()
     tool_calls = json.dumps(
         [
@@ -164,7 +164,6 @@ def test_legacy_english_markers_miss_zh_but_policy_hits(monkeypatch):
 
 def test_sql_anchors_cover_loaded_markers():
     markers = policy.load_markers()
-    uncovered = [m for m in markers if not policy.anchor_covers(m)]
     # Allow a few short punctuation-heavy leftovers; assert core zh/en covered
     assert policy.anchor_covers("已拦截")
     assert policy.anchor_covers("BLOCKED")
