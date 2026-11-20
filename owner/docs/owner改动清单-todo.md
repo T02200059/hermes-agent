@@ -787,6 +787,11 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - **接线时序**：gateway 启动 `discover_plugins()` 先于 `model_tools` 导入工具栈（`run_startup.py::_start_register_plugins_relay_hooks`），register() 时 entry 常不存在 → `apply_patch` 对轻模块 `tools.feishu_doc_tool` force-import 触发注册（`feishu_lark` 只 import json/threading，无 queue_cancel_patch 式死锁风险），非 defer 线程模式。
   - **测**：新增 `tests/owner/test_c12_feishu_doc_tool_thin.py` 9 条（上游字面护栏含注册 entry schema 等值断言、官方源无扩展字面、委托透传 args/kwargs、apply 后 `get_definitions` 出全 7 参数、双 apply 幂等、drive 改绑单次包裹/注入优先/无 client 报错）。
   - **验收**：c12 feishu 三套件 125 passed（116 + 守卫 9）；`tests/owner` + `tests/tools` 合并全量 552 failed / 10484 passed——经 stash 基线复跑证明 552 项失败在 HEAD 原文件上逐条复现（沙箱文件系统/子进程/缺 `mcp`·`jsonschema`·`fal_client` 可选依赖/网络类），**当前态相对基线零新增失败**，且基线多出的 5 条失败恰为本守卫对旧 247 行文件的正确拒绝。`tests/owner` 子集 0 失败。
+- [x] **C38** · 审查三项政策性开放项收口（2026-11-20）· **已落地** · tips `dadb5a6175`/`6b5c77f269`/`f33a47cec9`
+  - **① Check 8 标记校验迁回**（`6b5c77f269`）：源仓 `merge_health_check.py` Check 8 的 v2 精简重写 `owner/validation/check_owner_markers.py`（280 行；inventory 逐文件断言**不迁**，由能力包守卫测试替代）。基线=本地 main merge-base；只查相对基线已修改的官方文件（非 owner/、非 tests/owner/、非 *.md）；生成物内置豁免（uv.lock 等 13 名+2 模式）；债务登记 `marker_debt.txt` 只能收缩（stale 判红）；`--staged` 查 index（~1.7s）挂 lefthook pre-commit，`--all` 全量人工/CI；无 main/非 git 仓 fail-open。10 项临时 git 仓测试（tests/owner/validation/）。
+  - **② Check 8 首跑清账**（`dadb5a6175`）：补 102 处遗漏标记（tui.yaml 16 文件 64 处——⚠→💡/❕ 图标偏好改动当年未标；官方测试 22 文件 37 处；tui_gateway/session_history.py 1 处），顺带清 6 处既有 lint 债（sorted→min、% 格式化、未用变量×3、未用解包×2）。`--all` 对 161 个改动官方文件全绿（160 查验 160 带标，uv.lock 豁免），债务登记 0 条。注意 lefthook 的 marker job 查的是 index 全量偏离文件——补标与 checker 落地的提交顺序必须先标记后接线（本批已按此序）。
+  - **③ 规范两处口径拍板**（`f33a47cec9`）：§2.2.1 locale 分工——**新增 owner 键进 bundled**（en+zh 真译、其余语言英占位、zh-hant 繁体真译），**改上游已有键译文走 overlay**，旧「一律走 overlay」作废（test_i18n 一致性保护价值经 2026-11-19 实证）；§5 前缀表收编 `test(owner)`/`chore(owner)`、`fix(官方模块)` 改 `fix(<官方模块>)`（scope 填实际模块名）、`fix(v2)` 冻结认可仅限 O/B 历史段、禁造新 scope、`perf:` 并入 chore。
+  - **遗留（环境性预存，与本批无关）**：`tests/cron/test_due_scan_save_failure.py` 的 home_io_guard（读真实 `~/.hermes/manifest.json`）与 `tests/gateway/test_native_http_auth.py` 的真实网卡绑定两条，干净 HEAD 同样红，待测试隔离专项。
 
 
 ## § yaml 整合方向（穿插落地；不大爆炸）
