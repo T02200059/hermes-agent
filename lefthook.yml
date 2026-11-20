@@ -33,3 +33,10 @@ pre-commit:
       root: tests-js/
       glob: "*.{js,ts,tsx}"
       run: npx eslint {staged_files}
+
+    - name: owner marker check
+      # Check 8 (v2): official files modified vs the local `main` baseline must
+      # carry an [owner] marker (owner/docs/二次开发规范.md §2.2). The script
+      # reads the git index itself, so it stays incremental and fast; it fails
+      # open in clones without a local `main`. Full audit: --all.
+      run: python3 owner/validation/check_owner_markers.py --staged
