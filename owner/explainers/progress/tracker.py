@@ -20,7 +20,7 @@ import json
 import threading
 import time
 from collections import deque
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 _EVENTS_MAXLEN = 64
 _DEFAULT_TAIL_CHARS = 1500
@@ -42,7 +42,7 @@ class ProgressTracker:
         self,
         turn_started_at: float,
         user_message: str = "",
-        cfg: Optional[Dict[str, Any]] = None,
+        cfg: Optional[dict[str, Any]] = None,
     ) -> None:
         cfg = cfg if isinstance(cfg, dict) else {}
         self.turn_started_at = float(turn_started_at)
@@ -58,7 +58,7 @@ class ProgressTracker:
             self._stall_seconds = _DEFAULT_STALL_SECONDS
 
         self._lock = threading.Lock()
-        self._events: "deque" = deque(maxlen=_EVENTS_MAXLEN)
+        self._events: deque = deque(maxlen=_EVENTS_MAXLEN)
         self._reasoning_chars = 0
         self._text_chars = 0
         self._last_reasoning_ts: Optional[float] = None
@@ -71,13 +71,15 @@ class ProgressTracker:
         self._last_tool_started_ts: Optional[float] = None
         self._explainer_count = 0
         self._last_explainer_ts: Optional[float] = None
+        # 用户输入门（clarify / approval）等待态：等待期间静默计时冻结 (C13-T1)
+        self._awaiting_user = False
 
     # ---- 写路径 (工具线程 / 流回调线程) ----
 
-    def record_tool_event(self, event: Dict[str, Any]) -> None:
+    def record_tool_event(self, event: dict[str, Any]) -> None:
         """工具事件打点: started / completed 等。容错: 非法输入静默丢弃。"""
         try:
-            ev: Dict[str, Any] = dict(event) if isinstance(event, dict) else {"raw": str(event)}
+            ev: dict[str, Any] = dict(event) if isinstance(event, dict) else {"raw": str(event)}
         except Exception:
             return
         ts = ev.get("ts")
@@ -134,9 +136,29 @@ class ProgressTracker:
             self._last_explainer_ts = now
             self._last_content_ts = now
 
+    def note_awaiting_user(self, active: bool) -> None:
+        """用户输入门（clarify / approval）等待态切换 —— 冻结/重起静默计时。
+
+        等待期间没有工具活动也没有流增量, 但这也是**用户造成的静默**, 不是 agent
+        卡住: 旁白不该催促一个正在被提问的人。dispatcher 在等待期间直接不发送;
+        这里只维护计时锚点, 让两件事都不会发生:
+          - 等待 10 分钟把 `silence` 累到阈值, 用户一回答就立刻补发一条旁白;
+          - 退出等待后残留的 stall 判定, 把「刚回答完」误报成「疑似停滞」。
+        幂等: 等待期间每个 tick 都会以 active=True 调用, 反复推前锚点即可。
+        """
+        with self._lock:
+            now = _now()
+            if active:
+                self._awaiting_user = True
+                self._last_content_ts = now
+                return
+            if self._awaiting_user:
+                self._awaiting_user = False
+                self._last_content_ts = now
+
     # ---- 读路径 (tick / 事件循环线程) ----
 
-    def state(self) -> Dict[str, Any]:
+    def state(self) -> dict[str, Any]:
         """一致性快照: 静默秒数 / 停滞检测 / 分支 / 流统计 / digest_hash。"""
         now = _now()
         with self._lock:
@@ -176,7 +198,7 @@ class ProgressTracker:
             last_activity = max(t for t in candidates if t is not None)
             stalled = (now - last_activity) > self._stall_seconds
 
-            snapshot: Dict[str, Any] = {
+            snapshot: dict[str, Any] = {
                 "now": now,
                 "turn_started_at": self.turn_started_at,
                 "user_message": self.user_message,
@@ -198,6 +220,7 @@ class ProgressTracker:
                 "events": [dict(ev) for ev in self._events],
                 "explainer_count": self._explainer_count,
                 "last_explainer_ts": self._last_explainer_ts,
+                "awaiting_user": self._awaiting_user,
             }
 
         # 锁外计算: 对事实哈希, 不含时间戳 → 事实不变即同 hash (§5.2/§5.4)
@@ -205,7 +228,7 @@ class ProgressTracker:
         return snapshot
 
 
-def _digest_hash(snapshot: Dict[str, Any]) -> str:
+def _digest_hash(snapshot: dict[str, Any]) -> str:
     basis = {
         "branch": snapshot["branch"],
         "current_tool": snapshot["current_tool"],

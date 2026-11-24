@@ -560,3 +560,124 @@ def test_progress_hard_facts_numeric_iteration_for_prompt(monkeypatch):
     assert "迭代 15/120" in rendered
     assert "已耗时 60s" in rendered
     assert "当前工具: patch" in rendered
+
+
+# ── C13-T1 用户输入门（clarify / approval）等待期不旁白 ──────────────────────────
+
+
+def test_progress_tracker_freezes_silence_while_awaiting_user():
+    import time
+
+    from owner.explainers.progress.tracker import ProgressTracker
+
+    t = ProgressTracker(turn_started_at=time.time() - 300, user_message="改配置", cfg={})
+    assert t.state()["awaiting_user"] is False
+    assert t.state()["silence_seconds_since_last_content"] >= 300
+
+    t.note_awaiting_user(True)
+    frozen = t.state()
+    assert frozen["awaiting_user"] is True
+    assert frozen["silence_seconds_since_last_content"] < 2
+    # 等待期间每 tick 都会重入：锚点反复推前，静默不得累积
+    t.note_awaiting_user(True)
+    assert t.state()["silence_seconds_since_last_content"] < 2
+
+    t.note_awaiting_user(False)
+    resumed = t.state()
+    assert resumed["awaiting_user"] is False
+    # 退出等待即重新起算，否则「用户刚回答完」会被当成久已静默
+    assert resumed["silence_seconds_since_last_content"] < 2
+
+
+def test_user_gate_pending_reads_clarify_and_approval_registries(monkeypatch):
+    from owner.explainers.progress import dispatcher
+    from tools import approval, clarify_gateway
+
+    monkeypatch.setattr(clarify_gateway, "has_pending", lambda key: False)
+    monkeypatch.setattr(approval, "has_blocking_approval", lambda key: False)
+    assert dispatcher.user_gate_pending("s1") == ""
+    assert dispatcher.user_gate_pending("") == ""
+
+    monkeypatch.setattr(clarify_gateway, "has_pending", lambda key: key == "s1")
+    assert dispatcher.user_gate_pending("s1") == "clarify"
+    assert dispatcher.user_gate_pending("s2") == ""
+
+    monkeypatch.setattr(clarify_gateway, "has_pending", lambda key: False)
+    monkeypatch.setattr(approval, "has_blocking_approval", lambda key: key == "s1")
+    assert dispatcher.user_gate_pending("s1") == "approval"
+
+
+def test_user_gate_pending_fail_open(monkeypatch):
+    from owner.explainers.progress import dispatcher
+    from tools import approval, clarify_gateway
+
+    def boom(*_args, **_kwargs):
+        raise RuntimeError("registry gone")
+
+    monkeypatch.setattr(clarify_gateway, "has_pending", boom)
+    monkeypatch.setattr(approval, "has_blocking_approval", boom)
+    assert dispatcher.user_gate_pending("s1") == ""
+
+
+def _gate_explainer(gate: dict) -> object:
+    """A ProgressExplainer that only exercises ``_tick_once``'s gate logic."""
+    import time
+
+    from owner.explainers.progress.dispatcher import ProgressExplainer
+    from owner.explainers.progress.tracker import ProgressTracker
+
+    agent = MagicMock()
+    pe = ProgressExplainer.__new__(ProgressExplainer)
+    pe._sending = False
+    pe._identity_resolved = True
+    pe._wrapped_agent_id = id(agent)
+    pe._resolve_agent = lambda: agent
+    pe._run_still_current = lambda: True
+    pe._cfg = {
+        "enabled": True,
+        "pause_while_awaiting_user": True,
+        "silence_seconds": 60,
+        "min_interval_seconds": 120,
+        "max_per_turn": 5,
+    }
+    pe._tracker = ProgressTracker(turn_started_at=time.time() - 300, user_message="x", cfg={})
+    pe._awaiting_noted = False
+    # 关闭 gate 的用例会继续走到去重分支，需要这个属性存在
+    pe._last_digest_hash = None
+    pe._user_gate = lambda: gate["now"]
+    pe._adapter = lambda: pe._adapter_mock
+    pe._adapter_mock = MagicMock()
+    pe._session_id, pe._turn_id = "sid", "tid"
+    return pe
+
+
+def test_progress_tick_silent_while_awaiting_user_and_resets_after():
+    import asyncio
+
+    gate = {"now": "clarify"}
+    pe = _gate_explainer(gate)
+
+    asyncio.run(pe._tick_once())
+    pe._adapter_mock.send.assert_not_called()  # 被提问的人不该收到「当前进度」
+    assert pe._tracker.state()["awaiting_user"] is True
+    assert pe._awaiting_noted is True
+    assert pe._tracker.state()["explainer_count"] == 0  # 不消耗 max_per_turn
+
+    gate["now"] = ""
+    asyncio.run(pe._tick_once())
+    pe._adapter_mock.send.assert_not_called()  # 回答完不补发一条旁白
+    assert pe._tracker.state()["awaiting_user"] is False
+    assert pe._tracker.state()["silence_seconds_since_last_content"] < 2
+    assert pe._awaiting_noted is False
+
+
+def test_progress_tick_gate_can_be_disabled():
+    import asyncio
+
+    gate = {"now": "clarify"}
+    pe = _gate_explainer(gate)
+    pe._cfg["pause_while_awaiting_user"] = False
+
+    asyncio.run(pe._tick_once())
+    assert pe._tracker.state()["awaiting_user"] is False
+    assert pe._awaiting_noted is False

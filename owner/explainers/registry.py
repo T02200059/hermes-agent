@@ -77,6 +77,8 @@ def _ensure_builtins() -> None:
                 "chars_per_event": 200,
                 "reasoning_tail_chars": 1500,
                 "cleanup_progress": False,
+                # 用户输入门（clarify / approval）等待期间暂停旁白：被提问的人不需要被催
+                "pause_while_awaiting_user": True,
                 "platforms": {},
                 "chats": {},
             },

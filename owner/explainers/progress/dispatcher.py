@@ -118,6 +118,34 @@ def _stream_guard_tripped(session_id: str, turn_id: str) -> bool:
         return False
 
 
+def user_gate_pending(session_key: str) -> str:
+    """该会话是否正阻塞在「等用户输入」的门上：返回 ``"clarify"`` / ``"approval"`` / ``""``。
+
+    询问源是两个模块级注册表本身，不是进度事件回放——即使用户把 tool_progress 关了、
+    或 turn 中途回调被重绑（``mute_notification_reply`` 会把 ``tool_progress_callback``
+    置 None，包装器随之丢失），注册表依然如实反映「agent 线程正卡在一个等回答的门上」。
+    成本是两次字典查询，可以每 tick 调用。fail-open：任何异常都当作没有等待态。
+    """
+    key = str(session_key or "")
+    if not key:
+        return ""
+    try:
+        from tools import clarify_gateway as _clarify
+
+        if _clarify.has_pending(key):
+            return "clarify"
+    except Exception:
+        logger.debug("progress_explainer: clarify probe failed", exc_info=True)
+    try:
+        from tools import approval as _approval
+
+        if _approval.has_blocking_approval(key):
+            return "approval"
+    except Exception:
+        logger.debug("progress_explainer: approval probe failed", exc_info=True)
+    return ""
+
+
 # ---------------------------------------------------------------------------
 # ProgressExplainer：一个网关 turn 的运行时
 # ---------------------------------------------------------------------------
@@ -194,6 +222,8 @@ class ProgressExplainer:
         self._send_done_cb: Optional[Callable[[bool], None]] = None
         # 已发出 digest_hash（§5.4 去重）
         self._last_digest_hash: Optional[str] = None
+        # 等待用户输入（clarify / approval）期间暂停旁白；只在进入/退出时各记一次日志
+        self._awaiting_noted = False
 
     # ---- 安装 ----
 
@@ -382,6 +412,21 @@ class ProgressExplainer:
             return  # agent 尚未 spin-up：无活动可报，静默等下一轮
         if not self._run_still_current():
             return
+        # 用户输入门（clarify / approval）：turn 还活着，但 agent 线程正阻塞在等回答上，
+        # 静默是用户造成的。此时旁白既无信息量又会催促一个正在被提问的人——整段跳过，
+        # 且不消耗 max_per_turn（早退在计数之前）。见 user_gate_pending。
+        gate = self._user_gate() if bool(cfg.get("pause_while_awaiting_user", True)) else ""
+        if gate:
+            self._tracker.note_awaiting_user(True)
+            if not self._awaiting_noted:
+                self._awaiting_noted = True
+                logger.debug("progress_explainer paused: waiting for user input (%s)", gate)
+            return
+        if self._awaiting_noted:
+            # 用户已回答/拒绝：静默计时从这一刻重新起算，避免「刚回答完就补发一条旁白」
+            self._awaiting_noted = False
+            self._tracker.note_awaiting_user(False)
+            logger.debug("progress_explainer resumed after user input gate")
         state = self._tracker.state()
         if state["silence_seconds_since_last_content"] < float(
             cfg.get("silence_seconds", 60)
@@ -512,6 +557,10 @@ class ProgressExplainer:
             return self._runner._delivery_adapter_for(self._source)  # [owner] A4-2: upstream delivery chain
         except Exception:
             return None
+
+    def _user_gate(self) -> str:
+        """当前会话是否卡在等用户输入的门上（clarify / approval）；无则空串。"""
+        return user_gate_pending(self._session_key)
 
     def _activity_summary(self) -> dict[str, Any]:
         try:

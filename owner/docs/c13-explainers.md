@@ -35,6 +35,7 @@ explainers:
   progress:
     enabled: true
     silence_seconds: 60
+    pause_while_awaiting_user: true   # clarify/审批等待期不旁白
     platforms: { feishu: true }
   approval:
     enabled: true
@@ -136,6 +137,27 @@ PYTHONPATH=. python -m pytest tests/owner/test_c13_explainers.py tests/owner/tes
 3. 仍非中文：日志 warning，**fail-open** 返回最后一次文本（与其它 explainer 软失败一致）。
 
 适用范围：`english` / `recap` 默认强制中文旁白；`progress` / `approval` 跟随 `display.language`（可用 kind cfg `require_chinese` 覆盖）。**不**改写 english explainer 的英文源正文。
+
+## progress 用户输入门（clarify / approval）等待期不旁白
+
+`clarify` 与审批卡都会让 agent 线程阻塞在「等用户回答」上：turn 没结束、executor 没 done，但也没有工具完成事件和流增量。这正是沉默期旁白的触发条件——若不处理，提问卡发出约 60s 后就开始出「🧭 当前进度」，每 `min_interval_seconds` 一条、最多 `max_per_turn` 条（默认 120s / 5 条），底栏还会因为 `current_tool=clarify` 显示「正在提问 — 第 N/M 轮迭代」：用户在思考怎么回答，bot 在旁边反复催促。默认 `clarify_timeout=3600`，一次提问足以把整轮配额刷满。
+
+判定不看进度事件，直接查两个模块级注册表（`dispatcher.user_gate_pending`）：
+
+| 门 | 探针 | 返回 |
+|---|---|---|
+| 提问 | `tools.clarify_gateway.has_pending(session_key)` | `clarify` |
+| 审批 | `tools.approval.has_blocking_approval(session_key)` | `approval` |
+
+用注册表而非事件回放，是因为 `mute_notification_reply` 会把 `tool_progress_callback` 置 `None`，包装器随之失效、`tool.started/completed` 不再进 tracker；而注册表始终如实反映「agent 线程正卡在一个等回答的门上」。探针是两次字典查询，可每 tick 调用，失败 fail-open。
+
+行为：
+
+- 等待期间 tick 整段跳过——不发旁白，**也不消耗** `max_per_turn`（早退在计数之前）。
+- 静默计时冻结（`tracker.note_awaiting_user(True)`），避免等 10 分钟后把 `silence` 累到 stall，用户一回答就补发一条「疑似停滞」。
+- 门消失（用户点了按钮/回了文字/超时退出）时静默计时重新起算，所以「刚回答完立刻被插嘴」不会发生。
+- 多问题 clarify 逐题发卡，中间间隙极短；门在间隙变空也只会重置计时，不会误发。
+- `explainers.progress.pause_while_awaiting_user: false` 可关闭该行为（回到纯沉默期计时）。
 
 ## progress fact_line（旁白正文下一行）
 
