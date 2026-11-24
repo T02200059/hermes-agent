@@ -40,6 +40,6 @@
 ## 测
 
 ```bash
-cd ~/.hermes/hermes-agent-v2
+cd ~/.hermes/hermes-agent
 PYTHONPATH=. python -m pytest tests/owner/test_c11_auto_card.py tests/owner/test_feishu_agent_end_media.py -q
 ```

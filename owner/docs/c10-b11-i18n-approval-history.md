@@ -18,7 +18,7 @@
 ## 测
 
 ```bash
-cd ~/.hermes/hermes-agent-v2
+cd ~/.hermes/hermes-agent
 uv run pytest tests/owner/test_file_tools_guard_text_i18n.py \
   tests/owner/test_approval_suggest_i18n_blocks.py \
   tests/hermes_cli/test_approvals_suggest.py -q

@@ -682,8 +682,8 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   1. ~~C14 `stream_guard.DEFAULTS["action"]=warn_only`~~ → **已改** `interrupt`（与 overlay 完整版对齐；缺 overlay 不再 fail-open）。测：`test_stream_guard_defaults_action_interrupt`；`warn_only` 仍可显式配置。
   2. ~~`[owner-patch P2-3]` 旧拼写~~ → **已落地**：`# [owner] P2-3: …`
   3. ~~C13 三 kind 输出帽硬编码~~ → **已落地**：读 overlay `max_output_chars`（见 C13 条）
-  4. **标记纪律**：~~本轮未批量扫~~ → **轻量已补**（相对 `upstream/main...HEAD` 官方运行时缺标 12 文件补 `# [owner]`；**未**做 `owner/validation/` 迁入、**未**开 C24 全量 inventory / 官方测全绿；`tests/owner/*` 整文件属 owner 域跳过；其余官方 test 改动本轮不铺标）
-  5. `owner/validation/` 仅 `samples/`、无 `inventory.yaml`（Check 7/8 工具未迁）— **旁置保留**（绑 C24；本轮不删不发明 inventory）
+  4. **标记纪律**：~~本轮未批量扫~~ → **轻量已补**（相对 `upstream/main...HEAD` 官方运行时缺标 12 文件补 `# [owner]`；`owner/validation/` 的 Check 8 后来迁回、见 § 落地记录；C24 全量 inventory 不迁；`tests/owner/*` 整文件属 owner 域跳过；其余官方 test 改动本轮不铺标）
+  5. `owner/validation/` 现状：`check_owner_markers.py`（Check 8 的 v2 精简版，挂 lefthook）+ `marker_debt.txt`（只缩不减的标记债务）；**无** `inventory.yaml` / `samples/` —— Check 7 逐文件断言不迁，覆盖职责归 `tests/owner/` 能力包守卫。C24 不再需要全量 inventory。
   6. ~~C02 `/model` → wire `custom` 归因~~ → **已核实并修**（见 C02「已核实并落地」：`custom:<slug>` 剥前缀）
 - **限流（暂不做）**：本清单 **无独立限流定制项**（C 段无 RPM/TPM/throttle/客户端主动限流条目）。最接近已消化项：
   - **B18**（已勾）/ 源 §7.9 — 429 配额耗尽当 transient 静默重试 → 本树用 **O5** 天/周配额墙单向降为 billing

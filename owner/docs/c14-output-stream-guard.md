@@ -38,7 +38,7 @@ S3 直接复用 `agent.repetition_guard.is_repetition_dominated`，不另写复�
 ## 自检 / 测试
 
 ```bash
-cd ~/.hermes/hermes-agent-v2
+cd ~/.hermes/hermes-agent
 python -m owner.output_guard.selfcheck
 python -m owner.stream_guard.selfcheck
 python -m pytest tests/owner/test_c14_guards.py -q
