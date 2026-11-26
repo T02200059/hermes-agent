@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Any
 from collections import OrderedDict
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from owner.feishu import auto_card, card_sender
+from gateway.platforms.base import SendResult
 
 
 def test_threshold_reads_patch(monkeypatch):
@@ -132,3 +134,86 @@ async def test_send_card_surfaces_api_failure():
         adapter, chat_id="oc_x", card={"elements": []}, metadata=None,
     )
     assert result.success is False
+
+
+# ---------------------------------------------------------------------------
+# C11 卡片降级链 / 2200 白名单 / overlay 总开关
+# ---------------------------------------------------------------------------
+
+class _CardAdapter:
+    """最小适配器替身：只暴露 try_auto_card 用到的 send_card。"""
+
+    def __init__(self, outcomes):
+        self.calls = []
+        self._outcomes = list(outcomes)
+
+    async def send_card(self, *, chat_id, card, metadata=None):
+        self.calls.append(card)
+        success = self._outcomes.pop(0)
+        return SendResult(success=success, error=None if success else "[9499] card rejected")
+
+
+@pytest.mark.asyncio
+async def test_try_auto_card_disabled_by_overlay_switch(monkeypatch):
+    """overlay feishu_card.auto_card_enabled: false → 完全不走卡片。"""
+    monkeypatch.setattr(auto_card, "is_auto_card_enabled", lambda: False)
+    adapter: Any = _CardAdapter([True])
+    result = await auto_card.try_auto_card(
+        adapter, "x" * 200, {}, chat_id="oc_test", force=True,
+    )
+    assert result is None
+    assert adapter.calls == []
+
+
+@pytest.mark.asyncio
+async def test_try_auto_card_v2_rejected_falls_back_to_v1_once(monkeypatch):
+    """v2 被拒 → 只补一次 v1（不再 3 次重试）。"""
+    monkeypatch.setattr(auto_card, "is_auto_card_enabled", lambda: True)
+    monkeypatch.setattr(auto_card, "get_auto_card_threshold", lambda: 20)
+    adapter: Any = _CardAdapter([False, True])
+    result = await auto_card.try_auto_card(
+        adapter, "x" * 200, {}, chat_id="oc_test", force=True,
+    )
+    assert result is not None and result.success is True
+    assert len(adapter.calls) == 2
+    assert adapter.calls[0].get("schema") == "2.0"
+    assert "schema" not in adapter.calls[1]
+    assert adapter.calls[1]["elements"]
+
+
+@pytest.mark.asyncio
+async def test_try_auto_card_both_formats_rejected_falls_to_plain_text(monkeypatch):
+    """v2 + v1 都失败 → 返回 None 交给普通消息，仍然只有两次发送。"""
+    monkeypatch.setattr(auto_card, "is_auto_card_enabled", lambda: True)
+    monkeypatch.setattr(auto_card, "get_auto_card_threshold", lambda: 20)
+    adapter: Any = _CardAdapter([False, False])
+    result = await auto_card.try_auto_card(
+        adapter, "x" * 200, {}, chat_id="oc_test", force=True,
+    )
+    assert result is None
+    assert len(adapter.calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_send_card_treats_2200_as_delivered():
+    """[2200] 实测是「已创建、正文没渲染」：按已送达处理，不再重试/降级。"""
+    adapter = MagicMock()
+
+    class _Resp:
+        code = 2200
+        msg = "internal error"
+
+        def success(self):
+            return False
+
+    async def _send(**kwargs):
+        return _Resp()
+
+    adapter._feishu_send_with_retry = _send
+    adapter._finalize_send_result = MagicMock(
+        return_value=SendResult(success=False, error="[2200] internal error")
+    )
+    result = await card_sender.send_card(
+        adapter, chat_id="oc_x", card={"elements": []}, metadata=None,
+    )
+    assert result.success is True

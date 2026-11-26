@@ -15,6 +15,9 @@
 # 覆盖为「整表替换」，非追加。
 feishu_card:
   auto_card_threshold: 57
+  # 总开关。false 时整条 auto-card 路径关闭，回复改走普通消息（post/text）。
+  # 阈值 auto_card_threshold: 0 是等价的旧写法，两者都生效。
+  auto_card_enabled: true
 
 # ── 飞书行为 ────────────────────────────────────────────────────────────────
 feishu:

@@ -20,6 +20,19 @@ from gateway.platforms.base import SendResult
 
 logger = logging.getLogger(__name__)
 
+# [owner] C11: 飞书对「消息已创建、但卡片正文没渲染出来」的请求返回 [2200] internal error，
+# 而且不返回 message_id（聊天里留下的占位卡也撤不掉）。2026-11-26 实测：5 分钟内 31 次
+# 2200 与聊天里 32 条占位卡逐秒 1:1 对应 —— 也就是说内容已经发出去了。这类码再重试只会
+# 把同一段内容发第 2、3 遍，所以按「已送达」处理，让调用方停手（auto-card 的
+# v2 → v1 → 纯文本降级链不会因它再发一条）。
+_DELIVERED_ERROR_CODES = frozenset({"2200"})
+
+
+def is_delivered_error(error: Optional[str]) -> bool:
+    """True when ``error`` carries a code meaning the message WAS created anyway."""
+    text = str(error or "")
+    return any(f"[{code}]" in text for code in _DELIVERED_ERROR_CODES)
+
 
 def _resolve_receive_target(chat_id: str, metadata: Optional[dict[str, Any]] = None) -> tuple[str, str]:
     """Resolve (receive_id, receive_id_type) for Feishu im/v1/messages create.
@@ -375,6 +388,14 @@ async def send_card(
                 chat_id,
                 result.message_id or "(none)",
             )
+        elif is_delivered_error(result.error):
+            logger.info(
+                "[Feishu card] send_card delivered-with-error chat_id=%s error=%s "
+                "(message created, card body not rendered — not retrying)",
+                chat_id,
+                result.error,
+            )
+            return SendResult(success=True, message_id="", raw_response=response)
         else:
             logger.warning(
                 "[Feishu card] send_card failed chat_id=%s error=%s",

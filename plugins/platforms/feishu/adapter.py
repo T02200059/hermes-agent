@@ -1765,6 +1765,18 @@ class FeishuAdapter(BasePlatformAdapter):
             logger.error("[Feishu] Send error: %s", exc, exc_info=True)
             return SendResult(success=False, error=str(exc))
 
+    async def _send_plain_fallback(
+        self, chat_id: str, content: str, *, reply_to: Optional[str], metadata: Any,
+    ) -> SendResult:
+        """Plain-text fallback that does NOT re-enter auto-card.
+
+        The base implementation re-calls ``self.send()``, whose first step is
+        ``try_auto_card`` — so a "plain-text" fallback would fire another card
+        attempt first and duplicate the reply (owner, 2026-11-26).
+        """
+        from owner.feishu.plain_fallback import send_plain_fallback
+        return await send_plain_fallback(self, chat_id, content, reply_to=reply_to, metadata=metadata)
+
     async def edit_message(self, chat_id: str, message_id: str, content: str, *, finalize: bool = False) -> SendResult:
         """Edit a previously sent Feishu text/post message."""
         if not self._client:

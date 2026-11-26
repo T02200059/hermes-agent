@@ -156,7 +156,7 @@ explainers:
 | 基建 | 编号 | 入口（要点） | 配置 |
 |------|------|--------------|------|
 | 永久审批门 | C01 | `owner/approval/permanent_policy.py` → `gate_allow_permanent` / `get_allow_permanent` | `owner.approvals.allow_permanent`（默认 false） |
-| 飞书 auto-card / notice / early-typing | C11 底座 | `owner/feishu/auto_card.py`（`try_auto_card` / `match_notice_rule` / `make_notice_card`）；`card_sender.send_card`；`agent_end.try_auto_card_on_end`；adapter early-typing | `owner.feishu_card.*` |
+| 飞书 auto-card / notice / early-typing | C11 底座 | `owner/feishu/auto_card.py`（`try_auto_card` / `match_notice_rule` / `make_notice_card` / `make_*_v1` v1 降级形状）；`card_sender.send_card`（`[2200]` 已送达白名单）；`plain_fallback.send_plain_fallback`（adapter `_send_plain_fallback` 覆写）；`agent_end.try_auto_card_on_end`；adapter early-typing | `owner.feishu_card.*`（含 `auto_card_enabled`） |
 | 飞书 bot 菜单 menu_v6 | C11-bot-menu | `owner/feishu/bot_menu.py`（`handle_bot_menu_event`）；adapter 注册 + p2p/inbound 暖缓存 | `owner.feishu.bot_menu*` |
 | 飞书 clarify 交互卡 | C11-clarify | `owner/feishu/clarify_card.py`（`send_clarify` / `retire_clarify_card` / `handle_clarify_card_action`）；`owner/clarify/gateway_helpers.py` | — |
 | 飞书 /providers model picker | C26-feishu-picker | `owner/feishu/model_picker.py`（`send_model_picker_card` / `handle_picker_action`）；adapter `_model_picker_state` + card-action `hermes_model_picker` | — |
@@ -498,6 +498,12 @@ O3–O8 代码 commit：`acbc2074c5`。B15/B17 见本批随后 commit。
   - 说明：`owner/docs/c11-feishu-auto-card-base.md`
   - 测：`tests/owner/test_c11_auto_card.py`（含 `recap["template"] == "orange"` 断言）、`tests/owner/test_feishu_agent_end_media.py`
   - 依赖：C04 已落地；卡发送复用官方 `_feishu_send_with_retry` / `_finalize_send_result`
+  - **发送降级链**（2026-11-26 · 更新本条，非新增条目）：失败不再重试，固定 `v2 卡 → v1 卡 → 普通消息` 各一次。
+    - `auto_card.try_auto_card`：删掉 `_MAX_CARD_SEND_ATTEMPTS=3` + 1s sleep 重试循环；v2 被拒时用 `make_auto_card_v1` / `make_notice_card_v1`（同内容、`config`+`elements`）重发一次，仍失败返回 `None` 交给 `adapter.send()` 走 post/text。
+    - `card_sender.send_card`：新增 `_DELIVERED_ERROR_CODES = {"2200"}` + `is_delivered_error()`；`[2200] internal error` 按已送达处理（实测＝消息已创建、正文没渲染；31 次 2200 ↔ 32 条占位卡逐秒 1:1），INFO `delivered-with-error`，不降级不重发。
+    - 新文件 `owner/feishu/plain_fallback.py` + `adapter._send_plain_fallback` 覆写：真正发 `msg_type=text`，不再 `self.send()` 二次进 auto-card（这是 2026-11-26 一条回复变 9 张卡的放大源）。
+    - 配置新增 `feishu_card.auto_card_enabled`（默认 true）；`auto_card_threshold: 0` 仍是等价关法。
+    - 测：同一文件新增 4 例（2200 按已送达 / v2 失败只补 v1 / 两级失败返回 None / overlay 关不发卡）。
   - **话题交互卡（2026-11-11）**：`send_card` / `send_card_via_rest` 在有 `metadata.thread_id` 时走 reply API（`reply_in_thread=True`），不按 `receive_id_type=thread_id` 创建（99992402）。详见 C13「飞书话题发卡」。测：`tests/owner/test_c13_feishu_thread_cards.py`
 - [x] **C11-bot-menu** · 源 §4.6 · bot 菜单 menu_v6 + p2p 暖缓存 · **优先级：P1**（阶段三）· **已落地**
   - `owner/feishu/bot_menu.py`；adapter 注册/委托 + p2p/inbound cache warm；`overlay.yaml` → `feishu.bot_menu*`

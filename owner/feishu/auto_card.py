@@ -13,7 +13,6 @@ Usage in feishu.py send():
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import re
@@ -92,6 +91,19 @@ def get_auto_card_threshold() -> int:
         return max(0, int(threshold))
     except Exception:
         return _DEFAULT_AUTO_CARD_THRESHOLD
+
+
+def is_auto_card_enabled() -> bool:
+    """auto-card 总开关：overlay ``feishu_card.auto_card_enabled``（默认开）。
+
+    显式写 false 时整条 auto-card 路径关闭，所有回复走普通消息；阈值
+    ``auto_card_threshold: 0`` 是同义的旧写法，两者都支持。
+    """
+    try:
+        patch = load_patch_config()
+        return bool(patch.get("feishu_card", {}).get("auto_card_enabled", True))
+    except Exception:
+        return True
 
 
 def get_auto_card_split_enabled() -> bool:
@@ -314,6 +326,40 @@ def make_notice_card(markdown_text: str, rule: dict[str, Any]) -> dict[str, Any]
             "template": rule["template"],
         },
         "body": {"elements": [{"tag": "markdown", "content": body}]},
+    }
+
+
+# ---------------------------------------------------------------------------
+# [owner] C11: 卡片 v1 降级形状
+# ---------------------------------------------------------------------------
+# 2026-11-26 实测：同样内容用 schema 2.0 发出，飞书无论回 code 0 还是 [2200]，聊天里
+# 落下的都是占位卡「请升级至最新版本客户端，以查看内容」；换成 v1（config + elements）
+# 正文就能正常渲染。所以 v2 失败时先降 v1，v1 也失败才退回纯文本。
+
+
+def make_auto_card_v1(markdown_text: str, footer: str = "") -> dict[str, Any]:
+    """v1 形状的 auto-card：同一段正文，不带 schema 2.0 声明。"""
+    return {
+        "config": {"wide_screen_mode": True},
+        "elements": _build_card_elements(markdown_text, footer=footer),
+    }
+
+
+def make_notice_card_v1(markdown_text: str, rule: dict[str, Any]) -> dict[str, Any]:
+    """v1 形状的告警卡：header + 单个 markdown 元素。"""
+    if rule.get("strip_prefix"):
+        body = _strip_notice_prefix(markdown_text, rule["prefix"])
+    else:
+        body = markdown_text
+    if not body.strip():
+        body = markdown_text
+    return {
+        "config": {"wide_screen_mode": True},
+        "header": {
+            "title": {"content": rule["title"], "tag": "plain_text"},
+            "template": rule["template"],
+        },
+        "elements": [{"tag": "markdown", "content": body}],
     }
 
 
@@ -566,8 +612,9 @@ def _split_text_for_card(text: str, max_chars: int) -> list[str]:
 # Main entry point: try_auto_card
 # ---------------------------------------------------------------------------
 
-_MAX_CARD_SEND_ATTEMPTS = 3
-_CARD_SEND_RETRY_DELAY_SECONDS = 1.0
+# [owner] C11: 卡片只发一次，不做重试。历史上的 3 次重试意味着一次失败会往聊天里多发
+# 2 条（[2200] 实测是「消息已创建、正文没渲染」，重试等于重发同样的内容）。格式问题
+# 改由 v2 → v1 → 纯文本 的降级链解决，每级各一次，见 try_auto_card。
 
 
 async def try_auto_card(
@@ -592,12 +639,15 @@ async def try_auto_card(
     behaviour (cards only when streaming is off).
 
     Returns SendResult on success, None if auto-card should be skipped
-    (short text, streaming on, threshold disabled, or feasibility risk).
-    On card send failure after retries, logs a warning and returns None so
-    the caller falls through to the plain-text path.
+    (short text, streaming on, switch/threshold disabled, or feasibility risk).
+    卡片只发一次：v2 被拒时降级为 v1 再发一次，两级都失败才返回 None，由调用方
+    退回普通消息（不做重试 —— 每次重发都会在聊天里多出一条）。
     """
     # Tool-progress bubbles are editable; never convert them to cards.
     if metadata and metadata.get("__hermes_progress_bubble"):
+        return None
+
+    if not is_auto_card_enabled():
         return None
 
     threshold = get_auto_card_threshold()
@@ -653,7 +703,6 @@ async def try_auto_card(
     # internal _chat_id for very old direct uses. This fixes the "chat_id
     # 推导退化" for synthetic DM / auto-card paths.
     chat_id = chat_id or getattr(adapter, "_chat_id", "") or ""
-    last_error = ""
     last_card_result: Optional[SendResult] = None
 
     # [owner] High#2: hold a per-chat card-send lock across the WHOLE chunk
@@ -683,39 +732,33 @@ async def try_auto_card(
             # 只发生在长回复路径上，那里不该冒出告警标题。
             notice_rule = match_notice_rule(card_text) if n_chunks == 1 else None
             if notice_rule is not None:
-                card = make_notice_card(card_text, notice_rule)
-            else:
-                card = make_auto_card(card_text, footer=card_footer)
-
-            card_result = None
-            for attempt in range(_MAX_CARD_SEND_ATTEMPTS):
-                card_result = await adapter.send_card(
-                    chat_id=chat_id,
-                    card=card,
-                    metadata=metadata,
+                cards = (
+                    make_notice_card(card_text, notice_rule),
+                    make_notice_card_v1(card_text, notice_rule),
                 )
-                if card_result.success:
-                    break
-                if attempt < _MAX_CARD_SEND_ATTEMPTS - 1:
-                    logger.warning(
-                        "[Feishu] auto-card chunk %d/%d attempt %d/%d failed (%s), retrying in %.1fs",
-                        idx + 1,
-                        n_chunks,
-                        attempt + 1,
-                        _MAX_CARD_SEND_ATTEMPTS,
-                        card_result.error or "unknown",
-                        _CARD_SEND_RETRY_DELAY_SECONDS,
-                    )
-                    await asyncio.sleep(_CARD_SEND_RETRY_DELAY_SECONDS)
+            else:
+                cards = (
+                    make_auto_card(card_text, footer=card_footer),
+                    make_auto_card_v1(card_text, footer=card_footer),
+                )
 
-            if card_result is None or not card_result.success:
-                last_error = (card_result.error or "unknown") if card_result else "unknown"
+            # v2 → v1 → 纯文本，每级各一次。次数固定为 1 是刻意的：任何一次失败再重发
+            # 都会在聊天里多出一条（飞书不给 2200 的 message_id，占位卡撤不掉）。
+            card_result = await adapter.send_card(chat_id=chat_id, card=cards[0], metadata=metadata)
+            if not card_result.success:
                 logger.warning(
-                    "[Feishu] auto-card chunk %d/%d failed after %d attempts: %s; falling back to plain text",
+                    "[Feishu] auto-card chunk %d/%d v2 card rejected (%s); retrying once as v1 card",
                     idx + 1,
                     n_chunks,
-                    _MAX_CARD_SEND_ATTEMPTS,
-                    last_error,
+                    card_result.error or "unknown",
+                )
+                card_result = await adapter.send_card(chat_id=chat_id, card=cards[1], metadata=metadata)
+            if not card_result.success:
+                logger.warning(
+                    "[Feishu] auto-card chunk %d/%d failed on v1 too (%s); falling back to plain text",
+                    idx + 1,
+                    n_chunks,
+                    card_result.error or "unknown",
                 )
                 return None
             last_card_result = card_result
