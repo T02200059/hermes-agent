@@ -599,6 +599,13 @@ def env_for(*names: str, base_env: Optional[dict] = None) -> dict[str, str]:
 def _runtime_state_matches(fact: dict, stamp: str, *, project_root: Path | None = None) -> bool:
     if not isinstance(fact, dict) or fact.get("stamp") != stamp:
         return False
+    return _environment_state_matches(fact, project_root=project_root)
+
+
+def _environment_state_matches(fact: dict, *, project_root: Path | None = None) -> bool:
+    """The recorded selection's environment is the one this checkout would use, and it exists."""
+    if not isinstance(fact, dict):
+        return False
     from pm.environments import selected_venv
 
     try:
@@ -609,6 +616,24 @@ def _runtime_state_matches(fact: dict, stamp: str, *, project_root: Path | None 
     if recorded is not None and (not isinstance(recorded, str) or Path(recorded).resolve() != environment):
         return False
     return (environment / "pyvenv.cfg").is_file()
+
+
+def _members_unobservable() -> bool:
+    """[owner] 容器化子 gateway：宿主 profiles 树没有挂进容器，插件成员集合不可观测。
+
+    node010 的 hermes-<name> 只把 <root>/profiles/<name> bind mount 成 ~/.hermes，
+    <root>/profiles 整个目录不在容器里。members_stamp 对所有 home 的插件做路径+内容
+    哈希，容器内只能看到 1 个（甚至 0 个），与安装时记录的集合永远对不上。
+    依赖归宿主安装与管理，容器不该替它判成员；由启动它的宿主发现成员变化。
+    """
+    if os.environ.get("HERMES_SUPERVISED_CHILD", "").strip().lower() not in ("1", "true", "yes"):
+        return False
+    from pm.environments import dependency_home_root
+
+    try:
+        return not (dependency_home_root() / "profiles").is_dir()
+    except (OSError, RuntimeError):
+        return False
 
 
 def _member_inputs(plugins: PluginInput | None) -> dict:
@@ -667,6 +692,10 @@ def venv_is_current(*, extras: list[str] | None = None, plugins: Members | Candi
             or any(not isinstance(extra, str) for extra in fact["extras"])):
         raise ValueError("invalid recorded dependency state")
     enabled = sorted(set(_still_declared(package, fact["extras"])) | set(extras or []))
+    if _members_unobservable():
+        # 依赖归宿主安装与管理（容器化子 gateway），插件成员集合在容器内不可观测：
+        # 只校验 extras 选择与已选环境本身，成员变化由宿主下次启动时发现。
+        return set(enabled) == set(fact["extras"]) and _environment_state_matches(fact, project_root=root)
     stamp = package.expected_stamp(enabled, **_member_inputs(plugins))
     return _runtime_state_matches(fact, stamp, project_root=root)
 
