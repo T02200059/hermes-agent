@@ -27,7 +27,23 @@ def dependency_home_root() -> Path:
     from hermes_constants import get_default_hermes_root, get_hermes_home_override
 
     override = get_hermes_home_override()
-    return get_default_hermes_root(home=override) if override else get_default_hermes_root()
+    root = get_default_hermes_root(home=override) if override else get_default_hermes_root()
+    # [owner] 容器化 profile:宿主 <root>/profiles/<name> 被 bind mount 到容器内的 ~/.hermes,
+    # 于是 env_path.resolve() 与 native home 同名同路径,get_default_hermes_root 判不出
+    # 「这是某个 profile」而把 profile 当成 root。依赖作用域因此缩到 1 个 home,
+    # members_stamp 与安装时记录的 14 个 home 不一致 → venv_is_current() 恒 False →
+    # 每个 gateway 启动都重跑 update tail 并撞共享 checkout 锁(node010 hermes-<name>)。
+    # 容器的 <home>/installs、<home>/tools 是指向宿主 <root>/installs|tools 的软链,
+    # 从软链目标反推宿主 root;普通部署的 installs 是真目录,不走这条。
+    installs = root / "installs"
+    try:
+        if installs.is_symlink():
+            target = installs.resolve()
+            if target.name == "installs" and target.parent != root.resolve():
+                return target.parent
+    except (OSError, RuntimeError):
+        pass
+    return root
 
 
 def installs_root() -> Path:
