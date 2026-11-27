@@ -114,6 +114,15 @@ apps/desktop/electron/**/*.d.ts
 /log.txt
 /sqlite_leak_fix.png
 /*.png.bak
+# [owner] 运维手工备份:*.bak/*.bak.*/*.bak-* 不参与脏树判断
+# Hand-made backups of tracked files (api_server.py.bak-20260907,
+# patch.yaml.bak.20260721-105524, ...). Operators keep these next to the
+# original; a checkout carrying one must still read as clean to
+# `_tree_matches_completed_stamp`, which otherwise reruns the update tail on
+# every gateway launch.
+*.bak
+*.bak.*
+*.bak-*
 *.tar.gz
 *.tgz
 apps/shared/src/**/*.js
@@ -129,6 +138,10 @@ apps/desktop/.staging-*/
 # `npm run sync-assets` (see web/package.json).
 web/public/fonts/
 web/public/ds-assets/
+# web/ builds with npm (package-lock.json); a yarn.lock left by a hand-run
+# `yarn` in that directory is machine scratch, not a tracked lockfile.
+# [owner] web/ 用 npm,手跑 yarn 的锁文件不跟踪
+/web/yarn.lock
 
 # Release script temp files
 .release_notes.md
@@ -161,6 +174,10 @@ models-dev-upstream/
 .cursor/
 .gemini/
 .zed/
+# [owner] 本地 agent 工具目录:.claude/.serena/.local
+.claude/
+.serena/
+/.local/
 .mcp.json
 opencode.json
 config/mcporter.json
