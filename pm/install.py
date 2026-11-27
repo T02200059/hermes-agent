@@ -619,21 +619,18 @@ def _environment_state_matches(fact: dict, *, project_root: Path | None = None) 
 
 
 def _members_unobservable() -> bool:
-    """[owner] 容器化子 gateway：宿主 profiles 树没有挂进容器，插件成员集合不可观测。
+    """[owner] 容器化子 gateway：插件成员集合在容器内不可观测。
 
     node010 的 hermes-<name> 只把 <root>/profiles/<name> bind mount 成 ~/.hermes，
-    <root>/profiles 整个目录不在容器里。members_stamp 对所有 home 的插件做路径+内容
-    哈希，容器内只能看到 1 个（甚至 0 个），与安装时记录的集合永远对不上。
-    依赖归宿主安装与管理，容器不该替它判成员；由启动它的宿主发现成员变化。
+    <root>/profiles 整个目录不在容器里（各容器的挂载布局还不一致，有的残留空挂载点
+    让 is_dir() 为真）。members_stamp 对所有 home 的插件做「绝对路径 + 内容」哈希，
+    容器内只能看到 0/1 个，与安装时记录的集合永远对不上。
+    依赖归宿主安装与管理；启动它的宿主会发现成员变化。
+    判定用 supervised-child + HERMES_PROFILE，不看挂载布局。
     """
     if os.environ.get("HERMES_SUPERVISED_CHILD", "").strip().lower() not in ("1", "true", "yes"):
         return False
-    from pm.environments import dependency_home_root
-
-    try:
-        return not (dependency_home_root() / "profiles").is_dir()
-    except (OSError, RuntimeError):
-        return False
+    return bool(os.environ.get("HERMES_PROFILE", "").strip())
 
 
 def _member_inputs(plugins: PluginInput | None) -> dict:
